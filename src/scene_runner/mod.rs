@@ -10,12 +10,13 @@ use serde_json::value::RawValue;
 mod engine;
 
 // system sets used for ordering
-#[derive(SystemLabel)]
-pub enum SceneSystems {
-    Init,         // setup the scene
+#[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
+pub enum SceneSets {
+    Init,          // setup the scene
     Input, // systems which create EngineResponses for the current frame (though these can be created anywhere)
     Run,   // run the script
     SpawnEvents, // generate bevy events from EngineCommands
+    CreateDestroy, // manage entity lifetimes
     HandleOutput, // systems which handle events from the current frame
 }
 
@@ -76,17 +77,27 @@ impl Plugin for SceneRunnerPlugin {
         app.add_event::<EngineResponse>();
         app.add_event::<EngineCommand>();
 
-        app.add_system(
-            initialize_scene
-                .label(SceneSystems::Init)
-                .before(SceneSystems::Input),
+        app.configure_sets(
+            (
+                SceneSets::Init,
+                SceneSets::Input,
+                SceneSets::Run,
+                SceneSets::SpawnEvents,
+                SceneSets::CreateDestroy,
+                SceneSets::HandleOutput,
+            )
+                .chain(),
         );
+
+        app.add_system(initialize_scene.in_set(SceneSets::Init));
+        app.add_system(run_scene.in_set(SceneSets::Run));
+
+        // add a command flush between CreateDestroy and HandleOutput so that
+        // commands can be applied to entities in the same frame they are created
         app.add_system(
-            run_scene
-                .after(SceneSystems::Input)
-                .label(SceneSystems::Run)
-                .before(SceneSystems::SpawnEvents)
-                .before(SceneSystems::HandleOutput),
+            apply_system_buffers
+                .after(SceneSets::CreateDestroy)
+                .before(SceneSets::HandleOutput),
         );
     }
 }
@@ -319,10 +330,6 @@ impl AddEngineCommandHandlerExt for App {
             }
         };
 
-        self.add_system(
-            system
-                .label(SceneSystems::SpawnEvents)
-                .before(SceneSystems::HandleOutput),
-        );
+        self.add_system(system.in_set(SceneSets::SpawnEvents));
     }
 }

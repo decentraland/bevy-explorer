@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Deserializer};
 
-use crate::scene_runner::{AddEngineCommandHandlerExt, JsEntityMap, SceneSystems};
+use crate::scene_runner::{AddEngineCommandHandlerExt, JsEntityMap, SceneSets};
 
 // plugin to manage some commands from the scene script
 pub struct SceneOutputPlugin;
@@ -11,14 +11,10 @@ impl Plugin for SceneOutputPlugin {
         // register "entity_add" method with EntityAddEngineCommand payload
         app.add_command_event::<EntityAddEngineCommand>("entity_add");
         // add system to handle EntityAddEngineCommand events
-        app.add_system(entity_add.label(SceneSystems::HandleOutput));
+        app.add_system(entity_add.in_set(SceneSets::CreateDestroy));
 
         app.add_command_event::<EntityTransformUpdateCommand>("entity_transform_update");
-        app.add_system(
-            entity_transform_update
-                .label(SceneSystems::HandleOutput)
-                .after(entity_add),
-        );
+        app.add_system(entity_transform_update.in_set(SceneSets::HandleOutput));
     }
 }
 
@@ -89,30 +85,24 @@ fn parse_engine_transform<'de, D: Deserializer<'de>>(source: D) -> Result<Transf
 }
 
 fn entity_transform_update(
-    mut pending: Local<Vec<EntityTransformUpdateCommand>>,
+    mut commands: Commands,
     entity_map: ResMut<JsEntityMap>,
     mut events: EventReader<EntityTransformUpdateCommand>,
     mut transforms: Query<&mut Transform>,
 ) {
-    for event in std::mem::take(&mut *pending).iter().chain(events.iter()) {
-        let Some(entity) = entity_map.0.get(&event.entity_id) else {
+    for event in events.iter() {
+        let Some(&entity) = entity_map.0.get(&event.entity_id) else {
             warn!("entity_transform_update for unknown entity {}", event.entity_id);
             continue;
         };
 
-        if let Ok(mut transform) = transforms.get_mut(*entity) {
+        if let Ok(mut transform) = transforms.get_mut(entity) {
             *transform = event.transform;
         } else {
-            // the entity exists in the JsEntityMap but not in the world -
-            // this is probably because it has been spawned in the same schedule stage,
-            // so we'll store the command for next time.
-            // TODO: we could also add a flush between add_entity instructions and others
-            // which will be much easier in bevy v0.10 releasing ~18th feb.
-            debug!(
-                "deferring entity_transform_update for pending entity {}",
-                event.entity_id
-            );
-            pending.push(event.clone());
+            // the entity exists in the JsEntityMap but has no transform.
+            // we know the entity exists in the world since it is in the entity map.
+            // add a new transform
+            commands.entity(entity).insert(event.transform);
         }
     }
 }
