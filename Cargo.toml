@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = { version = "0.9", features = ["serialize"] }
+bevy = { version = "0.10", features = ["serialize"] }
 deno_core = "0.170.*"
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }

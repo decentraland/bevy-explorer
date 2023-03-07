@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use deno_core::serde::Serialize;
 
-use crate::scene_runner::{EngineResponse, SceneSystems};
+use crate::scene_runner::{EngineResponse, SceneSets};
 
 // plugin to pass user input messages to the scene
 pub struct SceneInputPlugin;
@@ -9,7 +9,7 @@ pub struct SceneInputPlugin;
 impl Plugin for SceneInputPlugin {
     fn build(&self, app: &mut App) {
         // register system
-        app.add_system(send_key_input.label(SceneSystems::Input));
+        app.add_system(send_key_input.in_set(SceneSets::Input));
     }
 }
 
