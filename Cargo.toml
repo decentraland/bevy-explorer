@@ -7,7 +7,13 @@ edition = "2021"
 
 [dependencies]
 bevy = { version = "0.10", features = ["serialize"] }
+# bevy = { version = "0.10", features = ["serialize", "trace_tracy"] }
 deno_core = "0.170.*"
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
 serde_v8 = "0.81.0"
+num-traits = "0.2"
+num-derive = "0.3"
+num = "0.4"
+protobuf = "3.2.0"
+futures-lite = "1.12.0"

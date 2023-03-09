@@ -1,108 +1,103 @@
 use bevy::prelude::*;
-use serde::{Deserialize, Deserializer};
 
-use crate::scene_runner::{AddEngineCommandHandlerExt, JsEntityMap, SceneSets};
+use crate::scene_runner::{
+    crdt::{lww::CrdtLWWState, AddCrdtInterfaceExt, FromProto},
+    engine::ReadDclFormat,
+    SceneComponentId, SceneContext, SceneEntityId, SceneSets,
+};
 
 // plugin to manage some commands from the scene script
 pub struct SceneOutputPlugin;
 
 impl Plugin for SceneOutputPlugin {
     fn build(&self, app: &mut App) {
-        // register "entity_add" method with EntityAddEngineCommand payload
-        app.add_command_event::<EntityAddEngineCommand>("entity_add");
-        // add system to handle EntityAddEngineCommand events
-        app.add_system(entity_add.in_set(SceneSets::CreateDestroy));
-
-        app.add_command_event::<EntityTransformUpdateCommand>("entity_transform_update");
-        app.add_system(entity_transform_update.in_set(SceneSets::HandleOutput));
+        app.add_crdt_lww_interface::<TransformAndParent>(SceneComponentId(1));
+        app.add_system(process_transform_and_parent_updates.in_set(SceneSets::HandleOutput));
     }
 }
 
-#[derive(Deserialize)]
-struct EntityAddEngineCommand {
-    id: usize,
-}
-
-// handle "entity_add" commands
-fn entity_add(
-    mut commands: Commands,
-    mut entity_map: ResMut<JsEntityMap>,
-    mut events: EventReader<EntityAddEngineCommand>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    for ev in events.iter() {
-        if let Some(existing) = entity_map.0.remove(&ev.id) {
-            // remove any existing entity with the given id
-            commands.entity(existing).despawn_recursive();
-        }
-
-        // spawn a default cube
-        let entity = commands
-            .spawn(PbrBundle {
-                mesh: meshes.add(shape::Cube::new(1.0).into()),
-                material: materials.add(Color::RED.into()),
-                ..Default::default()
-            })
-            .id();
-
-        info!("spawned {} -> {:?}", ev.id, entity);
-        // add the (js entity handle -> entity id) to our map
-        entity_map.0.insert(ev.id, entity);
-    }
-}
-
-#[derive(Deserialize, Clone)]
-struct EntityTransformUpdateCommand {
-    #[serde(rename = "entityId")]
-    entity_id: usize,
-    #[serde(deserialize_with = "parse_engine_transform")]
+#[derive(Debug)]
+struct TransformAndParent {
     transform: Transform,
+    parent: SceneEntityId,
 }
 
-#[derive(Deserialize)]
-struct EngineTransform {
-    position: Vec3,
-    rotation: Vec4,
-    scale: Vec3,
+impl FromProto for TransformAndParent {
+    fn from_proto(buf: &mut protobuf::CodedInputStream) -> Result<Self, protobuf::Error> {
+        Ok(TransformAndParent {
+            transform: Transform {
+                translation: Vec3::new(
+                    buf.read_be_float()?,
+                    buf.read_be_float()?,
+                    buf.read_be_float()?,
+                ),
+                rotation: Quat::from_xyzw(
+                    buf.read_be_float()?,
+                    buf.read_be_float()?,
+                    buf.read_be_float()?,
+                    buf.read_be_float()?,
+                ),
+                scale: Vec3::new(
+                    buf.read_be_float()?,
+                    buf.read_be_float()?,
+                    buf.read_be_float()?,
+                ),
+            },
+            parent: SceneEntityId(buf.read_be_u32()?),
+        })
+    }
 }
 
-// custom deserializer as the bevy Transform format is different to the message format
-fn parse_engine_transform<'de, D: Deserializer<'de>>(source: D) -> Result<Transform, D::Error> {
-    let source = EngineTransform::deserialize(source)?;
-
-    Ok(Transform {
-        translation: source.position,
-        // TODO: not sure how the rotation is meant to be interpreted, i chose euler angles and discarded the 4th component
-        rotation: Quat::from_euler(
-            EulerRot::XYZ,
-            source.rotation.x,
-            source.rotation.y,
-            source.rotation.z,
-        ),
-        scale: source.scale,
-    })
-}
-
-fn entity_transform_update(
+fn process_transform_and_parent_updates(
     mut commands: Commands,
-    entity_map: ResMut<JsEntityMap>,
-    mut events: EventReader<EntityTransformUpdateCommand>,
-    mut transforms: Query<&mut Transform>,
+    mut scenes: Query<(
+        Entity,
+        &mut SceneContext,
+        &mut CrdtLWWState<TransformAndParent>,
+    )>,
 ) {
-    for event in events.iter() {
-        let Some(&entity) = entity_map.0.get(&event.entity_id) else {
-            warn!("entity_transform_update for unknown entity {}", event.entity_id);
-            continue;
-        };
+    for (root, mut entity_map, mut updates) in scenes.iter_mut() {
+        // remove crdt state for dead entities
+        updates
+            .timestamps
+            .retain(|ent, _| !entity_map.is_dead(*ent));
 
-        if let Ok(mut transform) = transforms.get_mut(entity) {
-            *transform = event.transform;
-        } else {
-            // the entity exists in the JsEntityMap but has no transform.
-            // we know the entity exists in the world since it is in the entity map.
-            // add a new transform
-            commands.entity(entity).insert(event.transform);
+        for (scene_entity, value) in updates.values.drain() {
+            debug!(
+                "[{:?}] {} -> {:?}",
+                scene_entity,
+                std::any::type_name::<TransformAndParent>(),
+                value
+            );
+            let Some(entity) = entity_map.bevy_entity(scene_entity) else {
+                info!("skipping {} update for missing entity {:?}", std::any::type_name::<TransformAndParent>(), scene_entity);
+                continue;
+            };
+            match value {
+                Some(TransformAndParent { transform, parent }) => {
+                    let parent = match entity_map.bevy_entity(parent) {
+                        Some(parent) => parent,
+                        None => {
+                            // we are parented to something that doesn't yet exist, create it here
+                            // TODO abstract out the new entity code (duplicated from process_lifecycle)
+                            let new_entity = commands
+                                .spawn(SpatialBundle::default())
+                                .set_parent(root)
+                                .id();
+                            entity_map.live.insert(parent, new_entity);
+                            new_entity
+                        }
+                    };
+                    commands.entity(entity).insert(transform).set_parent(parent);
+                }
+                None => {
+                    // insert a default transform and reparent to the root
+                    commands
+                        .entity(entity)
+                        .insert(Transform::default())
+                        .set_parent(root);
+                }
+            };
         }
     }
 }
