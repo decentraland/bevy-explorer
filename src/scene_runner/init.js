@@ -43,5 +43,6 @@ function require(moduleName) {
 
 // minimal console
 const console = { 
-    log: function(text) { Deno.core.print(text + "\n") }
+    log: function(text) { Deno.core.print("LOG  :" + text + "\n") },
+    error: function(text) { Deno.core.print("ERROR: " + text + "\n") },
 }
