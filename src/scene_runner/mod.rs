@@ -426,7 +426,7 @@ fn process_lifecycle(
                     root.spawn(PbrBundle {
                         // TODO remove these and replace with spatial bundle when mesh and material components are supported
                         mesh: meshes.add(shape::Cube::new(1.0).into()),
-                        material: materials.add(Color::RED.into()),
+                        material: materials.add(Color::WHITE.into()),
                         ..Default::default()
                     })
                     .id(),

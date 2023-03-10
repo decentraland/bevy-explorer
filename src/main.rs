@@ -5,6 +5,7 @@ mod test;
 
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    pbr::CascadeShadowConfigBuilder,
     prelude::*,
 };
 
@@ -15,7 +16,7 @@ use scene_runner::{LoadJsSceneEvent, SceneDefinition, SceneRunnerPlugin};
 #[derive(Resource)]
 struct UserScriptFolder(String);
 
-const LOG_FPS: bool = false;
+const LOG_FPS: bool = true;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -34,6 +35,10 @@ fn main() {
     .add_plugin(SceneInputPlugin) // plugin for posting input events to the script
     .add_plugin(SceneOutputPlugin) // plugin for processing some commands from the script
     .add_startup_system(setup)
+    .insert_resource(AmbientLight {
+        color: Color::WHITE,
+        brightness: 0.1,
+    })
     .insert_resource(UserScriptFolder(user_script_folder.clone()));
 
     if LOG_FPS {
@@ -51,8 +56,23 @@ fn setup(
 ) {
     // add a camera
     commands.spawn(Camera3dBundle {
-        transform: Transform::from_translation(Vec3::new(0.0, 1.0, 0.0))
-            .looking_at(Vec3::new(1.0, 1.0, 1.0), Vec3::Y),
+        transform: Transform::from_translation(Vec3::new(-10.0, 5.0, -4.0))
+            .looking_at(Vec3::new(1.0, 3.0, 1.0), Vec3::Y),
+        ..Default::default()
+    });
+
+    // add a directional light so it looks nicer
+    commands.spawn(DirectionalLightBundle {
+        directional_light: DirectionalLight {
+            shadows_enabled: true,
+            ..Default::default()
+        },
+        transform: Transform::default().looking_at(Vec3::new(0.2, -0.5, -1.0), Vec3::Y),
+        cascade_shadow_config: CascadeShadowConfigBuilder {
+            maximum_distance: 20.0,
+            ..Default::default()
+        }
+        .into(),
         ..Default::default()
     });
 
