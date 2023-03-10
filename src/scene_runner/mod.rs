@@ -176,7 +176,7 @@ fn op_require(
     // only allow items within designated paths
     if module_spec.contains("..") {
         return Err(generic_error(format!(
-            "invalid module request `{module_spec}`"
+            "invalid module request: '..' not allowed in `{module_spec}`"
         )));
     }
 
@@ -195,7 +195,7 @@ fn op_require(
     debug!("require(\"{filename}\")");
 
     std::fs::read_to_string(filename)
-        .map_err(|_| generic_error(format!("invalid module request `{module_spec}`")))
+        .map_err(|err| generic_error(format!("invalid module request `{module_spec}` ({err})")))
 }
 
 fn initialize_scene(
