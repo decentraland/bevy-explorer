@@ -11,11 +11,10 @@ use num::FromPrimitive;
 use num_derive::FromPrimitive;
 use std::{
     cell::{RefCell, RefMut},
-    mem::MaybeUninit,
     rc::Rc,
 };
 
-const CRDT_HEADER_SIZE: u64 = 8;
+const CRDT_HEADER_SIZE: usize = 8;
 
 #[derive(FromPrimitive, Debug)]
 pub enum CrdtMessageType {
@@ -27,38 +26,52 @@ pub enum CrdtMessageType {
 }
 
 // buffer format helpers
-
-/// `MaybeUninit::array_assume_init` is not stable.
-#[inline]
-pub(crate) unsafe fn maybe_ununit_array_assume_init<T, const N: usize>(
-    array: [MaybeUninit<T>; N],
-) -> [T; N] {
-    // SAFETY:
-    // * The caller guarantees that all elements of the array are initialized
-    // * `MaybeUninit<T>` and T are guaranteed to have the same layout
-    // * `MaybeUninit` does not drop, so there are no double-frees
-    // And thus the conversion is safe
-    (&array as *const _ as *const [T; N]).read()
+#[derive(Debug)]
+pub enum DclReaderError {
+    Eof,
 }
 
-pub trait ReadDclFormat {
-    /// Read little-endian 32-bit integer
-    fn read_be_u32(&mut self) -> protobuf::Result<u32>;
-    fn read_be_float(&mut self) -> protobuf::Result<f32>;
+pub struct DclReader<'a> {
+    pos: usize,
+    buffer: &'a [u8],
 }
 
-impl<'de> ReadDclFormat for protobuf::CodedInputStream<'de> {
-    fn read_be_u32(&mut self) -> protobuf::Result<u32> {
-        let mut bytes = [MaybeUninit::uninit(); 4];
-        self.read_exact(&mut bytes)?;
-        // SAFETY: `read_exact` guarantees that the buffer is filled.
-        let bytes = unsafe { maybe_ununit_array_assume_init(bytes) };
-        Ok(u32::from_be_bytes(bytes))
+impl<'a> DclReader<'a> {
+    pub fn new(buffer: &'a [u8]) -> Self {
+        Self { pos: 0, buffer }
     }
 
-    fn read_be_float(&mut self) -> protobuf::Result<f32> {
-        let bits = self.read_be_u32()?;
+    pub fn read_u32(&mut self) -> Result<u32, DclReaderError> {
+        Ok(u32::from_be_bytes(
+            self.take_slice(4).try_into().or(Err(DclReaderError::Eof))?,
+        ))
+    }
+
+    pub fn read_float(&mut self) -> Result<f32, DclReaderError> {
+        let bits = self.read_u32()?;
         Ok(f32::from_bits(bits))
+    }
+
+    pub fn take_slice(&mut self, len: usize) -> &[u8] {
+        let result = &self.buffer[0..len];
+        self.buffer = &self.buffer[len..];
+        self.pos += len;
+        result
+    }
+
+    pub fn take_reader(&mut self, len: usize) -> DclReader {
+        DclReader::new(self.take_slice(len))
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        self.buffer
+    }
+    pub fn len(&self) -> usize {
+        self.buffer.len()
+    }
+
+    pub fn pos(&self) -> usize {
+        self.pos
     }
 }
 
@@ -73,17 +86,17 @@ fn process_message(
     writers: &CrdtInterfacesMap,
     entity_map: &mut SceneContext,
     crdt_type: CrdtMessageType,
-    stream: &mut protobuf::CodedInputStream,
-) -> Result<(), protobuf::Error> {
+    stream: &mut DclReader,
+) -> Result<(), DclReaderError> {
     match crdt_type {
         CrdtMessageType::PutComponent => {
-            let entity = SceneEntityId(stream.read_be_u32()?);
-            let component = SceneComponentId(stream.read_be_u32()?);
-            let timestamp = stream.read_be_u32()?;
-            let content_len = stream.read_be_u32()?;
+            let entity = SceneEntityId(stream.read_u32()?);
+            let component = SceneComponentId(stream.read_u32()?);
+            let timestamp = stream.read_u32()?;
+            let content_len = stream.read_u32()? as usize;
 
             debug!("PUT e:{entity:?}, c: {component:?}, timestamp: {timestamp}, content len: {content_len}");
-            assert_eq!((content_len as u64), stream.bytes_until_limit());
+            assert_eq!(content_len, stream.len());
 
             // check for a writer
             let Some(writer) = writers.get(&component) else {
@@ -101,9 +114,9 @@ fn process_message(
             }
         }
         CrdtMessageType::DeleteComponent => {
-            let entity = SceneEntityId(stream.read_be_u32()?);
-            let component = SceneComponentId(stream.read_be_u32()?);
-            let timestamp = stream.read_be_u32()?;
+            let entity = SceneEntityId(stream.read_u32()?);
+            let component = SceneComponentId(stream.read_u32()?);
+            let timestamp = stream.read_u32()?;
 
             // check for a writer
             let Some(writer) = writers.get(&component) else {
@@ -121,7 +134,7 @@ fn process_message(
             }
         }
         CrdtMessageType::DeleteEntity => {
-            let entity = SceneEntityId(stream.read_be_u32()?);
+            let entity = SceneEntityId(stream.read_u32()?);
             entity_map.kill(entity);
         }
         CrdtMessageType::AppendValue => unimplemented!(),
@@ -137,21 +150,17 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) -> 
     let mut entity_map = op_state.take::<SceneContext>();
     let writers = op_state.borrow::<CrdtComponentInterfaces>().clone();
     let writers = writers.0.as_ref();
-    let mut stream = protobuf::CodedInputStream::from_bytes(messages);
-    stream.push_limit(messages.len() as u64).unwrap();
-    let message_limit = stream.bytes_until_limit();
-    debug!("BATCH limit: {}, len: {}", message_limit, messages.len());
+    let mut stream = DclReader::new(messages);
+    debug!("BATCH len: {}", stream.len());
 
     // collect commands
-    while stream.bytes_until_limit() > CRDT_HEADER_SIZE {
+    while stream.len() > CRDT_HEADER_SIZE {
         let pos = stream.pos();
-        let length = stream.read_be_u32().unwrap();
-        let crdt_type = stream.read_be_u32().unwrap();
+        let length = stream.read_u32().unwrap() as usize;
+        let crdt_type = stream.read_u32().unwrap();
 
         debug!("[{pos}] crdt_type: {crdt_type}, length: {length}");
-        if let Err(e) = stream.push_limit(length.saturating_sub(8) as u64) {
-            error!("CRDT Header error: failed to set limit {}: {}", length, e);
-        };
+        let mut message_stream = stream.take_reader(length.saturating_sub(8));
 
         match FromPrimitive::from_u32(crdt_type) {
             Some(crdt_type) => {
@@ -160,18 +169,13 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) -> 
                     writers,
                     &mut entity_map,
                     crdt_type,
-                    &mut stream,
+                    &mut message_stream,
                 ) {
-                    error!("CRDT Buffer error: {}", e);
+                    error!("CRDT Buffer error: {:?}", e);
                 };
             }
             None => error!("CRDT Header error: unhandled crdt message type {crdt_type}"),
         }
-
-        if let Err(e) = stream.skip_raw_bytes(stream.bytes_until_limit().try_into().unwrap()) {
-            error!("CRDT Header error: failed to skip bytes: {}", e);
-        }
-        stream.pop_limit(message_limit);
     }
 
     op_state.put(entity_map);
