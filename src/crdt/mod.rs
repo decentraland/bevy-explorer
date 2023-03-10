@@ -7,12 +7,15 @@ use bevy::{
 };
 use deno_core::OpState;
 
-use super::{
-    engine::{DclReader, DclReaderError},
-    SceneComponentId, SceneCrdtTimestamp, SceneEntityId, SceneSets,
-};
-
 pub mod lww;
+
+use crate::{
+    dcl_component::{
+        DclReader, DclReaderError, FromDclReader, SceneComponentId, SceneCrdtTimestamp,
+        SceneEntityId,
+    },
+    scene_runner::SceneSets,
+};
 
 use self::lww::{process_crdt_lww_updates, CrdtLWWInterface};
 
@@ -26,13 +29,6 @@ pub trait CrdtInterface {
         data: Option<&mut DclReader>,
     ) -> Result<bool, DclReaderError>;
     fn claim_crdt(&self, op_state: &mut RefMut<OpState>, target: &mut EntityCommands);
-}
-
-// trait to build an object from a buffer stream
-pub trait FromDclReader: Send + Sync + 'static {
-    fn from_proto(buf: &mut DclReader) -> Result<Self, DclReaderError>
-    where
-        Self: Sized;
 }
 
 pub type CrdtInterfacesMap = HashMap<SceneComponentId, Box<dyn CrdtInterface + Send + Sync>>;

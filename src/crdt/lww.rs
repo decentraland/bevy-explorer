@@ -7,12 +7,12 @@ use bevy::{
 };
 use deno_core::OpState;
 
-use crate::scene_runner::{
-    engine::{DclReader, DclReaderError},
-    SceneContext, SceneCrdtTimestamp, SceneEntityId,
+use crate::{
+    dcl_component::{DclReader, DclReaderError, FromDclReader, SceneCrdtTimestamp, SceneEntityId},
+    scene_runner::SceneContext,
 };
 
-use super::{CrdtInterface, FromDclReader};
+use super::CrdtInterface;
 
 pub struct LWWEntry {
     pub timestamp: SceneCrdtTimestamp,
@@ -163,7 +163,7 @@ pub(crate) fn process_crdt_lww_updates<T: FromDclReader + Component + std::fmt::
                 continue;
             };
             if entry.is_some {
-                match T::from_proto(&mut DclReader::new(&entry.data)) {
+                match T::from_reader(&mut DclReader::new(&entry.data)) {
                     Ok(t) => {
                         debug!(
                             "[{:?}] {} -> {:?}",

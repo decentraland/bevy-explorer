@@ -1,3 +1,5 @@
+mod crdt;
+mod dcl_component;
 mod input_handler;
 mod output_handler;
 mod scene_runner;
@@ -56,8 +58,8 @@ fn setup(
 ) {
     // add a camera
     commands.spawn(Camera3dBundle {
-        transform: Transform::from_translation(Vec3::new(-10.0, 5.0, -4.0))
-            .looking_at(Vec3::new(1.0, 3.0, 1.0), Vec3::Y),
+        transform: Transform::from_translation(Vec3::new(-10.0, 5.0, 4.0))
+            .looking_at(Vec3::new(1.0, 3.0, -1.0), Vec3::Y),
         ..Default::default()
     });
 

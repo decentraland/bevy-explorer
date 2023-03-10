@@ -1,9 +1,11 @@
 use bevy::prelude::*;
 
-use crate::scene_runner::{
-    crdt::{lww::CrdtLWWState, AddCrdtInterfaceExt, FromDclReader},
-    engine::{DclReader, DclReaderError},
-    SceneComponentId, SceneContext, SceneEntityId, SceneSets,
+use crate::{
+    crdt::{lww::CrdtLWWState, AddCrdtInterfaceExt},
+    dcl_component::{
+        transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
+    },
+    scene_runner::{SceneContext, SceneSets},
 };
 
 // plugin to manage some commands from the scene script
@@ -11,32 +13,8 @@ pub struct SceneOutputPlugin;
 
 impl Plugin for SceneOutputPlugin {
     fn build(&self, app: &mut App) {
-        app.add_crdt_lww_interface::<TransformAndParent>(SceneComponentId(1));
+        app.add_crdt_lww_interface::<DclTransformAndParent>(SceneComponentId(1));
         app.add_system(process_transform_and_parent_updates.in_set(SceneSets::HandleOutput));
-    }
-}
-
-#[derive(Debug)]
-struct TransformAndParent {
-    transform: Transform,
-    parent: SceneEntityId,
-}
-
-impl FromDclReader for TransformAndParent {
-    fn from_proto(buf: &mut DclReader) -> Result<Self, DclReaderError> {
-        Ok(TransformAndParent {
-            transform: Transform {
-                translation: Vec3::new(buf.read_float()?, buf.read_float()?, buf.read_float()?),
-                rotation: Quat::from_xyzw(
-                    buf.read_float()?,
-                    buf.read_float()?,
-                    buf.read_float()?,
-                    buf.read_float()?,
-                ),
-                scale: Vec3::new(buf.read_float()?, buf.read_float()?, buf.read_float()?),
-            },
-            parent: SceneEntityId(buf.read_u32()?),
-        })
     }
 }
 
@@ -45,7 +23,7 @@ fn process_transform_and_parent_updates(
     mut scenes: Query<(
         Entity,
         &mut SceneContext,
-        &mut CrdtLWWState<TransformAndParent>,
+        &mut CrdtLWWState<DclTransformAndParent>,
     )>,
 ) {
     for (root, mut entity_map, mut updates) in scenes.iter_mut() {
@@ -60,20 +38,22 @@ fn process_transform_and_parent_updates(
             .filter(|(_, entry)| entry.updated)
         {
             let Some(entity) = entity_map.bevy_entity(*scene_entity) else {
-                info!("skipping {} update for missing entity {:?}", std::any::type_name::<TransformAndParent>(), scene_entity);
+                info!("skipping {} update for missing entity {:?}", std::any::type_name::<DclTransformAndParent>(), scene_entity);
                 continue;
             };
             if entry.is_some {
-                match TransformAndParent::from_proto(&mut DclReader::new(&entry.data)) {
-                    Ok(tp) => {
+                match DclTransformAndParent::from_reader(&mut DclReader::new(&entry.data)) {
+                    Ok(dcl_tp) => {
                         debug!(
                             "[{:?}] {} -> {:?}",
                             scene_entity,
-                            std::any::type_name::<TransformAndParent>(),
-                            tp
+                            std::any::type_name::<DclTransformAndParent>(),
+                            dcl_tp
                         );
 
-                        let parent = match entity_map.bevy_entity(tp.parent) {
+                        let transform = dcl_tp.to_bevy_transform();
+
+                        let bevy_parent = match entity_map.bevy_entity(dcl_tp.parent()) {
                             Some(parent) => parent,
                             None => {
                                 // we are parented to something that doesn't yet exist, create it here
@@ -82,20 +62,20 @@ fn process_transform_and_parent_updates(
                                     .spawn(SpatialBundle::default())
                                     .set_parent(root)
                                     .id();
-                                entity_map.live.insert(tp.parent, new_entity);
+                                entity_map.live.insert(dcl_tp.parent(), new_entity);
                                 new_entity
                             }
                         };
 
                         commands
                             .entity(entity)
-                            .insert(tp.transform)
-                            .set_parent(parent);
+                            .insert(transform)
+                            .set_parent(bevy_parent);
                     }
                     Err(e) => {
                         warn!(
                             "failed to deserialize {} from buffer: {:?}",
-                            std::any::type_name::<TransformAndParent>(),
+                            std::any::type_name::<DclTransformAndParent>(),
                             e
                         );
                     }

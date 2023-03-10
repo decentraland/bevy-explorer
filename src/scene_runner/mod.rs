@@ -12,9 +12,8 @@ use deno_core::{
 };
 use serde::Serialize;
 
-use self::crdt::CrdtComponentInterfaces;
+use crate::{crdt::CrdtComponentInterfaces, dcl_component::SceneEntityId};
 
-pub mod crdt;
 pub mod engine;
 
 // system sets used for ordering
@@ -302,17 +301,6 @@ fn initialize_scene(
 
 #[derive(Default)]
 struct EngineResponseList(Vec<EngineResponse>);
-
-#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy)]
-pub struct SceneEntityId(pub u32);
-impl SceneEntityId {
-    pub const ROOT: SceneEntityId = SceneEntityId(0);
-}
-
-#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy)]
-pub struct SceneComponentId(pub u32);
-
-pub type SceneCrdtTimestamp = u32;
 
 // system to run the current active script
 fn run_scene(
