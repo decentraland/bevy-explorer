@@ -5,7 +5,7 @@ use crate::{
     dcl_component::{
         transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
     },
-    scene_runner::{SceneContext, SceneSets},
+    scene_runner::{DeletedSceneEntities, SceneContext, SceneEntity, SceneSets},
 };
 
 // plugin to manage some commands from the scene script
@@ -24,20 +24,23 @@ fn process_transform_and_parent_updates(
         Entity,
         &mut SceneContext,
         &mut CrdtLWWState<DclTransformAndParent>,
+        Option<&DeletedSceneEntities>,
     )>,
 ) {
-    for (root, mut entity_map, mut updates) in scenes.iter_mut() {
-        // remove crdt state for dead entities
-        updates
-            .last_write
-            .retain(|ent, _| !entity_map.is_dead(*ent));
+    for (root, mut scene_context, mut updates, maybe_deleted) in scenes.iter_mut() {
+        if let Some(deleted_entities) = maybe_deleted {
+            // remove crdt state for dead entities
+            for deleted in &deleted_entities.0 {
+                updates.last_write.remove(deleted);
+            }
+        }
 
         for (scene_entity, entry) in updates
             .last_write
             .iter_mut()
             .filter(|(_, entry)| entry.updated)
         {
-            let Some(entity) = entity_map.bevy_entity(*scene_entity) else {
+            let Some(entity) = scene_context.bevy_entity(*scene_entity) else {
                 info!("skipping {} update for missing entity {:?}", std::any::type_name::<DclTransformAndParent>(), scene_entity);
                 continue;
             };
@@ -53,24 +56,36 @@ fn process_transform_and_parent_updates(
 
                         let transform = dcl_tp.to_bevy_transform();
 
-                        let bevy_parent = match entity_map.bevy_entity(dcl_tp.parent()) {
+                        let bevy_parent = match scene_context.bevy_entity(dcl_tp.parent()) {
                             Some(parent) => parent,
                             None => {
-                                // we are parented to something that doesn't yet exist, create it here
-                                // TODO abstract out the new entity code (duplicated from process_lifecycle)
-                                let new_entity = commands
-                                    .spawn(SpatialBundle::default())
-                                    .set_parent(root)
-                                    .id();
-                                entity_map.live.insert(dcl_tp.parent(), new_entity);
-                                new_entity
+                                if scene_context.is_dead(dcl_tp.parent()) {
+                                    // parented to an already dead entity -> parent to root
+                                    root
+                                } else {
+                                    // we are parented to something that doesn't yet exist, create it here
+                                    // TODO abstract out the new entity code (duplicated from process_lifecycle)
+                                    let new_entity = commands
+                                        .spawn((
+                                            SpatialBundle::default(),
+                                            SceneEntity {
+                                                root,
+                                                scene_id: dcl_tp.parent(),
+                                            },
+                                        ))
+                                        .set_parent(root)
+                                        .id();
+                                    scene_context
+                                        .associate_bevy_entity(dcl_tp.parent(), new_entity);
+                                    new_entity
+                                }
                             }
                         };
 
                         commands
                             .entity(entity)
                             .insert(transform)
-                            .set_parent(bevy_parent);
+                            .set_parent(bevy_parent); // TODO: consider checking if parent has changed
                     }
                     Err(e) => {
                         warn!(

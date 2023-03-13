@@ -9,7 +9,7 @@ use deno_core::OpState;
 
 use crate::{
     dcl_component::{DclReader, DclReaderError, FromDclReader, SceneCrdtTimestamp, SceneEntityId},
-    scene_runner::SceneContext,
+    scene_runner::{DeletedSceneEntities, SceneContext},
 };
 
 use super::CrdtInterface;
@@ -155,13 +155,20 @@ impl<T: FromDclReader> CrdtInterface for CrdtLWWInterface<T> {
 // a default system for processing LWW comonent updates
 pub(crate) fn process_crdt_lww_updates<T: FromDclReader + Component + std::fmt::Debug>(
     mut commands: Commands,
-    mut scenes: Query<(Entity, &SceneContext, &mut CrdtLWWState<T>)>,
+    mut scenes: Query<(
+        Entity,
+        &SceneContext,
+        &mut CrdtLWWState<T>,
+        Option<&DeletedSceneEntities>,
+    )>,
 ) {
-    for (_root, entity_map, mut updates) in scenes.iter_mut() {
-        // remove crdt state for dead entities
-        updates
-            .last_write
-            .retain(|ent, _| !entity_map.is_dead(*ent));
+    for (_root, scene_context, mut updates, maybe_deleted) in scenes.iter_mut() {
+        if let Some(deleted_entities) = maybe_deleted {
+            // remove crdt state for dead entities
+            for deleted in &deleted_entities.0 {
+                updates.last_write.remove(deleted);
+            }
+        }
 
         for (scene_entity, entry) in updates
             .last_write
@@ -169,7 +176,7 @@ pub(crate) fn process_crdt_lww_updates<T: FromDclReader + Component + std::fmt::
             .filter(|(_, entry)| entry.updated)
         {
             entry.updated = false;
-            let Some(entity) = entity_map.bevy_entity(*scene_entity) else {
+            let Some(entity) = scene_context.bevy_entity(*scene_entity) else {
                 info!("skipping {} update for missing entity {:?}", std::any::type_name::<T>(), scene_entity);
                 continue;
             };
@@ -244,7 +251,10 @@ mod test {
         let op_state = RefCell::new(OpState::new(0));
         let interface = CrdtLWWInterface::<u32>::default();
 
-        let entity = SceneEntityId(0);
+        let entity = SceneEntityId {
+            id: 0,
+            generation: 0,
+        };
         let timestamp = SceneCrdtTimestamp(0);
         let data = 1231u32;
         let buf = 1231u32.to_be_bytes();
@@ -270,7 +280,10 @@ mod test {
         let op_state = RefCell::new(OpState::new(0));
         let interface = CrdtLWWInterface::<u32>::default();
 
-        let entity = SceneEntityId(0);
+        let entity = SceneEntityId {
+            id: 0,
+            generation: 0,
+        };
         let timestamp = SceneCrdtTimestamp(0);
         let data = 1231u32;
         let buf = 1231u32.to_be_bytes();
@@ -308,7 +321,10 @@ mod test {
         let op_state = RefCell::new(OpState::new(0));
         let interface = CrdtLWWInterface::<u32>::default();
 
-        let entity = SceneEntityId(0);
+        let entity = SceneEntityId {
+            id: 0,
+            generation: 0,
+        };
         let timestamp = SceneCrdtTimestamp(0);
         let data = 1231u32;
         let buf = data.to_be_bytes();
@@ -350,7 +366,10 @@ mod test {
         let op_state = RefCell::new(OpState::new(0));
         let interface = CrdtLWWInterface::<u32>::default();
 
-        let entity = SceneEntityId(0);
+        let entity = SceneEntityId {
+            id: 0,
+            generation: 0,
+        };
         let timestamp = SceneCrdtTimestamp(1);
         let data = 1231u32;
         let buf = data.to_be_bytes();
@@ -392,7 +411,10 @@ mod test {
         let op_state = RefCell::new(OpState::new(0));
         let interface = CrdtLWWInterface::<u32>::default();
 
-        let entity = SceneEntityId(0);
+        let entity = SceneEntityId {
+            id: 0,
+            generation: 0,
+        };
         let timestamp = SceneCrdtTimestamp(1);
         let data = 1u32;
         let buf = data.to_be_bytes();
@@ -433,7 +455,10 @@ mod test {
         let op_state = RefCell::new(OpState::new(0));
         let interface = CrdtLWWInterface::<u32>::default();
 
-        let entity = SceneEntityId(0);
+        let entity = SceneEntityId {
+            id: 0,
+            generation: 0,
+        };
         let timestamp = SceneCrdtTimestamp(1);
         let data = 1u32;
         let buf = data.to_be_bytes();
@@ -466,7 +491,10 @@ mod test {
         let op_state = RefCell::new(OpState::new(0));
         let interface = CrdtLWWInterface::<u32>::default();
 
-        let entity = SceneEntityId(0);
+        let entity = SceneEntityId {
+            id: 0,
+            generation: 0,
+        };
         let timestamp = SceneCrdtTimestamp(1);
         let data = 1u32;
         let buf = data.to_be_bytes();
@@ -500,7 +528,10 @@ mod test {
         let op_state = RefCell::new(OpState::new(0));
         let interface = CrdtLWWInterface::<u32>::default();
 
-        let entity = SceneEntityId(0);
+        let entity = SceneEntityId {
+            id: 0,
+            generation: 0,
+        };
         let timestamp = SceneCrdtTimestamp(1);
         let data = 1u32;
         let buf = data.to_be_bytes();
@@ -540,7 +571,10 @@ mod test {
         let op_state = RefCell::new(OpState::new(0));
         let interface = CrdtLWWInterface::<u32>::default();
 
-        let entity = SceneEntityId(0);
+        let entity = SceneEntityId {
+            id: 0,
+            generation: 0,
+        };
         let timestamp = SceneCrdtTimestamp(1);
         let data = 1u32;
         let buf = data.to_be_bytes();
@@ -589,7 +623,10 @@ mod test {
         let op_state = RefCell::new(OpState::new(0));
         let interface = CrdtLWWInterface::<u32>::default();
 
-        let entity = SceneEntityId(0);
+        let entity = SceneEntityId {
+            id: 0,
+            generation: 0,
+        };
         let timestamp = SceneCrdtTimestamp(0);
         let data = 1231u32;
         let buf = 1231u32.to_be_bytes();

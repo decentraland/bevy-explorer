@@ -3,7 +3,6 @@ mod dcl_component;
 mod input_handler;
 mod output_handler;
 mod scene_runner;
-mod test;
 
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
@@ -19,6 +18,20 @@ use scene_runner::{LoadJsSceneEvent, SceneDefinition, SceneRunnerPlugin};
 struct UserScriptFolder(String);
 
 const LOG_FPS: bool = true;
+
+// macro for assertions
+// by default, enabled in debug builds and disabled in release builds
+// can be enabled for release with `cargo run --release --features="dcl-assert"`
+#[cfg(any(debug_assertions, feature = "dcl-assert"))]
+#[macro_export]
+macro_rules! dcl_assert {
+    ($($arg:tt)*) => ( assert!($($arg)*); )
+}
+#[cfg(not(any(debug_assertions, feature = "dcl-assert")))]
+#[macro_export]
+macro_rules! dcl_assert {
+    ($($arg:tt)*) => {};
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

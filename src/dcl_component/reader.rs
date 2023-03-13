@@ -14,6 +14,12 @@ impl<'a> DclReader<'a> {
         Self { pos: 0, buffer }
     }
 
+    pub fn read_u16(&mut self) -> Result<u16, DclReaderError> {
+        Ok(u16::from_be_bytes(
+            self.take_slice(2).try_into().or(Err(DclReaderError::Eof))?,
+        ))
+    }
+
     pub fn read_u32(&mut self) -> Result<u32, DclReaderError> {
         Ok(u32::from_be_bytes(
             self.take_slice(4).try_into().or(Err(DclReaderError::Eof))?,

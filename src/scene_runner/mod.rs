@@ -12,9 +12,12 @@ use deno_core::{
 };
 use serde::Serialize;
 
-use crate::{crdt::CrdtComponentInterfaces, dcl_component::SceneEntityId};
+use crate::{crdt::CrdtComponentInterfaces, dcl_assert, dcl_component::SceneEntityId};
 
 pub mod engine;
+
+#[cfg(test)]
+pub mod test;
 
 // system sets used for ordering
 #[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
@@ -29,9 +32,6 @@ pub enum SceneSets {
 // (non-send) resource to hold the runtime and module object
 #[derive(Default)]
 pub struct JsRuntimeResource(HashMap<Entity, (JsRuntime, v8::Global<v8::Value>)>);
-
-// unsafe impl Send for JsRuntimeResource {}
-// unsafe impl Sync for JsRuntimeResource {}
 
 // metadata about the current scene. currently only the path (used in op_require to validate access)
 #[derive(Clone, Default)]
@@ -61,9 +61,18 @@ impl EngineResponse {
     }
 }
 
+// contains a list of (SceneEntityId.generation, bevy entity) indexed by SceneEntityId.id
+// where generation is the earliest non-dead (though maybe not yet live)
+// generation for the scene id index.
+// entities are initialized within the engine message-loop op, and added to 'nascent' until
+// the process_lifecycle system enlivens them.
+// Bevy entities are only created on a PUT of a component we care about in the renderer,
+// or if they are required for hierarchy parenting
+// TODO - consider Vec<Option<page>>
+type LiveEntityTable = Vec<(u16, Option<Entity>)>;
+
 // mapping from script entity -> bevy entity
-// TODO
-// - interpret entity as generation and id
+// note - be careful with size as this struct is moved into/out of js runtimes
 #[derive(Component, Default)]
 pub struct SceneContext {
     pub definition: SceneDefinition,
@@ -71,60 +80,105 @@ pub struct SceneContext {
     // entities waiting to be born in bevy
     pub nascent: HashSet<SceneEntityId>,
     // entities waiting to be destroyed in bevy
-    pub death_row: HashMap<SceneEntityId, Entity>,
+    pub death_row: HashSet<(SceneEntityId, Entity)>,
     // entities that are live
-    pub live: HashMap<SceneEntityId, Entity>,
-    // entities that are dead
-    pub dead: HashSet<SceneEntityId>,
+    live_entities: LiveEntityTable,
 }
 
 impl SceneContext {
     pub fn new(definition: SceneDefinition, root: Entity) -> Self {
-        Self {
+        let mut new_context = Self {
             definition,
             nascent: Default::default(),
             death_row: Default::default(),
-            live: HashMap::from([(SceneEntityId::ROOT, root)]),
-            dead: Default::default(),
-        }
+            live_entities: Vec::from_iter(std::iter::repeat((0, None)).take(u16::MAX as usize)),
+        };
+
+        new_context.live_entities[SceneEntityId::ROOT.id as usize] =
+            (SceneEntityId::ROOT.generation, Some(root));
+        new_context
+    }
+
+    fn entity_entry(&self, id: u16) -> &(u16, Option<Entity>) {
+        // SAFETY: live entities has u16::MAX members
+        unsafe { self.live_entities.get_unchecked(id as usize) }
+    }
+
+    fn entity_entry_mut(&mut self, id: u16) -> &mut (u16, Option<Entity>) {
+        // SAFETY: live entities has u16::MAX members
+        unsafe { self.live_entities.get_unchecked_mut(id as usize) }
     }
 
     // queue an entity for creation if required
     // returns false if the entity is already dead
     pub fn init(&mut self, entity: SceneEntityId) -> bool {
+        debug!(" init {:?}!", entity);
         if self.is_dead(entity) {
+            debug!("{:?} is dead!", entity);
             return false;
         }
 
-        if !self.is_live(entity) {
+        if !self.is_live_in_bevy(entity) {
             debug!("scene added {entity:?}");
             self.nascent.insert(entity);
+        } else {
+            debug!("{:?} is live already!", entity);
         }
 
         true
     }
 
-    pub fn kill(&mut self, entity: SceneEntityId) {
-        if let Some(bevy_entity) = self.live.remove(&entity) {
-            self.death_row.insert(entity, bevy_entity);
+    pub fn associate_bevy_entity(&mut self, scene_entity: SceneEntityId, bevy_entity: Entity) {
+        debug!(
+            "associate scene id: {} -> bevy id {:?}",
+            scene_entity, bevy_entity
+        );
+        dcl_assert!(self.entity_entry(scene_entity.id).0 <= scene_entity.generation);
+        dcl_assert!(self.entity_entry(scene_entity.id).1.is_none());
+        *self.entity_entry_mut(scene_entity.id) = (scene_entity.generation, Some(bevy_entity));
+    }
+
+    pub fn kill(&mut self, scene_entity: SceneEntityId) {
+        // update entity table and death row
+        match self.entity_entry_mut(scene_entity.id) {
+            (gen, maybe_bevy_entity) if *gen <= scene_entity.generation => {
+                *gen = scene_entity.generation + 1;
+
+                if let Some(bevy_entity) = maybe_bevy_entity.take() {
+                    self.death_row.insert((scene_entity, bevy_entity));
+                }
+            }
+            _ => (),
         }
-        self.dead.insert(entity);
-        self.nascent.remove(&entity);
-        self.live.remove(&entity);
-        debug!("scene killed {entity:?}");
+
+        // remove from nascent
+        self.nascent.remove(&scene_entity);
+        debug!("scene killed {scene_entity:?}");
     }
 
-    pub fn bevy_entity(&self, entity: SceneEntityId) -> Option<Entity> {
-        self.live.get(&entity).copied()
+    pub fn bevy_entity(&self, scene_entity: SceneEntityId) -> Option<Entity> {
+        match self.entity_entry(scene_entity.id) {
+            (gen, Some(bevy_entity)) if *gen == scene_entity.generation => Some(*bevy_entity),
+            _ => None,
+        }
     }
 
-    pub fn is_live(&self, entity: SceneEntityId) -> bool {
-        self.nascent.contains(&entity) || self.live.contains_key(&entity)
+    pub fn is_live_in_bevy(&self, scene_entity: SceneEntityId) -> bool {
+        self.nascent.contains(&scene_entity) || {
+            let entry = self.entity_entry(scene_entity.id);
+            entry.0 == scene_entity.generation && entry.1.is_some()
+        }
     }
 
     pub fn is_dead(&self, entity: SceneEntityId) -> bool {
-        self.dead.contains(&entity)
+        self.entity_entry(entity.id).0 > entity.generation
     }
+}
+
+#[derive(Component)]
+pub struct SceneEntity {
+    pub root: Entity,
+    pub scene_id: SceneEntityId,
 }
 
 // plugin which creates and runs scripts
@@ -244,16 +298,22 @@ fn initialize_scene(
         // TODO: snapshot
 
         // create the scene root entity
-        // todo set position
-        let root = commands.spawn(SpatialBundle::default()).id();
+        // todo set world position
+        let root = commands
+            .spawn((SpatialBundle::default(), DeletedSceneEntities::default()))
+            .id();
+        commands.entity(root).insert(SceneEntity {
+            root,
+            scene_id: SceneEntityId::ROOT,
+        });
 
-        let entity_map = SceneContext::new(new_scene.scene.clone(), root);
+        let context = SceneContext::new(new_scene.scene.clone(), root);
 
         let state = runtime.op_state();
 
         // store scene detail in the runtime state
         let mut state_mut = state.borrow_mut();
-        state_mut.put(entity_map);
+        state_mut.put(context);
 
         // store the component writers
         state_mut.put(crdt_component_interfaces.clone());
@@ -289,10 +349,10 @@ fn initialize_scene(
         }
 
         // retrieve the entity_map
-        let entity_map = state_mut.take::<SceneContext>();
+        let context = state_mut.take::<SceneContext>();
 
         // store entity map on the root entity
-        commands.entity(root).insert(entity_map);
+        commands.entity(root).insert(context);
 
         // insert runtime into the bevy app
         runtime_res.0.insert(root, (runtime, script));
@@ -311,15 +371,14 @@ fn run_scene(
     time: Res<Time>,
     crdt_interfaces: Res<CrdtComponentInterfaces>,
 ) {
-    for (root, mut entity_map_mut) in scenes.iter_mut() {
+    for (root, mut context_mut) in scenes.iter_mut() {
         if let Some((runtime, script)) = runtime_res.0.get_mut(&root) {
             let response_list = engine_responses.iter().cloned().collect();
 
-            let entity_map: &mut SceneContext = &mut entity_map_mut;
-            let entity_map = std::mem::take(entity_map);
+            let context = std::mem::take(context_mut.as_mut());
 
             let op_state = runtime.op_state();
-            op_state.borrow_mut().put(entity_map);
+            op_state.borrow_mut().put(context);
 
             // run the onUpdate function
             run_script(
@@ -340,7 +399,7 @@ fn run_scene(
             }
 
             // retrieve the entity map
-            *entity_map_mut = state_mut.take::<SceneContext>();
+            *context_mut = state_mut.take::<SceneContext>();
         } else {
             // discard events with no scene to receive them
             engine_responses.clear();
@@ -399,43 +458,61 @@ fn run_script(
     Ok(())
 }
 
+#[derive(Component, Default)]
+pub struct DeletedSceneEntities(pub Vec<SceneEntityId>);
+
 fn process_lifecycle(
     mut commands: Commands,
-    mut scenes: Query<(Entity, &mut SceneContext)>,
+    mut scenes: Query<(Entity, &mut SceneContext, &mut DeletedSceneEntities)>,
     children: Query<&Children>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for (root, mut entity_map) in scenes.iter_mut() {
-        commands.entity(root).with_children(|root| {
-            for create in std::mem::take(&mut entity_map.nascent) {
-                entity_map.live.insert(
+    for (root_entity, mut context, mut deleted_entities) in scenes.iter_mut() {
+        debug!("{:?}: nascent: {:?}", root_entity, context.nascent);
+        commands.entity(root_entity).with_children(|root| {
+            for create in std::mem::take(&mut context.nascent) {
+                context.associate_bevy_entity(
                     create,
-                    root.spawn(PbrBundle {
-                        // TODO remove these and replace with spatial bundle when mesh and material components are supported
-                        mesh: meshes.add(shape::Cube::new(1.0).into()),
-                        material: materials.add(Color::WHITE.into()),
-                        ..Default::default()
-                    })
+                    root.spawn((
+                        PbrBundle {
+                            // TODO remove these and replace with spatial bundle when mesh and material components are supported
+                            mesh: meshes.add(shape::Cube::new(1.0).into()),
+                            material: materials.add(Color::WHITE.into()),
+                            ..Default::default()
+                        },
+                        SceneEntity {
+                            root: root_entity,
+                            scene_id: create,
+                        },
+                    ))
                     .id(),
                 );
 
                 debug!(
                     "spawned {:?} -> {:?}",
                     create,
-                    entity_map.bevy_entity(create).unwrap()
+                    context.bevy_entity(create).unwrap()
                 );
             }
         });
 
-        for (_, delete) in std::mem::take(&mut entity_map.death_row) {
-            // reparent children to the root entity
-            if let Ok(children) = children.get(delete) {
-                commands.entity(root).push_children(children);
-            }
+        // update deleted entities list, used by crdt processors to filter results
+        deleted_entities.0 = std::mem::take(&mut context.death_row)
+            .into_iter()
+            .map(|(deleted_scene_entity, deleted_bevy_entity)| {
+                // reparent children to the root entity
+                if let Ok(children) = children.get(deleted_bevy_entity) {
+                    commands.entity(root_entity).push_children(children);
+                }
 
-            debug!("despawned -> {:?}", delete);
-            commands.entity(delete).despawn();
-        }
+                debug!(
+                    "despawned {:?} -> {:?}",
+                    deleted_scene_entity, deleted_bevy_entity
+                );
+                commands.entity(deleted_bevy_entity).despawn();
+                deleted_scene_entity
+            })
+            .collect();
     }
 }

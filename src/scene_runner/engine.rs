@@ -77,7 +77,7 @@ fn process_message(
             };
 
             // check the entity still lives (don't create here, no need)
-            if !entity_map.is_live(entity) {
+            if entity_map.is_dead(entity) {
                 return Ok(());
             }
 
