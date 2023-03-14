@@ -83,6 +83,11 @@ pub struct SceneContext {
     pub death_row: HashSet<(SceneEntityId, Entity)>,
     // entities that are live
     live_entities: LiveEntityTable,
+
+    // list of entities that are not currently parented to their target parent
+    pub unparented_entities: Vec<Entity>,
+    // indicates if we need to reprocess unparented entities
+    pub hierarchy_changed: bool,
 }
 
 impl SceneContext {
@@ -92,6 +97,8 @@ impl SceneContext {
             nascent: Default::default(),
             death_row: Default::default(),
             live_entities: Vec::from_iter(std::iter::repeat((0, None)).take(u16::MAX as usize)),
+            unparented_entities: Vec::new(),
+            hierarchy_changed: false,
         };
 
         new_context.live_entities[SceneEntityId::ROOT.id as usize] =
@@ -461,6 +468,9 @@ fn run_script(
 #[derive(Component, Default)]
 pub struct DeletedSceneEntities(pub Vec<SceneEntityId>);
 
+#[derive(Component)]
+pub struct TargetParent(pub Entity);
+
 fn process_lifecycle(
     mut commands: Commands,
     mut scenes: Query<(Entity, &mut SceneContext, &mut DeletedSceneEntities)>,
@@ -485,6 +495,7 @@ fn process_lifecycle(
                             root: root_entity,
                             scene_id: create,
                         },
+                        TargetParent(root_entity),
                     ))
                     .id(),
                 );

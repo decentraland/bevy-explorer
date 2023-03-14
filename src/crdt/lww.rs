@@ -14,7 +14,7 @@ use crate::{
 
 use super::CrdtInterface;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LWWEntry {
     pub timestamp: SceneCrdtTimestamp,
     pub updated: bool,
@@ -22,7 +22,7 @@ pub struct LWWEntry {
     pub data: Vec<u8>,
 }
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub struct CrdtLWWState<T> {
     pub last_write: HashMap<SceneEntityId, LWWEntry>,
     _marker: PhantomData<T>,
@@ -159,15 +159,13 @@ pub(crate) fn process_crdt_lww_updates<T: FromDclReader + Component + std::fmt::
         Entity,
         &SceneContext,
         &mut CrdtLWWState<T>,
-        Option<&DeletedSceneEntities>,
+        &DeletedSceneEntities,
     )>,
 ) {
-    for (_root, scene_context, mut updates, maybe_deleted) in scenes.iter_mut() {
-        if let Some(deleted_entities) = maybe_deleted {
-            // remove crdt state for dead entities
-            for deleted in &deleted_entities.0 {
-                updates.last_write.remove(deleted);
-            }
+    for (_root, scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
+        // remove crdt state for dead entities
+        for deleted in &deleted_entities.0 {
+            updates.last_write.remove(deleted);
         }
 
         for (scene_entity, entry) in updates

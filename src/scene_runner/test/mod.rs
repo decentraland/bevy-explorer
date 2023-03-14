@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{cell::RefCell, path::PathBuf};
 
 use std::{collections::BTreeMap, fs::File, io::Write};
 
@@ -11,8 +11,18 @@ use bevy::{
     time::TimePlugin,
     utils::HashMap,
 };
+use deno_core::OpState;
+use itertools::Itertools;
 
 use crate::{
+    crdt::{
+        lww::{CrdtLWWInterface, CrdtLWWState},
+        CrdtInterface,
+    },
+    dcl_component::{
+        transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneCrdtTimestamp,
+        SceneEntityId,
+    },
     output_handler::SceneOutputPlugin,
     scene_runner::{LoadJsSceneEvent, SceneDefinition, SceneEntity, SceneRunnerPlugin},
 };
@@ -61,6 +71,10 @@ fn init_test_app(script: &str) -> App {
             scene: SceneDefinition { path: path.clone() },
         })
     });
+
+    // run app once to get the scene initialized
+    app.update();
+
     app
 }
 
@@ -150,9 +164,6 @@ fn flat_hierarchy() {
     // Setup app
     let mut app = init_test_app("tests/flat_hierarchy");
 
-    // onStart
-    app.update();
-
     let graph = make_graph(&mut app);
     check_or_write!(graph, "expected/flat_hierarchy_onStart.dot");
 
@@ -169,8 +180,6 @@ fn reparenting() {
     // Setup app
     let mut app = init_test_app("tests/reparenting");
 
-    // onStart
-    app.update();
     // onUpdate
     app.update();
 
@@ -189,8 +198,6 @@ fn late_entities() {
     // Setup app
     let mut app = init_test_app("tests/late_entities");
 
-    // onStart
-    app.update();
     // onUpdate
     app.update();
 
@@ -206,4 +213,74 @@ fn late_entities() {
     app.update();
     let graph = make_graph(&mut app);
     check_or_write!(graph, "expected/late_entities_3.dot");
+}
+
+#[test]
+fn cyclic_recovery() {
+    let states = [(3, 1), (1, 2), (2, 3), (3, 0)]
+        .into_iter()
+        .enumerate()
+        .map(|(timestamp, (ent, par))| {
+            let entity = SceneEntityId {
+                id: ent,
+                generation: 0,
+            };
+            let parent = SceneEntityId {
+                id: par,
+                generation: 0,
+            };
+            let mut writer = DclWriter::new(48);
+            writer.write(&DclTransformAndParent {
+                parent,
+                ..Default::default()
+            });
+            let data: Vec<u8> = writer.into();
+            (
+                (ent, par),
+                entity,
+                SceneCrdtTimestamp(timestamp as u32),
+                data,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    for messages in states.iter().permutations(4) {
+        let mut app = init_test_app("tests/empty_scene");
+        let scene_entity = app.world.query::<Entity>().single(&mut app.world);
+        app.world
+            .entity_mut(scene_entity)
+            .insert(CrdtLWWState::<DclTransformAndParent>::default());
+
+        let mut desc = String::new();
+        for ix in 0..4 {
+            let ((ent, par), dcl_entity, timestamp, data) = messages[ix];
+            desc.push_str(format!("([{timestamp:?}] {ent}->{par}) ").as_str());
+            let (mut scene_context, mut crdt_state) = app
+                .world
+                .query::<(&mut SceneContext, &mut CrdtLWWState<DclTransformAndParent>)>()
+                .single_mut(&mut app.world);
+            scene_context.init(*dcl_entity);
+
+            // add next message
+            let op_state = RefCell::new(OpState::new(0));
+            op_state.borrow_mut().put(crdt_state.clone());
+            let reader = &mut DclReader::new(&data);
+            CrdtLWWInterface::<DclTransformAndParent>::default()
+                .update_crdt(
+                    &mut op_state.borrow_mut(),
+                    *dcl_entity,
+                    *timestamp,
+                    Some(reader),
+                )
+                .unwrap();
+            *crdt_state = op_state
+                .borrow_mut()
+                .take::<CrdtLWWState<DclTransformAndParent>>()
+                .clone();
+
+            app.update();
+        }
+        let graph = make_graph(&mut app);
+        check_or_write!(graph, "expected/cyclic_recovery.dot");
+    }
 }
