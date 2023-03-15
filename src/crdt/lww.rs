@@ -77,15 +77,6 @@ impl<T> CrdtLWWState<T> {
                 };
 
                 if update {
-                    // ensure data is valid
-                    if maybe_new_data
-                        .as_ref()
-                        .map(|data| data.len() == 0)
-                        .unwrap_or(false)
-                    {
-                        return Ok(false);
-                    }
-
                     entry.timestamp = new_timestamp;
                     entry.updated = true;
 
@@ -225,6 +216,14 @@ mod test {
         }
     }
 
+    impl FromDclReader for Vec<u8> {
+        fn from_reader(buf: &mut DclReader) -> Result<Self, DclReaderError> {
+            let mut vec = Vec::default();
+            vec.extend_from_slice(buf.take_slice(buf.len()));
+            Ok(vec)
+        }
+    }
+
     fn assert_entry_eq<T: FromDclReader + Eq + std::fmt::Debug>(
         state: CrdtLWWState<T>,
         entity: SceneEntityId,
@@ -260,7 +259,7 @@ mod test {
         };
         let timestamp = SceneCrdtTimestamp(0);
         let data = 1231u32;
-        let buf = 1231u32.to_be_bytes();
+        let buf = data.to_be_bytes();
         let mut reader = DclReader::new(&buf);
 
         assert_eq!(
@@ -281,7 +280,7 @@ mod test {
         };
         let timestamp = SceneCrdtTimestamp(0);
         let data = 1231u32;
-        let buf = 1231u32.to_be_bytes();
+        let buf = data.to_be_bytes();
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(
@@ -495,7 +494,7 @@ mod test {
     }
 
     #[test]
-    fn put_rejects_null_data() {
+    fn put_accepts_null_data() {
         let mut state = CrdtLWWState::default();
 
         let entity = SceneEntityId {
@@ -503,7 +502,6 @@ mod test {
             generation: 0,
         };
         let timestamp = SceneCrdtTimestamp(0);
-        let data = 1231u32;
         let buf = 1231u32.to_be_bytes();
 
         let mut reader = DclReader::new(&buf);
@@ -518,9 +516,9 @@ mod test {
             state
                 .update(entity, newer_timestamp, Some(&mut reader))
                 .unwrap(),
-            false
+            true
         );
 
-        assert_entry_eq(state, entity, timestamp, Some(data));
+        assert_entry_eq(state, entity, newer_timestamp, Some(Vec::<u8>::default()));
     }
 }
