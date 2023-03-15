@@ -162,6 +162,19 @@ fn make_graph(app: &mut App) -> String {
     format!("{:?}", dot)
 }
 
+fn make_reparent_buffer(parent: u16) -> Vec<u8> {
+    let parent = SceneEntityId {
+        id: parent,
+        generation: 0,
+    };
+    let mut writer = DclWriter::new(48);
+    writer.write(&DclTransformAndParent {
+        parent,
+        ..Default::default()
+    });
+    writer.into()
+}
+
 // basic hierarchy test
 #[test]
 fn flat_hierarchy() {
@@ -225,44 +238,33 @@ fn cyclic_recovery() {
         .into_iter()
         .enumerate()
         .map(|(timestamp, (ent, par))| {
-            let entity = SceneEntityId {
-                id: ent,
-                generation: 0,
-            };
-            let parent = SceneEntityId {
-                id: par,
-                generation: 0,
-            };
-            let mut writer = DclWriter::new(48);
-            writer.write(&DclTransformAndParent {
-                parent,
-                ..Default::default()
-            });
-            let data: Vec<u8> = writer.into();
             (
-                (ent, par),
-                entity,
+                SceneEntityId {
+                    id: ent,
+                    generation: 0,
+                },
                 SceneCrdtTimestamp(timestamp as u32),
-                data,
+                make_reparent_buffer(par),
             )
-        })
-        .collect::<Vec<_>>();
+        });
 
-    for messages in states.iter().permutations(4) {
+    for messages in states.permutations(4) {
+        // create new app instance
         let mut app = init_test_app("tests/empty_scene");
+        // add lww state
         let scene_entity = app.world.query::<Entity>().single(&mut app.world);
         app.world
             .entity_mut(scene_entity)
             .insert(CrdtLWWState::<DclTransformAndParent>::default());
 
-        let mut desc = String::new();
         for ix in 0..4 {
-            let ((ent, par), dcl_entity, timestamp, data) = messages[ix];
-            desc.push_str(format!("([{timestamp:?}] {ent}->{par}) ").as_str());
+            let (dcl_entity, timestamp, data) = &messages[ix];
             let (mut scene_context, mut crdt_state) = app
                 .world
                 .query::<(&mut SceneContext, &mut CrdtLWWState<DclTransformAndParent>)>()
                 .single_mut(&mut app.world);
+
+            // initialize the scene entity
             scene_context.init(*dcl_entity);
 
             // add next message
@@ -271,6 +273,7 @@ fn cyclic_recovery() {
                 .update(*dcl_entity, *timestamp, Some(reader))
                 .unwrap();
 
+            // run systems
             app.update();
         }
         let graph = make_graph(&mut app);
