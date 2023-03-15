@@ -217,8 +217,6 @@ pub(crate) fn process_crdt_lww_updates<T: FromDclReader + Component + std::fmt::
 
 #[cfg(test)]
 mod test {
-    use std::cell::RefCell;
-
     use super::*;
 
     impl FromDclReader for u32 {
@@ -228,13 +226,11 @@ mod test {
     }
 
     fn assert_entry_eq<T: FromDclReader + Eq + std::fmt::Debug>(
-        op_state: RefCell<OpState>,
+        state: CrdtLWWState<T>,
         entity: SceneEntityId,
         timestamp: SceneCrdtTimestamp,
         data: Option<T>,
     ) {
-        let state = op_state.borrow();
-        let state = state.borrow::<CrdtLWWState<T>>();
         let Some(LWWEntry {
             timestamp: output_timestamp,
             is_some,
@@ -257,9 +253,7 @@ mod test {
 
     #[test]
     fn put_to_none_should_accept() {
-        let op_state = RefCell::new(OpState::new(0));
-        let interface = CrdtLWWInterface::<u32>::default();
-
+        let mut state = CrdtLWWState::default();
         let entity = SceneEntityId {
             id: 0,
             generation: 0,
@@ -270,24 +264,16 @@ mod test {
         let mut reader = DclReader::new(&buf);
 
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    timestamp,
-                    Some(&mut reader)
-                )
-                .unwrap(),
+            state.update(entity, timestamp, Some(&mut reader)).unwrap(),
             true
         );
 
-        assert_entry_eq(op_state, entity, timestamp, Some(data));
+        assert_entry_eq(state, entity, timestamp, Some(data));
     }
 
     #[test]
     fn put_twice_is_idempotent() {
-        let op_state = RefCell::new(OpState::new(0));
-        let interface = CrdtLWWInterface::<u32>::default();
+        let mut state = CrdtLWWState::default();
 
         let entity = SceneEntityId {
             id: 0,
@@ -299,36 +285,21 @@ mod test {
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    timestamp,
-                    Some(&mut reader)
-                )
-                .unwrap(),
+            state.update(entity, timestamp, Some(&mut reader)).unwrap(),
             true
         );
         let mut reader = DclReader::new(&buf);
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    timestamp,
-                    Some(&mut reader)
-                )
-                .unwrap(),
+            state.update(entity, timestamp, Some(&mut reader)).unwrap(),
             false
         );
 
-        assert_entry_eq(op_state, entity, timestamp, Some(data));
+        assert_entry_eq(state, entity, timestamp, Some(data));
     }
 
     #[test]
     fn put_newer_should_accept() {
-        let op_state = RefCell::new(OpState::new(0));
-        let interface = CrdtLWWInterface::<u32>::default();
+        let mut state = CrdtLWWState::default();
 
         let entity = SceneEntityId {
             id: 0,
@@ -340,14 +311,7 @@ mod test {
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    timestamp,
-                    Some(&mut reader)
-                )
-                .unwrap(),
+            state.update(entity, timestamp, Some(&mut reader)).unwrap(),
             true
         );
 
@@ -356,24 +320,16 @@ mod test {
         let buf = newer_data.to_be_bytes();
         let mut reader = DclReader::new(&buf);
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    timestamp,
-                    Some(&mut reader)
-                )
-                .unwrap(),
+            state.update(entity, timestamp, Some(&mut reader)).unwrap(),
             true
         );
 
-        assert_entry_eq(op_state, entity, timestamp, Some(newer_data));
+        assert_entry_eq(state, entity, timestamp, Some(newer_data));
     }
 
     #[test]
     fn put_older_should_fail() {
-        let op_state = RefCell::new(OpState::new(0));
-        let interface = CrdtLWWInterface::<u32>::default();
+        let mut state = CrdtLWWState::default();
 
         let entity = SceneEntityId {
             id: 0,
@@ -385,14 +341,7 @@ mod test {
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    timestamp,
-                    Some(&mut reader)
-                )
-                .unwrap(),
+            state.update(entity, timestamp, Some(&mut reader)).unwrap(),
             true
         );
 
@@ -401,24 +350,18 @@ mod test {
         let buf = newer_data.to_be_bytes();
         let mut reader = DclReader::new(&buf);
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    older_timestamp,
-                    Some(&mut reader)
-                )
+            state
+                .update(entity, older_timestamp, Some(&mut reader))
                 .unwrap(),
             false
         );
 
-        assert_entry_eq(op_state, entity, timestamp, Some(data));
+        assert_entry_eq(state, entity, timestamp, Some(data));
     }
 
     #[test]
     fn put_higher_value_should_accept() {
-        let op_state = RefCell::new(OpState::new(0));
-        let interface = CrdtLWWInterface::<u32>::default();
+        let mut state = CrdtLWWState::default();
 
         let entity = SceneEntityId {
             id: 0,
@@ -430,14 +373,7 @@ mod test {
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    timestamp,
-                    Some(&mut reader)
-                )
-                .unwrap(),
+            state.update(entity, timestamp, Some(&mut reader)).unwrap(),
             true
         );
 
@@ -445,24 +381,16 @@ mod test {
         let buf = higher_data.to_be_bytes();
         let mut reader = DclReader::new(&buf);
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    timestamp,
-                    Some(&mut reader)
-                )
-                .unwrap(),
+            state.update(entity, timestamp, Some(&mut reader)).unwrap(),
             true
         );
 
-        assert_entry_eq(op_state, entity, timestamp, Some(higher_data));
+        assert_entry_eq(state, entity, timestamp, Some(higher_data));
     }
 
     #[test]
     fn delete_same_timestamp_should_reject() {
-        let op_state = RefCell::new(OpState::new(0));
-        let interface = CrdtLWWInterface::<u32>::default();
+        let mut state = CrdtLWWState::default();
 
         let entity = SceneEntityId {
             id: 0,
@@ -474,31 +402,18 @@ mod test {
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    timestamp,
-                    Some(&mut reader)
-                )
-                .unwrap(),
+            state.update(entity, timestamp, Some(&mut reader)).unwrap(),
             true
         );
 
-        assert_eq!(
-            interface
-                .update_crdt(&mut op_state.borrow_mut(), entity, timestamp, None)
-                .unwrap(),
-            false
-        );
+        assert_eq!(state.update(entity, timestamp, None).unwrap(), false);
 
-        assert_entry_eq(op_state, entity, timestamp, Some(data));
+        assert_entry_eq(state, entity, timestamp, Some(data));
     }
 
     #[test]
     fn delete_newer_should_accept() {
-        let op_state = RefCell::new(OpState::new(0));
-        let interface = CrdtLWWInterface::<u32>::default();
+        let mut state = CrdtLWWState::default();
 
         let entity = SceneEntityId {
             id: 0,
@@ -510,32 +425,19 @@ mod test {
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    timestamp,
-                    Some(&mut reader)
-                )
-                .unwrap(),
+            state.update(entity, timestamp, Some(&mut reader)).unwrap(),
             true
         );
 
         let newer_timestamp = SceneCrdtTimestamp(2);
-        assert_eq!(
-            interface
-                .update_crdt(&mut op_state.borrow_mut(), entity, newer_timestamp, None)
-                .unwrap(),
-            true
-        );
+        assert_eq!(state.update(entity, newer_timestamp, None).unwrap(), true);
 
-        assert_entry_eq(op_state, entity, newer_timestamp, Option::<u32>::None);
+        assert_entry_eq(state, entity, newer_timestamp, Option::<u32>::None);
     }
 
     #[test]
     fn delete_is_idempotent() {
-        let op_state = RefCell::new(OpState::new(0));
-        let interface = CrdtLWWInterface::<u32>::default();
+        let mut state = CrdtLWWState::default();
 
         let entity = SceneEntityId {
             id: 0,
@@ -547,38 +449,20 @@ mod test {
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    timestamp,
-                    Some(&mut reader)
-                )
-                .unwrap(),
+            state.update(entity, timestamp, Some(&mut reader)).unwrap(),
             true
         );
 
         let newer_timestamp = SceneCrdtTimestamp(2);
-        assert_eq!(
-            interface
-                .update_crdt(&mut op_state.borrow_mut(), entity, newer_timestamp, None)
-                .unwrap(),
-            true
-        );
-        assert_eq!(
-            interface
-                .update_crdt(&mut op_state.borrow_mut(), entity, newer_timestamp, None)
-                .unwrap(),
-            false
-        );
+        assert_eq!(state.update(entity, newer_timestamp, None).unwrap(), true);
+        assert_eq!(state.update(entity, newer_timestamp, None).unwrap(), false);
 
-        assert_entry_eq(op_state, entity, newer_timestamp, Option::<u32>::None);
+        assert_entry_eq(state, entity, newer_timestamp, Option::<u32>::None);
     }
 
     #[test]
     fn put_with_delete_timestamp_should_accept() {
-        let op_state = RefCell::new(OpState::new(0));
-        let interface = CrdtLWWInterface::<u32>::default();
+        let mut state = CrdtLWWState::default();
 
         let entity = SceneEntityId {
             id: 0,
@@ -590,47 +474,29 @@ mod test {
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    timestamp,
-                    Some(&mut reader)
-                )
-                .unwrap(),
+            state.update(entity, timestamp, Some(&mut reader)).unwrap(),
             true
         );
 
         let newer_timestamp = SceneCrdtTimestamp(2);
-        assert_eq!(
-            interface
-                .update_crdt(&mut op_state.borrow_mut(), entity, newer_timestamp, None)
-                .unwrap(),
-            true
-        );
+        assert_eq!(state.update(entity, newer_timestamp, None).unwrap(), true);
 
         let data = 3u32;
         let buf = data.to_be_bytes();
         let mut reader = DclReader::new(&buf);
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    newer_timestamp,
-                    Some(&mut reader)
-                )
+            state
+                .update(entity, newer_timestamp, Some(&mut reader))
                 .unwrap(),
             true
         );
 
-        assert_entry_eq(op_state, entity, newer_timestamp, Some(data));
+        assert_entry_eq(state, entity, newer_timestamp, Some(data));
     }
 
     #[test]
     fn put_rejects_null_data() {
-        let op_state = RefCell::new(OpState::new(0));
-        let interface = CrdtLWWInterface::<u32>::default();
+        let mut state = CrdtLWWState::default();
 
         let entity = SceneEntityId {
             id: 0,
@@ -642,31 +508,19 @@ mod test {
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    timestamp,
-                    Some(&mut reader)
-                )
-                .unwrap(),
+            state.update(entity, timestamp, Some(&mut reader)).unwrap(),
             true
         );
 
         let newer_timestamp = SceneCrdtTimestamp(2);
         let mut reader = DclReader::new(&[]);
         assert_eq!(
-            interface
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    entity,
-                    newer_timestamp,
-                    Some(&mut reader)
-                )
+            state
+                .update(entity, newer_timestamp, Some(&mut reader))
                 .unwrap(),
             false
         );
 
-        assert_entry_eq(op_state, entity, timestamp, Some(data));
+        assert_entry_eq(state, entity, timestamp, Some(data));
     }
 }
