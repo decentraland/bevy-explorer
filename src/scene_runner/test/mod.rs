@@ -1,4 +1,4 @@
-use std::{cell::RefCell, path::PathBuf};
+use std::{cell::RefCell, path::PathBuf, sync::Mutex};
 
 use std::{collections::BTreeMap, fs::File, io::Write};
 
@@ -13,6 +13,7 @@ use bevy::{
 };
 use deno_core::OpState;
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 
 use crate::{
     crdt::{
@@ -31,19 +32,26 @@ use super::SceneContext;
 
 pub struct TestPlugins;
 
+pub static LOG_ADDED: Lazy<Mutex<bool>> = Lazy::new(|| Default::default());
+
 impl PluginGroup for TestPlugins {
     fn build(self) -> PluginGroupBuilder {
-        PluginGroupBuilder::start::<Self>()
-            .add(LogPlugin::default())
+        let builder = PluginGroupBuilder::start::<Self>();
+
+        let mut log_added = LOG_ADDED.lock().unwrap();
+        let builder = if !*log_added {
+            *log_added = true;
+            builder.add(LogPlugin::default())
+        } else {
+            builder
+        };
+
+        builder
             .add(TaskPoolPlugin::default())
             .add(TypeRegistrationPlugin::default())
             .add(FrameCountPlugin::default())
             .add(TimePlugin::default())
             .add(ScheduleRunnerPlugin::default())
-            .add(TaskPoolPlugin::default())
-            .add(TypeRegistrationPlugin::default())
-            .add(FrameCountPlugin::default())
-            .add(TimePlugin::default())
             .add(TransformPlugin::default())
             .add(HierarchyPlugin::default())
             .add(DiagnosticsPlugin::default())
