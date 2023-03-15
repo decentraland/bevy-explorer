@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Mutex};
 
 use std::{collections::BTreeMap, fs::File, io::Write};
 
@@ -11,8 +11,15 @@ use bevy::{
     time::TimePlugin,
     utils::HashMap,
 };
+use itertools::Itertools;
+use once_cell::sync::Lazy;
 
 use crate::{
+    crdt::lww::CrdtLWWState,
+    dcl_component::{
+        transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneCrdtTimestamp,
+        SceneEntityId,
+    },
     output_handler::SceneOutputPlugin,
     scene_runner::{LoadJsSceneEvent, SceneDefinition, SceneEntity, SceneRunnerPlugin},
 };
@@ -21,19 +28,26 @@ use super::SceneContext;
 
 pub struct TestPlugins;
 
+pub static LOG_ADDED: Lazy<Mutex<bool>> = Lazy::new(|| Default::default());
+
 impl PluginGroup for TestPlugins {
     fn build(self) -> PluginGroupBuilder {
-        PluginGroupBuilder::start::<Self>()
-            .add(LogPlugin::default())
+        let builder = PluginGroupBuilder::start::<Self>();
+
+        let mut log_added = LOG_ADDED.lock().unwrap();
+        let builder = if !*log_added {
+            *log_added = true;
+            builder.add(LogPlugin::default())
+        } else {
+            builder
+        };
+
+        builder
             .add(TaskPoolPlugin::default())
             .add(TypeRegistrationPlugin::default())
             .add(FrameCountPlugin::default())
             .add(TimePlugin::default())
             .add(ScheduleRunnerPlugin::default())
-            .add(TaskPoolPlugin::default())
-            .add(TypeRegistrationPlugin::default())
-            .add(FrameCountPlugin::default())
-            .add(TimePlugin::default())
             .add(TransformPlugin::default())
             .add(HierarchyPlugin::default())
             .add(DiagnosticsPlugin::default())
@@ -61,6 +75,10 @@ fn init_test_app(script: &str) -> App {
             scene: SceneDefinition { path: path.clone() },
         })
     });
+
+    // run app once to get the scene initialized
+    app.update();
+
     app
 }
 
@@ -144,14 +162,24 @@ fn make_graph(app: &mut App) -> String {
     format!("{:?}", dot)
 }
 
+fn make_reparent_buffer(parent: u16) -> Vec<u8> {
+    let parent = SceneEntityId {
+        id: parent,
+        generation: 0,
+    };
+    let mut writer = DclWriter::new(48);
+    writer.write(&DclTransformAndParent {
+        parent,
+        ..Default::default()
+    });
+    writer.into()
+}
+
 // basic hierarchy test
 #[test]
 fn flat_hierarchy() {
     // Setup app
     let mut app = init_test_app("tests/flat_hierarchy");
-
-    // onStart
-    app.update();
 
     let graph = make_graph(&mut app);
     check_or_write!(graph, "expected/flat_hierarchy_onStart.dot");
@@ -169,8 +197,6 @@ fn reparenting() {
     // Setup app
     let mut app = init_test_app("tests/reparenting");
 
-    // onStart
-    app.update();
     // onUpdate
     app.update();
 
@@ -189,8 +215,6 @@ fn late_entities() {
     // Setup app
     let mut app = init_test_app("tests/late_entities");
 
-    // onStart
-    app.update();
     // onUpdate
     app.update();
 
@@ -206,4 +230,53 @@ fn late_entities() {
     app.update();
     let graph = make_graph(&mut app);
     check_or_write!(graph, "expected/late_entities_3.dot");
+}
+
+#[test]
+fn cyclic_recovery() {
+    let states = [(3, 1), (1, 2), (2, 3), (3, 0)]
+        .into_iter()
+        .enumerate()
+        .map(|(timestamp, (ent, par))| {
+            (
+                SceneEntityId {
+                    id: ent,
+                    generation: 0,
+                },
+                SceneCrdtTimestamp(timestamp as u32),
+                make_reparent_buffer(par),
+            )
+        });
+
+    for messages in states.permutations(4) {
+        // create new app instance
+        let mut app = init_test_app("tests/empty_scene");
+        // add lww state
+        let scene_entity = app.world.query::<Entity>().single(&mut app.world);
+        app.world
+            .entity_mut(scene_entity)
+            .insert(CrdtLWWState::<DclTransformAndParent>::default());
+
+        for ix in 0..4 {
+            let (dcl_entity, timestamp, data) = &messages[ix];
+            let (mut scene_context, mut crdt_state) = app
+                .world
+                .query::<(&mut SceneContext, &mut CrdtLWWState<DclTransformAndParent>)>()
+                .single_mut(&mut app.world);
+
+            // initialize the scene entity
+            scene_context.init(*dcl_entity);
+
+            // add next message
+            let reader = &mut DclReader::new(&data);
+            crdt_state
+                .update(*dcl_entity, *timestamp, Some(reader))
+                .unwrap();
+
+            // run systems
+            app.update();
+        }
+        let graph = make_graph(&mut app);
+        check_or_write!(graph, "expected/cyclic_recovery.dot");
+    }
 }

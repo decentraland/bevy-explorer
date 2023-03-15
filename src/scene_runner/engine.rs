@@ -3,7 +3,7 @@
 use bevy::prelude::{debug, error};
 use deno_core::{op, OpDecl, OpState};
 use num::FromPrimitive;
-use num_derive::FromPrimitive;
+use num_derive::{FromPrimitive, ToPrimitive};
 use std::{
     cell::{RefCell, RefMut},
     rc::Rc,
@@ -11,6 +11,7 @@ use std::{
 
 use crate::{
     crdt::{CrdtComponentInterfaces, CrdtInterfacesMap},
+    dcl_assert,
     dcl_component::{DclReader, DclReaderError},
     scene_runner::EngineResponseList,
 };
@@ -19,7 +20,7 @@ use super::SceneContext;
 
 const CRDT_HEADER_SIZE: usize = 8;
 
-#[derive(FromPrimitive, Debug)]
+#[derive(FromPrimitive, ToPrimitive, Debug)]
 pub enum CrdtMessageType {
     PutComponent = 1,
     DeleteComponent = 2,
@@ -49,7 +50,7 @@ fn process_message(
             let content_len = stream.read_u32()? as usize;
 
             debug!("PUT e:{entity:?}, c: {component:?}, timestamp: {timestamp:?}, content len: {content_len}");
-            assert_eq!(content_len, stream.len());
+            dcl_assert!(content_len == stream.len());
 
             // check for a writer
             let Some(writer) = writers.get(&component) else {

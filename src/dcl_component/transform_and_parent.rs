@@ -1,8 +1,11 @@
 use bevy::prelude::{Quat, Transform, Vec3};
 
-use super::{DclReader, DclReaderError, FromDclReader, SceneEntityId};
+use super::{DclReader, DclReaderError, FromDclReader, SceneEntityId, ToDclWriter};
 
-#[derive(Debug)]
+// for dcl: +z -> forward
+// for bevy: +z -> backward
+// DclTranslation internal format is wire format (+z = forward)
+#[derive(Debug, Default, Clone, Copy)]
 pub struct DclTranslation([f32; 3]);
 
 impl FromDclReader for DclTranslation {
@@ -11,26 +14,42 @@ impl FromDclReader for DclTranslation {
     }
 }
 
-impl DclTranslation {
-    // for dcl: +z -> forward
-    // for bevy: +z -> backward
+impl ToDclWriter for DclTranslation {
+    fn to_writer(&self, buf: &mut super::DclWriter) {
+        buf.write_float3(&self.0)
+    }
+}
 
+impl DclTranslation {
     #[allow(dead_code)]
     pub fn from_bevy_translation(rh_vec: Vec3) -> Self {
         Self([rh_vec.x, rh_vec.y, -rh_vec.z])
     }
 
-    pub fn to_bevy_translation(&self) -> Vec3 {
+    pub fn to_bevy_translation(self) -> Vec3 {
         Vec3::new(self.0[0], self.0[1], -self.0[2])
     }
 }
 
-#[derive(Debug)]
+// internal format is wire format (+z = forward)
+#[derive(Debug, Clone, Copy)]
 pub struct DclQuat([f32; 4]);
 
 impl FromDclReader for DclQuat {
     fn from_reader(buf: &mut DclReader) -> Result<Self, DclReaderError> {
         Ok(Self(buf.read_float4()?))
+    }
+}
+
+impl ToDclWriter for DclQuat {
+    fn to_writer(&self, buf: &mut super::DclWriter) {
+        buf.write_float4(&self.0)
+    }
+}
+
+impl Default for DclQuat {
+    fn default() -> Self {
+        Self::from_bevy_quat(Quat::default())
     }
 }
 
@@ -43,17 +62,17 @@ impl DclQuat {
         Self([rh_quat.x, rh_quat.y, -rh_quat.z, -rh_quat.w])
     }
 
-    pub fn to_bevy_quat(&self) -> Quat {
+    pub fn to_bevy_quat(self) -> Quat {
         Quat::from_xyzw(self.0[0], self.0[1], -self.0[2], -self.0[3])
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default, Clone)]
 pub struct DclTransformAndParent {
-    translation: DclTranslation,
-    rotation: DclQuat,
-    scale: Vec3,
-    parent: SceneEntityId,
+    pub translation: DclTranslation,
+    pub rotation: DclQuat,
+    pub scale: Vec3,
+    pub parent: SceneEntityId,
 }
 
 impl DclTransformAndParent {
@@ -78,5 +97,14 @@ impl FromDclReader for DclTransformAndParent {
             scale: buf.read()?,
             parent: buf.read()?,
         })
+    }
+}
+
+impl ToDclWriter for DclTransformAndParent {
+    fn to_writer(&self, buf: &mut super::DclWriter) {
+        buf.write(&self.translation);
+        buf.write(&self.rotation);
+        buf.write(&self.scale);
+        buf.write(&self.parent);
     }
 }

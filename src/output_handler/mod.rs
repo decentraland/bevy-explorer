@@ -1,11 +1,14 @@
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    utils::{Entry, HashMap, HashSet},
+};
 
 use crate::{
     crdt::{lww::CrdtLWWState, AddCrdtInterfaceExt},
     dcl_component::{
         transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
     },
-    scene_runner::{DeletedSceneEntities, SceneContext, SceneEntity, SceneSets},
+    scene_runner::{DeletedSceneEntities, SceneContext, SceneEntity, SceneSets, TargetParent},
 };
 
 // plugin to manage some commands from the scene script
@@ -24,27 +27,28 @@ fn process_transform_and_parent_updates(
         Entity,
         &mut SceneContext,
         &mut CrdtLWWState<DclTransformAndParent>,
-        Option<&DeletedSceneEntities>,
+        &DeletedSceneEntities,
     )>,
+    mut entities: Query<(&mut Transform, &mut TargetParent), With<SceneEntity>>,
 ) {
-    for (root, mut scene_context, mut updates, maybe_deleted) in scenes.iter_mut() {
-        if let Some(deleted_entities) = maybe_deleted {
-            // remove crdt state for dead entities
-            for deleted in &deleted_entities.0 {
-                updates.last_write.remove(deleted);
-            }
+    for (root, mut scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
+        // remove crdt state for dead entities
+        for deleted in &deleted_entities.0 {
+            updates.last_write.remove(deleted);
         }
 
         for (scene_entity, entry) in updates
             .last_write
             .iter_mut()
+            // TODO maintain a separate list of updated entries to avoid iterating the full list
             .filter(|(_, entry)| entry.updated)
         {
             let Some(entity) = scene_context.bevy_entity(*scene_entity) else {
                 info!("skipping {} update for missing entity {:?}", std::any::type_name::<DclTransformAndParent>(), scene_entity);
                 continue;
             };
-            if entry.is_some {
+
+            let (transform, new_target_parent) = if entry.is_some {
                 match DclTransformAndParent::from_reader(&mut DclReader::new(&entry.data)) {
                     Ok(dcl_tp) => {
                         debug!(
@@ -54,9 +58,7 @@ fn process_transform_and_parent_updates(
                             dcl_tp
                         );
 
-                        let transform = dcl_tp.to_bevy_transform();
-
-                        let bevy_parent = match scene_context.bevy_entity(dcl_tp.parent()) {
+                        let new_target_parent = match scene_context.bevy_entity(dcl_tp.parent()) {
                             Some(parent) => parent,
                             None => {
                                 if scene_context.is_dead(dcl_tp.parent()) {
@@ -72,6 +74,7 @@ fn process_transform_and_parent_updates(
                                                 root,
                                                 scene_id: dcl_tp.parent(),
                                             },
+                                            TargetParent(root),
                                         ))
                                         .set_parent(root)
                                         .id();
@@ -82,10 +85,7 @@ fn process_transform_and_parent_updates(
                             }
                         };
 
-                        commands
-                            .entity(entity)
-                            .insert(transform)
-                            .set_parent(bevy_parent); // TODO: consider checking if parent has changed
+                        (dcl_tp.to_bevy_transform(), new_target_parent)
                     }
                     Err(e) => {
                         warn!(
@@ -93,15 +93,84 @@ fn process_transform_and_parent_updates(
                             std::any::type_name::<DclTransformAndParent>(),
                             e
                         );
+                        continue;
                     }
                 }
             } else {
-                // insert a default transform and reparent to the root
-                commands
-                    .entity(entity)
-                    .insert(Transform::default())
-                    .set_parent(root);
+                (Transform::default(), root)
+            };
+
+            let (mut target_transform, mut target_parent) = entities.get_mut(entity).unwrap();
+            *target_transform = transform;
+            if new_target_parent != target_parent.0 {
+                // update the target
+                target_parent.0 = new_target_parent;
+                // mark the entity as needing hierarchy check
+                scene_context.unparented_entities.push(entity);
+                // mark the scene so hierarchy checking is performed
+                scene_context.hierarchy_changed = true;
             }
+        }
+    }
+
+    for (root, mut scene, ..) in scenes.iter_mut() {
+        if scene.hierarchy_changed {
+            scene.hierarchy_changed = false;
+
+            // hashmap for parent lookup to avoid reusing query
+            let mut parents = HashMap::default();
+
+            // entities that we know connect ultimately to the root
+            let mut valid_entities = HashSet::from_iter(std::iter::once(root));
+            // entities that we know are part of a cycle (or lead to a cycle)
+            let mut invalid_entities = HashSet::default();
+
+            scene.unparented_entities.retain(|entity| {
+                // entities in the current chain
+                let mut checklist = HashSet::default();
+
+                // walk until we reach a known valid/invalid entity or our starting point
+                let mut pointer = *entity;
+                while ![&valid_entities, &invalid_entities, &checklist]
+                    .iter()
+                    .any(|set| set.contains(&pointer))
+                {
+                    checklist.insert(pointer);
+                    let parent = match parents.entry(pointer) {
+                        Entry::Occupied(o) => o.into_mut(),
+                        Entry::Vacant(v) => v.insert(
+                            entities
+                                .get(pointer)
+                                .map(|(_, target_parent)| target_parent.0)
+                                .unwrap_or(root),
+                        ),
+                    };
+                    pointer = *parent;
+                }
+
+                if valid_entities.contains(&pointer) {
+                    debug!(
+                        "{:?}: valid, setting parent to {:?}",
+                        entity, parents[entity]
+                    );
+                    // this entity (and all checked entities) link to the root
+                    // apply parenting
+                    commands.entity(*entity).set_parent(parents[entity]);
+                    //  record validity of the chain
+                    valid_entities.extend(checklist.into_iter());
+                    // remove from the unparented list
+                    false
+                } else {
+                    debug!("{:?}: not valid, setting parent to {:?}", entity, root);
+                    // this entity (and all checked entities) end in a cycle
+                    // parent to the root
+                    commands.entity(*entity).set_parent(root);
+                    // mark as invalid
+                    invalid_entities.extend(checklist.into_iter());
+                    // keep the entity in the unparented list to recheck at the next hierarchy update
+                    true
+                }
+            });
         }
     }
 }
