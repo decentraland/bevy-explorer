@@ -28,45 +28,14 @@ pub struct CrdtLWWState<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T: FromDclReader> Default for CrdtLWWState<T> {
-    fn default() -> Self {
-        Self {
-            last_write: Default::default(),
-            _marker: PhantomData,
-        }
-    }
-}
-
-pub struct CrdtLWWInterface<T: FromDclReader> {
-    _marker: PhantomData<T>,
-}
-
-impl<T: FromDclReader> Default for CrdtLWWInterface<T> {
-    fn default() -> Self {
-        Self {
-            _marker: Default::default(),
-        }
-    }
-}
-
-impl<T: FromDclReader> CrdtInterface for CrdtLWWInterface<T> {
-    fn update_crdt(
-        &self,
-        op_state: &mut RefMut<OpState>,
+impl<T> CrdtLWWState<T> {
+    pub fn update(
+        &mut self,
         entity: SceneEntityId,
         new_timestamp: SceneCrdtTimestamp,
         maybe_new_data: Option<&mut DclReader>,
     ) -> Result<bool, DclReaderError> {
-        // create state if required
-        let state = match op_state.try_borrow_mut::<CrdtLWWState<T>>() {
-            Some(state) => state,
-            None => {
-                op_state.put(CrdtLWWState::<T>::default());
-                op_state.borrow_mut()
-            }
-        };
-
-        match state.last_write.entry(entity) {
+        match self.last_write.entry(entity) {
             Entry::Occupied(o) => {
                 let entry = o.into_mut();
                 let update = match entry.timestamp.cmp(&new_timestamp) {
@@ -143,6 +112,48 @@ impl<T: FromDclReader> CrdtInterface for CrdtLWWInterface<T> {
                 Ok(true)
             }
         }
+    }
+}
+
+impl<T: FromDclReader> Default for CrdtLWWState<T> {
+    fn default() -> Self {
+        Self {
+            last_write: Default::default(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+pub struct CrdtLWWInterface<T: FromDclReader> {
+    _marker: PhantomData<T>,
+}
+
+impl<T: FromDclReader> Default for CrdtLWWInterface<T> {
+    fn default() -> Self {
+        Self {
+            _marker: Default::default(),
+        }
+    }
+}
+
+impl<T: FromDclReader> CrdtInterface for CrdtLWWInterface<T> {
+    fn update_crdt(
+        &self,
+        op_state: &mut RefMut<OpState>,
+        entity: SceneEntityId,
+        new_timestamp: SceneCrdtTimestamp,
+        maybe_new_data: Option<&mut DclReader>,
+    ) -> Result<bool, DclReaderError> {
+        // create state if required
+        let state = match op_state.try_borrow_mut::<CrdtLWWState<T>>() {
+            Some(state) => state,
+            None => {
+                op_state.put(CrdtLWWState::<T>::default());
+                op_state.borrow_mut()
+            }
+        };
+
+        state.update(entity, new_timestamp, maybe_new_data)
     }
 
     fn claim_crdt(&self, op_state: &mut RefMut<OpState>, commands: &mut EntityCommands) {

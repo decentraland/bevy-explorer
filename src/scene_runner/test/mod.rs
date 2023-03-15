@@ -1,4 +1,4 @@
-use std::{cell::RefCell, path::PathBuf, sync::Mutex};
+use std::{path::PathBuf, sync::Mutex};
 
 use std::{collections::BTreeMap, fs::File, io::Write};
 
@@ -11,15 +11,11 @@ use bevy::{
     time::TimePlugin,
     utils::HashMap,
 };
-use deno_core::OpState;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
 use crate::{
-    crdt::{
-        lww::{CrdtLWWInterface, CrdtLWWState},
-        CrdtInterface,
-    },
+    crdt::lww::CrdtLWWState,
     dcl_component::{
         transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneCrdtTimestamp,
         SceneEntityId,
@@ -270,21 +266,10 @@ fn cyclic_recovery() {
             scene_context.init(*dcl_entity);
 
             // add next message
-            let op_state = RefCell::new(OpState::new(0));
-            op_state.borrow_mut().put(crdt_state.clone());
             let reader = &mut DclReader::new(&data);
-            CrdtLWWInterface::<DclTransformAndParent>::default()
-                .update_crdt(
-                    &mut op_state.borrow_mut(),
-                    *dcl_entity,
-                    *timestamp,
-                    Some(reader),
-                )
+            crdt_state
+                .update(*dcl_entity, *timestamp, Some(reader))
                 .unwrap();
-            *crdt_state = op_state
-                .borrow_mut()
-                .take::<CrdtLWWState<DclTransformAndParent>>()
-                .clone();
 
             app.update();
         }
