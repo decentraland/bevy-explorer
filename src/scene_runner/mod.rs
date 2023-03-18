@@ -635,7 +635,14 @@ fn initialize_scene(
 #[derive(Default)]
 struct EngineResponseList(Vec<EngineResponse>);
 
-const MAX_CONCURRENT_SCENES: usize = 16;
+// TODO: work out how to set this intelligently
+// we need to keep enough scheduler time to ensure the main loop wakes enough
+// otherwise we end up overrunning the budget
+// also consider
+// - reduce bevy async thread pool
+// - reduce bevy primary thread pool
+// - see if we can get v8 single threaded / no native threads working
+const MAX_CONCURRENT_SCENES: usize = 8;
 
 fn send_scene_updates(
     mut scenes: Query<(Entity, &mut RendererSceneContext, &SceneThreadHandle)>,
