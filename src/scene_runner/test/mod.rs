@@ -20,11 +20,14 @@ use crate::{
         transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneCrdtTimestamp,
         SceneEntityId,
     },
-    output_handler::SceneOutputPlugin,
-    scene_runner::{LoadJsSceneEvent, SceneDefinition, SceneEntity, SceneRunnerPlugin},
+    output_handler::{process_transform_and_parent_updates, SceneOutputPlugin},
+    scene_runner::{
+        process_lifecycle, receive_scene_updates, LoadSceneEvent, RendererSceneContext,
+        SceneDefinition, SceneEntity, SceneRunnerPlugin,
+    },
 };
 
-use super::SceneContext;
+use super::{send_scene_updates, SceneLoopSchedule, SceneUpdates};
 
 pub struct TestPlugins;
 
@@ -70,11 +73,20 @@ fn init_test_app(script: &str) -> App {
     let path = script.to_owned();
 
     // startup system to fire load event
-    app.add_startup_system(move |mut ev: EventWriter<LoadJsSceneEvent>| {
-        ev.send(LoadJsSceneEvent {
-            scene: SceneDefinition { path: path.clone() },
+    app.add_startup_system(move |mut ev: EventWriter<LoadSceneEvent>| {
+        ev.send(LoadSceneEvent {
+            scene: SceneDefinition {
+                path: path.clone(),
+                offset: Default::default(),
+                visible: true,
+            },
         })
     });
+
+    // replace the scene loop schedule with a dummy so we can better control it
+    app.world.remove_resource::<SceneLoopSchedule>().unwrap();
+    app.world
+        .insert_resource(SceneLoopSchedule(Schedule::new()));
 
     // run app once to get the scene initialized
     app.update();
@@ -113,7 +125,9 @@ macro_rules! check_or_write {
 }
 
 fn make_graph(app: &mut App) -> String {
-    let mut scene_query = app.world.query_filtered::<Entity, With<SceneContext>>();
+    let mut scene_query = app
+        .world
+        .query_filtered::<Entity, With<RendererSceneContext>>();
     assert_eq!(scene_query.iter(&app.world).len(), 1);
     let root = scene_query.iter(&app.world).next().unwrap();
 
@@ -175,6 +189,39 @@ fn make_reparent_buffer(parent: u16) -> Vec<u8> {
     writer.into()
 }
 
+fn run_single_update(app: &mut App) {
+    // run once
+    while app.world.resource_mut::<SceneUpdates>().jobs_in_flight == 0 {
+        // set last update time to zero so the scheduler doesn't freak out
+        app.world
+            .query::<&mut RendererSceneContext>()
+            .single_mut(&mut app.world)
+            .last_sent = 0.0;
+        Schedule::new()
+            .add_system(send_scene_updates)
+            .run(&mut app.world);
+    }
+    assert_eq!(app.world.resource_mut::<SceneUpdates>().jobs_in_flight, 1);
+
+    while app.world.resource_mut::<SceneUpdates>().jobs_in_flight == 1 {
+        // run the receiver and lifecycle part of the schedule
+        Schedule::new()
+            .add_systems(
+                (
+                    receive_scene_updates,
+                    process_lifecycle,
+                    apply_system_buffers,
+                    process_transform_and_parent_updates,
+                )
+                    .chain(),
+            )
+            .run(&mut app.world);
+    }
+
+    // make sure we got the one response
+    assert_eq!(app.world.resource_mut::<SceneUpdates>().jobs_in_flight, 0);
+}
+
 // basic hierarchy test
 #[test]
 fn flat_hierarchy() {
@@ -184,8 +231,10 @@ fn flat_hierarchy() {
     let graph = make_graph(&mut app);
     check_or_write!(graph, "expected/flat_hierarchy_onStart.dot");
 
+    info!("running update");
+
     // onUpdate
-    app.update();
+    run_single_update(&mut app);
 
     let graph = make_graph(&mut app);
     check_or_write!(graph, "expected/flat_hierarchy_onUpdate.dot");
@@ -198,13 +247,13 @@ fn reparenting() {
     let mut app = init_test_app("tests/reparenting");
 
     // onUpdate
-    app.update();
+    run_single_update(&mut app);
 
     let graph = make_graph(&mut app);
     check_or_write!(graph, "expected/reparenting_1.dot");
 
     // onUpdate
-    app.update();
+    run_single_update(&mut app);
     let graph = make_graph(&mut app);
     check_or_write!(graph, "expected/reparenting_2.dot");
 }
@@ -216,18 +265,18 @@ fn late_entities() {
     let mut app = init_test_app("tests/late_entities");
 
     // onUpdate
-    app.update();
+    run_single_update(&mut app);
 
     let graph = make_graph(&mut app);
     check_or_write!(graph, "expected/late_entities_1.dot");
 
     // onUpdate
-    app.update();
+    run_single_update(&mut app);
     let graph = make_graph(&mut app);
     check_or_write!(graph, "expected/late_entities_2.dot");
 
     // onUpdate
-    app.update();
+    run_single_update(&mut app);
     let graph = make_graph(&mut app);
     check_or_write!(graph, "expected/late_entities_3.dot");
 }
@@ -261,11 +310,16 @@ fn cyclic_recovery() {
             let (dcl_entity, timestamp, data) = &messages[ix];
             let (mut scene_context, mut crdt_state) = app
                 .world
-                .query::<(&mut SceneContext, &mut CrdtLWWState<DclTransformAndParent>)>()
+                .query::<(
+                    &mut RendererSceneContext,
+                    &mut CrdtLWWState<DclTransformAndParent>,
+                )>()
                 .single_mut(&mut app.world);
 
             // initialize the scene entity
-            scene_context.init(*dcl_entity);
+            if scene_context.bevy_entity(*dcl_entity).is_none() {
+                scene_context.nascent.insert(*dcl_entity);
+            }
 
             // add next message
             let reader = &mut DclReader::new(&data);
@@ -274,7 +328,16 @@ fn cyclic_recovery() {
                 .unwrap();
 
             // run systems
-            app.update();
+            Schedule::new()
+                .add_systems(
+                    (
+                        process_lifecycle,
+                        apply_system_buffers,
+                        process_transform_and_parent_updates,
+                    )
+                        .chain(),
+                )
+                .run(&mut app.world);
         }
         let graph = make_graph(&mut app);
         check_or_write!(graph, "expected/cyclic_recovery.dot");

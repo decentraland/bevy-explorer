@@ -1,23 +1,21 @@
-use std::{cell::RefMut, cmp::Ordering, marker::PhantomData};
+use std::{cmp::Ordering, marker::PhantomData};
 
 use bevy::{
     ecs::system::EntityCommands,
     prelude::*,
-    utils::{Entry, HashMap},
+    utils::{Entry, HashMap, HashSet},
 };
-use deno_core::OpState;
 
 use crate::{
     dcl_component::{DclReader, DclReaderError, FromDclReader, SceneCrdtTimestamp, SceneEntityId},
-    scene_runner::{DeletedSceneEntities, SceneContext},
+    scene_runner::{DeletedSceneEntities, RendererSceneContext},
 };
 
-use super::CrdtInterface;
+use super::{CrdtInterface, TypeMap};
 
 #[derive(Debug, Clone)]
 pub struct LWWEntry {
     pub timestamp: SceneCrdtTimestamp,
-    pub updated: bool,
     pub is_some: bool,
     pub data: Vec<u8>,
 }
@@ -25,6 +23,7 @@ pub struct LWWEntry {
 #[derive(Component, Clone)]
 pub struct CrdtLWWState<T> {
     pub last_write: HashMap<SceneEntityId, LWWEntry>,
+    pub updates: HashSet<SceneEntityId>,
     _marker: PhantomData<T>,
 }
 
@@ -78,7 +77,6 @@ impl<T> CrdtLWWState<T> {
 
                 if update {
                     entry.timestamp = new_timestamp;
-                    entry.updated = true;
 
                     entry.data.clear();
                     match maybe_new_data {
@@ -88,18 +86,19 @@ impl<T> CrdtLWWState<T> {
                         }
                         None => entry.is_some = false,
                     }
+                    self.updates.insert(entity);
                 }
                 Ok(update)
             }
             Entry::Vacant(v) => {
                 v.insert(LWWEntry {
                     timestamp: new_timestamp,
-                    updated: true,
                     is_some: maybe_new_data.is_some(),
                     data: maybe_new_data
                         .map(|new_data| new_data.as_slice().to_vec())
                         .unwrap_or_default(),
                 });
+                self.updates.insert(entity);
                 Ok(true)
             }
         }
@@ -110,6 +109,7 @@ impl<T: FromDclReader> Default for CrdtLWWState<T> {
     fn default() -> Self {
         Self {
             last_write: Default::default(),
+            updates: Default::default(),
             _marker: PhantomData,
         }
     }
@@ -130,26 +130,42 @@ impl<T: FromDclReader> Default for CrdtLWWInterface<T> {
 impl<T: FromDclReader> CrdtInterface for CrdtLWWInterface<T> {
     fn update_crdt(
         &self,
-        op_state: &mut RefMut<OpState>,
+        target: &mut TypeMap,
         entity: SceneEntityId,
         new_timestamp: SceneCrdtTimestamp,
         maybe_new_data: Option<&mut DclReader>,
     ) -> Result<bool, DclReaderError> {
         // create state if required
-        let state = match op_state.try_borrow_mut::<CrdtLWWState<T>>() {
+        let state = match target.borrow_mut::<CrdtLWWState<T>>() {
             Some(state) => state,
             None => {
-                op_state.put(CrdtLWWState::<T>::default());
-                op_state.borrow_mut()
+                target.insert(CrdtLWWState::<T>::default());
+                target.borrow_mut().unwrap()
             }
         };
 
         state.update(entity, new_timestamp, maybe_new_data)
     }
 
-    fn claim_crdt(&self, op_state: &mut RefMut<OpState>, commands: &mut EntityCommands) {
-        op_state
-            .try_take::<CrdtLWWState<T>>()
+    fn take_updates(&self, source: &mut TypeMap, target: &mut TypeMap) {
+        if let Some(state) = source.borrow_mut::<CrdtLWWState<T>>() {
+            let udpated_state = CrdtLWWState::<T> {
+                last_write: HashMap::from_iter(
+                    state
+                        .updates
+                        .iter()
+                        .map(|update| (*update, state.last_write.get(update).unwrap().clone())),
+                ),
+                updates: std::mem::take(&mut state.updates),
+                _marker: PhantomData,
+            };
+            target.insert(udpated_state);
+        }
+    }
+
+    fn updates_to_entity(&self, type_map: &mut TypeMap, commands: &mut EntityCommands) {
+        type_map
+            .take::<CrdtLWWState<T>>()
             .map(|state| commands.insert(state));
     }
 }
@@ -159,7 +175,7 @@ pub(crate) fn process_crdt_lww_updates<T: FromDclReader + Component + std::fmt::
     mut commands: Commands,
     mut scenes: Query<(
         Entity,
-        &SceneContext,
+        &RendererSceneContext,
         &mut CrdtLWWState<T>,
         &DeletedSceneEntities,
     )>,
@@ -170,12 +186,7 @@ pub(crate) fn process_crdt_lww_updates<T: FromDclReader + Component + std::fmt::
             updates.last_write.remove(deleted);
         }
 
-        for (scene_entity, entry) in updates
-            .last_write
-            .iter_mut()
-            .filter(|(_, entry)| entry.updated)
-        {
-            entry.updated = false;
+        for (scene_entity, entry) in updates.last_write.iter_mut() {
             let Some(entity) = scene_context.bevy_entity(*scene_entity) else {
                 info!("skipping {} update for missing entity {:?}", std::any::type_name::<T>(), scene_entity);
                 continue;

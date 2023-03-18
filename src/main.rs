@@ -12,7 +12,7 @@ use bevy::{
 
 use input_handler::SceneInputPlugin;
 use output_handler::SceneOutputPlugin;
-use scene_runner::{LoadJsSceneEvent, SceneDefinition, SceneRunnerPlugin};
+use scene_runner::{LoadSceneEvent, RendererSceneContext, SceneDefinition, SceneRunnerPlugin};
 
 #[derive(Resource)]
 struct UserScriptFolder(String);
@@ -61,18 +61,21 @@ fn main() {
             .add_plugin(LogDiagnosticsPlugin::default());
     }
 
+    app.add_system(input);
+    println!("up: increase scene count, down: decrease scene count");
+
     app.run()
 }
 
 fn setup(
     mut commands: Commands,
-    mut scene_load: EventWriter<LoadJsSceneEvent>,
+    mut scene_load: EventWriter<LoadSceneEvent>,
     user_script_folder: Res<UserScriptFolder>,
 ) {
     // add a camera
     commands.spawn(Camera3dBundle {
-        transform: Transform::from_translation(Vec3::new(-10.0, 5.0, 4.0))
-            .looking_at(Vec3::new(1.0, 3.0, -1.0), Vec3::Y),
+        transform: Transform::from_translation(Vec3::new(-10.0, 10.0, 4.0))
+            .looking_at(Vec3::new(1.0, 8.0, -1.0), Vec3::Y),
         ..Default::default()
     });
 
@@ -92,9 +95,41 @@ fn setup(
     });
 
     // load the scene
-    scene_load.send(LoadJsSceneEvent {
-        scene: SceneDefinition {
-            path: user_script_folder.0.clone(),
-        },
-    });
+    for i in 0..1 {
+        scene_load.send(LoadSceneEvent {
+            scene: SceneDefinition {
+                path: user_script_folder.0.clone(),
+                offset: Vec3::X * 2.0 * i as f32,
+                visible: i % 10 == 0,
+            },
+        });
+    }
+}
+
+fn input(
+    keys: Res<Input<KeyCode>>,
+    mut load: EventWriter<LoadSceneEvent>,
+    mut commands: Commands,
+    scenes: Query<Entity, With<RendererSceneContext>>,
+    user_script_folder: Res<UserScriptFolder>,
+) {
+    if keys.pressed(KeyCode::Up) {
+        let count = scenes.iter().count();
+        load.send(LoadSceneEvent {
+            scene: SceneDefinition {
+                path: user_script_folder.0.clone(),
+                offset: Vec3::X * 16.0 * count as f32,
+                visible: count.count_ones() <= 1,
+            },
+        });
+        println!("+ -> {}", count + 1);
+    }
+
+    if keys.pressed(KeyCode::Down) {
+        let count = scenes.iter().count();
+        if let Some(entity) = scenes.iter().last() {
+            commands.entity(entity).despawn_recursive();
+            println!("- -> {}", count - 1);
+        }
+    }
 }

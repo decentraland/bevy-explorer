@@ -8,7 +8,10 @@ use crate::{
     dcl_component::{
         transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
     },
-    scene_runner::{DeletedSceneEntities, SceneContext, SceneEntity, SceneSets, TargetParent},
+    scene_runner::{
+        DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneLoopSets,
+        TargetParent,
+    },
 };
 
 // plugin to manage some commands from the scene script
@@ -17,15 +20,18 @@ pub struct SceneOutputPlugin;
 impl Plugin for SceneOutputPlugin {
     fn build(&self, app: &mut App) {
         app.add_crdt_lww_interface::<DclTransformAndParent>(SceneComponentId(1));
-        app.add_system(process_transform_and_parent_updates.in_set(SceneSets::HandleOutput));
+        app.world
+            .resource_mut::<SceneLoopSchedule>()
+            .0
+            .add_system(process_transform_and_parent_updates.in_set(SceneLoopSets::UpdateWorld));
     }
 }
 
-fn process_transform_and_parent_updates(
+pub(crate) fn process_transform_and_parent_updates(
     mut commands: Commands,
     mut scenes: Query<(
         Entity,
-        &mut SceneContext,
+        &mut RendererSceneContext,
         &mut CrdtLWWState<DclTransformAndParent>,
         &DeletedSceneEntities,
     )>,
@@ -37,12 +43,7 @@ fn process_transform_and_parent_updates(
             updates.last_write.remove(deleted);
         }
 
-        for (scene_entity, entry) in updates
-            .last_write
-            .iter_mut()
-            // TODO maintain a separate list of updated entries to avoid iterating the full list
-            .filter(|(_, entry)| entry.updated)
-        {
+        for (scene_entity, entry) in updates.last_write.iter_mut() {
             let Some(entity) = scene_context.bevy_entity(*scene_entity) else {
                 info!("skipping {} update for missing entity {:?}", std::any::type_name::<DclTransformAndParent>(), scene_entity);
                 continue;
@@ -106,7 +107,7 @@ fn process_transform_and_parent_updates(
                 // update the target
                 target_parent.0 = new_target_parent;
                 // mark the entity as needing hierarchy check
-                scene_context.unparented_entities.push(entity);
+                scene_context.unparented_entities.insert(entity);
                 // mark the scene so hierarchy checking is performed
                 scene_context.hierarchy_changed = true;
             }

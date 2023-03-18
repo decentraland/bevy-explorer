@@ -1,18 +1,29 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError},
+    time::{Duration, SystemTime},
+};
 
 use bevy::{
     prelude::*,
-    utils::{HashMap, HashSet},
+    utils::{FloatOrd, HashSet, Instant},
 };
 use deno_core::{
-    error::generic_error,
+    error::{generic_error, AnyError},
     include_js_files, op,
-    v8::{self},
+    v8::{self, IsolateHandle},
     Extension, JsRuntime, OpState, RuntimeOptions,
 };
 use serde::Serialize;
 
-use crate::{crdt::CrdtComponentInterfaces, dcl_assert, dcl_component::SceneEntityId};
+use crate::{
+    crdt::{CrdtComponentInterfaces, TypeMap},
+    dcl_assert,
+    dcl_component::SceneEntityId,
+};
+
+use self::engine::ShuttingDown;
 
 pub mod engine;
 
@@ -22,27 +33,88 @@ pub mod test;
 // system sets used for ordering
 #[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
 pub enum SceneSets {
-    Init,          // setup the scene
     Input, // systems which create EngineResponses for the current frame (though these can be created anywhere)
-    Run,   // run the script
-    CreateDestroy, // manage entity lifetimes
-    HandleOutput, // systems which handle events from the current frame
+    Init,  // setup the scene
+    RunLoop, // run the scripts
 }
 
-// (non-send) resource to hold the runtime and module object
-#[derive(Default)]
-pub struct JsRuntimeResource(HashMap<Entity, (JsRuntime, v8::Global<v8::Value>)>);
+#[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
+pub enum SceneLoopSets {
+    SendToScene,      // pass data to the scene
+    ReceiveFromScene, // receive data from the scene
+    Lifecycle,        // manage bevy entity lifetimes
+    UpdateWorld,      // systems which handle events from the current frame
+}
+
+// data from renderer to scene
+#[derive(Debug)]
+pub enum RendererResponse {
+    Ok(Vec<()>),
+}
+
+// data from scene to renderer
+pub enum SceneResponse {
+    Error(String),
+    Ok(SceneCensus, TypeMap),
+}
+
+#[derive(Resource)]
+pub struct SceneUpdates {
+    pub sender: SyncSender<SceneResponse>,
+    receiver: Receiver<SceneResponse>,
+    pub jobs_in_flight: usize,
+    pub update_deadline: SystemTime,
+    pub eligible_jobs: usize,
+}
+
+// safety: struct is sync except for the receiver.
+// receiver is only accessible via &mut handle
+unsafe impl Sync for SceneUpdates {}
+
+impl SceneUpdates {
+    pub fn receiver(&mut self) -> &Receiver<SceneResponse> {
+        &self.receiver
+    }
+}
+
+#[derive(Component)]
+pub struct SceneThreadHandle {
+    pub kill_switch: IsolateHandle,
+    pub sender: tokio::sync::mpsc::Sender<RendererResponse>,
+}
 
 // metadata about the current scene. currently only the path (used in op_require to validate access)
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct SceneDefinition {
     pub path: String,
+    pub offset: Vec3,
+    pub visible: bool,
 }
 
 // event which can be sent from anywhere to trigger replacing the current scene with the one specified
-pub struct LoadJsSceneEvent {
+pub struct LoadSceneEvent {
     pub scene: SceneDefinition,
 }
+
+// fn kill_scenes(
+//     mut commands: Commands,
+//     scenes: Query<(Entity, &mut SceneThreadHandle)>,
+//     time: Res<Time>,
+// ) {
+//     if time.elapsed_seconds() > 20.0 {
+//         for (_ent, handle) in scenes.iter().skip(1) {
+//             // let _ = futures_lite::future::block_on(
+//             //     handle.sender.send(SceneThreadRendererResponses::Die),
+//             // );
+//             commands
+//                 .entity(_ent)
+//                 .remove::<RendererSceneContext>()
+//                 .remove::<SceneThreadHandle>();
+//             println!("-");
+//             return;
+//         }
+//     }
+// }
 
 // struct used for sending responses to the script.
 #[derive(Clone, Serialize)]
@@ -73,32 +145,40 @@ type LiveEntityTable = Vec<(u16, Option<Entity>)>;
 
 // mapping from script entity -> bevy entity
 // note - be careful with size as this struct is moved into/out of js runtimes
-#[derive(Component, Default)]
-pub struct SceneContext {
+#[derive(Component, Default, Debug)]
+pub struct RendererSceneContext {
     pub definition: SceneDefinition,
+    pub priority: f32,
 
     // entities waiting to be born in bevy
     pub nascent: HashSet<SceneEntityId>,
     // entities waiting to be destroyed in bevy
-    pub death_row: HashSet<(SceneEntityId, Entity)>,
+    pub death_row: HashSet<SceneEntityId>,
     // entities that are live
     live_entities: LiveEntityTable,
 
     // list of entities that are not currently parented to their target parent
-    pub unparented_entities: Vec<Entity>,
+    pub unparented_entities: HashSet<Entity>,
     // indicates if we need to reprocess unparented entities
     pub hierarchy_changed: bool,
+
+    // time of last message sent to scene
+    pub last_sent: f32,
+    pub in_flight: bool,
 }
 
-impl SceneContext {
-    pub fn new(definition: SceneDefinition, root: Entity) -> Self {
+impl RendererSceneContext {
+    pub fn new(definition: SceneDefinition, root: Entity, priority: f32) -> Self {
         let mut new_context = Self {
             definition,
             nascent: Default::default(),
             death_row: Default::default(),
             live_entities: Vec::from_iter(std::iter::repeat((0, None)).take(u16::MAX as usize)),
-            unparented_entities: Vec::new(),
+            unparented_entities: HashSet::new(),
             hierarchy_changed: false,
+            last_sent: 0.0,
+            in_flight: true,
+            priority,
         };
 
         new_context.live_entities[SceneEntityId::ROOT.id as usize] =
@@ -116,25 +196,6 @@ impl SceneContext {
         unsafe { self.live_entities.get_unchecked_mut(id as usize) }
     }
 
-    // queue an entity for creation if required
-    // returns false if the entity is already dead
-    pub fn init(&mut self, entity: SceneEntityId) -> bool {
-        debug!(" init {:?}!", entity);
-        if self.is_dead(entity) {
-            debug!("{:?} is dead!", entity);
-            return false;
-        }
-
-        if !self.is_live_in_bevy(entity) {
-            debug!("scene added {entity:?}");
-            self.nascent.insert(entity);
-        } else {
-            debug!("{:?} is live already!", entity);
-        }
-
-        true
-    }
-
     pub fn associate_bevy_entity(&mut self, scene_entity: SceneEntityId, bevy_entity: Entity) {
         debug!(
             "associate scene id: {} -> bevy id {:?}",
@@ -145,15 +206,91 @@ impl SceneContext {
         *self.entity_entry_mut(scene_entity.id) = (scene_entity.generation, Some(bevy_entity));
     }
 
+    pub fn bevy_entity(&self, scene_entity: SceneEntityId) -> Option<Entity> {
+        match self.entity_entry(scene_entity.id) {
+            (gen, Some(bevy_entity)) if *gen == scene_entity.generation => Some(*bevy_entity),
+            _ => None,
+        }
+    }
+
+    pub fn is_dead(&self, entity: SceneEntityId) -> bool {
+        self.entity_entry(entity.id).0 > entity.generation
+    }
+}
+
+pub struct SceneCensus {
+    root: Entity,
+    born: HashSet<SceneEntityId>,
+    died: HashSet<SceneEntityId>,
+}
+
+type LiveTable = Vec<(u16, bool)>;
+
+pub struct SceneSceneContext {
+    definition: SceneDefinition,
+    root: Entity,
+    live_entities: LiveTable,
+    nascent: HashSet<SceneEntityId>,
+    death_row: HashSet<SceneEntityId>,
+}
+
+impl SceneSceneContext {
+    pub fn new(definition: SceneDefinition, root: Entity) -> Self {
+        Self {
+            definition,
+            root,
+            live_entities: Vec::from_iter(std::iter::repeat((0, false)).take(u16::MAX as usize)),
+            nascent: Default::default(),
+            death_row: Default::default(),
+        }
+    }
+
+    fn entity_entry(&self, id: u16) -> &(u16, bool) {
+        // SAFETY: live entities has u16::MAX members
+        unsafe { self.live_entities.get_unchecked(id as usize) }
+    }
+
+    // queue an entity for creation if required
+    // returns false if the entity is already dead
+    pub fn init(&mut self, entity: SceneEntityId) -> bool {
+        // debug!(" init {:?}!", entity);
+        if self.is_dead(entity) {
+            debug!("{:?} is dead!", entity);
+            return false;
+        }
+
+        if !self.is_born(entity) {
+            debug!("scene added {entity:?}");
+            self.nascent.insert(entity);
+        } else {
+            // debug!("{:?} is live already!", entity);
+        }
+
+        true
+    }
+
+    pub fn take_census(&mut self) -> SceneCensus {
+        for scene_entity in &self.nascent {
+            self.live_entities[scene_entity.id as usize] = (scene_entity.generation, true);
+        }
+
+        SceneCensus {
+            root: self.root,
+            born: std::mem::take(&mut self.nascent),
+            died: std::mem::take(&mut self.death_row),
+        }
+    }
+
     pub fn kill(&mut self, scene_entity: SceneEntityId) {
         // update entity table and death row
-        match self.entity_entry_mut(scene_entity.id) {
-            (gen, maybe_bevy_entity) if *gen <= scene_entity.generation => {
+        match &mut self.live_entities[scene_entity.id as usize] {
+            (gen, live) if *gen <= scene_entity.generation => {
                 *gen = scene_entity.generation + 1;
 
-                if let Some(bevy_entity) = maybe_bevy_entity.take() {
-                    self.death_row.insert((scene_entity, bevy_entity));
+                if *live {
+                    self.death_row.insert(scene_entity);
                 }
+                *live = false;
             }
             _ => (),
         }
@@ -163,17 +300,10 @@ impl SceneContext {
         debug!("scene killed {scene_entity:?}");
     }
 
-    pub fn bevy_entity(&self, scene_entity: SceneEntityId) -> Option<Entity> {
-        match self.entity_entry(scene_entity.id) {
-            (gen, Some(bevy_entity)) if *gen == scene_entity.generation => Some(*bevy_entity),
-            _ => None,
-        }
-    }
-
-    pub fn is_live_in_bevy(&self, scene_entity: SceneEntityId) -> bool {
+    pub fn is_born(&self, scene_entity: SceneEntityId) -> bool {
         self.nascent.contains(&scene_entity) || {
             let entry = self.entity_entry(scene_entity.id);
-            entry.0 == scene_entity.generation && entry.1.is_some()
+            entry.0 == scene_entity.generation && entry.1
         }
     }
 
@@ -191,37 +321,83 @@ pub struct SceneEntity {
 // plugin which creates and runs scripts
 pub struct SceneRunnerPlugin;
 
+#[derive(Resource)]
+pub struct SceneLoopSchedule(pub Schedule);
+
 impl Plugin for SceneRunnerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_non_send_resource::<JsRuntimeResource>();
         app.init_resource::<CrdtComponentInterfaces>();
 
-        app.add_event::<LoadJsSceneEvent>();
+        let (sender, receiver) = sync_channel(1000);
+        app.insert_resource(SceneUpdates {
+            sender,
+            receiver,
+            jobs_in_flight: 0,
+            update_deadline: SystemTime::now(),
+            eligible_jobs: 0,
+        });
+
+        app.add_event::<LoadSceneEvent>();
         app.add_event::<EngineResponse>();
 
-        app.configure_sets(
+        app.configure_sets((SceneSets::Input, SceneSets::Init, SceneSets::RunLoop).chain());
+        app.add_system(
+            apply_system_buffers
+                .after(SceneSets::Init)
+                .before(SceneSets::RunLoop),
+        );
+        app.add_system(initialize_scene.in_set(SceneSets::Init));
+        app.add_system(update_scene_priority.in_set(SceneSets::Init));
+        app.add_system(run_scene_loop.in_set(SceneSets::RunLoop));
+
+        let mut scene_schedule = Schedule::new();
+
+        scene_schedule.configure_sets(
             (
-                SceneSets::Init,
-                SceneSets::Input,
-                SceneSets::Run,
-                SceneSets::CreateDestroy,
-                SceneSets::HandleOutput,
+                SceneLoopSets::SendToScene,
+                SceneLoopSets::ReceiveFromScene,
+                SceneLoopSets::Lifecycle,
+                SceneLoopSets::UpdateWorld,
             )
                 .chain(),
         );
 
-        app.add_system(initialize_scene.in_set(SceneSets::Init));
-        app.add_system(run_scene.in_set(SceneSets::Run));
-        app.add_system(process_lifecycle.in_set(SceneSets::CreateDestroy));
+        scene_schedule.add_system(send_scene_updates.in_set(SceneLoopSets::SendToScene));
+        scene_schedule.add_system(receive_scene_updates.in_set(SceneLoopSets::ReceiveFromScene));
+        scene_schedule.add_system(process_lifecycle.in_set(SceneLoopSets::Lifecycle));
 
         // add a command flush between CreateDestroy and HandleOutput so that
         // commands can be applied to entities in the same frame they are created
-        app.add_system(
+        scene_schedule.add_system(
             apply_system_buffers
-                .after(SceneSets::CreateDestroy)
-                .before(SceneSets::HandleOutput),
+                .after(SceneLoopSets::Lifecycle)
+                .before(SceneLoopSets::UpdateWorld),
         );
+
+        app.insert_resource(SceneLoopSchedule(scene_schedule));
     }
+}
+
+fn run_scene_loop(world: &mut World) {
+    world.resource_scope(|world, mut schedule: Mut<SceneLoopSchedule>| {
+        // TODO: don't just use 5ms, determine a budget
+        // - determine frame render time (bevy pr required - but maybe not needed with dynamic res scaling..?)
+        // - determine main world frame time (can roughly do this by snapping around render world extract, but better with bevy pr)
+        // - use prior frame scene budget and main world frame time to determine main world time excluding scenes
+        // - use max of target frame time and render time to allocate scene budget
+        // - trim for possibility of more work coming in
+        let update_deadline = Duration::from_millis(5);
+        let start = Instant::now();
+
+        // always run once
+        schedule.0.run(world);
+        // run until time elapsed or all scenes are updated
+        while Instant::now().duration_since(start) < update_deadline
+            && world.resource::<SceneUpdates>().eligible_jobs > 0
+        {
+            schedule.0.run(world)
+        }
+    });
 }
 
 const MODULE_PREFIX: &str = "./assets/modules/";
@@ -248,7 +424,7 @@ fn op_require(
         // generic load from the script path
         (scheme, name) => {
             let state = state.borrow();
-            let path = &state.borrow::<SceneContext>().definition.path;
+            let path = &state.borrow::<SceneSceneContext>().definition.path;
             format!("{SCENE_PREFIX}{path}/{scheme}{name}")
         }
     };
@@ -259,157 +435,289 @@ fn op_require(
         .map_err(|err| generic_error(format!("invalid module request `{module_spec}` ({err})")))
 }
 
+fn update_scene_priority(mut q: Query<&mut RendererSceneContext>) {
+    for mut context in q.iter_mut() {
+        context.priority = context.definition.offset.length().powf(1.0);
+    }
+}
+
 fn initialize_scene(
-    mut runtime_res: NonSendMut<JsRuntimeResource>,
-    mut load_scene_events: EventReader<LoadJsSceneEvent>,
+    mut load_scene_events: EventReader<LoadSceneEvent>,
     mut commands: Commands,
+    mut scene_updates: ResMut<SceneUpdates>,
     crdt_component_interfaces: Res<CrdtComponentInterfaces>,
+    mut counter: Local<usize>,
 ) {
     for new_scene in load_scene_events.iter() {
-        // create an extension referencing our native functions and JS initialisation scripts
-        // TODO: to make this more generic for multiple modules we could use
-        // https://crates.io/crates/inventory or similar
-        let ext = Extension::builder("decentraland")
-            // add require operation
-            .ops(vec![op_require::decl()])
-            // add plugin registrations
-            .ops(engine::ops())
-            // set startup JS script
-            .js(include_js_files!(
-                prefix "example:init",
-                "init.js",
-            ))
-            // remove core deno ops that are not required
-            .middleware(|op| {
-                const ALLOW: [&str; 4] = [
-                    "op_print",
-                    "op_eval_context",
-                    "op_require",
-                    "op_crdt_send_to_renderer",
-                ];
-                if ALLOW.contains(&op.name) {
-                    op
-                } else {
-                    debug!("deny: {}", op.name);
-                    op.disable()
-                }
-            })
-            .build();
-
-        // create runtime
-        let mut runtime = JsRuntime::new(RuntimeOptions {
-            extensions_with_js: vec![ext],
-            ..Default::default()
-        });
-
-        // TODO: snapshot
-
         // create the scene root entity
         // todo set world position
         let root = commands
-            .spawn((SpatialBundle::default(), DeletedSceneEntities::default()))
+            .spawn((
+                SpatialBundle {
+                    transform: Transform::from_translation(new_scene.scene.offset),
+                    visibility: if new_scene.scene.visible {
+                        Visibility::Inherited
+                    } else {
+                        Visibility::Hidden
+                    },
+                    ..Default::default()
+                },
+                DeletedSceneEntities::default(),
+            ))
             .id();
         commands.entity(root).insert(SceneEntity {
             root,
             scene_id: SceneEntityId::ROOT,
         });
 
-        let context = SceneContext::new(new_scene.scene.clone(), root);
+        let scene_context = SceneSceneContext::new(new_scene.scene.clone(), root);
+        let renderer_context = RendererSceneContext::new(new_scene.scene.clone(), root, 1.0);
 
-        let state = runtime.op_state();
+        let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
+        let (handle_sx, handle_rx) = sync_channel::<IsolateHandle>(1);
+        let thread_sx = scene_updates.sender.clone();
 
-        // store scene detail in the runtime state
-        let mut state_mut = state.borrow_mut();
-        state_mut.put(context);
+        let crdt_component_interfaces = crdt_component_interfaces.clone();
 
-        // store the component writers
-        state_mut.put(crdt_component_interfaces.clone());
+        std::thread::Builder::new()
+            .name(format!("scene thread {}", *counter))
+            .spawn(move || {
+                // create an extension referencing our native functions and JS initialisation scripts
+                // TODO: to make this more generic for multiple modules we could use
+                // https://crates.io/crates/inventory or similar
+                let ext = Extension::builder("decentraland")
+                    // add require operation
+                    .ops(vec![op_require::decl()])
+                    // add plugin registrations
+                    .ops(engine::ops())
+                    // set startup JS script
+                    .js(include_js_files!(
+                        prefix "example:init",
+                        "init.js",
+                    ))
+                    // remove core deno ops that are not required
+                    .middleware(|op| {
+                        const ALLOW: [&str; 4] = [
+                            "op_print",
+                            "op_eval_context",
+                            "op_require",
+                            "op_crdt_send_to_renderer",
+                        ];
+                        if ALLOW.contains(&op.name) {
+                            op
+                        } else {
+                            debug!("deny: {}", op.name);
+                            // op.disable()
+                            op
+                        }
+                    })
+                    .build();
 
-        drop(state_mut);
+                // create runtime
+                let mut runtime = JsRuntime::new(RuntimeOptions {
+                    v8_platform: v8::Platform::new(1, false).make_shared().into(),
+                    extensions_with_js: vec![ext],
+                    ..Default::default()
+                });
 
-        // load module
-        let script = runtime.execute_script("<loader>", "require (\"index.js\")");
+                // send handle to main thread
+                handle_sx
+                    .send(runtime.v8_isolate().thread_safe_handle())
+                    .unwrap_or_else(|e| error!("handle channel closed: {e:?}"));
 
-        let script = match script {
-            Err(e) => {
-                error!("script load error: {}", e);
-                return;
+                let state = runtime.op_state();
+
+                // store scene detail in the runtime state
+                state.borrow_mut().put(scene_context);
+
+                // store the component writers
+                state.borrow_mut().put(crdt_component_interfaces.clone());
+
+                // store channels
+                state.borrow_mut().put(thread_sx);
+                state.borrow_mut().put(thread_rx);
+
+                // store crdt state
+                state.borrow_mut().put(TypeMap::default());
+
+                // store kill handle
+                state
+                    .borrow_mut()
+                    .put(runtime.v8_isolate().thread_safe_handle());
+
+                // load module
+                let script = runtime.execute_script("<loader>", "require (\"index.js\")");
+
+                let script = match script {
+                    Err(e) => {
+                        error!("script load error: {}", e);
+                        return;
+                    }
+                    Ok(script) => script,
+                };
+
+                // run startup function
+                let result = run_script(
+                    &mut runtime,
+                    &script,
+                    "onStart",
+                    EngineResponseList::default(),
+                    |_| Vec::new(),
+                );
+
+                if let Err(e) = result {
+                    // ignore failure to send failure
+                    let _ = state
+                        .borrow_mut()
+                        .take::<SyncSender<SceneResponse>>()
+                        .send(SceneResponse::Error(format!("{e:?}")));
+                    return;
+                }
+
+                let start_time = std::time::SystemTime::now();
+                let mut elapsed = Duration::default();
+                loop {
+                    let dt = std::time::SystemTime::now()
+                        .duration_since(start_time)
+                        .unwrap_or(elapsed)
+                        - elapsed;
+                    elapsed += dt;
+
+                    // run the onUpdate function
+                    let result = run_script(
+                        &mut runtime,
+                        &script,
+                        "onUpdate",
+                        EngineResponseList::default(),
+                        |scope| vec![v8::Number::new(scope, dt.as_secs_f64()).into()],
+                    );
+
+                    if state.borrow().try_borrow::<ShuttingDown>().is_some() {
+                        return;
+                    }
+
+                    if let Err(e) = result {
+                        let _ = state
+                            .borrow_mut()
+                            .take::<SyncSender<SceneResponse>>()
+                            .send(SceneResponse::Error(format!("{e:?}")));
+                        return;
+                    }
+                }
+            })
+            .unwrap();
+        *counter += 1;
+
+        match handle_rx.recv_timeout(Duration::from_secs(1)) {
+            Ok(kill_switch) => {
+                // store entity map on the root entity
+                commands.entity(root).insert((
+                    renderer_context,
+                    SceneThreadHandle {
+                        kill_switch,
+                        sender: main_sx,
+                    },
+                ));
+                scene_updates.jobs_in_flight += 1;
             }
-            Ok(script) => script,
-        };
-
-        // run startup function
-        run_script(
-            &mut runtime,
-            &script,
-            "onStart",
-            EngineResponseList::default(),
-            |_| Vec::new(),
-        )
-        .unwrap();
-
-        // process any engine commands
-        let mut state_mut = state.borrow_mut();
-        let mut root_commands = commands.entity(root);
-        for crdt_interface in crdt_component_interfaces.0.values() {
-            crdt_interface.claim_crdt(&mut state_mut, &mut root_commands);
+            Err(e) => {
+                error!("failed to spawn scene thread: {e:?}");
+            }
         }
-
-        // retrieve the entity_map
-        let context = state_mut.take::<SceneContext>();
-
-        // store entity map on the root entity
-        commands.entity(root).insert(context);
-
-        // insert runtime into the bevy app
-        runtime_res.0.insert(root, (runtime, script));
     }
 }
 
 #[derive(Default)]
 struct EngineResponseList(Vec<EngineResponse>);
 
-// system to run the current active script
-fn run_scene(
-    mut commands: Commands,
-    mut scenes: Query<(Entity, &mut SceneContext)>,
-    mut runtime_res: NonSendMut<JsRuntimeResource>,
-    mut engine_responses: EventReader<EngineResponse>,
+const MAX_CONCURRENT_SCENES: usize = 16;
+
+fn send_scene_updates(
+    mut scenes: Query<(Entity, &mut RendererSceneContext, &SceneThreadHandle)>,
+    mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
-    crdt_interfaces: Res<CrdtComponentInterfaces>,
 ) {
-    for (root, mut context_mut) in scenes.iter_mut() {
-        if let Some((runtime, script)) = runtime_res.0.get_mut(&root) {
-            let response_list = engine_responses.iter().cloned().collect();
+    updates.eligible_jobs = 0;
 
-            let context = std::mem::take(context_mut.as_mut());
-
-            let op_state = runtime.op_state();
-            op_state.borrow_mut().put(context);
-
-            // run the onUpdate function
-            run_script(
-                runtime,
-                script,
-                "onUpdate",
-                EngineResponseList(response_list),
-                |scope| vec![v8::Number::new(scope, time.delta_seconds_f64()).into()],
-            )
-            .unwrap();
-
-            // process any engine commands
-            let state = runtime.op_state();
-            let mut state_mut = state.borrow_mut();
-            let mut root_commands = commands.entity(root);
-            for crdt_interface in crdt_interfaces.0.values() {
-                crdt_interface.claim_crdt(&mut state_mut, &mut root_commands);
+    // sort eligible scenes
+    let mut sorted_scenes: Vec<_> = scenes
+        .iter()
+        .filter(|(_, context, _)| !context.in_flight)
+        .filter_map(|(ent, context, _)| {
+            let not_yet_run = context.last_sent < time.elapsed_seconds();
+            if not_yet_run {
+                updates.eligible_jobs += 1;
             }
 
-            // retrieve the entity map
-            *context_mut = state_mut.take::<SceneContext>();
+            (!context.in_flight && not_yet_run).then(|| {
+                let priority =
+                    FloatOrd(context.priority / (time.elapsed_seconds() - context.last_sent));
+                (ent, priority)
+            })
+        })
+        .collect();
+    sorted_scenes.sort_by_key(|(_, priority)| *priority);
+
+    for (ent, _) in sorted_scenes
+        .into_iter()
+        .take(MAX_CONCURRENT_SCENES.saturating_sub(updates.jobs_in_flight))
+    {
+        let (_, mut context, handle) = scenes.get_mut(ent).unwrap();
+        if let Err(e) = handle
+            .sender
+            .blocking_send(RendererResponse::Ok(Vec::default()))
+        {
+            error!("failed to send updates to scene: {e:?}");
+            // TODO: clean up
         } else {
-            // discard events with no scene to receive them
-            engine_responses.clear();
+            context.last_sent = time.elapsed_seconds();
+            context.in_flight = true;
+            updates.jobs_in_flight += 1;
+        }
+    }
+}
+
+// system to run the current active script
+fn receive_scene_updates(
+    mut commands: Commands,
+    mut updates: ResMut<SceneUpdates>,
+    mut scenes: Query<&mut RendererSceneContext>,
+    crdt_interfaces: Res<CrdtComponentInterfaces>,
+) {
+    loop {
+        match updates.receiver().try_recv() {
+            Ok(response) => {
+                match response {
+                    SceneResponse::Error(msg) => {
+                        error!("scene error: {msg}");
+                        // *context_mut = context;
+                    }
+                    SceneResponse::Ok(census, mut crdt) => {
+                        debug!(
+                            "scene {:?} received updates! [+{}, -{}]",
+                            census.root,
+                            census.born.len(),
+                            census.died.len()
+                        );
+                        if let Ok(mut context) = scenes.get_mut(census.root) {
+                            context.in_flight = false;
+                            context.nascent = census.born;
+                            context.death_row = census.died;
+                            let mut commands = commands.entity(census.root);
+                            for interface in crdt_interfaces.0.values() {
+                                interface.updates_to_entity(&mut crdt, &mut commands);
+                            }
+                        } else {
+                            debug!("no scene entity, probably got dropped before we processed the result");
+                        }
+                    }
+                }
+                updates.jobs_in_flight -= 1;
+            }
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => {
+                panic!("render thread receiver exploded");
+            }
         }
     }
 }
@@ -421,7 +729,9 @@ fn run_script(
     fn_name: &str,
     messages_in: EngineResponseList,
     arg_fn: impl for<'a> Fn(&mut v8::HandleScope<'a>) -> Vec<v8::Local<'a, v8::Value>>,
-) -> Result<(), ()> {
+) -> Result<(), AnyError> {
+    let script_span = info_span!("js_run_script");
+    let _guard = script_span.enter();
     // set up scene i/o
     let op_state = runtime.op_state();
     op_state.borrow_mut().put(messages_in);
@@ -438,12 +748,12 @@ fn run_script(
                 .unwrap();
         let Some(target_function) = script.get(scope, target_function.into()) else {
             // function not define, is that an error ?
-            debug!("{fn_name} is not defined");
-            return Err(());
+            // debug!("{fn_name} is not defined");
+            return Err(AnyError::msg(format!("{fn_name} is not defined")));
         };
         let Ok(target_function) = v8::Local::<v8::Function>::try_from(target_function) else {
-            error!("{fn_name} is not a function");
-            return Err(());
+            // error!("{fn_name} is not a function");
+            return Err(AnyError::msg(format!("{fn_name} is not a function")));
         };
 
         // get args
@@ -451,44 +761,56 @@ fn run_script(
 
         // call
         let res = target_function.call(scope, script_this, &args);
-
-        let res = res.unwrap();
+        let Some(res) = res else {
+            // error!("{fn_name} did not return a promise");
+            return Err(AnyError::msg(format!("{fn_name} did not return a promise")));
+        };
 
         drop(args);
         v8::Global::new(scope, res)
     };
 
     let f = runtime.resolve_value(promise);
-    // TODO - all the multithreading ...
-    futures_lite::future::block_on(f).unwrap();
-
-    Ok(())
+    futures_lite::future::block_on(f).map(|_| ())
 }
 
 #[derive(Component, Default)]
-pub struct DeletedSceneEntities(pub Vec<SceneEntityId>);
+pub struct DeletedSceneEntities(pub HashSet<SceneEntityId>);
 
 #[derive(Component)]
 pub struct TargetParent(pub Entity);
 
 fn process_lifecycle(
     mut commands: Commands,
-    mut scenes: Query<(Entity, &mut SceneContext, &mut DeletedSceneEntities)>,
+    mut scenes: Query<(Entity, &mut RendererSceneContext, &mut DeletedSceneEntities)>,
     children: Query<&Children>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut handles: Local<Option<(Handle<Mesh>, Handle<StandardMaterial>)>>,
 ) {
+    let (mesh, material) = handles.get_or_insert_with(|| {
+        (
+            meshes.add(shape::Cube::new(1.0).into()),
+            materials.add(Color::WHITE.into()),
+        )
+    });
+
     for (root_entity, mut context, mut deleted_entities) in scenes.iter_mut() {
-        debug!("{:?}: nascent: {:?}", root_entity, context.nascent);
+        if !context.nascent.is_empty() {
+            debug!("{:?}: nascent: {:?}", root_entity, context.nascent);
+        }
         commands.entity(root_entity).with_children(|root| {
             for create in std::mem::take(&mut context.nascent) {
+                if context.bevy_entity(create).is_some() {
+                    continue;
+                }
                 context.associate_bevy_entity(
                     create,
                     root.spawn((
                         PbrBundle {
                             // TODO remove these and replace with spatial bundle when mesh and material components are supported
-                            mesh: meshes.add(shape::Cube::new(1.0).into()),
-                            material: materials.add(Color::WHITE.into()),
+                            mesh: mesh.clone(),
+                            material: material.clone(),
                             ..Default::default()
                         },
                         SceneEntity {
@@ -509,9 +831,10 @@ fn process_lifecycle(
         });
 
         // update deleted entities list, used by crdt processors to filter results
-        deleted_entities.0 = std::mem::take(&mut context.death_row)
-            .into_iter()
-            .map(|(deleted_scene_entity, deleted_bevy_entity)| {
+        deleted_entities.0 = std::mem::take(&mut context.death_row);
+
+        for deleted_scene_entity in &deleted_entities.0 {
+            if let Some(deleted_bevy_entity) = context.bevy_entity(*deleted_scene_entity) {
                 // reparent children to the root entity
                 if let Ok(children) = children.get(deleted_bevy_entity) {
                     commands.entity(root_entity).push_children(children);
@@ -522,8 +845,7 @@ fn process_lifecycle(
                     deleted_scene_entity, deleted_bevy_entity
                 );
                 commands.entity(deleted_bevy_entity).despawn();
-                deleted_scene_entity
-            })
-            .collect();
+            }
+        }
     }
 }

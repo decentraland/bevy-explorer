@@ -1,22 +1,20 @@
 // Engine module
 
-use bevy::prelude::{debug, error};
+use bevy::prelude::{debug, error, info};
 use deno_core::{op, OpDecl, OpState};
 use num::FromPrimitive;
 use num_derive::{FromPrimitive, ToPrimitive};
-use std::{
-    cell::{RefCell, RefMut},
-    rc::Rc,
-};
+use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
+use tokio::sync::mpsc::Receiver;
 
 use crate::{
-    crdt::{CrdtComponentInterfaces, CrdtInterfacesMap},
+    crdt::{CrdtComponentInterfaces, CrdtInterfacesMap, TypeMap},
     dcl_assert,
     dcl_component::{DclReader, DclReaderError},
-    scene_runner::EngineResponseList,
+    // scene_runner::EngineResponseList,
 };
 
-use super::SceneContext;
+use super::{RendererResponse, SceneResponse, SceneSceneContext};
 
 const CRDT_HEADER_SIZE: usize = 8;
 
@@ -31,14 +29,17 @@ pub enum CrdtMessageType {
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![op_crdt_send_to_renderer::decl()]
+    vec![
+        op_crdt_send_to_renderer::decl(),
+        op_crdt_recv_from_renderer::decl(),
+    ]
 }
 
 // handles a single message from the buffer
 fn process_message(
-    op_state: &mut RefMut<OpState>,
     writers: &CrdtInterfacesMap,
-    entity_map: &mut SceneContext,
+    typemap: &mut TypeMap,
+    entity_map: &mut SceneSceneContext,
     crdt_type: CrdtMessageType,
     stream: &mut DclReader,
 ) -> Result<(), DclReaderError> {
@@ -63,7 +64,7 @@ fn process_message(
             }
 
             // attempt to write (may fail due to a later write)
-            if !writer.update_crdt(op_state, entity, timestamp, Some(stream))? {
+            if !writer.update_crdt(typemap, entity, timestamp, Some(stream))? {
                 return Ok(());
             }
         }
@@ -83,7 +84,7 @@ fn process_message(
             }
 
             // attempt to write (may fail due to a later write)
-            if !writer.update_crdt(op_state, entity, timestamp, None)? {
+            if !writer.update_crdt(typemap, entity, timestamp, None)? {
                 return Ok(());
             }
         }
@@ -99,11 +100,11 @@ fn process_message(
 
 // receive and process a buffer of crdt messages
 #[op(v8)]
-fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) -> Vec<String> {
+fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
     let mut op_state = op_state.borrow_mut();
-    let mut entity_map = op_state.take::<SceneContext>();
-    let writers = op_state.borrow::<CrdtComponentInterfaces>().clone();
-    let writers = writers.0.as_ref();
+    let mut entity_map = op_state.take::<SceneSceneContext>();
+    let mut typemap = op_state.take::<TypeMap>();
+    let writers = op_state.take::<CrdtComponentInterfaces>();
     let mut stream = DclReader::new(messages);
     debug!("BATCH len: {}", stream.len());
 
@@ -119,8 +120,8 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) -> 
         match FromPrimitive::from_u32(crdt_type) {
             Some(crdt_type) => {
                 if let Err(e) = process_message(
-                    &mut op_state,
-                    writers,
+                    &writers.0,
+                    &mut typemap,
                     &mut entity_map,
                     crdt_type,
                     &mut message_stream,
@@ -132,13 +133,37 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) -> 
         }
     }
 
-    op_state.put(entity_map);
+    let mut updates = TypeMap::default();
+    for writer in writers.0.values() {
+        writer.take_updates(&mut typemap, &mut updates);
+    }
+    let census = entity_map.take_census();
 
-    // return responses
-    let responses = op_state.borrow::<EngineResponseList>();
-    responses
-        .0
-        .iter()
-        .map(|response| serde_json::to_string(response).unwrap())
-        .collect()
+    let sender = op_state.borrow_mut::<SyncSender<SceneResponse>>();
+    sender
+        .send(SceneResponse::Ok(census, updates))
+        .expect("failed to send to renderer");
+
+    op_state.put(writers);
+    op_state.put(entity_map);
+    op_state.put(typemap);
+}
+
+pub struct ShuttingDown;
+
+#[op(v8)]
+async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<OpState>>) -> Vec<()> {
+    let mut receiver = op_state.borrow_mut().take::<Receiver<RendererResponse>>();
+    let response = receiver.recv().await;
+    op_state.borrow_mut().put(receiver);
+
+    match response {
+        Some(_) => Default::default(),
+        None => {
+            // channel has been closed, shutdown gracefully
+            info!("{}: shutting down", std::thread::current().name().unwrap());
+            op_state.borrow_mut().put(ShuttingDown);
+            Default::default()
+        }
+    }
 }
