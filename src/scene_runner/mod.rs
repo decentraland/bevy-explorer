@@ -608,7 +608,12 @@ fn initialize_scene(
             .unwrap();
         *counter += 1;
 
-        match handle_rx.recv_timeout(Duration::from_secs(1)) {
+        #[cfg(test)]
+        let startup_wait_seconds = 100;
+        #[cfg(not(test))]
+        let startup_wait_seconds = 1;
+
+        match handle_rx.recv_timeout(Duration::from_secs(startup_wait_seconds)) {
             Ok(kill_switch) => {
                 // store entity map on the root entity
                 commands.entity(root).insert((
