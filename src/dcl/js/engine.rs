@@ -9,7 +9,7 @@ use tokio::sync::mpsc::Receiver;
 
 use crate::{
     dcl::{
-        interface::{CrdtComponentInterfaces, CrdtInterfacesMap, CrdtStore},
+        interface::{lww_interface, CrdtComponentInterfaces, CrdtStore, CrdtType},
         RendererResponse, SceneResponse,
     },
     dcl_assert,
@@ -41,7 +41,7 @@ pub fn ops() -> Vec<OpDecl> {
 
 // handles a single message from the buffer
 fn process_message(
-    writers: &CrdtInterfacesMap,
+    writers: &CrdtComponentInterfaces,
     typemap: &mut CrdtStore,
     entity_map: &mut SceneSceneContext,
     crdt_type: CrdtMessageType,
@@ -58,7 +58,7 @@ fn process_message(
             dcl_assert!(content_len == stream.len());
 
             // check for a writer
-            let Some(writer) = writers.get(&component) else {
+            let Some(writer) = writers.0.get(&component) else {
                 return Ok(())
             };
 
@@ -68,9 +68,11 @@ fn process_message(
             }
 
             // attempt to write (may fail due to a later write)
-            if !writer.update_crdt(typemap, entity, timestamp, Some(stream))? {
-                return Ok(());
-            }
+            match writer {
+                CrdtType::LWW => {
+                    lww_interface::update_crdt(typemap, component, entity, timestamp, Some(stream))?
+                }
+            };
         }
         CrdtMessageType::DeleteComponent => {
             let entity = stream.read()?;
@@ -78,7 +80,7 @@ fn process_message(
             let timestamp = stream.read()?;
 
             // check for a writer
-            let Some(writer) = writers.get(&component) else {
+            let Some(writer) = writers.0.get(&component) else {
                 return Ok(())
             };
 
@@ -88,9 +90,11 @@ fn process_message(
             }
 
             // attempt to write (may fail due to a later write)
-            if !writer.update_crdt(typemap, entity, timestamp, None)? {
-                return Ok(());
-            }
+            match writer {
+                CrdtType::LWW => {
+                    lww_interface::update_crdt(typemap, component, entity, timestamp, None)?
+                }
+            };
         }
         CrdtMessageType::DeleteEntity => {
             let entity = stream.read()?;
@@ -124,7 +128,7 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
         match FromPrimitive::from_u32(crdt_type) {
             Some(crdt_type) => {
                 if let Err(e) = process_message(
-                    &writers.0,
+                    &writers,
                     &mut typemap,
                     &mut entity_map,
                     crdt_type,
@@ -138,8 +142,10 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
     }
 
     let mut updates = CrdtStore::default();
-    for writer in writers.0.values() {
-        writer.take_updates(&mut typemap, &mut updates);
+    for (component_id, writer) in writers.0.iter() {
+        match writer {
+            CrdtType::LWW => lww_interface::take_updates(*component_id, &mut typemap, &mut updates),
+        };
     }
     let census = entity_map.take_census();
 

@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, marker::PhantomData};
+use std::cmp::Ordering;
 
 use bevy::utils::{Entry, HashMap, HashSet};
 
@@ -11,14 +11,13 @@ pub struct LWWEntry {
     pub data: Vec<u8>,
 }
 
-#[derive(Clone)]
-pub struct CrdtLWWState<T> {
+#[derive(Clone, Default)]
+pub struct CrdtLWWState {
     pub last_write: HashMap<SceneEntityId, LWWEntry>,
     pub updates: HashSet<SceneEntityId>,
-    pub _marker: PhantomData<T>,
 }
 
-impl<T> CrdtLWWState<T> {
+impl CrdtLWWState {
     pub fn update(
         &mut self,
         entity: SceneEntityId,
@@ -96,16 +95,6 @@ impl<T> CrdtLWWState<T> {
     }
 }
 
-impl<T> Default for CrdtLWWState<T> {
-    fn default() -> Self {
-        Self {
-            last_write: Default::default(),
-            updates: Default::default(),
-            _marker: PhantomData,
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::dcl_component::FromDclReader;
@@ -127,7 +116,7 @@ mod test {
     }
 
     fn assert_entry_eq<T: FromDclReader + Eq + std::fmt::Debug>(
-        state: CrdtLWWState<T>,
+        state: CrdtLWWState,
         entity: SceneEntityId,
         timestamp: SceneCrdtTimestamp,
         data: Option<T>,

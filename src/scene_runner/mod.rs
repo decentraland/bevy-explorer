@@ -18,7 +18,7 @@ use crate::{
     dcl_component::SceneEntityId,
 };
 
-use self::update_world::SceneOutputPlugin;
+use self::update_world::{CrdtExtractors, SceneOutputPlugin};
 
 #[cfg(test)]
 pub mod test;
@@ -198,7 +198,7 @@ pub struct SceneLoopSchedule {
 
 impl Plugin for SceneRunnerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<CrdtComponentInterfaces>();
+        app.init_resource::<CrdtExtractors>();
 
         let (sender, receiver) = sync_channel(1000);
         app.insert_resource(SceneUpdates {
@@ -299,7 +299,7 @@ fn initialize_scene(
     mut load_scene_events: EventReader<LoadSceneEvent>,
     mut commands: Commands,
     mut scene_updates: ResMut<SceneUpdates>,
-    crdt_component_interfaces: Res<CrdtComponentInterfaces>,
+    crdt_component_interfaces: Res<CrdtExtractors>,
 ) {
     for new_scene in load_scene_events.iter() {
         // create the scene root entity
@@ -321,11 +321,16 @@ fn initialize_scene(
 
         let thread_sx = scene_updates.sender.clone();
 
-        let crdt_component_interfaces = crdt_component_interfaces.clone();
+        let crdt_component_interfaces = CrdtComponentInterfaces(HashMap::from_iter(
+            crdt_component_interfaces
+                .0
+                .iter()
+                .map(|(id, interface)| (*id, interface.crdt_type())),
+        ));
 
         let (scene_id, main_sx) = spawn_scene(
             new_scene.scene.clone(),
-            crdt_component_interfaces.clone(),
+            crdt_component_interfaces,
             thread_sx,
         );
         scene_updates.jobs_in_flight += 1;
@@ -413,7 +418,7 @@ fn receive_scene_updates(
     mut commands: Commands,
     mut updates: ResMut<SceneUpdates>,
     mut scenes: Query<&mut RendererSceneContext>,
-    crdt_interfaces: Res<CrdtComponentInterfaces>,
+    crdt_interfaces: Res<CrdtExtractors>,
 ) {
     loop {
         match updates.receiver().try_recv() {
@@ -436,8 +441,12 @@ fn receive_scene_updates(
                             context.nascent = census.born;
                             context.death_row = census.died;
                             let mut commands = commands.entity(*root);
-                            for interface in crdt_interfaces.0.values() {
-                                interface.updates_to_entity(&mut crdt, &mut commands);
+                            for (component_id, interface) in crdt_interfaces.0.iter() {
+                                interface.updates_to_entity(
+                                    *component_id,
+                                    &mut crdt,
+                                    &mut commands,
+                                );
                             }
                         } else {
                             debug!("no scene entity, probably got dropped before we processed the result");
