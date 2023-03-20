@@ -1,7 +1,10 @@
-mod crdt;
+// todo
+// - separate js crate
+// - budget -> deadline is just last end + frame time
+
+pub mod dcl;
 mod dcl_component;
 mod input_handler;
-mod output_handler;
 mod scene_runner;
 
 use bevy::{
@@ -10,9 +13,10 @@ use bevy::{
     prelude::*,
 };
 
-use input_handler::SceneInputPlugin;
-use output_handler::SceneOutputPlugin;
-use scene_runner::{LoadSceneEvent, RendererSceneContext, SceneDefinition, SceneRunnerPlugin};
+use dcl::SceneDefinition;
+use scene_runner::{LoadSceneEvent, RendererSceneContext, SceneRunnerPlugin};
+
+use crate::input_handler::SceneInputPlugin;
 
 #[derive(Resource)]
 struct UserScriptFolder(String);
@@ -47,8 +51,7 @@ fn main() {
         ..Default::default()
     }))
     .add_plugin(SceneRunnerPlugin) // script engine plugin
-    .add_plugin(SceneInputPlugin) // plugin for posting input events to the script
-    .add_plugin(SceneOutputPlugin) // plugin for processing some commands from the script
+    .add_plugin(SceneInputPlugin) // input handler
     .add_startup_system(setup)
     .insert_resource(AmbientLight {
         color: Color::WHITE,

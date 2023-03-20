@@ -9,21 +9,22 @@ use bevy::{
     prelude::*,
     render::mesh::MeshPlugin,
     time::TimePlugin,
-    utils::HashMap,
+    utils::{HashMap, Instant},
 };
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
 use crate::{
-    crdt::lww::CrdtLWWState,
     dcl_component::{
         transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneCrdtTimestamp,
         SceneEntityId,
     },
-    output_handler::{process_transform_and_parent_updates, SceneOutputPlugin},
     scene_runner::{
-        process_lifecycle, receive_scene_updates, LoadSceneEvent, RendererSceneContext,
-        SceneDefinition, SceneEntity, SceneRunnerPlugin,
+        process_lifecycle, receive_scene_updates,
+        update_world::{
+            transform_and_parent::process_transform_and_parent_updates, CrdtLWWStateComponent,
+        },
+        LoadSceneEvent, RendererSceneContext, SceneDefinition, SceneEntity, SceneRunnerPlugin,
     },
 };
 
@@ -67,7 +68,6 @@ fn init_test_app(script: &str) -> App {
     app.add_asset::<Shader>();
     app.add_plugin(MaterialPlugin::<StandardMaterial>::default());
     app.add_plugin(SceneRunnerPlugin);
-    app.add_plugin(SceneOutputPlugin);
 
     // copy path so we can pass it into the closure
     let path = script.to_owned();
@@ -85,8 +85,10 @@ fn init_test_app(script: &str) -> App {
 
     // replace the scene loop schedule with a dummy so we can better control it
     app.world.remove_resource::<SceneLoopSchedule>().unwrap();
-    app.world
-        .insert_resource(SceneLoopSchedule(Schedule::new()));
+    app.world.insert_resource(SceneLoopSchedule {
+        schedule: Schedule::new(),
+        end_time: Instant::now(),
+    });
 
     // run app once to get the scene initialized
     app.update();
@@ -145,14 +147,18 @@ fn make_graph(app: &mut App) -> String {
 
         let graph_node = *graph_nodes
             .entry(ent)
-            .or_insert_with(|| graph.add_node(scene_entity.scene_id.to_string()));
+            .or_insert_with(|| graph.add_node(scene_entity.scene_entity_id.to_string()));
 
         if let Some(children) = maybe_children {
             let sorted_children_with_scene_id: BTreeMap<_, _> = children
                 .iter()
                 .map(|c| {
                     (
-                        scene_entity_query.get(&app.world, *c).unwrap().0.scene_id,
+                        scene_entity_query
+                            .get(&app.world, *c)
+                            .unwrap()
+                            .0
+                            .scene_entity_id,
                         c,
                     )
                 })
@@ -162,7 +168,7 @@ fn make_graph(app: &mut App) -> String {
             for (child_id, child_ent) in sorted_children_with_scene_id.into_iter() {
                 debug!(
                     "child of {:?}/{} -> {:?}/{}",
-                    ent, scene_entity.scene_id, child_ent, child_id
+                    ent, scene_entity.scene_entity_id, child_ent, child_id
                 );
                 let child_graph_node = *graph_nodes
                     .entry(*child_ent)
@@ -304,7 +310,7 @@ fn cyclic_recovery() {
         let scene_entity = app.world.query::<Entity>().single(&mut app.world);
         app.world
             .entity_mut(scene_entity)
-            .insert(CrdtLWWState::<DclTransformAndParent>::default());
+            .insert(CrdtLWWStateComponent::<DclTransformAndParent>::default());
 
         for ix in 0..4 {
             let (dcl_entity, timestamp, data) = &messages[ix];
@@ -312,7 +318,7 @@ fn cyclic_recovery() {
                 .world
                 .query::<(
                     &mut RendererSceneContext,
-                    &mut CrdtLWWState<DclTransformAndParent>,
+                    &mut CrdtLWWStateComponent<DclTransformAndParent>,
                 )>()
                 .single_mut(&mut app.world);
 

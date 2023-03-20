@@ -1,3 +1,4 @@
+// structs representing dcl components and de/serialization
 use bevy::prelude::Vec3;
 
 mod reader;

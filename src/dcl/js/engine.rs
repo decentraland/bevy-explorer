@@ -8,13 +8,17 @@ use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
 use tokio::sync::mpsc::Receiver;
 
 use crate::{
-    crdt::{CrdtComponentInterfaces, CrdtInterfacesMap, TypeMap},
+    dcl::{
+        interface::{CrdtComponentInterfaces, CrdtInterfacesMap, CrdtStore},
+        RendererResponse, SceneResponse,
+    },
     dcl_assert,
     dcl_component::{DclReader, DclReaderError},
-    // scene_runner::EngineResponseList,
 };
 
-use super::{RendererResponse, SceneResponse, SceneSceneContext};
+use super::ShuttingDown;
+
+use super::context::SceneSceneContext;
 
 const CRDT_HEADER_SIZE: usize = 8;
 
@@ -38,7 +42,7 @@ pub fn ops() -> Vec<OpDecl> {
 // handles a single message from the buffer
 fn process_message(
     writers: &CrdtInterfacesMap,
-    typemap: &mut TypeMap,
+    typemap: &mut CrdtStore,
     entity_map: &mut SceneSceneContext,
     crdt_type: CrdtMessageType,
     stream: &mut DclReader,
@@ -103,7 +107,7 @@ fn process_message(
 fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
     let mut op_state = op_state.borrow_mut();
     let mut entity_map = op_state.take::<SceneSceneContext>();
-    let mut typemap = op_state.take::<TypeMap>();
+    let mut typemap = op_state.take::<CrdtStore>();
     let writers = op_state.take::<CrdtComponentInterfaces>();
     let mut stream = DclReader::new(messages);
     debug!("BATCH len: {}", stream.len());
@@ -133,7 +137,7 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
         }
     }
 
-    let mut updates = TypeMap::default();
+    let mut updates = CrdtStore::default();
     for writer in writers.0.values() {
         writer.take_updates(&mut typemap, &mut updates);
     }
@@ -141,15 +145,13 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
 
     let sender = op_state.borrow_mut::<SyncSender<SceneResponse>>();
     sender
-        .send(SceneResponse::Ok(census, updates))
+        .send(SceneResponse::Ok(entity_map.scene_id, census, updates))
         .expect("failed to send to renderer");
 
     op_state.put(writers);
     op_state.put(entity_map);
     op_state.put(typemap);
 }
-
-pub struct ShuttingDown;
 
 #[op(v8)]
 async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<OpState>>) -> Vec<()> {

@@ -4,35 +4,18 @@ use bevy::{
 };
 
 use crate::{
-    crdt::{lww::CrdtLWWState, AddCrdtInterfaceExt},
-    dcl_component::{
-        transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
-    },
-    scene_runner::{
-        DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneLoopSets,
-        TargetParent,
-    },
+    dcl_component::{transform_and_parent::DclTransformAndParent, DclReader, FromDclReader},
+    scene_runner::{DeletedSceneEntities, RendererSceneContext, SceneEntity, TargetParent},
 };
 
-// plugin to manage some commands from the scene script
-pub struct SceneOutputPlugin;
-
-impl Plugin for SceneOutputPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_crdt_lww_interface::<DclTransformAndParent>(SceneComponentId(1));
-        app.world
-            .resource_mut::<SceneLoopSchedule>()
-            .0
-            .add_system(process_transform_and_parent_updates.in_set(SceneLoopSets::UpdateWorld));
-    }
-}
+use super::CrdtLWWStateComponent;
 
 pub(crate) fn process_transform_and_parent_updates(
     mut commands: Commands,
     mut scenes: Query<(
         Entity,
         &mut RendererSceneContext,
-        &mut CrdtLWWState<DclTransformAndParent>,
+        &mut CrdtLWWStateComponent<DclTransformAndParent>,
         &DeletedSceneEntities,
     )>,
     mut entities: Query<(&mut Transform, &mut TargetParent), With<SceneEntity>>,
@@ -68,12 +51,15 @@ pub(crate) fn process_transform_and_parent_updates(
                                 } else {
                                     // we are parented to something that doesn't yet exist, create it here
                                     // TODO abstract out the new entity code (duplicated from process_lifecycle)
+                                    // TODO alternatively make new target an option and leave this unparented,
+                                    // then try to look up the entity in the tree walk
                                     let new_entity = commands
                                         .spawn((
                                             SpatialBundle::default(),
                                             SceneEntity {
+                                                scene_id: scene_context.scene_id,
                                                 root,
-                                                scene_id: dcl_tp.parent(),
+                                                scene_entity_id: dcl_tp.parent(),
                                             },
                                             TargetParent(root),
                                         ))

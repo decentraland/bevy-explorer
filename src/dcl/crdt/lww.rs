@@ -1,17 +1,8 @@
 use std::{cmp::Ordering, marker::PhantomData};
 
-use bevy::{
-    ecs::system::EntityCommands,
-    prelude::*,
-    utils::{Entry, HashMap, HashSet},
-};
+use bevy::utils::{Entry, HashMap, HashSet};
 
-use crate::{
-    dcl_component::{DclReader, DclReaderError, FromDclReader, SceneCrdtTimestamp, SceneEntityId},
-    scene_runner::{DeletedSceneEntities, RendererSceneContext},
-};
-
-use super::{CrdtInterface, TypeMap};
+use crate::dcl_component::{DclReader, DclReaderError, SceneCrdtTimestamp, SceneEntityId};
 
 #[derive(Debug, Clone)]
 pub struct LWWEntry {
@@ -20,11 +11,11 @@ pub struct LWWEntry {
     pub data: Vec<u8>,
 }
 
-#[derive(Component, Clone)]
+#[derive(Clone)]
 pub struct CrdtLWWState<T> {
     pub last_write: HashMap<SceneEntityId, LWWEntry>,
     pub updates: HashSet<SceneEntityId>,
-    _marker: PhantomData<T>,
+    pub _marker: PhantomData<T>,
 }
 
 impl<T> CrdtLWWState<T> {
@@ -105,7 +96,7 @@ impl<T> CrdtLWWState<T> {
     }
 }
 
-impl<T: FromDclReader> Default for CrdtLWWState<T> {
+impl<T> Default for CrdtLWWState<T> {
     fn default() -> Self {
         Self {
             last_write: Default::default(),
@@ -115,110 +106,10 @@ impl<T: FromDclReader> Default for CrdtLWWState<T> {
     }
 }
 
-pub struct CrdtLWWInterface<T: FromDclReader> {
-    _marker: PhantomData<T>,
-}
-
-impl<T: FromDclReader> Default for CrdtLWWInterface<T> {
-    fn default() -> Self {
-        Self {
-            _marker: Default::default(),
-        }
-    }
-}
-
-impl<T: FromDclReader> CrdtInterface for CrdtLWWInterface<T> {
-    fn update_crdt(
-        &self,
-        target: &mut TypeMap,
-        entity: SceneEntityId,
-        new_timestamp: SceneCrdtTimestamp,
-        maybe_new_data: Option<&mut DclReader>,
-    ) -> Result<bool, DclReaderError> {
-        // create state if required
-        let state = match target.borrow_mut::<CrdtLWWState<T>>() {
-            Some(state) => state,
-            None => {
-                target.insert(CrdtLWWState::<T>::default());
-                target.borrow_mut().unwrap()
-            }
-        };
-
-        state.update(entity, new_timestamp, maybe_new_data)
-    }
-
-    fn take_updates(&self, source: &mut TypeMap, target: &mut TypeMap) {
-        if let Some(state) = source.borrow_mut::<CrdtLWWState<T>>() {
-            let udpated_state = CrdtLWWState::<T> {
-                last_write: HashMap::from_iter(
-                    state
-                        .updates
-                        .iter()
-                        .map(|update| (*update, state.last_write.get(update).unwrap().clone())),
-                ),
-                updates: std::mem::take(&mut state.updates),
-                _marker: PhantomData,
-            };
-            target.insert(udpated_state);
-        }
-    }
-
-    fn updates_to_entity(&self, type_map: &mut TypeMap, commands: &mut EntityCommands) {
-        type_map
-            .take::<CrdtLWWState<T>>()
-            .map(|state| commands.insert(state));
-    }
-}
-
-// a default system for processing LWW comonent updates
-pub(crate) fn process_crdt_lww_updates<T: FromDclReader + Component + std::fmt::Debug>(
-    mut commands: Commands,
-    mut scenes: Query<(
-        Entity,
-        &RendererSceneContext,
-        &mut CrdtLWWState<T>,
-        &DeletedSceneEntities,
-    )>,
-) {
-    for (_root, scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
-        // remove crdt state for dead entities
-        for deleted in &deleted_entities.0 {
-            updates.last_write.remove(deleted);
-        }
-
-        for (scene_entity, entry) in updates.last_write.iter_mut() {
-            let Some(entity) = scene_context.bevy_entity(*scene_entity) else {
-                info!("skipping {} update for missing entity {:?}", std::any::type_name::<T>(), scene_entity);
-                continue;
-            };
-            if entry.is_some {
-                match T::from_reader(&mut DclReader::new(&entry.data)) {
-                    Ok(t) => {
-                        debug!(
-                            "[{:?}] {} -> {:?}",
-                            scene_entity,
-                            std::any::type_name::<T>(),
-                            t
-                        );
-                        commands.entity(entity).insert(t);
-                    }
-                    Err(e) => {
-                        warn!(
-                            "failed to deserialize {} from buffer: {:?}",
-                            std::any::type_name::<T>(),
-                            e
-                        );
-                    }
-                };
-            } else {
-                commands.entity(entity).remove::<T>();
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
+    use crate::dcl_component::FromDclReader;
+
     use super::*;
 
     impl FromDclReader for u32 {
