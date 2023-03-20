@@ -4,29 +4,18 @@ use bevy::{
 };
 
 use crate::{
-    crdt::{lww::CrdtLWWState, AddCrdtInterfaceExt},
-    dcl_component::{
-        transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
-    },
-    scene_runner::{DeletedSceneEntities, SceneContext, SceneEntity, SceneSets, TargetParent},
+    dcl_component::{transform_and_parent::DclTransformAndParent, DclReader, FromDclReader},
+    scene_runner::{DeletedSceneEntities, RendererSceneContext, SceneEntity, TargetParent},
 };
 
-// plugin to manage some commands from the scene script
-pub struct SceneOutputPlugin;
+use super::CrdtLWWStateComponent;
 
-impl Plugin for SceneOutputPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_crdt_lww_interface::<DclTransformAndParent>(SceneComponentId(1));
-        app.add_system(process_transform_and_parent_updates.in_set(SceneSets::HandleOutput));
-    }
-}
-
-fn process_transform_and_parent_updates(
+pub(crate) fn process_transform_and_parent_updates(
     mut commands: Commands,
     mut scenes: Query<(
         Entity,
-        &mut SceneContext,
-        &mut CrdtLWWState<DclTransformAndParent>,
+        &mut RendererSceneContext,
+        &mut CrdtLWWStateComponent<DclTransformAndParent>,
         &DeletedSceneEntities,
     )>,
     mut entities: Query<(&mut Transform, &mut TargetParent), With<SceneEntity>>,
@@ -37,12 +26,7 @@ fn process_transform_and_parent_updates(
             updates.last_write.remove(deleted);
         }
 
-        for (scene_entity, entry) in updates
-            .last_write
-            .iter_mut()
-            // TODO maintain a separate list of updated entries to avoid iterating the full list
-            .filter(|(_, entry)| entry.updated)
-        {
+        for (scene_entity, entry) in updates.last_write.iter_mut() {
             let Some(entity) = scene_context.bevy_entity(*scene_entity) else {
                 info!("skipping {} update for missing entity {:?}", std::any::type_name::<DclTransformAndParent>(), scene_entity);
                 continue;
@@ -67,12 +51,15 @@ fn process_transform_and_parent_updates(
                                 } else {
                                     // we are parented to something that doesn't yet exist, create it here
                                     // TODO abstract out the new entity code (duplicated from process_lifecycle)
+                                    // TODO alternatively make new target an option and leave this unparented,
+                                    // then try to look up the entity in the tree walk
                                     let new_entity = commands
                                         .spawn((
                                             SpatialBundle::default(),
                                             SceneEntity {
+                                                scene_id: scene_context.scene_id,
                                                 root,
-                                                scene_id: dcl_tp.parent(),
+                                                scene_entity_id: dcl_tp.parent(),
                                             },
                                             TargetParent(root),
                                         ))
@@ -106,7 +93,7 @@ fn process_transform_and_parent_updates(
                 // update the target
                 target_parent.0 = new_target_parent;
                 // mark the entity as needing hierarchy check
-                scene_context.unparented_entities.push(entity);
+                scene_context.unparented_entities.insert(entity);
                 // mark the scene so hierarchy checking is performed
                 scene_context.hierarchy_changed = true;
             }

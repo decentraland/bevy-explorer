@@ -8,8 +8,8 @@ dcl-assert = []
 gen-tests = []
 
 [dependencies]
-bevy = { version = "0.10", features = ["serialize"] }
-# bevy = { version = "0.10", features = ["serialize", "trace_tracy"] }
+bevy = { version = "0.10" }
+# bevy = { version = "0.10", features = ["trace_tracy"] }
 deno_core = "0.170.*"
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
@@ -19,7 +19,9 @@ num-derive = "0.3"
 num = "0.4"
 futures-lite = "1.12.0"
 itertools = "0.10.5"
+tokio = { version = "1.26.0", features = ["sync"] }
+once_cell = "1.16.0"
 
 [dev-dependencies]
 petgraph = "0.6.3"
-once_cell = "1.16.0"
+
