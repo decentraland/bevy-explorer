@@ -8,8 +8,22 @@ use crate::dcl_component::SceneComponentId;
 use super::crdt::lww::CrdtLWWState;
 
 #[derive(PartialEq, Eq, Clone, Copy)]
+pub enum ComponentPosition {
+    RootOnly,
+    EntityOnly,
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum CrdtType {
-    LWW,
+    LWW(ComponentPosition),
+}
+
+impl CrdtType {
+    pub fn position(&self) -> ComponentPosition {
+        match self {
+            CrdtType::LWW(pos) => *pos,
+        }
+    }
 }
 
 pub struct CrdtComponentInterfaces(pub HashMap<SceneComponentId, CrdtType>);

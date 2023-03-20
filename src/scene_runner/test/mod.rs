@@ -20,15 +20,14 @@ use crate::{
         SceneEntityId,
     },
     scene_runner::{
-        process_lifecycle, receive_scene_updates,
+        process_lifecycle, receive_scene_updates, send_scene_updates,
         update_world::{
             transform_and_parent::process_transform_and_parent_updates, CrdtLWWStateComponent,
         },
-        LoadSceneEvent, RendererSceneContext, SceneDefinition, SceneEntity, SceneRunnerPlugin,
+        LoadSceneEvent, RendererSceneContext, SceneDefinition, SceneEntity, SceneLoopSchedule,
+        SceneRunnerPlugin, SceneUpdates,
     },
 };
-
-use super::{send_scene_updates, SceneLoopSchedule, SceneUpdates};
 
 pub struct TestPlugins;
 

@@ -1,6 +1,6 @@
 // Engine module
 
-use bevy::prelude::{debug, error, info};
+use bevy::prelude::{debug, error, info, warn};
 use deno_core::{op, OpDecl, OpState};
 use num::FromPrimitive;
 use num_derive::{FromPrimitive, ToPrimitive};
@@ -9,11 +9,13 @@ use tokio::sync::mpsc::Receiver;
 
 use crate::{
     dcl::{
-        interface::{lww_interface, CrdtComponentInterfaces, CrdtStore, CrdtType},
+        interface::{
+            lww_interface, ComponentPosition, CrdtComponentInterfaces, CrdtStore, CrdtType,
+        },
         RendererResponse, SceneResponse,
     },
     dcl_assert,
-    dcl_component::{DclReader, DclReaderError},
+    dcl_component::{DclReader, DclReaderError, SceneEntityId},
 };
 
 use super::ShuttingDown;
@@ -62,6 +64,14 @@ fn process_message(
                 return Ok(())
             };
 
+            match (writer.position(), entity == SceneEntityId::ROOT) {
+                (ComponentPosition::RootOnly, false) | (ComponentPosition::EntityOnly, true) => {
+                    warn!("invalid position for component {:?}", component);
+                    return Ok(());
+                }
+                _ => (),
+            }
+
             // create the entity (if not already dead)
             if !entity_map.init(entity) {
                 return Ok(());
@@ -69,7 +79,7 @@ fn process_message(
 
             // attempt to write (may fail due to a later write)
             match writer {
-                CrdtType::LWW => {
+                CrdtType::LWW(_) => {
                     lww_interface::update_crdt(typemap, component, entity, timestamp, Some(stream))?
                 }
             };
@@ -84,6 +94,14 @@ fn process_message(
                 return Ok(())
             };
 
+            match (writer.position(), entity == SceneEntityId::ROOT) {
+                (ComponentPosition::RootOnly, false) | (ComponentPosition::EntityOnly, true) => {
+                    warn!("invalid position for component {:?}", component);
+                    return Ok(());
+                }
+                _ => (),
+            }
+
             // check the entity still lives (don't create here, no need)
             if entity_map.is_dead(entity) {
                 return Ok(());
@@ -91,7 +109,7 @@ fn process_message(
 
             // attempt to write (may fail due to a later write)
             match writer {
-                CrdtType::LWW => {
+                CrdtType::LWW(_) => {
                     lww_interface::update_crdt(typemap, component, entity, timestamp, None)?
                 }
             };
@@ -144,7 +162,9 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
     let mut updates = CrdtStore::default();
     for (component_id, writer) in writers.0.iter() {
         match writer {
-            CrdtType::LWW => lww_interface::take_updates(*component_id, &mut typemap, &mut updates),
+            CrdtType::LWW(_) => {
+                lww_interface::take_updates(*component_id, &mut typemap, &mut updates)
+            }
         };
     }
     let census = entity_map.take_census();

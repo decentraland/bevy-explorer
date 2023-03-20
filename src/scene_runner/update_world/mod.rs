@@ -8,7 +8,7 @@ use bevy::{ecs::system::EntityCommands, prelude::*, utils::HashMap};
 use crate::{
     dcl::{
         crdt::lww::CrdtLWWState,
-        interface::{CrdtStore, CrdtType},
+        interface::{ComponentPosition, CrdtStore, CrdtType},
     },
     dcl_component::{
         transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
@@ -64,20 +64,13 @@ pub trait CrdtInterface {
 }
 
 pub struct CrdtLWWInterface<T: FromDclReader> {
+    position: ComponentPosition,
     _marker: PhantomData<T>,
-}
-
-impl<T: FromDclReader> Default for CrdtLWWInterface<T> {
-    fn default() -> Self {
-        Self {
-            _marker: Default::default(),
-        }
-    }
 }
 
 impl<T: FromDclReader> CrdtInterface for CrdtLWWInterface<T> {
     fn crdt_type(&self) -> CrdtType {
-        CrdtType::LWW
+        CrdtType::LWW(self.position)
     }
 
     fn updates_to_entity(
@@ -103,7 +96,10 @@ pub struct SceneOutputPlugin;
 
 impl Plugin for SceneOutputPlugin {
     fn build(&self, app: &mut App) {
-        app.add_crdt_lww_interface::<DclTransformAndParent>(SceneComponentId(1));
+        app.add_crdt_lww_interface::<DclTransformAndParent>(
+            SceneComponentId(1),
+            ComponentPosition::EntityOnly,
+        );
         app.world
             .resource_mut::<SceneLoopSchedule>()
             .schedule
@@ -113,28 +109,41 @@ impl Plugin for SceneOutputPlugin {
 
 // a helper to automatically apply engine component updates
 pub trait AddCrdtInterfaceExt {
-    fn add_crdt_lww_interface<T: FromDclReader>(&mut self, id: SceneComponentId);
+    fn add_crdt_lww_interface<T: FromDclReader>(
+        &mut self,
+        id: SceneComponentId,
+        position: ComponentPosition,
+    );
 
     fn add_crdt_lww_component<T: FromDclReader + Component + std::fmt::Debug>(
         &mut self,
         id: SceneComponentId,
+        position: ComponentPosition,
     );
 }
 
 impl AddCrdtInterfaceExt for App {
-    fn add_crdt_lww_interface<T: FromDclReader>(&mut self, id: SceneComponentId) {
+    fn add_crdt_lww_interface<T: FromDclReader>(
+        &mut self,
+        id: SceneComponentId,
+        position: ComponentPosition,
+    ) {
         // store a writer
-        self.world
-            .resource_mut::<CrdtExtractors>()
-            .0
-            .insert(id, Box::<CrdtLWWInterface<T>>::default());
+        self.world.resource_mut::<CrdtExtractors>().0.insert(
+            id,
+            Box::new(CrdtLWWInterface::<T> {
+                position,
+                _marker: PhantomData,
+            }),
+        );
     }
 
     fn add_crdt_lww_component<T: FromDclReader + Component + std::fmt::Debug>(
         &mut self,
         id: SceneComponentId,
+        position: ComponentPosition,
     ) {
-        self.add_crdt_lww_interface::<T>(id);
+        self.add_crdt_lww_interface::<T>(id, position);
         // add a system to process the update
         self.world
             .resource_mut::<SceneLoopSchedule>()
