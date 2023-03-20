@@ -20,12 +20,12 @@ use crate::{
         SceneEntityId,
     },
     scene_runner::{
-        process_lifecycle, receive_scene_updates, send_scene_updates,
+        process_lifecycle, receive_scene_updates, send_scene_updates, update_scene_priority,
         update_world::{
             transform_and_parent::process_transform_and_parent_updates, CrdtLWWStateComponent,
         },
         LoadSceneEvent, RendererSceneContext, SceneDefinition, SceneEntity, SceneLoopSchedule,
-        SceneRunnerPlugin, SceneUpdates, update_scene_priority,
+        SceneRunnerPlugin, SceneUpdates,
     },
 };
 

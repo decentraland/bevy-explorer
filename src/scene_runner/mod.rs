@@ -1,6 +1,7 @@
 use std::{
+    collections::VecDeque,
     sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError},
-    time::{Duration, SystemTime}, collections::VecDeque,
+    time::{Duration, SystemTime},
 };
 
 use bevy::{
@@ -272,7 +273,9 @@ fn run_scene_loop(world: &mut World) {
 
     // run until time elapsed or all scenes are updated
     while Instant::now() < end_time
-        && (!run_once || world.resource::<SceneUpdates>().eligible_jobs > 0 || world.resource::<SceneUpdates>().jobs_in_flight > 0)
+        && (!run_once
+            || world.resource::<SceneUpdates>().eligible_jobs > 0
+            || world.resource::<SceneUpdates>().jobs_in_flight > 0)
     {
         schedule.run(world);
         run_once = true;
@@ -316,7 +319,10 @@ fn update_scene_priority(
             })
         })
         .collect();
-    updates.scene_queue.make_contiguous().sort_by_key(|(_, priority)| *priority);
+    updates
+        .scene_queue
+        .make_contiguous()
+        .sort_by_key(|(_, priority)| *priority);
 }
 
 fn initialize_scene(
