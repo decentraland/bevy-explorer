@@ -25,7 +25,7 @@ use crate::{
             transform_and_parent::process_transform_and_parent_updates, CrdtLWWStateComponent,
         },
         LoadSceneEvent, RendererSceneContext, SceneDefinition, SceneEntity, SceneLoopSchedule,
-        SceneRunnerPlugin, SceneUpdates,
+        SceneRunnerPlugin, SceneUpdates, update_scene_priority,
     },
 };
 
@@ -203,7 +203,7 @@ fn run_single_update(app: &mut App) {
             .single_mut(&mut app.world)
             .last_sent = 0.0;
         Schedule::new()
-            .add_system(send_scene_updates)
+            .add_systems((update_scene_priority, send_scene_updates).chain())
             .run(&mut app.world);
     }
     assert_eq!(app.world.resource_mut::<SceneUpdates>().jobs_in_flight, 1);

@@ -16,7 +16,7 @@ use bevy::{
 use dcl::SceneDefinition;
 use scene_runner::{LoadSceneEvent, RendererSceneContext, SceneRunnerPlugin};
 
-use crate::input_handler::SceneInputPlugin;
+use crate::{input_handler::SceneInputPlugin, scene_runner::SceneSets};
 
 #[derive(Resource)]
 struct UserScriptFolder(String);
@@ -64,7 +64,7 @@ fn main() {
             .add_plugin(LogDiagnosticsPlugin::default());
     }
 
-    app.add_system(input);
+    app.add_system(input.after(SceneSets::RunLoop));
     println!("up: increase scene count, down: decrease scene count");
 
     app.run()

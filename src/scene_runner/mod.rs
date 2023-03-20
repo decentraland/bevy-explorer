@@ -1,6 +1,6 @@
 use std::{
     sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError},
-    time::{Duration, SystemTime},
+    time::{Duration, SystemTime}, collections::VecDeque,
 };
 
 use bevy::{
@@ -49,6 +49,7 @@ pub struct SceneUpdates {
     pub update_deadline: SystemTime,
     pub eligible_jobs: usize,
     pub loop_end_time: Instant,
+    pub scene_queue: VecDeque<(Entity, FloatOrd)>,
 }
 
 // safety: struct is sync except for the receiver.
@@ -208,6 +209,7 @@ impl Plugin for SceneRunnerPlugin {
             jobs_in_flight: 0,
             update_deadline: SystemTime::now(),
             eligible_jobs: 0,
+            scene_queue: Default::default(),
             loop_end_time: Instant::now(),
         });
 
@@ -264,11 +266,13 @@ fn run_scene_loop(world: &mut World) {
     let _start_time = Instant::now();
     let end_time = last_end_time + Duration::from_millis(6);
     world.resource_mut::<SceneUpdates>().loop_end_time = end_time;
+
+    // run at least once to collect updates even if no scenes are eligible
     let mut run_once = false;
 
     // run until time elapsed or all scenes are updated
     while Instant::now() < end_time
-        && (!run_once || world.resource::<SceneUpdates>().eligible_jobs > 0)
+        && (!run_once || world.resource::<SceneUpdates>().eligible_jobs > 0 || world.resource::<SceneUpdates>().jobs_in_flight > 0)
     {
         schedule.run(world);
         run_once = true;
@@ -289,10 +293,30 @@ fn run_scene_loop(world: &mut World) {
     loop_schedule.end_time = Instant::now();
 }
 
-fn update_scene_priority(mut q: Query<&mut RendererSceneContext>) {
-    for mut context in q.iter_mut() {
-        context.priority = context.definition.offset.length().powf(1.0);
-    }
+fn update_scene_priority(
+    mut scenes: Query<(Entity, &mut RendererSceneContext)>,
+    mut updates: ResMut<SceneUpdates>,
+    time: Res<Time>,
+) {
+    updates.eligible_jobs = 0;
+
+    // sort eligible scenes
+    updates.scene_queue = scenes
+        .iter_mut()
+        .filter(|(_, context)| !context.in_flight)
+        .filter_map(|(ent, mut context)| {
+            context.priority = context.definition.offset.length().powf(1.0);
+            let not_yet_run = context.last_sent < time.elapsed_seconds();
+
+            (!context.in_flight && not_yet_run).then(|| {
+                updates.eligible_jobs += 1;
+                let priority =
+                    FloatOrd(context.priority / (time.elapsed_seconds() - context.last_sent));
+                (ent, priority)
+            })
+        })
+        .collect();
+    updates.scene_queue.make_contiguous().sort_by_key(|(_, priority)| *priority);
 }
 
 fn initialize_scene(
@@ -369,48 +393,30 @@ fn send_scene_updates(
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
 ) {
-    updates.eligible_jobs = 0;
+    let updates = &mut *updates;
 
-    // sort eligible scenes
-    let mut sorted_scenes: Vec<_> = scenes
-        .iter()
-        .filter(|(_, context, _)| !context.in_flight)
-        .filter_map(|(ent, context, _)| {
-            let not_yet_run = context.last_sent < time.elapsed_seconds();
-            if not_yet_run {
-                updates.eligible_jobs += 1;
-            }
-
-            (!context.in_flight && not_yet_run).then(|| {
-                let priority =
-                    FloatOrd(context.priority / (time.elapsed_seconds() - context.last_sent));
-                (ent, priority)
-            })
-        })
-        .collect();
-    sorted_scenes.sort_by_key(|(_, priority)| *priority);
-
-    for (ent, _) in sorted_scenes
-        .into_iter()
-        .take(MAX_CONCURRENT_SCENES.saturating_sub(updates.jobs_in_flight))
-    {
-        let (_, mut context, handle) = scenes.get_mut(ent).unwrap();
-        if let Err(e) = handle
-            .sender
-            .blocking_send(RendererResponse::Ok(Vec::default()))
-        {
-            error!("failed to send updates to scene: {e:?}");
-            // TODO: clean up
-        } else {
-            context.last_sent = time.elapsed_seconds();
-            context.in_flight = true;
-            updates.jobs_in_flight += 1;
-        }
-
-        if Instant::now() > updates.loop_end_time {
-            return;
-        }
+    if updates.jobs_in_flight == MAX_CONCURRENT_SCENES {
+        return;
     }
+
+    let Some((ent, _)) = updates.scene_queue.pop_front() else {
+        return;
+    };
+
+    let (_, mut context, handle) = scenes.get_mut(ent).unwrap();
+    if let Err(e) = handle
+        .sender
+        .blocking_send(RendererResponse::Ok(Vec::default()))
+    {
+        error!("failed to send updates to scene: {e:?}");
+        // TODO: clean up
+    } else {
+        context.last_sent = time.elapsed_seconds();
+        context.in_flight = true;
+        updates.jobs_in_flight += 1;
+    }
+
+    updates.eligible_jobs -= 1;
 }
 
 // system to run the current active script
