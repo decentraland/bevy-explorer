@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 pub struct DclWriter {
     buffer: Vec<u8>,
 }
@@ -41,11 +43,23 @@ impl DclWriter {
     pub fn write<T: ToDclWriter>(&mut self, value: &T) {
         value.to_writer(self)
     }
+
+    pub fn clear(&mut self) {
+        self.buffer.clear();
+    }
 }
 
 impl From<DclWriter> for Vec<u8> {
     fn from(value: DclWriter) -> Self {
         value.buffer
+    }
+}
+
+impl Deref for DclWriter {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.buffer
     }
 }
 

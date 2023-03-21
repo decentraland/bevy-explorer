@@ -19,14 +19,21 @@ impl std::fmt::Display for SceneEntityId {
     }
 }
 impl SceneEntityId {
-    pub const ROOT: SceneEntityId = SceneEntityId {
-        id: 0,
-        generation: 0,
-    };
+    const fn reserved(id: u16) -> Self {
+        Self { id, generation: 0 }
+    }
+
+    pub const ROOT: SceneEntityId = Self::reserved(0);
+    pub const PLAYER: SceneEntityId = Self::reserved(1);
+    pub const CAMERA: SceneEntityId = Self::reserved(2);
 }
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy)]
 pub struct SceneComponentId(pub u32);
+
+impl SceneComponentId {
+    pub const TRANSFORM: SceneComponentId = SceneComponentId(1);
+}
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy)]
 pub struct SceneCrdtTimestamp(pub u32);

@@ -9,10 +9,8 @@ use tokio::sync::mpsc::Receiver;
 
 use crate::{
     dcl::{
-        interface::{
-            lww_interface, ComponentPosition, CrdtComponentInterfaces, CrdtStore, CrdtType,
-        },
-        RendererResponse, SceneResponse,
+        interface::ComponentPosition, CrdtComponentInterfaces, CrdtStore, RendererResponse,
+        SceneResponse,
     },
     dcl_assert,
     dcl_component::{DclReader, DclReaderError, SceneEntityId},
@@ -78,11 +76,7 @@ fn process_message(
             }
 
             // attempt to write (may fail due to a later write)
-            match writer {
-                CrdtType::LWW(_) => {
-                    lww_interface::update_crdt(typemap, component, entity, timestamp, Some(stream))?
-                }
-            };
+            typemap.try_update(component, *writer, entity, timestamp, Some(stream));
         }
         CrdtMessageType::DeleteComponent => {
             let entity = stream.read()?;
@@ -108,11 +102,7 @@ fn process_message(
             }
 
             // attempt to write (may fail due to a later write)
-            match writer {
-                CrdtType::LWW(_) => {
-                    lww_interface::update_crdt(typemap, component, entity, timestamp, None)?
-                }
-            };
+            typemap.try_update(component, *writer, entity, timestamp, None);
         }
         CrdtMessageType::DeleteEntity => {
             let entity = stream.read()?;
@@ -159,14 +149,7 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
         }
     }
 
-    let mut updates = CrdtStore::default();
-    for (component_id, writer) in writers.0.iter() {
-        match writer {
-            CrdtType::LWW(_) => {
-                lww_interface::take_updates(*component_id, &mut typemap, &mut updates)
-            }
-        };
-    }
+    let updates = typemap.take_updates();
     let census = entity_map.take_census();
 
     let sender = op_state.borrow_mut::<SyncSender<SceneResponse>>();

@@ -328,9 +328,7 @@ fn cyclic_recovery() {
 
             // add next message
             let reader = &mut DclReader::new(&data);
-            crdt_state
-                .update(*dcl_entity, *timestamp, Some(reader))
-                .unwrap();
+            crdt_state.try_update(*dcl_entity, *timestamp, Some(reader));
 
             // run systems
             Schedule::new()
