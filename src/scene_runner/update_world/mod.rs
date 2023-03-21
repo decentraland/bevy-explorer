@@ -11,7 +11,7 @@ use crate::{
         interface::{ComponentPosition, CrdtStore, CrdtType},
     },
     dcl_component::{
-        transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId, 
+        transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
     },
 };
 
@@ -106,7 +106,7 @@ impl Plugin for SceneOutputPlugin {
             .add_system(process_transform_and_parent_updates.in_set(SceneLoopSets::UpdateWorld));
 
         // app.add_crdt_lww_component::<DclBillboard>(
-        //     SceneComponentId::BILLBOARD, 
+        //     SceneComponentId::BILLBOARD,
         //     ComponentPosition::EntityOnly
         // );
     }
