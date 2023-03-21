@@ -8540,10 +8540,10 @@ function defineTransformComponent(engine) {
     return {
         ...transformDef,
         create(entity, val) {
-            return transformDef.create(entity, val);
+            return transformDef.create(entity, TransformSchema.extend(val));
         },
         createOrReplace(entity, val) {
-            return transformDef.createOrReplace(entity, val);
+            return transformDef.createOrReplace(entity, TransformSchema.extend(val));
         }
     };
 }
@@ -9447,6 +9447,8 @@ const defaultInitialCapacity = 10240;
  *
  * - Use read and write function to generate or consume data.
  * - Use set and get only if you are sure that you're doing.
+ *
+ * It always passes littleEndian param as true
  */
 class ReadWriteByteBuffer {
     /**
@@ -9484,41 +9486,41 @@ class ReadWriteByteBuffer {
         return this.woffset - this.roffset;
     }
     readFloat32() {
-        return this.view.getFloat32(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 4));
+        return this.view.getFloat32(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 4), true); // littleEndian = true
     }
     readFloat64() {
-        return this.view.getFloat64(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 8));
+        return this.view.getFloat64(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 8), true); // littleEndian = true
     }
     readInt8() {
         return this.view.getInt8(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 1));
     }
     readInt16() {
-        return this.view.getInt16(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 2));
+        return this.view.getInt16(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 2), true); // littleEndian = true
     }
     readInt32() {
-        return this.view.getInt32(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 4));
+        return this.view.getInt32(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 4), true); // littleEndian = true
     }
     readInt64() {
-        return this.view.getBigInt64(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 8));
+        return this.view.getBigInt64(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 8), true); // littleEndian = true
     }
     readUint8() {
         return this.view.getUint8(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 1));
     }
     readUint16() {
-        return this.view.getUint16(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 2));
+        return this.view.getUint16(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 2), true); // littleEndian = true
     }
     readUint32() {
-        return this.view.getUint32(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 4));
+        return this.view.getUint32(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 4), true); // littleEndian = true
     }
     readUint64() {
-        return this.view.getBigUint64(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 8));
+        return this.view.getBigUint64(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 8), true); // littleEndian = true
     }
     readBuffer() {
-        const length = this.view.getUint32(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 4));
+        const length = this.view.getUint32(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 4), true); // littleEndian = true
         return this._buffer.subarray(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, length), __classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 0));
     }
     readUtf8String() {
-        const length = this.view.getUint32(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 4));
+        const length = this.view.getUint32(__classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 4), true); // littleEndian = true
         return utf8Exports.read(this._buffer, __classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, length), __classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_roAdd).call(this, 0));
     }
     incrementWriteOffset(amount) {
@@ -9547,11 +9549,11 @@ class ReadWriteByteBuffer {
     }
     writeFloat32(value) {
         const o = __classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_woAdd).call(this, 4);
-        this.view.setFloat32(o, value);
+        this.view.setFloat32(o, value, true); // littleEndian = true
     }
     writeFloat64(value) {
         const o = __classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_woAdd).call(this, 8);
-        this.view.setFloat64(o, value);
+        this.view.setFloat64(o, value, true); // littleEndian = true
     }
     writeInt8(value) {
         const o = __classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_woAdd).call(this, 1);
@@ -9559,15 +9561,15 @@ class ReadWriteByteBuffer {
     }
     writeInt16(value) {
         const o = __classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_woAdd).call(this, 2);
-        this.view.setInt16(o, value);
+        this.view.setInt16(o, value, true); // littleEndian = true
     }
     writeInt32(value) {
         const o = __classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_woAdd).call(this, 4);
-        this.view.setInt32(o, value);
+        this.view.setInt32(o, value, true); // littleEndian = true
     }
     writeInt64(value) {
         const o = __classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_woAdd).call(this, 8);
-        this.view.setBigInt64(o, value);
+        this.view.setBigInt64(o, value, true); // littleEndian = true
     }
     writeUint8(value) {
         const o = __classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_woAdd).call(this, 1);
@@ -9575,76 +9577,76 @@ class ReadWriteByteBuffer {
     }
     writeUint16(value) {
         const o = __classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_woAdd).call(this, 2);
-        this.view.setUint16(o, value);
+        this.view.setUint16(o, value, true); // littleEndian = true
     }
     writeUint32(value) {
         const o = __classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_woAdd).call(this, 4);
-        this.view.setUint32(o, value);
+        this.view.setUint32(o, value, true); // littleEndian = true
     }
     writeUint64(value) {
         const o = __classPrivateFieldGet(this, _ReadWriteByteBuffer_instances, "m", _ReadWriteByteBuffer_woAdd).call(this, 8);
-        this.view.setBigUint64(o, value);
+        this.view.setBigUint64(o, value, true); // littleEndian = true
     }
     // DataView Proxy
     getFloat32(offset) {
-        return this.view.getFloat32(offset);
+        return this.view.getFloat32(offset, true); // littleEndian = true
     }
     getFloat64(offset) {
-        return this.view.getFloat64(offset);
+        return this.view.getFloat64(offset, true); // littleEndian = true
     }
     getInt8(offset) {
         return this.view.getInt8(offset);
     }
     getInt16(offset) {
-        return this.view.getInt16(offset);
+        return this.view.getInt16(offset, true); // littleEndian = true
     }
     getInt32(offset) {
-        return this.view.getInt32(offset);
+        return this.view.getInt32(offset, true); // littleEndian = true
     }
     getInt64(offset) {
-        return this.view.getBigInt64(offset);
+        return this.view.getBigInt64(offset, true); // littleEndian = true
     }
     getUint8(offset) {
         return this.view.getUint8(offset);
     }
     getUint16(offset) {
-        return this.view.getUint16(offset);
+        return this.view.getUint16(offset, true); // littleEndian = true
     }
     getUint32(offset) {
-        return this.view.getUint32(offset) >>> 0;
+        return this.view.getUint32(offset, true); // littleEndian = true >>> 0
     }
     getUint64(offset) {
-        return this.view.getBigUint64(offset);
+        return this.view.getBigUint64(offset, true); // littleEndian = true
     }
     setFloat32(offset, value) {
-        this.view.setFloat32(offset, value);
+        this.view.setFloat32(offset, value, true); // littleEndian = true
     }
     setFloat64(offset, value) {
-        this.view.setFloat64(offset, value);
+        this.view.setFloat64(offset, value, true); // littleEndian = true
     }
     setInt8(offset, value) {
         this.view.setInt8(offset, value);
     }
     setInt16(offset, value) {
-        this.view.setInt16(offset, value);
+        this.view.setInt16(offset, value, true); // littleEndian = true
     }
     setInt32(offset, value) {
-        this.view.setInt32(offset, value);
+        this.view.setInt32(offset, value, true); // littleEndian = true
     }
     setInt64(offset, value) {
-        this.view.setBigInt64(offset, value);
+        this.view.setBigInt64(offset, value, true); // littleEndian = true
     }
     setUint8(offset, value) {
         this.view.setUint8(offset, value);
     }
     setUint16(offset, value) {
-        this.view.setUint16(offset, value);
+        this.view.setUint16(offset, value, true); // littleEndian = true
     }
     setUint32(offset, value) {
-        this.view.setUint32(offset, value);
+        this.view.setUint32(offset, value, true); // littleEndian = true
     }
     setUint64(offset, value) {
-        this.view.setBigUint64(offset, value);
+        this.view.setBigUint64(offset, value, true); // littleEndian = true
     }
 }
 _ReadWriteByteBuffer_instances = new WeakSet(), _ReadWriteByteBuffer_woAdd = function _ReadWriteByteBuffer_woAdd(amount) {
@@ -9742,7 +9744,7 @@ var ProcessMessageResultType;
 //
 
 /**
- * @internal
+ * @public
  */
 var CrdtMessageProtocol;
 (function (CrdtMessageProtocol) {
@@ -9810,7 +9812,7 @@ var CrdtMessageProtocol;
 })(CrdtMessageProtocol || (CrdtMessageProtocol = {}));
 
 /**
- * @internal
+ * @public
  */
 var DeleteComponent;
 (function (DeleteComponent) {
@@ -9851,7 +9853,7 @@ var DeleteComponent;
 })(DeleteComponent || (DeleteComponent = {}));
 
 /**
- * @internal
+ * @public
  */
 var AppendValueOperation;
 (function (AppendValueOperation) {
@@ -9899,7 +9901,7 @@ var AppendValueOperation;
 })(AppendValueOperation || (AppendValueOperation = {}));
 
 /**
- * @internal
+ * @public
  */
 var DeleteEntity;
 (function (DeleteEntity) {
@@ -9929,7 +9931,7 @@ var DeleteEntity;
 })(DeleteEntity || (DeleteEntity = {}));
 
 /**
- * @internal
+ * @public
  */
 var PutComponentOperation;
 (function (PutComponentOperation) {
@@ -10010,7 +10012,11 @@ function crdtSceneSystem(engine, onProcessEntityComponentChange) {
                     });
                 }
                 else if (header.type === CrdtMessageType.PUT_COMPONENT) {
+                    // console.log("PUT");
                     const message = PutComponentOperation.read(buffer);
+                    // console.log("entityId: " + message.entityId);
+                    // console.log("componentId: " + message.componentId);
+                    // console.log("timestamp: " + message.timestamp);
                     receivedMessages.push({
                         ...message,
                         transportId,
@@ -10072,6 +10078,7 @@ function crdtSceneSystem(engine, onProcessEntityComponentChange) {
                     engine.entityContainer.updateUsedEntity(msg.entityId);
                 }
                 const component = engine.getComponentOrNull(msg.componentId);
+                /* istanbul ignore else */
                 if (component) {
                     const [conflictMessage, value] = component.updateFromCrdt(msg);
                     if (conflictMessage) {
@@ -10092,6 +10099,10 @@ function crdtSceneSystem(engine, onProcessEntityComponentChange) {
                         broadcastMessages.push(msg);
                         onProcessEntityComponentChange && onProcessEntityComponentChange(msg.entityId, msg.type, component, value);
                     }
+                }
+                else {
+                    // TODO: test this line, it is fundammental to make the editor work
+                    broadcastMessages.push(msg);
                 }
             }
         }
@@ -10251,6 +10262,22 @@ function incrementTimestamp(entity, timestamps) {
     const newTimestamp = (timestamps.get(entity) || 0) + 1;
     timestamps.set(entity, newTimestamp);
     return newTimestamp;
+}
+function createDumpLwwFunctionFromCrdt(componentId, timestamps, schema, data) {
+    return function dumpCrdtState(buffer) {
+        for (const [entity, timestamp] of timestamps) {
+            /* istanbul ignore else */
+            if (data.has(entity)) {
+                const it = data.get(entity);
+                const buf = new ReadWriteByteBuffer();
+                schema.serialize(it, buf);
+                PutComponentOperation.write(entity, timestamp, componentId, buf.toBinary(), buffer);
+            }
+            else {
+                DeleteComponent.write(entity, componentId, timestamp, buffer);
+            }
+        }
+    };
 }
 function createUpdateLwwFromCrdt(componentId, timestamps, schema, data) {
     /**
@@ -10469,7 +10496,8 @@ function createComponentDefinitionFromSchema(componentName, componentId, schema)
             }
         },
         getCrdtUpdates: createGetCrdtMessagesForLww(componentId, timestamps, dirtyIterator, schema, data),
-        updateFromCrdt: createUpdateLwwFromCrdt(componentId, timestamps, schema, data)
+        updateFromCrdt: createUpdateLwwFromCrdt(componentId, timestamps, schema, data),
+        dumpCrdtState: createDumpLwwFunctionFromCrdt(componentId, timestamps, schema, data)
     };
 }
 
@@ -10642,6 +10670,15 @@ function createValueSetComponentDefinitionFromSchema(componentName, componentId,
                 append(_body.entityId, schema.deserialize(buf));
             }
             return [null, undefined];
+        },
+        dumpCrdtState: function (buffer) {
+            for (const [entity, { raw }] of data) {
+                for (const it of raw) {
+                    const buf = new ReadWriteByteBuffer();
+                    schema.serialize(it.value, buf);
+                    AppendValueOperation.write(entity, 0, componentId, buf.toBinary(), buffer);
+                }
+            }
         }
     };
     return ret;
@@ -11016,7 +11053,9 @@ function preEngine() {
     };
 }
 /**
- * @internal
+ * Internal constructor of new engines, this is an internal API
+ * @public
+ * @deprecated Prevent manual usage prefer "engine" for scene development
  */
 function Engine(options) {
     const partialEngine = preEngine();
@@ -15838,18 +15877,24 @@ executeTask(async function () {
         Transform.getMutable(ref2).rotation = Quaternion.fromEulerDegrees(Math.atan2(-diff2.y, diff2.z), 0, 0);
         Transform.getMutable(ref3).rotation = Quaternion.fromEulerDegrees(0, Math.atan2(diff3.x, diff3.z), 0);
         Transform.getMutable(ref4).rotation = Quaternion.fromEulerDegrees(0, 0, Math.atan2(diff4.y, diff4.x));
-        const matrix = Matrix.Identity();
+        var matrix = Matrix.Identity();
         Matrix.fromQuaternionToRef(cameraPosition.rotation, matrix);
-        const invMatrix = Matrix.invert(matrix);
-        Quaternion.fromRotationMatrixToRef(invMatrix, Transform.getMutable(ref5).rotation);
+        Transform.getMutable(ref5).rotation = Quaternion.fromLookAt(Transform.get(ref5).position, cameraPosition.position, { x: 0, y: 1, z: 0 })
         Transform.getMutable(container).position.z = 4 * Math.cos(a);
         a += dt;
     });
 });
-engine.addSystem(function () {
+
+var accumulated_dt = 0.0;
+var last_write = 0.0;
+engine.addSystem(function (dt) {
     {
-        const transform = Transform.get(engine.CameraEntity);
-        console.log(`CameraTransform: ${JSON.stringify(transform)}`);
+        accumulated_dt += dt;
+        if (accumulated_dt > last_write + 2.0) {
+            const transform = Transform.get(engine.CameraEntity);
+            console.log(`CameraTransform: ${JSON.stringify(transform)}`);
+            last_write = accumulated_dt;
+        }
     }
 });
 

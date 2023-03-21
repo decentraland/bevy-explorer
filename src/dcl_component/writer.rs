@@ -18,11 +18,11 @@ impl DclWriter {
     }
 
     pub fn write_u16(&mut self, value: u16) {
-        self.write_raw(&value.to_be_bytes());
+        self.write_raw(&value.to_le_bytes());
     }
 
     pub fn write_u32(&mut self, value: u32) {
-        self.write_raw(&value.to_be_bytes());
+        self.write_raw(&value.to_le_bytes());
     }
 
     pub fn write_float(&mut self, value: f32) {

@@ -11,7 +11,7 @@ use crate::{
         interface::{ComponentPosition, CrdtStore, CrdtType},
     },
     dcl_component::{
-        transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
+        transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId, 
     },
 };
 
@@ -97,13 +97,18 @@ pub struct SceneOutputPlugin;
 impl Plugin for SceneOutputPlugin {
     fn build(&self, app: &mut App) {
         app.add_crdt_lww_interface::<DclTransformAndParent>(
-            SceneComponentId(1),
+            SceneComponentId::TRANSFORM,
             ComponentPosition::EntityOnly,
         );
         app.world
             .resource_mut::<SceneLoopSchedule>()
             .schedule
             .add_system(process_transform_and_parent_updates.in_set(SceneLoopSets::UpdateWorld));
+
+        // app.add_crdt_lww_component::<DclBillboard>(
+        //     SceneComponentId::BILLBOARD, 
+        //     ComponentPosition::EntityOnly
+        // );
     }
 }
 

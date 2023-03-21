@@ -177,7 +177,7 @@ mod test {
         };
         let timestamp = SceneCrdtTimestamp(0);
         let data = 1231u32;
-        let buf = data.to_be_bytes();
+        let buf = data.to_le_bytes();
         let mut reader = DclReader::new(&buf);
 
         assert_eq!(state.try_update(entity, timestamp, Some(&mut reader)), true);
@@ -195,7 +195,7 @@ mod test {
         };
         let timestamp = SceneCrdtTimestamp(0);
         let data = 1231u32;
-        let buf = data.to_be_bytes();
+        let buf = data.to_le_bytes();
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(state.try_update(entity, timestamp, Some(&mut reader)), true);
@@ -218,14 +218,14 @@ mod test {
         };
         let timestamp = SceneCrdtTimestamp(0);
         let data = 1231u32;
-        let buf = data.to_be_bytes();
+        let buf = data.to_le_bytes();
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(state.try_update(entity, timestamp, Some(&mut reader)), true);
 
         let timestamp = SceneCrdtTimestamp(1);
         let newer_data = 999u32;
-        let buf = newer_data.to_be_bytes();
+        let buf = newer_data.to_le_bytes();
         let mut reader = DclReader::new(&buf);
         assert_eq!(state.try_update(entity, timestamp, Some(&mut reader)), true);
 
@@ -242,14 +242,14 @@ mod test {
         };
         let timestamp = SceneCrdtTimestamp(1);
         let data = 1231u32;
-        let buf = data.to_be_bytes();
+        let buf = data.to_le_bytes();
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(state.try_update(entity, timestamp, Some(&mut reader)), true);
 
         let older_timestamp = SceneCrdtTimestamp(0);
         let newer_data = 999u32;
-        let buf = newer_data.to_be_bytes();
+        let buf = newer_data.to_le_bytes();
         let mut reader = DclReader::new(&buf);
         assert_eq!(
             state.try_update(entity, older_timestamp, Some(&mut reader)),
@@ -269,13 +269,13 @@ mod test {
         };
         let timestamp = SceneCrdtTimestamp(1);
         let data = 1u32;
-        let buf = data.to_be_bytes();
+        let buf = data.to_le_bytes();
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(state.try_update(entity, timestamp, Some(&mut reader)), true);
 
         let higher_data = 2u32;
-        let buf = higher_data.to_be_bytes();
+        let buf = higher_data.to_le_bytes();
         let mut reader = DclReader::new(&buf);
         assert_eq!(state.try_update(entity, timestamp, Some(&mut reader)), true);
 
@@ -292,7 +292,7 @@ mod test {
         };
         let timestamp = SceneCrdtTimestamp(1);
         let data = 1u32;
-        let buf = data.to_be_bytes();
+        let buf = data.to_le_bytes();
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(state.try_update(entity, timestamp, Some(&mut reader)), true);
@@ -312,7 +312,7 @@ mod test {
         };
         let timestamp = SceneCrdtTimestamp(1);
         let data = 1u32;
-        let buf = data.to_be_bytes();
+        let buf = data.to_le_bytes();
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(state.try_update(entity, timestamp, Some(&mut reader)), true);
@@ -333,7 +333,7 @@ mod test {
         };
         let timestamp = SceneCrdtTimestamp(1);
         let data = 1u32;
-        let buf = data.to_be_bytes();
+        let buf = data.to_le_bytes();
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(state.try_update(entity, timestamp, Some(&mut reader)), true);
@@ -355,7 +355,7 @@ mod test {
         };
         let timestamp = SceneCrdtTimestamp(1);
         let data = 1u32;
-        let buf = data.to_be_bytes();
+        let buf = data.to_le_bytes();
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(state.try_update(entity, timestamp, Some(&mut reader)), true);
@@ -364,7 +364,7 @@ mod test {
         assert_eq!(state.try_update(entity, newer_timestamp, None), true);
 
         let data = 3u32;
-        let buf = data.to_be_bytes();
+        let buf = data.to_le_bytes();
         let mut reader = DclReader::new(&buf);
         assert_eq!(
             state.try_update(entity, newer_timestamp, Some(&mut reader)),
@@ -383,7 +383,7 @@ mod test {
             generation: 0,
         };
         let timestamp = SceneCrdtTimestamp(0);
-        let buf = 1231u32.to_be_bytes();
+        let buf = 1231u32.to_le_bytes();
 
         let mut reader = DclReader::new(&buf);
         assert_eq!(state.try_update(entity, timestamp, Some(&mut reader)), true);
