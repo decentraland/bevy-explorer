@@ -18,6 +18,9 @@ pub enum CrdtType {
 }
 
 impl CrdtType {
+    pub const LWW_ROOT: CrdtType = CrdtType::LWW(ComponentPosition::RootOnly);
+    pub const LWW_ENT: CrdtType = CrdtType::LWW(ComponentPosition::EntityOnly);
+
     pub fn position(&self) -> ComponentPosition {
         match self {
             CrdtType::LWW(pos) => *pos,

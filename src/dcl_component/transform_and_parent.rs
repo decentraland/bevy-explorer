@@ -87,6 +87,15 @@ impl DclTransformAndParent {
     pub fn parent(&self) -> SceneEntityId {
         self.parent
     }
+
+    pub fn from_bevy_transform_and_parent(transform: &Transform, parent: SceneEntityId) -> Self {
+        Self {
+            translation: DclTranslation::from_bevy_translation(transform.translation),
+            rotation: DclQuat::from_bevy_quat(transform.rotation),
+            scale: transform.scale,
+            parent,
+        }
+    }
 }
 
 impl FromDclReader for DclTransformAndParent {

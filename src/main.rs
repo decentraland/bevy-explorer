@@ -2,6 +2,7 @@
 // - separate js crate
 // - budget -> deadline is just last end + frame time
 
+mod camera_controller;
 pub mod dcl;
 mod dcl_component;
 mod input_handler;
@@ -13,10 +14,14 @@ use bevy::{
     prelude::*,
 };
 
+use camera_controller::CameraController;
 use dcl::SceneDefinition;
-use scene_runner::{LoadSceneEvent, RendererSceneContext, SceneRunnerPlugin};
+use scene_runner::{LoadSceneEvent, PrimaryCamera, RendererSceneContext, SceneRunnerPlugin};
 
-use crate::{input_handler::SceneInputPlugin, scene_runner::SceneSets};
+use crate::{
+    camera_controller::CameraControllerPlugin, input_handler::SceneInputPlugin,
+    scene_runner::SceneSets,
+};
 
 #[derive(Resource)]
 struct UserScriptFolder(String);
@@ -52,6 +57,7 @@ fn main() {
     }))
     .add_plugin(SceneRunnerPlugin) // script engine plugin
     .add_plugin(SceneInputPlugin) // input handler
+    .add_plugin(CameraControllerPlugin)
     .add_startup_system(setup)
     .insert_resource(AmbientLight {
         color: Color::WHITE,
@@ -76,11 +82,15 @@ fn setup(
     user_script_folder: Res<UserScriptFolder>,
 ) {
     // add a camera
-    commands.spawn(Camera3dBundle {
-        transform: Transform::from_translation(Vec3::new(-10.0, 10.0, 4.0))
-            .looking_at(Vec3::new(1.0, 8.0, -1.0), Vec3::Y),
-        ..Default::default()
-    });
+    commands.spawn((
+        Camera3dBundle {
+            transform: Transform::from_translation(Vec3::new(-10.0, 10.0, 4.0))
+                .looking_at(Vec3::new(1.0, 8.0, -1.0), Vec3::Y),
+            ..Default::default()
+        },
+        PrimaryCamera,
+        CameraController::default(),
+    ));
 
     // add a directional light so it looks nicer
     commands.spawn(DirectionalLightBundle {

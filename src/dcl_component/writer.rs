@@ -1,5 +1,7 @@
 use std::ops::Deref;
 
+use super::DclReader;
+
 pub struct DclWriter {
     buffer: Vec<u8>,
 }
@@ -11,7 +13,7 @@ impl DclWriter {
         }
     }
 
-    fn write_raw(&mut self, data: &[u8]) {
+    pub fn write_raw(&mut self, data: &[u8]) {
         self.buffer.extend_from_slice(data)
     }
 
@@ -46,6 +48,10 @@ impl DclWriter {
 
     pub fn clear(&mut self) {
         self.buffer.clear();
+    }
+
+    pub fn reader(&self) -> DclReader {
+        DclReader::new(&self.buffer)
     }
 }
 

@@ -29,6 +29,8 @@ use crate::{
     },
 };
 
+use super::PrimaryCamera;
+
 pub struct TestPlugins;
 
 pub static LOG_ADDED: Lazy<Mutex<bool>> = Lazy::new(|| Default::default());
@@ -71,16 +73,19 @@ fn init_test_app(script: &str) -> App {
     // copy path so we can pass it into the closure
     let path = script.to_owned();
 
-    // startup system to fire load event
-    app.add_startup_system(move |mut ev: EventWriter<LoadSceneEvent>| {
-        ev.send(LoadSceneEvent {
-            scene: SceneDefinition {
-                path: path.clone(),
-                offset: Default::default(),
-                visible: true,
-            },
-        })
-    });
+    // startup system to create camera and fire load event
+    app.add_startup_system(
+        move |mut commands: Commands, mut ev: EventWriter<LoadSceneEvent>| {
+            commands.spawn((Camera3dBundle::default(), PrimaryCamera));
+            ev.send(LoadSceneEvent {
+                scene: SceneDefinition {
+                    path: path.clone(),
+                    offset: Default::default(),
+                    visible: true,
+                },
+            })
+        },
+    );
 
     // replace the scene loop schedule with a dummy so we can better control it
     app.world.remove_resource::<SceneLoopSchedule>().unwrap();
@@ -306,7 +311,10 @@ fn cyclic_recovery() {
         // create new app instance
         let mut app = init_test_app("tests/empty_scene");
         // add lww state
-        let scene_entity = app.world.query::<Entity>().single(&mut app.world);
+        let scene_entity = app
+            .world
+            .query_filtered::<Entity, With<RendererSceneContext>>()
+            .single(&mut app.world);
         app.world
             .entity_mut(scene_entity)
             .insert(CrdtLWWStateComponent::<DclTransformAndParent>::default());
