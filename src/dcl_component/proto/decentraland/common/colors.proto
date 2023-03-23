@@ -1,0 +1,15 @@
+syntax = "proto3";
+package decentraland.common;
+
+message Color3 {
+  float r = 1;
+  float g = 2;
+  float b = 3;
+}
+
+message Color4 {
+  float r = 1;
+  float g = 2;
+  float b = 3;
+  float a = 4;
+}

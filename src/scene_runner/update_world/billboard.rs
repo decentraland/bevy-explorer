@@ -8,7 +8,7 @@ use bevy::prelude::*;
 
 use crate::{
     dcl::interface::ComponentPosition,
-    dcl_component::{billboard::PbBillboard, SceneComponentId},
+    dcl_component::{proto_components::PbBillboard, SceneComponentId},
     scene_runner::{PrimaryCamera, SceneSets},
 };
 

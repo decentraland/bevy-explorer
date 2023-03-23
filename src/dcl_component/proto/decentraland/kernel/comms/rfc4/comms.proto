@@ -1,0 +1,73 @@
+// This file maps to the definition in https://rfc.decentraland.org/rfc/RFC-4
+// It is mandatory to also update that RFC when modifying this file
+
+syntax = "proto3";
+
+package decentraland.kernel.comms.rfc4;
+
+message Packet {
+  oneof message {
+    Position position = 1;
+    AnnounceProfileVersion profile_version = 2;
+    ProfileRequest profile_request = 3;
+    ProfileResponse profile_response = 4;
+    Chat chat = 5;
+    Scene scene = 6;
+    Voice voice = 7;
+  }
+}
+
+message Position {
+  // command number
+  uint32 index = 1;
+  // world position
+  float position_x = 3;
+  float position_y = 4;
+  float position_z = 5;
+  // quaternion
+  float rotation_x = 6;
+  float rotation_y = 7;
+  float rotation_z = 8;
+  float rotation_w = 9;
+}
+
+message AnnounceProfileVersion {
+  uint32 profile_version = 1;
+
+  // Extension: optional download_url to fetch the profile from a profile service
+  // optional string download_url = 2;
+}
+
+message ProfileRequest {
+  string address = 4;
+  uint32 profile_version = 3;
+}
+
+message ProfileResponse {
+  string serialized_profile = 1;
+  string base_url = 2;
+
+  // Extension: when Lambdas serializes profiles for the RPC, we could extend
+  // this format to prevent transmitting the serialized JSON and leverage protobuf
+  // directly
+  // Profile profile = 2;
+}
+
+message Chat {
+  string message = 1;
+  double timestamp = 2;
+}
+
+message Scene {
+  string scene_id = 1;
+  bytes data = 2;
+}
+
+message Voice {
+  bytes encoded_samples = 1;
+  uint32 index = 2;
+  VoiceCodec codec = 3;
+  enum VoiceCodec {
+    VC_OPUS = 0;
+  }
+}

@@ -1,0 +1,52 @@
+syntax = "proto3";
+package decentraland.kernel.apis;
+
+message KillRequest {
+    string pid = 1;
+}
+
+message KillResponse {
+    bool status = 1;
+}
+
+message SpawnRequest {
+    string pid = 1;
+}
+
+message SpawnResponse {
+    string pid = 1;
+    string parent_cid = 2;
+}
+
+message PxRequest {
+    string pid = 1;
+}
+
+message GetPortableExperiencesLoadedRequest {}
+
+message GetPortableExperiencesLoadedResponse {
+    repeated SpawnResponse loaded = 1;
+}
+
+message ExitRequest {}
+message ExitResponse {
+    bool status = 1;
+}
+
+service PortableExperiencesService {
+    // Spawns a new portable experience that is detached from the current scene.
+    // Spawned portable experiences can only be controlled by 1) the user (from the UI)
+    // and 2) from the parent scene. If the parent scene gets unloaded i.e. by distance,
+    // once the player re-loads the parent it will inherit the children portable experiences
+    // to gain control over them.
+    rpc Spawn(SpawnRequest) returns (SpawnResponse) {}
+    // Kill a child portable experience, this method only works if the child was
+    // spawned by the same process trying to kill it.
+    rpc Kill(KillRequest) returns (KillResponse) {}
+    // Kill the current scene if the current scene is a portable experience. Other
+    // kind of scenes are not allowed to finish their programs like portable experiences.
+    rpc Exit(ExitRequest) returns (ExitResponse) {}
+    // Gets a list of running portable experiences for the current user. Be mindful
+    // about the performance penalty of calling this function all frames.
+    rpc GetPortableExperiencesLoaded(GetPortableExperiencesLoadedRequest) returns (GetPortableExperiencesLoadedResponse) {}
+}

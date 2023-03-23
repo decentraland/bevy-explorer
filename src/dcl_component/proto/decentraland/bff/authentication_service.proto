@@ -1,0 +1,27 @@
+syntax = "proto3";
+package decentraland.bff;
+
+message GetChallengeRequest {
+  string address = 1;
+}
+
+message GetChallengeResponse {
+  string challenge_to_sign = 1;
+  bool already_connected = 2;
+}
+
+message SignedChallenge {
+  string auth_chain_json = 1;
+}
+
+message WelcomePeerInformation {
+  string peer_id = 1;
+
+  // list of available modules in this BFF
+  repeated string available_modules = 2;
+}
+
+service BffAuthenticationService {
+  rpc GetChallenge(GetChallengeRequest) returns (GetChallengeResponse) {}
+  rpc Authenticate(SignedChallenge) returns (WelcomePeerInformation) {}
+}

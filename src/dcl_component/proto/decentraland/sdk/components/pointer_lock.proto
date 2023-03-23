@@ -1,0 +1,11 @@
+syntax = "proto3";
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+option (common.ecs_component_id) = 1074;
+
+// PointerLock indicates whether the mouse pointer is automatically following the camera’s point of
+// focus (locked), or can move freely on the screen (unlocked).
+message PBPointerLock {
+  bool is_pointer_locked = 1; // whether the pointer is locked
+}

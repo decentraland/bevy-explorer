@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+// CommsDirector are formalized at https://rfc.decentraland.org/adr/ADR-81
+
+import "google/protobuf/empty.proto";
+import "decentraland/common/vectors.proto";
+
+package decentraland.bff;
+
+message WorldCommand {
+  oneof command {
+    SetCommsAdapter set_comms_adapter = 1;
+  }
+}
+
+message SetCommsAdapter {
+  string connection_string = 1;
+}
+
+message Heartbeat {
+  decentraland.common.Position position = 1;
+  optional string desired_room = 2;
+}
+
+service CommsDirectorService {
+  // every couple seconds AND at the beginning, the explorers must send a heartbeat
+  // to make the comms director aware of their location
+  rpc SendHeartbeat(Heartbeat) returns (google.protobuf.Empty) {}
+
+  // before sending the first heartbeat, it is required that the explorers subscribe
+  // to a list of comms commands
+  rpc GetCommsCommands(google.protobuf.Empty) returns (stream WorldCommand) {}
+}

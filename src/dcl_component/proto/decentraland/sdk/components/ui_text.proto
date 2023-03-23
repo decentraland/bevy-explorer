@@ -1,0 +1,20 @@
+﻿syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/common/colors.proto";
+import "decentraland/sdk/components/common/id.proto";
+import "decentraland/sdk/components/common/texts.proto";
+
+option (common.ecs_component_id) = 1052;
+
+// The UiText component creates a text widget inside a UI component tree. Its position and
+// layout properties can be specified in a UiTransform component on the same Entity.
+
+message PBUiText {
+  string value = 1;                              // the text content
+  optional decentraland.common.Color4 color = 2; // RGBA color (default: opaque white)
+  optional common.TextAlignMode text_align = 3;  // alignment within the bounds (default: center)
+  optional common.Font font = 4;                 // font for the text (default: sans-serif)
+  optional int32 font_size = 5;                  // size of the text (default: 10)
+}

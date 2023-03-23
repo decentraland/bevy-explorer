@@ -1,0 +1,16 @@
+syntax = "proto3";
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+option (common.ecs_component_id) = 1043;
+
+message PBVideoPlayer {
+   // which file to load
+  string src = 1;
+
+  optional bool playing = 2; // default true
+  optional float position = 3; // default 0.0
+  optional float volume = 4; // default 1.0
+  optional float playback_rate = 5; // default 1.0
+  optional bool loop = 6; // default false
+}

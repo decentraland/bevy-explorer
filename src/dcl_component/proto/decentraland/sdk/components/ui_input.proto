@@ -1,0 +1,20 @@
+﻿syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/common/colors.proto";
+import "decentraland/sdk/components/common/id.proto";
+import "decentraland/sdk/components/common/texts.proto";
+
+option (common.ecs_component_id) = 1093;
+
+message PBUiInput {
+  string placeholder = 1;
+  optional decentraland.common.Color4 color = 2; // default=(0.0,0.0,0.0,1.0)
+  optional decentraland.common.Color4 placeholder_color = 3; // default=(0.3,0.3,0.3,1.0)
+  bool disabled = 4;
+  optional common.TextAlignMode text_align = 10; // default='center'
+  optional common.Font font = 11; // default=0
+  optional int32 font_size = 12; // default=10
+  optional string value = 13;
+}

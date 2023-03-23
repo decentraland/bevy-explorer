@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package decentraland.kernel.comms.v3;
+
+enum TransportType {
+  TT_LIVEKIT = 0;
+  TT_WS = 1;
+}
+
+message Position3DMessage {
+  double x = 1;
+  double y = 2;
+  double z = 3;
+}
+
+message IslandChangedMessage {
+  string island_id = 1;
+  string conn_str = 2;
+  optional string from_island_id = 3;
+  map<string, Position3DMessage> peers = 4;
+}
+
+message LeftIslandMessage {
+  string island_id = 1;
+  string peer_id = 2;
+}
+
+message JoinIslandMessage {
+  string island_id = 1;
+  string peer_id = 2;
+}
+
+message IslandData {
+  string id = 1;
+  repeated string peers = 2;
+  uint32 max_peers = 3;
+  Position3DMessage center = 4;
+  double radius = 5;
+}
+
+message IslandStatusMessage {
+  repeated IslandData data = 1;
+}
+
+message TransportInit {
+  TransportType type = 1;
+  uint32 max_island_size = 2;
+}
+
+message TransportHeartbeat {
+  uint32 available_seats = 1;
+  uint32 users_count = 2;
+}
+
+message TransportAuthorizationRequest {
+  string request_id = 1;
+  string room_id = 2;
+  repeated string user_ids = 3;
+}
+
+message TransportAuthorizationResponse {
+  string request_id = 1;
+  map<string, string> conn_strs = 2;
+}
+
+message TransportMessage {
+  oneof message {
+    TransportInit init = 1;
+    TransportHeartbeat heartbeat = 2;
+    TransportAuthorizationRequest auth_request = 3;
+    TransportAuthorizationResponse auth_response = 4;
+  }
+}

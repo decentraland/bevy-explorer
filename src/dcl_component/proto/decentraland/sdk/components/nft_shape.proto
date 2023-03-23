@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/common/colors.proto";
+import "decentraland/sdk/components/common/id.proto";
+
+option (common.ecs_component_id) = 1040;
+
+// The NftShape component renders a framed picture from an NFT. It supports PNG, JPEG and GIF files.
+//
+// The `src` field is the URI of the NFT, which includes its parent contract and index, using
+// the `https:` or `ethereum:` schemes.
+//
+// The picture frame can have several different styles, plus a background color for images that have
+// transparent pixels.
+message PBNftShape {
+  string src = 1;                                // the URI of the NFT
+  optional NftFrameType style = 2;               // the frame style (default NFT_CLASSIC)
+  optional decentraland.common.Color3 color = 3; // RGB background (default [0.6404918, 0.611472, 0.8584906])
+}
+
+// NftFrameType is a predefined framing style for the image.
+enum NftFrameType {
+  NFT_CLASSIC = 0;
+  NFT_BAROQUE_ORNAMENT = 1;
+  NFT_DIAMOND_ORNAMENT = 2;
+  NFT_MINIMAL_WIDE = 3;
+  NFT_MINIMAL_GREY = 4;
+  NFT_BLOCKY = 5;
+  NFT_GOLD_EDGES = 6;
+  NFT_GOLD_CARVED = 7;
+  NFT_GOLD_WIDE = 8;
+  NFT_GOLD_ROUNDED = 9;
+  NFT_METAL_MEDIUM = 10;
+  NFT_METAL_WIDE = 11;
+  NFT_METAL_SLIM = 12;
+  NFT_METAL_ROUNDED = 13;
+  NFT_PINS = 14;
+  NFT_MINIMAL_BLACK = 15;
+  NFT_MINIMAL_WHITE = 16;
+  NFT_TAPE = 17;
+  NFT_WOOD_SLIM = 18;
+  NFT_WOOD_WIDE = 19;
+  NFT_WOOD_TWIGS = 20;
+  NFT_CANVAS = 21;
+  NFT_NONE = 22;
+}

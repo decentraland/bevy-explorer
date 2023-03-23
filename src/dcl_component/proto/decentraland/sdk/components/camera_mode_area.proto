@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/common/vectors.proto";
+import "decentraland/sdk/components/common/camera_type.proto";
+import "decentraland/sdk/components/common/id.proto";
+
+option (common.ecs_component_id) = 1071;
+
+// The CameraModeArea component can be attached to an Entity to define a region of space where 
+// the player's camera mode (1st-person or 3rd-person) is overridden.
+//
+// The Entity's Transform position determines the center-point of the region, while its size is 
+// given as a vector in the `area` property below. The Transform rotation is applied, but the scale 
+// is ignored.
+//
+// When players leave the region, their previous setting is restored.
+//
+// Note that, while commonly used to delineate a 2D area in a scene (hence the name), the region
+// is actually a 3D volume.
+message PBCameraModeArea {
+  decentraland.common.Vector3 area = 1; // the 3D size of the region
+  common.CameraType mode = 2;           // the camera mode to enforce
+}

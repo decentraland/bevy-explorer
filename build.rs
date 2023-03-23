@@ -1,5 +1,14 @@
 use std::io::Result;
 fn main() -> Result<()> {
-    prost_build::compile_protos(&["src/dcl_component/proto/*.proto"], &["src/"])?;
+    let components = ["billboard"];
+
+    let sources = components
+        .iter()
+        .map(|component| {
+            format!("src/dcl_component/proto/decentraland/sdk/components/{component}.proto")
+        })
+        .collect::<Vec<_>>();
+
+    prost_build::compile_protos(&sources, &["src/dcl_component/proto/"])?;
     Ok(())
 }

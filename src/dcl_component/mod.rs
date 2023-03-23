@@ -1,7 +1,7 @@
 // structs representing dcl components and de/serialization
 use bevy::prelude::Vec3;
 
-pub mod billboard;
+pub mod proto_components;
 pub mod reader;
 pub mod transform_and_parent;
 pub mod writer;

@@ -1,0 +1,10 @@
+﻿syntax = "proto3";
+package decentraland.common;
+
+// Defines indents from respective edges
+message BorderRect {
+  float top = 1;
+  float left = 2;
+  float right = 3;
+  float bottom = 4; 
+}

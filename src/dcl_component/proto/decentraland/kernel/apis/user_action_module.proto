@@ -1,0 +1,13 @@
+syntax = "proto3";
+package decentraland.kernel.apis;
+
+message RequestTeleportRequest {
+    string destination = 1;
+}
+
+message RequestTeleportResponse {}
+
+service UserActionModuleService {
+    // @deprecated, only available for SDK6 compatibility. Use RestrictedActions/TeleportTo
+    rpc RequestTeleport(RequestTeleportRequest) returns (RequestTeleportResponse) {}
+}
