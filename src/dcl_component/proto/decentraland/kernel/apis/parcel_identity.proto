@@ -1,0 +1,43 @@
+syntax = "proto3";
+package decentraland.kernel.apis;
+
+import "decentraland/common/content_mapping.proto";
+
+message MappingsResponse  {
+    string parcel_id = 1;
+    string root_cid = 2;
+    repeated decentraland.common.ContentMapping contents = 3;
+}
+
+message Land {
+    string scene_id = 1;
+    string scene_json_data = 2;
+    string base_url = 3;
+    string base_url_bundles = 4;
+    MappingsResponse mappings_response = 5;
+}
+
+message GetParcelRequest {}
+message GetParcelResponse {
+    Land land = 1;
+    string cid = 2;
+}
+
+message GetSceneIdRequest {}
+message GetSceneIdResponse {
+    string scene_id = 1;
+}
+
+message GetIsEmptyRequest {}
+message GetIsEmptyResponse {
+    bool is_empty = 1;
+}
+
+service ParcelIdentityService {
+    // @deprecated, only available for SDK6 compatibility
+    rpc GetParcel(GetParcelRequest) returns (GetParcelResponse) {}
+    // @deprecated, only available for SDK6 compatibility
+    rpc GetSceneId(GetSceneIdRequest) returns (GetSceneIdResponse) {}
+    // @deprecated, only available for SDK6 compatibility
+    rpc GetIsEmpty(GetIsEmptyRequest) returns (GetIsEmptyResponse) {}
+}

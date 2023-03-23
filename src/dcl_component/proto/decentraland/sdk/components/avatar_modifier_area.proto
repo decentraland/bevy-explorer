@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/common/vectors.proto";
+import "decentraland/sdk/components/common/id.proto";
+
+option (common.ecs_component_id) = 1070;
+
+// The AvatarModifierArea component can be attached to an Entity to define a region of space where 
+// avatar behavior changes.
+//
+// The Entity's Transform position determines the center-point of the region, while its size is 
+// given as a vector in the `area` property below. The Transform rotation is applied, but the scale 
+// is ignored.
+//
+// The modifier effect is only applied to avatars inside the region. It does not affect how players 
+// standing inside it see avatars on the other side of the boundary.
+//
+// Note that, while commonly used to delineate a 2D area in a scene (hence the name), the region
+// is actually a 3D volume.
+message PBAvatarModifierArea {
+  decentraland.common.Vector3 area = 1;      // the 3D size of the region
+  repeated string exclude_ids = 2;           // user IDs that can enter and remain unaffected
+  repeated AvatarModifierType modifiers = 3; // list of modifiers to apply
+}
+
+// AvatarModifierType is an effect that should be applied to avatars inside the region.
+enum AvatarModifierType {
+  AMT_HIDE_AVATARS = 0;      // avatars are invisible
+  AMT_DISABLE_PASSPORTS = 1; // selecting (e.g. clicking) an avatar will not bring up their profile.
+}

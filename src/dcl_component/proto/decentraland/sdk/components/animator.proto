@@ -1,0 +1,26 @@
+﻿syntax = "proto3";
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+option (common.ecs_component_id) = 1042;
+
+// The Animator component is a container for multiple potential animations an Entity can display,
+// separately or at the same time. It can be used to start, stop or blend animations; as well as
+// to inspect their playback state.
+//
+// Animations have a `weight` property, which determines how pronounced the animation will be. This
+// can be adjusted to blend animations together, or gracefully transition from one to the next.
+message PBAnimator {
+  repeated PBAnimationState states = 1; // a collection of animations and their current state
+}
+
+// AnimationState indicates the status and configuration of one available animation.
+message PBAnimationState {
+  string name = 1;                // the identifier for this animation, to use in scene code
+  string clip = 2;                // the animation path in the `files` array of the scene manifest
+  optional bool playing = 3;      // whether this animation is currently playing
+  optional float weight = 4;      // the "weight" of this animation (see below, default: 1.0)
+  optional float speed = 5;       // the playback speed (default: 1.0)
+  optional bool loop = 6;         // whether the animation repeats until stopped (default: true)
+  optional bool should_reset = 7; // whether the Entity is restored to its prior state when done
+}

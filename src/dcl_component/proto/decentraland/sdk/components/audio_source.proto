@@ -1,0 +1,23 @@
+﻿syntax = "proto3";
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+option (common.ecs_component_id) = 1020;
+
+// The AudioSource component can play an audio clips bundled with the scene, controlling some
+// of the behavior.
+//
+// In each AudioSource instance, the sound is spatially located at the associated entity’s position,
+// given by its Transform.
+//
+// Note that the `audio_clip_url` is not actually a URL, but rather the path of a file bundled with
+// the scene and declared in its manifest. The name was chosen because the URL use-case will
+// eventually be supported.
+message PBAudioSource { 
+  optional bool playing = 1; // whether the clip is currently playing.
+  optional float volume = 2; // the audio volume (default: 1.0).
+  optional bool loop = 3;    // whether the clip should restart when finished.
+  optional float pitch = 4;  // the audio pitch (default: 1.0).
+  string audio_clip_url = 5; // the clip path as given in the `files` array of the scene's manifest.
+}
+

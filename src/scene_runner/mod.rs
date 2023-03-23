@@ -12,11 +12,13 @@ use serde::Serialize;
 
 use crate::{
     dcl::{
-        interface::CrdtComponentInterfaces, spawn_scene, RendererResponse, SceneDefinition,
-        SceneId, SceneResponse,
+        interface::{CrdtComponentInterfaces, CrdtStore, CrdtType},
+        spawn_scene, RendererResponse, SceneDefinition, SceneId, SceneResponse,
     },
     dcl_assert,
-    dcl_component::SceneEntityId,
+    dcl_component::{
+        transform_and_parent::DclTransformAndParent, DclWriter, SceneComponentId, SceneEntityId,
+    },
 };
 
 use self::update_world::{CrdtExtractors, SceneOutputPlugin};
@@ -31,6 +33,7 @@ pub enum SceneSets {
     Input, // systems which create EngineResponses for the current frame (though these can be created anywhere)
     Init,  // setup the scene
     RunLoop, // run the scripts
+    PostLoop, // do anything after the script loop
 }
 
 #[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
@@ -122,7 +125,10 @@ pub struct RendererSceneContext {
 
     // time of last message sent to scene
     pub last_sent: f32,
+    // currently running?
     pub in_flight: bool,
+
+    pub crdt_store: CrdtStore,
 }
 
 impl RendererSceneContext {
@@ -141,8 +147,9 @@ impl RendererSceneContext {
             unparented_entities: HashSet::new(),
             hierarchy_changed: false,
             last_sent: 0.0,
-            in_flight: true,
+            in_flight: false,
             priority,
+            crdt_store: Default::default(),
         };
 
         new_context.live_entities[SceneEntityId::ROOT.id as usize] =
@@ -265,7 +272,11 @@ fn run_scene_loop(world: &mut World) {
     let mut schedule = std::mem::take(&mut loop_schedule.schedule);
     let last_end_time = loop_schedule.end_time;
     let _start_time = Instant::now();
-    let end_time = last_end_time + Duration::from_millis(6);
+    #[cfg(debug_assertions)]
+    let millis = 100;
+    #[cfg(not(debug_assertions))]
+    let millis = 6;
+    let end_time = last_end_time + Duration::from_millis(millis);
     world.resource_mut::<SceneUpdates>().loop_end_time = end_time;
 
     // run at least once to collect updates even if no scenes are eligible
@@ -363,7 +374,6 @@ fn initialize_scene(
             crdt_component_interfaces,
             thread_sx,
         );
-        scene_updates.jobs_in_flight += 1;
 
         let renderer_context =
             RendererSceneContext::new(scene_id, new_scene.scene.clone(), root, 1.0);
@@ -394,10 +404,19 @@ struct EngineResponseList(Vec<EngineResponse>);
 // - see if we can get v8 single threaded / no native threads working
 const MAX_CONCURRENT_SCENES: usize = 8;
 
+#[derive(Component)]
+pub struct PrimaryCamera;
+
 fn send_scene_updates(
-    mut scenes: Query<(Entity, &mut RendererSceneContext, &SceneThreadHandle)>,
+    mut scenes: Query<(
+        Entity,
+        &mut RendererSceneContext,
+        &SceneThreadHandle,
+        &GlobalTransform,
+    )>,
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
+    camera: Query<&GlobalTransform, With<PrimaryCamera>>,
 ) {
     let updates = &mut *updates;
 
@@ -409,10 +428,38 @@ fn send_scene_updates(
         return;
     };
 
-    let (_, mut context, handle) = scenes.get_mut(ent).unwrap();
+    let (_, mut context, handle, scene_transform) = scenes.get_mut(ent).unwrap();
+
+    // collect components
+
+    // generate updates for camera and player
+    let crdt_store = &mut context.crdt_store;
+    let mut affine = camera.single().affine();
+    affine.translation -= scene_transform.affine().translation;
+    let camera_relative_transform = Transform::from(GlobalTransform::from(affine));
+    let mut writer = DclWriter::new(44);
+    writer.write(&DclTransformAndParent::from_bevy_transform_and_parent(
+        &camera_relative_transform,
+        SceneEntityId::ROOT,
+    ));
+
+    crdt_store.force_update(
+        SceneComponentId::TRANSFORM,
+        CrdtType::LWW_ENT,
+        SceneEntityId::CAMERA,
+        Some(&mut writer.reader()),
+    );
+
+    crdt_store.force_update(
+        SceneComponentId::TRANSFORM,
+        CrdtType::LWW_ENT,
+        SceneEntityId::PLAYER,
+        Some(&mut writer.reader()),
+    );
+
     if let Err(e) = handle
         .sender
-        .blocking_send(RendererResponse::Ok(Vec::default()))
+        .blocking_send(RendererResponse::Ok(crdt_store.take_updates()))
     {
         error!("failed to send updates to scene: {e:?}");
         // TODO: clean up

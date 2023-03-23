@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package decentraland.sdk.components.common;
+
+enum InputAction {
+  IA_POINTER = 0;
+  IA_PRIMARY = 1;
+  IA_SECONDARY = 2;
+  IA_ANY = 3;
+  IA_FORWARD = 4;
+  IA_BACKWARD = 5;
+  IA_RIGHT = 6;
+  IA_LEFT = 7;
+  IA_JUMP = 8;
+  IA_WALK = 9;
+  IA_ACTION_3 = 10;
+  IA_ACTION_4 = 11;
+  IA_ACTION_5 = 12;
+  IA_ACTION_6 = 13;
+}
+
+// PointerEventType is a kind of interaction that can be detected.
+enum PointerEventType {
+  PET_UP = 0;
+  PET_DOWN = 1;
+  PET_HOVER_ENTER = 2;
+  PET_HOVER_LEAVE = 3;
+}

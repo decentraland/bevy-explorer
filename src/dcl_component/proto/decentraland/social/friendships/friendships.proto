@@ -1,0 +1,106 @@
+syntax = "proto3";
+package decentraland.social.friendships;
+
+import "google/protobuf/empty.proto";
+
+// Validation and anti-spam errors
+enum FriendshipErrorCode {
+  TOO_MANY_REQUESTS_SENT = 0;
+  NOT_ENOUGH_TIME_PASSED = 1;
+  BLOCKED_USER = 2;
+  NON_EXISTING_USER = 3;
+  INVALID_REQUEST = 4;
+  UNKNOWN = 5;
+}
+
+// This message is a response that is sent from the server to the client
+message FriendshipEventResponse {
+  oneof body {
+    RequestResponse request = 1;
+    AcceptResponse accept = 2;
+    RejectResponse reject = 4;
+    DeleteResponse delete = 5;
+    CancelResponse cancel = 6;
+  }
+}
+
+message FriendshipEventPayload {
+  oneof body {
+    RequestPayload request = 1;
+    AcceptPayload accept = 2;
+    RejectPayload reject = 4;
+    DeletePayload delete = 5;
+    CancelPayload cancel = 6;
+  }
+}
+
+message User { string address = 1; }
+
+message Users { repeated User users = 1; }
+
+message RequestResponse {
+  User user = 1;
+  int64 created_at = 2;
+  optional string message = 3;
+}
+
+message RequestPayload {
+  User user = 1;
+  optional string message = 3;
+}
+
+message Requests {
+  int64 total = 1; // Total amount of friendship requests
+  repeated RequestResponse items = 2;
+}
+
+message RequestEvents {
+  Requests outgoing = 1; // Requests the authed user have sent to users
+  Requests incoming = 2; // Requests the authed user have received from users
+}
+
+message AcceptResponse { User user = 1; }
+
+message AcceptPayload { User user = 1; }
+
+message RejectResponse { User user = 1; }
+
+message RejectPayload { User user = 1; }
+
+message DeleteResponse { User user = 1; }
+
+message DeletePayload { User user = 1; }
+
+message CancelResponse { User user = 1; }
+
+message CancelPayload { User user = 1; }
+
+message UpdateFriendshipPayload { FriendshipEventPayload event = 1; }
+
+message UpdateFriendshipResponse {
+  oneof response {
+    FriendshipErrorCode error = 1;
+    FriendshipEventResponse event = 2;
+  }
+}
+
+message SubscribeFriendshipEventsUpdatesResponse {
+  repeated FriendshipEventResponse events = 1;
+}
+
+service FriendshipsService {
+  // Get the list of friends for the authenticated user
+  rpc GetFriends(google.protobuf.Empty) returns (stream Users) {}
+
+  // Get the list of request events for the authenticated user
+  rpc GetRequestEvents(google.protobuf.Empty) returns (RequestEvents) {}
+
+  // Update friendship status: REQUEST, ACCEPT, REJECT, CANCEL, DELETE
+  rpc UpdateFriendshipEvent(UpdateFriendshipPayload)
+      returns (UpdateFriendshipResponse) {}
+
+  // Subscribe to updates of friendship status: REQUEST, ACCEPT, REJECT, CANCEL,
+  // DELETE
+  rpc SubscribeFriendshipEventsUpdates(google.protobuf.Empty)
+      returns (stream SubscribeFriendshipEventsUpdatesResponse) {}
+}

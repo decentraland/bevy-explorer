@@ -1,9 +1,10 @@
 // structs representing dcl components and de/serialization
 use bevy::prelude::Vec3;
 
-mod reader;
+pub mod proto_components;
+pub mod reader;
 pub mod transform_and_parent;
-mod writer;
+pub mod writer;
 
 pub use reader::{DclReader, DclReaderError, FromDclReader};
 pub use writer::{DclWriter, ToDclWriter};
@@ -19,14 +20,22 @@ impl std::fmt::Display for SceneEntityId {
     }
 }
 impl SceneEntityId {
-    pub const ROOT: SceneEntityId = SceneEntityId {
-        id: 0,
-        generation: 0,
-    };
+    const fn reserved(id: u16) -> Self {
+        Self { id, generation: 0 }
+    }
+
+    pub const ROOT: SceneEntityId = Self::reserved(0);
+    pub const PLAYER: SceneEntityId = Self::reserved(1);
+    pub const CAMERA: SceneEntityId = Self::reserved(2);
 }
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy)]
 pub struct SceneComponentId(pub u32);
+
+impl SceneComponentId {
+    pub const TRANSFORM: SceneComponentId = SceneComponentId(1);
+    pub const BILLBOARD: SceneComponentId = SceneComponentId(1090);
+}
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy)]
 pub struct SceneCrdtTimestamp(pub u32);
@@ -46,16 +55,16 @@ impl ToDclWriter for Vec3 {
 impl FromDclReader for SceneEntityId {
     fn from_reader(buf: &mut DclReader) -> Result<Self, DclReaderError> {
         Ok(Self {
-            generation: buf.read_u16()?,
             id: buf.read_u16()?,
+            generation: buf.read_u16()?,
         })
     }
 }
 
 impl ToDclWriter for SceneEntityId {
     fn to_writer(&self, buf: &mut DclWriter) {
-        buf.write_u16(self.generation);
         buf.write_u16(self.id);
+        buf.write_u16(self.generation);
     }
 }
 

@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/common/colors.proto";
+import "decentraland/common/texture.proto";
+import "decentraland/sdk/components/common/id.proto";
+
+option (common.ecs_component_id) = 1017;
+
+enum MaterialTransparencyMode {
+  MTM_OPAQUE = 0;
+  MTM_ALPHA_TEST = 1;
+  MTM_ALPHA_BLEND = 2;
+  MTM_ALPHA_TEST_AND_ALPHA_BLEND = 3;
+  MTM_AUTO = 4;
+}
+
+message PBMaterial {
+  message UnlitMaterial {
+    optional decentraland.common.TextureUnion texture = 1; // default = null
+    optional float alpha_test = 2; // default = 0.5. range value: from 0 to 1
+    optional bool cast_shadows = 3; // default =  true
+    optional decentraland.common.Color4 diffuse_color = 4; // default = white;
+  }
+
+  message PbrMaterial {
+    optional decentraland.common.TextureUnion texture = 1; // default = null
+  
+    optional float alpha_test = 2; // default = 0.5. range value: from 0 to 1
+    optional bool cast_shadows = 3; // default =  true
+  
+    optional decentraland.common.TextureUnion alpha_texture = 4; // default = null
+    optional decentraland.common.TextureUnion emissive_texture = 5; // default = null
+    optional decentraland.common.TextureUnion bump_texture = 6; // default = null
+  
+    optional decentraland.common.Color4 albedo_color = 7; // default = white;
+    optional decentraland.common.Color3 emissive_color = 8; // default = black;
+    optional decentraland.common.Color3 reflectivity_color = 9; // default = white;
+  
+    optional MaterialTransparencyMode transparency_mode = 10; // default = TransparencyMode.Auto
+  
+    optional float metallic = 11; // default = 0.5
+    optional float roughness = 12; // default = 0.5
+    optional float glossiness = 13; // default = 1
+  
+    optional float specular_intensity = 14; // default = 1
+    optional float emissive_intensity = 15; // default = 2
+    optional float direct_intensity = 16; // default = 1
+  }
+
+  oneof material {
+    UnlitMaterial unlit = 1;
+    PbrMaterial pbr = 2;
+  }
+  
+}

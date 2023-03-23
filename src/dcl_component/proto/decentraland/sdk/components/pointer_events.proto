@@ -1,0 +1,37 @@
+﻿syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+import "decentraland/sdk/components/common/input_action.proto";
+
+option (common.ecs_component_id) = 1062;
+
+// PointerEvents adds configurable pointer-based interactions to the attached Entity.
+//
+// Events that match the criteria defined in the PointerEvents structure are reported back to the 
+// Entity via the PointerEventsResult component.
+//
+// Some examples of events that can be detected:
+// - Pointer hovering over the Entity.
+// - Held mouse button released over the Entity.
+// - Controller button pressed while targeting the Entity.
+// - Key pressed while targeting the Entity, but only in close range.
+//
+// It also supports simple visual feedback when interactions occur, by showing floating text.
+// More sophisticated feedback requires the use of other components.
+message PBPointerEvents {
+  message Info {
+    optional common.InputAction button = 1; // key/button in use (default IA_ANY)
+    optional string hover_text = 2;         // feedback on hover (default 'Interact')
+    optional float max_distance = 3;        // range of interaction (default 10)
+    optional bool show_feedback = 4;        // enable or disable hover text (default true)
+  }
+
+  message Entry {
+    common.PointerEventType event_type = 1; // the kind of interaction to detect
+    Info event_info = 2;             // additional configuration for this detection
+  }
+
+  repeated Entry pointer_events = 1; // the list of relevant events to detect
+}

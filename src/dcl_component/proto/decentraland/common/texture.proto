@@ -1,0 +1,41 @@
+syntax = "proto3";
+package decentraland.common;
+
+enum TextureWrapMode {
+  TWM_REPEAT = 0;
+  TWM_CLAMP = 1;
+  TWM_MIRROR = 2;
+  TWM_MIRROR_ONCE = 3;
+}
+
+enum TextureFilterMode {
+  TFM_POINT = 0;
+  TFM_BILINEAR = 1;
+  TFM_TRILINEAR = 2;
+}
+
+message Texture {
+    string src = 1;
+    optional TextureWrapMode wrap_mode = 2; // default = TextureWrapMode.Clamp
+    optional TextureFilterMode filter_mode = 3; // default = FilterMode.Bilinear
+}
+
+message AvatarTexture {
+  string user_id = 1;
+  optional TextureWrapMode wrap_mode = 2; // default = TextureWrapMode.Clamp
+  optional TextureFilterMode filter_mode = 3; // default = FilterMode.Bilinear
+}
+
+message VideoTexture {
+  uint32 video_player_entity = 1;
+  optional TextureWrapMode wrap_mode = 2; // default = TextureWrapMode.Clamp
+  optional TextureFilterMode filter_mode = 3; // default = FilterMode.Bilinear
+}
+
+message TextureUnion {
+    oneof tex {
+      Texture texture = 1; // default = null
+      AvatarTexture avatar_texture = 2; // default = null
+      VideoTexture video_texture = 3; // default = null
+    }
+}

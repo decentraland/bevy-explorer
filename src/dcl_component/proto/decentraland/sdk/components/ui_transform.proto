@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+
+option (common.ecs_component_id) = 1050;
+
+enum YGPositionType {
+  YGPT_RELATIVE = 0;
+  YGPT_ABSOLUTE = 1;
+}
+
+enum YGAlign {
+  YGA_AUTO = 0;
+  YGA_FLEX_START = 1;
+  YGA_CENTER = 2;
+  YGA_FLEX_END = 3;
+  YGA_STRETCH = 4;
+  YGA_BASELINE = 5;
+  YGA_SPACE_BETWEEN = 6;
+  YGA_SPACE_AROUND = 7;
+}
+
+enum YGUnit {
+  YGU_UNDEFINED = 0;
+  YGU_POINT = 1;
+  YGU_PERCENT = 2;
+  YGU_AUTO = 3;
+}
+
+enum YGFlexDirection {
+  YGFD_ROW = 0;
+  YGFD_COLUMN = 1;
+  YGFD_COLUMN_REVERSE = 2;
+  YGFD_ROW_REVERSE = 3;
+}
+
+enum YGWrap {
+  YGW_NO_WRAP = 0;
+  YGW_WRAP = 1;
+  YGW_WRAP_REVERSE = 2;
+}
+
+enum YGJustify {
+  YGJ_FLEX_START = 0;
+  YGJ_CENTER = 1;
+  YGJ_FLEX_END = 2;
+  YGJ_SPACE_BETWEEN = 3;
+  YGJ_SPACE_AROUND = 4;
+  YGJ_SPACE_EVENLY = 5;
+}
+
+enum YGOverflow {
+  YGO_VISIBLE = 0;
+  YGO_HIDDEN = 1;
+  YGO_SCROLL = 2;
+}
+
+enum YGDisplay {
+  YGD_FLEX = 0;
+  YGD_NONE = 1;
+}
+
+enum YGEdge {
+  YGE_LEFT = 0;
+  YGE_TOP = 1;
+  YGE_RIGHT = 2;
+  YGE_BOTTOM = 3;
+  YGE_START = 4;
+  YGE_END = 5;
+  YGE_HORIZONTAL = 6;
+  YGE_VERTICAL = 7;
+  YGE_ALL = 8;
+}
+
+message PBUiTransform {
+  int32 parent = 1;
+  int32 right_of = 2;
+
+  optional YGAlign align_content = 3; // default: YGAlign.YGA_FLEX_START
+  optional YGAlign align_items = 4; // default: YGAlign.YGA_STRETCH
+  optional YGWrap flex_wrap = 5; // default: YGWrap.YGW_WRAP
+  optional float flex_shrink = 6; // default: 1
+
+  YGPositionType position_type = 7; // YGPositionType.YGPT_RELATIVE
+
+  YGAlign align_self = 8; // YGAlign.YGA_AUTO
+  YGFlexDirection flex_direction = 9; // YGFlexDirection.YGFD_ROW
+  YGJustify justify_content = 10; // YGJustify.YGJ_FLEX_START
+
+  YGOverflow overflow = 11; // YGOverflow.YGO_VISIBLE
+  YGDisplay display = 12; // YGDisplay.YGD_FLEX
+
+  YGUnit flex_basis_unit = 13; // YGUnit.YGU_UNDEFINED
+  float flex_basis = 14;
+
+  float flex_grow = 15;
+
+  YGUnit width_unit = 16; // YGUnit.YGU_UNDEFINED
+  float width = 17;
+  YGUnit height_unit = 18; // YGUnit.YGU_UNDEFINED
+  float height = 19;
+
+  YGUnit min_width_unit = 20; // YGUnit.YGU_UNDEFINED
+  float min_width = 21;
+  YGUnit min_height_unit = 22; // YGUnit.YGU_UNDEFINED
+  float min_height = 23;
+
+  YGUnit max_width_unit = 24; // YGUnit.YGU_UNDEFINED
+  float max_width = 25;
+  YGUnit max_height_unit = 26; // YGUnit.YGU_UNDEFINED
+  float max_height = 27;
+
+  YGUnit position_left_unit = 28; // YGUnit.YGU_UNDEFINED
+  float position_left = 29;
+  YGUnit position_top_unit = 30; // YGUnit.YGU_UNDEFINED
+  float position_top = 31;
+  YGUnit position_right_unit = 32; // YGUnit.YGU_UNDEFINED
+  float position_right = 33;
+  YGUnit position_bottom_unit = 34; // YGUnit.YGU_UNDEFINED
+  float position_bottom = 35;
+
+  YGUnit margin_left_unit = 36; // YGUnit.YGU_UNDEFINED
+  float margin_left = 37;
+  YGUnit margin_top_unit = 38; // YGUnit.YGU_UNDEFINED
+  float margin_top = 39;
+  YGUnit margin_right_unit = 40; // YGUnit.YGU_UNDEFINED
+  float margin_right = 41;
+  YGUnit margin_bottom_unit = 42; // YGUnit.YGU_UNDEFINED
+  float margin_bottom = 43;
+
+  YGUnit padding_left_unit = 44; // YGUnit.YGU_UNDEFINED
+  float padding_left = 45;
+  YGUnit padding_top_unit = 46; // YGUnit.YGU_UNDEFINED
+  float padding_top = 47;
+  YGUnit padding_right_unit = 48; // YGUnit.YGU_UNDEFINED
+  float padding_right = 49;
+  YGUnit padding_bottom_unit = 50; // YGUnit.YGU_UNDEFINED
+  float padding_bottom = 51;
+}

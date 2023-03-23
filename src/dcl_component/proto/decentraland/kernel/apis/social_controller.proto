@@ -1,0 +1,19 @@
+syntax = "proto3";
+package decentraland.kernel.apis;
+
+message InitRequest {}
+message SocialEvent {
+    string event = 1;
+    string payload = 2;
+}
+
+message GetAvatarEventsResponse {
+    repeated SocialEvent events = 1;
+}
+
+service SocialControllerService {
+    // @deprecated, only available for SDK6 compatibility. This was a low level
+    // API used for the AvatarScene, it will be replaced by Foreign Entities in
+    // SDK7
+    rpc PullAvatarEvents(InitRequest) returns (GetAvatarEventsResponse) {}
+}

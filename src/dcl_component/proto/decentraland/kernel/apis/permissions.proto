@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package decentraland.kernel.apis;
+
+enum PermissionItem {
+  PI_ALLOW_TO_MOVE_PLAYER_INSIDE_SCENE = 0;
+  PI_ALLOW_TO_TRIGGER_AVATAR_EMOTE = 1;
+  PI_USE_WEB3_API = 2;
+  PI_USE_WEBSOCKET = 3;
+  PI_USE_FETCH = 4;
+  PI_ALLOW_MEDIA_HOSTNAMES = 5;
+}
+
+message PermissionResponse {
+  bool has_permission = 1;
+}
+
+message HasPermissionRequest {
+  PermissionItem permission = 1;
+}
+
+message HasManyPermissionRequest {
+  repeated PermissionItem permissions = 1;
+}
+
+message HasManyPermissionResponse {
+  repeated bool has_many_permission = 1;
+}
+
+service PermissionsService {
+  // @deprecated, only available for SDK6 compatibility
+  rpc HasPermission(HasPermissionRequest) returns (PermissionResponse) {}
+  // @deprecated, only available for SDK6 compatibility
+  rpc HasManyPermissions(HasManyPermissionRequest) returns (HasManyPermissionResponse) {}
+}

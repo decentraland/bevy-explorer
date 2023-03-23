@@ -44,7 +44,7 @@ pub struct SceneCensus {
 // data from renderer to scene
 #[derive(Debug)]
 pub enum RendererResponse {
-    Ok(Vec<()>),
+    Ok(CrdtStore),
 }
 
 // data from scene to renderer

@@ -1,0 +1,22 @@
+syntax = "proto3";
+package decentraland.kernel.apis;
+
+import "decentraland/common/sdk/user_data.proto";
+
+message GetUserDataRequest {}
+
+message GetUserDataResponse {
+    optional decentraland.common.sdk.UserData data = 1;
+}
+
+message GetUserPublicKeyRequest {}
+
+message GetUserPublicKeyResponse {
+    optional string address = 1;
+}
+
+service UserIdentityService {
+    // @deprecated, only available for SDK6 compatibility. UseGetUserData
+    rpc GetUserPublicKey(GetUserPublicKeyRequest) returns (GetUserPublicKeyResponse) {}
+    rpc GetUserData(GetUserDataRequest) returns (GetUserDataResponse) {}
+}

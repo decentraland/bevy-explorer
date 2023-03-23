@@ -1,0 +1,8 @@
+syntax = "proto3";
+package decentraland.sdk.components.common;
+
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.FileOptions {
+  optional int32 ecs_component_id = 50000;
+}

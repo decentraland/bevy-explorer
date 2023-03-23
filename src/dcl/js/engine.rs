@@ -2,20 +2,20 @@
 
 use bevy::prelude::{debug, error, info, warn};
 use deno_core::{op, OpDecl, OpState};
-use num::FromPrimitive;
+use num::{FromPrimitive, ToPrimitive};
 use num_derive::{FromPrimitive, ToPrimitive};
 use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
 use tokio::sync::mpsc::Receiver;
 
 use crate::{
     dcl::{
-        interface::{
-            lww_interface, ComponentPosition, CrdtComponentInterfaces, CrdtStore, CrdtType,
-        },
+        crdt::lww::LWWEntry, interface::ComponentPosition, CrdtComponentInterfaces, CrdtStore,
         RendererResponse, SceneResponse,
     },
     dcl_assert,
-    dcl_component::{DclReader, DclReaderError, SceneEntityId},
+    dcl_component::{
+        DclReader, DclReaderError, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter,
+    },
 };
 
 use super::ShuttingDown;
@@ -31,6 +31,12 @@ pub enum CrdtMessageType {
 
     DeleteEntity = 3,
     AppendValue = 4,
+}
+
+impl ToDclWriter for CrdtMessageType {
+    fn to_writer(&self, buf: &mut DclWriter) {
+        buf.write_u32(ToPrimitive::to_u32(self).unwrap())
+    }
 }
 
 // list of op declarations
@@ -78,11 +84,7 @@ fn process_message(
             }
 
             // attempt to write (may fail due to a later write)
-            match writer {
-                CrdtType::LWW(_) => {
-                    lww_interface::update_crdt(typemap, component, entity, timestamp, Some(stream))?
-                }
-            };
+            typemap.try_update(component, *writer, entity, timestamp, Some(stream));
         }
         CrdtMessageType::DeleteComponent => {
             let entity = stream.read()?;
@@ -108,11 +110,7 @@ fn process_message(
             }
 
             // attempt to write (may fail due to a later write)
-            match writer {
-                CrdtType::LWW(_) => {
-                    lww_interface::update_crdt(typemap, component, entity, timestamp, None)?
-                }
-            };
+            typemap.try_update(component, *writer, entity, timestamp, None);
         }
         CrdtMessageType::DeleteEntity => {
             let entity = stream.read()?;
@@ -159,14 +157,7 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
         }
     }
 
-    let mut updates = CrdtStore::default();
-    for (component_id, writer) in writers.0.iter() {
-        match writer {
-            CrdtType::LWW(_) => {
-                lww_interface::take_updates(*component_id, &mut typemap, &mut updates)
-            }
-        };
-    }
+    let updates = typemap.take_updates();
     let census = entity_map.take_census();
 
     let sender = op_state.borrow_mut::<SyncSender<SceneResponse>>();
@@ -179,19 +170,59 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
     op_state.put(typemap);
 }
 
+fn put_component(
+    entity_id: &SceneEntityId,
+    component_id: &SceneComponentId,
+    data: &LWWEntry,
+) -> Vec<u8> {
+    let content_len = data.data.len();
+    let length = content_len + 12 + if data.is_some { 4 } else { 0 } + 8;
+
+    let mut writer = DclWriter::new(length);
+    writer.write_u32(length as u32);
+
+    if data.is_some {
+        writer.write(&CrdtMessageType::PutComponent);
+    } else {
+        writer.write(&CrdtMessageType::DeleteComponent);
+    }
+
+    writer.write(entity_id);
+    writer.write(component_id);
+    writer.write(&data.timestamp);
+
+    if data.is_some {
+        writer.write_u32(content_len as u32);
+        writer.write_raw(&data.data)
+    }
+
+    writer.into()
+}
+
 #[op(v8)]
-async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<OpState>>) -> Vec<()> {
+async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<OpState>>) -> Vec<Vec<u8>> {
     let mut receiver = op_state.borrow_mut().take::<Receiver<RendererResponse>>();
     let response = receiver.recv().await;
     op_state.borrow_mut().put(receiver);
 
-    match response {
-        Some(_) => Default::default(),
+    let results = match response {
+        Some(RendererResponse::Ok(updates)) => {
+            let mut results = Vec::new();
+            // TODO: consider writing directly into a v8 buffer
+            for (component_id, lww) in updates.lww.iter() {
+                for (entity_id, data) in lww.last_write.iter() {
+                    results.push(put_component(entity_id, component_id, data));
+                }
+            }
+            results
+        }
         None => {
             // channel has been closed, shutdown gracefully
             info!("{}: shutting down", std::thread::current().name().unwrap());
             op_state.borrow_mut().put(ShuttingDown);
             Default::default()
         }
-    }
+    };
+
+    results
 }

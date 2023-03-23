@@ -1,0 +1,13 @@
+syntax = "proto3";
+package decentraland.common;
+import "decentraland/common/content_mapping.proto";
+
+// Entity schema compliant with https://rfc.decentraland.org/adr/ADR-80
+
+message Entity {
+  string id = 1;
+  repeated string pointers = 2;
+  string metadata = 3;
+  uint32 timestamp = 4;
+  repeated ContentMapping content = 5;
+}

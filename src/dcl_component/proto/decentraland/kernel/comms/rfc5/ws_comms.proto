@@ -1,0 +1,104 @@
+// This file maps to the definition in https://rfc.decentraland.org/rfc/RFC-5
+// It is mandatory to also update that RFC when modifying this file
+
+syntax = "proto3";
+
+package decentraland.kernel.comms.rfc5;
+
+/**
+ * Sent to the clients when the challenge is validated and they are authenticated.
+ */
+message WsWelcome {
+  uint32 alias = 1;
+  map<uint32, string> peer_identities = 2;
+}
+
+/**
+ * Sent to the clients when a user connects and their identity is authenticated.
+ */
+message WsPeerJoin {
+  uint32 alias = 1;
+  string address = 2;
+}
+
+/**
+ * Sent to the clients when a user gets disconnected.
+ */
+message WsPeerLeave {
+  uint32 alias = 1;
+}
+
+/**
+ * This is the data package for all user messages.
+ */
+message WsPeerUpdate {
+  uint32 from_alias = 1;
+  bytes body = 2;
+  bool unreliable = 3;
+}
+
+
+/**
+ * Sent to the clients as first message, it contains a challenge string and a
+ * hint about if the same address is connected to another room. In such case,
+ * after authentication, the server may decide to end the former connection. This
+ * hint exists for UX purposes of the explorers for cases like multiple running
+ * instances of the explorer.
+ */
+message WsChallengeRequired {
+  string challenge_to_sign = 1;
+  bool already_connected = 2;
+}
+
+/**
+ * Response to WsChallengeRequired, signed using the AuthChain mechanism.
+ */
+message WsSignedChallenge {
+  string auth_chain_json = 1;
+}
+
+/**
+ * This is the first message sent by the clients, it us used to identify the client
+ * in the server.
+ */
+message WsIdentification {
+  string address = 1;
+}
+
+/**
+ * This message is received by the peers when the same address logs in in a
+ * different session. It should signal that the client should be shut down and not
+ * retry any new comms connection. It can also be used to reject new users joining when
+ * the room capacity has been reached.
+ */
+message WsKicked {
+  string reason = 1;
+}
+
+message WsPacket {
+  oneof message {
+    // direction: server->client
+    WsWelcome welcome_message = 1;
+
+    // direction: server->client
+    WsPeerJoin peer_join_message = 2;
+
+    // direction: client->(server)->client
+    WsPeerUpdate peer_update_message = 3;
+
+    // direction: server->client
+    WsChallengeRequired challenge_message = 4;
+
+    // direction: client->server
+    WsSignedChallenge signed_challenge_for_server = 5;
+
+    // direction: server->client
+    WsPeerLeave peer_leave_message = 6;
+
+    // direction: client->server
+    WsIdentification peer_identification = 7;
+
+    // direction: server->client
+    WsKicked peer_kicked = 8;
+  }
+}

@@ -1,0 +1,25 @@
+syntax = "proto3";
+package decentraland.common.sdk;
+
+message Snapshots {
+    string face256 = 1;
+    string body = 2;
+}
+
+message AvatarForUserData {
+    string body_shape = 1;
+    string skin_color = 2;
+    string hair_color = 3;
+    string eye_color = 4;
+    repeated string wearables = 5;
+    Snapshots snapshots = 6;
+}
+
+message UserData {
+    string display_name = 1;
+    optional string public_key = 2;
+    bool has_connected_web3 = 3;
+    string user_id = 4;
+    int32 version = 5;
+    AvatarForUserData avatar = 6;
+}

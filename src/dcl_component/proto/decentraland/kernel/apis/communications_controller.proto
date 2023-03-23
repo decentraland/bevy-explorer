@@ -1,0 +1,14 @@
+syntax = "proto3";
+package decentraland.kernel.apis;
+
+message RealSendRequest {
+    string message = 1;
+}
+
+message RealSendResponse {}
+
+service CommunicationsControllerService {
+    // @deprecated - This API should use a bidirectional binary stream in sdk7
+    // https://github.com/decentraland/sdk/issues/582
+    rpc Send(RealSendRequest) returns (RealSendResponse) {}
+}
