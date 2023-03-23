@@ -94,20 +94,6 @@ fn init_test_app(script: &str) -> App {
         end_time: Instant::now(),
     });
 
-    // replace the scene loop schedule with a dummy so we can better control it
-    app.world.remove_resource::<SceneLoopSchedule>().unwrap();
-    app.world.insert_resource(SceneLoopSchedule {
-        schedule: Schedule::new(),
-        end_time: Instant::now(),
-    });
-
-    // replace the scene loop schedule with a dummy so we can better control it
-    app.world.remove_resource::<SceneLoopSchedule>().unwrap();
-    app.world.insert_resource(SceneLoopSchedule {
-        schedule: Schedule::new(),
-        end_time: Instant::now(),
-    });
-
     // run app once to get the scene initialized
     app.update();
 

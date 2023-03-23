@@ -21,7 +21,7 @@ use self::{
 
 use super::{DeletedSceneEntities, RendererSceneContext, SceneLoopSchedule, SceneLoopSets};
 
-mod billboard;
+pub mod billboard;
 pub mod transform_and_parent;
 
 #[derive(Component, Default)]
