@@ -14,7 +14,8 @@ This project's goals are to:
 
 1. Clone the repo using `git clone https://github.com/decentraland/bevy-explorer`
 2. Install [rust](https://www.rust-lang.org/tools/install)
-3. `cargo run -- example_scene`
+3. Install [protoc](https://github.com/protocolbuffers/protobuf/releases)
+4. `cargo run -- example_scene`
 
 ## Testing
 

@@ -33,6 +33,7 @@ pub enum SceneSets {
     Input, // systems which create EngineResponses for the current frame (though these can be created anywhere)
     Init,  // setup the scene
     RunLoop, // run the scripts
+    PostLoop, // do anything after the script loop
 }
 
 #[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]

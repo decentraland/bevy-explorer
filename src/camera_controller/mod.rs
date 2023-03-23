@@ -28,6 +28,8 @@ pub struct CameraController {
     pub key_up: KeyCode,
     pub key_down: KeyCode,
     pub key_run: KeyCode,
+    pub key_roll_left: KeyCode,
+    pub key_roll_right: KeyCode,
     pub mouse_key_enable_mouse: MouseButton,
     pub keyboard_key_enable_mouse: KeyCode,
     pub walk_speed: f32,
@@ -35,6 +37,7 @@ pub struct CameraController {
     pub friction: f32,
     pub pitch: f32,
     pub yaw: f32,
+    pub roll: f32,
     pub velocity: Vec3,
 }
 
@@ -51,6 +54,8 @@ impl Default for CameraController {
             key_up: KeyCode::E,
             key_down: KeyCode::Q,
             key_run: KeyCode::LShift,
+            key_roll_left: KeyCode::T,
+            key_roll_right: KeyCode::Y,
             mouse_key_enable_mouse: MouseButton::Left,
             keyboard_key_enable_mouse: KeyCode::M,
             walk_speed: 5.0,
@@ -58,6 +63,7 @@ impl Default for CameraController {
             friction: 0.5,
             pitch: 0.0,
             yaw: 0.0,
+            roll: 0.0,
             velocity: Vec3::ZERO,
         }
     }
@@ -110,9 +116,10 @@ fn camera_controller(
 
     if let Ok((mut transform, mut options)) = query.get_single_mut() {
         if !options.initialized {
-            let (yaw, pitch, _roll) = transform.rotation.to_euler(EulerRot::YXZ);
+            let (yaw, pitch, roll) = transform.rotation.to_euler(EulerRot::YXZ);
             options.yaw = yaw;
             options.pitch = pitch;
+            options.roll = roll;
             options.initialized = true;
         }
         if !options.enabled {
@@ -141,6 +148,16 @@ fn camera_controller(
         }
         if key_input.just_pressed(options.keyboard_key_enable_mouse) {
             *move_toggled = !*move_toggled;
+        }
+
+        if key_input.pressed(options.key_roll_left) {
+            options.roll += dt * 1.0;
+        } else if key_input.pressed(options.key_roll_right) {
+            options.roll -= dt * 1.0;
+        } else if options.roll > 0.0 {
+            options.roll = (options.roll - dt * 0.25).max(0.0);
+        } else {
+            options.roll = (options.roll + dt * 0.25).min(0.0);
         }
 
         // Apply movement update
@@ -187,12 +204,13 @@ fn camera_controller(
             }
         }
 
-        if mouse_delta != Vec2::ZERO {
-            // Apply look update
-            options.pitch = (options.pitch - mouse_delta.y * RADIANS_PER_DOT * options.sensitivity)
-                .clamp(-PI / 2., PI / 2.);
-            options.yaw -= mouse_delta.x * RADIANS_PER_DOT * options.sensitivity;
-            transform.rotation = Quat::from_euler(EulerRot::ZYX, 0.0, options.yaw, options.pitch);
-        }
+        // if mouse_delta != Vec2::ZERO {
+        // Apply look update
+        options.pitch = (options.pitch - mouse_delta.y * RADIANS_PER_DOT * options.sensitivity)
+            .clamp(-PI / 2., PI / 2.);
+        options.yaw -= mouse_delta.x * RADIANS_PER_DOT * options.sensitivity;
+        transform.rotation =
+            Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
+        // }
     }
 }

@@ -15,10 +15,13 @@ use crate::{
     },
 };
 
-use self::transform_and_parent::process_transform_and_parent_updates;
+use self::{
+    billboard::BillboardPlugin, transform_and_parent::process_transform_and_parent_updates,
+};
 
 use super::{DeletedSceneEntities, RendererSceneContext, SceneLoopSchedule, SceneLoopSets};
 
+mod billboard;
 pub mod transform_and_parent;
 
 #[derive(Component, Default)]
@@ -105,30 +108,28 @@ impl Plugin for SceneOutputPlugin {
             .schedule
             .add_system(process_transform_and_parent_updates.in_set(SceneLoopSets::UpdateWorld));
 
-        // app.add_crdt_lww_component::<DclBillboard>(
-        //     SceneComponentId::BILLBOARD,
-        //     ComponentPosition::EntityOnly
-        // );
+        app.add_plugin(BillboardPlugin);
     }
 }
 
 // a helper to automatically apply engine component updates
 pub trait AddCrdtInterfaceExt {
-    fn add_crdt_lww_interface<T: FromDclReader>(
+    fn add_crdt_lww_interface<D: FromDclReader>(
         &mut self,
         id: SceneComponentId,
         position: ComponentPosition,
     );
 
-    fn add_crdt_lww_component<T: FromDclReader + Component + std::fmt::Debug>(
+    fn add_crdt_lww_component<D: FromDclReader + std::fmt::Debug, C: Component + TryFrom<D>>(
         &mut self,
         id: SceneComponentId,
         position: ComponentPosition,
-    );
+    ) where
+        <C as TryFrom<D>>::Error: std::fmt::Display;
 }
 
 impl AddCrdtInterfaceExt for App {
-    fn add_crdt_lww_interface<T: FromDclReader>(
+    fn add_crdt_lww_interface<D: FromDclReader>(
         &mut self,
         id: SceneComponentId,
         position: ComponentPosition,
@@ -136,37 +137,44 @@ impl AddCrdtInterfaceExt for App {
         // store a writer
         self.world.resource_mut::<CrdtExtractors>().0.insert(
             id,
-            Box::new(CrdtLWWInterface::<T> {
+            Box::new(CrdtLWWInterface::<D> {
                 position,
                 _marker: PhantomData,
             }),
         );
     }
 
-    fn add_crdt_lww_component<T: FromDclReader + Component + std::fmt::Debug>(
+    fn add_crdt_lww_component<D: FromDclReader + std::fmt::Debug, C: Component + TryFrom<D>>(
         &mut self,
         id: SceneComponentId,
         position: ComponentPosition,
-    ) {
-        self.add_crdt_lww_interface::<T>(id, position);
+    ) where
+        <C as TryFrom<D>>::Error: std::fmt::Display,
+    {
+        self.add_crdt_lww_interface::<D>(id, position);
         // add a system to process the update
         self.world
             .resource_mut::<SceneLoopSchedule>()
             .schedule
-            .add_system(process_crdt_lww_updates::<T>.in_set(SceneLoopSets::UpdateWorld));
+            .add_system(process_crdt_lww_updates::<D, C>.in_set(SceneLoopSets::UpdateWorld));
     }
 }
 
 // a default system for processing LWW comonent updates
-pub(crate) fn process_crdt_lww_updates<T: FromDclReader + Component + std::fmt::Debug>(
+pub(crate) fn process_crdt_lww_updates<
+    D: FromDclReader + std::fmt::Debug,
+    C: Component + TryFrom<D>,
+>(
     mut commands: Commands,
     mut scenes: Query<(
         Entity,
         &RendererSceneContext,
-        &mut CrdtLWWStateComponent<T>,
+        &mut CrdtLWWStateComponent<D>,
         &DeletedSceneEntities,
     )>,
-) {
+) where
+    <C as TryFrom<D>>::Error: std::fmt::Display,
+{
     for (_root, scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
         // remove crdt state for dead entities
         for deleted in &deleted_entities.0 {
@@ -175,30 +183,42 @@ pub(crate) fn process_crdt_lww_updates<T: FromDclReader + Component + std::fmt::
 
         for (scene_entity, entry) in updates.last_write.iter_mut() {
             let Some(entity) = scene_context.bevy_entity(*scene_entity) else {
-                warn!("skipping {} update for missing entity {:?}", std::any::type_name::<T>(), scene_entity);
+                warn!("skipping {} update for missing entity {:?}", std::any::type_name::<D>(), scene_entity);
                 continue;
             };
             if entry.is_some {
-                match T::from_reader(&mut DclReader::new(&entry.data)) {
-                    Ok(t) => {
+                match D::from_reader(&mut DclReader::new(&entry.data)) {
+                    Ok(d) => {
                         debug!(
                             "[{:?}] {} -> {:?}",
                             scene_entity,
-                            std::any::type_name::<T>(),
-                            t
+                            std::any::type_name::<D>(),
+                            d
                         );
-                        commands.entity(entity).insert(t);
+                        match C::try_from(d) {
+                            Ok(c) => {
+                                commands.entity(entity).insert(c);
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Error converting {} to {}: {}",
+                                    std::any::type_name::<D>(),
+                                    std::any::type_name::<C>(),
+                                    e
+                                );
+                            }
+                        }
                     }
                     Err(e) => {
                         warn!(
                             "failed to deserialize {} from buffer: {:?}",
-                            std::any::type_name::<T>(),
+                            std::any::type_name::<D>(),
                             e
                         );
                     }
                 };
             } else {
-                commands.entity(entity).remove::<T>();
+                commands.entity(entity).remove::<C>();
             }
         }
     }

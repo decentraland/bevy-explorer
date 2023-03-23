@@ -15840,6 +15840,8 @@ executeTask(async function () {
         }
     });
 });
+var a = 0.0;
+
 executeTask(async function () {
     const billboardParent = engine.addEntity();
     Transform.create(billboardParent, {});
@@ -15852,35 +15854,41 @@ executeTask(async function () {
         return meshEntity;
     }
     makeMesh(-2, 0, 0);
-    makeMesh(-1, 0, 1);
-    makeMesh(0, 0, 2);
-    makeMesh(1, 0, 4);
-    makeMesh(2, 0, 7);
-    makeMesh(-2, 2, 0);
-    const ref2 = makeMesh(-1, 2, 0);
-    const ref3 = makeMesh(0, 2, 0);
-    const ref4 = makeMesh(1, 2, 0);
-    const ref5 = makeMesh(2, 2, 0);
+    makeMesh(-1, 0, 1); // X
+    makeMesh(0, 0, 2);  // Y
+    makeMesh(1, 0, 3);  // Y
+    makeMesh(2, 0, 4);  // Y
+    makeMesh(3, 0, 5);  // Y
+    makeMesh(4, 0, 6);  // Y
+    makeMesh(5, 0, 7);
+    // const ref2 = makeMesh(-1, 2, 0);
+    // const ref3 = makeMesh(0, 2, 0);
+    // const ref4 = makeMesh(1, 2, 0);
+    // const ref5 = makeMesh(2, 2, 0);
     const container = engine.addEntity();
     Transform.create(container, { parent: billboardParent });
     makeMesh(-2, 0, 0, container);
-    makeMesh(-1, 0, 1, container);
-    makeMesh(0, 0, 2, container);
-    makeMesh(1, 0, 4, container);
-    makeMesh(2, 0, 7, container);
-    let a = 0;
+    makeMesh(-1, 0, 1, container); // X
+    makeMesh(0, 0, 2, container);  // Y
+    makeMesh(1, 0, 3, container);  // Y
+    makeMesh(2, 0, 4, container);  // Y
+    makeMesh(3, 0, 5, container);  // Y
+    makeMesh(4, 0, 6, container);  // Y
+    makeMesh(5, 0, 7, container);
     engine.addSystem(function (dt) {
         const cameraPosition = Transform.get(engine.CameraEntity);
-        const diff2 = Vector3.subtract(Transform.getMutable(ref2).position, cameraPosition.position);
-        const diff3 = Vector3.subtract(Transform.getMutable(ref3).position, cameraPosition.position);
-        const diff4 = Vector3.subtract(Transform.getMutable(ref4).position, cameraPosition.position);
-        Transform.getMutable(ref2).rotation = Quaternion.fromEulerDegrees(Math.atan2(-diff2.y, diff2.z), 0, 0);
-        Transform.getMutable(ref3).rotation = Quaternion.fromEulerDegrees(0, Math.atan2(diff3.x, diff3.z), 0);
-        Transform.getMutable(ref4).rotation = Quaternion.fromEulerDegrees(0, 0, Math.atan2(diff4.y, diff4.x));
-        var matrix = Matrix.Identity();
-        Matrix.fromQuaternionToRef(cameraPosition.rotation, matrix);
-        Transform.getMutable(ref5).rotation = Quaternion.fromLookAt(Transform.get(ref5).position, cameraPosition.position, { x: 0, y: 1, z: 0 })
+        // const diff2 = Vector3.subtract(Transform.getMutable(ref2).position, cameraPosition.position);
+        // const diff3 = Vector3.subtract(Transform.getMutable(ref3).position, cameraPosition.position);
+        // const diff4 = Vector3.subtract(Transform.getMutable(ref4).position, cameraPosition.position);
+        // Transform.getMutable(ref2).rotation = Quaternion.fromEulerDegrees(Math.atan2(-diff2.y, diff2.z), 0, 0);
+        // Transform.getMutable(ref3).rotation = Quaternion.fromEulerDegrees(0, Math.atan2(diff3.x, diff3.z), 0);
+        // Transform.getMutable(ref4).rotation = Quaternion.fromEulerDegrees(0, 0, Math.atan2(diff4.y, diff4.x));
+        // var matrix = Matrix.Identity();
+        // Matrix.fromQuaternionToRef(cameraPosition.rotation, matrix);
+        // Transform.getMutable(ref5).rotation = Quaternion.fromLookAt(Transform.get(ref5).position, cameraPosition.position, { x: 0, y: 1, z: 0 })
+        Transform.getMutable(container).position.y = 10;
         Transform.getMutable(container).position.z = 4 * Math.cos(a);
+        Transform.getMutable(container).rotation = Quaternion.fromEulerDegrees(a * 20.0, a * 45.0, a * 100.0);
         a += dt;
     });
 });

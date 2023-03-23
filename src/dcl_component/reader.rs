@@ -2,6 +2,13 @@
 #[derive(Debug)]
 pub enum DclReaderError {
     Eof,
+    ProtobufErr(prost::DecodeError),
+}
+
+impl From<prost::DecodeError> for DclReaderError {
+    fn from(value: prost::DecodeError) -> Self {
+        Self::ProtobufErr(value)
+    }
 }
 
 pub struct DclReader<'a> {
