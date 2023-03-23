@@ -1,6 +1,6 @@
 use std::io::Result;
 fn main() -> Result<()> {
-    let components = ["billboard"];
+    let components = ["billboard", "raycast", "raycast_result"];
 
     let sources = components
         .iter()

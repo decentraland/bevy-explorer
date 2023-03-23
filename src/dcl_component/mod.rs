@@ -35,6 +35,7 @@ pub struct SceneComponentId(pub u32);
 impl SceneComponentId {
     pub const TRANSFORM: SceneComponentId = SceneComponentId(1);
     pub const BILLBOARD: SceneComponentId = SceneComponentId(1090);
+    pub const RAYCAST: SceneComponentId = SceneComponentId(1090);
 }
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy)]

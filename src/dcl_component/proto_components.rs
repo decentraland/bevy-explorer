@@ -1,6 +1,22 @@
 use super::FromDclReader;
 
-include!(concat!(env!("OUT_DIR"), "/decentraland.sdk.components.rs"));
+pub mod sdk {
+    #[allow(clippy::all)]
+    pub mod components {
+        include!(concat!(env!("OUT_DIR"), "/decentraland.sdk.components.rs"));
+
+        pub mod common {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/decentraland.sdk.components.common.rs"
+            ));
+        }
+    }
+}
+
+pub mod common {
+    include!(concat!(env!("OUT_DIR"), "/decentraland.common.rs"));
+}
 
 trait DclProtoComponent: prost::Message + Default {}
 
@@ -10,4 +26,5 @@ impl<T: DclProtoComponent + Sync + Send + 'static> FromDclReader for T {
     }
 }
 
-impl DclProtoComponent for PbBillboard {}
+impl DclProtoComponent for sdk::components::PbBillboard {}
+impl DclProtoComponent for sdk::components::PbRaycast {}
