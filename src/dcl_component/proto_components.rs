@@ -28,3 +28,5 @@ impl<T: DclProtoComponent + Sync + Send + 'static> FromDclReader for T {
 
 impl DclProtoComponent for sdk::components::PbBillboard {}
 impl DclProtoComponent for sdk::components::PbRaycast {}
+impl DclProtoComponent for sdk::components::PbMeshRenderer {}
+impl DclProtoComponent for sdk::components::PbMeshCollider {}

@@ -15,9 +15,10 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 
 use crate::{
+    dcl::interface::{CrdtStore, CrdtType},
     dcl_component::{
-        transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneCrdtTimestamp,
-        SceneEntityId,
+        transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
+        SceneCrdtTimestamp, SceneEntityId,
     },
     scene_runner::{
         process_lifecycle, receive_scene_updates, send_scene_updates, update_scene_priority,
@@ -319,6 +320,8 @@ fn cyclic_recovery() {
             .entity_mut(scene_entity)
             .insert(CrdtLWWStateComponent::<DclTransformAndParent>::default());
 
+        let mut crdt_store = CrdtStore::default();
+
         for ix in 0..4 {
             let (dcl_entity, timestamp, data) = &messages[ix];
             let (mut scene_context, mut crdt_state) = app
@@ -336,7 +339,22 @@ fn cyclic_recovery() {
 
             // add next message
             let reader = &mut DclReader::new(&data);
-            crdt_state.try_update(*dcl_entity, *timestamp, Some(reader));
+            crdt_store.try_update(
+                SceneComponentId::TRANSFORM,
+                CrdtType::LWW_ENT,
+                *dcl_entity,
+                *timestamp,
+                Some(reader),
+            );
+            // pull updates
+            *crdt_state = CrdtLWWStateComponent::new(
+                crdt_store
+                    .take_updates()
+                    .lww
+                    .get(&SceneComponentId::TRANSFORM)
+                    .cloned()
+                    .unwrap_or_default(),
+            );
 
             // run systems
             Schedule::new()

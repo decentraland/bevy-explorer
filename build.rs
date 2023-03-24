@@ -1,6 +1,12 @@
 use std::io::Result;
 fn main() -> Result<()> {
-    let components = ["billboard", "raycast", "raycast_result"];
+    let components = [
+        "billboard",
+        "raycast",
+        "raycast_result",
+        "mesh_renderer",
+        "mesh_collider",
+    ];
 
     let sources = components
         .iter()

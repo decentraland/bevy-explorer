@@ -536,16 +536,10 @@ fn process_lifecycle(
     mut commands: Commands,
     mut scenes: Query<(Entity, &mut RendererSceneContext, &mut DeletedSceneEntities)>,
     children: Query<&Children>,
-    mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut handles: Local<Option<(Handle<Mesh>, Handle<StandardMaterial>)>>,
+    mut handles: Local<Option<Handle<StandardMaterial>>>,
 ) {
-    let (mesh, material) = handles.get_or_insert_with(|| {
-        (
-            meshes.add(shape::Cube::new(1.0).into()),
-            materials.add(Color::WHITE.into()),
-        )
-    });
+    let material = handles.get_or_insert_with(|| materials.add(Color::WHITE.into()));
 
     for (root, mut context, mut deleted_entities) in scenes.iter_mut() {
         let scene_id = context.scene_id;
@@ -563,7 +557,6 @@ fn process_lifecycle(
                         .spawn((
                             PbrBundle {
                                 // TODO remove these and replace with spatial bundle when mesh and material components are supported
-                                mesh: mesh.clone(),
                                 material: material.clone(),
                                 ..Default::default()
                             },

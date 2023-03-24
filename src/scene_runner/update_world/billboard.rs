@@ -47,11 +47,9 @@ impl From<Option<i32>> for Billboard {
     }
 }
 
-impl TryFrom<PbBillboard> for Billboard {
-    type Error = String;
-
-    fn try_from(value: PbBillboard) -> Result<Self, Self::Error> {
-        Ok(value.billboard_mode.into())
+impl From<PbBillboard> for Billboard {
+    fn from(value: PbBillboard) -> Self {
+        value.billboard_mode.into()
     }
 }
 
