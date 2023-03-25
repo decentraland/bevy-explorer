@@ -152,28 +152,19 @@ fn make_graph(app: &mut App) -> String {
 
         let graph_node = *graph_nodes
             .entry(ent)
-            .or_insert_with(|| graph.add_node(scene_entity.scene_entity_id.to_string()));
+            .or_insert_with(|| graph.add_node(scene_entity.id.to_string()));
 
         if let Some(children) = maybe_children {
             let sorted_children_with_scene_id: BTreeMap<_, _> = children
                 .iter()
-                .map(|c| {
-                    (
-                        scene_entity_query
-                            .get(&app.world, *c)
-                            .unwrap()
-                            .0
-                            .scene_entity_id,
-                        c,
-                    )
-                })
+                .map(|c| (scene_entity_query.get(&app.world, *c).unwrap().0.id, c))
                 .collect();
 
             to_check.extend(sorted_children_with_scene_id.values().copied());
             for (child_id, child_ent) in sorted_children_with_scene_id.into_iter() {
                 debug!(
                     "child of {:?}/{} -> {:?}/{}",
-                    ent, scene_entity.scene_entity_id, child_ent, child_id
+                    ent, scene_entity.id, child_ent, child_id
                 );
                 let child_graph_node = *graph_nodes
                     .entry(*child_ent)

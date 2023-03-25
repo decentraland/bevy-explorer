@@ -30,8 +30,9 @@ pub mod update_world;
 // system sets used for ordering
 #[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
 pub enum SceneSets {
+    Init,     // setup the scene
+    PostInit, // used for adding data to new scenes
     Input, // systems which create EngineResponses for the current frame (though these can be created anywhere)
-    Init,  // setup the scene
     RunLoop, // run the scripts
     PostLoop, // do anything after the script loop
 }
@@ -189,11 +190,11 @@ impl RendererSceneContext {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct SceneEntity {
     pub root: Entity,
     pub scene_id: SceneId,
-    pub scene_entity_id: SceneEntityId,
+    pub id: SceneEntityId,
 }
 
 // plugin which creates and runs scripts
@@ -224,10 +225,24 @@ impl Plugin for SceneRunnerPlugin {
         app.add_event::<LoadSceneEvent>();
         app.add_event::<EngineResponse>();
 
-        app.configure_sets((SceneSets::Input, SceneSets::Init, SceneSets::RunLoop).chain());
+        app.configure_sets(
+            (
+                SceneSets::Init,
+                SceneSets::PostInit,
+                SceneSets::Input,
+                SceneSets::RunLoop,
+                SceneSets::PostLoop,
+            )
+                .chain(),
+        );
         app.add_system(
             apply_system_buffers
                 .after(SceneSets::Init)
+                .before(SceneSets::PostInit),
+        );
+        app.add_system(
+            apply_system_buffers
+                .after(SceneSets::PostInit)
                 .before(SceneSets::RunLoop),
         );
         app.add_system(initialize_scene.in_set(SceneSets::Init));
@@ -385,7 +400,7 @@ fn initialize_scene(
             SceneEntity {
                 root,
                 scene_id,
-                scene_entity_id: SceneEntityId::ROOT,
+                id: SceneEntityId::ROOT,
             },
             SceneThreadHandle { sender: main_sx },
         ));
@@ -563,7 +578,7 @@ fn process_lifecycle(
                             SceneEntity {
                                 scene_id,
                                 root,
-                                scene_entity_id,
+                                id: scene_entity_id,
                             },
                             TargetParent(root),
                         ))

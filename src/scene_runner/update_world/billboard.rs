@@ -93,6 +93,7 @@ pub(crate) fn update_billboards(
             }
             Billboard::Y | Billboard::YX => {
                 // map camera into local frame
+                // TODO use GlobalTransform::raparented_to
                 let cam_local_matrix =
                     frame.compute_matrix().inverse() * cam_global_transform.compute_matrix();
                 let (_, _, cam_local_translation) =

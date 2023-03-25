@@ -16,13 +16,15 @@ use crate::{
 };
 
 use self::{
-    billboard::BillboardPlugin, mesh_renderer::MeshDefinitionPlugin, raycast::RaycastPlugin,
+    billboard::BillboardPlugin, mesh_collider::MeshColliderPlugin,
+    mesh_renderer::MeshDefinitionPlugin, raycast::RaycastPlugin,
     transform_and_parent::process_transform_and_parent_updates,
 };
 
 use super::{DeletedSceneEntities, RendererSceneContext, SceneLoopSchedule, SceneLoopSets};
 
 pub mod billboard;
+pub mod mesh_collider;
 pub mod mesh_renderer;
 pub mod raycast;
 pub mod transform_and_parent;
@@ -112,6 +114,7 @@ impl Plugin for SceneOutputPlugin {
             .add_system(process_transform_and_parent_updates.in_set(SceneLoopSets::UpdateWorld));
 
         app.add_plugin(MeshDefinitionPlugin);
+        app.add_plugin(MeshColliderPlugin);
         app.add_plugin(BillboardPlugin);
         app.add_plugin(RaycastPlugin);
     }

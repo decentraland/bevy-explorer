@@ -59,7 +59,7 @@ pub(crate) fn process_transform_and_parent_updates(
                                             SceneEntity {
                                                 scene_id: scene_context.scene_id,
                                                 root,
-                                                scene_entity_id: dcl_tp.parent(),
+                                                id: dcl_tp.parent(),
                                             },
                                             TargetParent(root),
                                         ))

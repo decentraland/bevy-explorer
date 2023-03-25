@@ -1,3 +1,5 @@
+use bevy::prelude::Vec3;
+
 use super::FromDclReader;
 
 pub mod sdk {
@@ -30,3 +32,23 @@ impl DclProtoComponent for sdk::components::PbBillboard {}
 impl DclProtoComponent for sdk::components::PbRaycast {}
 impl DclProtoComponent for sdk::components::PbMeshRenderer {}
 impl DclProtoComponent for sdk::components::PbMeshCollider {}
+
+impl From<&common::Vector3> for Vec3 {
+    fn from(f: &common::Vector3) -> Self {
+        Vec3 {
+            x: f.x,
+            y: f.y,
+            z: f.z,
+        }
+    }
+}
+
+impl From<common::Vector3> for Vec3 {
+    fn from(f: common::Vector3) -> Self {
+        Vec3 {
+            x: f.x,
+            y: f.y,
+            z: f.z,
+        }
+    }
+}
