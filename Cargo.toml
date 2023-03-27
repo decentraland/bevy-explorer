@@ -26,6 +26,7 @@ prost = "0.11.8"
 rapier3d = "0.17.2"
 nalgebra = { version = "0.32.2", features = [ "convert-glam023" ] }
 bimap = "0.6.3"
+bevy_prototype_debug_lines = { version = "0.10.1", features = ["3d"] }
 
 [dev-dependencies]
 petgraph = "0.6.3"

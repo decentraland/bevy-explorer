@@ -1,10 +1,10 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, utils::HashMap};
 use rapier3d::prelude::*;
 
 use crate::{
     dcl::interface::ComponentPosition,
     dcl_component::{
-        proto_components::sdk::components::{pb_mesh_collider, PbMeshCollider},
+        proto_components::sdk::components::{pb_mesh_collider, PbMeshCollider, ColliderLayer},
         SceneComponentId, SceneEntityId,
     },
     scene_runner::{DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneSets},
@@ -15,7 +15,13 @@ use super::{mesh_renderer::MeshDefinition, AddCrdtInterfaceExt};
 pub struct MeshColliderPlugin;
 
 #[derive(Component, Debug)]
-pub enum MeshCollider {
+pub struct MeshCollider {
+    shape: MeshColliderShape,
+    collision_mask: u32,
+}
+
+#[derive(Debug)]
+pub enum MeshColliderShape {
     Box,
     Cylinder { radius_top: f32, radius_bottom: f32 },
     Plane,
@@ -24,18 +30,24 @@ pub enum MeshCollider {
 
 impl From<PbMeshCollider> for MeshCollider {
     fn from(value: PbMeshCollider) -> Self {
-        match value.mesh {
-            Some(pb_mesh_collider::Mesh::Box(_)) => Self::Box,
-            Some(pb_mesh_collider::Mesh::Plane(_)) => Self::Plane,
-            Some(pb_mesh_collider::Mesh::Sphere(_)) => Self::Sphere,
+        let shape = match value.mesh {
+            Some(pb_mesh_collider::Mesh::Box(_)) => MeshColliderShape::Box,
+            Some(pb_mesh_collider::Mesh::Plane(_)) => MeshColliderShape::Plane,
+            Some(pb_mesh_collider::Mesh::Sphere(_)) => MeshColliderShape::Sphere,
             Some(pb_mesh_collider::Mesh::Cylinder(pb_mesh_collider::CylinderMesh {
                 radius_bottom,
                 radius_top,
-            })) => Self::Cylinder {
+            })) => MeshColliderShape::Cylinder {
                 radius_top: radius_top.unwrap_or(1.0),
                 radius_bottom: radius_bottom.unwrap_or(1.0),
             },
-            _ => Self::Box,
+            _ => MeshColliderShape::Box,
+        };
+
+        Self {
+            shape,
+            // TODO update to u32
+            collision_mask: value.collision_mask.unwrap_or(ColliderLayer::ClPointer as i32 | ColliderLayer::ClPhysics as i32) as u32,
         }
     }
 }
@@ -62,21 +74,30 @@ pub struct RaycastResult {
     pub normal: Vec3,
 }
 
+struct ColliderState {
+    base_collider: Collider,
+    scale: Vec3,
+}
+
 #[derive(Component, Default)]
 pub struct SceneColliderData {
     collider_set: ColliderSet,
-    entity_collider: bimap::BiMap<SceneEntityId, ColliderHandle>,
+    scaled_collider: bimap::BiMap<SceneEntityId, ColliderHandle>,
+    collider_state: HashMap<SceneEntityId, ColliderState>,
     query_state_valid_at: Option<f32>,
     query_state: Option<rapier3d::pipeline::QueryPipeline>,
     dummy_rapier_structs: (IslandManager, RigidBodySet),
 }
 
+const SCALE_EPSILON: f32 = 0.001;
+
 impl SceneColliderData {
     pub fn set_collider(&mut self, id: SceneEntityId, new_collider: Collider) {
         self.remove_collider(id);
 
+        self.collider_state.insert(id, ColliderState{ base_collider: new_collider.clone(), scale: Vec3::ONE });
         let handle = self.collider_set.insert(new_collider);
-        self.entity_collider.insert(id, handle);
+        self.scaled_collider.insert(id, handle);
         self.query_state_valid_at = None;
         debug!("set {id} collider");
     }
@@ -84,7 +105,28 @@ impl SceneColliderData {
     pub fn update_collider_transform(&mut self, id: SceneEntityId, transform: &GlobalTransform) {
         if let Some(handle) = self.get_collider(id) {
             if let Some(collider) = self.collider_set.get_mut(handle) {
-                collider.set_position(global_transform_to_iso(transform));
+                let (req_scale, rotation, translation) = transform.to_scale_rotation_translation();
+                let ColliderState{ base_collider, scale } = self.collider_state.get(&id).unwrap();
+
+                if (req_scale - *scale).length_squared() > SCALE_EPSILON {
+                    let base_shape = base_collider.shape();
+                    match base_shape.as_typed_shape() {
+                        TypedShape::Ball(b) => {
+                            match b.scaled(&req_scale.into(), 5).unwrap() {
+                                itertools::Either::Left(ball) => collider.set_shape(SharedShape::new(ball)),
+                                itertools::Either::Right(convex) => collider.set_shape(SharedShape::new(convex)),
+                            }
+                        }
+                        TypedShape::Cuboid(c) => {
+                            println!("{} updated cuboid scale {} -> {}", id, scale, req_scale);
+                            collider.set_shape(SharedShape::new(c.scaled(&req_scale.into())))
+                        }
+                        _ => unimplemented!()
+                    };
+                }
+                self.collider_state.get_mut(&id).unwrap().scale = req_scale;
+
+                collider.set_position(Isometry::from_parts(translation.into(), rotation.into()));
                 debug!("update {id} collider");
             }
         }
@@ -110,6 +152,7 @@ impl SceneColliderData {
         origin: Vec3,
         direction: Vec3,
         distance: f32,
+        collision_mask: u32,
     ) -> Option<RaycastResult> {
         let ray = rapier3d::prelude::Ray {
             origin: origin.into(),
@@ -125,8 +168,8 @@ impl SceneColliderData {
                 &self.collider_set,
                 &ray,
                 distance,
-                false,
-                QueryFilter::default(),
+                true,
+                QueryFilter::default().groups(InteractionGroups::new(Group::from_bits_truncate(collision_mask), Group::all())),
             )
             .map(|(handle, intersection)| RaycastResult {
                 id: self.get_entity(handle).unwrap(),
@@ -141,6 +184,7 @@ impl SceneColliderData {
         origin: Vec3,
         direction: Vec3,
         distance: f32,
+        collision_mask: u32,
     ) -> Vec<RaycastResult> {
         let ray = rapier3d::prelude::Ray {
             origin: origin.into(),
@@ -154,8 +198,8 @@ impl SceneColliderData {
             &self.collider_set,
             &ray,
             distance,
-            false,
-            QueryFilter::default(),
+            true,
+            QueryFilter::default().groups(InteractionGroups::new(Group::from_bits_truncate(collision_mask), Group::all())),
             |handle, intersection| {
                 results.push(RaycastResult {
                     id: self.get_entity(handle).unwrap(),
@@ -170,7 +214,7 @@ impl SceneColliderData {
     }
 
     pub fn remove_collider(&mut self, id: SceneEntityId) {
-        if let Some(handle) = self.entity_collider.get_by_left(&id) {
+        if let Some(handle) = self.scaled_collider.get_by_left(&id) {
             self.collider_set.remove(
                 *handle,
                 &mut self.dummy_rapier_structs.0,
@@ -178,14 +222,17 @@ impl SceneColliderData {
                 false,
             );
         }
+
+        self.scaled_collider.remove_by_left(&id);
+        self.collider_state.remove(&id);
     }
 
     pub fn get_collider(&self, id: SceneEntityId) -> Option<ColliderHandle> {
-        self.entity_collider.get_by_left(&id).copied()
+        self.scaled_collider.get_by_left(&id).copied()
     }
 
     pub fn get_entity(&self, handle: ColliderHandle) -> Option<SceneEntityId> {
-        self.entity_collider.get_by_right(&handle).copied()
+        self.scaled_collider.get_by_right(&handle).copied()
     }
 }
 
@@ -217,7 +264,7 @@ fn update_colliders(
     >,
     // add inferred colliders
     // any entity with a mesh definition that we're not using, or where the mesh definition has changed, as long as they don't have a mesh collider attached
-    new_inferred_colliders: Query<
+    _new_inferred_colliders: Query<
         (Entity, &SceneEntity, &MeshDefinition),
         (
             Or<(Changed<MeshDefinition>, Without<HasInferredCollider>)>,
@@ -248,39 +295,43 @@ fn update_colliders(
 
     // add explicit colliders
     // any entity with a mesh collider that we're not using, or where the mesh collider has changed
-    for (ent, scene_ent, collider) in new_explicit_colliders.iter() {
-        let collider = match collider {
-            MeshCollider::Box => ColliderBuilder::cuboid(0.5, 0.5, 0.5),
-            MeshCollider::Cylinder { .. } => unimplemented!(),
-            MeshCollider::Plane => ColliderBuilder::cuboid(0.5, 0.05, 0.5),
-            MeshCollider::Sphere => ColliderBuilder::ball(0.5),
+    for (ent, scene_ent, collider_def) in new_explicit_colliders.iter() {
+        let collider = match collider_def.shape {
+            MeshColliderShape::Box => ColliderBuilder::cuboid(0.5, 0.5, 0.5),
+            MeshColliderShape::Cylinder { .. } => unimplemented!(),
+            MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.05, 0.5),
+            MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),
         }
+        .collision_groups(InteractionGroups { memberships: Group::from_bits_truncate(collider_def.collision_mask), filter: Group::all() })
         .build();
 
-        update_collider(scene_ent, collider);
-        commands
-            .entity(ent)
-            .remove::<HasExplicitCollider>()
-            .insert(HasInferredCollider);
-    }
-
-    // add inferred colliders
-    // any entity with a mesh definition that we're not using, or where the mesh definition has changed, as long as they don't have a mesh collider attached
-    for (ent, scene_ent, mesh_definition) in new_inferred_colliders.iter() {
-        let collider = match mesh_definition {
-            MeshDefinition::Box { .. } => ColliderBuilder::cuboid(0.5, 0.5, 0.5),
-            MeshDefinition::Cylinder { .. } => unimplemented!(),
-            MeshDefinition::Plane { .. } => ColliderBuilder::cuboid(0.5, 0.05, 0.5),
-            MeshDefinition::Sphere => ColliderBuilder::ball(0.5),
-        }
-        .build();
-
+        debug!("{} adding explicit collider", scene_ent.id);
         update_collider(scene_ent, collider);
         commands
             .entity(ent)
             .remove::<HasInferredCollider>()
             .insert(HasExplicitCollider);
     }
+
+    // add inferred colliders
+    // any entity with a mesh definition that we're not using, or where the mesh definition has changed, as long as they don't have a mesh collider attached
+    // for (ent, scene_ent, mesh_definition) in new_inferred_colliders.iter() {
+    //     let collider = match mesh_definition {
+    //         MeshDefinition::Box { .. } => ColliderBuilder::cuboid(0.5, 0.5, 0.5),
+    //         MeshDefinition::Cylinder { .. } => unimplemented!(),
+    //         MeshDefinition::Plane { .. } => ColliderBuilder::cuboid(0.5, 0.05, 0.5),
+    //         MeshDefinition::Sphere => ColliderBuilder::ball(0.5),
+    //     }
+    //     .collision_groups(InteractionGroups { memberships: Group::from_bits_truncate((ColliderLayer::ClPointer as i32 | ColliderLayer::ClPhysics as i32) as u32), filter: Group::all() })
+    //     .build();
+
+    //     debug!("{} adding inferred collider", scene_ent.id);
+    //     update_collider(scene_ent, collider);
+    //     commands
+    //         .entity(ent)
+    //         .remove::<HasExplicitCollider>()
+    //         .insert(HasInferredCollider);
+    // }
 
     // remove colliders
     // any entities with a live collider handle that don't have a mesh collider or a mesh definition
@@ -326,9 +377,4 @@ fn update_collider_transforms(
 
         scene_data.update_collider_transform(scene_ent.id, global_transform);
     }
-}
-
-pub fn global_transform_to_iso(global_transform: &GlobalTransform) -> Isometry<Real> {
-    let (_, rotation, translation) = global_transform.to_scale_rotation_translation();
-    Isometry::from_parts(translation.into(), rotation.into())
 }

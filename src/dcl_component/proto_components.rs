@@ -65,16 +65,14 @@ impl std::ops::Add<common::Vector3> for common::Vector3 {
         }
     }
 }
-impl From<common::Vector3> for Vec3 {
-    fn from(value: common::Vector3) -> Self {
-        let common::Vector3 { x, y, z } = value;
-        Vec3 { x, y, z }
-    }
-}
 
-impl From<Vec3> for common::Vector3 {
-    fn from(value: Vec3) -> Self {
-        let Vec3 { x, y, z } = value;
-        Self { x, y, z }
+impl common::Vector3 {
+    // flip z coordinate for handedness
+    pub fn world_vec_to_vec3(&self) -> Vec3 {
+        Vec3::new(self.x, self.y, -self.z)
+    }
+
+    pub fn world_vec_from_vec3(vec3: &Vec3) -> Self {
+        Self { x: vec3.x, y: vec3.y, z: -vec3.z }
     }
 }

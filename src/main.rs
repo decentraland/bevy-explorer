@@ -14,6 +14,7 @@ use bevy::{
     prelude::*,
 };
 
+use bevy_prototype_debug_lines::DebugLinesPlugin;
 use camera_controller::CameraController;
 use dcl::SceneDefinition;
 use scene_runner::{LoadSceneEvent, PrimaryCamera, RendererSceneContext, SceneRunnerPlugin};
@@ -52,6 +53,7 @@ fn main() {
         }),
         ..Default::default()
     }))
+    .add_plugin(DebugLinesPlugin::with_depth_test(true))
     .add_plugin(SceneRunnerPlugin) // script engine plugin
     .add_plugin(CameraControllerPlugin)
     .add_startup_system(setup)
