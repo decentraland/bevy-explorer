@@ -51,8 +51,7 @@ fn run_raycasts(
         &mut SceneColliderData,
         &GlobalTransform,
     )>,
-    #[cfg(not(test))]
-    mut lines: ResMut<DebugLines>,
+    #[cfg(not(test))] mut lines: ResMut<DebugLines>,
 ) {
     for (e, scene_ent, raycast, transform) in raycast_requests.iter() {
         debug!("{e:?} has raycast request: {raycast:?}");

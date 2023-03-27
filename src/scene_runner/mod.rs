@@ -39,7 +39,7 @@ pub enum SceneSets {
 
 #[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
 pub enum SceneLoopSets {
-SendToScene,      // pass data to the scene
+    SendToScene,      // pass data to the scene
     ReceiveFromScene, // receive data from the scene
     Lifecycle,        // manage bevy entity lifetimes
     UpdateWorld,      // systems which handle events from the current frame
