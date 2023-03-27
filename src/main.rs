@@ -18,10 +18,7 @@ use camera_controller::CameraController;
 use dcl::SceneDefinition;
 use scene_runner::{LoadSceneEvent, PrimaryCamera, RendererSceneContext, SceneRunnerPlugin};
 
-use crate::{
-    camera_controller::CameraControllerPlugin, input_handler::SceneInputPlugin,
-    scene_runner::SceneSets,
-};
+use crate::{camera_controller::CameraControllerPlugin, scene_runner::SceneSets};
 
 #[derive(Resource)]
 struct UserScriptFolder(String);
@@ -56,7 +53,6 @@ fn main() {
         ..Default::default()
     }))
     .add_plugin(SceneRunnerPlugin) // script engine plugin
-    .add_plugin(SceneInputPlugin) // input handler
     .add_plugin(CameraControllerPlugin)
     .add_startup_system(setup)
     .insert_resource(AmbientLight {

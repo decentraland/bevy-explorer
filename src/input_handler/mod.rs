@@ -1,3 +1,5 @@
+/*
+
 use bevy::prelude::*;
 use deno_core::serde::Serialize;
 
@@ -9,9 +11,10 @@ pub struct SceneInputPlugin;
 impl Plugin for SceneInputPlugin {
     fn build(&self, app: &mut App) {
         // register system
-        app.add_system(send_key_input.in_set(SceneSets::Input));
+        // app.add_system(send_key_input.in_set(SceneSets::Input));
     }
 }
+
 
 // any struct implementing Serialize can be fed to EngineResponse::new()
 #[derive(Serialize)]
@@ -38,3 +41,5 @@ fn send_key_input(mut writer: EventWriter<EngineResponse>, input: Res<Input<KeyC
         ));
     }
 }
+
+*/

@@ -55,6 +55,13 @@ impl Plugin for MeshColliderPlugin {
     }
 }
 
+#[derive(Debug)]
+pub struct RaycastResult {
+    pub id: SceneEntityId,
+    pub toi: f32,
+    pub normal: Vec3,
+}
+
 #[derive(Component, Default)]
 pub struct SceneColliderData {
     collider_set: ColliderSet,
@@ -84,13 +91,7 @@ impl SceneColliderData {
         debug!("tried update {id} collider");
     }
 
-    pub fn cast_ray_nearest(
-        &mut self,
-        scene_time: f32,
-        origin: Vec3,
-        direction: Vec3,
-        distance: f32,
-    ) -> Option<SceneEntityId> {
+    fn update_pipeline(&mut self, scene_time: f32) {
         if self.query_state_valid_at != Some(scene_time) {
             if self.query_state.is_none() {
                 self.query_state = Some(Default::default());
@@ -101,15 +102,25 @@ impl SceneColliderData {
                 .update(&self.dummy_rapier_structs.1, &self.collider_set);
             self.query_state_valid_at = Some(scene_time);
         }
+    }
 
+    pub fn cast_ray_nearest(
+        &mut self,
+        scene_time: f32,
+        origin: Vec3,
+        direction: Vec3,
+        distance: f32,
+    ) -> Option<RaycastResult> {
         let ray = rapier3d::prelude::Ray {
             origin: origin.into(),
             dir: direction.into(),
         };
+        self.update_pipeline(scene_time);
+
         self.query_state
-            .as_mut()
+            .as_ref()
             .unwrap()
-            .cast_ray(
+            .cast_ray_and_get_normal(
                 &self.dummy_rapier_structs.1,
                 &self.collider_set,
                 &ray,
@@ -117,7 +128,45 @@ impl SceneColliderData {
                 false,
                 QueryFilter::default(),
             )
-            .and_then(|(handle, _)| self.get_entity(handle))
+            .map(|(handle, intersection)| RaycastResult {
+                id: self.get_entity(handle).unwrap(),
+                toi: intersection.toi,
+                normal: Vec3::from(intersection.normal),
+            })
+    }
+
+    pub fn cast_ray_all(
+        &mut self,
+        scene_time: f32,
+        origin: Vec3,
+        direction: Vec3,
+        distance: f32,
+    ) -> Vec<RaycastResult> {
+        let ray = rapier3d::prelude::Ray {
+            origin: origin.into(),
+            dir: direction.into(),
+        };
+        let mut results = Vec::default();
+        self.update_pipeline(scene_time);
+
+        self.query_state.as_ref().unwrap().intersections_with_ray(
+            &self.dummy_rapier_structs.1,
+            &self.collider_set,
+            &ray,
+            distance,
+            false,
+            QueryFilter::default(),
+            |handle, intersection| {
+                results.push(RaycastResult {
+                    id: self.get_entity(handle).unwrap(),
+                    toi: intersection.toi,
+                    normal: Vec3::from(intersection.normal),
+                });
+                true
+            },
+        );
+
+        results
     }
 
     pub fn remove_collider(&mut self, id: SceneEntityId) {

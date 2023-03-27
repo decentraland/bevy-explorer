@@ -8,7 +8,6 @@ use bevy::{
     prelude::*,
     utils::{FloatOrd, HashMap, HashSet, Instant},
 };
-use serde::Serialize;
 
 use crate::{
     dcl::{
@@ -17,7 +16,8 @@ use crate::{
     },
     dcl_assert,
     dcl_component::{
-        transform_and_parent::DclTransformAndParent, DclWriter, SceneComponentId, SceneEntityId,
+        transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
+        SceneEntityId, ToDclWriter,
     },
 };
 
@@ -77,23 +77,6 @@ pub struct LoadSceneEvent {
     pub scene: SceneDefinition,
 }
 
-// struct used for sending responses to the script.
-#[derive(Clone, Serialize)]
-pub struct EngineResponse {
-    pub method: String,
-    pub data: serde_json::Value,
-}
-
-impl EngineResponse {
-    // create from a method name and any type which implements `Serialize`
-    pub fn new(method: String, data: impl Serialize) -> Self {
-        Self {
-            method,
-            data: serde_json::to_value(data).unwrap(),
-        }
-    }
-}
-
 // contains a list of (SceneEntityId.generation, bevy entity) indexed by SceneEntityId.id
 // where generation is the earliest non-dead (though maybe not yet live)
 // generation for the scene id index.
@@ -106,7 +89,7 @@ type LiveEntityTable = Vec<(u16, Option<Entity>)>;
 
 // mapping from script entity -> bevy entity
 // note - be careful with size as this struct is moved into/out of js runtimes
-#[derive(Component, Default, Debug)]
+#[derive(Component, Debug)]
 pub struct RendererSceneContext {
     pub scene_id: SceneId,
     pub definition: SceneDefinition,
@@ -188,6 +171,30 @@ impl RendererSceneContext {
     pub fn is_dead(&self, entity: SceneEntityId) -> bool {
         self.entity_entry(entity.id).0 > entity.generation
     }
+
+    pub fn update_crdt(
+        &mut self,
+        component_id: SceneComponentId,
+        crdt_type: CrdtType,
+        id: SceneEntityId,
+        data: &impl ToDclWriter,
+    ) {
+        let mut buf = Vec::new();
+        DclWriter::new(&mut buf).write(data);
+        self.crdt_store
+            .force_update(component_id, crdt_type, id, Some(&mut DclReader::new(&buf)))
+    }
+
+    #[allow(dead_code)]
+    pub fn clear_crdt(
+        &mut self,
+        component_id: SceneComponentId,
+        crdt_type: CrdtType,
+        id: SceneEntityId,
+    ) {
+        self.crdt_store
+            .force_update(component_id, crdt_type, id, None)
+    }
 }
 
 #[derive(Component, Debug)]
@@ -223,7 +230,6 @@ impl Plugin for SceneRunnerPlugin {
         });
 
         app.add_event::<LoadSceneEvent>();
-        app.add_event::<EngineResponse>();
 
         app.configure_sets(
             (
@@ -407,9 +413,6 @@ fn initialize_scene(
     }
 }
 
-#[derive(Default)]
-struct EngineResponseList(Vec<EngineResponse>);
-
 // TODO: work out how to set this intelligently
 // we need to keep enough scheduler time to ensure the main loop wakes enough
 // otherwise we end up overrunning the budget
@@ -452,7 +455,8 @@ fn send_scene_updates(
     let mut affine = camera.single().affine();
     affine.translation -= scene_transform.affine().translation;
     let camera_relative_transform = Transform::from(GlobalTransform::from(affine));
-    let mut writer = DclWriter::new(44);
+    let mut buf = Vec::default();
+    let mut writer = DclWriter::new(&mut buf);
     writer.write(&DclTransformAndParent::from_bevy_transform_and_parent(
         &camera_relative_transform,
         SceneEntityId::ROOT,

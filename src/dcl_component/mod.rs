@@ -27,6 +27,10 @@ impl SceneEntityId {
     pub const ROOT: SceneEntityId = Self::reserved(0);
     pub const PLAYER: SceneEntityId = Self::reserved(1);
     pub const CAMERA: SceneEntityId = Self::reserved(2);
+
+    pub fn as_proto_u32(&self) -> Option<u32> {
+        Some((self.id as u32) << 16 | self.generation as u32)
+    }
 }
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy)]

@@ -183,12 +183,12 @@ fn make_reparent_buffer(parent: u16) -> Vec<u8> {
         id: parent,
         generation: 0,
     };
-    let mut writer = DclWriter::new(48);
-    writer.write(&DclTransformAndParent {
+    let mut buf = Vec::new();
+    DclWriter::new(&mut buf).write(&DclTransformAndParent {
         parent,
         ..Default::default()
     });
-    writer.into()
+    buf
 }
 
 fn run_single_update(app: &mut App) {
