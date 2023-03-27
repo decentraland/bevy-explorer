@@ -1,12 +1,17 @@
 use bevy::prelude::*;
+#[cfg(not(test))]
 use bevy_prototype_debug_lines::DebugLines;
 
 use crate::{
     dcl::interface::{ComponentPosition, CrdtType},
     dcl_component::{
-        proto_components::{sdk::components::{
-            common::RaycastHit, pb_raycast::Direction, PbRaycast, PbRaycastResult, RaycastQueryType,
-        }, common::Vector3},
+        proto_components::{
+            common::Vector3,
+            sdk::components::{
+                common::RaycastHit, pb_raycast::Direction, PbRaycast, PbRaycastResult,
+                RaycastQueryType,
+            },
+        },
         SceneComponentId,
     },
     scene_runner::{RendererSceneContext, SceneEntity, SceneSets},
@@ -46,6 +51,7 @@ fn run_raycasts(
         &mut SceneColliderData,
         &GlobalTransform,
     )>,
+    #[cfg(not(test))]
     mut lines: ResMut<DebugLines>,
 ) {
     for (e, scene_ent, raycast, transform) in raycast_requests.iter() {
@@ -55,7 +61,6 @@ fn run_raycasts(
         {
             let (_, local_rotation, _) = transform.to_scale_rotation_translation();
             let scene_translation = scene_transform.translation();
-            let mut db = false;
 
             let offset = raycast
                 .0
@@ -66,40 +71,56 @@ fn run_raycasts(
             let origin = transform.transform_point(offset);
             let direction = match &raycast.0.direction {
                 Some(Direction::LocalDirection(dir)) => local_rotation * dir.world_vec_to_vec3(),
-                Some(Direction::GlobalDirection(dir)) => {
-                    db = true;
-                    dir.world_vec_to_vec3()
+                Some(Direction::GlobalDirection(dir)) => dir.world_vec_to_vec3(),
+                Some(Direction::GlobalTarget(point)) => {
+                    point.world_vec_to_vec3() + scene_translation - origin
                 }
-                Some(Direction::GlobalTarget(point)) => point.world_vec_to_vec3() + scene_translation - origin,
                 Some(Direction::TargetEntity(_id)) => todo!(),
                 None => {
                     warn!("no direction on raycast");
                     continue;
                 }
-            }.normalize();
+            }
+            .normalize();
+
             let results = match raycast.0.query_type() {
                 RaycastQueryType::RqtHitFirst => scene_data
-                    .cast_ray_nearest(context.last_sent, origin, direction, f32::MAX, raycast.0.collision_mask.unwrap_or(u32::MAX))
+                    .cast_ray_nearest(
+                        context.last_sent,
+                        origin,
+                        direction,
+                        raycast.0.max_distance,
+                        raycast.0.collision_mask.unwrap_or(u32::MAX),
+                    )
                     .map(|hit| vec![hit])
                     .unwrap_or_default(),
-                RaycastQueryType::RqtQueryAll => {
-                    scene_data.cast_ray_all(context.last_sent, origin, direction, raycast.0.max_distance, raycast.0.collision_mask.unwrap_or(u32::MAX))
-                }
+                RaycastQueryType::RqtQueryAll => scene_data.cast_ray_all(
+                    context.last_sent,
+                    origin,
+                    direction,
+                    raycast.0.max_distance,
+                    raycast.0.collision_mask.unwrap_or(u32::MAX),
+                ),
                 RaycastQueryType::RqtNone => Vec::default(),
             };
 
-            if db {
-                debug!("{}: origin: {origin}, direction: {direction}, hits: {results:?}", scene_ent.id);
-            }
-
-            lines.line_colored(origin, origin + direction * 100.0, 0.0, Color::BLUE);
+            // debug line showing raycast
+            #[cfg(not(test))]
+            lines.line_colored(
+                origin,
+                origin + direction * raycast.0.max_distance,
+                0.0,
+                Color::BLUE,
+            );
 
             // output
             let scene_origin = origin - scene_translation;
 
             let make_hit = |result: RaycastResult| -> RaycastHit {
                 RaycastHit {
-                    position: Some(Vector3::world_vec_from_vec3(&(scene_origin + direction * result.toi))),
+                    position: Some(Vector3::world_vec_from_vec3(
+                        &(scene_origin + direction * result.toi),
+                    )),
                     global_origin: Some(Vector3::world_vec_from_vec3(&scene_origin)),
                     direction: Some(Vector3::world_vec_from_vec3(&direction)),
                     normal_hit: Some(Vector3::world_vec_from_vec3(&result.normal)),

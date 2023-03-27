@@ -4,13 +4,13 @@ use rapier3d::prelude::*;
 use crate::{
     dcl::interface::ComponentPosition,
     dcl_component::{
-        proto_components::sdk::components::{pb_mesh_collider, PbMeshCollider, ColliderLayer},
+        proto_components::sdk::components::{pb_mesh_collider, ColliderLayer, PbMeshCollider},
         SceneComponentId, SceneEntityId,
     },
     scene_runner::{DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneSets},
 };
 
-use super::{mesh_renderer::MeshDefinition, AddCrdtInterfaceExt};
+use super::AddCrdtInterfaceExt;
 
 pub struct MeshColliderPlugin;
 
@@ -47,7 +47,10 @@ impl From<PbMeshCollider> for MeshCollider {
         Self {
             shape,
             // TODO update to u32
-            collision_mask: value.collision_mask.unwrap_or(ColliderLayer::ClPointer as i32 | ColliderLayer::ClPhysics as i32) as u32,
+            collision_mask: value
+                .collision_mask
+                .unwrap_or(ColliderLayer::ClPointer as i32 | ColliderLayer::ClPhysics as i32)
+                as u32,
         }
     }
 }
@@ -95,7 +98,13 @@ impl SceneColliderData {
     pub fn set_collider(&mut self, id: SceneEntityId, new_collider: Collider) {
         self.remove_collider(id);
 
-        self.collider_state.insert(id, ColliderState{ base_collider: new_collider.clone(), scale: Vec3::ONE });
+        self.collider_state.insert(
+            id,
+            ColliderState {
+                base_collider: new_collider.clone(),
+                scale: Vec3::ONE,
+            },
+        );
         let handle = self.collider_set.insert(new_collider);
         self.scaled_collider.insert(id, handle);
         self.query_state_valid_at = None;
@@ -106,31 +115,34 @@ impl SceneColliderData {
         if let Some(handle) = self.get_collider(id) {
             if let Some(collider) = self.collider_set.get_mut(handle) {
                 let (req_scale, rotation, translation) = transform.to_scale_rotation_translation();
-                let ColliderState{ base_collider, scale } = self.collider_state.get(&id).unwrap();
+                let ColliderState {
+                    base_collider,
+                    scale,
+                } = self.collider_state.get(&id).unwrap();
 
+                // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
                 if (req_scale - *scale).length_squared() > SCALE_EPSILON {
                     let base_shape = base_collider.shape();
                     match base_shape.as_typed_shape() {
-                        TypedShape::Ball(b) => {
-                            match b.scaled(&req_scale.into(), 5).unwrap() {
-                                itertools::Either::Left(ball) => collider.set_shape(SharedShape::new(ball)),
-                                itertools::Either::Right(convex) => collider.set_shape(SharedShape::new(convex)),
+                        TypedShape::Ball(b) => match b.scaled(&req_scale.into(), 5).unwrap() {
+                            itertools::Either::Left(ball) => {
+                                collider.set_shape(SharedShape::new(ball))
                             }
-                        }
+                            itertools::Either::Right(convex) => {
+                                collider.set_shape(SharedShape::new(convex))
+                            }
+                        },
                         TypedShape::Cuboid(c) => {
-                            println!("{} updated cuboid scale {} -> {}", id, scale, req_scale);
                             collider.set_shape(SharedShape::new(c.scaled(&req_scale.into())))
                         }
-                        _ => unimplemented!()
+                        _ => unimplemented!(),
                     };
                 }
                 self.collider_state.get_mut(&id).unwrap().scale = req_scale;
 
                 collider.set_position(Isometry::from_parts(translation.into(), rotation.into()));
-                debug!("update {id} collider");
             }
         }
-        debug!("tried update {id} collider");
     }
 
     fn update_pipeline(&mut self, scene_time: f32) {
@@ -169,7 +181,10 @@ impl SceneColliderData {
                 &ray,
                 distance,
                 true,
-                QueryFilter::default().groups(InteractionGroups::new(Group::from_bits_truncate(collision_mask), Group::all())),
+                QueryFilter::default().groups(InteractionGroups::new(
+                    Group::from_bits_truncate(collision_mask),
+                    Group::all(),
+                )),
             )
             .map(|(handle, intersection)| RaycastResult {
                 id: self.get_entity(handle).unwrap(),
@@ -199,7 +214,10 @@ impl SceneColliderData {
             &ray,
             distance,
             true,
-            QueryFilter::default().groups(InteractionGroups::new(Group::from_bits_truncate(collision_mask), Group::all())),
+            QueryFilter::default().groups(InteractionGroups::new(
+                Group::from_bits_truncate(collision_mask),
+                Group::all(),
+            )),
             |handle, intersection| {
                 results.push(RaycastResult {
                     id: self.get_entity(handle).unwrap(),
@@ -247,101 +265,63 @@ fn update_scene_collider_data(
     }
 }
 
-// collider state components
+// collider state component
 #[derive(Component)]
-pub struct HasExplicitCollider;
-#[derive(Component)]
-pub struct HasInferredCollider;
+pub struct HasCollider;
 
 #[allow(clippy::type_complexity)]
 fn update_colliders(
     mut commands: Commands,
-    // add explicit colliders
+    // add colliders
     // any entity with a mesh collider that we're not already using, or where the mesh collider has changed
-    new_explicit_colliders: Query<
+    new_colliders: Query<
         (Entity, &SceneEntity, &MeshCollider),
-        Or<(Changed<MeshCollider>, Without<HasExplicitCollider>)>,
-    >,
-    // add inferred colliders
-    // any entity with a mesh definition that we're not using, or where the mesh definition has changed, as long as they don't have a mesh collider attached
-    _new_inferred_colliders: Query<
-        (Entity, &SceneEntity, &MeshDefinition),
-        (
-            Or<(Changed<MeshDefinition>, Without<HasInferredCollider>)>,
-            Without<MeshCollider>,
-        ),
+        Or<(Changed<MeshCollider>, Without<HasCollider>)>,
     >,
     // remove colliders
-    // any entities with a live collider handle that don't have a mesh collider or a mesh definition
+    // any entities with a live collider handle that don't have a mesh collider
     colliders_without_source: Query<
-        &SceneEntity,
-        (
-            Or<(With<HasExplicitCollider>, With<HasInferredCollider>)>,
-            Without<MeshDefinition>,
-            Without<MeshCollider>,
-        ),
+        (Entity, &SceneEntity),
+        (With<HasCollider>, Without<MeshCollider>),
     >,
     // remove colliders for deleted entities
     mut scene_data: Query<(&mut SceneColliderData, Option<&DeletedSceneEntities>)>,
 ) {
-    let mut update_collider = |scene_ent: &SceneEntity, new_collider: Collider| {
-        let Ok((mut scene_data, _)) = scene_data.get_mut(scene_ent.root) else {
-            warn!("missing scene root for {scene_ent:?}");
-            return;
-        };
-
-        scene_data.set_collider(scene_ent.id, new_collider);
-    };
-
-    // add explicit colliders
+    // add colliders
     // any entity with a mesh collider that we're not using, or where the mesh collider has changed
-    for (ent, scene_ent, collider_def) in new_explicit_colliders.iter() {
+    for (ent, scene_ent, collider_def) in new_colliders.iter() {
         let collider = match collider_def.shape {
             MeshColliderShape::Box => ColliderBuilder::cuboid(0.5, 0.5, 0.5),
             MeshColliderShape::Cylinder { .. } => unimplemented!(),
             MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.05, 0.5),
             MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),
         }
-        .collision_groups(InteractionGroups { memberships: Group::from_bits_truncate(collider_def.collision_mask), filter: Group::all() })
+        .collision_groups(InteractionGroups {
+            memberships: Group::from_bits_truncate(collider_def.collision_mask),
+            filter: Group::all(),
+        })
         .build();
 
-        debug!("{} adding explicit collider", scene_ent.id);
-        update_collider(scene_ent, collider);
-        commands
-            .entity(ent)
-            .remove::<HasInferredCollider>()
-            .insert(HasExplicitCollider);
+        debug!("{} adding collider", scene_ent.id);
+        let Ok((mut scene_data, _)) = scene_data.get_mut(scene_ent.root) else {
+            warn!("missing scene root for {scene_ent:?}");
+            continue;
+        };
+
+        scene_data.set_collider(scene_ent.id, collider);
+        commands.entity(ent).insert(HasCollider);
     }
-
-    // add inferred colliders
-    // any entity with a mesh definition that we're not using, or where the mesh definition has changed, as long as they don't have a mesh collider attached
-    // for (ent, scene_ent, mesh_definition) in new_inferred_colliders.iter() {
-    //     let collider = match mesh_definition {
-    //         MeshDefinition::Box { .. } => ColliderBuilder::cuboid(0.5, 0.5, 0.5),
-    //         MeshDefinition::Cylinder { .. } => unimplemented!(),
-    //         MeshDefinition::Plane { .. } => ColliderBuilder::cuboid(0.5, 0.05, 0.5),
-    //         MeshDefinition::Sphere => ColliderBuilder::ball(0.5),
-    //     }
-    //     .collision_groups(InteractionGroups { memberships: Group::from_bits_truncate((ColliderLayer::ClPointer as i32 | ColliderLayer::ClPhysics as i32) as u32), filter: Group::all() })
-    //     .build();
-
-    //     debug!("{} adding inferred collider", scene_ent.id);
-    //     update_collider(scene_ent, collider);
-    //     commands
-    //         .entity(ent)
-    //         .remove::<HasExplicitCollider>()
-    //         .insert(HasInferredCollider);
-    // }
 
     // remove colliders
     // any entities with a live collider handle that don't have a mesh collider or a mesh definition
-    for scene_ent in colliders_without_source.iter() {
+    for (ent, scene_ent) in colliders_without_source.iter() {
         let Ok((mut scene_data, _)) = scene_data.get_mut(scene_ent.root) else {
             warn!("missing scene root for {scene_ent:?}");
             continue;
         };
 
         scene_data.remove_collider(scene_ent.id);
+        commands.entity(ent).remove::<HasCollider>();
     }
 
     // remove colliders for deleted entities
@@ -359,12 +339,8 @@ fn update_collider_transforms(
     changed_colliders: Query<
         (&SceneEntity, &GlobalTransform),
         (
-            Or<(With<HasExplicitCollider>, With<HasInferredCollider>)>, // has some collider
-            Or<(
-                Changed<GlobalTransform>,
-                Added<HasExplicitCollider>,
-                Added<HasInferredCollider>,
-            )>, // which needs updating
+            With<HasCollider>,                                  // has some collider
+            Or<(Changed<GlobalTransform>, Added<HasCollider>)>, // which needs updating
         ),
     >,
     mut scene_data: Query<&mut SceneColliderData>,

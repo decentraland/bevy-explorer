@@ -73,6 +73,10 @@ impl common::Vector3 {
     }
 
     pub fn world_vec_from_vec3(vec3: &Vec3) -> Self {
-        Self { x: vec3.x, y: vec3.y, z: -vec3.z }
+        Self {
+            x: vec3.x,
+            y: vec3.y,
+            z: -vec3.z,
+        }
     }
 }
