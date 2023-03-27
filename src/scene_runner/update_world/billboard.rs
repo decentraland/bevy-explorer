@@ -89,7 +89,10 @@ pub(crate) fn update_billboards(
                 };
                 let target_local_matrix =
                     frame.compute_matrix().inverse() * target_global_transform.compute_matrix();
-                *local_transform = Transform::from_matrix(target_local_matrix);
+                let target_transform = Transform::from_matrix(target_local_matrix);
+
+                // just update the rotation so that scale and translation don't drift, or change on first frame if GlobalTransform is not yet updated
+                local_transform.rotation = target_transform.rotation;
             }
             Billboard::Y | Billboard::YX => {
                 // map camera into local frame
