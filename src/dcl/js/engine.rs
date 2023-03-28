@@ -178,7 +178,8 @@ fn put_component(
     let content_len = data.data.len();
     let length = content_len + 12 + if data.is_some { 4 } else { 0 } + 8;
 
-    let mut writer = DclWriter::new(length);
+    let mut buf = Vec::with_capacity(length);
+    let mut writer = DclWriter::new(&mut buf);
     writer.write_u32(length as u32);
 
     if data.is_some {
@@ -196,7 +197,7 @@ fn put_component(
         writer.write_raw(&data.data)
     }
 
-    writer.into()
+    buf
 }
 
 #[op(v8)]

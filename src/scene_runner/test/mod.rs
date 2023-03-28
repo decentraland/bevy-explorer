@@ -15,9 +15,10 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 
 use crate::{
+    dcl::interface::{CrdtStore, CrdtType},
     dcl_component::{
-        transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneCrdtTimestamp,
-        SceneEntityId,
+        transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
+        SceneCrdtTimestamp, SceneEntityId,
     },
     scene_runner::{
         process_lifecycle, receive_scene_updates, send_scene_updates, update_scene_priority,
@@ -151,28 +152,19 @@ fn make_graph(app: &mut App) -> String {
 
         let graph_node = *graph_nodes
             .entry(ent)
-            .or_insert_with(|| graph.add_node(scene_entity.scene_entity_id.to_string()));
+            .or_insert_with(|| graph.add_node(scene_entity.id.to_string()));
 
         if let Some(children) = maybe_children {
             let sorted_children_with_scene_id: BTreeMap<_, _> = children
                 .iter()
-                .map(|c| {
-                    (
-                        scene_entity_query
-                            .get(&app.world, *c)
-                            .unwrap()
-                            .0
-                            .scene_entity_id,
-                        c,
-                    )
-                })
+                .map(|c| (scene_entity_query.get(&app.world, *c).unwrap().0.id, c))
                 .collect();
 
             to_check.extend(sorted_children_with_scene_id.values().copied());
             for (child_id, child_ent) in sorted_children_with_scene_id.into_iter() {
                 debug!(
                     "child of {:?}/{} -> {:?}/{}",
-                    ent, scene_entity.scene_entity_id, child_ent, child_id
+                    ent, scene_entity.id, child_ent, child_id
                 );
                 let child_graph_node = *graph_nodes
                     .entry(*child_ent)
@@ -191,12 +183,12 @@ fn make_reparent_buffer(parent: u16) -> Vec<u8> {
         id: parent,
         generation: 0,
     };
-    let mut writer = DclWriter::new(48);
-    writer.write(&DclTransformAndParent {
+    let mut buf = Vec::new();
+    DclWriter::new(&mut buf).write(&DclTransformAndParent {
         parent,
         ..Default::default()
     });
-    writer.into()
+    buf
 }
 
 fn run_single_update(app: &mut App) {
@@ -319,6 +311,8 @@ fn cyclic_recovery() {
             .entity_mut(scene_entity)
             .insert(CrdtLWWStateComponent::<DclTransformAndParent>::default());
 
+        let mut crdt_store = CrdtStore::default();
+
         for ix in 0..4 {
             let (dcl_entity, timestamp, data) = &messages[ix];
             let (mut scene_context, mut crdt_state) = app
@@ -336,7 +330,22 @@ fn cyclic_recovery() {
 
             // add next message
             let reader = &mut DclReader::new(&data);
-            crdt_state.try_update(*dcl_entity, *timestamp, Some(reader));
+            crdt_store.try_update(
+                SceneComponentId::TRANSFORM,
+                CrdtType::LWW_ENT,
+                *dcl_entity,
+                *timestamp,
+                Some(reader),
+            );
+            // pull updates
+            *crdt_state = CrdtLWWStateComponent::new(
+                crdt_store
+                    .take_updates()
+                    .lww
+                    .get(&SceneComponentId::TRANSFORM)
+                    .cloned()
+                    .unwrap_or_default(),
+            );
 
             // run systems
             Schedule::new()

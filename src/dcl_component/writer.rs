@@ -2,15 +2,13 @@ use std::ops::Deref;
 
 use super::DclReader;
 
-pub struct DclWriter {
-    buffer: Vec<u8>,
+pub struct DclWriter<'a> {
+    buffer: &'a mut Vec<u8>,
 }
 
-impl DclWriter {
-    pub fn new(capacity: usize) -> Self {
-        Self {
-            buffer: Vec::with_capacity(capacity),
-        }
+impl<'a> DclWriter<'a> {
+    pub fn new(buffer: &'a mut Vec<u8>) -> Self {
+        Self { buffer }
     }
 
     pub fn write_raw(&mut self, data: &[u8]) {
@@ -46,29 +44,38 @@ impl DclWriter {
         value.to_writer(self)
     }
 
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.buffer.clear();
     }
 
     pub fn reader(&self) -> DclReader {
-        DclReader::new(&self.buffer)
+        DclReader::new(self.buffer)
     }
 }
 
-impl From<DclWriter> for Vec<u8> {
-    fn from(value: DclWriter) -> Self {
-        value.buffer
-    }
-}
-
-impl Deref for DclWriter {
+impl<'a> Deref for DclWriter<'a> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        &self.buffer
+        self.buffer
     }
 }
 
 pub trait ToDclWriter {
     fn to_writer(&self, buf: &mut DclWriter);
+}
+
+unsafe impl<'a> prost::bytes::BufMut for DclWriter<'a> {
+    fn remaining_mut(&self) -> usize {
+        self.buffer.remaining_mut()
+    }
+
+    unsafe fn advance_mut(&mut self, cnt: usize) {
+        self.buffer.advance_mut(cnt)
+    }
+
+    fn chunk_mut(&mut self) -> &mut prost::bytes::buf::UninitSlice {
+        self.buffer.chunk_mut()
+    }
 }

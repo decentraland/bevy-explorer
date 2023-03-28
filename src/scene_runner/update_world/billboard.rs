@@ -8,7 +8,7 @@ use bevy::prelude::*;
 
 use crate::{
     dcl::interface::ComponentPosition,
-    dcl_component::{proto_components::PbBillboard, SceneComponentId},
+    dcl_component::{proto_components::sdk::components::PbBillboard, SceneComponentId},
     scene_runner::{PrimaryCamera, SceneSets},
 };
 
@@ -47,11 +47,9 @@ impl From<Option<i32>> for Billboard {
     }
 }
 
-impl TryFrom<PbBillboard> for Billboard {
-    type Error = String;
-
-    fn try_from(value: PbBillboard) -> Result<Self, Self::Error> {
-        Ok(value.billboard_mode.into())
+impl From<PbBillboard> for Billboard {
+    fn from(value: PbBillboard) -> Self {
+        value.billboard_mode.into()
     }
 }
 
@@ -91,10 +89,14 @@ pub(crate) fn update_billboards(
                 };
                 let target_local_matrix =
                     frame.compute_matrix().inverse() * target_global_transform.compute_matrix();
-                *local_transform = Transform::from_matrix(target_local_matrix);
+                let target_transform = Transform::from_matrix(target_local_matrix);
+
+                // just update the rotation so that scale and translation don't drift, or change on first frame if GlobalTransform is not yet updated
+                local_transform.rotation = target_transform.rotation;
             }
             Billboard::Y | Billboard::YX => {
                 // map camera into local frame
+                // TODO use GlobalTransform::raparented_to
                 let cam_local_matrix =
                     frame.compute_matrix().inverse() * cam_global_transform.compute_matrix();
                 let (_, _, cam_local_translation) =

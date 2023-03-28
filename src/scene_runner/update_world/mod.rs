@@ -16,12 +16,17 @@ use crate::{
 };
 
 use self::{
-    billboard::BillboardPlugin, transform_and_parent::process_transform_and_parent_updates,
+    billboard::BillboardPlugin, mesh_collider::MeshColliderPlugin,
+    mesh_renderer::MeshDefinitionPlugin, raycast::RaycastPlugin,
+    transform_and_parent::process_transform_and_parent_updates,
 };
 
 use super::{DeletedSceneEntities, RendererSceneContext, SceneLoopSchedule, SceneLoopSets};
 
 pub mod billboard;
+pub mod mesh_collider;
+pub mod mesh_renderer;
+pub mod raycast;
 pub mod transform_and_parent;
 
 #[derive(Component, Default)]
@@ -108,7 +113,10 @@ impl Plugin for SceneOutputPlugin {
             .schedule
             .add_system(process_transform_and_parent_updates.in_set(SceneLoopSets::UpdateWorld));
 
+        app.add_plugin(MeshDefinitionPlugin);
+        app.add_plugin(MeshColliderPlugin);
         app.add_plugin(BillboardPlugin);
+        app.add_plugin(RaycastPlugin);
     }
 }
 
@@ -181,8 +189,8 @@ pub(crate) fn process_crdt_lww_updates<
             updates.last_write.remove(deleted);
         }
 
-        for (scene_entity, entry) in updates.last_write.iter_mut() {
-            let Some(entity) = scene_context.bevy_entity(*scene_entity) else {
+        for (scene_entity, entry) in std::mem::take(&mut updates.last_write) {
+            let Some(entity) = scene_context.bevy_entity(scene_entity) else {
                 warn!("skipping {} update for missing entity {:?}", std::any::type_name::<D>(), scene_entity);
                 continue;
             };

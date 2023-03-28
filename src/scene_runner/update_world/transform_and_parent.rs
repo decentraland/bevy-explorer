@@ -26,8 +26,8 @@ pub(crate) fn process_transform_and_parent_updates(
             updates.last_write.remove(deleted);
         }
 
-        for (scene_entity, entry) in updates.last_write.iter_mut() {
-            let Some(entity) = scene_context.bevy_entity(*scene_entity) else {
+        for (scene_entity, entry) in std::mem::take(&mut updates.last_write) {
+            let Some(entity) = scene_context.bevy_entity(scene_entity) else {
                 info!("skipping {} update for missing entity {:?}", std::any::type_name::<DclTransformAndParent>(), scene_entity);
                 continue;
             };
@@ -59,7 +59,7 @@ pub(crate) fn process_transform_and_parent_updates(
                                             SceneEntity {
                                                 scene_id: scene_context.scene_id,
                                                 root,
-                                                scene_entity_id: dcl_tp.parent(),
+                                                id: dcl_tp.parent(),
                                             },
                                             TargetParent(root),
                                         ))
