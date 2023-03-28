@@ -1,3 +1,11 @@
+// TODO
+// - handle continuous properly
+// - don't run every frame
+// - then prevent scene execution until raycasts are run
+// - probably change renderer context to contain frame number as well as dt so we can track precisely track run state
+// - move into scene loop
+// - consider how global raycasts interact with this setup
+
 use bevy::prelude::*;
 #[cfg(not(test))]
 use bevy_prototype_debug_lines::DebugLines;
