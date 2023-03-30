@@ -6,6 +6,7 @@ fn main() -> Result<()> {
         "raycast_result",
         "mesh_renderer",
         "mesh_collider",
+        "material",
     ];
 
     let sources = components
