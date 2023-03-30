@@ -38,6 +38,7 @@ pub struct SceneComponentId(pub u32);
 
 impl SceneComponentId {
     pub const TRANSFORM: SceneComponentId = SceneComponentId(1);
+    pub const MATERIAL: SceneComponentId = SceneComponentId(1017);
     pub const MESH_RENDERER: SceneComponentId = SceneComponentId(1018);
     pub const MESH_COLLIDER: SceneComponentId = SceneComponentId(1019);
     pub const RAYCAST: SceneComponentId = SceneComponentId(1067);

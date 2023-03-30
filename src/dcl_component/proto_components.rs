@@ -1,5 +1,3 @@
-use bevy::prelude::Vec3;
-
 use super::{FromDclReader, ToDclWriter};
 
 pub mod sdk {
@@ -16,6 +14,7 @@ pub mod sdk {
     }
 }
 
+#[allow(clippy::all)]
 pub mod common {
     include!(concat!(env!("OUT_DIR"), "/decentraland.common.rs"));
 }
@@ -41,7 +40,9 @@ impl DclProtoComponent for sdk::components::PbRaycast {}
 impl DclProtoComponent for sdk::components::PbRaycastResult {}
 impl DclProtoComponent for sdk::components::PbMeshRenderer {}
 impl DclProtoComponent for sdk::components::PbMeshCollider {}
+impl DclProtoComponent for sdk::components::PbMaterial {}
 
+// VECTOR3 conversions
 impl Copy for common::Vector3 {}
 impl std::ops::Mul<f32> for common::Vector3 {
     type Output = common::Vector3;
@@ -68,15 +69,30 @@ impl std::ops::Add<common::Vector3> for common::Vector3 {
 
 impl common::Vector3 {
     // flip z coordinate for handedness
-    pub fn world_vec_to_vec3(&self) -> Vec3 {
-        Vec3::new(self.x, self.y, -self.z)
+    pub fn world_vec_to_vec3(&self) -> bevy::prelude::Vec3 {
+        bevy::prelude::Vec3::new(self.x, self.y, -self.z)
     }
 
-    pub fn world_vec_from_vec3(vec3: &Vec3) -> Self {
+    pub fn world_vec_from_vec3(vec3: &bevy::prelude::Vec3) -> Self {
         Self {
             x: vec3.x,
             y: vec3.y,
             z: -vec3.z,
         }
+    }
+}
+
+// COLOR conversions
+impl Copy for common::Color3 {}
+impl Copy for common::Color4 {}
+impl From<common::Color4> for bevy::prelude::Color {
+    fn from(value: common::Color4) -> Self {
+        bevy::prelude::Color::rgba_linear(value.r, value.g, value.b, value.a)
+    }
+}
+
+impl From<common::Color3> for bevy::prelude::Color {
+    fn from(value: common::Color3) -> Self {
+        bevy::prelude::Color::rgb_linear(value.r, value.g, value.b)
     }
 }
