@@ -6,6 +6,7 @@ mod camera_controller;
 pub mod dcl;
 mod dcl_component;
 mod input_handler;
+mod ipfs;
 mod scene_runner;
 
 use bevy::{
