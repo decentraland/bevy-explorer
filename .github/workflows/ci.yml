@@ -7,7 +7,10 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: arduino/setup-protoc@v1
+      - name Install protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
       - uses: actions/checkout@v2
@@ -33,7 +36,10 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - uses: arduino/setup-protoc@v1
+      - name Install protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
         if: runner.os == 'linux'
@@ -52,7 +58,10 @@ jobs:
           toolchain: stable
           override: true
       - run: rustup component add rustfmt
-      - uses: arduino/setup-protoc@v1
+      - name Install protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
       - uses: actions-rs/cargo@v1
@@ -71,7 +80,10 @@ jobs:
           toolchain: stable
           override: true
       - run: rustup component add clippy
-      - uses: arduino/setup-protoc@v1
+      - name Install protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
       - uses: actions-rs/cargo@v1
