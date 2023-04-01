@@ -8,7 +8,7 @@ use bevy::{
 use bevy_common_assets::json::JsonAssetPlugin;
 use bimap::BiMap;
 use isahc::{http::StatusCode, AsyncReadResponseExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 pub struct TypedIpfsRef {
@@ -119,6 +119,7 @@ impl SceneContent {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum SceneIpfsLocation {
     Pointer(i32, i32),
     Hash(String),
@@ -157,7 +158,12 @@ impl Plugin for IpfsIoPlugin {
             .map(|fio| fio.root_path().clone());
 
         // create the custom asset io instance
-        let ipfs_io = IpfsIo::new(self.server_prefix.clone(), default_io, default_fs_path);
+        info!("remote server: {}", self.server_prefix);
+        let ipfs_io = IpfsIo::new(
+            format!("{}/content", self.server_prefix),
+            default_io,
+            default_fs_path,
+        );
 
         // the asset server is constructed and added the resource manager
         app.insert_resource(AssetServer::new(ipfs_io))

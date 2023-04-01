@@ -193,10 +193,10 @@ fn run_scene_loop(world: &mut World) {
     let mut run_once = false;
 
     // run until time elapsed or all scenes are updated
-    while Instant::now() < end_time
-        && (!run_once
-            || world.resource::<SceneUpdates>().eligible_jobs > 0
-            || world.resource::<SceneUpdates>().jobs_in_flight > 0)
+    while !run_once
+        || (Instant::now() < end_time
+            && (world.resource::<SceneUpdates>().eligible_jobs > 0
+                || world.resource::<SceneUpdates>().jobs_in_flight > 0))
     {
         schedule.run(world);
         run_once = true;

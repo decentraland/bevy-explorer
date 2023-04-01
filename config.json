@@ -1,0 +1,8 @@
+{
+    "server":"https://sdk-test-scenes.decentraland.zone",
+    "scene":{"Js":"scenes/step-11/index"},
+    "graphics":{
+        "vsync":false,
+        "log_fps":true
+    }
+}
