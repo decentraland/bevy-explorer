@@ -6,7 +6,7 @@ mod camera_controller;
 pub mod dcl;
 mod dcl_component;
 mod input_handler;
-mod ipfs;
+pub mod ipfs;
 mod scene_runner;
 
 use bevy::{
@@ -17,10 +17,11 @@ use bevy::{
 
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 use camera_controller::CameraController;
-use dcl::SceneDefinition;
-use scene_runner::{LoadSceneEvent, PrimaryCamera, RendererSceneContext, SceneRunnerPlugin};
+use scene_runner::{LoadSceneEvent, PrimaryCamera, SceneRunnerPlugin};
 
-use crate::{camera_controller::CameraControllerPlugin, scene_runner::SceneSets};
+use crate::{
+    camera_controller::CameraControllerPlugin, ipfs::IpfsIoPlugin, scene_runner::SceneSets,
+};
 
 #[derive(Resource)]
 struct UserScriptFolder(String);
@@ -44,16 +45,24 @@ macro_rules! dcl_assert {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let user_script_folder = args.get(1).expect("please enter script folder");
+    let prefix = "https://sdk-test-scenes.decentraland.zone/content".to_owned();
 
     let mut app = App::new();
 
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            present_mode: bevy::window::PresentMode::Immediate,
-            ..Default::default()
-        }),
-        ..Default::default()
-    }))
+    app.add_plugins(
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    present_mode: bevy::window::PresentMode::Immediate,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .build()
+            .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
+                server_prefix: prefix,
+            }),
+    )
     .add_plugin(DebugLinesPlugin::with_depth_test(true))
     .add_plugin(SceneRunnerPlugin) // script engine plugin
     .add_plugin(CameraControllerPlugin)
@@ -78,7 +87,7 @@ fn main() {
 fn setup(
     mut commands: Commands,
     mut scene_load: EventWriter<LoadSceneEvent>,
-    user_script_folder: Res<UserScriptFolder>,
+    // user_script_folder: Res<UserScriptFolder>,
 ) {
     // add a camera
     commands.spawn((
@@ -107,41 +116,34 @@ fn setup(
     });
 
     // load the scene
-    for i in 0..1 {
-        scene_load.send(LoadSceneEvent {
-            scene: SceneDefinition {
-                path: user_script_folder.0.clone(),
-                offset: Vec3::X * 2.0 * i as f32,
-                visible: i % 10 == 0,
-            },
-        });
-    }
+    scene_load.send(LoadSceneEvent {
+        location: ipfs::SceneIpfsLocation::Pointer(72, -10),
+    });
 }
 
-fn input(
-    keys: Res<Input<KeyCode>>,
-    mut load: EventWriter<LoadSceneEvent>,
-    mut commands: Commands,
-    scenes: Query<Entity, With<RendererSceneContext>>,
-    user_script_folder: Res<UserScriptFolder>,
+fn input(// keys: Res<Input<KeyCode>>,
+    // mut load: EventWriter<LoadSceneEvent>,
+    // mut commands: Commands,
+    // scenes: Query<Entity, With<RendererSceneContext>>,
+    // user_script_folder: Res<UserScriptFolder>,
 ) {
-    if keys.pressed(KeyCode::Up) {
-        let count = scenes.iter().count();
-        load.send(LoadSceneEvent {
-            scene: SceneDefinition {
-                path: user_script_folder.0.clone(),
-                offset: Vec3::X * 16.0 * count as f32,
-                visible: count.count_ones() <= 1,
-            },
-        });
-        println!("+ -> {}", count + 1);
-    }
+    // if keys.pressed(KeyCode::Up) {
+    //     let count = scenes.iter().count();
+    //     load.send(LoadSceneEvent {
+    //         scene: SceneDefinition {
+    //             path: user_script_folder.0.clone(),
+    //             offset: Vec3::X * 16.0 * count as f32,
+    //             visible: count.count_ones() <= 1,
+    //         },
+    //     });
+    //     println!("+ -> {}", count + 1);
+    // }
 
-    if keys.pressed(KeyCode::Down) {
-        let count = scenes.iter().count();
-        if let Some(entity) = scenes.iter().last() {
-            commands.entity(entity).despawn_recursive();
-            println!("- -> {}", count - 1);
-        }
-    }
+    // if keys.pressed(KeyCode::Down) {
+    //     let count = scenes.iter().count();
+    //     if let Some(entity) = scenes.iter().last() {
+    //         commands.entity(entity).despawn_recursive();
+    //         println!("- -> {}", count - 1);
+    //     }
+    // }
 }

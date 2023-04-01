@@ -8,7 +8,7 @@ use deno_core::{
 use tokio::sync::mpsc::Receiver;
 
 use self::context::SceneSceneContext;
-use crate::SceneDefinition;
+use crate::ipfs::SceneJsFile;
 
 use super::{
     interface::{CrdtComponentInterfaces, CrdtStore},
@@ -24,12 +24,12 @@ pub struct ShuttingDown;
 // main scene processing thread - constructs an isolate and runs the scene
 pub(crate) fn scene_thread(
     scene_id: SceneId,
-    scene_definition: SceneDefinition,
+    scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     thread_sx: SyncSender<SceneResponse>,
     thread_rx: Receiver<RendererResponse>,
 ) {
-    let scene_context = SceneSceneContext::new(scene_definition, scene_id);
+    let scene_context = SceneSceneContext::new(scene_id);
 
     // create an extension referencing our native functions and JS initialisation scripts
     // TODO: to make this more generic for multiple modules we could use
@@ -79,6 +79,7 @@ pub(crate) fn scene_thread(
 
     // store scene detail in the runtime state
     state.borrow_mut().put(scene_context);
+    state.borrow_mut().put(scene_js);
 
     // store the component writers
     state.borrow_mut().put(crdt_component_interfaces);
@@ -96,7 +97,7 @@ pub(crate) fn scene_thread(
         .put(runtime.v8_isolate().thread_safe_handle());
 
     // load module
-    let script = runtime.execute_script("<loader>", "require (\"index.js\")");
+    let script = runtime.execute_script("<loader>", "require (\"~scene.js\")");
 
     let script = match script {
         Err(e) => {
@@ -198,37 +199,21 @@ fn run_script(
     futures_lite::future::block_on(f).map(|_| ())
 }
 
-const MODULE_PREFIX: &str = "./assets/modules/";
-const MODULE_SUFFIX: &str = ".js";
-const SCENE_PREFIX: &str = "./assets/scenes/";
-
 // synchronously returns a string containing JS code from the file system
 #[op(v8)]
 fn op_require(
     state: Rc<RefCell<OpState>>,
     module_spec: String,
 ) -> Result<String, deno_core::error::AnyError> {
-    // only allow items within designated paths
-    if module_spec.contains("..") {
-        return Err(generic_error(format!(
-            "invalid module request: '..' not allowed in `{module_spec}`"
-        )));
-    }
+    debug!("require(\"{module_spec}\")");
 
-    let (scheme, name) = module_spec.split_at(1);
-    let filename = match (scheme, name) {
+    match module_spec.as_str() {
+        // user module load
+        "~scene.js" => Ok(state.borrow().borrow::<SceneJsFile>().0.as_ref().clone()),
         // core module load
-        ("~", name) => format!("{MODULE_PREFIX}{name}{MODULE_SUFFIX}"),
-        // generic load from the script path
-        (scheme, name) => {
-            let state = state.borrow();
-            let path = &state.borrow::<SceneSceneContext>().definition.path;
-            format!("{SCENE_PREFIX}{path}/{scheme}{name}")
-        }
-    };
-
-    debug!("require(\"{filename}\")");
-
-    std::fs::read_to_string(filename)
-        .map_err(|err| generic_error(format!("invalid module request `{module_spec}` ({err})")))
+        "~system/EngineApi" => Ok(include_str!("EngineApi.js").to_owned()),
+        _ => Err(generic_error(format!(
+            "invalid module request `{module_spec}`"
+        ))),
+    }
 }

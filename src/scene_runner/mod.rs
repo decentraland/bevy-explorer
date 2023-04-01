@@ -12,13 +12,14 @@ use bevy::{
 use crate::{
     dcl::{
         interface::{CrdtComponentInterfaces, CrdtStore, CrdtType},
-        spawn_scene, RendererResponse, SceneDefinition, SceneId, SceneResponse,
+        spawn_scene, RendererResponse, SceneId, SceneResponse,
     },
     dcl_assert,
     dcl_component::{
         transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
         SceneEntityId, ToDclWriter,
     },
+    ipfs::{IpfsLoaderExt, SceneDefinition, SceneIpfsLocation, SceneJsFile, SceneMeta},
 };
 
 use self::update_world::{CrdtExtractors, SceneOutputPlugin};
@@ -74,7 +75,7 @@ pub struct SceneThreadHandle {
 
 // event which can be sent from anywhere to trigger replacing the current scene with the one specified
 pub struct LoadSceneEvent {
-    pub scene: SceneDefinition,
+    pub location: SceneIpfsLocation,
 }
 
 // contains a list of (SceneEntityId.generation, bevy entity) indexed by SceneEntityId.id
@@ -92,7 +93,6 @@ type LiveEntityTable = Vec<(u16, Option<Entity>)>;
 #[derive(Component, Debug)]
 pub struct RendererSceneContext {
     pub scene_id: SceneId,
-    pub definition: SceneDefinition,
     pub priority: f32,
 
     // entities waiting to be born in bevy
@@ -116,15 +116,9 @@ pub struct RendererSceneContext {
 }
 
 impl RendererSceneContext {
-    pub fn new(
-        scene_id: SceneId,
-        definition: SceneDefinition,
-        root: Entity,
-        priority: f32,
-    ) -> Self {
+    pub fn new(scene_id: SceneId, root: Entity, priority: f32) -> Self {
         let mut new_context = Self {
             scene_id,
-            definition,
             nascent: Default::default(),
             death_row: Default::default(),
             live_entities: Vec::from_iter(std::iter::repeat((0, None)).take(u16::MAX as usize)),
@@ -251,7 +245,12 @@ impl Plugin for SceneRunnerPlugin {
                 .after(SceneSets::PostInit)
                 .before(SceneSets::RunLoop),
         );
+
+        app.add_system(load_scene_entity.in_set(SceneSets::Init));
+        app.add_system(load_scene_json.in_set(SceneSets::Init));
+        app.add_system(load_scene_js.in_set(SceneSets::Init));
         app.add_system(initialize_scene.in_set(SceneSets::Init));
+
         app.add_system(update_scene_priority.in_set(SceneSets::Init));
         app.add_system(run_scene_loop.in_set(SceneSets::RunLoop));
 
@@ -329,18 +328,25 @@ fn run_scene_loop(world: &mut World) {
 }
 
 fn update_scene_priority(
-    mut scenes: Query<(Entity, &mut RendererSceneContext)>,
+    mut scenes: Query<(Entity, &GlobalTransform, &mut RendererSceneContext)>,
+    camera: Query<&GlobalTransform, With<PrimaryCamera>>,
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
 ) {
     updates.eligible_jobs = 0;
 
+    let camera_translation = camera
+        .get_single()
+        .map(|gt| gt.translation())
+        .unwrap_or_default();
+
     // sort eligible scenes
     updates.scene_queue = scenes
         .iter_mut()
-        .filter(|(_, context)| !context.in_flight)
-        .filter_map(|(ent, mut context)| {
-            context.priority = context.definition.offset.length().powf(1.0);
+        .filter(|(_, _, context)| !context.in_flight)
+        .filter_map(|(ent, transform, mut context)| {
+            let distance = (transform.translation() - camera_translation).length();
+            context.priority = distance;
             let not_yet_run = context.last_sent < time.elapsed_seconds();
 
             (!context.in_flight && not_yet_run).then(|| {
@@ -357,29 +363,166 @@ fn update_scene_priority(
         .sort_by_key(|(_, priority)| *priority);
 }
 
-fn initialize_scene(
+#[derive(Component)]
+pub enum SceneLoading {
+    SceneEntity,
+    SceneMeta,
+    Javascript,
+}
+
+fn load_scene_entity(
+    mut commands: Commands,
     mut load_scene_events: EventReader<LoadSceneEvent>,
+    asset_server: Res<AssetServer>,
+) {
+    for event in load_scene_events.iter() {
+        match &event.location {
+            SceneIpfsLocation::Pointer(x, y) => {
+                commands.spawn((
+                    SceneLoading::SceneEntity,
+                    asset_server.load_scene_pointer(*x, *y),
+                ));
+            }
+            SceneIpfsLocation::Hash(path) => {
+                commands.spawn((
+                    SceneLoading::SceneEntity,
+                    asset_server.load::<SceneDefinition, _>(format!("{path}.scene_entity")),
+                ));
+            }
+            SceneIpfsLocation::Js(path) => {
+                commands.spawn((
+                    SceneLoading::Javascript,
+                    asset_server.load::<SceneJsFile, _>(format!("{path}.js")),
+                ));
+            }
+        };
+    }
+}
+
+fn load_scene_json(
+    mut commands: Commands,
+    mut loading_scenes: Query<(Entity, &mut SceneLoading, &Handle<SceneDefinition>)>,
+    scene_definitions: Res<Assets<SceneDefinition>>,
+    asset_server: Res<AssetServer>,
+) {
+    for (entity, mut state, h_scene) in loading_scenes
+        .iter_mut()
+        .filter(|(_, state, _)| matches!(**state, SceneLoading::SceneEntity))
+    {
+        let mut fail = |msg: &str| {
+            warn!("{entity:?} failed to initialize scene: {msg}");
+            commands.entity(entity).despawn_recursive();
+        };
+
+        match asset_server.get_load_state(h_scene) {
+            bevy::asset::LoadState::Loaded => (),
+            bevy::asset::LoadState::Failed => {
+                fail("Scene entity could not be loaded");
+                continue;
+            }
+            _ => continue,
+        }
+        let Some(definition) = scene_definitions.get(h_scene) else {
+            fail("Scene entity did not resolve to a valid asset");
+            continue;
+        };
+        let Some(h_meta) = asset_server.load_scene_file::<SceneMeta>("scene.json", &definition.content) else {
+            fail("scene entity did not contain a `scene.json` content item");
+            continue;
+        };
+
+        commands.entity(entity).insert(h_meta);
+        *state = SceneLoading::SceneMeta;
+    }
+}
+
+fn load_scene_js(
+    mut commands: Commands,
+    mut loading_scenes: Query<(
+        Entity,
+        &mut SceneLoading,
+        &Handle<SceneDefinition>,
+        &Handle<SceneMeta>,
+    )>,
+    scene_definitions: Res<Assets<SceneDefinition>>,
+    scene_metas: Res<Assets<SceneMeta>>,
+    asset_server: Res<AssetServer>,
+) {
+    for (entity, mut state, h_scene, h_meta) in loading_scenes
+        .iter_mut()
+        .filter(|(_, state, _, _)| matches!(**state, SceneLoading::SceneMeta))
+    {
+        let mut fail = |msg: &str| {
+            warn!("{entity:?} failed to initialize scene: {msg}");
+            commands.entity(entity).despawn_recursive();
+        };
+
+        match asset_server.get_load_state(h_meta) {
+            bevy::asset::LoadState::Loaded => (),
+            bevy::asset::LoadState::Failed => {
+                fail("scene.json could not be loaded");
+                continue;
+            }
+            _ => continue,
+        }
+        let definition = scene_definitions.get(h_scene).unwrap();
+        let Some(meta) = scene_metas.get(h_meta) else {
+            fail("scene.json did not resolve to expected format");
+            continue;
+        };
+        let Some(h_code) = asset_server.load_scene_file::<SceneJsFile>(&meta.main, &definition.content) else {
+            fail(format!("scene entity did not contain `main` content item `{}`", meta.main).as_str());
+            continue;
+        };
+
+        commands.entity(entity).insert(h_code);
+        *state = SceneLoading::Javascript;
+    }
+}
+
+fn initialize_scene(
     mut commands: Commands,
     mut scene_updates: ResMut<SceneUpdates>,
     crdt_component_interfaces: Res<CrdtExtractors>,
+    loading_scenes: Query<(Entity, &SceneLoading, &Handle<SceneJsFile>)>,
+    scene_js_files: Res<Assets<SceneJsFile>>,
+    asset_server: Res<AssetServer>,
 ) {
-    for new_scene in load_scene_events.iter() {
+    for (root, _, h_code) in loading_scenes
+        .iter()
+        .filter(|(_, state, ..)| matches!(state, SceneLoading::Javascript))
+    {
+        debug!("checking for js");
+        let mut fail = |msg: &str| {
+            warn!("{root:?} failed to initialize scene: {msg}");
+            commands.entity(root).despawn_recursive();
+        };
+
+        match asset_server.get_load_state(h_code) {
+            bevy::asset::LoadState::Loaded => (),
+            bevy::asset::LoadState::Failed => {
+                fail("main js could not be loaded");
+                continue;
+            }
+            _ => continue,
+        }
+
+        let Some(js_file) = scene_js_files.get(h_code) else {
+            fail("main js did not resolve to expected format");
+            continue;
+        };
+
+        info!("{root:?}: starting scene");
+
         // create the scene root entity
         // todo set world position
-        let root = commands
-            .spawn((
-                SpatialBundle {
-                    transform: Transform::from_translation(new_scene.scene.offset),
-                    visibility: if new_scene.scene.visible {
-                        Visibility::Inherited
-                    } else {
-                        Visibility::Hidden
-                    },
-                    ..Default::default()
-                },
-                DeletedSceneEntities::default(),
-            ))
-            .id();
+        commands.entity(root).remove::<SceneLoading>().insert((
+            SpatialBundle {
+                // todo set world position
+                ..Default::default()
+            },
+            DeletedSceneEntities::default(),
+        ));
 
         let thread_sx = scene_updates.sender.clone();
 
@@ -390,14 +533,10 @@ fn initialize_scene(
                 .map(|(id, interface)| (*id, interface.crdt_type())),
         ));
 
-        let (scene_id, main_sx) = spawn_scene(
-            new_scene.scene.clone(),
-            crdt_component_interfaces,
-            thread_sx,
-        );
+        let (scene_id, main_sx) =
+            spawn_scene(js_file.clone(), crdt_component_interfaces, thread_sx);
 
-        let renderer_context =
-            RendererSceneContext::new(scene_id, new_scene.scene.clone(), root, 1.0);
+        let renderer_context = RendererSceneContext::new(scene_id, root, 1.0);
 
         scene_updates.scene_ids.insert(scene_id, root);
 
