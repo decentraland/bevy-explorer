@@ -10,19 +10,23 @@ use bevy::{
 };
 
 use crate::{
-    dcl::{
-        interface::{CrdtComponentInterfaces, CrdtStore, CrdtType},
-        spawn_scene, RendererResponse, SceneDefinition, SceneId, SceneResponse,
-    },
-    dcl_assert,
+    dcl::{interface::CrdtType, RendererResponse, SceneId, SceneResponse},
     dcl_component::{
-        transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
-        SceneEntityId, ToDclWriter,
+        transform_and_parent::DclTransformAndParent, DclWriter, SceneComponentId, SceneEntityId,
     },
+    ipfs::SceneIpfsLocation,
 };
 
-use self::update_world::{CrdtExtractors, SceneOutputPlugin};
+use self::{
+    initialize_scene::{
+        initialize_scene, load_scene_entity, load_scene_javascript, load_scene_json,
+    },
+    renderer_context::RendererSceneContext,
+    update_world::{CrdtExtractors, SceneOutputPlugin},
+};
 
+pub mod initialize_scene;
+pub mod renderer_context;
 #[cfg(test)]
 pub mod test;
 pub mod update_world;
@@ -74,127 +78,7 @@ pub struct SceneThreadHandle {
 
 // event which can be sent from anywhere to trigger replacing the current scene with the one specified
 pub struct LoadSceneEvent {
-    pub scene: SceneDefinition,
-}
-
-// contains a list of (SceneEntityId.generation, bevy entity) indexed by SceneEntityId.id
-// where generation is the earliest non-dead (though maybe not yet live)
-// generation for the scene id index.
-// entities are initialized within the engine message-loop op, and added to 'nascent' until
-// the process_lifecycle system enlivens them.
-// Bevy entities are only created on a PUT of a component we care about in the renderer,
-// or if they are required for hierarchy parenting
-// TODO - consider Vec<Option<page>>
-type LiveEntityTable = Vec<(u16, Option<Entity>)>;
-
-// mapping from script entity -> bevy entity
-// note - be careful with size as this struct is moved into/out of js runtimes
-#[derive(Component, Debug)]
-pub struct RendererSceneContext {
-    pub scene_id: SceneId,
-    pub definition: SceneDefinition,
-    pub priority: f32,
-
-    // entities waiting to be born in bevy
-    pub nascent: HashSet<SceneEntityId>,
-    // entities waiting to be destroyed in bevy
-    pub death_row: HashSet<SceneEntityId>,
-    // entities that are live
-    live_entities: LiveEntityTable,
-
-    // list of entities that are not currently parented to their target parent
-    pub unparented_entities: HashSet<Entity>,
-    // indicates if we need to reprocess unparented entities
-    pub hierarchy_changed: bool,
-
-    // time of last message sent to scene
-    pub last_sent: f32,
-    // currently running?
-    pub in_flight: bool,
-
-    pub crdt_store: CrdtStore,
-}
-
-impl RendererSceneContext {
-    pub fn new(
-        scene_id: SceneId,
-        definition: SceneDefinition,
-        root: Entity,
-        priority: f32,
-    ) -> Self {
-        let mut new_context = Self {
-            scene_id,
-            definition,
-            nascent: Default::default(),
-            death_row: Default::default(),
-            live_entities: Vec::from_iter(std::iter::repeat((0, None)).take(u16::MAX as usize)),
-            unparented_entities: HashSet::new(),
-            hierarchy_changed: false,
-            last_sent: 0.0,
-            in_flight: false,
-            priority,
-            crdt_store: Default::default(),
-        };
-
-        new_context.live_entities[SceneEntityId::ROOT.id as usize] =
-            (SceneEntityId::ROOT.generation, Some(root));
-        new_context
-    }
-
-    fn entity_entry(&self, id: u16) -> &(u16, Option<Entity>) {
-        // SAFETY: live entities has u16::MAX members
-        unsafe { self.live_entities.get_unchecked(id as usize) }
-    }
-
-    fn entity_entry_mut(&mut self, id: u16) -> &mut (u16, Option<Entity>) {
-        // SAFETY: live entities has u16::MAX members
-        unsafe { self.live_entities.get_unchecked_mut(id as usize) }
-    }
-
-    pub fn associate_bevy_entity(&mut self, scene_entity: SceneEntityId, bevy_entity: Entity) {
-        debug!(
-            "associate scene id: {} -> bevy id {:?}",
-            scene_entity, bevy_entity
-        );
-        dcl_assert!(self.entity_entry(scene_entity.id).0 <= scene_entity.generation);
-        dcl_assert!(self.entity_entry(scene_entity.id).1.is_none());
-        *self.entity_entry_mut(scene_entity.id) = (scene_entity.generation, Some(bevy_entity));
-    }
-
-    pub fn bevy_entity(&self, scene_entity: SceneEntityId) -> Option<Entity> {
-        match self.entity_entry(scene_entity.id) {
-            (gen, Some(bevy_entity)) if *gen == scene_entity.generation => Some(*bevy_entity),
-            _ => None,
-        }
-    }
-
-    pub fn is_dead(&self, entity: SceneEntityId) -> bool {
-        self.entity_entry(entity.id).0 > entity.generation
-    }
-
-    pub fn update_crdt(
-        &mut self,
-        component_id: SceneComponentId,
-        crdt_type: CrdtType,
-        id: SceneEntityId,
-        data: &impl ToDclWriter,
-    ) {
-        let mut buf = Vec::new();
-        DclWriter::new(&mut buf).write(data);
-        self.crdt_store
-            .force_update(component_id, crdt_type, id, Some(&mut DclReader::new(&buf)))
-    }
-
-    #[allow(dead_code)]
-    pub fn clear_crdt(
-        &mut self,
-        component_id: SceneComponentId,
-        crdt_type: CrdtType,
-        id: SceneEntityId,
-    ) {
-        self.crdt_store
-            .force_update(component_id, crdt_type, id, None)
-    }
+    pub location: SceneIpfsLocation,
 }
 
 #[derive(Component, Debug)]
@@ -251,7 +135,12 @@ impl Plugin for SceneRunnerPlugin {
                 .after(SceneSets::PostInit)
                 .before(SceneSets::RunLoop),
         );
+
+        app.add_system(load_scene_entity.in_set(SceneSets::Init));
+        app.add_system(load_scene_json.in_set(SceneSets::Init));
+        app.add_system(load_scene_javascript.in_set(SceneSets::Init));
         app.add_system(initialize_scene.in_set(SceneSets::Init));
+
         app.add_system(update_scene_priority.in_set(SceneSets::Init));
         app.add_system(run_scene_loop.in_set(SceneSets::RunLoop));
 
@@ -304,10 +193,10 @@ fn run_scene_loop(world: &mut World) {
     let mut run_once = false;
 
     // run until time elapsed or all scenes are updated
-    while Instant::now() < end_time
-        && (!run_once
-            || world.resource::<SceneUpdates>().eligible_jobs > 0
-            || world.resource::<SceneUpdates>().jobs_in_flight > 0)
+    while !run_once
+        || (Instant::now() < end_time
+            && (world.resource::<SceneUpdates>().eligible_jobs > 0
+                || world.resource::<SceneUpdates>().jobs_in_flight > 0))
     {
         schedule.run(world);
         run_once = true;
@@ -329,18 +218,25 @@ fn run_scene_loop(world: &mut World) {
 }
 
 fn update_scene_priority(
-    mut scenes: Query<(Entity, &mut RendererSceneContext)>,
+    mut scenes: Query<(Entity, &GlobalTransform, &mut RendererSceneContext)>,
+    camera: Query<&GlobalTransform, With<PrimaryCamera>>,
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
 ) {
     updates.eligible_jobs = 0;
 
+    let camera_translation = camera
+        .get_single()
+        .map(|gt| gt.translation())
+        .unwrap_or_default();
+
     // sort eligible scenes
     updates.scene_queue = scenes
         .iter_mut()
-        .filter(|(_, context)| !context.in_flight)
-        .filter_map(|(ent, mut context)| {
-            context.priority = context.definition.offset.length().powf(1.0);
+        .filter(|(_, _, context)| !context.in_flight)
+        .filter_map(|(ent, transform, mut context)| {
+            let distance = (transform.translation() - camera_translation).length();
+            context.priority = distance;
             let not_yet_run = context.last_sent < time.elapsed_seconds();
 
             (!context.in_flight && not_yet_run).then(|| {
@@ -355,62 +251,6 @@ fn update_scene_priority(
         .scene_queue
         .make_contiguous()
         .sort_by_key(|(_, priority)| *priority);
-}
-
-fn initialize_scene(
-    mut load_scene_events: EventReader<LoadSceneEvent>,
-    mut commands: Commands,
-    mut scene_updates: ResMut<SceneUpdates>,
-    crdt_component_interfaces: Res<CrdtExtractors>,
-) {
-    for new_scene in load_scene_events.iter() {
-        // create the scene root entity
-        // todo set world position
-        let root = commands
-            .spawn((
-                SpatialBundle {
-                    transform: Transform::from_translation(new_scene.scene.offset),
-                    visibility: if new_scene.scene.visible {
-                        Visibility::Inherited
-                    } else {
-                        Visibility::Hidden
-                    },
-                    ..Default::default()
-                },
-                DeletedSceneEntities::default(),
-            ))
-            .id();
-
-        let thread_sx = scene_updates.sender.clone();
-
-        let crdt_component_interfaces = CrdtComponentInterfaces(HashMap::from_iter(
-            crdt_component_interfaces
-                .0
-                .iter()
-                .map(|(id, interface)| (*id, interface.crdt_type())),
-        ));
-
-        let (scene_id, main_sx) = spawn_scene(
-            new_scene.scene.clone(),
-            crdt_component_interfaces,
-            thread_sx,
-        );
-
-        let renderer_context =
-            RendererSceneContext::new(scene_id, new_scene.scene.clone(), root, 1.0);
-
-        scene_updates.scene_ids.insert(scene_id, root);
-
-        commands.entity(root).insert((
-            renderer_context,
-            SceneEntity {
-                root,
-                scene_id,
-                id: SceneEntityId::ROOT,
-            },
-            SceneThreadHandle { sender: main_sx },
-        ));
-    }
 }
 
 // TODO: work out how to set this intelligently

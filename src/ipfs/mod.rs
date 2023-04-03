@@ -1,13 +1,14 @@
-use std::{io::ErrorKind, path::PathBuf};
+use std::{io::ErrorKind, path::PathBuf, sync::Arc};
 
 use bevy::{
     asset::{Asset, AssetIo, AssetIoError, AssetLoader, FileAssetIo, LoadedAsset},
     prelude::*,
     reflect::TypeUuid,
 };
+use bevy_common_assets::json::JsonAssetPlugin;
 use bimap::BiMap;
 use isahc::{http::StatusCode, AsyncReadResponseExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 pub struct TypedIpfsRef {
@@ -36,9 +37,9 @@ pub struct SceneDefinition {
     pub content: SceneContent,
 }
 
-#[derive(TypeUuid, Debug)]
+#[derive(TypeUuid, Debug, Clone)]
 #[uuid = "f9f54e97-439f-4768-9ea0-f3e894049492"]
-struct SceneJsFile(String);
+pub struct SceneJsFile(pub Arc<String>);
 
 #[derive(Default)]
 pub struct SceneDefinitionLoader;
@@ -71,7 +72,7 @@ impl AssetLoader for SceneDefinitionLoader {
     }
 
     fn extensions(&self) -> &[&str] {
-        &["scene_pointer"]
+        &["scene_pointer", "scene_entity"]
     }
 }
 
@@ -85,9 +86,9 @@ impl AssetLoader for SceneJsLoader {
         load_context: &'a mut bevy::asset::LoadContext,
     ) -> bevy::utils::BoxedFuture<'a, Result<(), bevy::asset::Error>> {
         Box::pin(async move {
-            load_context.set_default_asset(LoadedAsset::new(SceneJsFile(String::from_utf8(
-                bytes.to_vec(),
-            )?)));
+            load_context.set_default_asset(LoadedAsset::new(SceneJsFile(Arc::new(
+                String::from_utf8(bytes.to_vec())?,
+            ))));
             Ok(())
         })
     }
@@ -118,15 +119,22 @@ impl SceneContent {
     }
 }
 
-trait IpfsLoaderExt {
-    fn load_scene(&self, pointer: &str) -> Handle<SceneDefinition>;
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum SceneIpfsLocation {
+    Pointer(i32, i32),
+    Hash(String),
+    Js(String),
+}
+
+pub trait IpfsLoaderExt {
+    fn load_scene_pointer(&self, x: i32, y: i32) -> Handle<SceneDefinition>;
 
     fn load_scene_file<T: Asset>(&self, file: &str, content: &SceneContent) -> Option<Handle<T>>;
 }
 
 impl IpfsLoaderExt for AssetServer {
-    fn load_scene(&self, pointer: &str) -> Handle<SceneDefinition> {
-        self.load(format!("{pointer}.scene_pointer"))
+    fn load_scene_pointer(&self, x: i32, y: i32) -> Handle<SceneDefinition> {
+        self.load(format!("{x},{y}.scene_pointer"))
     }
 
     fn load_scene_file<T: Asset>(&self, file: &str, content: &SceneContent) -> Option<Handle<T>> {
@@ -136,8 +144,8 @@ impl IpfsLoaderExt for AssetServer {
     }
 }
 
-struct IpfsIoPlugin {
-    server_prefix: String,
+pub struct IpfsIoPlugin {
+    pub server_prefix: String,
 }
 
 impl Plugin for IpfsIoPlugin {
@@ -150,10 +158,20 @@ impl Plugin for IpfsIoPlugin {
             .map(|fio| fio.root_path().clone());
 
         // create the custom asset io instance
-        let ipfs_io = IpfsIo::new(self.server_prefix.clone(), default_io, default_fs_path);
+        info!("remote server: {}", self.server_prefix);
+        let ipfs_io = IpfsIo::new(
+            format!("{}/content", self.server_prefix),
+            default_io,
+            default_fs_path,
+        );
 
         // the asset server is constructed and added the resource manager
-        app.insert_resource(AssetServer::new(ipfs_io));
+        app.insert_resource(AssetServer::new(ipfs_io))
+            .add_asset::<SceneDefinition>()
+            .add_asset::<SceneJsFile>()
+            .init_asset_loader::<SceneDefinitionLoader>()
+            .init_asset_loader::<SceneJsLoader>()
+            .add_plugin(JsonAssetPlugin::<SceneMeta>::new(&["scene.json"]));
     }
 }
 

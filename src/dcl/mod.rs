@@ -4,15 +4,12 @@ use std::sync::{
     Mutex,
 };
 
-use bevy::{
-    prelude::Vec3,
-    utils::{HashMap, HashSet},
-};
+use bevy::utils::{HashMap, HashSet};
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use tokio::sync::mpsc::Sender;
 
-use crate::dcl_component::SceneEntityId;
+use crate::{dcl_component::SceneEntityId, ipfs::SceneJsFile};
 
 use self::{
     interface::{CrdtComponentInterfaces, CrdtStore},
@@ -25,14 +22,6 @@ pub mod js;
 
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct SceneId(u32);
-
-// scene metadata
-#[derive(Clone, Default, Debug)]
-pub struct SceneDefinition {
-    pub path: String,
-    pub offset: Vec3,
-    pub visible: bool,
-}
 
 // message from scene describing new and deleted entities
 pub struct SceneCensus {
@@ -58,7 +47,7 @@ pub(crate) static VM_HANDLES: Lazy<Mutex<HashMap<SceneId, IsolateHandle>>> =
     Lazy::new(Default::default);
 
 pub fn spawn_scene(
-    scene_definition: SceneDefinition,
+    scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SyncSender<SceneResponse>,
 ) -> (SceneId, Sender<RendererResponse>) {
@@ -71,7 +60,7 @@ pub fn spawn_scene(
         .spawn(move || {
             scene_thread(
                 id,
-                scene_definition,
+                scene_js,
                 crdt_component_interfaces,
                 renderer_sender,
                 thread_rx,

@@ -20,13 +20,14 @@ use crate::{
         transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
         SceneCrdtTimestamp, SceneEntityId,
     },
+    ipfs::{IpfsIoPlugin, SceneIpfsLocation},
     scene_runner::{
         process_lifecycle, receive_scene_updates, send_scene_updates, update_scene_priority,
         update_world::{
             transform_and_parent::process_transform_and_parent_updates, CrdtLWWStateComponent,
         },
-        LoadSceneEvent, RendererSceneContext, SceneDefinition, SceneEntity, SceneLoopSchedule,
-        SceneRunnerPlugin, SceneUpdates,
+        LoadSceneEvent, RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin,
+        SceneUpdates,
     },
 };
 
@@ -57,6 +58,9 @@ impl PluginGroup for TestPlugins {
             .add(TransformPlugin::default())
             .add(HierarchyPlugin::default())
             .add(DiagnosticsPlugin::default())
+            .add(IpfsIoPlugin {
+                server_prefix: Default::default(),
+            })
             .add(AssetPlugin::default())
             .add(MeshPlugin)
     }
@@ -79,11 +83,7 @@ fn init_test_app(script: &str) -> App {
         move |mut commands: Commands, mut ev: EventWriter<LoadSceneEvent>| {
             commands.spawn((Camera3dBundle::default(), PrimaryCamera));
             ev.send(LoadSceneEvent {
-                scene: SceneDefinition {
-                    path: path.clone(),
-                    offset: Default::default(),
-                    visible: true,
-                },
+                location: SceneIpfsLocation::Js(path.clone()),
             })
         },
     );
@@ -96,7 +96,10 @@ fn init_test_app(script: &str) -> App {
     });
 
     // run app once to get the scene initialized
-    app.update();
+    let mut q = app.world.query::<&RendererSceneContext>();
+    while q.get_single(&mut app.world).is_err() {
+        app.update();
+    }
 
     app
 }

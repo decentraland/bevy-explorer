@@ -1,14 +1,13 @@
 use bevy::{prelude::debug, utils::HashSet};
 
 use crate::{
-    dcl::{SceneCensus, SceneDefinition, SceneId},
+    dcl::{SceneCensus, SceneId},
     dcl_component::SceneEntityId,
 };
 
 type LiveTable = Vec<(u16, bool)>;
 
 pub struct SceneSceneContext {
-    pub definition: SceneDefinition,
     pub scene_id: SceneId,
     live_entities: LiveTable,
     nascent: HashSet<SceneEntityId>,
@@ -16,9 +15,8 @@ pub struct SceneSceneContext {
 }
 
 impl SceneSceneContext {
-    pub fn new(definition: SceneDefinition, scene_id: SceneId) -> Self {
+    pub fn new(scene_id: SceneId) -> Self {
         Self {
-            definition,
             scene_id,
             live_entities: Vec::from_iter(std::iter::repeat((0, false)).take(u16::MAX as usize)),
             nascent: Default::default(),
