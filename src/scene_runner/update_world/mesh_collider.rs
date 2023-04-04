@@ -292,7 +292,10 @@ fn update_colliders(
     for (ent, scene_ent, collider_def) in new_colliders.iter() {
         let collider = match collider_def.shape {
             MeshColliderShape::Box => ColliderBuilder::cuboid(0.5, 0.5, 0.5),
-            MeshColliderShape::Cylinder { .. } => unimplemented!(),
+            MeshColliderShape::Cylinder { .. } => {
+                warn!("cylinder not implemented");
+                ColliderBuilder::ball(0.5)
+            }
             MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.05, 0.5),
             MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),
         }
