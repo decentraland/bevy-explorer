@@ -9,7 +9,7 @@ use bevy::{
     prelude::*,
     render::mesh::MeshPlugin,
     time::TimePlugin,
-    utils::{HashMap, Instant},
+    utils::{HashMap, Instant}, gltf::GltfPlugin, scene::ScenePlugin,
 };
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -63,6 +63,8 @@ impl PluginGroup for TestPlugins {
             })
             .add(AssetPlugin::default())
             .add(MeshPlugin)
+            .add(GltfPlugin)
+            .add(ScenePlugin)
     }
 }
 
