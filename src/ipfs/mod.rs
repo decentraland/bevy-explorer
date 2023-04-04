@@ -1,7 +1,7 @@
 use std::{
     io::ErrorKind,
     path::{Path, PathBuf},
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock}, time::Duration,
 };
 
 use bevy::{
@@ -12,7 +12,7 @@ use bevy::{
 };
 use bevy_common_assets::json::JsonAssetPlugin;
 use bimap::BiMap;
-use isahc::{http::StatusCode, AsyncReadResponseExt};
+use isahc::{http::StatusCode, AsyncReadResponseExt, prelude::Configurable, RequestExt};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -271,7 +271,11 @@ impl AssetIo for IpfsIo {
                     &path.file_name().unwrap().to_string_lossy(),
                 );
                 debug!("requesting: `{remote}`");
-                let mut response = isahc::get_async(&remote).await.map_err(|e| {
+                let request = isahc::Request::get(&remote).timeout(Duration::from_secs(5)).body(()).map_err(|e| {
+                    warn!("request failed: {e:?}");
+                    AssetIoError::Io(std::io::Error::new(ErrorKind::Other, e.to_string()))
+                })?;
+                let mut response = request.send_async().await.map_err(|e| {
                     warn!("asset io error: {e:?}");
                     AssetIoError::Io(std::io::Error::new(ErrorKind::Other, e.to_string()))
                 })?;
