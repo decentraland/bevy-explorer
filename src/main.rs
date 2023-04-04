@@ -213,7 +213,7 @@ fn setup(
         },
         transform: Transform::default().looking_at(Vec3::new(0.2, -0.5, -1.0), Vec3::Y),
         cascade_shadow_config: CascadeShadowConfigBuilder {
-            maximum_distance: 20.0,
+            maximum_distance: 100.0,
             ..Default::default()
         }
         .into(),

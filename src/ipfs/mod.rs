@@ -1,9 +1,14 @@
-use std::{io::ErrorKind, path::PathBuf, sync::Arc};
+use std::{
+    io::ErrorKind,
+    path::{Path, PathBuf},
+    sync::{Arc, RwLock},
+};
 
 use bevy::{
     asset::{Asset, AssetIo, AssetIoError, AssetLoader, FileAssetIo, LoadedAsset},
     prelude::*,
     reflect::TypeUuid,
+    utils::HashMap,
 };
 use bevy_common_assets::json::JsonAssetPlugin;
 use bimap::BiMap;
@@ -59,7 +64,7 @@ impl AssetLoader for SceneDefinitionLoader {
                 definition_json
                     .content
                     .into_iter()
-                    .map(|ipfs| (ipfs.hash, ipfs.file)),
+                    .map(|ipfs| (normalize_path(&ipfs.file), ipfs.hash)),
             ));
             let definition = SceneDefinition {
                 id: definition_json.id,
@@ -98,24 +103,18 @@ impl AssetLoader for SceneJsLoader {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SceneContent(BiMap<String, String>);
 
 impl SceneContent {
     pub fn file(&self, hash: &str) -> Option<&str> {
-        self.0.get_by_left(hash).map(String::as_str)
-    }
-    pub fn ext(&self, hash: &str) -> Option<&str> {
-        self.file(hash).map(|file| {
-            let ext = &file[file.find('.').unwrap_or_default()..];
-            match ext {
-                ".json" => file,
-                _ => &ext[1..],
-            }
-        })
-    }
-    pub fn hash(&self, hash: &str) -> Option<&str> {
         self.0.get_by_right(hash).map(String::as_str)
+    }
+
+    pub fn hash(&self, file: &str) -> Option<&str> {
+        self.0
+            .get_by_left(&normalize_path(file))
+            .map(String::as_str)
     }
 }
 
@@ -129,7 +128,7 @@ pub enum SceneIpfsLocation {
 pub trait IpfsLoaderExt {
     fn load_scene_pointer(&self, x: i32, y: i32) -> Handle<SceneDefinition>;
 
-    fn load_scene_file<T: Asset>(&self, file: &str, content: &SceneContent) -> Option<Handle<T>>;
+    fn load_scene_file<T: Asset>(&self, file: &str, scene_entity_hash: &str) -> Handle<T>;
 }
 
 impl IpfsLoaderExt for AssetServer {
@@ -137,10 +136,12 @@ impl IpfsLoaderExt for AssetServer {
         self.load(format!("{x},{y}.scene_pointer"))
     }
 
-    fn load_scene_file<T: Asset>(&self, file: &str, content: &SceneContent) -> Option<Handle<T>> {
-        let hash = content.hash(file)?;
-        let ext = content.ext(hash)?;
-        Some(self.load(format!("{hash}.{ext}")))
+    fn load_scene_file<T: Asset>(&self, file: &str, scene_entity_hash: &str) -> Handle<T> {
+        debug!(
+            "load: {file} from {scene_entity_hash} -> `{}`",
+            format!("{scene_entity_hash}.{file}")
+        );
+        self.load(format!("{scene_entity_hash}.{file}"))
     }
 }
 
@@ -175,10 +176,11 @@ impl Plugin for IpfsIoPlugin {
     }
 }
 
-struct IpfsIo {
+pub struct IpfsIo {
     default_io: Box<dyn AssetIo>,
     default_fs_path: Option<PathBuf>,
     server_prefix: String,
+    collections: RwLock<HashMap<String, SceneContent>>,
 }
 
 impl IpfsIo {
@@ -191,6 +193,7 @@ impl IpfsIo {
             default_io,
             default_fs_path,
             server_prefix,
+            collections: Default::default(),
         }
     }
 
@@ -198,15 +201,20 @@ impl IpfsIo {
         format!("{}/entities/scene?pointer={}", self.server_prefix, pointer)
     }
 
-    pub fn content_path(&self, path: &str, ext: &str) -> String {
+    pub fn remote_path(&self, target: &str, path: &str) -> String {
+        let (base, ext) = path.rsplit_once('.').unwrap_or_default();
         match ext {
-            "scene_pointer" => self.scene_path(path),
-            _ => format!("{}/contents/{}", self.server_prefix, path),
+            "scene_pointer" => self.scene_path(base),
+            _ => format!("{}/contents/{}", self.server_prefix, target),
         }
     }
 
-    pub fn path_should_cache(&self, path: &str) -> bool {
-        self.default_fs_path.is_some() && !path.starts_with("b64") && !path.ends_with("pointer")
+    pub fn path_should_cache(&self, target: &str, path: &Path) -> bool {
+        self.default_fs_path.is_some() && !target.starts_with("b64") && !path.ends_with("pointer")
+    }
+
+    pub fn add_collection(&self, hash: String, collection: SceneContent) {
+        self.collections.write().unwrap().insert(hash, collection);
     }
 }
 
@@ -216,25 +224,54 @@ impl AssetIo for IpfsIo {
         path: &'a std::path::Path,
     ) -> bevy::utils::BoxedFuture<'a, Result<Vec<u8>, bevy::asset::AssetIoError>> {
         Box::pin(async move {
-            let path_str = path.to_string_lossy();
-            debug!("request: {}", path_str);
-            let file = match self.path_should_cache(&path_str) {
-                true => self.default_io.load_path(path).await.ok(),
+            debug!("request: {:?}", path);
+
+            let path_string = path.to_string_lossy();
+            let target = {
+                let collections = self.collections.read().unwrap();
+
+                path_string
+                    .split_once('.')
+                    .and_then(|(collection_hash, filename)| {
+                        debug!("got collection hash {collection_hash}");
+
+                        debug!("filename {:?}", filename);
+
+                        collections
+                            .get(collection_hash)
+                            .map(|hash| (hash, filename))
+                    })
+                    .and_then(|(collection, filename)| {
+                        debug!("looking up `{}`", normalize_path(filename));
+                        let res = collection.hash(filename);
+                        debug!("found: `{:?}`", res);
+                        if res.is_none() {
+                            debug!("contents were: {:#?}", collection);
+                        }
+                        res
+                    })
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| path_string.into_owned())
+            };
+
+            debug!("target: {}", target);
+            let file = match self.path_should_cache(&target, path) {
+                true => self.default_io.load_path(Path::new(&target)).await.ok(),
                 false => None,
             };
+
             if let Some(existing) = file {
-                debug!("existing: {}", path_str);
+                debug!("existing: {}", path.to_string_lossy());
                 Ok(existing)
             } else {
-                let file_name = path.file_name().unwrap().to_string_lossy();
-                debug!("remote: {}", file_name);
-                let ext_ix = file_name.find('.').unwrap();
-                let base = &file_name[0..ext_ix];
-                let ext = &file_name[ext_ix + 1..];
+                debug!("remote: {}", target);
 
-                let remote = self.content_path(base, ext);
+                let remote = self.remote_path(
+                    target.as_str(),
+                    &path.file_name().unwrap().to_string_lossy(),
+                );
                 debug!("requesting: `{remote}`");
-                let mut response = isahc::get_async(remote).await.map_err(|e| {
+                let mut response = isahc::get_async(&remote).await.map_err(|e| {
                     warn!("asset io error: {e:?}");
                     AssetIoError::Io(std::io::Error::new(ErrorKind::Other, e.to_string()))
                 })?;
@@ -245,22 +282,22 @@ impl AssetIo for IpfsIo {
                         format!(
                             "server responded with status {} requesting `{}`",
                             response.status(),
-                            self.content_path(base, ext)
+                            target,
                         ),
                     )));
                 };
 
                 let data = response.bytes().await?;
 
-                if self.path_should_cache(&path_str) {
+                if self.path_should_cache(&target, path) {
                     let mut cache_path = self.default_fs_path.clone().unwrap();
-                    cache_path.push(path);
+                    cache_path.push(target);
                     let cache_path_str = cache_path.to_string_lossy().into_owned();
                     // ignore errors trying to cache
                     if let Err(e) = std::fs::write(cache_path, &data) {
                         warn!("failed to cache `{cache_path_str}`: {e}");
                     } else {
-                        warn!("cached ok `{cache_path_str}`");
+                        debug!("cached ok `{cache_path_str}`");
                     }
                 }
 
@@ -296,4 +333,9 @@ impl AssetIo for IpfsIo {
         // do nothing
         Ok(())
     }
+}
+
+// must be a better way to do this
+fn normalize_path(path: &str) -> String {
+    path.to_lowercase().replace('\\', "/")
 }

@@ -3,7 +3,7 @@ use bevy::{prelude::*, utils::HashMap};
 use crate::{
     dcl::{interface::CrdtComponentInterfaces, spawn_scene},
     dcl_component::SceneEntityId,
-    ipfs::{IpfsLoaderExt, SceneDefinition, SceneIpfsLocation, SceneJsFile, SceneMeta},
+    ipfs::{IpfsIo, IpfsLoaderExt, SceneDefinition, SceneIpfsLocation, SceneJsFile, SceneMeta},
     scene_runner::{
         renderer_context::RendererSceneContext, DeletedSceneEntities, SceneEntity,
         SceneThreadHandle,
@@ -75,10 +75,11 @@ pub(crate) fn load_scene_json(
             fail("Scene entity did not resolve to a valid asset");
             continue;
         };
-        let Some(h_meta) = asset_server.load_scene_file::<SceneMeta>("scene.json", &definition.content) else {
-            fail("scene entity did not contain a `scene.json` content item");
-            continue;
-        };
+
+        let ipfs_io = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
+        ipfs_io.add_collection(definition.id.clone(), definition.content.clone());
+
+        let h_meta = asset_server.load_scene_file::<SceneMeta>("scene.json", &definition.id);
 
         commands.entity(entity).insert(h_meta);
         *state = SceneLoading::SceneMeta;
@@ -119,10 +120,7 @@ pub(crate) fn load_scene_javascript(
             fail("scene.json did not resolve to expected format");
             continue;
         };
-        let Some(h_code) = asset_server.load_scene_file::<SceneJsFile>(&meta.main, &definition.content) else {
-            fail(format!("scene entity did not contain `main` content item `{}`", meta.main).as_str());
-            continue;
-        };
+        let h_code = asset_server.load_scene_file::<SceneJsFile>(&meta.main, &definition.id);
 
         commands.entity(entity).insert(h_code);
         *state = SceneLoading::Javascript;

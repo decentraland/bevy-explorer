@@ -41,6 +41,7 @@ impl SceneComponentId {
     pub const MATERIAL: SceneComponentId = SceneComponentId(1017);
     pub const MESH_RENDERER: SceneComponentId = SceneComponentId(1018);
     pub const MESH_COLLIDER: SceneComponentId = SceneComponentId(1019);
+    pub const GLTF_CONTAINER: SceneComponentId = SceneComponentId(1041);
     pub const RAYCAST: SceneComponentId = SceneComponentId(1067);
     pub const RAYCAST_RESULT: SceneComponentId = SceneComponentId(1068);
     pub const BILLBOARD: SceneComponentId = SceneComponentId(1090);

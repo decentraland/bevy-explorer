@@ -7,6 +7,7 @@ fn main() -> Result<()> {
         "mesh_renderer",
         "mesh_collider",
         "material",
+        "gltf_container",
     ];
 
     let sources = components
