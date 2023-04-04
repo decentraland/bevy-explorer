@@ -5,11 +5,13 @@ use std::{collections::BTreeMap, fs::File, io::Write};
 use bevy::{
     app::{PluginGroupBuilder, ScheduleRunnerPlugin},
     diagnostic::DiagnosticsPlugin,
+    gltf::GltfPlugin,
     log::LogPlugin,
     prelude::*,
     render::mesh::MeshPlugin,
+    scene::ScenePlugin,
     time::TimePlugin,
-    utils::{HashMap, Instant}, gltf::GltfPlugin, scene::ScenePlugin,
+    utils::{HashMap, Instant},
 };
 use itertools::Itertools;
 use once_cell::sync::Lazy;
