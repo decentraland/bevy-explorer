@@ -5,9 +5,11 @@ use std::{collections::BTreeMap, fs::File, io::Write};
 use bevy::{
     app::{PluginGroupBuilder, ScheduleRunnerPlugin},
     diagnostic::DiagnosticsPlugin,
+    gltf::GltfPlugin,
     log::LogPlugin,
     prelude::*,
     render::mesh::MeshPlugin,
+    scene::ScenePlugin,
     time::TimePlugin,
     utils::{HashMap, Instant},
 };
@@ -22,7 +24,8 @@ use crate::{
     },
     ipfs::{IpfsIoPlugin, SceneIpfsLocation},
     scene_runner::{
-        process_lifecycle, receive_scene_updates, send_scene_updates, update_scene_priority,
+        process_scene_entity_lifecycle, receive_scene_updates, send_scene_updates,
+        update_scene_priority,
         update_world::{
             transform_and_parent::process_transform_and_parent_updates, CrdtLWWStateComponent,
         },
@@ -63,6 +66,8 @@ impl PluginGroup for TestPlugins {
             })
             .add(AssetPlugin::default())
             .add(MeshPlugin)
+            .add(GltfPlugin)
+            .add(ScenePlugin)
     }
 }
 
@@ -73,7 +78,9 @@ fn init_test_app(script: &str) -> App {
     app.add_plugins(TestPlugins);
     app.add_asset::<Shader>();
     app.add_plugin(MaterialPlugin::<StandardMaterial>::default());
-    app.add_plugin(SceneRunnerPlugin);
+    app.add_plugin(SceneRunnerPlugin {
+        dynamic_spawning: false,
+    });
 
     // copy path so we can pass it into the closure
     let path = script.to_owned();
@@ -196,7 +203,12 @@ fn make_reparent_buffer(parent: u16) -> Vec<u8> {
 
 fn run_single_update(app: &mut App) {
     // run once
-    while app.world.resource_mut::<SceneUpdates>().jobs_in_flight == 0 {
+    while app
+        .world
+        .resource_mut::<SceneUpdates>()
+        .jobs_in_flight
+        .is_empty()
+    {
         // set last update time to zero so the scheduler doesn't freak out
         app.world
             .query::<&mut RendererSceneContext>()
@@ -206,15 +218,27 @@ fn run_single_update(app: &mut App) {
             .add_systems((update_scene_priority, send_scene_updates).chain())
             .run(&mut app.world);
     }
-    assert_eq!(app.world.resource_mut::<SceneUpdates>().jobs_in_flight, 1);
+    assert_eq!(
+        app.world
+            .resource_mut::<SceneUpdates>()
+            .jobs_in_flight
+            .len(),
+        1
+    );
 
-    while app.world.resource_mut::<SceneUpdates>().jobs_in_flight == 1 {
+    while app
+        .world
+        .resource_mut::<SceneUpdates>()
+        .jobs_in_flight
+        .len()
+        == 1
+    {
         // run the receiver and lifecycle part of the schedule
         Schedule::new()
             .add_systems(
                 (
                     receive_scene_updates,
-                    process_lifecycle,
+                    process_scene_entity_lifecycle,
                     apply_system_buffers,
                     process_transform_and_parent_updates,
                 )
@@ -224,7 +248,11 @@ fn run_single_update(app: &mut App) {
     }
 
     // make sure we got the one response
-    assert_eq!(app.world.resource_mut::<SceneUpdates>().jobs_in_flight, 0);
+    assert!(app
+        .world
+        .resource_mut::<SceneUpdates>()
+        .jobs_in_flight
+        .is_empty());
 }
 
 // basic hierarchy test
@@ -354,7 +382,7 @@ fn cyclic_recovery() {
             Schedule::new()
                 .add_systems(
                     (
-                        process_lifecycle,
+                        process_scene_entity_lifecycle,
                         apply_system_buffers,
                         process_transform_and_parent_updates,
                     )

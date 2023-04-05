@@ -41,6 +41,7 @@ impl DclProtoComponent for sdk::components::PbRaycastResult {}
 impl DclProtoComponent for sdk::components::PbMeshRenderer {}
 impl DclProtoComponent for sdk::components::PbMeshCollider {}
 impl DclProtoComponent for sdk::components::PbMaterial {}
+impl DclProtoComponent for sdk::components::PbGltfContainer {}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}
