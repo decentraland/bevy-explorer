@@ -29,17 +29,23 @@ pub struct SceneDefinitionJson {
     content: Vec<TypedIpfsRef>,
 }
 
+#[derive(Deserialize, Debug)]
+pub struct SceneMetaScene {
+    pub base: String,
+}
+
 #[derive(Deserialize, TypeUuid, Debug)]
 #[uuid = "5b587f78-4650-4132-8788-6fe683bec3aa"]
 pub struct SceneMeta {
     pub main: String,
+    pub scene: SceneMetaScene,
 }
 
-#[derive(TypeUuid, Debug)]
+#[derive(TypeUuid, Debug, Default)]
 #[uuid = "d373738a-208e-4560-9e2e-020e5c64a852"]
 pub struct SceneDefinition {
     pub id: String,
-    pub pointers: Vec<String>,
+    pub pointers: Vec<IVec2>,
     pub content: SceneContent,
 }
 
@@ -58,18 +64,29 @@ impl AssetLoader for SceneDefinitionLoader {
     ) -> bevy::utils::BoxedFuture<'a, Result<(), bevy::asset::Error>> {
         Box::pin(async move {
             let mut definition_json: Vec<SceneDefinitionJson> = serde_json::from_reader(bytes)?;
-            let definition_json = definition_json
-                .pop()
-                .ok_or(bevy::asset::Error::msg("scene pointer is empty"))?;
+            let Some(definition_json) = definition_json.pop() else {
+                load_context.set_default_asset(LoadedAsset::new(SceneDefinition::default()));
+                return Ok(());
+            };
             let content = SceneContent(BiMap::from_iter(
                 definition_json
                     .content
                     .into_iter()
                     .map(|ipfs| (normalize_path(&ipfs.file), ipfs.hash)),
             ));
+            let pointers = definition_json
+                .pointers
+                .iter()
+                .map(|pointer_str| {
+                    let (pointer_x, pointer_y) = pointer_str.split_once(',').unwrap();
+                    let pointer_x = pointer_x.parse::<i32>().unwrap();
+                    let pointer_y = pointer_y.parse::<i32>().unwrap();
+                    IVec2::new(pointer_x, pointer_y)
+                })
+                .collect();
             let definition = SceneDefinition {
                 id: definition_json.id,
-                pointers: definition_json.pointers,
+                pointers,
                 content,
             };
             load_context.set_default_asset(LoadedAsset::new(definition));
@@ -104,7 +121,7 @@ impl AssetLoader for SceneJsLoader {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SceneContent(BiMap<String, String>);
 
 impl SceneContent {
@@ -210,8 +227,9 @@ impl IpfsIo {
         }
     }
 
-    pub fn path_should_cache(&self, target: &str, path: &Path) -> bool {
-        self.default_fs_path.is_some() && !target.starts_with("b64") && !path.ends_with("pointer")
+    pub fn path_should_cache(&self, _target: &str, _path: &Path) -> bool {
+        // TODO: these things should not be cached but the sdk test scene server is super painful otherwise
+        self.default_fs_path.is_some() /* && !target.starts_with("b64") && !path.to_string_lossy().ends_with("pointer") */
     }
 
     pub fn add_collection(&self, hash: String, collection: SceneContent) {
@@ -273,7 +291,7 @@ impl AssetIo for IpfsIo {
                 );
                 debug!("requesting: `{remote}`");
                 let request = isahc::Request::get(&remote)
-                    .timeout(Duration::from_secs(5))
+                    .timeout(Duration::from_secs(120))
                     .body(())
                     .map_err(|e| {
                         warn!("request failed: {e:?}");

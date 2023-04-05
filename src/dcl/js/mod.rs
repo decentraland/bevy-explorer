@@ -101,7 +101,11 @@ pub(crate) fn scene_thread(
 
     let script = match script {
         Err(e) => {
-            error!("script load error: {}", e);
+            error!("[scene thread {scene_id:?}] script load error: {}", e);
+            let _ = state
+                .borrow_mut()
+                .take::<SyncSender<SceneResponse>>()
+                .send(SceneResponse::Error(scene_id, format!("{e:?}")));
             return;
         }
         Ok(script) => script,

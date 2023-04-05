@@ -1,4 +1,8 @@
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{
+    math::Vec3Swizzles,
+    prelude::*,
+    utils::{HashMap, HashSet},
+};
 
 use crate::{
     dcl::{interface::CrdtComponentInterfaces, spawn_scene},
@@ -10,7 +14,7 @@ use crate::{
     },
 };
 
-use super::{update_world::CrdtExtractors, LoadSceneEvent, SceneUpdates};
+use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryCamera, SceneUpdates};
 
 #[derive(Component)]
 pub enum SceneLoading {
@@ -22,15 +26,19 @@ pub enum SceneLoading {
 pub(crate) fn load_scene_entity(
     mut commands: Commands,
     mut load_scene_events: EventReader<LoadSceneEvent>,
+    mut live_scenes: ResMut<LiveScenes>,
     asset_server: Res<AssetServer>,
 ) {
     for event in load_scene_events.iter() {
         match &event.location {
             SceneIpfsLocation::Pointer(x, y) => {
-                commands.spawn((
-                    SceneLoading::SceneEntity,
-                    asset_server.load_scene_pointer(*x, *y),
-                ));
+                let ent = commands
+                    .spawn((
+                        SceneLoading::SceneEntity,
+                        asset_server.load_scene_pointer(*x, *y),
+                    ))
+                    .id();
+                live_scenes.0.insert(IVec2::new(*x, *y), ent);
             }
             SceneIpfsLocation::Hash(path) => {
                 commands.spawn((
@@ -53,6 +61,7 @@ pub(crate) fn load_scene_json(
     mut loading_scenes: Query<(Entity, &mut SceneLoading, &Handle<SceneDefinition>)>,
     scene_definitions: Res<Assets<SceneDefinition>>,
     asset_server: Res<AssetServer>,
+    mut live_scenes: ResMut<LiveScenes>,
 ) {
     for (entity, mut state, h_scene) in loading_scenes
         .iter_mut()
@@ -75,6 +84,35 @@ pub(crate) fn load_scene_json(
             fail("Scene entity did not resolve to a valid asset");
             continue;
         };
+
+        if definition.id.is_empty() {
+            // there was nothing at this pointer
+            // stop loading but don't despawn
+            commands.entity(entity).remove::<SceneLoading>();
+            continue;
+        }
+
+        // scene entity is invalid if all live_scene pointers are present and refer to another entity
+        let is_invalid = definition.pointers.iter().all(|pointer| {
+            live_scenes
+                .0
+                .get(pointer)
+                .map(|live_entity| live_entity != &entity)
+                .unwrap_or(false)
+        });
+
+        if is_invalid {
+            commands.entity(entity).despawn_recursive();
+            continue;
+        }
+
+        // otherwise either the live scenes don't contain anything (e.g. if loaded via entity ref or js filename)
+        // or at least one scene pointer contains this entity. in that case, we stamp our authority on all
+        // the parcels, which will cause all other entities referenced in those parcels to despawn when they
+        // reach the invalid test above.
+        for pointer in &definition.pointers {
+            live_scenes.0.insert(*pointer, entity);
+        }
 
         let ipfs_io = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
         ipfs_io.add_collection(definition.id.clone(), definition.content.clone());
@@ -127,15 +165,22 @@ pub(crate) fn load_scene_javascript(
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub(crate) fn initialize_scene(
     mut commands: Commands,
     mut scene_updates: ResMut<SceneUpdates>,
     crdt_component_interfaces: Res<CrdtExtractors>,
-    loading_scenes: Query<(Entity, &SceneLoading, &Handle<SceneJsFile>)>,
+    loading_scenes: Query<(
+        Entity,
+        &SceneLoading,
+        &Handle<SceneJsFile>,
+        Option<&Handle<SceneMeta>>,
+    )>,
     scene_js_files: Res<Assets<SceneJsFile>>,
+    scene_metas: Res<Assets<SceneMeta>>,
     asset_server: Res<AssetServer>,
 ) {
-    for (root, _, h_code) in loading_scenes
+    for (root, _, h_code, maybe_h_meta) in loading_scenes
         .iter()
         .filter(|(_, state, ..)| matches!(state, SceneLoading::Javascript))
     {
@@ -161,11 +206,28 @@ pub(crate) fn initialize_scene(
 
         info!("{root:?}: starting scene");
 
-        // create the scene root entity
-        // todo set world position
+        let base = match maybe_h_meta {
+            Some(h_meta) => {
+                let meta = scene_metas.get(h_meta).unwrap();
+
+                let (pointer_x, pointer_y) = meta.scene.base.split_once(',').unwrap();
+                let pointer_x = pointer_x.parse::<i32>().unwrap();
+                let pointer_y = pointer_y.parse::<i32>().unwrap();
+                IVec2::new(pointer_x, pointer_y)
+            }
+            None => Default::default(),
+        };
+
+        let initial_position = base.as_vec2() * Vec2::splat(PARCEL_SIZE);
+
+        // setup the scene root entity
         commands.entity(root).remove::<SceneLoading>().insert((
             SpatialBundle {
-                // todo set world position
+                transform: Transform::from_translation(Vec3::new(
+                    initial_position.x,
+                    0.0,
+                    -initial_position.y,
+                )),
                 ..Default::default()
             },
             DeletedSceneEntities::default(),
@@ -183,7 +245,8 @@ pub(crate) fn initialize_scene(
         let (scene_id, main_sx) =
             spawn_scene(js_file.clone(), crdt_component_interfaces, thread_sx);
 
-        let renderer_context = RendererSceneContext::new(scene_id, root, 1.0);
+        let renderer_context = RendererSceneContext::new(scene_id, base, root, 1.0);
+        info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?})");
 
         scene_updates.scene_ids.insert(scene_id, root);
 
@@ -197,4 +260,77 @@ pub(crate) fn initialize_scene(
             SceneThreadHandle { sender: main_sx },
         ));
     }
+}
+
+#[derive(Resource)]
+pub struct SceneLoadDistance(pub f32);
+
+#[derive(Resource, Default)]
+pub struct LiveScenes(pub HashMap<IVec2, Entity>);
+
+pub const PARCEL_SIZE: f32 = 16.0;
+
+#[allow(clippy::type_complexity)]
+pub fn process_scene_lifecycle(
+    mut commands: Commands,
+    focus: Query<&GlobalTransform, With<PrimaryCamera>>,
+    range: Res<SceneLoadDistance>,
+    mut live_scenes: ResMut<LiveScenes>,
+    mut spawn: EventWriter<LoadSceneEvent>,
+    mut updates: ResMut<SceneUpdates>,
+    scene_entities: Query<(), Or<(With<SceneLoading>, With<RendererSceneContext>)>>,
+) {
+    let Ok(focus) = focus.get_single() else {
+        return;
+    };
+    let focus = focus.translation().xz() * Vec2::new(1.0, -1.0);
+
+    let min_point = focus - Vec2::splat(range.0);
+    let max_point = focus + Vec2::splat(range.0);
+
+    let min_parcel = (min_point / 16.0).floor().as_ivec2();
+    let max_parcel = (max_point / 16.0).ceil().as_ivec2();
+
+    let mut good_scenes = HashSet::default();
+
+    // iterate parcels within range
+    for parcel_x in min_parcel.x..=max_parcel.x {
+        for parcel_y in min_parcel.y..=max_parcel.y {
+            let parcel = IVec2::new(parcel_x, parcel_y);
+            let parcel_min_point = parcel.as_vec2() * PARCEL_SIZE;
+            let parcel_max_point = (parcel + 1).as_vec2() * PARCEL_SIZE;
+            let nearest_point = focus.clamp(parcel_min_point, parcel_max_point);
+            let distance = nearest_point.distance(focus);
+
+            if distance < range.0 {
+                if let Some(scene_entity) = live_scenes.0.get(&parcel) {
+                    // record still-valid entities
+                    if scene_entities.get(*scene_entity).is_ok() {
+                        good_scenes.insert(*scene_entity);
+                    }
+                } else {
+                    // or spawn them in
+                    info!("spawning scene @ {:?}", parcel);
+                    spawn.send(LoadSceneEvent {
+                        location: SceneIpfsLocation::Pointer(parcel.x, parcel.y),
+                    });
+                }
+            }
+        }
+    }
+
+    // despawn any no-longer valid scenes
+    live_scenes.0.retain(|_, entity| {
+        let is_good = good_scenes.contains(entity);
+        if !is_good {
+            if let Some(commands) = commands.get_entity(*entity) {
+                info!("despawning scene {:?}", entity);
+                commands.despawn_recursive();
+            }
+
+            // remove from running scenes
+            updates.jobs_in_flight.remove(entity);
+        }
+        is_good
+    })
 }

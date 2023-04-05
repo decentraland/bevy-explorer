@@ -24,6 +24,7 @@ type LiveEntityTable = Vec<(u16, Option<Entity>)>;
 #[derive(Component, Debug)]
 pub struct RendererSceneContext {
     pub scene_id: SceneId,
+    pub base: IVec2,
     pub priority: f32,
 
     // entities waiting to be born in bevy
@@ -42,14 +43,17 @@ pub struct RendererSceneContext {
     pub last_sent: f32,
     // currently running?
     pub in_flight: bool,
+    // currently broken (record and keep for debug purposes and to avoid spamming reloads)
+    pub broken: bool,
 
     pub crdt_store: CrdtStore,
 }
 
 impl RendererSceneContext {
-    pub fn new(scene_id: SceneId, root: Entity, priority: f32) -> Self {
+    pub fn new(scene_id: SceneId, base: IVec2, root: Entity, priority: f32) -> Self {
         let mut new_context = Self {
             scene_id,
+            base,
             nascent: Default::default(),
             death_row: Default::default(),
             live_entities: Vec::from_iter(std::iter::repeat((0, None)).take(u16::MAX as usize)),
@@ -57,6 +61,7 @@ impl RendererSceneContext {
             hierarchy_changed: false,
             last_sent: 0.0,
             in_flight: false,
+            broken: false,
             priority,
             crdt_store: Default::default(),
         };
@@ -78,8 +83,8 @@ impl RendererSceneContext {
 
     pub fn associate_bevy_entity(&mut self, scene_entity: SceneEntityId, bevy_entity: Entity) {
         debug!(
-            "associate scene id: {} -> bevy id {:?}",
-            scene_entity, bevy_entity
+            "[{:?}] associate scene id: {} -> bevy id {:?}",
+            self.scene_id, scene_entity, bevy_entity
         );
         dcl_assert!(self.entity_entry(scene_entity.id).0 <= scene_entity.generation);
         dcl_assert!(self.entity_entry(scene_entity.id).1.is_none());
@@ -90,6 +95,14 @@ impl RendererSceneContext {
         match self.entity_entry(scene_entity.id) {
             (gen, Some(bevy_entity)) if *gen == scene_entity.generation => Some(*bevy_entity),
             _ => None,
+        }
+    }
+
+    pub fn set_dead(&mut self, entity: SceneEntityId) {
+        let mut entry = self.entity_entry_mut(entity.id);
+        if entry.0 == entity.generation {
+            entry.0 += 1;
+            entry.1 = None;
         }
     }
 

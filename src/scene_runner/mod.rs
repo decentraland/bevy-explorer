@@ -6,11 +6,13 @@ use std::{
 
 use bevy::{
     prelude::*,
+    scene::scene_spawner_system,
     utils::{FloatOrd, HashMap, HashSet, Instant},
 };
 
 use crate::{
     dcl::{interface::CrdtType, RendererResponse, SceneId, SceneResponse},
+    dcl_assert,
     dcl_component::{
         transform_and_parent::DclTransformAndParent, DclWriter, SceneComponentId, SceneEntityId,
     },
@@ -20,6 +22,7 @@ use crate::{
 use self::{
     initialize_scene::{
         initialize_scene, load_scene_entity, load_scene_javascript, load_scene_json,
+        process_scene_lifecycle, LiveScenes, SceneLoadDistance,
     },
     renderer_context::RendererSceneContext,
     update_world::{CrdtExtractors, SceneOutputPlugin},
@@ -54,7 +57,7 @@ pub struct SceneUpdates {
     pub sender: SyncSender<SceneResponse>,
     receiver: Receiver<SceneResponse>,
     pub scene_ids: HashMap<SceneId, Entity>,
-    pub jobs_in_flight: usize,
+    pub jobs_in_flight: HashSet<Entity>,
     pub update_deadline: SystemTime,
     pub eligible_jobs: usize,
     pub loop_end_time: Instant,
@@ -89,7 +92,11 @@ pub struct SceneEntity {
 }
 
 // plugin which creates and runs scripts
-pub struct SceneRunnerPlugin;
+pub struct SceneRunnerPlugin {
+    // should we try to load scenes near the camera
+    // should be disabled for single scene view or tests
+    pub dynamic_spawning: bool,
+}
 
 #[derive(Resource)]
 pub struct SceneLoopSchedule {
@@ -106,7 +113,7 @@ impl Plugin for SceneRunnerPlugin {
             sender,
             receiver,
             scene_ids: Default::default(),
-            jobs_in_flight: 0,
+            jobs_in_flight: Default::default(),
             update_deadline: SystemTime::now(),
             eligible_jobs: 0,
             scene_queue: Default::default(),
@@ -136,13 +143,26 @@ impl Plugin for SceneRunnerPlugin {
                 .before(SceneSets::RunLoop),
         );
 
-        app.add_system(load_scene_entity.in_set(SceneSets::Init));
-        app.add_system(load_scene_json.in_set(SceneSets::Init));
-        app.add_system(load_scene_javascript.in_set(SceneSets::Init));
-        app.add_system(initialize_scene.in_set(SceneSets::Init));
+        if self.dynamic_spawning {
+            app.add_system(process_scene_lifecycle.in_base_set(CoreSet::PostUpdate));
+        }
+
+        app.add_systems(
+            (
+                load_scene_entity,
+                load_scene_json,
+                load_scene_javascript,
+                initialize_scene,
+            )
+                .after(scene_spawner_system) // these can despawn scenes, make sure that the scene spawner system doesn't try to write to deleted entities
+                .in_set(SceneSets::Init),
+        );
 
         app.add_system(update_scene_priority.in_set(SceneSets::Init));
         app.add_system(run_scene_loop.in_set(SceneSets::RunLoop));
+
+        app.init_resource::<LiveScenes>();
+        app.insert_resource(SceneLoadDistance(100.0));
 
         let mut scene_schedule = Schedule::new();
 
@@ -158,7 +178,7 @@ impl Plugin for SceneRunnerPlugin {
 
         scene_schedule.add_system(send_scene_updates.in_set(SceneLoopSets::SendToScene));
         scene_schedule.add_system(receive_scene_updates.in_set(SceneLoopSets::ReceiveFromScene));
-        scene_schedule.add_system(process_lifecycle.in_set(SceneLoopSets::Lifecycle));
+        scene_schedule.add_system(process_scene_entity_lifecycle.in_set(SceneLoopSets::Lifecycle));
 
         // add a command flush between CreateDestroy and HandleOutput so that
         // commands can be applied to entities in the same frame they are created
@@ -196,7 +216,7 @@ fn run_scene_loop(world: &mut World) {
     while !run_once
         || (Instant::now() < end_time
             && (world.resource::<SceneUpdates>().eligible_jobs > 0
-                || world.resource::<SceneUpdates>().jobs_in_flight > 0))
+                || !world.resource::<SceneUpdates>().jobs_in_flight.is_empty()))
     {
         schedule.run(world);
         run_once = true;
@@ -233,7 +253,7 @@ fn update_scene_priority(
     // sort eligible scenes
     updates.scene_queue = scenes
         .iter_mut()
-        .filter(|(_, _, context)| !context.in_flight)
+        .filter(|(_, _, context)| !context.in_flight && !context.broken)
         .filter_map(|(ent, transform, mut context)| {
             let distance = (transform.translation() - camera_translation).length();
             context.priority = distance;
@@ -278,7 +298,7 @@ fn send_scene_updates(
 ) {
     let updates = &mut *updates;
 
-    if updates.jobs_in_flight == MAX_CONCURRENT_SCENES {
+    if updates.jobs_in_flight.len() == MAX_CONCURRENT_SCENES {
         return;
     }
 
@@ -320,12 +340,17 @@ fn send_scene_updates(
         .sender
         .blocking_send(RendererResponse::Ok(crdt_store.take_updates()))
     {
-        error!("failed to send updates to scene: {e:?}");
+        error!(
+            "failed to send updates to scene {ent:?} [{:?}]: {e:?}",
+            context.base
+        );
+        context.broken = true;
         // TODO: clean up
     } else {
-        context.last_sent = time.elapsed_seconds();
         context.in_flight = true;
-        updates.jobs_in_flight += 1;
+        context.last_sent = time.elapsed_seconds();
+        dcl_assert!(!updates.jobs_in_flight.contains(&ent));
+        updates.jobs_in_flight.insert(ent);
     }
 
     updates.eligible_jobs -= 1;
@@ -339,44 +364,54 @@ fn receive_scene_updates(
     crdt_interfaces: Res<CrdtExtractors>,
 ) {
     loop {
-        match updates.receiver().try_recv() {
-            Ok(response) => {
-                match response {
-                    SceneResponse::Error(scene_id, msg) => {
-                        error!("[{scene_id:?}] error: {msg}");
-                    }
-                    SceneResponse::Ok(scene_id, census, mut crdt) => {
-                        let root = updates.scene_ids.get(&scene_id).unwrap();
-                        debug!(
-                            "scene {:?}/{:?} received updates! [+{}, -{}]",
-                            census.scene_id,
-                            root,
-                            census.born.len(),
-                            census.died.len()
-                        );
+        let maybe_completed_job = match updates.receiver().try_recv() {
+            Ok(response) => match response {
+                SceneResponse::Error(scene_id, msg) => {
+                    error!("[{scene_id:?}] error: {msg}");
+                    if let Some(root) = updates.scene_ids.get(&scene_id) {
                         if let Ok(mut context) = scenes.get_mut(*root) {
+                            context.broken = true;
                             context.in_flight = false;
-                            context.nascent = census.born;
-                            context.death_row = census.died;
-                            let mut commands = commands.entity(*root);
-                            for (component_id, interface) in crdt_interfaces.0.iter() {
-                                interface.updates_to_entity(
-                                    *component_id,
-                                    &mut crdt,
-                                    &mut commands,
-                                );
-                            }
-                        } else {
-                            debug!("no scene entity, probably got dropped before we processed the result");
                         }
+                        Some(*root)
+                    } else {
+                        None
                     }
                 }
-                updates.jobs_in_flight -= 1;
-            }
+                SceneResponse::Ok(scene_id, census, mut crdt) => {
+                    let root = updates.scene_ids.get(&scene_id).unwrap();
+                    debug!(
+                        "scene {:?}/{:?} received updates! [+{}, -{}]",
+                        census.scene_id,
+                        root,
+                        census.born.len(),
+                        census.died.len()
+                    );
+                    if let Ok(mut context) = scenes.get_mut(*root) {
+                        context.in_flight = false;
+                        context.nascent = census.born;
+                        context.death_row = census.died;
+                        let mut commands = commands.entity(*root);
+                        for (component_id, interface) in crdt_interfaces.0.iter() {
+                            interface.updates_to_entity(*component_id, &mut crdt, &mut commands);
+                        }
+                    } else {
+                        debug!(
+                            "no scene entity, probably got dropped before we processed the result"
+                        );
+                    }
+                    dcl_assert!(updates.jobs_in_flight.contains(root));
+                    Some(*root)
+                }
+            },
             Err(TryRecvError::Empty) => return,
             Err(TryRecvError::Disconnected) => {
                 panic!("render thread receiver exploded");
             }
+        };
+
+        if let Some(completed_job) = maybe_completed_job {
+            updates.jobs_in_flight.remove(&completed_job);
         }
 
         if Instant::now() > updates.loop_end_time {
@@ -391,7 +426,7 @@ pub struct DeletedSceneEntities(pub HashSet<SceneEntityId>);
 #[derive(Component)]
 pub struct TargetParent(pub Entity);
 
-fn process_lifecycle(
+fn process_scene_entity_lifecycle(
     mut commands: Commands,
     mut scenes: Query<(Entity, &mut RendererSceneContext, &mut DeletedSceneEntities)>,
     children: Query<&Children>,
@@ -453,6 +488,7 @@ fn process_lifecycle(
                 );
                 commands.entity(deleted_bevy_entity).despawn();
             }
+            context.set_dead(*deleted_scene_entity);
         }
     }
 }

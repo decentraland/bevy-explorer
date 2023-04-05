@@ -112,7 +112,8 @@ fn update_mesh(
                 if *radius_bottom == 1.0 && *radius_top == 1.0 {
                     defaults.cylinder.clone()
                 } else {
-                    todo!()
+                    warn!("uneven cylinder primitive not implemented");
+                    defaults.cylinder.clone()
                 }
             }
             MeshDefinition::Plane { uvs } => {
