@@ -71,7 +71,7 @@ impl Plugin for MeshDefinitionPlugin {
         let mut assets = app.world.resource_mut::<Assets<Mesh>>();
         let boxx = assets.add(shape::Cube::default().into());
         let cylinder = assets.add(shape::Cylinder::default().into()); // TODO make a custom cylinder that supports different top and bottom radius
-        let plane = assets.add(shape::Plane::default().into());
+        let plane = assets.add(shape::Quad::default().into());
         let sphere = assets.add(shape::UVSphere::default().into());
         app.insert_resource(MeshPrimitiveDefaults {
             boxx,

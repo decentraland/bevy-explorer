@@ -1,4 +1,4 @@
-use bevy::{gltf::Gltf, prelude::*, scene::InstanceId};
+use bevy::{gltf::Gltf, prelude::*, render::mesh::VertexAttributeValues, scene::InstanceId};
 
 use crate::{
     dcl::interface::ComponentPosition,
@@ -48,6 +48,8 @@ fn update_gltf(
     asset_server: Res<AssetServer>,
     gltfs: Res<Assets<Gltf>>,
     mut scene_spawner: ResMut<SceneSpawner>,
+    mesh_handles: Query<&Handle<Mesh>>,
+    mut meshes: ResMut<Assets<Mesh>>,
 ) {
     // TODO: clean up old gltf data
 
@@ -115,6 +117,22 @@ fn update_gltf(
                                 Vec3::ZERO,
                                 Quat::from_rotation_y(std::f32::consts::PI),
                             );
+                        }
+
+                        // fix zero joint weights, same way as unity and three.js
+                        // TODO: remove if https://github.com/bevyengine/bevy/pull/8316 is merged
+                        if let Some(VertexAttributeValues::Float32x4(joint_weights)) = mesh_handles
+                            .get(spawned_ent)
+                            .ok()
+                            .and_then(|h_mesh| meshes.get_mut(h_mesh))
+                            .and_then(|mesh| mesh.attribute_mut(Mesh::ATTRIBUTE_JOINT_WEIGHT))
+                        {
+                            for weights in joint_weights
+                                .iter_mut()
+                                .filter(|weights| *weights == &[0.0, 0.0, 0.0, 0.0])
+                            {
+                                weights[0] = 1.0;
+                            }
                         }
                     }
                 }
