@@ -8,7 +8,7 @@ dcl-assert = []
 gen-tests = []
 
 [dependencies]
-bevy = { version = "0.10" }
+bevy = { version = "0.10", features=["jpeg"] }
 # bevy = { version = "0.10", features = ["trace_tracy"] }
 deno_core = "0.170.*"
 serde = "1.0.152"

@@ -155,6 +155,10 @@ fn main() {
                 }),
                 ..Default::default()
             })
+            .set(bevy::log::LogPlugin {
+                filter: "wgpu=error,bevy_animation=error".to_string(),
+                ..default()
+            })
             .build()
             .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
                 server_prefix: final_config.server.clone(),

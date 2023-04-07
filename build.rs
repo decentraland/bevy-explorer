@@ -8,6 +8,7 @@ fn main() -> Result<()> {
         "mesh_collider",
         "material",
         "gltf_container",
+        "animator",
     ];
 
     let sources = components
