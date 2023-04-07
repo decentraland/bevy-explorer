@@ -1,4 +1,6 @@
-use bevy::{gltf::Gltf, prelude::*, render::mesh::VertexAttributeValues, scene::InstanceId};
+use bevy::{
+    gltf::Gltf, prelude::*, render::mesh::VertexAttributeValues, scene::InstanceId, utils::HashSet,
+};
 
 use crate::{
     dcl::interface::ComponentPosition,
@@ -32,17 +34,24 @@ impl Plugin for GltfDefinitionPlugin {
 }
 
 #[derive(Component)]
-struct GltfProcessed(Option<InstanceId>);
-#[derive(Component)]
-struct GltfPruned;
+struct GltfLoaded(Option<InstanceId>);
+#[derive(Component, Default)]
+pub struct GltfProcessed {
+    pub animation_roots: HashSet<Entity>,
+}
 
 #[allow(clippy::too_many_arguments)]
 fn update_gltf(
     mut commands: Commands,
     new_gltfs: Query<(Entity, &SceneEntity, &GltfDefinition), Changed<GltfDefinition>>,
-    unprocessed_gltfs: Query<(Entity, &SceneEntity, &Handle<Gltf>), Without<GltfProcessed>>,
-    ready_gltfs: Query<(Entity, &GltfProcessed), Without<GltfPruned>>,
-    mut named_entities: Query<(Option<&Name>, &mut Transform, &Parent)>,
+    unprocessed_gltfs: Query<(Entity, &SceneEntity, &Handle<Gltf>), Without<GltfLoaded>>,
+    ready_gltfs: Query<(Entity, &GltfLoaded), Without<GltfProcessed>>,
+    mut named_entities: Query<(
+        Option<&Name>,
+        &mut Transform,
+        &Parent,
+        Option<&AnimationPlayer>,
+    )>,
     scene_def_handles: Query<&Handle<SceneDefinition>>,
     scene_defs: Res<Assets<SceneDefinition>>,
     asset_server: Res<AssetServer>,
@@ -68,10 +77,7 @@ fn update_gltf(
 
         let h_gltf = asset_server.load_scene_file::<Gltf>(gltf.0.src.as_str(), &scene_def.id);
 
-        commands
-            .entity(ent)
-            .insert(h_gltf)
-            .remove::<GltfProcessed>();
+        commands.entity(ent).insert(h_gltf).remove::<GltfLoaded>();
     }
 
     for (ent, _scene_ent, h_gltf) in unprocessed_gltfs.iter() {
@@ -79,7 +85,7 @@ fn update_gltf(
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed => {
                 warn!("failed to process gltf");
-                commands.entity(ent).insert(GltfProcessed(None));
+                commands.entity(ent).insert(GltfLoaded(None));
                 continue;
             }
             _ => continue,
@@ -88,20 +94,21 @@ fn update_gltf(
         let gltf = gltfs.get(h_gltf).unwrap();
         let gltf_scene_handle = gltf.default_scene.as_ref().unwrap();
         let instance_id = scene_spawner.spawn_as_child(gltf_scene_handle.clone_weak(), ent);
-        commands
-            .entity(ent)
-            .insert(GltfProcessed(Some(instance_id)));
+        commands.entity(ent).insert(GltfLoaded(Some(instance_id)));
     }
 
     for (ent, processed) in ready_gltfs.iter() {
         if processed.0.is_none() {
-            commands.entity(ent).insert(GltfPruned);
+            commands.entity(ent).insert(GltfProcessed::default());
             continue;
         }
         let instance = processed.0.as_ref().unwrap();
         if scene_spawner.instance_is_ready(*instance) {
+            let mut animation_roots = HashSet::default();
+
             for spawned_ent in scene_spawner.iter_instance_entities(*instance) {
-                if let Ok((maybe_name, mut transform, parent)) = named_entities.get_mut(spawned_ent)
+                if let Ok((maybe_name, mut transform, parent, maybe_player)) =
+                    named_entities.get_mut(spawned_ent)
                 {
                     if maybe_name
                         .map(|name| name.as_str().ends_with("_collider"))
@@ -134,11 +141,18 @@ fn update_gltf(
                                 weights[0] = 1.0;
                             }
                         }
+
+                        // if there is a player, record the entity
+                        if maybe_player.is_some() {
+                            animation_roots.insert(spawned_ent);
+                        }
                     }
                 }
             }
 
-            commands.entity(ent).insert(GltfPruned);
+            commands
+                .entity(ent)
+                .insert(GltfProcessed { animation_roots });
         }
     }
 }

@@ -16,7 +16,7 @@ use crate::{
 };
 
 use self::{
-    billboard::BillboardPlugin, gltf_container::GltfDefinitionPlugin,
+    animation::AnimatorPlugin, billboard::BillboardPlugin, gltf_container::GltfDefinitionPlugin,
     material::MaterialDefinitionPlugin, mesh_collider::MeshColliderPlugin,
     mesh_renderer::MeshDefinitionPlugin, raycast::RaycastPlugin,
     transform_and_parent::process_transform_and_parent_updates,
@@ -24,6 +24,7 @@ use self::{
 
 use super::{DeletedSceneEntities, RendererSceneContext, SceneLoopSchedule, SceneLoopSets};
 
+pub mod animation;
 pub mod billboard;
 pub mod gltf_container;
 pub mod material;
@@ -120,6 +121,7 @@ impl Plugin for SceneOutputPlugin {
         app.add_plugin(MaterialDefinitionPlugin);
         app.add_plugin(MeshColliderPlugin);
         app.add_plugin(GltfDefinitionPlugin);
+        app.add_plugin(AnimatorPlugin);
         app.add_plugin(BillboardPlugin);
         app.add_plugin(RaycastPlugin);
     }
