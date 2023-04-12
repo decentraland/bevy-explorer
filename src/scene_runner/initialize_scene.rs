@@ -117,7 +117,8 @@ pub(crate) fn load_scene_json(
         let ipfs_io = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
         ipfs_io.add_collection(definition.id.clone(), definition.content.clone());
 
-        let h_meta = asset_server.load_scene_file::<SceneMeta>("scene.json", &definition.id);
+        let h_meta = asset_server
+            .load_content_file::<SceneMeta>("scene.json".to_owned(), definition.id.to_owned());
 
         commands.entity(entity).insert(h_meta);
         *state = SceneLoading::SceneMeta;
@@ -158,7 +159,8 @@ pub(crate) fn load_scene_javascript(
             fail("scene.json did not resolve to expected format");
             continue;
         };
-        let h_code = asset_server.load_scene_file::<SceneJsFile>(&meta.main, &definition.id);
+        let h_code = asset_server
+            .load_content_file::<SceneJsFile>(meta.main.to_owned(), definition.id.to_owned());
 
         commands.entity(entity).insert(h_code);
         *state = SceneLoading::Javascript;

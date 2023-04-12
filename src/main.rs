@@ -161,7 +161,7 @@ fn main() {
             })
             .build()
             .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
-                server_prefix: final_config.server.clone(),
+                starting_realm: Some(final_config.server.clone()),
             }),
     )
     .add_plugin(DebugLinesPlugin::with_depth_test(true))

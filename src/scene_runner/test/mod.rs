@@ -62,7 +62,7 @@ impl PluginGroup for TestPlugins {
             .add(HierarchyPlugin::default())
             .add(DiagnosticsPlugin::default())
             .add(IpfsIoPlugin {
-                server_prefix: Default::default(),
+                starting_realm: Default::default(),
             })
             .add(AssetPlugin::default())
             .add(MeshPlugin)

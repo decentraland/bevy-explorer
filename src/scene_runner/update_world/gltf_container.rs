@@ -75,7 +75,8 @@ fn update_gltf(
             continue;
         };
 
-        let h_gltf = asset_server.load_scene_file::<Gltf>(gltf.0.src.as_str(), &scene_def.id);
+        let h_gltf =
+            asset_server.load_content_file::<Gltf>(gltf.0.src.to_owned(), scene_def.id.to_owned());
 
         commands.entity(ent).insert(h_gltf).remove::<GltfLoaded>();
     }
