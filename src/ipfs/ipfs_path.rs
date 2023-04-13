@@ -152,7 +152,7 @@ impl IpfsType {
     }
 
     // the container hash if this is a container request, or the path hash otherwise
-    fn context_hash<'a>(&'a self) -> Option<&'a str> {
+    fn context_hash(&self) -> Option<&str> {
         match self {
             IpfsType::ContentFile { content_hash, .. } => Some(content_hash),
             IpfsType::Pointer { .. } => None,

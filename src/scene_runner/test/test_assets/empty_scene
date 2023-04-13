@@ -1,0 +1,29 @@
+[
+    {
+        "version": "v3",
+        "type": "scene",
+        "id": "EmptySceneTest",
+        "pointers": [],
+        "timestamp": 1,
+        "metadata": {
+            "main": "js.js",
+            "scene": {
+                "base": "0,0",
+                "parcels": [
+                    "0,0"
+                ]
+            },
+            "name": "empty scene"
+        },
+        "content": [
+            {
+                "file": "scene.json",
+                "hash": "empty_scene_meta"
+            },
+            {
+                "file": "js.js",
+                "hash": "empty_scene_js"
+            }
+        ]
+    }
+]

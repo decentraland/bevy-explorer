@@ -212,23 +212,25 @@ impl IpfsLoaderExt for AssetServer {
         file_path: &str,
         content_hash: &str,
     ) -> Result<Handle<T>, anyhow::Error> {
-        // TODO we could use this immediate resolution for files that don't rely on context (currently anything except gltfs)
-            // let ipfs_io = self.asset_io().downcast_ref::<IpfsIo>().unwrap();
-            // let context = ipfs_io.context.blocking_read();
-            // let collection = context
-            //     .collections
-            //     .get(content_hash)
-            //     .ok_or(anyhow::anyhow!("collection not found: {content_hash}"))?;
-            // let hash = collection
-            //     .hash(&normalize_path(file_path))
-            //     .ok_or(anyhow::anyhow!(
-            //         "file_path not found in collection: {file_path}"
-            //     ))?;
-            // // TODO use registered loaders to extract extension
-            // let file_path = Path::new(file_path);
-            // let file_name = file_path.file_name().unwrap().to_str().unwrap();
-            // let path = format!("$ipfs//$entity//{hash}.{file_name}");
-            // Ok(self.load(path))
+        // note - we can't resolve paths to hashes here because some loaders use the path to locate dependent assets (e.g. gltf embedded textures)
+        // TODO we could use this immediate resolution for file types that don't rely on context
+        // TODO or we could add a `canonicalize` method to bevy's AssetIo trait
+        // let ipfs_io = self.asset_io().downcast_ref::<IpfsIo>().unwrap();
+        // let context = ipfs_io.context.blocking_read();
+        // let collection = context
+        //     .collections
+        //     .get(content_hash)
+        //     .ok_or(anyhow::anyhow!("collection not found: {content_hash}"))?;
+        // let hash = collection
+        //     .hash(&normalize_path(file_path))
+        //     .ok_or(anyhow::anyhow!(
+        //         "file_path not found in collection: {file_path}"
+        //     ))?;
+        // // TODO use registered loaders to extract extension
+        // let file_path = Path::new(file_path);
+        // let file_name = file_path.file_name().unwrap().to_str().unwrap();
+        // let path = format!("$ipfs//$entity//{hash}.{file_name}");
+        // Ok(self.load(path))
         let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
             content_hash.to_owned(),
             file_path.to_owned(),
@@ -298,17 +300,22 @@ pub struct ServerConfiguration {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ServerAbout {
-    content: Option<EndpointConfig>,
-    configurations: Option<ServerConfiguration>,
+    pub content: Option<EndpointConfig>,
+    pub configurations: Option<ServerConfiguration>,
 }
 
 pub struct IpfsIoPlugin {
+    pub cache_root: Option<String>,
     pub starting_realm: Option<String>,
 }
 
 impl Plugin for IpfsIoPlugin {
     fn build(&self, app: &mut App) {
-        let default_io = AssetPlugin::default().create_platform_default_asset_io();
+        let default_io = AssetPlugin {
+            asset_folder: self.cache_root.clone().unwrap_or("assets".to_owned()),
+            ..Default::default()
+        }
+        .create_platform_default_asset_io();
 
         // TODO this will fail on android and wasm, investigate a caching solution there
         let default_fs_path = default_io
@@ -432,6 +439,16 @@ impl IpfsIo {
         if let Err(e) = res {
             error!("failed to set realm: {e}");
         }
+    }
+
+    pub fn set_realm_about(&self, about: ServerAbout) {
+        self.context.blocking_write().base_url = about
+            .content
+            .as_ref()
+            .map(|endpoint| endpoint.public_url.clone());
+        self.realm_config_sender
+            .send(Some(("manual value".to_owned(), about)))
+            .expect("channel closed");
     }
 
     async fn set_realm_inner(&self, new_realm: String) -> Result<(), anyhow::Error> {

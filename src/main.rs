@@ -9,8 +9,6 @@ mod input_handler;
 pub mod ipfs;
 mod scene_runner;
 
-use std::path::Path;
-
 use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::CascadeShadowConfigBuilder,
@@ -19,8 +17,7 @@ use bevy::{
 
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 use camera_controller::CameraController;
-use ipfs::{ipfs_path::IpfsPath, SceneIpfsLocation};
-use scene_runner::{LoadSceneEvent, PrimaryCamera, SceneRunnerPlugin};
+use scene_runner::{PrimaryCamera, SceneRunnerPlugin};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -59,7 +56,6 @@ impl Default for GraphicsSettings {
 #[derive(Serialize, Deserialize, Resource)]
 pub struct AppConfig {
     server: String,
-    scene: Option<SceneIpfsLocation>,
     graphics: GraphicsSettings,
 }
 
@@ -67,28 +63,9 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             server: "https://sdk-test-scenes.decentraland.zone".to_owned(),
-            scene: None,
             graphics: Default::default(),
         }
     }
-}
-
-fn parse_scene_location(scene: &str) -> Result<SceneIpfsLocation, anyhow::Error> {
-    Err(anyhow::anyhow!("nope"))
-    // if scene.ends_with(".js") {
-    //     return Ok(SceneIpfsLocation::Js(scene[0..scene.len() - 3].to_string()));
-    // }
-
-    // if let Some((px, py)) = scene.split_once(',') {
-    //     return Ok(SceneIpfsLocation::Pointer(
-    //         px.parse::<i32>()?,
-    //         py.parse::<i32>()?,
-    //     ));
-    // };
-
-    // Ok(SceneIpfsLocation::IpfsPath(
-    //     IpfsPath::new_from_path(Path::new(scene))?.unwrap(),
-    // ))
 }
 
 fn main() {
@@ -110,9 +87,6 @@ fn main() {
             .value_from_str("--server")
             .ok()
             .unwrap_or(base_config.server),
-        scene: args
-            .opt_value_from_fn("--scene", parse_scene_location)
-            .unwrap(),
         graphics: GraphicsSettings {
             vsync: args
                 .value_from_str("--vsync")
@@ -167,11 +141,12 @@ fn main() {
             .build()
             .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
                 starting_realm: Some(final_config.server.clone()),
+                cache_root: Default::default(),
             }),
     )
     .add_plugin(DebugLinesPlugin::with_depth_test(true))
     .add_plugin(SceneRunnerPlugin {
-        dynamic_spawning: final_config.scene.is_none(),
+        dynamic_spawning: true,
     }) // script engine plugin
     .add_plugin(CameraControllerPlugin)
     .add_startup_system(setup)
@@ -200,12 +175,7 @@ fn main() {
     app.run()
 }
 
-fn setup(
-    mut commands: Commands,
-    mut scene_load: EventWriter<LoadSceneEvent>,
-    config: Res<AppConfig>,
-    asset_server: Res<AssetServer>,
-) {
+fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<AssetServer>) {
     // add a camera
     commands.spawn((
         Camera3dBundle {
@@ -231,15 +201,6 @@ fn setup(
         .into(),
         ..Default::default()
     });
-
-    // load the scene
-    if let Some(initial_scene) = config.scene.as_ref() {
-        info!("loading scene: {:?}", initial_scene);
-        scene_load.send(LoadSceneEvent {
-            entity: None,
-            location: initial_scene.clone(),
-        });
-    }
 
     // fps counter
     if config.graphics.log_fps {
