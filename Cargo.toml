@@ -32,6 +32,7 @@ isahc = { version = "1.7.2", features = ["json"] }
 pico-args = "0.5.0"
 anyhow = "1.0.70"
 urlencoding = "2.1.2"
+urn = "0.7.0"
 
 [dev-dependencies]
 petgraph = "0.6.3"

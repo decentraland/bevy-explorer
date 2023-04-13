@@ -1,0 +1,891 @@
+[2m2023-04-13T13:55:34.934751Z[0m [32m INFO[0m [2mdecentra_bevy::ipfs[0m[2m:[0m remote server: Some("https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-23c44f78405b2ee2e063a808d3b031905bc59800")
+[2m2023-04-13T13:55:34.935159Z[0m [32m INFO[0m [2mdecentra_bevy::ipfs[0m[2m:[0m disconnecting
+[2m2023-04-13T13:55:34.940272Z[0m [32m INFO[0m [2mbevy_winit::system[0m[2m:[0m Creating new window "Decentraland Bevy Explorer" (0v0)
+[2m2023-04-13T13:55:35.112659Z[0m [32m INFO[0m [2mbevy_render::renderer[0m[2m:[0m AdapterInfo { name: "NVIDIA GeForce RTX 3070", vendor: 4318, device: 9352, device_type: DiscreteGpu, driver: "NVIDIA", driver_info: "472.12", backend: Vulkan }
+[2m2023-04-13T13:55:35.237508Z[0m [32m INFO[0m [2mbevy_prototype_debug_lines[0m[2m:[0m Loaded 3d debug lines plugin.
+up: increase scene count, down: decrease scene count
+[2m2023-04-13T13:55:35.412872Z[0m [32m INFO[0m [2mbevy_diagnostic::system_information_diagnostics_plugin::internal[0m[2m:[0m SystemInfo { os: "Windows 11 Home", kernel: "22621", cpu: "AMD Ryzen 9 5900X 12-Core Processor", core_count: "12", memory: "31.9 GiB" }
+[2m2023-04-13T13:55:35.428320Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m realm change! purging scenes
+[2m2023-04-13T13:55:35.428451Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreicz2zw5xgj4n2j4ebziuhgcq7csoiatsegbilv2nafce577ejbfoq" @ ??
+[2m2023-04-13T13:55:35.428461Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreiepc7mvbzuneyv2nbrgf2gkwpb2l3alprzrtdlw3vlz22pbh2flay" @ ??
+[2m2023-04-13T13:55:35.428467Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreic2g4vpzhhfa7gkl2kk5khtb4qe2ik3ukzhfsljumrznljcrklus4" @ ??
+[2m2023-04-13T13:55:35.428473Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreiez5i6oaaxl2enk2t5v22kumwloco7s6xryx4jpxcfslnexgyayom" @ ??
+[2m2023-04-13T13:55:35.428478Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreif7jmyuqtrtefhq4txwxsk4rslc6lvwakwyntiqkmlo3m7x7ltsse" @ ??
+[2m2023-04-13T13:55:35.428484Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreigkeox6foe5tdji26m6ljmhc5itmqpnjvejsokyqht3n3febfgoty" @ ??
+[2m2023-04-13T13:55:35.428490Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreibu4a4rc2ysfhlxirvsc6btqtv7gksphxq2gunrq543poukd7nzha" @ ??
+[2m2023-04-13T13:55:35.428495Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreidj362bwxgjaiii5kyqdt3lfjc2ttoceaqgsoedl2nge6mjrunrz4" @ ??
+[2m2023-04-13T13:55:35.428501Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreidpdvde6gng3htq3vvlmbexdazbohiztciqnyacpliaikdajxi4by" @ ??
+[2m2023-04-13T13:55:35.428507Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreibpav7w3xjme62cammov6rda263tj6qfdooospvoit2kcxr4j6dk4" @ ??
+[2m2023-04-13T13:55:35.428512Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreicyup6oi3lxb6ohjq75dg57xedlialbiddcwxcmjfnlipsljcc37e" @ ??
+[2m2023-04-13T13:55:35.428518Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreianuhacj27z4rahzgp6payhreplkxehdquj7wry57ff53klxzhqxq" @ ??
+[2m2023-04-13T13:55:35.428523Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreic3x24huuwcptqwpwxtovxjhlrwwuj5vutyn2o57b5iuo27owolzi" @ ??
+[2m2023-04-13T13:55:35.428528Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreiaz2ffazbfojcsbc4fh46cg62nqsxduqu3lrf64co5cwjd4xm3wsq" @ ??
+[2m2023-04-13T13:55:35.428534Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreie5mdeubel4xt4iir5z5dtyxount2ssozifuuf5hkzf3245tuqoaa" @ ??
+[2m2023-04-13T13:55:35.428591Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreigt6vhaizitqhm2riret5adjy7lcgbyezxr25wpyzysb5ngjtvhqa" @ ??
+[2m2023-04-13T13:55:35.428600Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreifzd7sla7bevoxvgeynyger3hn26yn2m6lib2zvvwhajvj5gzf4oi" @ ??
+[2m2023-04-13T13:55:35.428606Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreibme3nnbgfyokvysifjpbmjafqznxloomw5ffyii427ik5hwkzxua" @ ??
+[2m2023-04-13T13:55:35.428612Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreibfbn2rtomvfu5xnqbt462bfnluve7kj2c7g7hwgjpboyrznhbvri" @ ??
+[2m2023-04-13T13:55:35.428617Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreigb4b6cwaoifq6mgvgb4cftjgywlydvd5wjv7ee7gpcsu3hx7xfvq" @ ??
+[2m2023-04-13T13:55:35.428623Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreidihcpyrv2ku32dwho3hotbsz4c5uudwkyu2xkq7fasziism5h7wu" @ ??
+[2m2023-04-13T13:55:35.428628Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreifnyvsy2s7ne45vqqjdaffwmdssot43zz72ry5daoyunuobk2bndq" @ ??
+[2m2023-04-13T13:55:35.428634Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreihhns3rdfyjvixqi5r5ecc5lhwp6onaw63cyihdd37isdryr3pgdi" @ ??
+[2m2023-04-13T13:55:35.428639Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreiflekw7mtr5xogyjrjnduxuvx3ryc3wnirt45sw33p7izjuytblbe" @ ??
+[2m2023-04-13T13:55:35.428644Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreidvy4qbbgytbb3e5rz63aazlbc4mbz6ald565lq34rsaxo7qlt6aq" @ ??
+[2m2023-04-13T13:55:35.428650Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreibeks5pztb6picobseo7xyjcvdfltf2z3ussot5f52mgrilphvihu" @ ??
+[2m2023-04-13T13:55:35.428655Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreicgtit2wpbr7unwjkvdo3xvtemzcjzth2maw72ir7mf6rfyfhzq6i" @ ??
+[2m2023-04-13T13:55:35.428661Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreicmofofgmknkyzc24rq6vr3mdhwndrzl4b6gfypyvlkmfgfjoglg4" @ ??
+[2m2023-04-13T13:55:35.428666Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreifxqtoxwrhbzikfeyrbtqnda57v45lknanodmhkx6mnwuegpltddm" @ ??
+[2m2023-04-13T13:55:35.428672Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreifzdb4dhpz2azymwqfumaqcsyhzhc6t6o4gngvy5txalaf5m2aime" @ ??
+[2m2023-04-13T13:55:35.428677Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreicki4nbyqhj6r6bhlq5radlime7ifut5vcj5dz3ymsd76cknyhxre" @ ??
+[2m2023-04-13T13:55:35.428683Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreibqgab64oewo2n5a6vcwx6gh2bvdvwgyuqdzdu5zz46w2uzzbsxga" @ ??
+[2m2023-04-13T13:55:35.428688Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreig6nd7d2xcj7sqtqcyd7vaxiv2qhfgqwn7b2jogj6q2nbixcibl3m" @ ??
+[2m2023-04-13T13:55:35.428694Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreiavankugupvq5jyk6qilv6fbsmykypdal5st7m4wbv2dmvfxzbuaa" @ ??
+[2m2023-04-13T13:55:35.428699Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreigrvjpcbcery235fltc4gbe2q5zlfficpznqttokn4k4djmn7alxe" @ ??
+[2m2023-04-13T13:55:35.428705Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreieulgufecbscewxk655qfdv6lljidvrwxokc2cwy4qluuw53ilsjq" @ ??
+[2m2023-04-13T13:55:35.428711Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "bafkreibyfg3brat26ycjpo7fmc4xqcw5mvjkqupfcs7dyf66zketd5jhwy" @ ??
+[2m2023-04-13T13:55:35.453033Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreicz2zw5xgj4n2j4ebziuhgcq7csoiatsegbilv2nafce577ejbfoq?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreicz2zw5xgj4n2j4ebziuhgcq7csoiatsegbilv2nafce577ejbfoq", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453063Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453082Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreiepc7mvbzuneyv2nbrgf2gkwpb2l3alprzrtdlw3vlz22pbh2flay?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreiepc7mvbzuneyv2nbrgf2gkwpb2l3alprzrtdlw3vlz22pbh2flay", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453090Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453099Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreic2g4vpzhhfa7gkl2kk5khtb4qe2ik3ukzhfsljumrznljcrklus4?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreic2g4vpzhhfa7gkl2kk5khtb4qe2ik3ukzhfsljumrznljcrklus4", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453105Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453116Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreiez5i6oaaxl2enk2t5v22kumwloco7s6xryx4jpxcfslnexgyayom?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreiez5i6oaaxl2enk2t5v22kumwloco7s6xryx4jpxcfslnexgyayom", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453124Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453132Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreif7jmyuqtrtefhq4txwxsk4rslc6lvwakwyntiqkmlo3m7x7ltsse?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreif7jmyuqtrtefhq4txwxsk4rslc6lvwakwyntiqkmlo3m7x7ltsse", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453140Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453147Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreigkeox6foe5tdji26m6ljmhc5itmqpnjvejsokyqht3n3febfgoty?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreigkeox6foe5tdji26m6ljmhc5itmqpnjvejsokyqht3n3febfgoty", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453153Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453160Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreibu4a4rc2ysfhlxirvsc6btqtv7gksphxq2gunrq543poukd7nzha?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreibu4a4rc2ysfhlxirvsc6btqtv7gksphxq2gunrq543poukd7nzha", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453168Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453178Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreidj362bwxgjaiii5kyqdt3lfjc2ttoceaqgsoedl2nge6mjrunrz4?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreidj362bwxgjaiii5kyqdt3lfjc2ttoceaqgsoedl2nge6mjrunrz4", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453186Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453194Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreidpdvde6gng3htq3vvlmbexdazbohiztciqnyacpliaikdajxi4by?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreidpdvde6gng3htq3vvlmbexdazbohiztciqnyacpliaikdajxi4by", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453201Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453208Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreibpav7w3xjme62cammov6rda263tj6qfdooospvoit2kcxr4j6dk4?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreibpav7w3xjme62cammov6rda263tj6qfdooospvoit2kcxr4j6dk4", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453215Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453223Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreicyup6oi3lxb6ohjq75dg57xedlialbiddcwxcmjfnlipsljcc37e?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreicyup6oi3lxb6ohjq75dg57xedlialbiddcwxcmjfnlipsljcc37e", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453229Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453237Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreianuhacj27z4rahzgp6payhreplkxehdquj7wry57ff53klxzhqxq?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreianuhacj27z4rahzgp6payhreplkxehdquj7wry57ff53klxzhqxq", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453244Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453253Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreic3x24huuwcptqwpwxtovxjhlrwwuj5vutyn2o57b5iuo27owolzi?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreic3x24huuwcptqwpwxtovxjhlrwwuj5vutyn2o57b5iuo27owolzi", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453260Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453266Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreiaz2ffazbfojcsbc4fh46cg62nqsxduqu3lrf64co5cwjd4xm3wsq?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreiaz2ffazbfojcsbc4fh46cg62nqsxduqu3lrf64co5cwjd4xm3wsq", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453273Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453283Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreie5mdeubel4xt4iir5z5dtyxount2ssozifuuf5hkzf3245tuqoaa?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreie5mdeubel4xt4iir5z5dtyxount2ssozifuuf5hkzf3245tuqoaa", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453342Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453384Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreiez5i6oaaxl2enk2t5v22kumwloco7s6xryx4jpxcfslnexgyayom
+[2m2023-04-13T13:55:35.453389Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreicz2zw5xgj4n2j4ebziuhgcq7csoiatsegbilv2nafce577ejbfoq
+[2m2023-04-13T13:55:35.453398Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "models/grass.glb" <> "bafkreigc7teryo2g47lu3g6umlvewqoskc3dfiuborb466jvlj7ksqrrbm", "bin/index.js" <> "bafybeihw6nlixw3ljnjmuyzomr2iqyybclz6sgqyy5p5qzn7dwsldd5t3m", "models/grass3.glb" <> "bafkreifa7v6rcir7l6ketcd7flnoudwpifbearjt3oidd2cf53cgqbuasy", "models/ground.glb" <> "bafybeihsi7n3bitnfv5atzwr4wpiannqdgsesofdgzvajydtnopewvm3cu", "scene.json" <> "bafkreihcxyuoltpaj2qs7pk46mnbws3zvqywgbfh4hhtuhlsn6eg3fp34q", "models/grass2.glb" <> "bafkreifwoo6gpzkghbzewjuozzd7fbhfmxxyk2cdthmznja7bwee5bpki4"})
+[2m2023-04-13T13:55:35.453419Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreiepc7mvbzuneyv2nbrgf2gkwpb2l3alprzrtdlw3vlz22pbh2flay
+[2m2023-04-13T13:55:35.453406Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreic2g4vpzhhfa7gkl2kk5khtb4qe2ik3ukzhfsljumrznljcrklus4
+[2m2023-04-13T13:55:35.453414Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreigt6vhaizitqhm2riret5adjy7lcgbyezxr25wpyzysb5ngjtvhqa?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreigt6vhaizitqhm2riret5adjy7lcgbyezxr25wpyzysb5ngjtvhqa", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453460Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453432Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"scene.json" <> "bafkreicchbwfkxchyxagrr4qwdxlyovzzp6lyokzahflxez5az6q4o2tke", "sounds/armorpickup.mp3" <> "bafkreihfbnpjpnr6vzsiwhystktqlimqfpeddtnf2oduimkyz7howp45r4", "models/spawnbasegreen.glb" <> "bafkreihekzcdkgfvx2swzl6fhbvz6elofaqrf43bhmoe5qba5mdmf6l7dq", "models/spawnbaseblue.glb" <> "bafkreihgwsw2fov43rf5bt26kk3ksjkxu3idn7shqfinsuzw34ou6cjj34", "models/medikit.glb" <> "bafkreidavvwjuacrsbb5ero453ifngahr5l6ppxeuqye5zdbyhq4layjmu", "models/baselight.glb" <> "bafkreiacntpyouvzasjlmhe52qpvouctledxrwkcwi4jiqehc42mn2wdki", "models/spawnbasered.glb" <> "bafkreievfndeo6x7qoo6beczgzpmxnvg6mwudzhnxtofbfh3rh4iuxecry", "models/armor.glb" <> "bafkreievl5vlonjexzl7ygkn7drjsyx2u32dqovs4aj45dwyhck2ltdhve", "models/genesis_tx.png" <> "bafkreid2aswbhebm5lwcjtsuwrrpz2jczgwvwavbelb22n7myftlhcpa4q", "sounds/ammopickup.mp3" <> "bafkreicuztpxkwsajuwzv6kumbrnyled6vrxzhfuh5i5ax3svsorpldzqu", "sounds/medikitpickup.mp3" <> "bafkreibd7hicfulomvgjblnhirafqzxv7xpfyt5qd7k3d5vwbmifnx7ipe", "models/ammo.glb" <> "bafkreieme2pd3zwgjfmglztt3pty5o3ndcs6hexk6fnawbbnoawwulydf4", "bin/game.js" <> "bafybeihioh2l4iyw6kme6uehiw36rwqqiybahtydtdhrth77mzsrbc4leu"})
+[2m2023-04-13T13:55:35.453412Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/genesis_tx.png" <> "bafkreifbmurixopnslku6i2xqizxz5altgi3ogo6vzysjqpel7av2sze54", "models/basedarkwithcollider.glb" <> "bafkreiewuteglnptaxzoi3ok5yns3sespsqjakyp7sou3mtahuwfbi6zc4", "sounds/putdown.mp3" <> "bafkreialaa4zzybk5oh44petudymdefy4ovh3w7iphgn5t3v3luzfob7aa", "models/genesis_tx_transp.png" <> "bafkreihzxzuysemzjlednm3zjx3ogtzphry5r2joygpkr5mdmvuwgrjsky", "bin/game.js" <> "bafybeiakj7eyjayaiylfuweelqkuqvu4stvqwtfnm6ht7ulrfaxb2tmq3e", "models/tables.glb" <> "bafybeiflup7njkltlupdhweocf2dniukdovouksy2lxraog6epmsozxefu", "scene.json" <> "bafkreig6lmp3nnkkl2qwqzhoedoqn5uu6g3t5sclssszdyebm52wdlj3ua", "sounds/beerpump.mp3" <> "bafkreigohdfh5nbg4itagkacxnzge6g4fro6o5wgsyoirdwz2ced7jlfsa", "models/beerglass.glb" <> "bafkreidxonccuxoguapqfi3bjtb7sxyyshd5jfa5yc3whgk3qzpvxsrdoq", "images/no-sign.png" <> "bafkreibfuzwhdkwtdwjgfvvkgz5mgplnsbzmxvkecmaeouqrzcs4qwk4ry", "sounds/swallow.mp3" <> "bafkreib27fco3r2zztuvrbqpmirfke7pfmzty4kavafvxxduguaz7hslgq", "models/redtap.glb" <> "bafkreigvzfs3hnh2luhun6ysp5w7hrg6hfhpxt5hj3udpo6pr5lrwmeryi", "models/yellowtap.glb" <> "bafkreigzrfzyvtvgebn4gk2cko2l7j7wci3kv2nw5dh7sjrm5vmfavslx4", "models/greentap.glb" <> "bafkreic5ondc2z7wktcsf6mgawssy2jzn7rbdr564vji5xovvv5fjh4rgm", "sounds/error.mp3" <> "bafkreidftz7linceox6xw5keiwfsfeuhq3gge6auaqahzzu63tpvdvouu4", "sounds/pickup.mp3" <> "bafkreiadgrjr3xynct7shkc3uspen6pnacd7zpww5yxazx3iheuerbzbky", "models/beerdispenser.glb" <> "bafkreie3s3h3cljuxtblcc3qg5xrkxbeumkvhkw7r735jnjoci652nge4m"})
+[2m2023-04-13T13:55:35.453479Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreifzd7sla7bevoxvgeynyger3hn26yn2m6lib2zvvwhajvj5gzf4oi?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreifzd7sla7bevoxvgeynyger3hn26yn2m6lib2zvvwhajvj5gzf4oi", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453529Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453479Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/fish_04/fish_04.glb" <> "bafkreihnz3v5m23ew6kdbbltejfswi2aasay3m6dj2no2exwosexfngwti", "models/fish_01/piratespack_tx.png.png" <> "bafkreibtlcu5xu4u7qloyhi6s36e722qu7y7ths2xaspwqgqynpnl5aukq", "models/shark.glb" <> "bafkreibozw2k5os2sqs6cjiicuhqp5illvjs4ui2eocrqw34d2vftt4avq", "images/transparent-texture.png" <> "bafkreihhobfaiwkvj6cpyrm6mv2j6gvv3tuufcg6c6axxn4tzaqbucsjxu", "models/t_underwater.png" <> "bafkreiepunczg2rnz4knnmzgtynqeg25qrzcs7tym3jqc4bfeuu2sowsge", "bin/game.js" <> "bafybeidszlywq24cyotxijhkijzasxew2g7pmx22jqj3w4tkouinyj7taq", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "models/fish_03/thumbnail.png" <> "bafkreigw2z6rpfd2jiqp2a44q2wok64yojq52t35xkbmz6qnn2px5lol4q", "models/fish_01/fish_01.glb" <> "bafkreiganvj6dkan3dhnuqharr4nc6el2uk6nmcbwqnmac6oyyp4vd46u4", "credits/license" <> "bafkreiapu2ggpafdrdlv444y2z5h3ikzkkyxaueurwhgmroa5g6aow7xuq", "scene.json" <> "bafkreif2dc6rke5ote5fymj5vwk3sbn2zhzhsl6lcffcglq7seg44igz2m", "models/fish_03/fish_03.glb" <> "bafkreibfpbbidwuzokcwn4ctyfq4w66lpdg5notkyyrjvca66cvfb3w2gi", "models/fish_01/thumbnail.png" <> "bafkreifi4unnwiyj643fnksg6hkvwvoqszgnqgbgojb3zo3uxhn5bt7kdi", "images/rounded_alpha_square.png" <> "bafkreifhjkffpiz5j2z27b3o22smbp2nfvp44baoxxtumc5a3aa7nrpkn4", "license" <> "bafkreib5srmltvfe467egxiwa6xewop7ruj3uk4zd7uilqfatujccs4v64", "models/underwater.gltf" <> "bafybeih5k2t3sfdxjwdywit2hsn2h475cs4ftpv4jbpi42ujpzhtooaa3i", "models/fish_04/thumbnail.png" <> "bafkreiblf5gyemdwzaivyztpzcdn2f5rjhybd43q37tgiifh5bvi53f6fa"})
+[2m2023-04-13T13:55:35.453543Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreibme3nnbgfyokvysifjpbmjafqznxloomw5ffyii427ik5hwkzxua?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreibme3nnbgfyokvysifjpbmjafqznxloomw5ffyii427ik5hwkzxua", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453555Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453564Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreibfbn2rtomvfu5xnqbt462bfnluve7kj2c7g7hwgjpboyrznhbvri?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreibfbn2rtomvfu5xnqbt462bfnluve7kj2c7g7hwgjpboyrznhbvri", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453573Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453582Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreigb4b6cwaoifq6mgvgb4cftjgywlydvd5wjv7ee7gpcsu3hx7xfvq?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreigb4b6cwaoifq6mgvgb4cftjgywlydvd5wjv7ee7gpcsu3hx7xfvq", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453589Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453597Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreidihcpyrv2ku32dwho3hotbsz4c5uudwkyu2xkq7fasziism5h7wu?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreidihcpyrv2ku32dwho3hotbsz4c5uudwkyu2xkq7fasziism5h7wu", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453603Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453604Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreif7jmyuqtrtefhq4txwxsk4rslc6lvwakwyntiqkmlo3m7x7ltsse
+[2m2023-04-13T13:55:35.453611Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreifnyvsy2s7ne45vqqjdaffwmdssot43zz72ry5daoyunuobk2bndq?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreifnyvsy2s7ne45vqqjdaffwmdssot43zz72ry5daoyunuobk2bndq", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453621Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453616Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"textures/smoke-puff3.png" <> "bafkreiheritlemwrd7xdiphnczlb7cwrrywteb3apnyrubl3v2ti52qoei", "models/fireplace.glb" <> "bafkreietl52x6p5q2swmzawopu3ysmysoal5dk5utrnhktmdhwyooijci4", "models/floorbasegrass.glb" <> "bafkreib55csalavfqvro7frkoik2tqeuca6xszng3cppw2353yzmpjgcky", "textures/smoke-puff2.png" <> "bafkreiav24ap73ulwt7trfiykilhwk62toij3ycgxpxvtfz6loxrqkgjae", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "scene.json" <> "bafkreibh67apospi2otq4rym4suf7uiji6indydffz6sesfm4zvwirllqe", "bin/game.js" <> "bafybeibxn37lnxv5qtxh2kal6xsnai5xcnhz4hvgbcw76ufg7ztr2qu27m"})
+[2m2023-04-13T13:55:35.453631Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreianuhacj27z4rahzgp6payhreplkxehdquj7wry57ff53klxzhqxq
+[2m2023-04-13T13:55:35.453630Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreihhns3rdfyjvixqi5r5ecc5lhwp6onaw63cyihdd37isdryr3pgdi?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreihhns3rdfyjvixqi5r5ecc5lhwp6onaw63cyihdd37isdryr3pgdi", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453657Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/zombie.glb" <> "bafybeicn5txrokoqfb7hv7stvouqpqwnyvvaq2v5c3gxegjmfybi7doeue", "models/baselight.glb" <> "bafkreiacntpyouvzasjlmhe52qpvouctledxrwkcwi4jiqehc42mn2wdki", "models/zombieskin.png" <> "bafkreiemgaa6urjcuqc6ecv4qflyc3426c2olgtkgumxfiudxnyiltr5bm", "models/zombieeyes.png" <> "bafkreid72jihvic7qb3vtudnnglzow4gimqpcklu252lykpt6hccmh5aoq", "bin/game.js" <> "bafybeid4drisy54v6gq5bipybq7fx5abxxgb5iu2ztlyr63hzrslf6xohu", "models/zombieeyebrows.png" <> "bafkreid3xecd44iujaz5qekbdrt5orqdqj3wivg5zc5mya3zkorjhyrkda", "models/zombiemouth.png" <> "bafkreibwij4tymhuutm27jsyiks3skveaaxh6oloedxrmmo7gylzlomz2e", "models/blood.png" <> "bafkreiaf6aviagylv5d7pcqmo5mns6wszskeo33swiqn2qv3pxi3my2ek4", "models/avatarwearables_tx.png" <> "bafkreie2zkxkaboe6lo2yuafimiu4rzdlyuw4cvyaaocx4szwyranfpoaa", "models/zombieskinbase.png" <> "bafkreicantyfanyud7hj7yovvh4fidabip2vlkkrwu67qkmuktx7bftlly", "scene.json" <> "bafkreifa5uhpjh4zdrcowji5zlgay4pkuskqmd5g5rp5in35akqw64azxq"})
+[2m2023-04-13T13:55:35.453668Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453691Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreiflekw7mtr5xogyjrjnduxuvx3ryc3wnirt45sw33p7izjuytblbe?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreiflekw7mtr5xogyjrjnduxuvx3ryc3wnirt45sw33p7izjuytblbe", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453700Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453717Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreidvy4qbbgytbb3e5rz63aazlbc4mbz6ald565lq34rsaxo7qlt6aq?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreidvy4qbbgytbb3e5rz63aazlbc4mbz6ald565lq34rsaxo7qlt6aq", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453722Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreibfbn2rtomvfu5xnqbt462bfnluve7kj2c7g7hwgjpboyrznhbvri
+[2m2023-04-13T13:55:35.453724Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453733Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/shark.glb" <> "bafkreibozw2k5os2sqs6cjiicuhqp5illvjs4ui2eocrqw34d2vftt4avq", "models/t_underwater.png" <> "bafkreiepunczg2rnz4knnmzgtynqeg25qrzcs7tym3jqc4bfeuu2sowsge", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "scene.json" <> "bafkreie5qeucs63j746akzgo4symoh35f7wdn7d76u4obvzdk3trz47odm", "models/underwater.gltf" <> "bafybeih5k2t3sfdxjwdywit2hsn2h475cs4ftpv4jbpi42ujpzhtooaa3i", "bin/game.js" <> "bafybeiapww7vzp5jgwpipzgr3j6neilkimo5wwqtj5ify3qcknfimdrnue"})
+[2m2023-04-13T13:55:35.453745Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreibeks5pztb6picobseo7xyjcvdfltf2z3ussot5f52mgrilphvihu?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreibeks5pztb6picobseo7xyjcvdfltf2z3ussot5f52mgrilphvihu", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453752Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453761Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreicgtit2wpbr7unwjkvdo3xvtemzcjzth2maw72ir7mf6rfyfhzq6i?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreicgtit2wpbr7unwjkvdo3xvtemzcjzth2maw72ir7mf6rfyfhzq6i", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453768Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453777Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreicmofofgmknkyzc24rq6vr3mdhwndrzl4b6gfypyvlkmfgfjoglg4?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreicmofofgmknkyzc24rq6vr3mdhwndrzl4b6gfypyvlkmfgfjoglg4", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453783Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453795Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreifxqtoxwrhbzikfeyrbtqnda57v45lknanodmhkx6mnwuegpltddm?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreifxqtoxwrhbzikfeyrbtqnda57v45lknanodmhkx6mnwuegpltddm", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453835Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453818Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreic3x24huuwcptqwpwxtovxjhlrwwuj5vutyn2o57b5iuo27owolzi
+[2m2023-04-13T13:55:35.453833Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreigkeox6foe5tdji26m6ljmhc5itmqpnjvejsokyqht3n3febfgoty
+[2m2023-04-13T13:55:35.453800Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreie5mdeubel4xt4iir5z5dtyxount2ssozifuuf5hkzf3245tuqoaa
+[2m2023-04-13T13:55:35.453848Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreifzdb4dhpz2azymwqfumaqcsyhzhc6t6o4gngvy5txalaf5m2aime?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreifzdb4dhpz2azymwqfumaqcsyhzhc6t6o4gngvy5txalaf5m2aime", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453899Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453876Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"scene.json" <> "bafkreifb2incxnwoljojaxvmi2zhrbmkruhb6tnkifku6bzg64q4pbhs3a", "bin/index.js" <> "bafybeifz6tqnxesjdpofm56iojg5kavqh66mskyba4v3ren6l2cvabv25q", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y"})
+[2m2023-04-13T13:55:35.453890Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreigb4b6cwaoifq6mgvgb4cftjgywlydvd5wjv7ee7gpcsu3hx7xfvq
+[2m2023-04-13T13:55:35.453863Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/arissa.glb" <> "bafybeidzpcyhjufv27llgu3te5cv3ffpkuuibqgcnnmkl2wecn3ohyl4zm", "bin/game.js" <> "bafybeihtetcmmpq6mkddjopi7o66532fem3iwqfpdmbj4sylz4sh6musgq", "scene.json" <> "bafkreib7f5ytooztvsx4opgpxuuegawv6cjiylovygkwd3gwoytfd3e7le", "models/basegrass.glb" <> "bafybeihi47rn6nbitcv26bmrur7isq4ksjnnuxcwl4a5mh5r54ihdojizu"})
+[2m2023-04-13T13:55:35.453889Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"screenshot/moving-platforms.gif" <> "bafybeibfuxpj22zbxmbqke7vo4wrrk6mlvrikxfnqfviimdjgrjzlgo6wi", "scene.json" <> "bafkreidktwyegf4iqkjl7wcpgam6poq3cusgaxooj5ffqavoseaczxgrhe", "models/triggerplatform.glb" <> "bafkreiff4horkdfo23oyaaqkt37omwahjbvvwblgcp4pgrpg7a2nhx43ly", "models/starcoin.glb" <> "bafkreif6qazpaiulr6kcqgukopkw6r26lawpnisdjdoddaqeujd5ytaezy", "models/orangecheckercolor.png" <> "bafkreig6zo4ru5gjg65lo4uv653r5kgzfstkeh5ht5cpr3ak4j45ok7rba", "models/movingplatform.glb" <> "bafkreicc3bnkvlem5l2owcd4ryqxquclqnuhskqh4c533gq3i7qfqewtxi", "models/magentacheckercolor.png" <> "bafkreicsknxbfwr7t4ogf2wi7gc3q7xbnulqvnjlwwtfmuieu6urpuj6nq", "sounds/coinpickup.mp3" <> "bafkreicm4vcamva5x7ixzb3l3s67ykwwngih3r6lo4iaxy2xzvgeu4gscy", "models/greencheckercolor.png" <> "bafkreif6rhmgmp66hfsj4anhd4mgrhiwavcw3quifvxcq4duu72k2wzrdi", "models/staticplatforms.glb" <> "bafkreieiaycy6srjcmu62q3z3hpst4bb6jls33nnxxhasnaexglrjzgada", "models/browncheckercolor.png" <> "bafkreihsfufy66dwbx5ogwzxg433f52gczcs3od45ltwtl4uexual5i2ya", "models/baselight.glb" <> "bafkreiacntpyouvzasjlmhe52qpvouctledxrwkcwi4jiqehc42mn2wdki", "bin/game.js" <> "bafybeiddehh4afktgv2lcqq3zateqhv56xd4c7azd4x5mq7hshqds3l4zu"})
+[2m2023-04-13T13:55:35.453911Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreicki4nbyqhj6r6bhlq5radlime7ifut5vcj5dz3ymsd76cknyhxre?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreicki4nbyqhj6r6bhlq5radlime7ifut5vcj5dz3ymsd76cknyhxre", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.453998Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.453935Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/barrierc.glb" <> "bafkreig4wiy67bzg4u73ehbglxdbuzszqa7gov2vvfd5fhncvtw2don2x4", "scene.json" <> "bafkreiazosd4t3yrg7kwpjkr6ro2i65b4yyoiae3lzyjdlgwqawlco2dne", "models/wheela.glb" <> "bafkreiaxdt2deug4brgr53lfycr5wbjpo4gbqywqzuzwn3tv776efsldsy", "bin/index.js" <> "bafybeidgilmaz2j5reitsyl3ibdtuudginwazxhld2ymfz3dh54opwjyru", "models/orangecheckeredcolor.png" <> "bafkreiciohlnv635r2bk5ovsjwq6gg3jr7uzhb5z3jptk2am67pqulwfba", "models/roundaboutb.glb" <> "bafkreicljlt56ppfntk5pxivltsosiv7g3kdk25e6ofygvm2n6dmi5mr6u", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "models/pinkcheckeredcolor.png" <> "bafkreiaiyqzb4g3aqkhj3xcnceemuvztzboibq464cyagmswcqn4jtgqqy", "models/roundabouta.glb" <> "bafkreie724zrzll4dml7rwnhxydu7jhq7oj4hf6wzowjplc4lv5xdjwf2e", "models/purplecheckeredcolor.png" <> "bafkreifoulxnlvvggg7vgo6mtrlqekf3hlp5zxhhrkv4fdcm5ok2dhusyi", "models/bridgeb.glb" <> "bafkreifjhhcko6k36yux56fwfwrmswv7r2pnpd4676diekofqasavyp4nm", "models/barrierb.glb" <> "bafkreiefqgimsuazxhbqrm7lonnlaf3xzhsxo5lsuqxyn4bnrwtkr5mooy", "screenshots/rotating-platforms.gif" <> "bafybeihyqmvheshilqtj2bjh325eujti37js45vcyj626ocf4vvdiyrcsa", "models/baselight.glb" <> "bafkreiacntpyouvzasjlmhe52qpvouctledxrwkcwi4jiqehc42mn2wdki", "models/bridgea.glb" <> "bafkreigdabjr7veibsedoqpvfuggzroq6ccbq5ijlrtfr3bs75mtn5sxuu", "models/yellowcheckeredcolor.png" <> "bafkreifoideuvne44qlzycal2vk6s74ooxcbqytwmu2uxdxbbyok4ixeym", "models/bluecheckeredcolor.png" <> "bafkreib7hjyqbju5nhf4g4fbfscxqiicodym3qogfrrqicnusth6wvthye", "models/wheelb.glb" <> "bafkreia6rc2n2gkeedceca2zhimeyh5lkl7axhefzbo5vld72ja5xciy7i", "models/genesis_tx.png" <> "bafkreid2aswbhebm5lwcjtsuwrrpz2jczgwvwavbelb22n7myftlhcpa4q", "models/barriera.glb" <> "bafkreieaa4dp7veldh3hnepnqc42znq7q4iukt33iitbrzbbomh2t55yci", "sounds/win.mp3" <> "bafkreidharcsonzf3gwqnou6rxeqpptdmcswy7vx4m5lyusrrqvdlkawxi", "models/staticplatforms.glb" <> "bafkreiasulcrdgllswaqxie7c3gwblrvcpigo3ld2cnw7tsqbmrae7tzze", "models/crown.glb" <> "bafkreibhh6bjlmugshim6vnlhtuypwbla4h33p6gotkl3svelbj6x7exbe"})
+[2m2023-04-13T13:55:35.454011Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreibqgab64oewo2n5a6vcwx6gh2bvdvwgyuqdzdu5zz46w2uzzbsxga?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreibqgab64oewo2n5a6vcwx6gh2bvdvwgyuqdzdu5zz46w2uzzbsxga", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.454033Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.454043Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreig6nd7d2xcj7sqtqcyd7vaxiv2qhfgqwn7b2jogj6q2nbixcibl3m?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreig6nd7d2xcj7sqtqcyd7vaxiv2qhfgqwn7b2jogj6q2nbixcibl3m", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.454051Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.454061Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreiavankugupvq5jyk6qilv6fbsmykypdal5st7m4wbv2dmvfxzbuaa?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreiavankugupvq5jyk6qilv6fbsmykypdal5st7m4wbv2dmvfxzbuaa", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.454068Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.454076Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreigrvjpcbcery235fltc4gbe2q5zlfficpznqttokn4k4djmn7alxe?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreigrvjpcbcery235fltc4gbe2q5zlfficpznqttokn4k4djmn7alxe", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.454081Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreibu4a4rc2ysfhlxirvsc6btqtv7gksphxq2gunrq543poukd7nzha
+[2m2023-04-13T13:55:35.454087Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.454099Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "bin/game.js" <> "bafybeigeibvktzcdyjuxwyt64qobuhfoegrlbb4uyxxgwngwi5bfe76g2q", "scene.json" <> "bafkreigtsa6ocwrosog4q2rz7txoroglwc3lfxhvhp4sdzxvq2dsrtmiya"})
+[2m2023-04-13T13:55:35.454120Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreieulgufecbscewxk655qfdv6lljidvrwxokc2cwy4qluuw53ilsjq?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreieulgufecbscewxk655qfdv6lljidvrwxokc2cwy4qluuw53ilsjq", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.454132Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.454138Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreigt6vhaizitqhm2riret5adjy7lcgbyezxr25wpyzysb5ngjtvhqa
+[2m2023-04-13T13:55:35.454141Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m urn: "urn:decentraland:entity:bafkreibyfg3brat26ycjpo7fmc4xqcw5mvjkqupfcs7dyf66zketd5jhwy?=&baseUrl=https://sdk-team-cdn.decentraland.org/ipfs/" => ipfs_path: IpfsPath { key_values: {BaseUrl: "https://sdk-team-cdn.decentraland.org/ipfs/"}, ipfs_type: Entity { hash: "bafkreibyfg3brat26ycjpo7fmc4xqcw5mvjkqupfcs7dyf66zketd5jhwy", ext: "scene_entity" } }
+[2m2023-04-13T13:55:35.454149Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"scene.json" <> "bafkreihrhr7wkwl4yq3dxzx7uf55xregsnr7xfeefjysscts45ju6l225u", "models/t_underwater.png" <> "bafkreiepunczg2rnz4knnmzgtynqeg25qrzcs7tym3jqc4bfeuu2sowsge", "bin/game.js" <> "bafybeiajxaoor6mfd4vpfwzlunbbisdynvq2n764jlrgumag2iobxbrdz4", "models/underwater.gltf" <> "bafybeih5k2t3sfdxjwdywit2hsn2h475cs4ftpv4jbpi42ujpzhtooaa3i", "models/shark.glb" <> "bafkreibozw2k5os2sqs6cjiicuhqp5illvjs4ui2eocrqw34d2vftt4avq", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y"})
+[2m2023-04-13T13:55:35.454156Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m updating context
+[2m2023-04-13T13:55:35.454185Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreidihcpyrv2ku32dwho3hotbsz4c5uudwkyu2xkq7fasziism5h7wu
+[2m2023-04-13T13:55:35.454195Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"scene.json" <> "bafkreic26au3bjalbsscwakn6tpzzjdnzqox2mzvcjhcjtmrpvup4k7opy", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "bin/game.js" <> "bafybeibtvovaec4pvbawjcdwavfxe5xb4zafy7kjaopsmtsdwvvg3se6oi"})
+[2m2023-04-13T13:55:35.454213Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreiaz2ffazbfojcsbc4fh46cg62nqsxduqu3lrf64co5cwjd4xm3wsq
+[2m2023-04-13T13:55:35.454228Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"sounds/telemann.mp3" <> "bafybeigxiy56huz6mx33kb44g3x5vgg7k7g5rszahu5ugpt6fcsl4aajqy", "bin/game.js" <> "bafybeib3qkgeie3zrxzdkgsns3n2vi4rs7ewnzgi6aokzuflwhpni3wbj4", "sounds/chopin.mp3" <> "bafybeiapnzj2labuhlsnctzlsnz2v5lqqlfhifflz5mzs56rat2vqlzsci", "sounds/brahms.mp3" <> "bafybeigrovbhwqnpoae47jokhektqn3hor5wnmsfjzb2miu6y7nhordrd4", "models/jukebox.bin" <> "bafkreidgfpvkvm7dxgslvyw37bs72khno45i4qk4ocmjhy4iatiwksnaou", "scene.json" <> "bafkreigvocognexostq7objb35ppsfxeu2fsi6u6lw7syspnw6pdnnyl2m", "models/jukebox.gltf" <> "bafkreihoaxgxlqx4k2qghjzyvpwrbi4q2umbfdryqskodhuljnai6z2oba", "sounds/bach.mp3" <> "bafybeiafw2zf3f5osiinlxdebrxh4u3loejsujtetvdaap2imvj2ind4xe", "models/jukeboxdiffuse.png" <> "bafkreig4ngyuzxcmrqkjjypt5h6s4cku44uemiybzbl7375mpf3ilyxdey", "models/floorbasegrass.glb" <> "bafkreib55csalavfqvro7frkoik2tqeuca6xszng3cppw2353yzmpjgcky", "models/button.glb" <> "bafkreihljwyzhdkid6xig26rd5ptziyypqvbf7eyud5asiv7qfv6fkxi24", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y"})
+[2m2023-04-13T13:55:35.454299Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreidj362bwxgjaiii5kyqdt3lfjc2ttoceaqgsoedl2nge6mjrunrz4
+[2m2023-04-13T13:55:35.454300Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreifzd7sla7bevoxvgeynyger3hn26yn2m6lib2zvvwhajvj5gzf4oi
+[2m2023-04-13T13:55:35.454316Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/trevor.glb" <> "bafybeifckjgovqokmkh22q36dy2wnfinr3oemky6zun4ci4k5o5jobub7y", "sounds/vexento.mp3" <> "bafybeifwifqzcbzewlqcuiquxbtznvinkngmjbqla2qb3rljxjaacf3hs4", "sounds/vexento.ogg" <> "bafybeiaaaneu3svxsdgv73u5fuylbwj254i4qhir7lapcxnaaepd6zk7ma", "scene.json" <> "bafkreiczyzlakhozqirbll23y4gvviqv3rws6vx6vy4yydmipbn7cgg64m", "models/parque.gltf" <> "bafybeid6a6tmhmte6kusj2rdraz3uri6uhhknlbsv6q6poo6353x6lwrcm", "screenshot/screenshot.png" <> "bafybeihbzcrqewo4cjphvb3wwxi33yp46gdwn6oyblgvlmgenbqpmng5g4", "bin/game.js" <> "bafybeibdh6jepavck3zlykvaaafgxd2a2gu55mepkm3cbgd6pwjbtnxkiy"})
+[2m2023-04-13T13:55:35.454327Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/theatre.glb" <> "bafybeidlkaxqcq5u6qcvfbvaltkdd457lj7qbpzwi6ojhqru5pxx6ai37e", "scene.json" <> "bafkreiak45ic4q2oyatuqy4rvm2qnamad3nrld6hulsipoeewbyvevn564", "materials/hypno-wheel.png" <> "bafkreidfl5i7jkjzr2ofuo2konrfxwefb47rpenfq2gq2lbhr3hwjqvfce", "bin/game.js" <> "bafybeigsmkbttbqasbamlv3rycn6brc2otudw5frbvm7vlhmooa5i6vgcm", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y"})
+[2m2023-04-13T13:55:35.454359Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreifnyvsy2s7ne45vqqjdaffwmdssot43zz72ry5daoyunuobk2bndq
+[2m2023-04-13T13:55:35.454369Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/skelet_king_texture.png" <> "bafybeicbacmsgxlkiaeifawwyfg3jyu7yqxi5rzclwjpjwfi5xd62g5k6q", "models/candelabra_01_col.png" <> "bafybeieogzyucg5lljsli4ar2r4tlrevdip3van643bxx5t4u67n4stldu", "models/dungeon_arch_col.png" <> "bafybeicy4so7spv4xgogeeqc2quqlbzm26rli4nvzpnscp54mevesercwi", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "bin/game.js" <> "bafybeih2yetytifglgengn7u4enn7mgz4brra3lki65sajkcqitkbt6zri", "models/rock_wall_01.png" <> "bafybeiext3kk2jjkpmeh7pivgf3n5rapnvgasyqwuruwo6dmbcjkvxd6ka", "models/plinth_col.png" <> "bafybeiab3wy7b634ycon5igi6erdttjfdldyke6rygpa5al2rcylsdfzua", "sounds/pickup.mp3" <> "bafkreiadgrjr3xynct7shkc3uspen6pnacd7zpww5yxazx3iheuerbzbky", "models/gnark.glb" <> "bafybeicaf35f5fyd6kkdzcifp36pjazbdsq62en36hop4g63hb2ymeujdy", "models/skeleton diffuse.png" <> "bafybeianjac7x2dqb7uh752qiepgpbhobmigipsltk34antvtnklmisfja", "models/temple.glb" <> "bafybeie3ygnasyvegdbt4pvm2kkitj323d5m7z53enxety67tf25triwwy", "scene.json" <> "bafkreiheyn2mjfiu7zawdzmx6lrlywqpg4acd3ffdgzyrssopd4bgjidle"})
+[2m2023-04-13T13:55:35.454467Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreicmofofgmknkyzc24rq6vr3mdhwndrzl4b6gfypyvlkmfgfjoglg4
+[2m2023-04-13T13:55:35.454479Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/grinch_fullbody.glb" <> "bafybeifgcpiy4ara2j3v4ag5hueyphs7ne72zqucqj54a3kpp35g24gy6u", "bin/game.js" <> "bafybeif6qipdkbcuqpvgrc5pfyn6tpc4l5xirhuztdegbovkuqxwk7fmlu", "scene.json" <> "bafkreicprnfwo2bqrosuvanonkzgnkgshkjsecmhtnqt77pdykxyoptgym", "models/santa_fullbody.glb" <> "bafybeidz4wt5thg5ih763ignsrqsozq5wsxtkxolyjtbzmilyw2aqzqy5u"})
+[2m2023-04-13T13:55:35.454490Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreibme3nnbgfyokvysifjpbmjafqznxloomw5ffyii427ik5hwkzxua
+[2m2023-04-13T13:55:35.454494Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreidpdvde6gng3htq3vvlmbexdazbohiztciqnyacpliaikdajxi4by
+[2m2023-04-13T13:55:35.454516Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreihhns3rdfyjvixqi5r5ecc5lhwp6onaw63cyihdd37isdryr3pgdi
+[2m2023-04-13T13:55:35.454503Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/floorbasegrass.glb" <> "bafkreib55csalavfqvro7frkoik2tqeuca6xszng3cppw2353yzmpjgcky", "models/blockdog.bin" <> "bafkreigtvxujw2a3t7x25du2oqlrim6j6reeuv4xuvdp6funierq4rrdwa", "models/blockdog.1.glb" <> "bafkreidotfjurujihx5hv2pj5k3jh46bnhhefo7zug4ztjb36jmiuhggu4", "models/blockdogtexture.png" <> "bafkreifbe2wsffj7s3e4xwrhow5x2owj4sv7s2s3zupiuhhletf6cs6wvq", "scene.json" <> "bafkreiaaen5rygiinqlhssuulbqyv4upr6mvfa65fkini6w2ew76jkj2yi", "models/robots.glb" <> "bafkreid57xszzpjgfbd23wgxacdews7k7qbczpa325svk2mokwpo4m7bbi", "bin/game.js" <> "bafybeib2s7musup6tjkzrwcgnozncvm57j5rtrvujt66segu5ik2wk72iq", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y"})
+[2m2023-04-13T13:55:35.454519Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"bin/game.js" <> "bafybeihdq3jdxu4gsnz47km2myxlvsyhshtqjopndvj2orplashvsvdmfa", "scene.json" <> "bafkreig6nfnhbe6uobxgy4jfusfpa4mvp5tgh36kgm6jnvcftc4gb4ctk4", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y"})
+[2m2023-04-13T13:55:35.454525Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"bin/game.js" <> "bafybeiddlqftjq54mj3n6l4vfnq7mfyr4xipqfiotziszwop3m2oumekda", "scene.json" <> "bafkreihtmdntg5rjlovafogdu3l5i73jeeocn6wqaygy6w3vkskp3rloja"})
+[2m2023-04-13T13:55:35.454657Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreifxqtoxwrhbzikfeyrbtqnda57v45lknanodmhkx6mnwuegpltddm
+[2m2023-04-13T13:55:35.454666Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"scene.json" <> "bafkreibwdvxlqfioxrorsnjchuzr25pwkaq3gdoyxgzkwmp27t5zsvttyi", "models/powercube.glb" <> "bafkreih4iz4brw5lpypyo75laez7luvwk2zliq2q4mtgnx2m7byfrjag4a", "models/blueglowgrad.png" <> "bafkreigndcyzspfs33zvn37w5v2bfjfu4jjewmuenrdacnoe62ov3q6e3e", "sounds/powerdown.mp3" <> "bafkreifgv2o4pzofpobrp4cahsohzr2xrwymhmwwjvedfyxruxrfavbayq", "sounds/cubeputdown.mp3" <> "bafkreia575g2p5o6l33n3we7kmkcstzm3otiuv5rgrqup6sk7bclgyxxhq", "models/powerblueglow.glb" <> "bafkreicjb665uby7hdeng2mwoxxuueizdlmodnyj7attmy2lx6kafkym7m", "models/powerredglow.glb" <> "bafkreiby54zdyi3egfujihav3f32jo2btpsafakbndrxlrf6fljxehmyli", "models/powerbase.glb" <> "bafkreicnu6iz3fov4evkigja6snx2bk52tnjmvru4szpe7grcd4bibw4ay", "models/genesis_tx.png" <> "bafkreid2aswbhebm5lwcjtsuwrrpz2jczgwvwavbelb22n7myftlhcpa4q", "bin/game.js" <> "bafybeigfpzaew24awolla22rjlfvje4jpt6zlyv3zo6j3ukg4axdqzzm7y", "models/staticbase.glb" <> "bafkreiddzfpfz6rxx44z7uu3pnubtd7jun5auw7hmb2kqjwhste36hvpne", "models/card.glb" <> "bafkreihqt6rva4zegjsowerbfs2ox23tyqfnk7vhkb6hfzq7sq6qgvgt2i", "sounds/powerup.mp3" <> "bafkreiducepsvtxfci2tx4xm2qucmud2dmbjey7gfpy6fycstusv3znriq", "sounds/cardpickup.mp3" <> "bafkreidxgxzej4jgcmc6vnafzoqkj7rqzyrl2dghjajgqaov5tevpcnxsq", "sounds/cubepickup.mp3" <> "bafkreicten74pw5l7nzr26gi3wxdytatkv6rbo4lbucqic42nhh57p54f4", "models/forcefield.glb" <> "bafkreigp5lxjg3ctzjv6umq2cbltcgrs5bikv3vi7hsdhnpt7ej5o5rt2m"})
+[2m2023-04-13T13:55:35.454737Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreibpav7w3xjme62cammov6rda263tj6qfdooospvoit2kcxr4j6dk4
+[2m2023-04-13T13:55:35.454742Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreiavankugupvq5jyk6qilv6fbsmykypdal5st7m4wbv2dmvfxzbuaa
+[2m2023-04-13T13:55:35.454746Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"scene.json" <> "bafkreiey7ruyusdehqaqgf7rvpnuq3wflirxn6hwtmsvoa5qslaqlox7yi", "models/baselight.glb" <> "bafkreiacntpyouvzasjlmhe52qpvouctledxrwkcwi4jiqehc42mn2wdki", "models/crate.glb" <> "bafkreiduuwyp2rhfgsgmnxambqbitvmrslw6qskvg5rflqovejysyzwgw4", "screenshots/grab-objects-advanced.gif" <> "bafybeiasxb224ygtx4lbyibeif3hz2qaeaqxenth2rcx2nyqlyc6la2ivu", "bin/game.js" <> "bafybeibec4thhws2prkhad5f2wkjwnbti4fhfmxnmmafn6l333orjp6jza"})
+[2m2023-04-13T13:55:35.454752Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreiflekw7mtr5xogyjrjnduxuvx3ryc3wnirt45sw33p7izjuytblbe
+[2m2023-04-13T13:55:35.454759Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"scene.json" <> "bafkreiflcxjzttbmobcfnhb57ecgqnyg5pl5zjhq7ljoeh4dg7dojallny", "models/coin.glb" <> "bafkreichjwv4g6zla767tfy33xbnofirtaaew7bugmxstziwog2ips62lu", "bin/game.js" <> "bafybeicwckdijnm4kq4gtiqmli6ct6ltkvyafroajc3d4fxnlm256fosee", "models/platform.glb" <> "bafkreihvum4cisool5zailsijjdhre53yboe226vmxqyosef5wq5yvjdfe", "models/baselight.glb" <> "bafkreiacntpyouvzasjlmhe52qpvouctledxrwkcwi4jiqehc42mn2wdki", "sounds/coinpickup.mp3" <> "bafkreicm4vcamva5x7ixzb3l3s67ykwwngih3r6lo4iaxy2xzvgeu4gscy"})
+[2m2023-04-13T13:55:35.454805Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/zombieskin.png" <> "bafkreiemgaa6urjcuqc6ecv4qflyc3426c2olgtkgumxfiudxnyiltr5bm", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "models/zombiemouth.png" <> "bafkreibwij4tymhuutm27jsyiks3skveaaxh6oloedxrmmo7gylzlomz2e", "scene.json" <> "bafkreiey4jqh3m7p7hgifwpfhoqp2eqtpl3m3majfq4n6nvm5mxy7akqle", "models/zombieskinbase.png" <> "bafkreicantyfanyud7hj7yovvh4fidabip2vlkkrwu67qkmuktx7bftlly", "sounds/ambient.mp3" <> "bafkreic4um5t3lo7w2dbb2leazgmkoboazaia5iltnr32vp7idijfpqp2i", "models/zombie.glb" <> "bafybeicn5txrokoqfb7hv7stvouqpqwnyvvaq2v5c3gxegjmfybi7doeue", "sounds/explosion.mp3" <> "bafkreifwerxzye67wp5tes5vzu7kvb3pkabecyc36wazku65vrdibgqa7y", "sounds/pickup.mp3" <> "bafkreiadgrjr3xynct7shkc3uspen6pnacd7zpww5yxazx3iheuerbzbky", "models/zombieeyes.png" <> "bafkreid72jihvic7qb3vtudnnglzow4gimqpcklu252lykpt6hccmh5aoq", "models/zombieeyebrows.png" <> "bafkreid3xecd44iujaz5qekbdrt5orqdqj3wivg5zc5mya3zkorjhyrkda", "bin/game.js" <> "bafybeifivybmdoildovg4wq2u6urna64sn4le4wodqzhf4yycpdy43j6di", "models/blood.png" <> "bafkreiaf6aviagylv5d7pcqmo5mns6wszskeo33swiqn2qv3pxi3my2ek4", "models/avatarwearables_tx.png" <> "bafkreie2zkxkaboe6lo2yuafimiu4rzdlyuw4cvyaaocx4szwyranfpoaa", "sounds/attack.mp3" <> "bafkreihtg2hbzmel6ojf5hgejmw73vkjhkko2hrykvb2t2iv5up2fvnjk4"})
+[2m2023-04-13T13:55:35.454832Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreifzdb4dhpz2azymwqfumaqcsyhzhc6t6o4gngvy5txalaf5m2aime
+[2m2023-04-13T13:55:35.454846Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/seats.glb" <> "bafkreibj6dxcu4gvzjqzqbp25ypb7wh6vjrzzqnlbit7zt3n272mbrmlxu", "models/basedarkwithcollider.glb" <> "bafkreiewuteglnptaxzoi3ok5yns3sespsqjakyp7sou3mtahuwfbi6zc4", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "scene.json" <> "bafkreia5v35netnhqf3w3tuyleoybhzam67kf5gjg2poyokj5vefsotgk4", "models/screen.glb" <> "bafybeig5hmbhdiuormwg4okdwmgksl73fk3gxmvubxfqqd3rsyy66dsfqm", "bin/index.js" <> "bafybeifl5mcal6vijtfcvfa5ht7ltx4326plcjzydz3pimh6krdafv3uhu"})
+[2m2023-04-13T13:55:35.455014Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreicki4nbyqhj6r6bhlq5radlime7ifut5vcj5dz3ymsd76cknyhxre
+[2m2023-04-13T13:55:35.455018Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreicyup6oi3lxb6ohjq75dg57xedlialbiddcwxcmjfnlipsljcc37e
+[2m2023-04-13T13:55:35.455019Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreigrvjpcbcery235fltc4gbe2q5zlfficpznqttokn4k4djmn7alxe
+[2m2023-04-13T13:55:35.455037Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/redspaceship.glb" <> "bafkreifk4yz3rvrdxatqfzid46jkgyoskpzjymsdcbbclwwucvn62exbaq", "models/bluespaceship.glb" <> "bafkreigdejixwscgplbm6qb4klqmgzoaiitvwwgcyufaam6acqgdey3dsu", "models/greenportal.glb" <> "bafkreibd7hui73ztjhsi2fdvd4su5u77yqqshj5u7zhf65gqz2v5phiy2i", "models/genesis_tx.png" <> "bafkreid2aswbhebm5lwcjtsuwrrpz2jczgwvwavbelb22n7myftlhcpa4q", "sounds/explosion.mp3" <> "bafkreifwerxzye67wp5tes5vzu7kvb3pkabecyc36wazku65vrdibgqa7y", "scene.json" <> "bafkreievlsgltipyq4sm7lfdax25poteeetpx7bs2wevqn76yol6crujuu", "sounds/spawn.mp3" <> "bafkreigot5fpw4mpmcdszja2m4lw7d2wfdvfqjvledmcisbtw7ajmgpyme", "models/redportal.glb" <> "bafkreiffyvpoknkmhaog5h2le7t5xz2kd5ytafyndb27de4u3daoh7lz3a", "models/glowingspaceship.glb" <> "bafkreifvrcypevc4zrfeu3tfohuzoycwfuunoin6yalymufssrtm6cz4fq", "models/blueportal.glb" <> "bafkreihyeenk2anld6rokvmlf6synuepehqy3tccputk4ltaaza47nscpu", "models/baselight.glb" <> "bafkreiacntpyouvzasjlmhe52qpvouctledxrwkcwi4jiqehc42mn2wdki", "bin/game.js" <> "bafybeigmumjdtvbwk2oknixs4i4ivapeipp65v2opdlpi5gwptjrj6w2qq", "sounds/blaster.mp3" <> "bafkreigegmukah4jjfksp2ac3xfguvfxwi7u6u2iihv2h3hrg6gq6qi33e", "models/scifipack_tx.png" <> "bafkreiav3zyb6vody64gtpgax5uezxw5pqusqcbnisvp6t5rmlswickogy", "models/greenspaceship.glb" <> "bafkreidvqvclrcesszdoyod7kgs3erw2y4gc5xumxi6c5k4aodgsb27apu"})
+[2m2023-04-13T13:55:35.455046Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreidvy4qbbgytbb3e5rz63aazlbc4mbz6ald565lq34rsaxo7qlt6aq
+[2m2023-04-13T13:55:35.455024Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/ground.gltf" <> "bafkreiejjeolznkdqv6dhhkvkprurenhepx64zoxekvpabmx46zbx6pnzu", "scene.json" <> "bafkreid27o6eqcj7d63vnpmn4s3tnmcr3ga3g37lk7uifjccjjrf5z6a5q", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "models/hummingbird.glb" <> "bafybeiaptm7a5ttlxqx5mqskyqlhkwsun6wrtujgicfy5rik4fcvkcf6b4", "sounds/pickup.mp3" <> "bafkreiadgrjr3xynct7shkc3uspen6pnacd7zpww5yxazx3iheuerbzbky", "models/hummingbird.png" <> "bafybeicxmdfjorslprl5ig7ppxsp6gdonwwupz4vhu5kp4nzswvbyq72f4", "bin/game.js" <> "bafybeieo474he452c5sh3av2647ghd2x25hs25pixdfw3momnuckjke644", "models/coloratlas_2.png" <> "bafkreihqjreiyrz64pxhvxhojaylb334itg7dna23h7d5hwazoxytniumi", "models/tree.gltf" <> "bafkreierz47snfmatal4bznzi2w7xp4ta63vm7lcxtw2msffbbirbe5qgm"})
+[2m2023-04-13T13:55:35.455051Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/sand.glb" <> "bafybeiaxw3fmuuam2ldr5f42sf26kh4qpu2bmbrzua4p3cscfcdmn22vgy", "images/black.png" <> "bafkreid3utiljlns5siybgbxzaqtoosjzs5nei7qjtkh35rz4mwjkdkgeq", "models/bird.glb" <> "bafkreiapb47wnb5xyzrrfkmcfgsbzrbo2n7ysbfdt63aoqz7ibv3wb4xx4", "images/white.png" <> "bafkreihoue4vedphcwkrumnpdn2m67b447eufwhz6mfas33wqnestqlqg4", "scene.json" <> "bafkreici4g4awas2eokluycitwp6omr7einxj7gbauzv52un6nz4ubvb3q", "bin/game.js" <> "bafybeiabnlhvjgwqvtzyldgvwcbmz3xedbowmy5qmp5ehi27ym75rueubi", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "models/bird_fly.glb" <> "bafkreibvg3uook4k3k3yrfiumphk3l6vwkeb7l35fjmrr7boxzsls4ykqe"})
+[2m2023-04-13T13:55:35.455078Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"scene.json" <> "bafkreicz5n3eqlnjvqnnimprzckvi4plufojuj6lvrqtdcf7uygcnteszm", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "bin/game.js" <> "bafybeiew5rtamtf6cl53f46mybbguuk6glttxb6bhalmip2kxtv563ualq"})
+[2m2023-04-13T13:55:35.455220Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreibyfg3brat26ycjpo7fmc4xqcw5mvjkqupfcs7dyf66zketd5jhwy
+[2m2023-04-13T13:55:35.455230Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"scene.json" <> "bafkreihvzxub3gyldvz4blwx6wqrufdhycno7io73woyo2qlrnyadpxf5a", "sounds/explosion.mp3" <> "bafkreifwerxzye67wp5tes5vzu7kvb3pkabecyc36wazku65vrdibgqa7y", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "sounds/ambient.mp3" <> "bafkreic4um5t3lo7w2dbb2leazgmkoboazaia5iltnr32vp7idijfpqp2i", "sounds/pickup.mp3" <> "bafkreiadgrjr3xynct7shkc3uspen6pnacd7zpww5yxazx3iheuerbzbky", "models/zombieskin.png" <> "bafkreiemgaa6urjcuqc6ecv4qflyc3426c2olgtkgumxfiudxnyiltr5bm", "models/zombieeyes.png" <> "bafkreid72jihvic7qb3vtudnnglzow4gimqpcklu252lykpt6hccmh5aoq", "sounds/attack.mp3" <> "bafkreihtg2hbzmel6ojf5hgejmw73vkjhkko2hrykvb2t2iv5up2fvnjk4", "bin/game.js" <> "bafybeibuyk4aknaufkxytcbeu3vud3am6vjbhbjr64wcn7ftpqxlraqbxu", "models/avatarwearables_tx.png" <> "bafkreie2zkxkaboe6lo2yuafimiu4rzdlyuw4cvyaaocx4szwyranfpoaa", "models/zombieskinbase.png" <> "bafkreicantyfanyud7hj7yovvh4fidabip2vlkkrwu67qkmuktx7bftlly", "models/blood.png" <> "bafkreiaf6aviagylv5d7pcqmo5mns6wszskeo33swiqn2qv3pxi3my2ek4", "models/zombiemouth.png" <> "bafkreibwij4tymhuutm27jsyiks3skveaaxh6oloedxrmmo7gylzlomz2e", "models/zombie.glb" <> "bafybeicn5txrokoqfb7hv7stvouqpqwnyvvaq2v5c3gxegjmfybi7doeue", "models/zombieeyebrows.png" <> "bafkreid3xecd44iujaz5qekbdrt5orqdqj3wivg5zc5mya3zkorjhyrkda"})
+[2m2023-04-13T13:55:35.455281Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreieulgufecbscewxk655qfdv6lljidvrwxokc2cwy4qluuw53ilsjq
+[2m2023-04-13T13:55:35.455293Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/blockdogbowl.gltf" <> "bafkreihza7o2fhqlinhrhjv7avt677es2373li7w5we7lcp5at6o2jivo4", "models/blockdogbowl.bin" <> "bafkreiaxqacrbyhpc74nmqaeijmp63xomljzoljn3ef3bmoiscyky2nvau", "models/blockdog.glb" <> "bafkreidotfjurujihx5hv2pj5k3jh46bnhhefo7zug4ztjb36jmiuhggu4", "scene.json" <> "bafkreien4hudihcx2yib7f3pe4xvbjfc4an6rqfqkh3b52bcihi3qro4aq", "sounds/pickup.mp3" <> "bafkreiadgrjr3xynct7shkc3uspen6pnacd7zpww5yxazx3iheuerbzbky", "models/garden.glb" <> "bafybeigwxyfyyarzmvqz262vet65xa2ovetct6hcnm27uwge7yxpmhfvoe", "bin/game.js" <> "bafybeihpjtigvuhy6dfq3e5hib4ea6msqxvnu6aj65bexgnwblammjf2ka", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y"})
+[2m2023-04-13T13:55:35.455391Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreibqgab64oewo2n5a6vcwx6gh2bvdvwgyuqdzdu5zz46w2uzzbsxga
+[2m2023-04-13T13:55:35.455410Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreibeks5pztb6picobseo7xyjcvdfltf2z3ussot5f52mgrilphvihu
+[2m2023-04-13T13:55:35.455421Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreig6nd7d2xcj7sqtqcyd7vaxiv2qhfgqwn7b2jogj6q2nbixcibl3m
+[2m2023-04-13T13:55:35.455407Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "bin/game.js" <> "bafybeifckxfhlycpb2thqtdyztjvxcerjoca2vlml6fu4kkqy3sjdub5bu", "images/robottalking.png" <> "bafkreie62wcsqzkggvocljijyigadyrj7lwhrsfpp2bqbso65p6svwzhyu", "models/robottalking.glb" <> "bafkreifvohp3ipjoamj6g2dmfs47ksyl42mcvoqvvpxqlmv2iuklhto7by", "scene.json" <> "bafkreib22vvoc3tedzdvfky25aq624lzb2samok5wjjoq5hvlwci3vizxq"})
+[2m2023-04-13T13:55:35.455450Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m scene id bafkreicgtit2wpbr7unwjkvdo3xvtemzcjzth2maw72ir7mf6rfyfhzq6i
+[2m2023-04-13T13:55:35.455434Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"bin/game.js" <> "bafybeiakongswgcz5nzzpxnfa2exylpwgrgfuso5xxz5dy2sko6xyjxv2e", "models/turret_01.glb" <> "bafkreidw6jk6x46yo5dgn3urqojt77rqi3zgfudrrxokc6pwibtq4fjsri", "scene.json" <> "bafkreiatrubny6llgaacksqufutdjcvx3mvyrbmqnk5ticnexp3wxi6dpm", "images/scene-thumbnail.png" <> "bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y", "models/floor_scifi_03.glb" <> "bafkreiepv5hdpgu6wjrsvmqtis37pgwfcy2ikhq5fqotcxrjnztxp7s3wm", "models/turretbase_01.glb" <> "bafkreicm6shryldw5v7pjtmgzhrchiraebgosmjqcy2w64apft2qkt3liy"})
+[2m2023-04-13T13:55:35.455421Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"license" <> "bafkreib5srmltvfe467egxiwa6xewop7ruj3uk4zd7uilqfatujccs4v64", "screenshot/grab-objects.gif" <> "bafybeihd6eil6tz5kt5q54nqslnfbjtuhofdjnfp2d6272ak5opdr42hv4", "bin/index.js" <> "bafybeigks6c2nlqqyab5iwz5wzyi2haar5bocwpwmiwfd76ollggc45d44", "scene.json" <> "bafkreigl6qtk5tij3ujigmau746gfejejifd3kjw6xrjmxfidpolqchnci", "sounds/put-down.mp3" <> "bafkreifevnpymxd2ap656jfltapzswcnogld6ntztfiske7hrr3xdnt65y", "sounds/pick-up.mp3" <> "bafkreicso6qjtwrwgfi2fg4etuykt4tt5tccmpwulozov5auyfcppinlh4", "models/baselight.glb" <> "bafkreiacntpyouvzasjlmhe52qpvouctledxrwkcwi4jiqehc42mn2wdki", "models/crate.glb" <> "bafkreib7gh7zcidz57th7k4sy6u4tiksgundl3rgoyrs2eokf4tycdmv2e"})
+[2m2023-04-13T13:55:35.455463Z[0m [31mERROR[0m [2mdecentra_bevy::ipfs[0m[2m:[0m content ContentMap({"models/browncheckercolor.png" <> "bafkreihsfufy66dwbx5ogwzxg433f52gczcs3od45ltwtl4uexual5i2ya", "models/irregular.glb" <> "bafkreif22ozspz4rj5sypzk6javxarufhp5bf6cf6gw3ciam4d42n6xwhi", "models/greencheckercolor.png" <> "bafkreif6rhmgmp66hfsj4anhd4mgrhiwavcw3quifvxcq4duu72k2wzrdi", "models/movingplatform.glb" <> "bafkreicc3bnkvlem5l2owcd4ryqxquclqnuhskqh4c533gq3i7qfqewtxi", "bin/index.js" <> "bafybeic43nllhl7yb3egp27chfpx2jc2zwj3daz772abqdxwrfdxzd72my", "audio/brahms-melody.mp3" <> "bafybeigrovbhwqnpoae47jokhektqn3hor5wnmsfjzb2miu6y7nhordrd4", "scene.json" <> "bafkreidqygojfnk2tv3eb2neihvrub3rhc6lvlxir3zk4dlcefjgc5dabm"})
+[2m2023-04-13T13:55:35.456982Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457001Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457010Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457019Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/index.js
+[2m2023-04-13T13:55:35.457026Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457034Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/index.js
+[2m2023-04-13T13:55:35.457041Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457050Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457074Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457092Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457101Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457108Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457115Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457122Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457129Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457136Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457143Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457151Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457159Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457165Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/index.js
+[2m2023-04-13T13:55:35.457172Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457182Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457189Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457196Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457203Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457209Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457216Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457223Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/index.js
+[2m2023-04-13T13:55:35.457229Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457236Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457248Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457255Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.457261Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.458715Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/index.js
+[2m2023-04-13T13:55:35.458779Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/index.js
+[2m2023-04-13T13:55:35.458808Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.458827Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m loading meta.main = bin/game.js
+[2m2023-04-13T13:55:35.458868Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 16v0: starting scene
+[2m2023-04-13T13:55:35.459347Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 16v0: started scene (location: IVec2(78, -8), scene thread id: SceneId(0))
+[2m2023-04-13T13:55:35.460902Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 10v0: starting scene
+[2m2023-04-13T13:55:35.461319Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 10v0: started scene (location: IVec2(73, -7), scene thread id: SceneId(1))
+[2m2023-04-13T13:55:35.461329Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 11v0: starting scene
+[2m2023-04-13T13:55:35.461831Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 11v0: started scene (location: IVec2(77, -4), scene thread id: SceneId(2))
+[2m2023-04-13T13:55:35.461854Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 14v0: starting scene
+[2m2023-04-13T13:55:35.462493Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 14v0: started scene (location: IVec2(78, -4), scene thread id: SceneId(3))
+[2m2023-04-13T13:55:35.462506Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 15v0: starting scene
+[2m2023-04-13T13:55:35.462960Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 15v0: started scene (location: IVec2(79, -9), scene thread id: SceneId(4))
+[2m2023-04-13T13:55:35.462981Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 17v0: starting scene
+[2m2023-04-13T13:55:35.463620Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 17v0: started scene (location: IVec2(76, -3), scene thread id: SceneId(5))
+[2m2023-04-13T13:55:35.463637Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 18v0: starting scene
+[2m2023-04-13T13:55:35.464134Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 18v0: started scene (location: IVec2(78, -9), scene thread id: SceneId(6))
+[2m2023-04-13T13:55:35.464149Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 31v0: starting scene
+[2m2023-04-13T13:55:35.464761Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 31v0: started scene (location: IVec2(74, -9), scene thread id: SceneId(7))
+[2m2023-04-13T13:55:35.468038Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 36v0: starting scene
+[2m2023-04-13T13:55:35.468655Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 36v0: started scene (location: IVec2(5, 90), scene thread id: SceneId(8))
+[2m2023-04-13T13:55:35.468680Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 12v0: starting scene
+[2m2023-04-13T13:55:35.469108Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 12v0: started scene (location: IVec2(72, -6), scene thread id: SceneId(9))
+[2m2023-04-13T13:55:35.469127Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 13v0: starting scene
+[2m2023-04-13T13:55:35.469632Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 13v0: started scene (location: IVec2(73, -10), scene thread id: SceneId(10))
+[2m2023-04-13T13:55:35.469646Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 46v0: starting scene
+[2m2023-04-13T13:55:35.470054Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 46v0: started scene (location: IVec2(77, -9), scene thread id: SceneId(11))
+[2m2023-04-13T13:55:35.470074Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 45v0: starting scene
+[2m2023-04-13T13:55:35.470789Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 45v0: started scene (location: IVec2(72, -9), scene thread id: SceneId(12))
+[2m2023-04-13T13:55:35.470873Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 44v0: starting scene
+[2m2023-04-13T13:55:35.471247Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 44v0: started scene (location: IVec2(74, -2), scene thread id: SceneId(13))
+[2m2023-04-13T13:55:35.471257Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 19v0: starting scene
+[2m2023-04-13T13:55:35.471694Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 19v0: started scene (location: IVec2(74, -6), scene thread id: SceneId(14))
+[2m2023-04-13T13:55:35.471716Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 20v0: starting scene
+[2m2023-04-13T13:55:35.472472Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 20v0: started scene (location: IVec2(74, -4), scene thread id: SceneId(15))
+[2m2023-04-13T13:55:35.472517Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 21v0: starting scene
+[2m2023-04-13T13:55:35.472961Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 21v0: started scene (location: IVec2(78, -1), scene thread id: SceneId(16))
+[2m2023-04-13T13:55:35.472976Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 32v0: starting scene
+[2m2023-04-13T13:55:35.473441Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 32v0: started scene (location: IVec2(73, -2), scene thread id: SceneId(17))
+[2m2023-04-13T13:55:35.477775Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 41v0: starting scene
+[2m2023-04-13T13:55:35.478202Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 41v0: started scene (location: IVec2(74, -7), scene thread id: SceneId(18))
+[2m2023-04-13T13:55:35.478221Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 40v0: starting scene
+[2m2023-04-13T13:55:35.478527Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 40v0: started scene (location: IVec2(76, -9), scene thread id: SceneId(19))
+[2m2023-04-13T13:55:35.478543Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 39v0: starting scene
+[2m2023-04-13T13:55:35.478900Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 39v0: started scene (location: IVec2(78, -3), scene thread id: SceneId(20))
+[2m2023-04-13T13:55:35.478918Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 38v0: starting scene
+[2m2023-04-13T13:55:35.479240Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 38v0: started scene (location: IVec2(72, -10), scene thread id: SceneId(21))
+[2m2023-04-13T13:55:35.479259Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 35v0: starting scene
+[2m2023-04-13T13:55:35.479571Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 35v0: started scene (location: IVec2(77, -3), scene thread id: SceneId(22))
+[2m2023-04-13T13:55:35.479591Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 37v0: starting scene
+[2m2023-04-13T13:55:35.479926Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 37v0: started scene (location: IVec2(76, -7), scene thread id: SceneId(23))
+[2m2023-04-13T13:55:35.479992Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 42v0: starting scene
+[2m2023-04-13T13:55:35.480319Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 42v0: started scene (location: IVec2(72, -4), scene thread id: SceneId(24))
+[2m2023-04-13T13:55:35.480335Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 34v0: starting scene
+[2m2023-04-13T13:55:35.480675Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 34v0: started scene (location: IVec2(77, -7), scene thread id: SceneId(25))
+[2m2023-04-13T13:55:35.481038Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 33v0: starting scene
+[2m2023-04-13T13:55:35.481695Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 33v0: started scene (location: IVec2(77, -8), scene thread id: SceneId(26))
+[2m2023-04-13T13:55:35.481809Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 43v0: starting scene
+[2m2023-04-13T13:55:35.483146Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 43v0: started scene (location: IVec2(76, -4), scene thread id: SceneId(27))
+[2m2023-04-13T13:55:35.484820Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 30v0: starting scene
+[2m2023-04-13T13:55:35.487446Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 30v0: started scene (location: IVec2(76, -8), scene thread id: SceneId(28))
+[2m2023-04-13T13:55:35.487476Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 22v0: starting scene
+[2m2023-04-13T13:55:35.488520Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 22v0: started scene (location: IVec2(75, -7), scene thread id: SceneId(29))
+[2m2023-04-13T13:55:35.488567Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 23v0: starting scene
+[2m2023-04-13T13:55:35.489924Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 23v0: started scene (location: IVec2(73, -5), scene thread id: SceneId(30))
+[2m2023-04-13T13:55:35.489952Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 24v0: starting scene
+[2m2023-04-13T13:55:35.490633Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 24v0: started scene (location: IVec2(77, -5), scene thread id: SceneId(31))
+[2m2023-04-13T13:55:35.490667Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 25v0: starting scene
+[2m2023-04-13T13:55:35.491316Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 25v0: started scene (location: IVec2(73, -8), scene thread id: SceneId(32))
+[2m2023-04-13T13:55:35.491576Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 26v0: starting scene
+[2m2023-04-13T13:55:35.492399Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 26v0: started scene (location: IVec2(73, -6), scene thread id: SceneId(33))
+[2m2023-04-13T13:55:35.492446Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 27v0: starting scene
+[2m2023-04-13T13:55:35.493325Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 27v0: started scene (location: IVec2(72, -7), scene thread id: SceneId(34))
+[2m2023-04-13T13:55:35.493345Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 28v0: starting scene
+[2m2023-04-13T13:55:35.494323Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 28v0: started scene (location: IVec2(72, -8), scene thread id: SceneId(35))
+[2m2023-04-13T13:55:35.509072Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 29v0: starting scene
+[2m2023-04-13T13:55:35.509614Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 29v0: started scene (location: IVec2(78, -7), scene thread id: SceneId(36))
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :addPredator
+LOG  :createUpdateFn
+[2m2023-04-13T13:55:35.583940Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner[0m[2m:[0m [SceneId(3)] error: onStart is not a function
+LOG  :createBoundaryPlanes is disabled SHOW_DEBUG_BOUNDARY_PLANES
+LOG  :createBoundaryMarkers is disabled SHOW_DEBUG_BOUNDARY_MARKERS
+[2m2023-04-13T13:55:35.591174Z[0m [33m WARN[0m [2mdecentra_bevy::scene_runner::update_world::mesh_renderer[0m[2m:[0m uneven cylinder primitive not implemented
+[2m2023-04-13T13:55:35.591222Z[0m [33m WARN[0m [2mdecentra_bevy::scene_runner::update_world::mesh_renderer[0m[2m:[0m uneven cylinder primitive not implemented
+[2m2023-04-13T13:55:35.591195Z[0m [33m WARN[0m [2mdecentra_bevy::scene_runner::update_world::mesh_collider[0m[2m:[0m cylinder not implemented
+[2m2023-04-13T13:55:35.591260Z[0m [33m WARN[0m [2mdecentra_bevy::scene_runner::update_world::mesh_collider[0m[2m:[0m cylinder not implemented
+[2m2023-04-13T13:55:35.591697Z[0m [31mERROR[0m [2mdecentra_bevy::dcl::js[0m[2m:[0m [scene thread SceneId(1)] script load error: Error: invalid module request `~system/UserIdentity`
+    at require (example:init/init.js:14:32)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12233:27)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12706:4)
+    at require (example:init/init.js:32:13)
+    at <loader>:1:1
+[2m2023-04-13T13:55:35.593003Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner[0m[2m:[0m [SceneId(1)] error: Error: invalid module request `~system/UserIdentity`
+    at require (example:init/init.js:14:32)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12233:27)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12706:4)
+    at require (example:init/init.js:32:13)
+    at <loader>:1:1
+[2m2023-04-13T13:55:35.600986Z[0m [31mERROR[0m [2mdecentra_bevy::dcl::js[0m[2m:[0m [scene thread SceneId(13)] script load error: Error: [mutable] Component core::Transform for 515 not found
+    at Object.getMutable (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:8017:15)
+    at spawnBirds (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12123:18)
+    at setup (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12196:3)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12198:1)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12201:4)
+    at require (example:init/init.js:32:13)
+    at <loader>:1:1
+[2m2023-04-13T13:55:35.601065Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner[0m[2m:[0m [SceneId(13)] error: Error: [mutable] Component core::Transform for 515 not found
+    at Object.getMutable (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:8017:15)
+    at spawnBirds (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12123:18)
+    at setup (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12196:3)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12198:1)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12201:4)
+    at require (example:init/init.js:32:13)
+    at <loader>:1:1
+[2m2023-04-13T13:55:35.611123Z[0m [31mERROR[0m [2mdecentra_bevy::dcl::js[0m[2m:[0m [scene thread SceneId(25)] script load error: Error: invalid module request `~system/UserIdentity`
+    at require (example:init/init.js:14:32)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12152:27)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12564:4)
+    at require (example:init/init.js:32:13)
+    at <loader>:1:1
+[2m2023-04-13T13:55:35.626099Z[0m [31mERROR[0m [2mdecentra_bevy::dcl::js[0m[2m:[0m [scene thread SceneId(14)] script load error: ReferenceError: performance is not defined
+    at 56.../collision/AABB (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:9173:23)
+    at s (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2290:22)
+    at file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2292:22
+    at 2.../package.json (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2395:18)
+    at s (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2290:22)
+    at e (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2299:11)
+    at file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2301:8
+    at file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2269:27
+    at ../node_modules/cannon/build/cannon.js (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2276:6)
+    at __require (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:9:51)
+[2m2023-04-13T13:55:35.632946Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner[0m[2m:[0m [SceneId(25)] error: Error: invalid module request `~system/UserIdentity`
+    at require (example:init/init.js:14:32)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12152:27)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:12564:4)
+    at require (example:init/init.js:32:13)
+    at <loader>:1:1
+[2m2023-04-13T13:55:35.632981Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner[0m[2m:[0m [SceneId(14)] error: ReferenceError: performance is not defined
+    at 56.../collision/AABB (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:9173:23)
+    at s (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2290:22)
+    at file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2292:22
+    at 2.../package.json (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2395:18)
+    at s (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2290:22)
+    at e (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2299:11)
+    at file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2301:8
+    at file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2269:27
+    at ../node_modules/cannon/build/cannon.js (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2276:6)
+    at __require (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:9:51)
+[2m2023-04-13T13:55:35.635183Z[0m [33m WARN[0m [2mdecentra_bevy::scene_runner::update_world::mesh_collider[0m[2m:[0m cylinder not implemented
+[2m2023-04-13T13:55:35.635209Z[0m [33m WARN[0m [2mdecentra_bevy::scene_runner::update_world::mesh_collider[0m[2m:[0m cylinder not implemented
+[2m2023-04-13T13:55:35.635370Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 1352v0 because it doesn't exist in this World.
+LOG  :on enter
+[2m2023-04-13T13:55:35.636290Z[0m [33m WARN[0m [2mbevy_asset::asset_server[0m[2m:[0m encountered an error while loading an asset: failed to load an asset path: encountered an io error while loading asset: file not found in content map: "models/genesis_tx.png"
+[2m2023-04-13T13:55:35.641361Z[0m [33m WARN[0m [2mdecentra_bevy::scene_runner::update_world::gltf_container[0m[2m:[0m failed to process gltf
+[2m2023-04-13T13:55:35.644625Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644734Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644770Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644781Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644787Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644797Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644804Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644816Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644822Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644834Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644843Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644861Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644874Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644889Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644898Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644908Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644913Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644921Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644927Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644936Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644942Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.644950Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T13:55:35.652935Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Morph animation property not yet supported
+[2m2023-04-13T13:55:35.652955Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Morph animation property not yet supported
+[2m2023-04-13T13:55:35.673462Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner[0m[2m:[0m [SceneId(17)] error: TypeError: localSetTimeout is not a function
+    at schedulePerformWorkUntilDeadline (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:4552:13)
+    at requestHostCallback (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:4559:13)
+    at unstable_scheduleCallback (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:4471:15)
+    at scheduleCallback$1 (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:18384:22)
+    at ensureRootIsScheduled (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:17157:15)
+    at scheduleUpdateOnFiber (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:17087:13)
+    at Object.updateContainer (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:19351:13)
+    at Object.update (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:27860:25)
+    at Object.ReactBasedUiSystem [as fn] (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:27872:16)
+    at Object.update (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:26024:26)
+[2m2023-04-13T13:55:35.678527Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 1510v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.692987Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T13:55:35.693013Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T13:55:35.693019Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T13:55:35.693092Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T13:55:35.697615Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T13:55:35.697634Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T13:55:35.697644Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T13:55:35.742778Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 3701v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.742844Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 4298v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.742856Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 4308v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.742862Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 4310v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.755578Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 3684v1 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.755604Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5004v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.800049Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5999v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.800140Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 4305v2 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.800162Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5052v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.800176Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5088v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.800196Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5112v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.800220Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5144v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.800226Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5147v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.800231Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5138v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.800237Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5153v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.800249Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5174v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.800256Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5184v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.800263Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5190v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.800276Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5208v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.800283Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5218v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.836474Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T13:55:35.836503Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T13:55:35.836510Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T13:55:35.836612Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T13:55:35.836624Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T13:55:35.836631Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T13:55:35.838283Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T13:55:35.838296Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T13:55:35.838303Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T13:55:35.838345Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T13:55:35.842347Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T13:55:35.842360Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T13:55:35.842366Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T13:55:35.842433Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T13:55:35.842441Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T13:55:35.842446Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T13:55:35.848049Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T13:55:35.855778Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T13:55:35.858227Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T13:55:35.858238Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T13:55:35.858244Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T13:55:35.858314Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T13:55:35.860275Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T13:55:35.860289Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T13:55:35.860295Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T13:55:35.860336Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T13:55:35.860739Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T13:55:35.862677Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T13:55:35.863149Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T13:55:35.863159Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T13:55:35.863164Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T13:55:35.863203Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T13:55:35.863365Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T13:55:35.924878Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5455v1 because it doesn't exist in this World.
+[2m2023-04-13T13:55:35.924928Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5470v1 because it doesn't exist in this World.
+[2m2023-04-13T13:55:36.431606Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.078810ms (avg 5.977760ms)
+[2m2023-04-13T13:55:36.431648Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  168.579797   (avg 169.623488)
+[2m2023-04-13T13:55:36.431660Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 123.000000
+[2m2023-04-13T13:55:36.633974Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5510v1 because it doesn't exist in this World.
+[2m2023-04-13T13:55:37.434553Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.946618ms (avg 5.926740ms)
+[2m2023-04-13T13:55:37.434593Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  169.208240   (avg 169.632676)
+[2m2023-04-13T13:55:37.434600Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 292.000000
+[2m2023-04-13T13:55:38.431534Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.172636ms (avg 6.105610ms)
+[2m2023-04-13T13:55:38.431583Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  164.759118   (avg 166.851490)
+[2m2023-04-13T13:55:38.431591Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 458.000000
+[2m2023-04-13T13:55:39.142516Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5164v1 because it doesn't exist in this World.
+[2m2023-04-13T13:55:39.433039Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.833872ms (avg 5.799065ms)
+[2m2023-04-13T13:55:39.433085Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.520822   (avg 174.556388)
+[2m2023-04-13T13:55:39.433093Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 627.000000
+[2m2023-04-13T13:55:40.433794Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.818527ms (avg 5.833715ms)
+[2m2023-04-13T13:55:40.433850Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.195136   (avg 172.700531)
+[2m2023-04-13T13:55:40.433858Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 796.000000
+[2m2023-04-13T13:55:41.435087Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.895080ms (avg 5.805050ms)
+[2m2023-04-13T13:55:41.435135Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  172.164888   (avg 174.117378)
+[2m2023-04-13T13:55:41.435143Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 966.000000
+[2m2023-04-13T13:55:42.434880Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.944732ms (avg 5.985430ms)
+[2m2023-04-13T13:55:42.434932Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  171.070526   (avg 170.659436)
+[2m2023-04-13T13:55:42.434941Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 1136.000000
+[2m2023-04-13T13:55:42.463929Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5099v1 because it doesn't exist in this World.
+[2m2023-04-13T13:55:43.434149Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.789126ms (avg 5.810880ms)
+[2m2023-04-13T13:55:43.434201Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  175.199362   (avg 175.311515)
+[2m2023-04-13T13:55:43.434214Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 1310.000000
+[2m2023-04-13T13:55:44.031821Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5057v1 because it doesn't exist in this World.
+[2m2023-04-13T13:55:44.434060Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.755186ms (avg 5.708995ms)
+[2m2023-04-13T13:55:44.434112Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  175.548902   (avg 177.217689)
+[2m2023-04-13T13:55:44.434120Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 1482.000000
+[2m2023-04-13T13:55:45.262047Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5049v1 because it doesn't exist in this World.
+[2m2023-04-13T13:55:45.434316Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.755061ms (avg 5.729885ms)
+[2m2023-04-13T13:55:45.434365Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  174.833078   (avg 175.439121)
+[2m2023-04-13T13:55:45.434373Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 1656.000000
+[2m2023-04-13T13:55:46.430176Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.864876ms (avg 5.765535ms)
+[2m2023-04-13T13:55:46.430216Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  171.841026   (avg 174.640577)
+[2m2023-04-13T13:55:46.430225Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 1827.000000
+[2m2023-04-13T13:55:47.429919Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.822029ms (avg 5.794630ms)
+[2m2023-04-13T13:55:47.429968Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.267693   (avg 174.406291)
+[2m2023-04-13T13:55:47.429976Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 2000.000000
+[2m2023-04-13T13:55:48.433579Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.806287ms (avg 5.751980ms)
+[2m2023-04-13T13:55:48.433619Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.410231   (avg 174.994250)
+[2m2023-04-13T13:55:48.433627Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 2173.000000
+[2m2023-04-13T13:55:49.433636Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.723258ms (avg 5.689300ms)
+[2m2023-04-13T13:55:49.433680Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  176.032946   (avg 176.701411)
+[2m2023-04-13T13:55:49.433688Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 2345.000000
+[2m2023-04-13T13:55:50.166936Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6021v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:50.431803Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.915933ms (avg 5.944345ms)
+[2m2023-04-13T13:55:50.431868Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  170.959122   (avg 169.941371)
+[2m2023-04-13T13:55:50.431877Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 2516.000000
+[2m2023-04-13T13:55:51.434063Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.996994ms (avg 6.065550ms)
+[2m2023-04-13T13:55:51.434117Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  169.348447   (avg 167.719175)
+[2m2023-04-13T13:55:51.434125Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 2688.000000
+[2m2023-04-13T13:55:52.232170Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6035v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:52.432667Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.698870ms (avg 5.694190ms)
+[2m2023-04-13T13:55:52.432711Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  177.259541   (avg 176.994549)
+[2m2023-04-13T13:55:52.432719Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 2860.000000
+[2m2023-04-13T13:55:53.432061Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.841962ms (avg 5.793455ms)
+[2m2023-04-13T13:55:53.432111Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  172.723013   (avg 174.001763)
+[2m2023-04-13T13:55:53.432119Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 3033.000000
+[2m2023-04-13T13:55:54.434179Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.798252ms (avg 5.760705ms)
+[2m2023-04-13T13:55:54.434220Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  174.371503   (avg 175.893779)
+[2m2023-04-13T13:55:54.434227Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 3206.000000
+[2m2023-04-13T13:55:54.959534Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6055v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:55.430387Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.743272ms (avg 5.697870ms)
+[2m2023-04-13T13:55:55.430429Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  175.496102   (avg 176.884254)
+[2m2023-04-13T13:55:55.430436Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 3378.000000
+[2m2023-04-13T13:55:56.430463Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.889838ms (avg 5.875185ms)
+[2m2023-04-13T13:55:56.430497Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  171.625041   (avg 171.766212)
+[2m2023-04-13T13:55:56.430504Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 3552.000000
+[2m2023-04-13T13:55:56.818849Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6064v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:57.430677Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.706630ms (avg 5.658815ms)
+[2m2023-04-13T13:55:57.430715Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  175.933593   (avg 177.141792)
+[2m2023-04-13T13:55:57.430723Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 3725.000000
+[2m2023-04-13T13:55:58.433260Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.833494ms (avg 5.804190ms)
+[2m2023-04-13T13:55:58.433305Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  172.208912   (avg 172.892099)
+[2m2023-04-13T13:55:58.433312Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 3897.000000
+[2m2023-04-13T13:55:58.995087Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6076v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:59.285268Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6079v0 because it doesn't exist in this World.
+[2m2023-04-13T13:55:59.430540Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.814838ms (avg 5.779725ms)
+[2m2023-04-13T13:55:59.430585Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.072527   (avg 173.861350)
+[2m2023-04-13T13:55:59.430599Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 4067.000000
+[2m2023-04-13T13:56:00.427983Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.823780ms (avg 5.742175ms)
+[2m2023-04-13T13:56:00.428019Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.269953   (avg 176.068706)
+[2m2023-04-13T13:56:00.428027Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 4239.000000
+[2m2023-04-13T13:56:01.430875Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.733031ms (avg 5.752225ms)
+[2m2023-04-13T13:56:01.430918Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  175.351773   (avg 174.546005)
+[2m2023-04-13T13:56:01.430925Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 4412.000000
+[2m2023-04-13T13:56:01.551556Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6094v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:02.432660Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.803389ms (avg 5.744825ms)
+[2m2023-04-13T13:56:02.432709Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.960876   (avg 175.325212)
+[2m2023-04-13T13:56:02.432719Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 4585.000000
+[2m2023-04-13T13:56:03.431482Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.741239ms (avg 5.677170ms)
+[2m2023-04-13T13:56:03.431526Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  175.826403   (avg 177.585427)
+[2m2023-04-13T13:56:03.431534Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 4758.000000
+[2m2023-04-13T13:56:04.428815Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.782919ms (avg 5.741160ms)
+[2m2023-04-13T13:56:04.428881Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  175.277518   (avg 176.177758)
+[2m2023-04-13T13:56:04.428890Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 4931.000000
+[2m2023-04-13T13:56:05.041632Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6107v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:05.434291Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.910468ms (avg 5.890455ms)
+[2m2023-04-13T13:56:05.434338Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  170.737732   (avg 171.234306)
+[2m2023-04-13T13:56:05.434347Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 5103.000000
+[2m2023-04-13T13:56:06.431326Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.869697ms (avg 5.820245ms)
+[2m2023-04-13T13:56:06.431371Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  171.489093   (avg 172.796837)
+[2m2023-04-13T13:56:06.431379Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 5272.000000
+[2m2023-04-13T13:56:07.025097Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6119v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:07.432720Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.669309ms (avg 5.651910ms)
+[2m2023-04-13T13:56:07.432786Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  177.377588   (avg 178.241264)
+[2m2023-04-13T13:56:07.432793Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 5446.000000
+[2m2023-04-13T13:56:08.433153Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.819565ms (avg 5.834940ms)
+[2m2023-04-13T13:56:08.433200Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.158702   (avg 172.602271)
+[2m2023-04-13T13:56:08.433207Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 5620.000000
+[2m2023-04-13T13:56:08.526347Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6127v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:09.227107Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6131v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:09.433718Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.739315ms (avg 5.730185ms)
+[2m2023-04-13T13:56:09.433759Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  175.107720   (avg 175.008683)
+[2m2023-04-13T13:56:09.433767Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 5794.000000
+[2m2023-04-13T13:56:10.431692Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.748208ms (avg 5.725940ms)
+[2m2023-04-13T13:56:10.431733Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  176.130833   (avg 176.741595)
+[2m2023-04-13T13:56:10.431741Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 5968.000000
+[2m2023-04-13T13:56:11.434455Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.863720ms (avg 5.843465ms)
+[2m2023-04-13T13:56:11.434510Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  171.431893   (avg 171.773576)
+[2m2023-04-13T13:56:11.434519Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 6141.000000
+[2m2023-04-13T13:56:11.520394Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6143v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:12.432371Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.843745ms (avg 5.819645ms)
+[2m2023-04-13T13:56:12.432410Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  172.825543   (avg 173.481951)
+[2m2023-04-13T13:56:12.432417Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 6314.000000
+[2m2023-04-13T13:56:12.598313Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6146v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:13.071754Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6150v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:13.089855Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6155v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:13.434147Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.741753ms (avg 5.726735ms)
+[2m2023-04-13T13:56:13.434191Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  175.895378   (avg 176.049319)
+[2m2023-04-13T13:56:13.434200Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 6487.000000
+[2m2023-04-13T13:56:14.431618Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.947583ms (avg 5.934025ms)
+[2m2023-04-13T13:56:14.431663Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  170.634195   (avg 171.302533)
+[2m2023-04-13T13:56:14.431674Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 6658.000000
+[2m2023-04-13T13:56:14.471538Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6159v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:14.861216Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6163v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:15.433801Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.814906ms (avg 5.860750ms)
+[2m2023-04-13T13:56:15.433838Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.533616   (avg 172.026098)
+[2m2023-04-13T13:56:15.433846Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 6828.000000
+[2m2023-04-13T13:56:16.430073Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.980804ms (avg 6.032460ms)
+[2m2023-04-13T13:56:16.430132Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  168.955787   (avg 167.525557)
+[2m2023-04-13T13:56:16.430144Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 6998.000000
+[2m2023-04-13T13:56:17.209207Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6176v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:17.434094Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.960915ms (avg 6.005950ms)
+[2m2023-04-13T13:56:17.434136Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  169.955814   (avg 168.435117)
+[2m2023-04-13T13:56:17.434144Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 7171.000000
+[2m2023-04-13T13:56:17.882806Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T13:56:17.882849Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T13:56:17.882858Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T13:56:17.882914Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T13:56:18.431640Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.820376ms (avg 5.734330ms)
+[2m2023-04-13T13:56:18.431707Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  172.928003   (avg 175.339159)
+[2m2023-04-13T13:56:18.431718Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 7342.000000
+[2m2023-04-13T13:56:19.433819Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.829271ms (avg 5.816660ms)
+[2m2023-04-13T13:56:19.433867Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  172.843302   (avg 173.033571)
+[2m2023-04-13T13:56:19.433876Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 7514.000000
+[2m2023-04-13T13:56:19.456717Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6187v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:20.431026Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.059606ms (avg 5.935835ms)
+[2m2023-04-13T13:56:20.431066Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  170.494164   (avg 173.809311)
+[2m2023-04-13T13:56:20.431076Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 7682.000000
+[2m2023-04-13T13:56:21.432265Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.693665ms (avg 5.714100ms)
+[2m2023-04-13T13:56:21.432304Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  177.416500   (avg 176.352939)
+[2m2023-04-13T13:56:21.432369Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 7855.000000
+[2m2023-04-13T13:56:21.721728Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6199v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:21.855187Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T13:56:22.130402Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6202v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:22.434020Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.756429ms (avg 5.640420ms)
+[2m2023-04-13T13:56:22.434075Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  175.575556   (avg 178.676419)
+[2m2023-04-13T13:56:22.434085Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 8027.000000
+[2m2023-04-13T13:56:23.436199Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.884740ms (avg 5.903205ms)
+[2m2023-04-13T13:56:23.436239Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  172.093168   (avg 171.376426)
+[2m2023-04-13T13:56:23.436247Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 8201.000000
+[2m2023-04-13T13:56:23.931374Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6206v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:24.099645Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6211v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:24.435369Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.873145ms (avg 5.865865ms)
+[2m2023-04-13T13:56:24.435407Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.825547   (avg 173.680526)
+[2m2023-04-13T13:56:24.435415Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 8374.000000
+[2m2023-04-13T13:56:24.685935Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6214v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:25.436171Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.665246ms (avg 5.664045ms)
+[2m2023-04-13T13:56:25.436217Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  179.170770   (avg 179.260241)
+[2m2023-04-13T13:56:25.436225Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 8548.000000
+[2m2023-04-13T13:56:26.096220Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6218v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:26.431476Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.759252ms (avg 5.771265ms)
+[2m2023-04-13T13:56:26.431518Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  175.024357   (avg 174.439542)
+[2m2023-04-13T13:56:26.431525Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 8720.000000
+[2m2023-04-13T13:56:26.664054Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6222v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:27.433519Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.705496ms (avg 5.702600ms)
+[2m2023-04-13T13:56:27.433562Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  178.505612   (avg 178.719559)
+[2m2023-04-13T13:56:27.433569Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 8892.000000
+[2m2023-04-13T13:56:28.359188Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6231v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:28.435261Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.871777ms (avg 5.810280ms)
+[2m2023-04-13T13:56:28.435314Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  172.241608   (avg 173.775802)
+[2m2023-04-13T13:56:28.435321Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 9063.000000
+[2m2023-04-13T13:56:28.628477Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6240v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:29.432756Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.950625ms (avg 5.940930ms)
+[2m2023-04-13T13:56:29.432846Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  169.766941   (avg 170.573353)
+[2m2023-04-13T13:56:29.432853Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 9233.000000
+[2m2023-04-13T13:56:30.432903Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.919656ms (avg 5.853200ms)
+[2m2023-04-13T13:56:30.432959Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  171.227134   (avg 173.359266)
+[2m2023-04-13T13:56:30.432970Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 9404.000000
+[2m2023-04-13T13:56:30.868037Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6243v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:31.433283Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.763691ms (avg 5.753150ms)
+[2m2023-04-13T13:56:31.433323Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  174.942398   (avg 175.232503)
+[2m2023-04-13T13:56:31.433331Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 9576.000000
+[2m2023-04-13T13:56:32.434074Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.671655ms (avg 5.723820ms)
+[2m2023-04-13T13:56:32.434124Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  177.709575   (avg 176.192896)
+[2m2023-04-13T13:56:32.434131Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 9749.000000
+[2m2023-04-13T13:56:32.973309Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6254v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:33.432631Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.850249ms (avg 5.863810ms)
+[2m2023-04-13T13:56:33.432697Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  172.244184   (avg 171.977746)
+[2m2023-04-13T13:56:33.432707Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 9921.000000
+[2m2023-04-13T13:56:34.436963Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.852985ms (avg 5.808690ms)
+[2m2023-04-13T13:56:34.437011Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  172.099088   (avg 173.431843)
+[2m2023-04-13T13:56:34.437018Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 10094.000000
+[2m2023-04-13T13:56:35.434465Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.793248ms (avg 5.793125ms)
+[2m2023-04-13T13:56:35.434499Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.947509   (avg 173.391038)
+[2m2023-04-13T13:56:35.434506Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 10266.000000
+[2m2023-04-13T13:56:36.436899Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.806468ms (avg 5.820755ms)
+[2m2023-04-13T13:56:36.436948Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.797731   (avg 173.344695)
+[2m2023-04-13T13:56:36.436958Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 10439.000000
+[2m2023-04-13T13:56:36.489252Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6274v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:37.366622Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6279v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:37.430237Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.886465ms (avg 5.841900ms)
+[2m2023-04-13T13:56:37.430284Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  171.151014   (avg 172.594990)
+[2m2023-04-13T13:56:37.430293Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 10610.000000
+[2m2023-04-13T13:56:37.740381Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6283v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:38.241077Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6288v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:38.433936Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.825885ms (avg 5.803580ms)
+[2m2023-04-13T13:56:38.433994Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  172.647158   (avg 173.320029)
+[2m2023-04-13T13:56:38.434003Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 10783.000000
+[2m2023-04-13T13:56:39.434201Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.793023ms (avg 5.794935ms)
+[2m2023-04-13T13:56:39.434246Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  174.510100   (avg 174.094286)
+[2m2023-04-13T13:56:39.434253Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 10955.000000
+[2m2023-04-13T13:56:39.928056Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6291v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:40.131917Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6295v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:40.432806Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.865667ms (avg 5.881995ms)
+[2m2023-04-13T13:56:40.432856Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  172.547162   (avg 171.651867)
+[2m2023-04-13T13:56:40.432863Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 11127.000000
+[2m2023-04-13T13:56:41.431435Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.768604ms (avg 5.728750ms)
+[2m2023-04-13T13:56:41.431481Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  174.687790   (avg 175.851632)
+[2m2023-04-13T13:56:41.431490Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 11300.000000
+[2m2023-04-13T13:56:41.723011Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6303v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:42.430777Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.780090ms (avg 5.790345ms)
+[2m2023-04-13T13:56:42.430822Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.736073   (avg 173.300880)
+[2m2023-04-13T13:56:42.430830Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 11472.000000
+[2m2023-04-13T13:56:43.081101Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6310v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:43.434676Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.817317ms (avg 5.821390ms)
+[2m2023-04-13T13:56:43.434724Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.276008   (avg 173.100230)
+[2m2023-04-13T13:56:43.434732Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 11645.000000
+[2m2023-04-13T13:56:44.213771Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6315v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:44.434917Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.791975ms (avg 5.789775ms)
+[2m2023-04-13T13:56:44.434972Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.748066   (avg 173.946875)
+[2m2023-04-13T13:56:44.434980Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 11817.000000
+[2m2023-04-13T13:56:45.436103Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.814669ms (avg 5.743230ms)
+[2m2023-04-13T13:56:45.436153Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.453123   (avg 175.448919)
+[2m2023-04-13T13:56:45.436161Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 11988.000000
+[2m2023-04-13T13:56:46.399457Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6326v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:46.434866Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.794546ms (avg 5.832505ms)
+[2m2023-04-13T13:56:46.434909Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  173.870037   (avg 172.786167)
+[2m2023-04-13T13:56:46.434916Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 12160.000000
+[2m2023-04-13T13:56:47.433202Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.786315ms (avg 5.775780ms)
+[2m2023-04-13T13:56:47.433242Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  174.558023   (avg 174.730806)
+[2m2023-04-13T13:56:47.433249Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 12332.000000
+[2m2023-04-13T13:56:48.434559Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.710192ms (avg 5.770075ms)
+[2m2023-04-13T13:56:48.434601Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  176.692600   (avg 174.454616)
+[2m2023-04-13T13:56:48.434608Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 12506.000000
+[2m2023-04-13T13:56:49.144782Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6342v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:49.435535Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.781094ms (avg 5.833860ms)
+[2m2023-04-13T13:56:49.435584Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  175.979738   (avg 174.287627)
+[2m2023-04-13T13:56:49.435592Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 12679.000000
+[2m2023-04-13T13:56:49.869308Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6347v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:50.433249Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.855131ms (avg 5.868930ms)
+[2m2023-04-13T13:56:50.433289Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  172.967468   (avg 172.795903)
+[2m2023-04-13T13:56:50.433300Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 12852.000000
+[2m2023-04-13T13:56:50.824070Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6356v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:51.433086Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.684480ms (avg 5.709910ms)
+[2m2023-04-13T13:56:51.433135Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  177.772317   (avg 177.470936)
+[2m2023-04-13T13:56:51.433144Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 13026.000000
+[2m2023-04-13T13:56:52.433627Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.724416ms (avg 5.762110ms)
+[2m2023-04-13T13:56:52.433668Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  176.998788   (avg 176.272313)
+[2m2023-04-13T13:56:52.433676Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 13202.000000
+[2m2023-04-13T13:56:52.590323Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6359v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:53.429990Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.952560ms (avg 5.904660ms)
+[2m2023-04-13T13:56:53.430054Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  169.223543   (avg 170.627565)
+[2m2023-04-13T13:56:53.430064Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 13375.000000
+[2m2023-04-13T13:56:54.430711Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.078307ms (avg 6.046260ms)
+[2m2023-04-13T13:56:54.430758Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  165.380071   (avg 166.146511)
+[2m2023-04-13T13:56:54.430765Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 13541.000000
+[2m2023-04-13T13:56:54.796479Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6375v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:55.432090Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.073714ms (avg 6.058445ms)
+[2m2023-04-13T13:56:55.432134Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  165.469000   (avg 165.984801)
+[2m2023-04-13T13:56:55.432141Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 13706.000000
+[2m2023-04-13T13:56:56.429274Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.018342ms (avg 5.998890ms)
+[2m2023-04-13T13:56:56.429324Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  168.061093   (avg 168.802365)
+[2m2023-04-13T13:56:56.429334Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 13872.000000
+[2m2023-04-13T13:56:57.192445Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6383v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:57.210665Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6388v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:57.428239Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.044036ms (avg 6.032670ms)
+[2m2023-04-13T13:56:57.428302Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  166.519447   (avg 166.777803)
+[2m2023-04-13T13:56:57.428311Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 14038.000000
+[2m2023-04-13T13:56:58.428261Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.103408ms (avg 6.049555ms)
+[2m2023-04-13T13:56:58.428314Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  164.929168   (avg 166.450117)
+[2m2023-04-13T13:56:58.428325Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 14203.000000
+[2m2023-04-13T13:56:58.488890Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6391v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:59.040994Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6394v0 because it doesn't exist in this World.
+[2m2023-04-13T13:56:59.429088Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.154850ms (avg 6.091935ms)
+[2m2023-04-13T13:56:59.429141Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  164.644498   (avg 166.021425)
+[2m2023-04-13T13:56:59.429151Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 14368.000000
+[2m2023-04-13T13:57:00.430256Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.129166ms (avg 6.104460ms)
+[2m2023-04-13T13:57:00.430308Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  164.206783   (avg 164.680352)
+[2m2023-04-13T13:57:00.430317Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 14533.000000
+[2m2023-04-13T13:57:01.119324Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6407v0 because it doesn't exist in this World.
+[2m2023-04-13T13:57:01.433342Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.119011ms (avg 6.033070ms)
+[2m2023-04-13T13:57:01.433410Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  165.187736   (avg 167.661852)
+[2m2023-04-13T13:57:01.433419Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 14699.000000
+[2m2023-04-13T13:57:02.427567Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.099220ms (avg 6.012080ms)
+[2m2023-04-13T13:57:02.427619Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  165.385582   (avg 167.664331)
+[2m2023-04-13T13:57:02.427628Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 14864.000000
+[2m2023-04-13T13:57:03.430922Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.098968ms (avg 6.076470ms)
+[2m2023-04-13T13:57:03.430989Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  164.930553   (avg 165.444273)
+[2m2023-04-13T13:57:03.430999Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 15029.000000
+[2m2023-04-13T13:57:03.533750Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6419v0 because it doesn't exist in this World.
+[2m2023-04-13T13:57:04.426579Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.191234ms (avg 6.109210ms)
+[2m2023-04-13T13:57:04.426614Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  162.535157   (avg 164.645833)
+[2m2023-04-13T13:57:04.426622Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 15194.000000
+[2m2023-04-13T13:57:05.027440Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6422v0 because it doesn't exist in this World.
+[2m2023-04-13T13:57:05.427395Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.171395ms (avg 6.087520ms)
+[2m2023-04-13T13:57:05.427428Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  163.009999   (avg 164.983644)
+[2m2023-04-13T13:57:05.427441Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 15359.000000
+[2m2023-04-13T13:57:05.942074Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6430v0 because it doesn't exist in this World.
+[2m2023-04-13T13:57:06.430767Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.038856ms (avg 6.040075ms)
+[2m2023-04-13T13:57:06.430809Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  166.530869   (avg 166.630171)
+[2m2023-04-13T13:57:06.430816Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 15525.000000
+[2m2023-04-13T13:57:07.429620Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.104426ms (avg 6.038130ms)
+[2m2023-04-13T13:57:07.429691Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  164.729468   (avg 166.800863)
+[2m2023-04-13T13:57:07.429702Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 15690.000000
+[2m2023-04-13T13:57:07.738302Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 6439v0 because it doesn't exist in this World.
+[2m2023-04-13T13:57:08.427727Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.095989ms (avg 6.056065ms)
+[2m2023-04-13T13:57:08.427776Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  164.864193   (avg 165.665887)
+[2m2023-04-13T13:57:08.427785Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 15855.000000
+[2m2023-04-13T13:57:09.428017Z[0m [32m INFO[0m [2mbevy_window::system[0m[2m:[0m No windows are open, exiting
+[2m2023-04-13T13:57:09.428768Z[0m [32m INFO[0m [2mbevy_winit::system[0m[2m:[0m Closing window 0v0
+[2m2023-04-13T13:57:09.433665Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 11: shutting down
+[2m2023-04-13T13:57:09.433665Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 28: shutting down
+[2m2023-04-13T13:57:09.433666Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 26: shutting down
+[2m2023-04-13T13:57:09.433923Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 6: shutting down
+[2m2023-04-13T13:57:09.433925Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 0: shutting down
+[2m2023-04-13T13:57:09.434293Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 29: shutting down
+[2m2023-04-13T13:57:09.434315Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 9: shutting down
+[2m2023-04-13T13:57:09.434299Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 7: shutting down
+[2m2023-04-13T13:57:09.434301Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 32: shutting down
+[2m2023-04-13T13:57:09.434304Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 12: shutting down
+[2m2023-04-13T13:57:09.434307Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 35: shutting down
+[2m2023-04-13T13:57:09.434311Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 16: shutting down
+[2m2023-04-13T13:57:09.434296Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 19: shutting down
+[2m2023-04-13T13:57:09.434502Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 4: shutting down
+[2m2023-04-13T13:57:09.435777Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 31: shutting down
+[2m2023-04-13T13:57:09.435777Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 2: shutting down
+[2m2023-04-13T13:57:09.435782Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 15: shutting down
+[2m2023-04-13T13:57:09.435783Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 27: shutting down
+[2m2023-04-13T13:57:09.435783Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 22: shutting down
+[2m2023-04-13T13:57:09.435786Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 36: shutting down
+[2m2023-04-13T13:57:09.435790Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 30: shutting down
+[2m2023-04-13T13:57:09.436087Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 18: shutting down
+[2m2023-04-13T13:57:09.436094Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 21: shutting down
+[2m2023-04-13T13:57:09.436204Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 23: shutting down
+[2m2023-04-13T13:57:09.436872Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 20: shutting down
+[2m2023-04-13T13:57:09.436878Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 33: shutting down
+[2m2023-04-13T13:57:09.437691Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 5: shutting down
+[2m2023-04-13T13:57:09.437824Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 34: shutting down
+[2m2023-04-13T13:57:09.438334Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 24: shutting down
+[2m2023-04-13T13:57:09.438568Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 10: shutting down
+[2m2023-04-13T13:57:09.438979Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 8: shutting down

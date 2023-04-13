@@ -31,53 +31,65 @@ macro_rules! urlpath {
 }
 
 use std::{
+    collections::BTreeMap,
     ffi::OsStr,
     iter::Peekable,
     path::{Component, Components, Path, PathBuf},
+    str::FromStr,
 };
 
-use bevy::utils::HashMap;
+use urn::Urn;
 
 use super::IpfsContext;
 
-pub enum PointerType {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EntityType {
     Scene,
 }
 
-impl PointerType {
+impl EntityType {
+    fn ty(&self) -> &str {
+        match self {
+            EntityType::Scene => "type.scene_entity",
+        }
+    }
+
+    pub fn ext(&self) -> &str {
+        self.ty().split_once('.').unwrap().1
+    }
+
     fn base_url_extension(&self) -> &str {
         match self {
-            PointerType::Scene => "/entities/scene?",
+            EntityType::Scene => "/entities/scene?",
         }
     }
 }
 
-impl AsRef<Path> for PointerType {
+impl AsRef<Path> for EntityType {
     fn as_ref(&self) -> &Path {
-        match self {
-            PointerType::Scene => Path::new("type.scene_pointer"),
-        }
+        Path::new(self.ty())
     }
 }
 
-impl<'a> TryFrom<Component<'a>> for PointerType {
+impl<'a> TryFrom<Component<'a>> for EntityType {
     type Error = anyhow::Error;
 
     fn try_from(value: Component<'a>) -> Result<Self, Self::Error> {
         match value.as_os_str().to_str() {
-            Some("type.scene_pointer") => Ok(PointerType::Scene),
+            Some("type.scene_entity") => Ok(EntityType::Scene),
             other => anyhow::bail!("invalid pointer type: {:?}", other),
         }
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum IpfsType {
     ContentFile {
         content_hash: String,
         file_path: String,
     },
     Pointer {
-        pointer_type: PointerType,
+        entity_type: EntityType,
         address: String,
     },
     Entity {
@@ -97,7 +109,10 @@ impl IpfsType {
     fn base_url_extension(&self) -> &str {
         match self {
             IpfsType::ContentFile { .. } | IpfsType::Entity { .. } => "/contents/",
-            IpfsType::Pointer { pointer_type, .. } => pointer_type.base_url_extension(),
+            IpfsType::Pointer {
+                entity_type: pointer_type,
+                ..
+            } => pointer_type.base_url_extension(),
         }
     }
 
@@ -115,10 +130,10 @@ impl IpfsType {
                 .ok_or_else(|| anyhow::anyhow!("file not found in content map: {file_path:?}"))
                 .map(ToOwned::to_owned),
             IpfsType::Pointer {
-                pointer_type,
+                entity_type: pointer_type,
                 address,
             } => match pointer_type {
-                PointerType::Scene => Ok(format!("pointer={}", address)),
+                EntityType::Scene => Ok(format!("pointer={}", address)),
             },
             IpfsType::Entity { hash, .. } => Ok(hash.to_owned()),
         }
@@ -133,6 +148,25 @@ impl IpfsType {
             } => context.collections.get(scene_hash)?.hash(file_path),
             IpfsType::Pointer { .. } => None,
             IpfsType::Entity { hash, .. } => Some(hash),
+        }
+    }
+
+    // the container hash if this is a container request, or the path hash otherwise
+    fn context_hash<'a>(&'a self) -> Option<&'a str> {
+        match self {
+            IpfsType::ContentFile { content_hash, .. } => Some(content_hash),
+            IpfsType::Pointer { .. } => None,
+            IpfsType::Entity { hash, .. } => Some(hash),
+        }
+    }
+
+    fn context_free_hash(&self) -> Result<Option<&str>, anyhow::Error> {
+        match self {
+            IpfsType::ContentFile { .. } => {
+                anyhow::bail!("Can't get hash for content files without context")
+            }
+            IpfsType::Pointer { .. } => Ok(None),
+            IpfsType::Entity { hash, .. } => Ok(Some(hash)),
         }
     }
 }
@@ -155,7 +189,7 @@ impl From<&IpfsType> for PathBuf {
                     .join(file_path)
             }
             IpfsType::Pointer {
-                pointer_type,
+                entity_type: pointer_type,
                 address,
             } => PathBuf::from("$pointer")
                 .join(urlpath!(address))
@@ -222,7 +256,7 @@ impl<'a> TryFrom<Peekable<Components<'a>>> for IpfsType {
                     .ok_or(anyhow::anyhow!("pointer specifier missing address"))?
                     .try_into()?;
                 Ok(IpfsType::Pointer {
-                    pointer_type,
+                    entity_type: pointer_type,
                     address,
                 })
             }
@@ -233,7 +267,7 @@ impl<'a> TryFrom<Peekable<Components<'a>>> for IpfsType {
                     .as_os_str()
                     .to_string_lossy();
                 let (hash, ext) = hash_ext
-                    .rsplit_once('.')
+                    .split_once('.')
                     .ok_or(anyhow::anyhow!("entity specified malformed (no '.')"))?;
                 Ok(IpfsType::Entity {
                     hash: hash.to_owned(),
@@ -245,7 +279,7 @@ impl<'a> TryFrom<Peekable<Components<'a>>> for IpfsType {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum IpfsKey {
     BaseUrl,
 }
@@ -270,8 +304,9 @@ impl<'a> TryFrom<Component<'a>> for IpfsKey {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IpfsPath {
-    key_values: HashMap<IpfsKey, String>,
+    key_values: BTreeMap<IpfsKey, String>,
     ipfs_type: IpfsType,
 }
 
@@ -283,7 +318,45 @@ impl IpfsPath {
         }
     }
 
-    pub fn from_path(path: &Path) -> Result<Option<Self>, anyhow::Error> {
+    pub fn new_from_urn(urn: &str, entity_type: EntityType) -> Result<Self, anyhow::Error> {
+        let urn = Urn::from_str(urn)?;
+        anyhow::ensure!(
+            urn.nid() == "decentraland",
+            "unrecognised nid {}",
+            urn.nid()
+        );
+
+        let (lhs, rhs) = urn
+            .nss()
+            .split_once(':')
+            .ok_or_else(|| anyhow::anyhow!("invalid nss `{}`", urn.nss()))?;
+
+        let hash = match lhs {
+            "entity" => rhs.to_owned(),
+            _ => anyhow::bail!("unrecognised nss lhs: `{lhs}`"),
+        };
+
+        let key_values = BTreeMap::from_iter(
+            urn.q_component()
+                .unwrap_or("")
+                .split('&')
+                .flat_map(|piece| piece.split_once('='))
+                .flat_map(|(key, value)| match key {
+                    "baseUrl" => Some((IpfsKey::BaseUrl, value.to_owned())),
+                    _ => None,
+                }),
+        );
+
+        Ok(Self {
+            ipfs_type: IpfsType::Entity {
+                hash,
+                ext: entity_type.ext().to_owned(),
+            },
+            key_values,
+        })
+    }
+
+    pub fn new_from_path(path: &Path) -> Result<Option<Self>, anyhow::Error> {
         let mut components = path.components().peekable();
 
         if components.peek() != Some(&Component::Normal(OsStr::new("$ipfs"))) {
@@ -292,7 +365,7 @@ impl IpfsPath {
         }
         components.next();
 
-        let mut key_values = HashMap::default();
+        let mut key_values = BTreeMap::default();
         while components
             .peek()
             .map(|c| c.as_os_str().to_string_lossy().starts_with('&'))
@@ -319,16 +392,27 @@ impl IpfsPath {
 
     pub fn to_url(&self, context: &IpfsContext) -> Result<String, anyhow::Error> {
         let base_url = self
+            // check the embedded base url first
             .key_values
             .get(&IpfsKey::BaseUrl)
             .cloned()
-            .unwrap_or(format!(
-                "{}{}",
-                context.base_url.as_ref().ok_or_else(|| anyhow::anyhow!(
-                    "base url not specified in asset path or context"
-                ))?,
-                self.ipfs_type.base_url_extension()
-            ));
+            .or_else(|| {
+                // if nothing, check the context modifiers for the hash
+                self.ipfs_type.context_hash().and_then(|hash| {
+                    context
+                        .modifiers
+                        .get(hash)
+                        .and_then(|modifier| modifier.base_url.to_owned())
+                })
+            })
+            .or_else(|| {
+                // fall back to the context base url
+                context
+                    .base_url
+                    .as_ref()
+                    .map(|base_url| format!("{}{}", base_url, self.ipfs_type.base_url_extension()))
+            })
+            .ok_or_else(|| anyhow::anyhow!("base url not specified in asset path or context"))?;
 
         let target = self.ipfs_type.url_target(context)?;
 
@@ -339,8 +423,16 @@ impl IpfsPath {
         self.ipfs_type.hash(context).map(ToOwned::to_owned)
     }
 
+    pub fn context_free_hash(&self) -> Result<Option<String>, anyhow::Error> {
+        Ok(self.ipfs_type.context_free_hash()?.map(ToOwned::to_owned))
+    }
+
     pub fn should_cache(&self) -> bool {
         true // TODO only if hash is some and is not b64-
+    }
+
+    pub fn base_url(&self) -> Option<&str> {
+        self.key_values.get(&IpfsKey::BaseUrl).map(String::as_str)
     }
 }
 

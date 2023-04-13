@@ -1,0 +1,409 @@
+[2m2023-04-13T10:51:08.437359Z[0m [32m INFO[0m [2mdecentra_bevy::ipfs[0m[2m:[0m remote server: Some("http://127.0.0.1:8000")
+[2m2023-04-13T10:51:08.437760Z[0m [32m INFO[0m [2mdecentra_bevy::ipfs[0m[2m:[0m disconnecting
+[2m2023-04-13T10:51:08.442468Z[0m [32m INFO[0m [2mbevy_winit::system[0m[2m:[0m Creating new window "Decentraland Bevy Explorer" (0v0)
+[2m2023-04-13T10:51:08.619545Z[0m [32m INFO[0m [2mbevy_render::renderer[0m[2m:[0m AdapterInfo { name: "NVIDIA GeForce RTX 3070", vendor: 4318, device: 9352, device_type: DiscreteGpu, driver: "NVIDIA", driver_info: "472.12", backend: Vulkan }
+[2m2023-04-13T10:51:08.751739Z[0m [32m INFO[0m [2mbevy_prototype_debug_lines[0m[2m:[0m Loaded 3d debug lines plugin.
+up: increase scene count, down: decrease scene count
+[2m2023-04-13T10:51:08.958197Z[0m [32m INFO[0m [2mbevy_diagnostic::system_information_diagnostics_plugin::internal[0m[2m:[0m SystemInfo { os: "Windows 11 Home", kernel: "22621", cpu: "AMD Ryzen 9 5900X 12-Core Processor", core_count: "12", memory: "31.9 GiB" }
+[2m2023-04-13T10:51:08.973257Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m realm change! purging scenes
+[2m2023-04-13T10:51:09.229039Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m found 34 entities over parcels {IVec2(73, -5), IVec2(79, -5), IVec2(72, -5), IVec2(79, -11), IVec2(80, -12), IVec2(82, -9), IVec2(74, -9), IVec2(72, -6), IVec2(73, -3), IVec2(80, -9), IVec2(75, -6), IVec2(78, -9), IVec2(74, -7), IVec2(80, -5), IVec2(76, -6), IVec2(77, -10), IVec2(75, -10), IVec2(72, -10), IVec2(81, -7), IVec2(83, -5), IVec2(73, -10), IVec2(71, -7), IVec2(74, -6), IVec2(79, -13), IVec2(76, -9), IVec2(78, -3), IVec2(72, -12), IVec2(78, -12), IVec2(79, -12), IVec2(77, -12), IVec2(80, -8), IVec2(81, -9), IVec2(76, -3), IVec2(72, -7), IVec2(74, -13), IVec2(79, -9), IVec2(72, -8), IVec2(83, -7), IVec2(80, -6), IVec2(80, -13), IVec2(82, -6), IVec2(72, -9), IVec2(75, -12), IVec2(75, -3), IVec2(76, -14), IVec2(77, -6), IVec2(79, -14), IVec2(79, -2), IVec2(74, -14), IVec2(82, -7), IVec2(81, -13), IVec2(75, -11), IVec2(81, -8), IVec2(73, -4), IVec2(77, -8), IVec2(77, -4), IVec2(73, -9), IVec2(80, -2), IVec2(81, -10), IVec2(82, -4), IVec2(77, -13), IVec2(80, -14), IVec2(71, -9), IVec2(76, -8), IVec2(80, -7), IVec2(82, -11), IVec2(77, -7), IVec2(73, -13), IVec2(77, -5), IVec2(80, -11), IVec2(79, -3), IVec2(73, -7), IVec2(78, -2), IVec2(78, -6), IVec2(74, -5), IVec2(72, -11), IVec2(78, -7), IVec2(81, -5), IVec2(81, -4), IVec2(76, -7), IVec2(77, -3), IVec2(74, -10), IVec2(80, -4), IVec2(78, -14), IVec2(75, -13), IVec2(76, -11), IVec2(72, -4), IVec2(80, -10), IVec2(82, -10), IVec2(76, -4), IVec2(79, -6), IVec2(71, -10), IVec2(73, -6), IVec2(83, -10), IVec2(78, -4), IVec2(76, -10), IVec2(83, -9), IVec2(83, -8), IVec2(79, -7), IVec2(75, -5), IVec2(78, -10), IVec2(79, -4), IVec2(75, -8), IVec2(78, -13), IVec2(81, -3), IVec2(73, -11), IVec2(82, -8), IVec2(82, -5), IVec2(71, -8), IVec2(80, -3), IVec2(76, -5), IVec2(76, -12), IVec2(75, -14), IVec2(73, -8), IVec2(74, -8), IVec2(76, -13), IVec2(82, -12), IVec2(74, -3), IVec2(71, -6), IVec2(77, -2), IVec2(75, -2), IVec2(83, -11), IVec2(77, -9), IVec2(83, -6), IVec2(77, -14), IVec2(74, -4), IVec2(78, -5), IVec2(78, -8), IVec2(71, -11), IVec2(81, -12), IVec2(74, -2), IVec2(75, -4), IVec2(76, -2), IVec2(81, -11), IVec2(74, -12), IVec2(71, -5), IVec2(73, -12), IVec2(74, -11), IVec2(75, -9), IVec2(79, -8), IVec2(75, -7), IVec2(81, -6), IVec2(78, -11), IVec2(77, -11), IVec2(79, -10)}
+[2m2023-04-13T10:51:09.229073Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m {ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxiaXJkLWZpZWxk", pointers: ["74,-2", "74,-1", "75,-2", "75,-1", "76,-2", "76,-1", "74,0", "75,0", "76,0"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxSYW5kb20tbm9pc2UtbW92ZW1lbnQ=", pointers: ["73,-10"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxwb3dlci1jdWJl", pointers: ["72,-10"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxMYXNlci1yYXktQ2FzdGluZw==", pointers: ["72,-4", "73,-4", "72,-3", "73,-3"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxvcGVuLWRvb3I=", pointers: ["77,-7"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxyb3RhdGluZy1wbGF0Zm9ybXM=", pointers: ["78,-7", "79,-7", "78,-6", "79,-6"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxtb3ZpbmctcGxhdGZvcm1z", pointers: ["77,-5"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxjb2luLXBpY2t1cA==", pointers: ["76,-4"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxIdW1taW5nYmlyZHM=", pointers: ["76,-9"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxpdGVtLXBpY2t1cA==", pointers: ["77,-4"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxTbW9rZQ==", pointers: ["78,-4"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxzbGlkaW5nLWRvb3I=", pointers: ["79,-9"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxIeXBuby13aGVlbHM=", pointers: ["73,-6"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxEYW5jZS1mbG9vcg==", pointers: ["76,-3"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxTd2ltbWluZy1TaGFyaw==", pointers: ["72,-8"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVx1di1tYXA=", pointers: ["74,-7"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxab21iaWUtc2hvb3Rlcg==", pointers: ["77,-9"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxncmFiLW9iamVjdHM=", pointers: ["77,-3"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxab21iaWUtc2hvb3RlcjI=", pointers: ["77,-8"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxHbmFyaw==", pointers: ["74,-9", "74,-8", "75,-9", "75,-8"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxjdWJlLXdhdmUtMTZ4MTY=", pointers: ["78,-8"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxDdWJl", pointers: ["76,-8"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxjdWJlLXdhdmUtMzJ4MzI=", pointers: ["78,-9"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVx2aWRlby1zdHJlYW1pbmc=", pointers: ["78,-3", "78,-2", "79,-3", "79,-2"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxCYXNpY0ludGVyYWN0aW9ucw==", pointers: ["72,-7"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxCbG9jay1kb2c=", pointers: ["72,-9"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxlbmVteS1zcGF3bmVy", pointers: ["74,-4", "75,-4", "75,-3", "74,-3"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxKdWtlYm94", pointers: ["73,-5"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxncmFiLW9iamVjdC1hZHZhbmNl", pointers: ["74,-6", "74,-5", "75,-6", "75,-5"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxTaGFyay1hbmltYXRpb24=", pointers: ["73,-8"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxhZHZhbmNlZC1hdmF0YXItc3dhcA==", pointers: ["76,-7", "76,-6"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxib2lkcw==", pointers: ["72,-6", "72,-5"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxiZWVyLWRpc3BlbnNlcg==", pointers: ["73,-7"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxhdmF0YXItc3dhcA==", pointers: ["75,-7"] }}
+[2m2023-04-13T10:51:09.229161Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxiaXJkLWZpZWxk" @ ["74,-2", "74,-1", "75,-2", "75,-1", "76,-2", "76,-1", "74,0", "75,0", "76,0"]
+[2m2023-04-13T10:51:09.229192Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxSYW5kb20tbm9pc2UtbW92ZW1lbnQ=" @ ["73,-10"]
+[2m2023-04-13T10:51:09.229200Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxwb3dlci1jdWJl" @ ["72,-10"]
+[2m2023-04-13T10:51:09.229206Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxMYXNlci1yYXktQ2FzdGluZw==" @ ["72,-4", "73,-4", "72,-3", "73,-3"]
+[2m2023-04-13T10:51:09.229215Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxvcGVuLWRvb3I=" @ ["77,-7"]
+[2m2023-04-13T10:51:09.229221Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxyb3RhdGluZy1wbGF0Zm9ybXM=" @ ["78,-7", "79,-7", "78,-6", "79,-6"]
+[2m2023-04-13T10:51:09.229229Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxtb3ZpbmctcGxhdGZvcm1z" @ ["77,-5"]
+[2m2023-04-13T10:51:09.229235Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxjb2luLXBpY2t1cA==" @ ["76,-4"]
+[2m2023-04-13T10:51:09.229242Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxIdW1taW5nYmlyZHM=" @ ["76,-9"]
+[2m2023-04-13T10:51:09.229248Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxpdGVtLXBpY2t1cA==" @ ["77,-4"]
+[2m2023-04-13T10:51:09.229254Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxTbW9rZQ==" @ ["78,-4"]
+[2m2023-04-13T10:51:09.229260Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxzbGlkaW5nLWRvb3I=" @ ["79,-9"]
+[2m2023-04-13T10:51:09.229267Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxIeXBuby13aGVlbHM=" @ ["73,-6"]
+[2m2023-04-13T10:51:09.229273Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxEYW5jZS1mbG9vcg==" @ ["76,-3"]
+[2m2023-04-13T10:51:09.229280Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxTd2ltbWluZy1TaGFyaw==" @ ["72,-8"]
+[2m2023-04-13T10:51:09.229289Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVx1di1tYXA=" @ ["74,-7"]
+[2m2023-04-13T10:51:09.229295Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxab21iaWUtc2hvb3Rlcg==" @ ["77,-9"]
+[2m2023-04-13T10:51:09.229303Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxncmFiLW9iamVjdHM=" @ ["77,-3"]
+[2m2023-04-13T10:51:09.229309Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxab21iaWUtc2hvb3RlcjI=" @ ["77,-8"]
+[2m2023-04-13T10:51:09.229315Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxHbmFyaw==" @ ["74,-9", "74,-8", "75,-9", "75,-8"]
+[2m2023-04-13T10:51:09.229322Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxjdWJlLXdhdmUtMTZ4MTY=" @ ["78,-8"]
+[2m2023-04-13T10:51:09.229328Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxDdWJl" @ ["76,-8"]
+[2m2023-04-13T10:51:09.229334Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxjdWJlLXdhdmUtMzJ4MzI=" @ ["78,-9"]
+[2m2023-04-13T10:51:09.229340Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVx2aWRlby1zdHJlYW1pbmc=" @ ["78,-3", "78,-2", "79,-3", "79,-2"]
+[2m2023-04-13T10:51:09.229348Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxCYXNpY0ludGVyYWN0aW9ucw==" @ ["72,-7"]
+[2m2023-04-13T10:51:09.229356Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxCbG9jay1kb2c=" @ ["72,-9"]
+[2m2023-04-13T10:51:09.229363Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxlbmVteS1zcGF3bmVy" @ ["74,-4", "75,-4", "75,-3", "74,-3"]
+[2m2023-04-13T10:51:09.229370Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxKdWtlYm94" @ ["73,-5"]
+[2m2023-04-13T10:51:09.229378Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxncmFiLW9iamVjdC1hZHZhbmNl" @ ["74,-6", "74,-5", "75,-6", "75,-5"]
+[2m2023-04-13T10:51:09.229388Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxTaGFyay1hbmltYXRpb24=" @ ["73,-8"]
+[2m2023-04-13T10:51:09.229394Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxhZHZhbmNlZC1hdmF0YXItc3dhcA==" @ ["76,-7", "76,-6"]
+[2m2023-04-13T10:51:09.229402Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxib2lkcw==" @ ["72,-6", "72,-5"]
+[2m2023-04-13T10:51:09.229409Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxiZWVyLWRpc3BlbnNlcg==" @ ["73,-7"]
+[2m2023-04-13T10:51:09.229416Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxhdmF0YXItc3dhcA==" @ ["75,-7"]
+[2m2023-04-13T10:51:09.230309Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxwb3dlci1jdWJl" @ IVec2(72, -10)
+[2m2023-04-13T10:51:09.230327Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxCbG9jay1kb2c=" @ IVec2(72, -9)
+[2m2023-04-13T10:51:09.230335Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxTd2ltbWluZy1TaGFyaw==" @ IVec2(72, -8)
+[2m2023-04-13T10:51:09.230342Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxCYXNpY0ludGVyYWN0aW9ucw==" @ IVec2(72, -7)
+[2m2023-04-13T10:51:09.230349Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxib2lkcw==" @ IVec2(72, -5)
+[2m2023-04-13T10:51:09.230357Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxSYW5kb20tbm9pc2UtbW92ZW1lbnQ=" @ IVec2(73, -10)
+[2m2023-04-13T10:51:09.230364Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxTaGFyay1hbmltYXRpb24=" @ IVec2(73, -8)
+[2m2023-04-13T10:51:09.230371Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxiZWVyLWRpc3BlbnNlcg==" @ IVec2(73, -7)
+[2m2023-04-13T10:51:09.230379Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxIeXBuby13aGVlbHM=" @ IVec2(73, -6)
+[2m2023-04-13T10:51:09.230386Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxKdWtlYm94" @ IVec2(73, -5)
+[2m2023-04-13T10:51:09.230392Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxMYXNlci1yYXktQ2FzdGluZw==" @ IVec2(73, -3)
+[2m2023-04-13T10:51:09.230400Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVx1di1tYXA=" @ IVec2(74, -7)
+[2m2023-04-13T10:51:09.230406Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxlbmVteS1zcGF3bmVy" @ IVec2(74, -3)
+[2m2023-04-13T10:51:09.230414Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxHbmFyaw==" @ IVec2(75, -8)
+[2m2023-04-13T10:51:09.230422Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxhdmF0YXItc3dhcA==" @ IVec2(75, -7)
+[2m2023-04-13T10:51:09.230430Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxncmFiLW9iamVjdC1hZHZhbmNl" @ IVec2(75, -5)
+[2m2023-04-13T10:51:09.230437Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxIdW1taW5nYmlyZHM=" @ IVec2(76, -9)
+[2m2023-04-13T10:51:09.230444Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxDdWJl" @ IVec2(76, -8)
+[2m2023-04-13T10:51:09.230452Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxhZHZhbmNlZC1hdmF0YXItc3dhcA==" @ IVec2(76, -6)
+[2m2023-04-13T10:51:09.230459Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxjb2luLXBpY2t1cA==" @ IVec2(76, -4)
+[2m2023-04-13T10:51:09.230464Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxEYW5jZS1mbG9vcg==" @ IVec2(76, -3)
+[2m2023-04-13T10:51:09.230471Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxab21iaWUtc2hvb3Rlcg==" @ IVec2(77, -9)
+[2m2023-04-13T10:51:09.230478Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxab21iaWUtc2hvb3RlcjI=" @ IVec2(77, -8)
+[2m2023-04-13T10:51:09.230484Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxvcGVuLWRvb3I=" @ IVec2(77, -7)
+[2m2023-04-13T10:51:09.230490Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxtb3ZpbmctcGxhdGZvcm1z" @ IVec2(77, -5)
+[2m2023-04-13T10:51:09.230496Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxpdGVtLXBpY2t1cA==" @ IVec2(77, -4)
+[2m2023-04-13T10:51:09.230502Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxncmFiLW9iamVjdHM=" @ IVec2(77, -3)
+[2m2023-04-13T10:51:09.230509Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxjdWJlLXdhdmUtMzJ4MzI=" @ IVec2(78, -9)
+[2m2023-04-13T10:51:09.230515Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxjdWJlLXdhdmUtMTZ4MTY=" @ IVec2(78, -8)
+[2m2023-04-13T10:51:09.230522Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxTbW9rZQ==" @ IVec2(78, -4)
+[2m2023-04-13T10:51:09.230557Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxzbGlkaW5nLWRvb3I=" @ IVec2(79, -9)
+[2m2023-04-13T10:51:09.230566Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxyb3RhdGluZy1wbGF0Zm9ybXM=" @ IVec2(79, -6)
+[2m2023-04-13T10:51:09.230573Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVx2aWRlby1zdHJlYW1pbmc=" @ IVec2(79, -2)
+[2m2023-04-13T10:51:09.232172Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxCYXNpY0ludGVyYWN0aW9ucw==" @ IVec2(72, -7)
+[2m2023-04-13T10:51:09.232197Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxhdmF0YXItc3dhcA==" @ IVec2(75, -7)
+[2m2023-04-13T10:51:09.232208Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxhZHZhbmNlZC1hdmF0YXItc3dhcA==" @ IVec2(76, -6)
+[2m2023-04-13T10:51:09.232216Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxjdWJlLXdhdmUtMzJ4MzI=" @ IVec2(78, -9)
+[2m2023-04-13T10:51:09.453294Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 71v0: starting scene
+[2m2023-04-13T10:51:09.453813Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 71v0: started scene (location: IVec2(78, -9), scene thread id: SceneId(0))
+[2m2023-04-13T10:51:09.461123Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 30v0: starting scene
+[2m2023-04-13T10:51:09.461445Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 30v0: started scene (location: IVec2(78, -8), scene thread id: SceneId(1))
+[2m2023-04-13T10:51:09.473852Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 10v0: starting scene
+[2m2023-04-13T10:51:09.474322Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 10v0: started scene (location: IVec2(74, -2), scene thread id: SceneId(2))
+[2m2023-04-13T10:51:09.474346Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 58v0: starting scene
+[2m2023-04-13T10:51:09.474732Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 58v0: started scene (location: IVec2(75, -7), scene thread id: SceneId(3))
+[2m2023-04-13T10:51:09.474929Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 13v0: starting scene
+[2m2023-04-13T10:51:09.475233Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 13v0: started scene (location: IVec2(72, -4), scene thread id: SceneId(4))
+[2m2023-04-13T10:51:09.475265Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 17v0: starting scene
+[2m2023-04-13T10:51:09.475710Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 17v0: started scene (location: IVec2(76, -4), scene thread id: SceneId(5))
+[2m2023-04-13T10:51:09.503262Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 16v0: starting scene
+[2m2023-04-13T10:51:09.503575Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 16v0: started scene (location: IVec2(77, -5), scene thread id: SceneId(6))
+[2m2023-04-13T10:51:09.523379Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 12v0: starting scene
+[2m2023-04-13T10:51:09.523668Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 12v0: started scene (location: IVec2(72, -10), scene thread id: SceneId(7))
+[2m2023-04-13T10:51:09.530274Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 11v0: starting scene
+[2m2023-04-13T10:51:09.530628Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 11v0: started scene (location: IVec2(73, -10), scene thread id: SceneId(8))
+[2m2023-04-13T10:51:09.530880Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 42v0: starting scene
+[2m2023-04-13T10:51:09.531211Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 42v0: started scene (location: IVec2(73, -7), scene thread id: SceneId(9))
+[2m2023-04-13T10:51:09.531407Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 36v0: starting scene
+[2m2023-04-13T10:51:09.531672Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 36v0: started scene (location: IVec2(74, -4), scene thread id: SceneId(10))
+[2m2023-04-13T10:51:09.532793Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 62v0: starting scene
+[2m2023-04-13T10:51:09.533067Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 62v0: started scene (location: IVec2(76, -7), scene thread id: SceneId(11))
+[2m2023-04-13T10:51:09.533080Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 14v0: starting scene
+[2m2023-04-13T10:51:09.533356Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 14v0: started scene (location: IVec2(77, -7), scene thread id: SceneId(12))
+[2m2023-04-13T10:51:09.533369Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 18v0: starting scene
+[2m2023-04-13T10:51:09.533674Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 18v0: started scene (location: IVec2(76, -9), scene thread id: SceneId(13))
+[2m2023-04-13T10:51:09.533697Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 19v0: starting scene
+[2m2023-04-13T10:51:09.533979Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 19v0: started scene (location: IVec2(77, -4), scene thread id: SceneId(14))
+[2m2023-04-13T10:51:09.534258Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 23v0: starting scene
+[2m2023-04-13T10:51:09.534556Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 23v0: started scene (location: IVec2(76, -3), scene thread id: SceneId(15))
+[2m2023-04-13T10:51:09.534644Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 15v0: starting scene
+[2m2023-04-13T10:51:09.534920Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 15v0: started scene (location: IVec2(78, -7), scene thread id: SceneId(16))
+[2m2023-04-13T10:51:09.534933Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 24v0: starting scene
+[2m2023-04-13T10:51:09.535202Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 24v0: started scene (location: IVec2(72, -8), scene thread id: SceneId(17))
+[2m2023-04-13T10:51:09.542175Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 28v0: starting scene
+[2m2023-04-13T10:51:09.542529Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 28v0: started scene (location: IVec2(77, -8), scene thread id: SceneId(18))
+[2m2023-04-13T10:51:09.543001Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 31v0: starting scene
+[2m2023-04-13T10:51:09.543589Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 31v0: started scene (location: IVec2(76, -8), scene thread id: SceneId(19))
+[2m2023-04-13T10:51:09.543615Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 20v0: starting scene
+[2m2023-04-13T10:51:09.544007Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 20v0: started scene (location: IVec2(78, -4), scene thread id: SceneId(20))
+[2m2023-04-13T10:51:09.553085Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 21v0: starting scene
+[2m2023-04-13T10:51:09.553409Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 21v0: started scene (location: IVec2(79, -9), scene thread id: SceneId(21))
+[2m2023-04-13T10:51:09.553423Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 29v0: starting scene
+[2m2023-04-13T10:51:09.553712Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 29v0: started scene (location: IVec2(74, -9), scene thread id: SceneId(22))
+[2m2023-04-13T10:51:09.553731Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 25v0: starting scene
+[2m2023-04-13T10:51:09.554053Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 25v0: started scene (location: IVec2(74, -7), scene thread id: SceneId(23))
+[2m2023-04-13T10:51:09.554065Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 27v0: starting scene
+[2m2023-04-13T10:51:09.554318Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 27v0: started scene (location: IVec2(77, -3), scene thread id: SceneId(24))
+[2m2023-04-13T10:51:09.554330Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 39v0: starting scene
+[2m2023-04-13T10:51:09.554868Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 39v0: started scene (location: IVec2(73, -8), scene thread id: SceneId(25))
+[2m2023-04-13T10:51:09.545287Z[0m [31mERROR[0m [2mdecentra_bevy::dcl::js[0m[2m:[0m [scene thread SceneId(2)] script load error: Error: [mutable] Component core::Transform for 515 not found
+    at Object.getMutable (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:8854:15)
+    at spawnBirds (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13042:18)
+    at setup (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13115:3)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13117:1)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13120:4)
+    at require (example:init/init.js:32:13)
+    at <loader>:1:1
+[2m2023-04-13T10:51:09.592146Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 35v0: starting scene
+[2m2023-04-13T10:51:09.592487Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 35v0: started scene (location: IVec2(72, -9), scene thread id: SceneId(26))
+[2m2023-04-13T10:51:09.592508Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 26v0: starting scene
+[2m2023-04-13T10:51:09.592773Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 26v0: started scene (location: IVec2(77, -9), scene thread id: SceneId(27))
+[2m2023-04-13T10:51:09.597801Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 33v0: starting scene
+[2m2023-04-13T10:51:09.598071Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 33v0: started scene (location: IVec2(78, -3), scene thread id: SceneId(28))
+[2m2023-04-13T10:51:09.599069Z[0m [31mERROR[0m [2mdecentra_bevy::dcl::js[0m[2m:[0m [scene thread SceneId(9)] script load error: Error: invalid module request `~system/UserIdentity`
+    at require (example:init/init.js:14:32)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13152:27)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13625:4)
+    at require (example:init/init.js:32:13)
+    at <loader>:1:1
+[2m2023-04-13T10:51:09.599245Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 22v0: starting scene
+[2m2023-04-13T10:51:09.599527Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 22v0: started scene (location: IVec2(73, -6), scene thread id: SceneId(29))
+[2m2023-04-13T10:51:09.599540Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 34v0: starting scene
+[2m2023-04-13T10:51:09.599811Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 34v0: started scene (location: IVec2(72, -7), scene thread id: SceneId(30))
+[2m2023-04-13T10:51:09.601545Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m found 9 entities over parcels {IVec2(75, -9), IVec2(74, -5), IVec2(78, -3), IVec2(74, -9), IVec2(78, -7), IVec2(75, -4), IVec2(72, -6), IVec2(74, -2), IVec2(74, -4), IVec2(76, -7), IVec2(74, -6), IVec2(76, -2), IVec2(74, -8), IVec2(79, -7), IVec2(78, -2), IVec2(75, -3), IVec2(78, -6), IVec2(73, -4), IVec2(79, -3), IVec2(75, -6), IVec2(75, -2), IVec2(72, -4)}
+[2m2023-04-13T10:51:09.601700Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m {ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxMYXNlci1yYXktQ2FzdGluZw==", pointers: ["72,-4", "73,-4", "72,-3", "73,-3"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxlbmVteS1zcGF3bmVy", pointers: ["74,-4", "75,-4", "75,-3", "74,-3"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxncmFiLW9iamVjdC1hZHZhbmNl", pointers: ["74,-6", "74,-5", "75,-6", "75,-5"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxib2lkcw==", pointers: ["72,-6", "72,-5"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxhZHZhbmNlZC1hdmF0YXItc3dhcA==", pointers: ["76,-7", "76,-6"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxHbmFyaw==", pointers: ["74,-9", "74,-8", "75,-9", "75,-8"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxiaXJkLWZpZWxk", pointers: ["74,-2", "74,-1", "75,-2", "75,-1", "76,-2", "76,-1", "74,0", "75,0", "76,0"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVx2aWRlby1zdHJlYW1pbmc=", pointers: ["78,-3", "78,-2", "79,-3", "79,-2"] }, ActiveEntity { id: "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxyb3RhdGluZy1wbGF0Zm9ybXM=", pointers: ["78,-7", "79,-7", "78,-6", "79,-6"] }}
+[2m2023-04-13T10:51:09.601849Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxMYXNlci1yYXktQ2FzdGluZw==" @ ["72,-4", "73,-4", "72,-3", "73,-3"]
+[2m2023-04-13T10:51:09.601890Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxlbmVteS1zcGF3bmVy" @ ["74,-4", "75,-4", "75,-3", "74,-3"]
+[2m2023-04-13T10:51:09.602084Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxncmFiLW9iamVjdC1hZHZhbmNl" @ ["74,-6", "74,-5", "75,-6", "75,-5"]
+[2m2023-04-13T10:51:09.602100Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxib2lkcw==" @ ["72,-6", "72,-5"]
+[2m2023-04-13T10:51:09.602116Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxhZHZhbmNlZC1hdmF0YXItc3dhcA==" @ ["76,-7", "76,-6"]
+[2m2023-04-13T10:51:09.602135Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxHbmFyaw==" @ ["74,-9", "74,-8", "75,-9", "75,-8"]
+[2m2023-04-13T10:51:09.602158Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxiaXJkLWZpZWxk" @ ["74,-2", "74,-1", "75,-2", "75,-1", "76,-2", "76,-1", "74,0", "75,0", "76,0"]
+[2m2023-04-13T10:51:09.602177Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVx2aWRlby1zdHJlYW1pbmc=" @ ["78,-3", "78,-2", "79,-3", "79,-2"]
+[2m2023-04-13T10:51:09.602195Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m spawning scene "b64-QzpcVXNlcnNccm9iZm1cRG9jdW1lbnRzXGRlY2VudHJhbGFuZFxzZGs3LWdvZXJsaS1wbGF6YVxyb3RhdGluZy1wbGF0Zm9ybXM=" @ ["78,-7", "79,-7", "78,-6", "79,-6"]
+[2m2023-04-13T10:51:09.604519Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 38v0: starting scene
+[2m2023-04-13T10:51:09.604960Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 38v0: started scene (location: IVec2(74, -6), scene thread id: SceneId(31))
+[2m2023-04-13T10:51:09.605998Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 37v0: starting scene
+[2m2023-04-13T10:51:09.606275Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 37v0: started scene (location: IVec2(73, -5), scene thread id: SceneId(32))
+[2m2023-04-13T10:51:09.606329Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 41v0: starting scene
+[2m2023-04-13T10:51:09.606630Z[0m [32m INFO[0m [2mdecentra_bevy::scene_runner::initialize_scene[0m[2m:[0m 41v0: started scene (location: IVec2(72, -6), scene thread id: SceneId(33))
+[2m2023-04-13T10:51:09.607164Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner[0m[2m:[0m [SceneId(2)] error: Error: [mutable] Component core::Transform for 515 not found
+    at Object.getMutable (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:8854:15)
+    at spawnBirds (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13042:18)
+    at setup (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13115:3)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13117:1)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13120:4)
+    at require (example:init/init.js:32:13)
+    at <loader>:1:1
+[2m2023-04-13T10:51:09.649084Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner[0m[2m:[0m [SceneId(9)] error: Error: invalid module request `~system/UserIdentity`
+    at require (example:init/init.js:14:32)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13152:27)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13625:4)
+    at require (example:init/init.js:32:13)
+    at <loader>:1:1
+[2m2023-04-13T10:51:09.678771Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner[0m[2m:[0m [SceneId(20)] error: onStart is not a function
+[2m2023-04-13T10:51:09.686712Z[0m [31mERROR[0m [2mdecentra_bevy::dcl::js[0m[2m:[0m [scene thread SceneId(12)] script load error: Error: invalid module request `~system/UserIdentity`
+    at require (example:init/init.js:14:32)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13071:27)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13483:4)
+    at require (example:init/init.js:32:13)
+    at <loader>:1:1
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :adding child obs
+LOG  :adding child obs
+LOG  :addObstacleEntity
+LOG  :addPredator
+LOG  :createUpdateFn
+LOG  :createBoundaryPlanes is disabled SHOW_DEBUG_BOUNDARY_PLANES
+LOG  :createBoundaryMarkers is disabled SHOW_DEBUG_BOUNDARY_MARKERS
+[2m2023-04-13T10:51:09.704718Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner[0m[2m:[0m [SceneId(12)] error: Error: invalid module request `~system/UserIdentity`
+    at require (example:init/init.js:14:32)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13071:27)
+    at Object.<anonymous> (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:13483:4)
+    at require (example:init/init.js:32:13)
+    at <loader>:1:1
+[2m2023-04-13T10:51:09.707340Z[0m [33m WARN[0m [2mdecentra_bevy::scene_runner::update_world::mesh_collider[0m[2m:[0m cylinder not implemented
+[2m2023-04-13T10:51:09.707373Z[0m [33m WARN[0m [2mdecentra_bevy::scene_runner::update_world::mesh_collider[0m[2m:[0m cylinder not implemented
+[2m2023-04-13T10:51:09.707506Z[0m [33m WARN[0m [2mdecentra_bevy::scene_runner::update_world::mesh_renderer[0m[2m:[0m uneven cylinder primitive not implemented
+[2m2023-04-13T10:51:09.707528Z[0m [33m WARN[0m [2mdecentra_bevy::scene_runner::update_world::mesh_renderer[0m[2m:[0m uneven cylinder primitive not implemented
+[2m2023-04-13T10:51:09.707607Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 1294v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.713464Z[0m [33m WARN[0m [2mdecentra_bevy::scene_runner::update_world::mesh_collider[0m[2m:[0m cylinder not implemented
+[2m2023-04-13T10:51:09.713536Z[0m [33m WARN[0m [2mdecentra_bevy::scene_runner::update_world::mesh_collider[0m[2m:[0m cylinder not implemented
+[2m2023-04-13T10:51:09.715069Z[0m [31mERROR[0m [2mdecentra_bevy::dcl::js[0m[2m:[0m [scene thread SceneId(31)] script load error: ReferenceError: performance is not defined
+    at 56.../collision/AABB (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:9173:23)
+    at s (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2290:22)
+    at file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2292:22
+    at 2.../package.json (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2395:18)
+    at s (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2290:22)
+    at e (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2299:11)
+    at file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2301:8
+    at file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2269:27
+    at ../node_modules/cannon/build/cannon.js (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2276:6)
+    at __require (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:9:51)
+[2m2023-04-13T10:51:09.744714Z[0m [33m WARN[0m [2mbevy_asset::asset_server[0m[2m:[0m encountered an error while loading an asset: failed to load an asset path: encountered an io error while loading asset: file not found in content map: "models/genesis_tx.png"
+[2m2023-04-13T10:51:09.744974Z[0m [31mERROR[0m [2mdecentra_bevy::scene_runner[0m[2m:[0m [SceneId(31)] error: ReferenceError: performance is not defined
+    at 56.../collision/AABB (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:9173:23)
+    at s (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2290:22)
+    at file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2292:22
+    at 2.../package.json (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2395:18)
+    at s (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2290:22)
+    at e (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2299:11)
+    at file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2301:8
+    at file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2269:27
+    at ../node_modules/cannon/build/cannon.js (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:2276:6)
+    at __require (file:///C:/Users/robfm/Documents/decentraland/bevy-explorer/~scene.js:9:51)
+[2m2023-04-13T10:51:09.748541Z[0m [33m WARN[0m [2mdecentra_bevy::scene_runner::update_world::gltf_container[0m[2m:[0m failed to process gltf
+LOG  :on enter
+[2m2023-04-13T10:51:09.754345Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 1784v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.756607Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Morph animation property not yet supported
+[2m2023-04-13T10:51:09.756634Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Morph animation property not yet supported
+[2m2023-04-13T10:51:09.761863Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T10:51:09.761909Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T10:51:09.761919Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T10:51:09.773013Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T10:51:09.773047Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T10:51:09.773055Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T10:51:09.773143Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T10:51:09.798570Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 1923v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.798667Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 2113v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.798692Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 2128v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.815243Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 1942v1 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.815275Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 2156v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.815292Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 2168v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.817542Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T10:51:09.817579Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T10:51:09.817590Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T10:51:09.819379Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819526Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819562Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819573Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819578Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819586Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819591Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819598Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819604Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819611Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819617Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819628Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819640Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819647Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819653Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819660Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819665Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819674Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819679Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819686Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819692Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.819699Z[0m [33m WARN[0m [2mbevy_gltf::loader[0m[2m:[0m Animation interpolation Step is not supported, will use linear
+[2m2023-04-13T10:51:09.829805Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T10:51:09.829834Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T10:51:09.829844Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T10:51:09.838691Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T10:51:09.838712Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T10:51:09.838720Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T10:51:09.838807Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T10:51:09.846025Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T10:51:09.857080Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T10:51:09.861263Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T10:51:09.861279Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T10:51:09.861286Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T10:51:09.861334Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T10:51:09.894606Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 2805v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.894659Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 2957v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.894668Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 2970v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.894707Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 3405v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.894732Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 3468v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.894738Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 3477v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.894743Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 3474v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.894750Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 3486v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.915857Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T10:51:09.915885Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T10:51:09.915892Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T10:51:09.916018Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T10:51:09.916028Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T10:51:09.916034Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T10:51:09.916085Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T10:51:09.916349Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T10:51:09.922332Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T10:51:09.926028Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T10:51:09.928184Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T10:51:09.928198Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T10:51:09.928204Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T10:51:09.928252Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("skin_model")    
+[2m2023-04-13T10:51:09.928615Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_normal_local_to_world")    
+[2m2023-04-13T10:51:09.928626Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("sign_determinant_model_3x3")    
+[2m2023-04-13T10:51:09.928632Z[0m [32m INFO[0m [2mnaga::back::spv::writer[0m[2m:[0m Skip function Some("mesh_tangent_local_to_world")    
+[2m2023-04-13T10:51:09.948313Z[0m [33m WARN[0m [2mbevy_asset::asset_server[0m[2m:[0m encountered an error while loading an asset: You may need to add the feature for the file format: failed to load an image: Format error decoding Png: Unexpected end of data before image end.
+[2m2023-04-13T10:51:09.954784Z[0m [33m WARN[0m [2mdecentra_bevy::scene_runner::update_world::gltf_container[0m[2m:[0m failed to process gltf
+[2m2023-04-13T10:51:09.969333Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5813v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.969382Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5823v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.969390Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5825v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:09.975946Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :   25.720834ms (avg 15.956700ms)
+[2m2023-04-13T10:51:09.975975Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :   68.105083   (avg 141.199589)
+[2m2023-04-13T10:51:09.975984Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 504.000000
+[2m2023-04-13T10:51:10.772048Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5801v1 because it doesn't exist in this World.
+[2m2023-04-13T10:51:10.772094Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5832v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:10.772107Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5838v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:10.976864Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.109930ms (avg 5.950115ms)
+[2m2023-04-13T10:51:10.976905Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  167.051235   (avg 170.322385)
+[2m2023-04-13T10:51:10.976913Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 667.000000
+[2m2023-04-13T10:51:11.979289Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    5.943212ms (avg 5.957020ms)
+[2m2023-04-13T10:51:11.979322Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  172.244779   (avg 171.896032)
+[2m2023-04-13T10:51:11.979329Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 834.000000
+[2m2023-04-13T10:51:12.265658Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5839v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:12.973729Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5844v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:12.973793Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.114754ms (avg 5.993245ms)
+[2m2023-04-13T10:51:12.973812Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  169.331592   (avg 171.991482)
+[2m2023-04-13T10:51:12.973820Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 1004.000000
+[2m2023-04-13T10:51:13.972984Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_time                      :    6.004616ms (avg 5.939955ms)
+[2m2023-04-13T10:51:13.973025Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m fps                             :  170.009374   (avg 172.115223)
+[2m2023-04-13T10:51:13.973033Z[0m [32m INFO[0m [2mbevy diagnostic[0m[2m:[0m frame_count                     : 1176.000000
+[2m2023-04-13T10:51:14.107603Z[0m [33m WARN[0m [2mbevy_ecs::world[0m[2m:[0m error[B0003]: Could not despawn entity 5854v0 because it doesn't exist in this World.
+[2m2023-04-13T10:51:14.320583Z[0m [32m INFO[0m [2mbevy_window::system[0m[2m:[0m No windows are open, exiting
+[2m2023-04-13T10:51:14.321489Z[0m [32m INFO[0m [2mbevy_winit::system[0m[2m:[0m Closing window 0v0
+[2m2023-04-13T10:51:14.325465Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 1: shutting down
+[2m2023-04-13T10:51:14.325942Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 25: shutting down
+[2m2023-04-13T10:51:14.325974Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 26: shutting down
+[2m2023-04-13T10:51:14.325942Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 17: shutting down
+[2m2023-04-13T10:51:14.325942Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 22: shutting down
+[2m2023-04-13T10:51:14.325940Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 3: shutting down
+[2m2023-04-13T10:51:14.325942Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 13: shutting down
+[2m2023-04-13T10:51:14.325986Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 33: shutting down
+[2m2023-04-13T10:51:14.326359Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 11: shutting down
+[2m2023-04-13T10:51:14.326449Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 0: shutting down
+[2m2023-04-13T10:51:14.327163Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 14: shutting down
+[2m2023-04-13T10:51:14.327175Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 16: shutting down
+[2m2023-04-13T10:51:14.327172Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 5: shutting down
+[2m2023-04-13T10:51:14.327176Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 24: shutting down
+[2m2023-04-13T10:51:14.327164Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 6: shutting down
+[2m2023-04-13T10:51:14.327178Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 10: shutting down
+[2m2023-04-13T10:51:14.327182Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 32: shutting down
+[2m2023-04-13T10:51:14.327870Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 19: shutting down
+[2m2023-04-13T10:51:14.327873Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 18: shutting down
+[2m2023-04-13T10:51:14.327875Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 27: shutting down
+[2m2023-04-13T10:51:14.327971Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 21: shutting down
+[2m2023-04-13T10:51:14.331681Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 23: shutting down
+[2m2023-04-13T10:51:14.331682Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 7: shutting down
+[2m2023-04-13T10:51:14.332043Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 28: shutting down
+[2m2023-04-13T10:51:14.332045Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 29: shutting down
+[2m2023-04-13T10:51:14.332446Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 15: shutting down
+[2m2023-04-13T10:51:14.333812Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 30: shutting down
+[2m2023-04-13T10:51:14.334562Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 8: shutting down
+[2m2023-04-13T10:51:14.335421Z[0m [32m INFO[0m [1mjs_run_script[0m[2m:[0m [2mdecentra_bevy::dcl::js::engine[0m[2m:[0m scene thread 4: shutting down

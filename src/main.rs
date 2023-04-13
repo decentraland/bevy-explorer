@@ -9,6 +9,8 @@ mod input_handler;
 pub mod ipfs;
 mod scene_runner;
 
+use std::path::Path;
+
 use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::CascadeShadowConfigBuilder,
@@ -17,7 +19,7 @@ use bevy::{
 
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 use camera_controller::CameraController;
-use ipfs::SceneIpfsLocation;
+use ipfs::{ipfs_path::IpfsPath, SceneIpfsLocation};
 use scene_runner::{LoadSceneEvent, PrimaryCamera, SceneRunnerPlugin};
 use serde::{Deserialize, Serialize};
 
@@ -72,18 +74,21 @@ impl Default for AppConfig {
 }
 
 fn parse_scene_location(scene: &str) -> Result<SceneIpfsLocation, anyhow::Error> {
-    if scene.ends_with(".js") {
-        return Ok(SceneIpfsLocation::Js(scene[0..scene.len() - 3].to_string()));
-    }
+    Err(anyhow::anyhow!("nope"))
+    // if scene.ends_with(".js") {
+    //     return Ok(SceneIpfsLocation::Js(scene[0..scene.len() - 3].to_string()));
+    // }
 
-    if let Some((px, py)) = scene.split_once(',') {
-        return Ok(SceneIpfsLocation::Pointer(
-            px.parse::<i32>()?,
-            py.parse::<i32>()?,
-        ));
-    };
+    // if let Some((px, py)) = scene.split_once(',') {
+    //     return Ok(SceneIpfsLocation::Pointer(
+    //         px.parse::<i32>()?,
+    //         py.parse::<i32>()?,
+    //     ));
+    // };
 
-    Ok(SceneIpfsLocation::Hash(scene.to_owned()))
+    // Ok(SceneIpfsLocation::IpfsPath(
+    //     IpfsPath::new_from_path(Path::new(scene))?.unwrap(),
+    // ))
 }
 
 fn main() {
@@ -204,7 +209,7 @@ fn setup(
     // add a camera
     commands.spawn((
         Camera3dBundle {
-            transform: Transform::from_translation(Vec3::new(16.0 * 78.0, 10.0, 16.0 * 8.0))
+            transform: Transform::from_translation(Vec3::new(16.0 * 77.5, 10.0, 16.0 * 7.5))
                 .looking_at(Vec3::new(1.0, 8.0, -1.0), Vec3::Y),
             ..Default::default()
         },
@@ -231,6 +236,7 @@ fn setup(
     if let Some(initial_scene) = config.scene.as_ref() {
         info!("loading scene: {:?}", initial_scene);
         scene_load.send(LoadSceneEvent {
+            entity: None,
             location: initial_scene.clone(),
         });
     }

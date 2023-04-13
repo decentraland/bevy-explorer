@@ -22,7 +22,7 @@ use crate::{
 use self::{
     initialize_scene::{
         initialize_scene, load_scene_entity, load_scene_javascript, load_scene_json,
-        process_scene_lifecycle, LiveScenes, SceneLoadDistance,
+        process_scene_lifecycle, LiveScenes, SceneLoadDistance, ScenePointers,
     },
     renderer_context::RendererSceneContext,
     update_world::{CrdtExtractors, SceneOutputPlugin},
@@ -81,6 +81,7 @@ pub struct SceneThreadHandle {
 
 // event which can be sent from anywhere to trigger replacing the current scene with the one specified
 pub struct LoadSceneEvent {
+    pub entity: Option<Entity>,
     pub location: SceneIpfsLocation,
 }
 
@@ -162,6 +163,7 @@ impl Plugin for SceneRunnerPlugin {
         app.add_system(run_scene_loop.in_set(SceneSets::RunLoop));
 
         app.init_resource::<LiveScenes>();
+        app.init_resource::<ScenePointers>();
         app.insert_resource(SceneLoadDistance(100.0));
 
         let mut scene_schedule = Schedule::new();

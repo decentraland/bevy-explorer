@@ -21,7 +21,7 @@ use isahc::{http::StatusCode, prelude::Configurable, AsyncReadResponseExt, Reque
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use self::ipfs_path::{normalize_path, IpfsPath, IpfsType, PointerType};
+use self::ipfs_path::{normalize_path, EntityType, IpfsPath, IpfsType};
 
 #[derive(Deserialize)]
 pub struct TypedIpfsRef {
@@ -31,9 +31,10 @@ pub struct TypedIpfsRef {
 
 #[derive(Deserialize)]
 pub struct SceneDefinitionJson {
-    id: String,
+    id: Option<String>,
     pointers: Vec<String>,
     content: Vec<TypedIpfsRef>,
+    metadata: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -70,8 +71,20 @@ impl AssetLoader for SceneDefinitionLoader {
         load_context: &'a mut bevy::asset::LoadContext,
     ) -> bevy::utils::BoxedFuture<'a, Result<(), bevy::asset::Error>> {
         Box::pin(async move {
-            let mut definition_json: Vec<SceneDefinitionJson> = serde_json::from_reader(bytes)?;
-            let Some(definition_json) = definition_json.pop() else {
+            let maybe_definition_json = {
+                // try to parse as a vec
+                let definition_json_vec: Result<Vec<SceneDefinitionJson>, _> =
+                    serde_json::from_reader(bytes);
+                match definition_json_vec {
+                    Ok(mut vec) => vec.pop(),
+                    Err(_) => {
+                        // else try to parse as a single item
+                        Some(serde_json::from_reader(bytes)?)
+                    }
+                }
+            };
+            let Some(definition_json) = maybe_definition_json else {
+                // if the source was an empty vec, we have loaded a pointer with no content, just set default
                 load_context.set_default_asset(LoadedAsset::new(SceneDefinition::default()));
                 return Ok(());
             };
@@ -91,8 +104,36 @@ impl AssetLoader for SceneDefinitionLoader {
                     IVec2::new(pointer_x, pointer_y)
                 })
                 .collect();
+            let id = definition_json.id.unwrap_or_else(|| {
+                // we must have been loaded as an entity with the format "$ipfs/$entity/{hash}.scene_entity" - use the ipfs path to resolve the id
+                load_context
+                    .path()
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .split_once('.')
+                    .unwrap()
+                    .0
+                    .to_owned()
+            });
+
+            if let Some(metadata) = definition_json.metadata {
+                // store this metadata to the filesystem so subsequent resolves of the scene.json work even if the file is not actually available from the realm's content server
+                if let Some(hash) = content.hash("scene.json") {
+                    let ipfs: &IpfsIo = load_context.asset_io().downcast_ref().unwrap();
+                    let mut cache_path = ipfs.cache_path().to_owned();
+                    cache_path.push(hash);
+
+                    if hash.starts_with("b64-") || !cache_path.exists() {
+                        let file = std::fs::File::create(&cache_path)?;
+                        serde_json::to_writer(file, &metadata)?;
+                    }
+                }
+            }
+
             let definition = SceneDefinition {
-                id: definition_json.id,
+                id,
                 pointers,
                 content,
             };
@@ -143,35 +184,102 @@ impl ContentMap {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum SceneIpfsLocation {
-    Pointer(i32, i32),
     Hash(String),
-    Js(String),
+    Urn(String),
 }
 
 pub trait IpfsLoaderExt {
-    fn load_scene_pointer(&self, x: i32, y: i32) -> Handle<SceneDefinition>;
+    fn load_content_file<T: Asset>(
+        &self,
+        file_path: &str,
+        content_hash: &str,
+    ) -> Result<Handle<T>, anyhow::Error>;
 
-    fn load_content_file<T: Asset>(&self, file_path: String, content_hash: String) -> Handle<T>;
+    fn load_urn<T: Asset>(&self, urn: &str, ty: EntityType) -> Result<Handle<T>, anyhow::Error>;
 
-    fn load_urn<T: Asset>(&self, urn: &str) -> Handle<T>;
+    fn load_hash<T: Asset>(&self, hash: &str, ty: EntityType) -> Handle<T>;
+
+    fn active_endpoint(&self) -> Option<String>;
+
+    fn ipfs(&self) -> &IpfsIo;
+
+    fn ipfs_cache_path(&self) -> &Path;
 }
 
 impl IpfsLoaderExt for AssetServer {
-    fn load_scene_pointer(&self, x: i32, y: i32) -> Handle<SceneDefinition> {
-        let ipfs_path = IpfsPath::new(IpfsType::Pointer {
-            pointer_type: PointerType::Scene,
-            address: format!("{x},{y}"),
-        });
-        self.load(PathBuf::from(&ipfs_path))
+    fn load_content_file<T: Asset>(
+        &self,
+        file_path: &str,
+        content_hash: &str,
+    ) -> Result<Handle<T>, anyhow::Error> {
+        // TODO we could use this immediate resolution for files that don't rely on context (currently anything except gltfs)
+            // let ipfs_io = self.asset_io().downcast_ref::<IpfsIo>().unwrap();
+            // let context = ipfs_io.context.blocking_read();
+            // let collection = context
+            //     .collections
+            //     .get(content_hash)
+            //     .ok_or(anyhow::anyhow!("collection not found: {content_hash}"))?;
+            // let hash = collection
+            //     .hash(&normalize_path(file_path))
+            //     .ok_or(anyhow::anyhow!(
+            //         "file_path not found in collection: {file_path}"
+            //     ))?;
+            // // TODO use registered loaders to extract extension
+            // let file_path = Path::new(file_path);
+            // let file_name = file_path.file_name().unwrap().to_str().unwrap();
+            // let path = format!("$ipfs//$entity//{hash}.{file_name}");
+            // Ok(self.load(path))
+        let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+            content_hash.to_owned(),
+            file_path.to_owned(),
+        ));
+        Ok(self.load(PathBuf::from(&ipfs_path)))
     }
 
-    fn load_content_file<T: Asset>(&self, file_path: String, content_hash: String) -> Handle<T> {
-        let ipfs_path = IpfsPath::new(IpfsType::new_content_file(content_hash, file_path));
-        self.load(PathBuf::from(&ipfs_path))
+    fn load_urn<T: Asset>(&self, urn: &str, ty: EntityType) -> Result<Handle<T>, anyhow::Error> {
+        let ipfs_path = IpfsPath::new_from_urn(urn, ty)?;
+        let hash = ipfs_path
+            .context_free_hash()?
+            .ok_or(anyhow::anyhow!("urn did not resolve to a hash"))?;
+        let ext = ty.ext();
+        let path = format!("$ipfs//$entity//{hash}.{ext}");
+
+        if let Some(base_url) = ipfs_path.base_url() {
+            // update the context
+            let ipfs_io = self.asset_io().downcast_ref::<IpfsIo>().unwrap();
+            let mut context = ipfs_io.context.blocking_write();
+            context.modifiers.insert(
+                hash,
+                IpfsModifier {
+                    base_url: Some(base_url.to_owned()),
+                },
+            );
+        }
+        Ok(self.load(path))
     }
 
-    fn load_urn<T: Asset>(&self, _urn: &str) -> Handle<T> {
-        unimplemented!()
+    fn load_hash<T: Asset>(&self, hash: &str, ty: EntityType) -> Handle<T> {
+        let ext = ty.ext();
+        let path = format!("$ipfs//$entity//{hash}.{ext}");
+        self.load(path)
+    }
+
+    fn active_endpoint(&self) -> Option<String> {
+        let ipfs_io = self.asset_io().downcast_ref::<IpfsIo>().unwrap();
+        ipfs_io
+            .realm_config_receiver
+            .borrow()
+            .as_ref()
+            .and_then(|(_, about)| about.content.as_ref())
+            .map(|content| format!("{}/entities/active", &content.public_url))
+    }
+
+    fn ipfs(&self) -> &IpfsIo {
+        self.asset_io().downcast_ref().unwrap()
+    }
+
+    fn ipfs_cache_path(&self) -> &Path {
+        self.ipfs().cache_path()
     }
 }
 
@@ -205,7 +313,9 @@ impl Plugin for IpfsIoPlugin {
         // TODO this will fail on android and wasm, investigate a caching solution there
         let default_fs_path = default_io
             .downcast_ref::<FileAssetIo>()
-            .map(|fio| fio.root_path().clone());
+            .unwrap()
+            .root_path()
+            .clone();
 
         // create the custom asset io instance
         info!("remote server: {:?}", self.starting_realm);
@@ -242,23 +352,26 @@ pub struct ChangeRealmEvent {
 }
 
 pub struct RealmChangedEvent {
+    pub realm: String,
     pub config: ServerConfiguration,
 }
 
+#[allow(clippy::type_complexity)]
 fn change_realm(
     mut change_realm_requests: EventReader<ChangeRealmEvent>,
     mut change_realm_results: EventWriter<RealmChangedEvent>,
     asset_server: Res<AssetServer>,
-    mut realm_change: Local<Option<tokio::sync::watch::Receiver<Option<ServerAbout>>>>,
+    mut realm_change: Local<Option<tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>>>,
 ) {
     let ipfsio = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
     match *realm_change {
         None => *realm_change = Some(ipfsio.realm_config_receiver.clone()),
         Some(ref mut realm_change) => {
             if realm_change.has_changed().unwrap_or_default() {
-                if let Some(new_realm) = &*realm_change.borrow_and_update() {
+                if let Some((realm, about)) = &*realm_change.borrow_and_update() {
                     change_realm_results.send(RealmChangedEvent {
-                        config: new_realm.configurations.clone().unwrap_or_default(),
+                        realm: realm.clone(),
+                        config: about.configurations.clone().unwrap_or_default(),
                     });
                 }
             }
@@ -282,22 +395,27 @@ fn change_realm(
     }
 }
 
+struct IpfsModifier {
+    base_url: Option<String>,
+}
+
 #[derive(Default)]
 pub struct IpfsContext {
     collections: HashMap<String, ContentMap>,
     base_url: Option<String>,
+    modifiers: HashMap<String, IpfsModifier>,
 }
 
 pub struct IpfsIo {
     default_io: Box<dyn AssetIo>,
-    default_fs_path: Option<PathBuf>,
-    pub realm_config_receiver: tokio::sync::watch::Receiver<Option<ServerAbout>>,
-    realm_config_sender: tokio::sync::watch::Sender<Option<ServerAbout>>,
+    default_fs_path: PathBuf,
+    pub realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>,
+    realm_config_sender: tokio::sync::watch::Sender<Option<(String, ServerAbout)>>,
     context: RwLock<IpfsContext>,
 }
 
 impl IpfsIo {
-    pub fn new(default_io: Box<dyn AssetIo>, default_fs_path: Option<PathBuf>) -> Self {
+    pub fn new(default_io: Box<dyn AssetIo>, default_fs_path: PathBuf) -> Self {
         let (sender, receiver) = tokio::sync::watch::channel(None);
 
         Self {
@@ -335,7 +453,7 @@ impl IpfsIo {
             .as_ref()
             .map(|endpoint| endpoint.public_url.clone());
         self.realm_config_sender
-            .send(Some(about))
+            .send(Some((new_realm, about)))
             .expect("channel closed");
         Ok(())
     }
@@ -362,6 +480,10 @@ impl IpfsIo {
             .collections
             .insert(hash, collection);
     }
+
+    pub fn cache_path(&self) -> &Path {
+        self.default_fs_path.as_path()
+    }
 }
 
 impl AssetIo for IpfsIo {
@@ -375,7 +497,8 @@ impl AssetIo for IpfsIo {
 
             debug!("request: {:?}", path);
 
-            let maybe_ipfs_path = IpfsPath::from_path(path).map_err(wrap_err)?;
+            let maybe_ipfs_path = IpfsPath::new_from_path(path).map_err(wrap_err)?;
+            debug!("ipfs: {maybe_ipfs_path:?}");
             let ipfs_path = match maybe_ipfs_path {
                 Some(ipfs_path) => ipfs_path,
                 // non-ipfs files are loaded as normal
@@ -433,7 +556,7 @@ impl AssetIo for IpfsIo {
 
                 if ipfs_path.should_cache() {
                     if let Some(hash) = hash {
-                        let mut cache_path = self.default_fs_path.clone().unwrap();
+                        let mut cache_path = PathBuf::from(self.cache_path());
                         cache_path.push(hash);
                         let cache_path_str = cache_path.to_string_lossy().into_owned();
                         // ignore errors trying to cache
