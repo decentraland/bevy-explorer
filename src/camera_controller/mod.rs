@@ -59,7 +59,7 @@ impl Default for CameraController {
             mouse_key_enable_mouse: MouseButton::Left,
             keyboard_key_enable_mouse: KeyCode::M,
             walk_speed: 5.0,
-            run_speed: 15.0,
+            run_speed: 50.0,
             friction: 0.5,
             pitch: 0.0,
             yaw: 0.0,

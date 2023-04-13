@@ -56,7 +56,10 @@ pub(crate) fn load_scene_entity(
         };
 
         match event.entity {
-            Some(entity) => commands.entity(entity),
+            Some(entity) => {
+                let Some(commands) = commands.get_entity(entity) else { continue; };
+                commands
+            }
             None => commands.spawn_empty(),
         }
         .insert((SceneLoading::SceneEntity, h_scene));
@@ -158,7 +161,10 @@ pub(crate) fn load_scene_javascript(
             }
             _ => continue,
         }
-        let definition = scene_definitions.get(h_scene).unwrap();
+        let Some(definition) = scene_definitions.get(h_scene) else {
+            fail("definition was dropped");
+            continue;
+        };
         let Some(meta) = scene_metas.get(h_meta) else {
             fail("scene.json did not resolve to expected format");
             continue;
@@ -297,7 +303,7 @@ pub fn process_scene_lifecycle(
     mut commands: Commands,
     (focus, scene_entities): (
         Query<&GlobalTransform, With<PrimaryCamera>>,
-        Query<(), Or<(With<SceneLoading>, With<RendererSceneContext>)>>,
+        Query<Entity, Or<(With<SceneLoading>, With<RendererSceneContext>)>>,
     ),
     range: Res<SceneLoadDistance>,
     mut live_scenes: ResMut<LiveScenes>,
@@ -316,6 +322,7 @@ pub fn process_scene_lifecycle(
             Task<Result<HashSet<ActiveEntity>, anyhow::Error>>,
         )>,
     >,
+    mut spawned_scenes: Local<HashSet<String>>,
 ) {
     if let Some(realm_changed) = changed_realms.iter().last() {
         info!("realm change! purging scenes");
@@ -373,6 +380,8 @@ pub fn process_scene_lifecycle(
                 .0
                 .contains_right(&PointerResult::Exists(hash.clone()))
         });
+
+        *spawned_scenes = HashSet::from_iter(realm_scene_ids.keys().cloned());
         for (hash, urn) in realm_scene_ids.into_iter() {
             info!("spawning scene {:?} @ ??", hash);
             spawn.send(LoadSceneEvent {
@@ -406,7 +415,6 @@ pub fn process_scene_lifecycle(
     let max_parcel = (max_point / 16.0).ceil().as_ivec2();
 
     let mut good_scenes = HashSet::default();
-    let mut spawned_scenes = HashSet::default();
     let mut required_parcels = HashSet::default();
 
     // iterate parcels within range
@@ -438,6 +446,7 @@ pub fn process_scene_lifecycle(
                                     location: SceneIpfsLocation::Hash(id.to_owned()),
                                 });
                                 spawned_scenes.insert(id.to_owned());
+                                good_scenes.insert(entity);
                             }
                         }
                         Some(PointerResult::Nothing(..)) => {
@@ -469,16 +478,25 @@ pub fn process_scene_lifecycle(
     live_scenes.0.retain(|location, entity| {
         let is_good = good_scenes.contains(entity);
         if !is_good {
-            if let Some(commands) = commands.get_entity(*entity) {
-                info!("despawning scene @ {location:?} : {:?}", entity);
+            info!("despawning scene @ {location:?} : {:?}", entity);
+            if let Some(PointerResult::Exists(hash)) = pointers.0.get_by_left(location) {
+                spawned_scenes.remove(hash);
+            }
+        }
+        is_good
+    });
+
+    for entity in &scene_entities {
+        if !good_scenes.contains(&entity) {
+            if let Some(commands) = commands.get_entity(entity) {
+                info!("despawning {:?}", entity);
                 commands.despawn_recursive();
             }
 
             // remove from running scenes
-            updates.jobs_in_flight.remove(entity);
+            updates.jobs_in_flight.remove(&entity);
         }
-        is_good
-    });
+    }
 
     if pointer_request.is_none() {
         // load required pointers
@@ -513,6 +531,10 @@ pub fn process_scene_lifecycle(
         );
 
         for active_entity in retrieved_parcels {
+            if spawned_scenes.contains(&active_entity.id) {
+                continue;
+            }
+
             info!(
                 "spawning scene {:?} @ {:?}",
                 active_entity.id, active_entity.pointers
