@@ -82,9 +82,7 @@ fn init_test_app(entity_json: &str) -> App {
     app.add_plugins(TestPlugins);
     app.add_asset::<Shader>();
     app.add_plugin(MaterialPlugin::<StandardMaterial>::default());
-    app.add_plugin(SceneRunnerPlugin {
-        dynamic_spawning: true,
-    });
+    app.add_plugin(SceneRunnerPlugin);
 
     let ipfs = app.world.resource::<AssetServer>().ipfs();
     let urn = format!("urn:decentraland:entity:{entity_json}");

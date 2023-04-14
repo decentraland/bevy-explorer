@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use bevy::{
     math::Vec3Swizzles,
     prelude::*,
+    scene::scene_spawner_system,
     tasks::{IoTaskPool, Task},
     utils::{HashMap, HashSet},
 };
@@ -15,8 +16,8 @@ use crate::{
     dcl_component::SceneEntityId,
     ipfs::{
         ipfs_path::{EntityType, IpfsPath},
-        IpfsIo, IpfsLoaderExt, RealmChangedEvent, SceneDefinition, SceneIpfsLocation, SceneJsFile,
-        SceneMeta, ServerConfiguration,
+        CurrentRealm, IpfsIo, IpfsLoaderExt, SceneDefinition, SceneIpfsLocation, SceneJsFile,
+        SceneMeta,
     },
     scene_runner::{
         renderer_context::RendererSceneContext, DeletedSceneEntities, SceneEntity,
@@ -24,7 +25,38 @@ use crate::{
     },
 };
 
-use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryCamera, SceneUpdates};
+use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryCamera, SceneSets, SceneUpdates};
+
+pub struct SceneLifecyclePlugin;
+
+impl Plugin for SceneLifecyclePlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<LiveScenes>();
+        app.init_resource::<ScenePointers>();
+        app.insert_resource(SceneLoadDistance(100.0));
+
+        app.add_systems(
+            (
+                load_scene_entity,
+                load_scene_json,
+                load_scene_javascript,
+                initialize_scene,
+            )
+                .after(scene_spawner_system) // these can despawn scenes, make sure that the scene spawner system doesn't try to write to deleted entities
+                .in_set(SceneSets::Init),
+        );
+
+        app.add_systems(
+            (
+                process_realm_change,
+                load_active_entities,
+                process_scene_lifecycle,
+            )
+                .chain()
+                .in_base_set(CoreSet::PostUpdate),
+        );
+    }
+}
 
 #[derive(Component)]
 pub enum SceneLoading {
@@ -32,6 +64,7 @@ pub enum SceneLoading {
     SceneEntity,
     SceneMeta,
     Javascript,
+    Failed,
 }
 
 pub(crate) fn load_scene_entity(
@@ -40,6 +73,14 @@ pub(crate) fn load_scene_entity(
     asset_server: Res<AssetServer>,
 ) {
     for event in load_scene_events.iter() {
+        let mut commands = match event.entity {
+            Some(entity) => {
+                let Some(commands) = commands.get_entity(entity) else { continue; };
+                commands
+            }
+            None => commands.spawn_empty(),
+        };
+
         let h_scene = match &event.location {
             SceneIpfsLocation::Hash(hash) => {
                 asset_server.load_hash::<SceneDefinition>(hash, EntityType::Scene)
@@ -49,20 +90,14 @@ pub(crate) fn load_scene_entity(
                     Ok(h_scene) => h_scene,
                     Err(e) => {
                         warn!("failed to parse urn: {e}");
+                        commands.insert(SceneLoading::Failed);
                         continue;
                     }
                 }
             }
         };
 
-        match event.entity {
-            Some(entity) => {
-                let Some(commands) = commands.get_entity(entity) else { continue; };
-                commands
-            }
-            None => commands.spawn_empty(),
-        }
-        .insert((SceneLoading::SceneEntity, h_scene));
+        commands.insert((SceneLoading::SceneEntity, h_scene));
     }
 }
 
@@ -71,8 +106,6 @@ pub(crate) fn load_scene_json(
     mut loading_scenes: Query<(Entity, &mut SceneLoading, &Handle<SceneDefinition>)>,
     scene_definitions: Res<Assets<SceneDefinition>>,
     asset_server: Res<AssetServer>,
-    mut live_scenes: ResMut<LiveScenes>,
-    mut pointers: ResMut<ScenePointers>,
 ) {
     for (entity, mut state, h_scene) in loading_scenes
         .iter_mut()
@@ -81,7 +114,7 @@ pub(crate) fn load_scene_json(
         debug!("checking json");
         let mut fail = |msg: &str| {
             warn!("{entity:?} failed to initialize scene: {msg}");
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).insert(SceneLoading::Failed);
         };
 
         match asset_server.get_load_state(h_scene) {
@@ -102,17 +135,6 @@ pub(crate) fn load_scene_json(
             // stop loading but don't despawn
             commands.entity(entity).remove::<SceneLoading>();
             continue;
-        }
-
-        // make sure pointer and live scenes are updated
-        // if the scene was loaded from a urn, the parcel
-        // may have been unknown
-        for pointer in &definition.pointers {
-            live_scenes.0.insert(*pointer, entity);
-            pointers.0.insert(
-                definition.pointers[0],
-                PointerResult::Exists(definition.id.clone()),
-            );
         }
 
         let ipfs_io = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
@@ -150,7 +172,7 @@ pub(crate) fn load_scene_javascript(
     {
         let mut fail = |msg: &str| {
             warn!("{entity:?} failed to initialize scene: {msg}");
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).insert(SceneLoading::Failed);
         };
 
         match asset_server.get_load_state(h_meta) {
@@ -205,7 +227,7 @@ pub(crate) fn initialize_scene(
         debug!("checking for js");
         let mut fail = |msg: &str| {
             warn!("{root:?} failed to initialize scene: {msg}");
-            commands.entity(root).despawn_recursive();
+            commands.entity(root).insert(SceneLoading::Failed);
         };
 
         match asset_server.get_load_state(h_code) {
@@ -284,12 +306,12 @@ pub(crate) fn initialize_scene(
 pub struct SceneLoadDistance(pub f32);
 
 #[derive(Resource, Default)]
-pub struct LiveScenes(pub HashMap<IVec2, Entity>);
+pub struct LiveScenes(pub HashMap<String, Entity>);
 
 pub const PARCEL_SIZE: f32 = 16.0;
 
-#[derive(Resource, Default)]
-pub struct ScenePointers(bimap::BiMap<IVec2, PointerResult>);
+#[derive(Resource, Default, Debug)]
+pub struct ScenePointers(HashMap<IVec2, PointerResult>);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum PointerResult {
@@ -297,60 +319,72 @@ pub enum PointerResult {
     Exists(String),
 }
 
-// todo - this function is getting too big
-#[allow(clippy::type_complexity, clippy::too_many_arguments)]
-pub fn process_scene_lifecycle(
-    mut commands: Commands,
-    (focus, scene_entities): (
-        Query<&GlobalTransform, With<PrimaryCamera>>,
-        Query<Entity, Or<(With<SceneLoading>, With<RendererSceneContext>)>>,
-    ),
-    range: Res<SceneLoadDistance>,
-    mut live_scenes: ResMut<LiveScenes>,
-    mut updates: ResMut<SceneUpdates>,
-    mut spawn: EventWriter<LoadSceneEvent>,
-    mut changed_realms: EventReader<RealmChangedEvent>,
-    mut current_realm: Local<String>,
-    mut current_config: Local<Option<ServerConfiguration>>,
-    mut realm_scenes: Local<HashMap<String, String>>, // hash -> urn
-    mut pending_realm_scenes: Local<HashSet<PointerResult>>,
-    mut pointers: ResMut<ScenePointers>,
-    asset_server: Res<AssetServer>,
-    mut pointer_request: Local<
-        Option<(
-            HashSet<IVec2>,
-            Task<Result<HashSet<ActiveEntity>, anyhow::Error>>,
-        )>,
-    >,
-    mut spawned_scenes: Local<HashSet<String>>,
-) {
-    if let Some(realm_changed) = changed_realms.iter().last() {
-        info!("realm change! purging scenes");
-        *current_realm = realm_changed.realm.clone();
-        *current_config = Some(realm_changed.config.clone());
+impl PointerResult {
+    fn hash(&self) -> Option<&String> {
+        match self {
+            PointerResult::Nothing(..) => None,
+            PointerResult::Exists(hash) => Some(hash),
+        }
+    }
+}
 
-        // get list of realm-specified scenes
-        let mut realm_scene_urns = HashSet::default();
-        if let Some(current_config) = &*current_config {
-            for urn in current_config
-                .scenes_urn
-                .as_ref()
-                .unwrap_or(&Vec::default())
-            {
-                let hacked_urn = urn.replace('?', "?=&");
-                let path = match IpfsPath::new_from_urn(&hacked_urn, EntityType::Scene) {
-                    Ok(path) => path,
-                    Err(e) => {
-                        warn!("failed to parse urn: `{}`: {}", urn, e);
-                        continue;
-                    }
-                };
+fn parcels_in_range(focus: &GlobalTransform, range: f32) -> Vec<IVec2> {
+    let focus = focus.translation().xz() * Vec2::new(1.0, -1.0);
 
-                realm_scene_urns.insert((hacked_urn, path));
+    let min_point = focus - Vec2::splat(range);
+    let max_point = focus + Vec2::splat(range);
+
+    let min_parcel = (min_point / 16.0).floor().as_ivec2();
+    let max_parcel = (max_point / 16.0).ceil().as_ivec2();
+
+    let mut results = Vec::default();
+
+    for parcel_x in min_parcel.x..=max_parcel.x {
+        for parcel_y in min_parcel.y..=max_parcel.y {
+            let parcel = IVec2::new(parcel_x, parcel_y);
+            let parcel_min_point = parcel.as_vec2() * PARCEL_SIZE;
+            let parcel_max_point = (parcel + 1).as_vec2() * PARCEL_SIZE;
+            let nearest_point = focus.clamp(parcel_min_point, parcel_max_point);
+            let distance = nearest_point.distance(focus);
+
+            if distance < range {
+                results.push(parcel);
             }
         }
+    }
 
-        let mut realm_scene_ids = realm_scene_urns
+    results
+}
+
+pub fn process_realm_change(
+    mut commands: Commands,
+    current_realm: Res<CurrentRealm>,
+    mut pointers: ResMut<ScenePointers>,
+    mut live_scenes: ResMut<LiveScenes>,
+    mut spawn: EventWriter<LoadSceneEvent>,
+) {
+    if current_realm.is_changed() {
+        info!("realm change! purging scenes");
+        let mut realm_scene_urns = HashSet::default();
+        for urn in current_realm
+            .config
+            .scenes_urn
+            .as_ref()
+            .unwrap_or(&Vec::default())
+        {
+            let hacked_urn = urn.replace('?', "?=&");
+            let path = match IpfsPath::new_from_urn(&hacked_urn, EntityType::Scene) {
+                Ok(path) => path,
+                Err(e) => {
+                    warn!("failed to parse urn: `{}`: {}", urn, e);
+                    continue;
+                }
+            };
+
+            realm_scene_urns.insert((hacked_urn, path));
+        }
+
+        let realm_scene_ids = realm_scene_urns
             .into_iter()
             .flat_map(|(urn, path)| match path.context_free_hash() {
                 Ok(Some(hash)) => Some((hash, urn)),
@@ -368,150 +402,62 @@ pub fn process_scene_lifecycle(
         });
         live_scenes
             .0
-            .retain(|location, _| pointers.0.contains_left(location));
-
-        // store the realm-specified scenes
-        *realm_scenes = realm_scene_ids.clone();
+            .retain(|hash, _| realm_scene_ids.contains_key(hash));
 
         // load the remaining unloaded scenes
-        pending_realm_scenes.clear();
-        realm_scene_ids.retain(|hash, _| {
-            !pointers
-                .0
-                .contains_right(&PointerResult::Exists(hash.clone()))
-        });
+        let to_load: HashSet<_> = realm_scene_ids
+            .into_iter()
+            .filter(|(hash, _)| !live_scenes.0.contains_key(hash))
+            .collect();
 
-        *spawned_scenes = HashSet::from_iter(realm_scene_ids.keys().cloned());
-        for (hash, urn) in realm_scene_ids.into_iter() {
-            info!("spawning scene {:?} @ ??", hash);
+        for (hash, urn) in to_load {
+            let entity = commands.spawn(SceneLoading::SceneSpawned).id();
+            info!("spawning scene {:?} @ ??: {entity:?}", hash);
+            live_scenes.0.insert(hash, entity);
             spawn.send(LoadSceneEvent {
-                entity: None,
+                entity: Some(entity),
                 location: SceneIpfsLocation::Urn(urn),
             });
-            pending_realm_scenes.insert(PointerResult::Exists(hash));
         }
     }
+}
 
-    // remove loaded realm scenes from the pending list
-    pending_realm_scenes.retain(|hash| !pointers.0.contains_right(hash));
-
-    // if we haven't yet loaded all the realm-specified scenes, stop here
-    // in fact ... for now just stop if there are scenes specified in the globals
-    // TODO this isn't really complete
-    if !pending_realm_scenes.is_empty() || current_config.is_none() || !realm_scenes.is_empty() {
+#[allow(clippy::type_complexity)]
+fn load_active_entities(
+    realm: Res<CurrentRealm>,
+    focus: Query<&GlobalTransform, With<PrimaryCamera>>,
+    range: Res<SceneLoadDistance>,
+    mut pointers: ResMut<ScenePointers>,
+    mut pointer_request: Local<
+        Option<(
+            HashSet<IVec2>,
+            Task<Result<HashSet<ActiveEntity>, anyhow::Error>>,
+        )>,
+    >,
+    asset_server: Res<AssetServer>,
+) {
+    if realm.is_changed() {
+        // drop current request
+        *pointer_request = None;
         return;
-    }
-
-    // determine world position
-    let Ok(focus) = focus.get_single() else {
-        return;
-    };
-    let focus = focus.translation().xz() * Vec2::new(1.0, -1.0);
-
-    let min_point = focus - Vec2::splat(range.0);
-    let max_point = focus + Vec2::splat(range.0);
-
-    let min_parcel = (min_point / 16.0).floor().as_ivec2();
-    let max_parcel = (max_point / 16.0).ceil().as_ivec2();
-
-    let mut good_scenes = HashSet::default();
-    let mut required_parcels = HashSet::default();
-
-    // iterate parcels within range
-    for parcel_x in min_parcel.x..=max_parcel.x {
-        for parcel_y in min_parcel.y..=max_parcel.y {
-            let parcel = IVec2::new(parcel_x, parcel_y);
-            let parcel_min_point = parcel.as_vec2() * PARCEL_SIZE;
-            let parcel_max_point = (parcel + 1).as_vec2() * PARCEL_SIZE;
-            let nearest_point = focus.clamp(parcel_min_point, parcel_max_point);
-            let distance = nearest_point.distance(focus);
-
-            if distance < range.0 {
-                if let Some(scene_entity) = live_scenes.0.get(&parcel) {
-                    // record still-valid entities
-                    if scene_entities.get(*scene_entity).is_ok() {
-                        good_scenes.insert(*scene_entity);
-                    }
-                } else {
-                    // we don't have a live scene at this parcel
-                    match pointers.0.get_by_left(&parcel) {
-                        Some(PointerResult::Exists(id)) => {
-                            // scene data already exists, load it now if we didn't already
-                            if !spawned_scenes.contains(id) {
-                                let entity = commands.spawn(SceneLoading::SceneSpawned).id();
-                                live_scenes.0.insert(parcel, entity);
-                                info!("spawning scene {:?} @ {:?}: {:?}", id, parcel, entity);
-                                spawn.send(LoadSceneEvent {
-                                    entity: Some(entity),
-                                    location: SceneIpfsLocation::Hash(id.to_owned()),
-                                });
-                                spawned_scenes.insert(id.to_owned());
-                                good_scenes.insert(entity);
-                            }
-                        }
-                        Some(PointerResult::Nothing(..)) => {
-                            // scene data has been requested but found not to exist
-                            // TODO: spawn a dummy scene
-                        }
-                        None => {
-                            // load parcel data to spawn later
-                            required_parcels.insert(parcel);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // record realm-specified scenes
-    for realm_scene in &realm_scenes {
-        let pointer = pointers
-            .0
-            .get_by_right(&PointerResult::Exists(realm_scene.0.clone()))
-            .unwrap();
-        if let Some(scene_entity) = live_scenes.0.get(pointer) {
-            good_scenes.insert(*scene_entity);
-        }
-    }
-
-    // despawn any no-longer valid scenes
-    live_scenes.0.retain(|location, entity| {
-        let is_good = good_scenes.contains(entity);
-        if !is_good {
-            info!("despawning scene @ {location:?} : {:?}", entity);
-            if let Some(PointerResult::Exists(hash)) = pointers.0.get_by_left(location) {
-                spawned_scenes.remove(hash);
-            }
-        }
-        is_good
-    });
-
-    for entity in &scene_entities {
-        if !good_scenes.contains(&entity) {
-            if let Some(commands) = commands.get_entity(entity) {
-                info!("despawning {:?}", entity);
-                commands.despawn_recursive();
-            }
-
-            // remove from running scenes
-            updates.jobs_in_flight.remove(&entity);
-        }
     }
 
     if pointer_request.is_none() {
-        // load required pointers
-        required_parcels.retain(|parcel| !pointers.0.contains_left(parcel));
-        let cache_path = asset_server.ipfs_cache_path().to_owned();
+        if let Some(url) = asset_server.active_endpoint() {
+            // load required pointers
+            let Ok(focus) = focus.get_single() else {
+                return;
+            };
+            let parcels: HashSet<_> = parcels_in_range(focus, range.0)
+                .into_iter()
+                .filter(|parcel| !pointers.0.contains_key(parcel))
+                .collect();
 
-        if !required_parcels.is_empty() {
-            if let Some(url) = asset_server.active_endpoint() {
+            if !parcels.is_empty() {
+                let cache_path = asset_server.ipfs_cache_path().to_owned();
                 *pointer_request = Some((
-                    required_parcels.clone(),
-                    IoTaskPool::get().spawn(request_active_entities(
-                        url,
-                        required_parcels,
-                        cache_path,
-                    )),
+                    parcels.clone(),
+                    IoTaskPool::get().spawn(request_active_entities(url, parcels, cache_path)),
                 ));
             }
         }
@@ -520,7 +466,7 @@ pub fn process_scene_lifecycle(
         let (mut requested_parcels, mut task) = pointer_request.take().unwrap();
 
         let Ok(retrieved_parcels) = future::block_on(future::poll_once(&mut task)).unwrap() else {
-            warn!("failed to retrieve active scenes, retrying");
+            warn!("failed to retrieve active scenes, will retry");
             return;
         };
 
@@ -531,16 +477,6 @@ pub fn process_scene_lifecycle(
         );
 
         for active_entity in retrieved_parcels {
-            if spawned_scenes.contains(&active_entity.id) {
-                continue;
-            }
-
-            info!(
-                "spawning scene {:?} @ {:?}",
-                active_entity.id, active_entity.pointers
-            );
-
-            let entity = commands.spawn(SceneLoading::SceneSpawned).id();
             for pointer in active_entity.pointers {
                 let (x, y) = pointer.split_once(',').unwrap();
                 let x = x.parse::<i32>().unwrap();
@@ -551,13 +487,7 @@ pub fn process_scene_lifecycle(
                 pointers
                     .0
                     .insert(parcel, PointerResult::Exists(active_entity.id.clone()));
-                live_scenes.0.insert(parcel, entity);
             }
-
-            spawn.send(LoadSceneEvent {
-                entity: Some(entity),
-                location: SceneIpfsLocation::Hash(active_entity.id),
-            });
         }
 
         // any remaining requested parcels are empty
@@ -567,6 +497,90 @@ pub fn process_scene_lifecycle(
                 PointerResult::Nothing(empty_parcel.x, empty_parcel.y),
             );
         }
+    }
+}
+
+// todo - this function is getting too big
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+pub fn process_scene_lifecycle(
+    mut commands: Commands,
+    current_realm: Res<CurrentRealm>,
+    focus: Query<&GlobalTransform, With<PrimaryCamera>>,
+    scene_entities: Query<Entity, Or<(With<SceneLoading>, With<RendererSceneContext>)>>,
+    range: Res<SceneLoadDistance>,
+    mut live_scenes: ResMut<LiveScenes>,
+    mut updates: ResMut<SceneUpdates>,
+    mut spawn: EventWriter<LoadSceneEvent>,
+    pointers: Res<ScenePointers>,
+) {
+    let mut required_scene_ids: HashSet<String> = HashSet::default();
+
+    // add realm-defined scenes to requirements
+    if let Some(scenes) = current_realm.config.scenes_urn.as_ref() {
+        required_scene_ids.extend(scenes.iter().flat_map(|urn| {
+            let hacked_urn = urn.replace('?', "?=&");
+            IpfsPath::new_from_urn(&hacked_urn, EntityType::Scene)
+                .ok()?
+                .context_free_hash()
+                .ok()?
+        }))
+    }
+
+    // add nearby scenes to requirements
+    let Ok(focus) = focus.get_single() else {
+        return;
+    };
+    required_scene_ids.extend(
+        parcels_in_range(focus, range.0)
+            .into_iter()
+            .flat_map(|parcel| {
+                pointers
+                    .0
+                    .get(&parcel)
+                    .and_then(PointerResult::hash)
+                    .map(ToOwned::to_owned)
+            }),
+    );
+
+    // record which scene entities we should keep
+    let required_entities: HashMap<_, _> = required_scene_ids
+        .iter()
+        .flat_map(|scene| live_scenes.0.get(scene).map(|ent| (ent, scene)))
+        .collect();
+
+    let mut existing_ids = HashSet::default();
+
+    // despawn any no-longer required entities
+    for entity in &scene_entities {
+        match required_entities.get(&entity) {
+            Some(hash) => {
+                existing_ids.insert(<&String>::clone(hash));
+            }
+            None => {
+                if let Some(commands) = commands.get_entity(entity) {
+                    info!("despawning {:?}", entity);
+                    commands.despawn_recursive();
+                }
+
+                // remove from running scenes
+                updates.jobs_in_flight.remove(&entity);
+            }
+        }
+    }
+    drop(required_entities);
+
+    // spawn any newly required scenes
+    for required_scene_id in required_scene_ids
+        .iter()
+        .filter(|id| !existing_ids.contains(id))
+    {
+        let entity = commands.spawn(SceneLoading::SceneSpawned).id();
+        info!("spawning scene {:?} @ ??: {entity:?}", required_scene_id);
+        live_scenes.0.insert(required_scene_id.clone(), entity);
+        spawn.send(LoadSceneEvent {
+            entity: Some(entity),
+            location: SceneIpfsLocation::Hash(required_scene_id.clone()),
+        })
     }
 }
 

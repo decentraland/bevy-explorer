@@ -145,9 +145,7 @@ fn main() {
             }),
     )
     .add_plugin(DebugLinesPlugin::with_depth_test(true))
-    .add_plugin(SceneRunnerPlugin {
-        dynamic_spawning: true,
-    }) // script engine plugin
+    .add_plugin(SceneRunnerPlugin) // script engine plugin
     .add_plugin(CameraControllerPlugin)
     .add_startup_system(setup)
     .insert_resource(AmbientLight {

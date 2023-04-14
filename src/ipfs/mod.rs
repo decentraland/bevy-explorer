@@ -338,7 +338,7 @@ impl Plugin for IpfsIoPlugin {
             .add_plugin(JsonAssetPlugin::<SceneMeta>::new(&["scene.json"]));
 
         app.add_event::<ChangeRealmEvent>();
-        app.add_event::<RealmChangedEvent>();
+        app.init_resource::<CurrentRealm>();
         app.add_system(change_realm.in_base_set(CoreSet::PostUpdate));
 
         if let Some(realm) = &self.starting_realm {
@@ -358,17 +358,18 @@ pub struct ChangeRealmEvent {
     new_realm: String,
 }
 
-pub struct RealmChangedEvent {
-    pub realm: String,
+#[derive(Resource, Default)]
+pub struct CurrentRealm {
+    pub address: String,
     pub config: ServerConfiguration,
 }
 
 #[allow(clippy::type_complexity)]
 fn change_realm(
     mut change_realm_requests: EventReader<ChangeRealmEvent>,
-    mut change_realm_results: EventWriter<RealmChangedEvent>,
     asset_server: Res<AssetServer>,
     mut realm_change: Local<Option<tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>>>,
+    mut current_realm: ResMut<CurrentRealm>,
 ) {
     let ipfsio = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
     match *realm_change {
@@ -376,10 +377,10 @@ fn change_realm(
         Some(ref mut realm_change) => {
             if realm_change.has_changed().unwrap_or_default() {
                 if let Some((realm, about)) = &*realm_change.borrow_and_update() {
-                    change_realm_results.send(RealmChangedEvent {
-                        realm: realm.clone(),
+                    *current_realm = CurrentRealm {
+                        address: realm.clone(),
                         config: about.configurations.clone().unwrap_or_default(),
-                    });
+                    }
                 }
             }
         }
