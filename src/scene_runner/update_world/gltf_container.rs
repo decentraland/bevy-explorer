@@ -100,6 +100,7 @@ fn update_gltf(
 
         let gltf = gltfs.get(h_gltf).unwrap();
         let gltf_scene_handle = gltf.default_scene.as_ref();
+
         match gltf_scene_handle {
             Some(gltf_scene_handle) => {
                 let instance_id = scene_spawner.spawn_as_child(gltf_scene_handle.clone_weak(), ent);
