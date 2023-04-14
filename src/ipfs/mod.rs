@@ -16,10 +16,13 @@ use bevy::{
     utils::HashMap,
 };
 use bevy_common_assets::json::JsonAssetPlugin;
+use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use bimap::BiMap;
 use isahc::{http::StatusCode, prelude::Configurable, AsyncReadResponseExt, RequestExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
+
+use crate::console::DoAddConsoleCommand;
 
 use self::ipfs_path::{normalize_path, EntityType, IpfsPath, IpfsType};
 
@@ -298,7 +301,7 @@ pub struct ServerConfiguration {
     pub scenes_urn: Option<Vec<String>>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, Default)]
 pub struct ServerAbout {
     pub content: Option<EndpointConfig>,
     pub configurations: Option<ServerConfiguration>,
@@ -351,6 +354,27 @@ impl Plugin for IpfsIoPlugin {
                 })
                 .detach();
         }
+
+        app.add_console_command::<ChangeRealmCommand, _>(change_realm_command);
+    }
+}
+
+/// Switch to a new realm
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/changerealm")]
+struct ChangeRealmCommand {
+    new_realm: String,
+}
+
+fn change_realm_command(
+    mut input: ConsoleCommand<ChangeRealmCommand>,
+    mut writer: EventWriter<ChangeRealmEvent>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        writer.send(ChangeRealmEvent {
+            new_realm: command.new_realm,
+        });
+        input.ok();
     }
 }
 
@@ -370,6 +394,7 @@ fn change_realm(
     asset_server: Res<AssetServer>,
     mut realm_change: Local<Option<tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>>>,
     mut current_realm: ResMut<CurrentRealm>,
+    mut print: EventWriter<PrintConsoleLine>,
 ) {
     let ipfsio = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
     match *realm_change {
@@ -380,6 +405,15 @@ fn change_realm(
                     *current_realm = CurrentRealm {
                         address: realm.clone(),
                         config: about.configurations.clone().unwrap_or_default(),
+                    };
+
+                    match about.configurations {
+                        Some(_) => print.send(PrintConsoleLine::new(
+                            format!("Realm set to `{realm}`").into(),
+                        )),
+                        None => print.send(PrintConsoleLine::new(
+                            format!("Failed to set realm `{realm}`").into(),
+                        )),
                     }
                 }
             }
@@ -436,9 +470,12 @@ impl IpfsIo {
     }
 
     pub async fn set_realm(&self, new_realm: String) {
-        let res = self.set_realm_inner(new_realm).await;
+        let res = self.set_realm_inner(new_realm.clone()).await;
         if let Err(e) = res {
             error!("failed to set realm: {e}");
+            self.realm_config_sender
+                .send(Some((new_realm, Default::default())))
+                .expect("channel closed");
         }
     }
 

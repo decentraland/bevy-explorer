@@ -7,9 +7,12 @@
 
 use bevy::window::CursorGrabMode;
 use bevy::{input::mouse::MouseMotion, prelude::*};
+use bevy_console::ConsoleOpen;
 
 use std::f32::consts::*;
 use std::fmt;
+
+use crate::scene_runner::SceneSets;
 
 /// Based on Valorant's default sensitivity, not entirely sure why it is exactly 1.0 / 180.0,
 /// but I'm guessing it is a misunderstanding between degrees/radians and then sticking with
@@ -99,7 +102,11 @@ pub struct CameraControllerPlugin;
 
 impl Plugin for CameraControllerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(camera_controller);
+        app.add_system(
+            camera_controller
+                .in_set(SceneSets::Input)
+                .run_if(|console_open: Res<ConsoleOpen>| !console_open.open),
+        );
     }
 }
 
