@@ -1,7 +1,4 @@
-use std::{
-    f32::consts::FRAC_PI_2,
-    time::Duration,
-};
+use std::{f32::consts::FRAC_PI_2, time::Duration};
 
 use bevy::prelude::*;
 use bevy_atmosphere::{
