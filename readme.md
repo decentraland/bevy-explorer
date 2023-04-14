@@ -19,13 +19,7 @@ This project's goals are to:
 
 # Arguments
 
-`cargo run --release -- [--scene scenename] [--server serverpath] [--vsync true|false] [--log_fps true|false]`
-
-`--scene`
-runs a single scene, taking an argument of either: 
-- a pointer with format `x,y`, to load a single scene by parcel address
-- a hash like `b64-L3Vzci9zcmMvYXBwL2dpdGh1Yi5jb21fZGVjZW50cmFsYW5kLXNjZW5lc19zZGs3LWdvZXJsaS1wbGF6YS0xNjc5OTk3ODkxMzA5LXJvdGF0aW5nLXBsYXRmb3Jtcw==` to load a scene by entity id
-- a js file like `scenes/example_scene/index.js` to load a raw js file from the assets folder
+`cargo run --release -- [--server serverpath] [--vsync true|false] [--log_fps true|false]`
 
 `--server https://sdk-test-scenes.decentraland.zone`
 - specify the content server, defaults to the sdk test server.
