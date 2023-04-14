@@ -9,6 +9,7 @@ mod dcl_component;
 mod input_handler;
 pub mod ipfs;
 mod scene_runner;
+pub mod visuals;
 
 use bevy::{
     core::FrameCount,
@@ -29,7 +30,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     camera_controller::CameraControllerPlugin, console::ConsolePlugin, ipfs::IpfsIoPlugin,
-    scene_runner::SceneSets,
+    scene_runner::SceneSets, visuals::VisualsPlugin,
 };
 
 // macro for assertions
@@ -156,10 +157,11 @@ fn main() {
     .add_plugin(SceneRunnerPlugin) // script engine plugin
     .add_plugin(CameraControllerPlugin)
     .add_plugin(ConsolePlugin)
+    .add_plugin(VisualsPlugin)
     .add_startup_system(setup)
     .insert_resource(AmbientLight {
-        color: Color::WHITE,
-        brightness: 0.1,
+        color: Color::BLUE,
+        brightness: 0.05,
     });
 
     if final_config.graphics.log_fps {
