@@ -355,7 +355,7 @@ impl Plugin for IpfsIoPlugin {
 }
 
 pub struct ChangeRealmEvent {
-    new_realm: String,
+    pub new_realm: String,
 }
 
 #[derive(Resource, Default)]

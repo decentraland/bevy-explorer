@@ -10,6 +10,7 @@ pub mod ipfs;
 mod scene_runner;
 
 use bevy::{
+    core::FrameCount,
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::CascadeShadowConfigBuilder,
     prelude::*,
@@ -17,7 +18,11 @@ use bevy::{
 
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 use camera_controller::CameraController;
-use scene_runner::{PrimaryCamera, SceneRunnerPlugin};
+use ipfs::ChangeRealmEvent;
+use scene_runner::{
+    initialize_scene::SceneLoading, renderer_context::RendererSceneContext, PrimaryCamera,
+    SceneRunnerPlugin,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -161,7 +166,7 @@ fn main() {
     }
 
     app.add_system(input.after(SceneSets::RunLoop));
-    println!("up: increase scene count, down: decrease scene count");
+    println!("up: realm1, down: realm2");
 
     // replay any warnings
     for warning in warnings {
@@ -268,29 +273,29 @@ fn update_fps(
     }
 }
 
-fn input(// keys: Res<Input<KeyCode>>,
-    // mut load: EventWriter<LoadSceneEvent>,
-    // mut commands: Commands,
-    // scenes: Query<Entity, With<RendererSceneContext>>,
-    // user_script_folder: Res<UserScriptFolder>,
+fn input(
+    keys: Res<Input<KeyCode>>,
+    mut load: EventWriter<ChangeRealmEvent>,
+    frame: Res<FrameCount>,
+    loading_scenes: Query<(), With<SceneLoading>>,
+    running_scenes: Query<(), With<RendererSceneContext>>,
 ) {
-    // if keys.pressed(KeyCode::Up) {
-    //     let count = scenes.iter().count();
-    //     load.send(LoadSceneEvent {
-    //         scene: SceneDefinition {
-    //             path: user_script_folder.0.clone(),
-    //             offset: Vec3::X * 16.0 * count as f32,
-    //             visible: count.count_ones() <= 1,
-    //         },
-    //     });
-    //     println!("+ -> {}", count + 1);
-    // }
+    let realm = if keys.pressed(KeyCode::Up) {
+        "https://sdk-test-scenes.decentraland.zone"
+    } else if keys.pressed(KeyCode::Down) {
+        "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-23c44f78405b2ee2e063a808d3b031905bc59800"
+    } else {
+        ""
+    };
 
-    // if keys.pressed(KeyCode::Down) {
-    //     let count = scenes.iter().count();
-    //     if let Some(entity) = scenes.iter().last() {
-    //         commands.entity(entity).despawn_recursive();
-    //         println!("- -> {}", count - 1);
-    //     }
-    // }
+    if !realm.is_empty() {
+        load.send(ChangeRealmEvent {
+            new_realm: realm.to_owned(),
+        });
+    }
+
+    if frame.0 % 1000 == 0 {
+        info!("{} loading", loading_scenes.iter().count());
+        info!("{} running", running_scenes.iter().count());
+    }
 }

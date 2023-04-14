@@ -526,21 +526,21 @@ pub fn process_scene_lifecycle(
         }))
     }
 
-    // add nearby scenes to requirements
-    let Ok(focus) = focus.get_single() else {
-        return;
-    };
-    required_scene_ids.extend(
-        parcels_in_range(focus, range.0)
-            .into_iter()
-            .flat_map(|parcel| {
+    // otherwise add nearby scenes to requirements
+    if required_scene_ids.is_empty() {
+        let Ok(focus) = focus.get_single() else {
+            return;
+        };
+        required_scene_ids.extend(parcels_in_range(focus, range.0).into_iter().flat_map(
+            |parcel| {
                 pointers
                     .0
                     .get(&parcel)
                     .and_then(PointerResult::hash)
                     .map(ToOwned::to_owned)
-            }),
-    );
+            },
+        ));
+    }
 
     // record which scene entities we should keep
     let required_entities: HashMap<_, _> = required_scene_ids
