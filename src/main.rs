@@ -8,6 +8,7 @@ mod dcl_component;
 mod input_handler;
 pub mod ipfs;
 mod scene_runner;
+pub mod console;
 
 use bevy::{
     core::FrameCount,
@@ -152,6 +153,7 @@ fn main() {
     .add_plugin(DebugLinesPlugin::with_depth_test(true))
     .add_plugin(SceneRunnerPlugin) // script engine plugin
     .add_plugin(CameraControllerPlugin)
+    .add_plugin(bevy_console::ConsolePlugin)
     .add_startup_system(setup)
     .insert_resource(AmbientLight {
         color: Color::WHITE,

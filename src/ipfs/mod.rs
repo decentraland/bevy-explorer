@@ -16,6 +16,7 @@ use bevy::{
     utils::HashMap,
 };
 use bevy_common_assets::json::JsonAssetPlugin;
+use bevy_console::{ConsoleCommand, AddConsoleCommand};
 use bimap::BiMap;
 use isahc::{http::StatusCode, prelude::Configurable, AsyncReadResponseExt, RequestExt};
 use serde::{Deserialize, Serialize};
@@ -351,6 +352,22 @@ impl Plugin for IpfsIoPlugin {
                 })
                 .detach();
         }
+
+        app.add_console_command::<ChangeRealmCommand, _>(change_realm_command);
+    }
+}
+
+#[derive(clap::Parser, ConsoleCommand)]
+struct ChangeRealmCommand {
+    new_realm: String,
+}
+
+fn change_realm_command(
+    mut command: ConsoleCommand<ChangeRealmCommand>,
+    mut writer: EventWriter<ChangeRealmEvent>,
+) {
+    if let Some(Ok(command)) = command.take() {
+        writer.send(ChangeRealmEvent { new_realm: command.new_realm })
     }
 }
 

@@ -33,6 +33,8 @@ pico-args = "0.5.0"
 anyhow = "1.0.70"
 urlencoding = "2.1.2"
 urn = "0.7.0"
+bevy_console = "0.7.0"
+clap = "4.1.10"
 
 [dev-dependencies]
 petgraph = "0.6.3"
