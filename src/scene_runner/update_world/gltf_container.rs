@@ -75,7 +75,14 @@ fn update_gltf(
             continue;
         };
 
-        let h_gltf = asset_server.load_scene_file::<Gltf>(gltf.0.src.as_str(), &scene_def.id);
+        let h_gltf = match asset_server.load_content_file::<Gltf>(&gltf.0.src, &scene_def.id) {
+            Ok(h_gltf) => h_gltf,
+            Err(e) => {
+                warn!("gltf content file not found: {e}");
+                commands.entity(ent).remove::<GltfLoaded>();
+                continue;
+            }
+        };
 
         commands.entity(ent).insert(h_gltf).remove::<GltfLoaded>();
     }

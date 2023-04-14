@@ -1,0 +1,29 @@
+[
+    {
+        "version": "v3",
+        "type": "scene",
+        "id": "FlatHierarchyTest",
+        "pointers": [],
+        "timestamp": 1,
+        "metadata": {
+            "main": "js.js",
+            "scene": {
+                "base": "0,0",
+                "parcels": [
+                    "0,0"
+                ]
+            },
+            "name": "flat hierarchy"
+        },
+        "content": [
+            {
+                "file": "scene.json",
+                "hash": "flat_hierarchy_meta"
+            },
+            {
+                "file": "js.js",
+                "hash": "flat_hierarchy_js"
+            }
+        ]
+    }
+]

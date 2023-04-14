@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Mutex};
+use std::{path::PathBuf, str::FromStr, sync::Mutex};
 
 use std::{collections::BTreeMap, fs::File, io::Write};
 
@@ -22,15 +22,14 @@ use crate::{
         transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
         SceneCrdtTimestamp, SceneEntityId,
     },
-    ipfs::{IpfsIoPlugin, SceneIpfsLocation},
+    ipfs::{IpfsIoPlugin, IpfsLoaderExt, ServerAbout, ServerConfiguration},
     scene_runner::{
         process_scene_entity_lifecycle, receive_scene_updates, send_scene_updates,
         update_scene_priority,
         update_world::{
             transform_and_parent::process_transform_and_parent_updates, CrdtLWWStateComponent,
         },
-        LoadSceneEvent, RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin,
-        SceneUpdates,
+        RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
     },
 };
 
@@ -52,6 +51,10 @@ impl PluginGroup for TestPlugins {
             builder
         };
 
+        let mut test_path = PathBuf::from_str(file!()).unwrap();
+        test_path.pop();
+        test_path.push("test_assets");
+
         builder
             .add(TaskPoolPlugin::default())
             .add(TypeRegistrationPlugin::default())
@@ -62,7 +65,8 @@ impl PluginGroup for TestPlugins {
             .add(HierarchyPlugin::default())
             .add(DiagnosticsPlugin::default())
             .add(IpfsIoPlugin {
-                server_prefix: Default::default(),
+                cache_root: test_path.to_str().map(ToOwned::to_owned),
+                starting_realm: Default::default(),
             })
             .add(AssetPlugin::default())
             .add(MeshPlugin)
@@ -71,29 +75,31 @@ impl PluginGroup for TestPlugins {
     }
 }
 
-fn init_test_app(script: &str) -> App {
+fn init_test_app(entity_json: &str) -> App {
     let mut app = App::new();
 
     // Add our systems
     app.add_plugins(TestPlugins);
     app.add_asset::<Shader>();
     app.add_plugin(MaterialPlugin::<StandardMaterial>::default());
-    app.add_plugin(SceneRunnerPlugin {
-        dynamic_spawning: false,
+    app.add_plugin(SceneRunnerPlugin);
+
+    let ipfs = app.world.resource::<AssetServer>().ipfs();
+    let urn = format!("urn:decentraland:entity:{entity_json}");
+    ipfs.set_realm_about(ServerAbout {
+        content: Some(crate::ipfs::EndpointConfig {
+            healthy: true,
+            public_url: "dummy".to_owned(),
+        }),
+        configurations: Some(ServerConfiguration {
+            scenes_urn: Some(vec![urn]),
+        }),
     });
 
-    // copy path so we can pass it into the closure
-    let path = script.to_owned();
-
     // startup system to create camera and fire load event
-    app.add_startup_system(
-        move |mut commands: Commands, mut ev: EventWriter<LoadSceneEvent>| {
-            commands.spawn((Camera3dBundle::default(), PrimaryCamera));
-            ev.send(LoadSceneEvent {
-                location: SceneIpfsLocation::Js(path.clone()),
-            })
-        },
-    );
+    app.add_startup_system(move |mut commands: Commands| {
+        commands.spawn((Camera3dBundle::default(), PrimaryCamera));
+    });
 
     // replace the scene loop schedule with a dummy so we can better control it
     app.world.remove_resource::<SceneLoopSchedule>().unwrap();
@@ -259,7 +265,7 @@ fn run_single_update(app: &mut App) {
 #[test]
 fn flat_hierarchy() {
     // Setup app
-    let mut app = init_test_app("tests/flat_hierarchy");
+    let mut app = init_test_app("flat_hierarchy");
 
     let graph = make_graph(&mut app);
     check_or_write!(graph, "expected/flat_hierarchy_onStart.dot");
@@ -277,7 +283,7 @@ fn flat_hierarchy() {
 #[test]
 fn reparenting() {
     // Setup app
-    let mut app = init_test_app("tests/reparenting");
+    let mut app = init_test_app("reparenting");
 
     // onUpdate
     run_single_update(&mut app);
@@ -295,7 +301,7 @@ fn reparenting() {
 #[test]
 fn late_entities() {
     // Setup app
-    let mut app = init_test_app("tests/late_entities");
+    let mut app = init_test_app("late_entities");
 
     // onUpdate
     run_single_update(&mut app);
@@ -332,7 +338,7 @@ fn cyclic_recovery() {
 
     for messages in states.permutations(4) {
         // create new app instance
-        let mut app = init_test_app("tests/empty_scene");
+        let mut app = init_test_app("empty_scene.scene_entity");
         // add lww state
         let scene_entity = app
             .world

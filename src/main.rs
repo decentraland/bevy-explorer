@@ -10,6 +10,7 @@ pub mod ipfs;
 mod scene_runner;
 
 use bevy::{
+    core::FrameCount,
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::CascadeShadowConfigBuilder,
     prelude::*,
@@ -17,8 +18,11 @@ use bevy::{
 
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 use camera_controller::CameraController;
-use ipfs::SceneIpfsLocation;
-use scene_runner::{LoadSceneEvent, PrimaryCamera, SceneRunnerPlugin};
+use ipfs::ChangeRealmEvent;
+use scene_runner::{
+    initialize_scene::SceneLoading, renderer_context::RendererSceneContext, PrimaryCamera,
+    SceneRunnerPlugin,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -57,7 +61,6 @@ impl Default for GraphicsSettings {
 #[derive(Serialize, Deserialize, Resource)]
 pub struct AppConfig {
     server: String,
-    scene: Option<SceneIpfsLocation>,
     graphics: GraphicsSettings,
 }
 
@@ -65,25 +68,9 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             server: "https://sdk-test-scenes.decentraland.zone".to_owned(),
-            scene: None,
             graphics: Default::default(),
         }
     }
-}
-
-fn parse_scene_location(scene: &str) -> Result<SceneIpfsLocation, anyhow::Error> {
-    if scene.ends_with(".js") {
-        return Ok(SceneIpfsLocation::Js(scene[0..scene.len() - 3].to_string()));
-    }
-
-    if let Some((px, py)) = scene.split_once(',') {
-        return Ok(SceneIpfsLocation::Pointer(
-            px.parse::<i32>()?,
-            py.parse::<i32>()?,
-        ));
-    };
-
-    Ok(SceneIpfsLocation::Hash(scene.to_owned()))
 }
 
 fn main() {
@@ -105,9 +92,6 @@ fn main() {
             .value_from_str("--server")
             .ok()
             .unwrap_or(base_config.server),
-        scene: args
-            .opt_value_from_fn("--scene", parse_scene_location)
-            .unwrap(),
         graphics: GraphicsSettings {
             vsync: args
                 .value_from_str("--vsync")
@@ -161,13 +145,12 @@ fn main() {
             })
             .build()
             .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
-                server_prefix: final_config.server.clone(),
+                starting_realm: Some(final_config.server.clone()),
+                cache_root: Default::default(),
             }),
     )
     .add_plugin(DebugLinesPlugin::with_depth_test(true))
-    .add_plugin(SceneRunnerPlugin {
-        dynamic_spawning: final_config.scene.is_none(),
-    }) // script engine plugin
+    .add_plugin(SceneRunnerPlugin) // script engine plugin
     .add_plugin(CameraControllerPlugin)
     .add_startup_system(setup)
     .insert_resource(AmbientLight {
@@ -183,7 +166,7 @@ fn main() {
     }
 
     app.add_system(input.after(SceneSets::RunLoop));
-    println!("up: increase scene count, down: decrease scene count");
+    println!("up: realm1, down: realm2");
 
     // replay any warnings
     for warning in warnings {
@@ -195,16 +178,11 @@ fn main() {
     app.run()
 }
 
-fn setup(
-    mut commands: Commands,
-    mut scene_load: EventWriter<LoadSceneEvent>,
-    config: Res<AppConfig>,
-    asset_server: Res<AssetServer>,
-) {
+fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<AssetServer>) {
     // add a camera
     commands.spawn((
         Camera3dBundle {
-            transform: Transform::from_translation(Vec3::new(16.0 * 78.0, 10.0, 16.0 * 8.0))
+            transform: Transform::from_translation(Vec3::new(16.0 * 77.5, 10.0, 16.0 * 7.5))
                 .looking_at(Vec3::new(1.0, 8.0, -1.0), Vec3::Y),
             ..Default::default()
         },
@@ -226,14 +204,6 @@ fn setup(
         .into(),
         ..Default::default()
     });
-
-    // load the scene
-    if let Some(initial_scene) = config.scene.as_ref() {
-        info!("loading scene: {:?}", initial_scene);
-        scene_load.send(LoadSceneEvent {
-            location: initial_scene.clone(),
-        });
-    }
 
     // fps counter
     if config.graphics.log_fps {
@@ -303,29 +273,29 @@ fn update_fps(
     }
 }
 
-fn input(// keys: Res<Input<KeyCode>>,
-    // mut load: EventWriter<LoadSceneEvent>,
-    // mut commands: Commands,
-    // scenes: Query<Entity, With<RendererSceneContext>>,
-    // user_script_folder: Res<UserScriptFolder>,
+fn input(
+    keys: Res<Input<KeyCode>>,
+    mut load: EventWriter<ChangeRealmEvent>,
+    frame: Res<FrameCount>,
+    loading_scenes: Query<(), With<SceneLoading>>,
+    running_scenes: Query<(), With<RendererSceneContext>>,
 ) {
-    // if keys.pressed(KeyCode::Up) {
-    //     let count = scenes.iter().count();
-    //     load.send(LoadSceneEvent {
-    //         scene: SceneDefinition {
-    //             path: user_script_folder.0.clone(),
-    //             offset: Vec3::X * 16.0 * count as f32,
-    //             visible: count.count_ones() <= 1,
-    //         },
-    //     });
-    //     println!("+ -> {}", count + 1);
-    // }
+    let realm = if keys.pressed(KeyCode::Up) {
+        "https://sdk-test-scenes.decentraland.zone"
+    } else if keys.pressed(KeyCode::Down) {
+        "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-23c44f78405b2ee2e063a808d3b031905bc59800"
+    } else {
+        ""
+    };
 
-    // if keys.pressed(KeyCode::Down) {
-    //     let count = scenes.iter().count();
-    //     if let Some(entity) = scenes.iter().last() {
-    //         commands.entity(entity).despawn_recursive();
-    //         println!("- -> {}", count - 1);
-    //     }
-    // }
+    if !realm.is_empty() {
+        load.send(ChangeRealmEvent {
+            new_realm: realm.to_owned(),
+        });
+    }
+
+    if frame.0 % 1000 == 0 {
+        info!("{} loading", loading_scenes.iter().count());
+        info!("{} running", running_scenes.iter().count());
+    }
 }

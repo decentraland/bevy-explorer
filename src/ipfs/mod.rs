@@ -1,20 +1,27 @@
+pub mod ipfs_path;
+
 use std::{
     io::ErrorKind,
     path::{Path, PathBuf},
-    sync::{Arc, RwLock},
+    sync::Arc,
     time::Duration,
 };
 
+use anyhow::anyhow;
 use bevy::{
     asset::{Asset, AssetIo, AssetIoError, AssetLoader, FileAssetIo, LoadedAsset},
     prelude::*,
     reflect::TypeUuid,
+    tasks::IoTaskPool,
     utils::HashMap,
 };
 use bevy_common_assets::json::JsonAssetPlugin;
 use bimap::BiMap;
 use isahc::{http::StatusCode, prelude::Configurable, AsyncReadResponseExt, RequestExt};
 use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
+
+use self::ipfs_path::{normalize_path, EntityType, IpfsPath, IpfsType};
 
 #[derive(Deserialize)]
 pub struct TypedIpfsRef {
@@ -24,9 +31,10 @@ pub struct TypedIpfsRef {
 
 #[derive(Deserialize)]
 pub struct SceneDefinitionJson {
-    id: String,
+    id: Option<String>,
     pointers: Vec<String>,
     content: Vec<TypedIpfsRef>,
+    metadata: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -46,7 +54,7 @@ pub struct SceneMeta {
 pub struct SceneDefinition {
     pub id: String,
     pub pointers: Vec<IVec2>,
-    pub content: SceneContent,
+    pub content: ContentMap,
 }
 
 #[derive(TypeUuid, Debug, Clone)]
@@ -63,12 +71,24 @@ impl AssetLoader for SceneDefinitionLoader {
         load_context: &'a mut bevy::asset::LoadContext,
     ) -> bevy::utils::BoxedFuture<'a, Result<(), bevy::asset::Error>> {
         Box::pin(async move {
-            let mut definition_json: Vec<SceneDefinitionJson> = serde_json::from_reader(bytes)?;
-            let Some(definition_json) = definition_json.pop() else {
+            let maybe_definition_json = {
+                // try to parse as a vec
+                let definition_json_vec: Result<Vec<SceneDefinitionJson>, _> =
+                    serde_json::from_reader(bytes);
+                match definition_json_vec {
+                    Ok(mut vec) => vec.pop(),
+                    Err(_) => {
+                        // else try to parse as a single item
+                        Some(serde_json::from_reader(bytes)?)
+                    }
+                }
+            };
+            let Some(definition_json) = maybe_definition_json else {
+                // if the source was an empty vec, we have loaded a pointer with no content, just set default
                 load_context.set_default_asset(LoadedAsset::new(SceneDefinition::default()));
                 return Ok(());
             };
-            let content = SceneContent(BiMap::from_iter(
+            let content = ContentMap(BiMap::from_iter(
                 definition_json
                     .content
                     .into_iter()
@@ -84,8 +104,36 @@ impl AssetLoader for SceneDefinitionLoader {
                     IVec2::new(pointer_x, pointer_y)
                 })
                 .collect();
+            let id = definition_json.id.unwrap_or_else(|| {
+                // we must have been loaded as an entity with the format "$ipfs/$entity/{hash}.scene_entity" - use the ipfs path to resolve the id
+                load_context
+                    .path()
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .split_once('.')
+                    .unwrap()
+                    .0
+                    .to_owned()
+            });
+
+            if let Some(metadata) = definition_json.metadata {
+                // store this metadata to the filesystem so subsequent resolves of the scene.json work even if the file is not actually available from the realm's content server
+                if let Some(hash) = content.hash("scene.json") {
+                    let ipfs: &IpfsIo = load_context.asset_io().downcast_ref().unwrap();
+                    let mut cache_path = ipfs.cache_path().to_owned();
+                    cache_path.push(hash);
+
+                    if hash.starts_with("b64-") || !cache_path.exists() {
+                        let file = std::fs::File::create(&cache_path)?;
+                        serde_json::to_writer(file, &metadata)?;
+                    }
+                }
+            }
+
             let definition = SceneDefinition {
-                id: definition_json.id,
+                id,
                 pointers,
                 content,
             };
@@ -122,67 +170,164 @@ impl AssetLoader for SceneJsLoader {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct SceneContent(BiMap<String, String>);
+pub struct ContentMap(BiMap<String, String>);
 
-impl SceneContent {
+impl ContentMap {
     pub fn file(&self, hash: &str) -> Option<&str> {
         self.0.get_by_right(hash).map(String::as_str)
     }
 
     pub fn hash(&self, file: &str) -> Option<&str> {
-        self.0
-            .get_by_left(&normalize_path(file))
-            .map(String::as_str)
+        self.0.get_by_left(file).map(String::as_str)
     }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum SceneIpfsLocation {
-    Pointer(i32, i32),
     Hash(String),
-    Js(String),
+    Urn(String),
 }
 
 pub trait IpfsLoaderExt {
-    fn load_scene_pointer(&self, x: i32, y: i32) -> Handle<SceneDefinition>;
+    fn load_content_file<T: Asset>(
+        &self,
+        file_path: &str,
+        content_hash: &str,
+    ) -> Result<Handle<T>, anyhow::Error>;
 
-    fn load_scene_file<T: Asset>(&self, file: &str, scene_entity_hash: &str) -> Handle<T>;
+    fn load_urn<T: Asset>(&self, urn: &str, ty: EntityType) -> Result<Handle<T>, anyhow::Error>;
+
+    fn load_hash<T: Asset>(&self, hash: &str, ty: EntityType) -> Handle<T>;
+
+    fn active_endpoint(&self) -> Option<String>;
+
+    fn ipfs(&self) -> &IpfsIo;
+
+    fn ipfs_cache_path(&self) -> &Path;
 }
 
 impl IpfsLoaderExt for AssetServer {
-    fn load_scene_pointer(&self, x: i32, y: i32) -> Handle<SceneDefinition> {
-        self.load(format!("{x},{y}.scene_pointer"))
+    fn load_content_file<T: Asset>(
+        &self,
+        file_path: &str,
+        content_hash: &str,
+    ) -> Result<Handle<T>, anyhow::Error> {
+        // note - we can't resolve paths to hashes here because some loaders use the path to locate dependent assets (e.g. gltf embedded textures)
+        // TODO we could use this immediate resolution for file types that don't rely on context
+        // TODO or we could add a `canonicalize` method to bevy's AssetIo trait
+        // let ipfs_io = self.asset_io().downcast_ref::<IpfsIo>().unwrap();
+        // let context = ipfs_io.context.blocking_read();
+        // let collection = context
+        //     .collections
+        //     .get(content_hash)
+        //     .ok_or(anyhow::anyhow!("collection not found: {content_hash}"))?;
+        // let hash = collection
+        //     .hash(&normalize_path(file_path))
+        //     .ok_or(anyhow::anyhow!(
+        //         "file_path not found in collection: {file_path}"
+        //     ))?;
+        // // TODO use registered loaders to extract extension
+        // let file_path = Path::new(file_path);
+        // let file_name = file_path.file_name().unwrap().to_str().unwrap();
+        // let path = format!("$ipfs//$entity//{hash}.{file_name}");
+        // Ok(self.load(path))
+        let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+            content_hash.to_owned(),
+            file_path.to_owned(),
+        ));
+        Ok(self.load(PathBuf::from(&ipfs_path)))
     }
 
-    fn load_scene_file<T: Asset>(&self, file: &str, scene_entity_hash: &str) -> Handle<T> {
-        debug!(
-            "load: {file} from {scene_entity_hash} -> `{}`",
-            format!("{scene_entity_hash}.{file}")
-        );
-        self.load(format!("{scene_entity_hash}.{file}"))
+    fn load_urn<T: Asset>(&self, urn: &str, ty: EntityType) -> Result<Handle<T>, anyhow::Error> {
+        let ipfs_path = IpfsPath::new_from_urn(urn, ty)?;
+        let hash = ipfs_path
+            .context_free_hash()?
+            .ok_or(anyhow::anyhow!("urn did not resolve to a hash"))?;
+        let ext = ty.ext();
+        let path = format!("$ipfs//$entity//{hash}.{ext}");
+
+        if let Some(base_url) = ipfs_path.base_url() {
+            // update the context
+            let ipfs_io = self.asset_io().downcast_ref::<IpfsIo>().unwrap();
+            let mut context = ipfs_io.context.blocking_write();
+            context.modifiers.insert(
+                hash,
+                IpfsModifier {
+                    base_url: Some(base_url.to_owned()),
+                },
+            );
+        }
+        Ok(self.load(path))
+    }
+
+    fn load_hash<T: Asset>(&self, hash: &str, ty: EntityType) -> Handle<T> {
+        let ext = ty.ext();
+        let path = format!("$ipfs//$entity//{hash}.{ext}");
+        self.load(path)
+    }
+
+    fn active_endpoint(&self) -> Option<String> {
+        let ipfs_io = self.asset_io().downcast_ref::<IpfsIo>().unwrap();
+        ipfs_io
+            .realm_config_receiver
+            .borrow()
+            .as_ref()
+            .and_then(|(_, about)| about.content.as_ref())
+            .map(|content| format!("{}/entities/active", &content.public_url))
+    }
+
+    fn ipfs(&self) -> &IpfsIo {
+        self.asset_io().downcast_ref().unwrap()
+    }
+
+    fn ipfs_cache_path(&self) -> &Path {
+        self.ipfs().cache_path()
     }
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct EndpointConfig {
+    pub healthy: bool,
+    #[serde(rename = "publicUrl")]
+    pub public_url: String,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct ServerConfiguration {
+    #[serde(rename = "scenesUrn")]
+    pub scenes_urn: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct ServerAbout {
+    pub content: Option<EndpointConfig>,
+    pub configurations: Option<ServerConfiguration>,
+}
+
 pub struct IpfsIoPlugin {
-    pub server_prefix: String,
+    pub cache_root: Option<String>,
+    pub starting_realm: Option<String>,
 }
 
 impl Plugin for IpfsIoPlugin {
     fn build(&self, app: &mut App) {
-        let default_io = AssetPlugin::default().create_platform_default_asset_io();
+        let default_io = AssetPlugin {
+            asset_folder: self.cache_root.clone().unwrap_or("assets".to_owned()),
+            ..Default::default()
+        }
+        .create_platform_default_asset_io();
 
         // TODO this will fail on android and wasm, investigate a caching solution there
         let default_fs_path = default_io
             .downcast_ref::<FileAssetIo>()
-            .map(|fio| fio.root_path().clone());
+            .unwrap()
+            .root_path()
+            .clone();
 
         // create the custom asset io instance
-        info!("remote server: {}", self.server_prefix);
-        let ipfs_io = IpfsIo::new(
-            format!("{}/content", self.server_prefix),
-            default_io,
-            default_fs_path,
-        );
+        info!("remote server: {:?}", self.starting_realm);
+
+        let ipfs_io = IpfsIo::new(default_io, default_fs_path);
 
         // the asset server is constructed and added the resource manager
         app.insert_resource(AssetServer::new(ipfs_io))
@@ -191,49 +336,171 @@ impl Plugin for IpfsIoPlugin {
             .init_asset_loader::<SceneDefinitionLoader>()
             .init_asset_loader::<SceneJsLoader>()
             .add_plugin(JsonAssetPlugin::<SceneMeta>::new(&["scene.json"]));
+
+        app.add_event::<ChangeRealmEvent>();
+        app.init_resource::<CurrentRealm>();
+        app.add_system(change_realm.in_base_set(CoreSet::PostUpdate));
+
+        if let Some(realm) = &self.starting_realm {
+            let asset_server = app.world.resource::<AssetServer>().clone();
+            let realm = realm.clone();
+            IoTaskPool::get()
+                .spawn(async move {
+                    let ipfsio = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
+                    ipfsio.set_realm(realm).await;
+                })
+                .detach();
+        }
     }
+}
+
+pub struct ChangeRealmEvent {
+    pub new_realm: String,
+}
+
+#[derive(Resource, Default)]
+pub struct CurrentRealm {
+    pub address: String,
+    pub config: ServerConfiguration,
+}
+
+#[allow(clippy::type_complexity)]
+fn change_realm(
+    mut change_realm_requests: EventReader<ChangeRealmEvent>,
+    asset_server: Res<AssetServer>,
+    mut realm_change: Local<Option<tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>>>,
+    mut current_realm: ResMut<CurrentRealm>,
+) {
+    let ipfsio = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
+    match *realm_change {
+        None => *realm_change = Some(ipfsio.realm_config_receiver.clone()),
+        Some(ref mut realm_change) => {
+            if realm_change.has_changed().unwrap_or_default() {
+                if let Some((realm, about)) = &*realm_change.borrow_and_update() {
+                    *current_realm = CurrentRealm {
+                        address: realm.clone(),
+                        config: about.configurations.clone().unwrap_or_default(),
+                    }
+                }
+            }
+        }
+    }
+
+    if !change_realm_requests.is_empty() {
+        let asset_server = asset_server.clone();
+        let new_realm = change_realm_requests
+            .iter()
+            .last()
+            .unwrap()
+            .new_realm
+            .to_owned();
+        IoTaskPool::get()
+            .spawn(async move {
+                let ipfsio = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
+                ipfsio.set_realm(new_realm).await;
+            })
+            .detach();
+    }
+}
+
+struct IpfsModifier {
+    base_url: Option<String>,
+}
+
+#[derive(Default)]
+pub struct IpfsContext {
+    collections: HashMap<String, ContentMap>,
+    base_url: Option<String>,
+    modifiers: HashMap<String, IpfsModifier>,
 }
 
 pub struct IpfsIo {
     default_io: Box<dyn AssetIo>,
-    default_fs_path: Option<PathBuf>,
-    server_prefix: String,
-    collections: RwLock<HashMap<String, SceneContent>>,
+    default_fs_path: PathBuf,
+    pub realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>,
+    realm_config_sender: tokio::sync::watch::Sender<Option<(String, ServerAbout)>>,
+    context: RwLock<IpfsContext>,
 }
 
 impl IpfsIo {
-    pub fn new(
-        server_prefix: String,
-        default_io: Box<dyn AssetIo>,
-        default_fs_path: Option<PathBuf>,
-    ) -> Self {
+    pub fn new(default_io: Box<dyn AssetIo>, default_fs_path: PathBuf) -> Self {
+        let (sender, receiver) = tokio::sync::watch::channel(None);
+
         Self {
             default_io,
             default_fs_path,
-            server_prefix,
-            collections: Default::default(),
+            realm_config_receiver: receiver,
+            realm_config_sender: sender,
+            context: Default::default(),
         }
     }
 
-    pub fn scene_path(&self, pointer: &str) -> String {
-        format!("{}/entities/scene?pointer={}", self.server_prefix, pointer)
-    }
-
-    pub fn remote_path(&self, target: &str, path: &str) -> String {
-        let (base, ext) = path.rsplit_once('.').unwrap_or_default();
-        match ext {
-            "scene_pointer" => self.scene_path(base),
-            _ => format!("{}/contents/{}", self.server_prefix, target),
+    pub async fn set_realm(&self, new_realm: String) {
+        let res = self.set_realm_inner(new_realm).await;
+        if let Err(e) = res {
+            error!("failed to set realm: {e}");
         }
     }
 
-    pub fn path_should_cache(&self, _target: &str, _path: &Path) -> bool {
-        // TODO: these things should not be cached but the sdk test scene server is super painful otherwise
-        self.default_fs_path.is_some() /* && !target.starts_with("b64") && !path.to_string_lossy().ends_with("pointer") */
+    pub fn set_realm_about(&self, about: ServerAbout) {
+        self.context.blocking_write().base_url = about
+            .content
+            .as_ref()
+            .map(|endpoint| endpoint.public_url.clone());
+        self.realm_config_sender
+            .send(Some(("manual value".to_owned(), about)))
+            .expect("channel closed");
     }
 
-    pub fn add_collection(&self, hash: String, collection: SceneContent) {
-        self.collections.write().unwrap().insert(hash, collection);
+    async fn set_realm_inner(&self, new_realm: String) -> Result<(), anyhow::Error> {
+        info!("disconnecting");
+        self.realm_config_sender.send(None).expect("channel closed");
+        self.context.write().await.base_url = None;
+
+        let mut about = isahc::get_async(format!("{new_realm}/about"))
+            .await
+            .map_err(|e| anyhow!(e))?;
+        if about.status() != StatusCode::OK {
+            return Err(anyhow!("status: {}", about.status()));
+        }
+
+        let about = about.json::<ServerAbout>().await.map_err(|e| anyhow!(e))?;
+
+        self.context.write().await.base_url = about
+            .content
+            .as_ref()
+            .map(|endpoint| endpoint.public_url.clone());
+        self.realm_config_sender
+            .send(Some((new_realm, about)))
+            .expect("channel closed");
+        Ok(())
+    }
+
+    async fn connected(&self) -> Result<(), anyhow::Error> {
+        if self.realm_config_receiver.borrow().is_some() {
+            return Ok(());
+        }
+
+        let mut watcher = self.realm_config_receiver.clone();
+
+        loop {
+            if self.realm_config_receiver.borrow().is_some() {
+                return Ok(());
+            }
+
+            watcher.changed().await?;
+        }
+    }
+
+    pub fn add_collection(&self, hash: String, collection: ContentMap) {
+        self.context
+            .blocking_write()
+            .collections
+            .insert(hash, collection);
+    }
+
+    pub fn cache_path(&self) -> &Path {
+        self.default_fs_path.as_path()
     }
 }
 
@@ -243,64 +510,54 @@ impl AssetIo for IpfsIo {
         path: &'a std::path::Path,
     ) -> bevy::utils::BoxedFuture<'a, Result<Vec<u8>, bevy::asset::AssetIoError>> {
         Box::pin(async move {
+            let wrap_err =
+                |e| bevy::asset::AssetIoError::Io(std::io::Error::new(ErrorKind::Other, e));
+
             debug!("request: {:?}", path);
 
-            let path_string = path.to_string_lossy();
-            let target = {
-                let collections = self.collections.read().unwrap();
-
-                path_string
-                    .split_once('.')
-                    .and_then(|(collection_hash, filename)| {
-                        debug!("got collection hash {collection_hash}");
-
-                        debug!("filename {:?}", filename);
-
-                        collections
-                            .get(collection_hash)
-                            .map(|hash| (hash, filename))
-                    })
-                    .and_then(|(collection, filename)| {
-                        debug!("looking up `{}`", normalize_path(filename));
-                        let res = collection.hash(filename);
-                        debug!("found: `{:?}`", res);
-                        if res.is_none() {
-                            debug!("contents were: {:#?}", collection);
-                        }
-                        res
-                    })
-                    .map(ToOwned::to_owned)
-                    .unwrap_or_else(|| path_string.into_owned())
+            let maybe_ipfs_path = IpfsPath::new_from_path(path).map_err(wrap_err)?;
+            debug!("ipfs: {maybe_ipfs_path:?}");
+            let ipfs_path = match maybe_ipfs_path {
+                Some(ipfs_path) => ipfs_path,
+                // non-ipfs files are loaded as normal
+                None => return self.default_io.load_path(path).await,
             };
 
-            debug!("target: {}", target);
-            let file = match self.path_should_cache(&target, path) {
-                true => self.default_io.load_path(Path::new(&target)).await.ok(),
-                false => None,
+            let hash = ipfs_path.hash(&*self.context.read().await);
+
+            let file = match &hash {
+                None => None,
+                Some(hash) => {
+                    debug!("hash: {}", hash);
+                    match ipfs_path.should_cache() {
+                        true => self.default_io.load_path(Path::new(hash)).await.ok(),
+                        false => None,
+                    }
+                }
             };
 
             if let Some(existing) = file {
-                debug!("existing: {}", path.to_string_lossy());
+                debug!("existing");
                 Ok(existing)
             } else {
-                debug!("remote: {}", target);
+                debug!("remote");
 
-                let remote = self.remote_path(
-                    target.as_str(),
-                    &path.file_name().unwrap().to_string_lossy(),
-                );
-                debug!("requesting: `{remote}`");
+                // wait till connected
+                self.connected().await.map_err(wrap_err)?;
+
+                let remote = ipfs_path
+                    .to_url(&*self.context.read().await)
+                    .map_err(wrap_err)?;
+
+                debug!("remote url: `{remote}`");
                 let request = isahc::Request::get(&remote)
                     .timeout(Duration::from_secs(120))
                     .body(())
-                    .map_err(|e| {
-                        warn!("request failed: {e:?}");
-                        AssetIoError::Io(std::io::Error::new(ErrorKind::Other, e.to_string()))
-                    })?;
-                let mut response = request.send_async().await.map_err(|e| {
-                    warn!("asset io error: {e:?}");
-                    AssetIoError::Io(std::io::Error::new(ErrorKind::Other, e.to_string()))
-                })?;
+                    .map_err(|e| AssetIoError::Io(std::io::Error::new(ErrorKind::Other, e)))?;
+                let mut response = request
+                    .send_async()
+                    .await
+                    .map_err(|e| AssetIoError::Io(std::io::Error::new(ErrorKind::Other, e)))?;
 
                 if !matches!(response.status(), StatusCode::OK) {
                     return Err(AssetIoError::Io(std::io::Error::new(
@@ -308,22 +565,24 @@ impl AssetIo for IpfsIo {
                         format!(
                             "server responded with status {} requesting `{}`",
                             response.status(),
-                            target,
+                            remote,
                         ),
                     )));
-                };
+                }
 
                 let data = response.bytes().await?;
 
-                if self.path_should_cache(&target, path) {
-                    let mut cache_path = self.default_fs_path.clone().unwrap();
-                    cache_path.push(target);
-                    let cache_path_str = cache_path.to_string_lossy().into_owned();
-                    // ignore errors trying to cache
-                    if let Err(e) = std::fs::write(cache_path, &data) {
-                        warn!("failed to cache `{cache_path_str}`: {e}");
-                    } else {
-                        debug!("cached ok `{cache_path_str}`");
+                if ipfs_path.should_cache() {
+                    if let Some(hash) = hash {
+                        let mut cache_path = PathBuf::from(self.cache_path());
+                        cache_path.push(hash);
+                        let cache_path_str = cache_path.to_string_lossy().into_owned();
+                        // ignore errors trying to cache
+                        if let Err(e) = std::fs::write(cache_path, &data) {
+                            warn!("failed to cache `{cache_path_str}`: {e}");
+                        } else {
+                            debug!("cached ok `{cache_path_str}`");
+                        }
                     }
                 }
 
@@ -359,9 +618,4 @@ impl AssetIo for IpfsIo {
         // do nothing
         Ok(())
     }
-}
-
-// must be a better way to do this
-fn normalize_path(path: &str) -> String {
-    path.to_lowercase().replace('\\', "/")
 }

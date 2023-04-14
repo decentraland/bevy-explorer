@@ -1,0 +1,29 @@
+[
+    {
+        "version": "v3",
+        "type": "scene",
+        "id": "ReparentingTest",
+        "pointers": [],
+        "timestamp": 1,
+        "metadata": {
+            "main": "js.js",
+            "scene": {
+                "base": "0,0",
+                "parcels": [
+                    "0,0"
+                ]
+            },
+            "name": "late entities"
+        },
+        "content": [
+            {
+                "file": "scene.json",
+                "hash": "reparenting_meta"
+            },
+            {
+                "file": "js.js",
+                "hash": "reparenting_js"
+            }
+        ]
+    }
+]

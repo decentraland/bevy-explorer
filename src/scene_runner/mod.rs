@@ -6,7 +6,6 @@ use std::{
 
 use bevy::{
     prelude::*,
-    scene::scene_spawner_system,
     utils::{FloatOrd, HashMap, HashSet, Instant},
 };
 
@@ -20,10 +19,7 @@ use crate::{
 };
 
 use self::{
-    initialize_scene::{
-        initialize_scene, load_scene_entity, load_scene_javascript, load_scene_json,
-        process_scene_lifecycle, LiveScenes, SceneLoadDistance,
-    },
+    initialize_scene::SceneLifecyclePlugin,
     renderer_context::RendererSceneContext,
     update_world::{CrdtExtractors, SceneOutputPlugin},
 };
@@ -52,6 +48,7 @@ pub enum SceneLoopSets {
     UpdateWorld,      // systems which handle events from the current frame
 }
 
+// bookkeeping struct for javascript execution of scenes
 #[derive(Resource)]
 pub struct SceneUpdates {
     pub sender: SyncSender<SceneResponse>,
@@ -81,6 +78,7 @@ pub struct SceneThreadHandle {
 
 // event which can be sent from anywhere to trigger replacing the current scene with the one specified
 pub struct LoadSceneEvent {
+    pub entity: Option<Entity>,
     pub location: SceneIpfsLocation,
 }
 
@@ -92,11 +90,7 @@ pub struct SceneEntity {
 }
 
 // plugin which creates and runs scripts
-pub struct SceneRunnerPlugin {
-    // should we try to load scenes near the camera
-    // should be disabled for single scene view or tests
-    pub dynamic_spawning: bool,
-}
+pub struct SceneRunnerPlugin;
 
 #[derive(Resource)]
 pub struct SceneLoopSchedule {
@@ -143,26 +137,10 @@ impl Plugin for SceneRunnerPlugin {
                 .before(SceneSets::RunLoop),
         );
 
-        if self.dynamic_spawning {
-            app.add_system(process_scene_lifecycle.in_base_set(CoreSet::PostUpdate));
-        }
-
-        app.add_systems(
-            (
-                load_scene_entity,
-                load_scene_json,
-                load_scene_javascript,
-                initialize_scene,
-            )
-                .after(scene_spawner_system) // these can despawn scenes, make sure that the scene spawner system doesn't try to write to deleted entities
-                .in_set(SceneSets::Init),
-        );
+        app.add_plugin(SceneLifecyclePlugin);
 
         app.add_system(update_scene_priority.in_set(SceneSets::Init));
         app.add_system(run_scene_loop.in_set(SceneSets::RunLoop));
-
-        app.init_resource::<LiveScenes>();
-        app.insert_resource(SceneLoadDistance(100.0));
 
         let mut scene_schedule = Schedule::new();
 

@@ -46,11 +46,12 @@ pub(crate) fn scene_thread(
         ))
         // remove core deno ops that are not required
         .middleware(|op| {
-            const ALLOW: [&str; 4] = [
+            const ALLOW: [&str; 5] = [
                 "op_print",
                 "op_eval_context",
                 "op_require",
                 "op_crdt_send_to_renderer",
+                "op_crdt_recv_from_renderer",
             ];
             if ALLOW.contains(&op.name) {
                 op
