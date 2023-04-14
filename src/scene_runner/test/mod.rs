@@ -17,6 +17,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 
 use crate::{
+    console::{self, ConsolePlugin},
     dcl::interface::{CrdtStore, CrdtType},
     dcl_component::{
         transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
@@ -32,6 +33,17 @@ use crate::{
         RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
     },
 };
+
+#[cfg(test)]
+impl console::DoAddConsoleCommand for App {
+    fn add_console_command<T: bevy_console::Command, U>(
+        &mut self,
+        _: impl IntoSystemConfig<U>,
+    ) -> &mut Self {
+        // do nothing
+        self
+    }
+}
 
 use super::PrimaryCamera;
 
@@ -72,6 +84,7 @@ impl PluginGroup for TestPlugins {
             .add(MeshPlugin)
             .add(GltfPlugin)
             .add(ScenePlugin)
+            .add(ConsolePlugin)
     }
 }
 

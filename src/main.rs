@@ -3,12 +3,12 @@
 // - budget -> deadline is just last end + frame time
 
 mod camera_controller;
+pub mod console;
 pub mod dcl;
 mod dcl_component;
 mod input_handler;
 pub mod ipfs;
 mod scene_runner;
-pub mod console;
 
 use bevy::{
     core::FrameCount,
@@ -17,6 +17,7 @@ use bevy::{
     prelude::*,
 };
 
+use bevy_console::ConsoleOpen;
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 use camera_controller::CameraController;
 use ipfs::ChangeRealmEvent;
@@ -27,7 +28,8 @@ use scene_runner::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    camera_controller::CameraControllerPlugin, ipfs::IpfsIoPlugin, scene_runner::SceneSets,
+    camera_controller::CameraControllerPlugin, console::ConsolePlugin, ipfs::IpfsIoPlugin,
+    scene_runner::SceneSets,
 };
 
 // macro for assertions
@@ -153,7 +155,7 @@ fn main() {
     .add_plugin(DebugLinesPlugin::with_depth_test(true))
     .add_plugin(SceneRunnerPlugin) // script engine plugin
     .add_plugin(CameraControllerPlugin)
-    .add_plugin(bevy_console::ConsolePlugin)
+    .add_plugin(ConsolePlugin)
     .add_startup_system(setup)
     .insert_resource(AmbientLight {
         color: Color::WHITE,
@@ -167,7 +169,11 @@ fn main() {
         app.add_system(update_fps);
     }
 
-    app.add_system(input.after(SceneSets::RunLoop));
+    app.add_system(
+        input
+            .after(SceneSets::RunLoop)
+            .run_if(|console_open: Res<ConsoleOpen>| !console_open.open),
+    );
     println!("up: realm1, down: realm2");
 
     // replay any warnings
@@ -299,5 +305,16 @@ fn input(
     if frame.0 % 1000 == 0 {
         info!("{} loading", loading_scenes.iter().count());
         info!("{} running", running_scenes.iter().count());
+    }
+}
+
+// hook console commands
+#[cfg(not(test))]
+impl console::DoAddConsoleCommand for App {
+    fn add_console_command<T: bevy_console::Command, U>(
+        &mut self,
+        system: impl IntoSystemConfig<U>,
+    ) -> &mut Self {
+        bevy_console::AddConsoleCommand::add_console_command::<T, U>(self, system)
     }
 }

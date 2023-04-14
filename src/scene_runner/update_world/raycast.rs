@@ -7,10 +7,12 @@
 // - consider how global raycasts interact with this setup
 
 use bevy::prelude::*;
+use bevy_console::ConsoleCommand;
 #[cfg(not(test))]
 use bevy_prototype_debug_lines::DebugLines;
 
 use crate::{
+    console::DoAddConsoleCommand,
     dcl::interface::{ComponentPosition, CrdtType},
     dcl_component::{
         proto_components::{
@@ -48,6 +50,26 @@ impl Plugin for RaycastPlugin {
             ComponentPosition::EntityOnly,
         );
         app.add_system(run_raycasts.in_set(SceneSets::Input));
+        app.init_resource::<DebugRaycast>();
+        app.add_console_command::<DebugRaycastCommand, _>(debug_raycast);
+    }
+}
+
+#[derive(Resource, Default)]
+struct DebugRaycast(bool);
+
+/// Toggle debug lines for raycasts
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/debug_raycast")]
+struct DebugRaycastCommand {
+    show: Option<bool>,
+}
+
+fn debug_raycast(mut input: ConsoleCommand<DebugRaycastCommand>, mut debug: ResMut<DebugRaycast>) {
+    if let Some(Ok(command)) = input.take() {
+        let new_state = command.show.unwrap_or(!debug.0);
+        debug.0 = new_state;
+        input.reply_ok(format!("showing debug raycast lines: {new_state}"));
     }
 }
 
@@ -60,6 +82,7 @@ fn run_raycasts(
         &GlobalTransform,
     )>,
     #[cfg(not(test))] mut lines: ResMut<DebugLines>,
+    debug: Res<DebugRaycast>,
 ) {
     for (e, scene_ent, raycast, transform) in raycast_requests.iter() {
         debug!("{e:?} has raycast request: {raycast:?}");
@@ -112,13 +135,15 @@ fn run_raycasts(
             };
 
             // debug line showing raycast
-            #[cfg(not(test))]
-            lines.line_colored(
-                origin,
-                origin + direction * raycast.0.max_distance,
-                0.0,
-                Color::BLUE,
-            );
+            if debug.0 {
+                #[cfg(not(test))]
+                lines.line_colored(
+                    origin,
+                    origin + direction * raycast.0.max_distance,
+                    0.0,
+                    Color::BLUE,
+                );
+            }
 
             // output
             let scene_origin = origin - scene_translation;

@@ -99,9 +99,17 @@ fn update_gltf(
         }
 
         let gltf = gltfs.get(h_gltf).unwrap();
-        let gltf_scene_handle = gltf.default_scene.as_ref().unwrap();
-        let instance_id = scene_spawner.spawn_as_child(gltf_scene_handle.clone_weak(), ent);
-        commands.entity(ent).insert(GltfLoaded(Some(instance_id)));
+        let gltf_scene_handle = gltf.default_scene.as_ref();
+        match gltf_scene_handle {
+            Some(gltf_scene_handle) => {
+                let instance_id = scene_spawner.spawn_as_child(gltf_scene_handle.clone_weak(), ent);
+                commands.entity(ent).insert(GltfLoaded(Some(instance_id)));
+            }
+            None => {
+                warn!("no default scene found in gltf.");
+                commands.entity(ent).insert(GltfLoaded(None));
+            }
+        }
     }
 
     for (ent, processed) in ready_gltfs.iter() {
