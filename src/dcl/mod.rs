@@ -13,7 +13,7 @@ use crate::{dcl_component::SceneEntityId, ipfs::SceneJsFile};
 
 use self::{
     interface::{CrdtComponentInterfaces, CrdtStore},
-    js::scene_thread,
+    js::{create_runtime, scene_thread},
 };
 
 pub mod crdt;
@@ -52,6 +52,11 @@ pub fn spawn_scene(
     renderer_sender: SyncSender<SceneResponse>,
 ) -> (SceneId, Sender<RendererResponse>) {
     let id = SceneId(SCENE_ID.fetch_add(1, Ordering::Relaxed));
+
+    if id.0 == 0 {
+        // synchronously create and drop a single runtime to hopefully avoid initial segfaults
+        create_runtime();
+    }
 
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
 

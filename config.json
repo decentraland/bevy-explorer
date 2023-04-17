@@ -1,5 +1,5 @@
 {
-    "server":"https://sdk-test-scenes.decentraland.zone",
+    "server":"https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-23c44f78405b2ee2e063a808d3b031905bc59800",
     "graphics":{
         "vsync":false,
         "log_fps":true

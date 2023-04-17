@@ -131,7 +131,9 @@ fn update_gltf(
                         .unwrap_or(false)
                     {
                         // TODO interpret as collider
-                        commands.entity(spawned_ent).despawn_recursive();
+                        if let Some(commands) = commands.get_entity(spawned_ent) {
+                            commands.despawn_recursive();
+                        }
                     } else {
                         // info!("keeping {:?}", maybe_name);
                         // why?!

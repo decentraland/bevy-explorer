@@ -21,16 +21,7 @@ pub mod engine;
 // marker to indicate shutdown has been triggered
 pub struct ShuttingDown;
 
-// main scene processing thread - constructs an isolate and runs the scene
-pub(crate) fn scene_thread(
-    scene_id: SceneId,
-    scene_js: SceneJsFile,
-    crdt_component_interfaces: CrdtComponentInterfaces,
-    thread_sx: SyncSender<SceneResponse>,
-    thread_rx: Receiver<RendererResponse>,
-) {
-    let scene_context = SceneSceneContext::new(scene_id);
-
+pub fn create_runtime() -> JsRuntime {
     // create an extension referencing our native functions and JS initialisation scripts
     // TODO: to make this more generic for multiple modules we could use
     // https://crates.io/crates/inventory or similar
@@ -57,18 +48,30 @@ pub(crate) fn scene_thread(
                 op
             } else {
                 debug!("deny: {}", op.name);
-                // op.disable()
-                op
+                op.disable()
+                // op
             }
         })
         .build();
 
     // create runtime
-    let mut runtime = JsRuntime::new(RuntimeOptions {
+    JsRuntime::new(RuntimeOptions {
         v8_platform: v8::Platform::new(1, false).make_shared().into(),
         extensions_with_js: vec![ext],
         ..Default::default()
-    });
+    })
+}
+
+// main scene processing thread - constructs an isolate and runs the scene
+pub(crate) fn scene_thread(
+    scene_id: SceneId,
+    scene_js: SceneJsFile,
+    crdt_component_interfaces: CrdtComponentInterfaces,
+    thread_sx: SyncSender<SceneResponse>,
+    thread_rx: Receiver<RendererResponse>,
+) {
+    let scene_context = SceneSceneContext::new(scene_id);
+    let mut runtime = create_runtime();
 
     // store handle
     let vm_handle = runtime.v8_isolate().thread_safe_handle();

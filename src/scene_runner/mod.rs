@@ -228,10 +228,16 @@ fn update_scene_priority(
         .map(|gt| gt.translation())
         .unwrap_or_default();
 
+    // check all in-flight scenes still exist
+    let mut missing_in_flight = updates.jobs_in_flight.clone();
+
     // sort eligible scenes
     updates.scene_queue = scenes
         .iter_mut()
-        .filter(|(_, _, context)| !context.in_flight && !context.broken)
+        .filter(|(ent, _, context)| {
+            missing_in_flight.remove(ent);
+            !context.in_flight && !context.broken
+        })
         .filter_map(|(ent, transform, mut context)| {
             let distance = (transform.translation() - camera_translation).length();
             context.priority = distance;
@@ -249,6 +255,9 @@ fn update_scene_priority(
         .scene_queue
         .make_contiguous()
         .sort_by_key(|(_, priority)| *priority);
+
+    // remove any scenes we didn't see from the in-flight set
+    updates.jobs_in_flight = &updates.jobs_in_flight - &missing_in_flight;
 }
 
 // TODO: work out how to set this intelligently

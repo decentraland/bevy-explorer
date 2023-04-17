@@ -500,7 +500,6 @@ fn load_active_entities(
     }
 }
 
-// todo - this function is getting too big
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_scene_lifecycle(
     mut commands: Commands,
@@ -509,7 +508,6 @@ pub fn process_scene_lifecycle(
     scene_entities: Query<Entity, Or<(With<SceneLoading>, With<RendererSceneContext>)>>,
     range: Res<SceneLoadDistance>,
     mut live_scenes: ResMut<LiveScenes>,
-    mut updates: ResMut<SceneUpdates>,
     mut spawn: EventWriter<LoadSceneEvent>,
     pointers: Res<ScenePointers>,
 ) {
@@ -561,9 +559,6 @@ pub fn process_scene_lifecycle(
                     info!("despawning {:?}", entity);
                     commands.despawn_recursive();
                 }
-
-                // remove from running scenes
-                updates.jobs_in_flight.remove(&entity);
             }
         }
     }
