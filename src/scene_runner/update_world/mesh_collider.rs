@@ -1,4 +1,4 @@
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{prelude::*, utils::HashMap, render::mesh::VertexAttributeValues};
 use rapier3d::prelude::*;
 
 use crate::{
@@ -7,7 +7,7 @@ use crate::{
         proto_components::sdk::components::{pb_mesh_collider, ColliderLayer, PbMeshCollider},
         SceneComponentId, SceneEntityId,
     },
-    scene_runner::{DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneSets},
+    scene_runner::{DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneSets, update_world::mesh_renderer::truncated_cone::TruncatedCone},
 };
 
 use super::AddCrdtInterfaceExt;
@@ -135,7 +135,10 @@ impl SceneColliderData {
                         TypedShape::Cuboid(c) => {
                             collider.set_shape(SharedShape::new(c.scaled(&req_scale.into())))
                         }
-                        _ => unimplemented!(),
+                        TypedShape::ConvexPolyhedron(p) => {
+                            collider.set_shape(SharedShape::new(p.clone().scaled(&req_scale.into()).unwrap()))
+                        },
+                        _ => panic!()
                     };
                 }
                 self.collider_state.get_mut(&id).unwrap().scale = req_scale;
@@ -292,9 +295,11 @@ fn update_colliders(
     for (ent, scene_ent, collider_def) in new_colliders.iter() {
         let collider = match collider_def.shape {
             MeshColliderShape::Box => ColliderBuilder::cuboid(0.5, 0.5, 0.5),
-            MeshColliderShape::Cylinder { .. } => {
-                warn!("cylinder not implemented");
-                ColliderBuilder::ball(0.5)
+            MeshColliderShape::Cylinder { radius_top, radius_bottom } => {
+                // TODO we could use explicit support points to make queries faster
+                let mesh: Mesh = TruncatedCone{ base_radius: radius_top, tip_radius: radius_bottom, ..Default::default() }.into();
+                let VertexAttributeValues::Float32x3(positions) = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else { panic!() };
+                ColliderBuilder::convex_hull(&positions.into_iter().map(|p| Point::from(*p)).collect::<Vec<_>>()).unwrap()
             }
             MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.05, 0.5),
             MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),

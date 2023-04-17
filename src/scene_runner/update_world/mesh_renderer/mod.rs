@@ -9,8 +9,11 @@ use crate::{
     scene_runner::SceneSets,
 };
 
+use self::truncated_cone::TruncatedCone;
+
 use super::AddCrdtInterfaceExt;
 
+pub mod truncated_cone;
 pub struct MeshDefinitionPlugin;
 
 #[derive(Component, Debug)]
@@ -70,7 +73,7 @@ impl Plugin for MeshDefinitionPlugin {
 
         let mut assets = app.world.resource_mut::<Assets<Mesh>>();
         let boxx = assets.add(shape::Cube::default().into());
-        let cylinder = assets.add(shape::Cylinder::default().into()); // TODO make a custom cylinder that supports different top and bottom radius
+        let cylinder = assets.add(shape::Cylinder::default().into());
         let plane = assets.add(shape::Quad::default().into());
         let sphere = assets.add(shape::UVSphere::default().into());
         app.insert_resource(MeshPrimitiveDefaults {
@@ -112,8 +115,14 @@ fn update_mesh(
                 if *radius_bottom == 1.0 && *radius_top == 1.0 {
                     defaults.cylinder.clone()
                 } else {
-                    warn!("uneven cylinder primitive not implemented");
-                    defaults.cylinder.clone()
+                    meshes.add(
+                        TruncatedCone {
+                            base_radius: *radius_bottom,
+                            tip_radius: *radius_top,
+                            ..Default::default()
+                        }
+                        .into(),
+                    )
                 }
             }
             MeshDefinition::Plane { uvs } => {
