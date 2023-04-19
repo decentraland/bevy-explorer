@@ -64,6 +64,7 @@ pub enum GltfCachedShape {
 #[derive(Component)]
 pub struct PendingGltfCollider {
     h_shape: Handle<GltfCachedShape>,
+    h_mesh: Handle<Mesh>,
     collision_mask: u32,
     mesh_name: Option<String>,
     index: u32,
@@ -284,42 +285,50 @@ fn update_gltf(
                     }
 
                     if collider_bits != 0 && !is_skinned {
-                        if let Some(cached_shape_handle) = shape_lookup.0.get(h_mesh) {
-                            // already calculating or calculated, just attach a handle
-                            commands
-                                .entity(spawned_ent)
-                                .insert(cached_shape_handle.clone());
-                            continue;
-                        }
+                        let h_shape = match shape_lookup.0.get(h_mesh) {
+                            Some(cached_shape_handle)
+                                if cached_shapes.get(cached_shape_handle).is_some() =>
+                            {
+                                cached_shape_handle.clone()
+                            }
+                            _ => {
+                                // create the collider
+                                let scale = transform.scale;
+                                let VertexAttributeValues::Float32x3(positions) = mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else { panic!() };
+                                let vertices: Vec<_> = positions
+                                    .iter()
+                                    .map(|p| {
+                                        Point::from([
+                                            p[0] * scale.x,
+                                            p[1] * scale.y,
+                                            p[2] * scale.z,
+                                        ])
+                                    })
+                                    .collect();
+                                let indices: Vec<_> = match mesh_data.indices() {
+                                    Some(Indices::U16(u16s)) => u16s
+                                        .chunks_exact(3)
+                                        .map(|ix| [ix[0] as u32, ix[1] as u32, ix[2] as u32])
+                                        .collect(),
+                                    Some(Indices::U32(u32s)) => u32s
+                                        .chunks_exact(3)
+                                        .map(|ix| [ix[0], ix[1], ix[2]])
+                                        .collect(),
+                                    None => (0u32..positions.len() as u32)
+                                        .collect::<Vec<_>>()
+                                        .chunks_exact(3)
+                                        .map(|ix| [ix[0], ix[1], ix[2]])
+                                        .collect(),
+                                };
 
-                        // create the collider
-                        let scale = transform.scale;
-                        let VertexAttributeValues::Float32x3(positions) = mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else { panic!() };
-                        let vertices: Vec<_> = positions
-                            .iter()
-                            .map(|p| Point::from([p[0] * scale.x, p[1] * scale.y, p[2] * scale.z]))
-                            .collect();
-                        let indices: Vec<_> = match mesh_data.indices() {
-                            Some(Indices::U16(u16s)) => u16s
-                                .chunks_exact(3)
-                                .map(|ix| [ix[0] as u32, ix[1] as u32, ix[2] as u32])
-                                .collect(),
-                            Some(Indices::U32(u32s)) => u32s
-                                .chunks_exact(3)
-                                .map(|ix| [ix[0], ix[1], ix[2]])
-                                .collect(),
-                            None => (0u32..positions.len() as u32)
-                                .collect::<Vec<_>>()
-                                .chunks_exact(3)
-                                .map(|ix| [ix[0], ix[1], ix[2]])
-                                .collect(),
+                                let task = AsyncComputeTaskPool::get().spawn(async move {
+                                    SharedShape::convex_decomposition(&vertices, &indices)
+                                });
+                                let h_shape = cached_shapes.add(GltfCachedShape::Task(task));
+                                shape_lookup.0.insert(h_mesh.clone(), h_shape.clone());
+                                h_shape
+                            }
                         };
-
-                        let task = AsyncComputeTaskPool::get().spawn(async move {
-                            SharedShape::convex_decomposition(&vertices, &indices)
-                        });
-                        let h_shape = cached_shapes.add(GltfCachedShape::Task(task));
-                        shape_lookup.0.insert(h_mesh.clone(), h_shape.clone());
 
                         let base_name = maybe_name
                             .unwrap()
@@ -330,6 +339,7 @@ fn update_gltf(
 
                         commands.entity(spawned_ent).insert(PendingGltfCollider {
                             h_shape,
+                            h_mesh: h_mesh.clone_weak(),
                             collision_mask: collider_bits,
                             mesh_name: Some(base_name.to_owned()),
                             index: *index,
@@ -390,7 +400,7 @@ fn attach_ready_colliders(
             commands
                 .entity(entity)
                 .insert(MeshCollider {
-                    shape: MeshColliderShape::Shape(shape),
+                    shape: MeshColliderShape::Shape(shape, pending.h_mesh.clone()),
                     collision_mask: pending.collision_mask,
                     mesh_name: pending.mesh_name.clone(),
                     index: pending.index,

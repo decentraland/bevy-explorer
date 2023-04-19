@@ -1,9 +1,13 @@
 use std::borrow::Borrow;
 
-use bevy::{prelude::*, render::mesh::VertexAttributeValues, utils::HashMap};
+use bevy::{
+    pbr::wireframe::Wireframe, prelude::*, render::mesh::VertexAttributeValues, utils::HashMap,
+};
+use bevy_console::ConsoleCommand;
 use rapier3d::prelude::*;
 
 use crate::{
+    console::DoAddConsoleCommand,
     dcl::interface::ComponentPosition,
     dcl_component::{
         proto_components::sdk::components::{pb_mesh_collider, ColliderLayer, PbMeshCollider},
@@ -44,7 +48,7 @@ pub enum MeshColliderShape {
     Cylinder { radius_top: f32, radius_bottom: f32 },
     Plane,
     Sphere,
-    Shape(SharedShape),
+    Shape(SharedShape, Handle<Mesh>),
 }
 
 impl From<PbMeshCollider> for MeshCollider {
@@ -87,6 +91,10 @@ impl Plugin for MeshColliderPlugin {
 
         // update collider transforms before queries and scenes are run, but after global transforms are updated (at end of prior frame)
         app.add_system(update_collider_transforms.in_set(SceneSets::PostInit));
+
+        app.init_resource::<DebugColliders>();
+        app.add_console_command::<DebugColliderCommand, _>(debug_colliders);
+        app.add_system(render_debug_colliders);
     }
 }
 
@@ -372,7 +380,7 @@ fn update_colliders(
             }
             MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.05, 0.5),
             MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),
-            MeshColliderShape::Shape(shape) => {
+            MeshColliderShape::Shape(shape, _) => {
                 ColliderBuilder::new(shape.clone())
             },
         }
@@ -436,5 +444,115 @@ fn update_collider_transforms(
         };
 
         scene_data.update_collider_transform(&collider.0, global_transform);
+    }
+}
+
+#[derive(Resource, Default)]
+struct DebugColliders(u32);
+
+/// Display debug colliders
+/// show: u32 to specify collider masks to show. if omitted, toggles between `all` and `none`
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/debug_colliders")]
+struct DebugColliderCommand {
+    show: Option<u32>,
+}
+
+fn debug_colliders(
+    mut input: ConsoleCommand<DebugColliderCommand>,
+    mut debug: ResMut<DebugColliders>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let new_state = command
+            .show
+            .unwrap_or(if debug.0 == 0 { u32::MAX } else { 0 });
+        debug.0 = new_state;
+        input.reply_ok(format!(
+            "showing debug colliders with mask matching: {new_state:#x}"
+        ));
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_debug_colliders(
+    mut commands: Commands,
+    debug: Res<DebugColliders>,
+    mut debug_entities: Local<HashMap<Entity, Entity>>,
+    with_collider: Query<(Entity, &MeshCollider), With<HasCollider>>,
+    changed_collider: Query<Entity, Changed<MeshCollider>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut debug_material: Local<Option<Handle<StandardMaterial>>>,
+) {
+    if debug.0 == 0 || debug.is_changed() {
+        for (_, debug_ent) in debug_entities.drain() {
+            if let Some(mut commands) = commands.get_entity(debug_ent) {
+                commands.despawn();
+            };
+        }
+        return;
+    }
+
+    if debug_material.is_none() {
+        *debug_material = Some(materials.add(StandardMaterial {
+            base_color: Color::rgba(1.0, 0.0, 0.0, 0.1),
+            alpha_mode: AlphaMode::Blend,
+            unlit: true,
+            depth_bias: 1000.0,
+            ..Default::default()
+        }));
+    }
+
+    for collider in changed_collider.iter() {
+        if let Some(debug_ent) = debug_entities.remove(&collider) {
+            if let Some(mut commands) = commands.get_entity(debug_ent) {
+                commands.despawn();
+            }
+        }
+    }
+
+    for (collider_ent, collider) in with_collider.iter() {
+        if !debug_entities.contains_key(&collider_ent) && collider.collision_mask & debug.0 != 0 {
+            let h_mesh = match &collider.shape {
+                MeshColliderShape::Box => meshes.add(bevy::prelude::shape::Cube::default().into()),
+                MeshColliderShape::Cylinder {
+                    radius_top,
+                    radius_bottom,
+                } => meshes.add(
+                    TruncatedCone {
+                        base_radius: *radius_bottom,
+                        tip_radius: *radius_top,
+                        ..Default::default()
+                    }
+                    .into(),
+                ),
+                MeshColliderShape::Plane => {
+                    meshes.add(bevy::prelude::shape::Quad::default().into())
+                }
+                MeshColliderShape::Sphere => {
+                    meshes.add(bevy::prelude::shape::UVSphere::default().into())
+                }
+                MeshColliderShape::Shape(_, h_mesh) => {
+                    let mut h_mesh = h_mesh.clone();
+                    h_mesh.make_strong(&meshes);
+                    h_mesh
+                }
+            };
+
+            let debug_ent = commands
+                .spawn((
+                    PbrBundle {
+                        mesh: h_mesh,
+                        material: debug_material.as_ref().unwrap().clone(),
+                        ..Default::default()
+                    },
+                    Wireframe,
+                ))
+                .id();
+
+            commands.entity(collider_ent).add_child(debug_ent);
+
+            debug_entities.insert(collider_ent, debug_ent);
+        }
     }
 }
