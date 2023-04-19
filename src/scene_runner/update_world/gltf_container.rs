@@ -3,10 +3,13 @@ use std::collections::BTreeMap;
 use bevy::{
     gltf::{Gltf, GltfExtras},
     prelude::*,
+    reflect::TypeUuid,
     render::mesh::{Indices, VertexAttributeValues},
     scene::InstanceId,
+    tasks::{AsyncComputeTaskPool, Task},
     utils::{HashMap, HashSet},
 };
+use futures_lite::future;
 use nalgebra::Point;
 use rapier3d::prelude::*;
 use serde::Deserialize;
@@ -45,7 +48,25 @@ impl Plugin for GltfDefinitionPlugin {
         );
 
         app.add_system(update_gltf.in_set(SceneSets::PostLoop));
+        app.add_system(attach_ready_colliders.in_set(SceneSets::PostLoop));
+        app.add_asset::<GltfCachedShape>();
+        app.init_resource::<MeshToShape>();
     }
+}
+
+#[derive(TypeUuid)]
+#[uuid = "09e7812e-ea71-4046-a9be-65565257d459"]
+pub enum GltfCachedShape {
+    Shape(SharedShape),
+    Task(Task<SharedShape>),
+}
+
+#[derive(Component)]
+pub struct PendingGltfCollider {
+    h_shape: Handle<GltfCachedShape>,
+    collision_mask: u32,
+    mesh_name: Option<String>,
+    index: u32,
 }
 
 #[derive(Component, Debug)]
@@ -59,6 +80,9 @@ struct GltfLoaded(Option<InstanceId>);
 pub struct GltfProcessed {
     pub animation_roots: HashSet<Entity>,
 }
+
+#[derive(Resource, Default)]
+pub struct MeshToShape(HashMap<Handle<Mesh>, Handle<GltfCachedShape>>);
 
 #[derive(Deserialize)]
 struct DclNodeExtras {
@@ -89,6 +113,8 @@ fn update_gltf(
     mut scene_spawner: ResMut<SceneSpawner>,
     mesh_handles: Query<(Option<&Handle<Mesh>>, &Transform, &Parent)>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut cached_shapes: ResMut<Assets<GltfCachedShape>>,
+    mut shape_lookup: ResMut<MeshToShape>,
     _debug_name_query: Query<(Entity, Option<&Name>, Option<&Children>)>,
 ) {
     // TODO: clean up old gltf data
@@ -258,10 +284,18 @@ fn update_gltf(
                     }
 
                     if collider_bits != 0 && !is_skinned {
+                        if let Some(cached_shape_handle) = shape_lookup.0.get(h_mesh) {
+                            // already calculating or calculated, just attach a handle
+                            commands
+                                .entity(spawned_ent)
+                                .insert(cached_shape_handle.clone());
+                            continue;
+                        }
+
                         // create the collider
                         let scale = transform.scale;
                         let VertexAttributeValues::Float32x3(positions) = mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else { panic!() };
-                        let vertices = positions
+                        let vertices: Vec<_> = positions
                             .iter()
                             .map(|p| Point::from([p[0] * scale.x, p[1] * scale.y, p[2] * scale.z]))
                             .collect();
@@ -281,6 +315,12 @@ fn update_gltf(
                                 .collect(),
                         };
 
+                        let task = AsyncComputeTaskPool::get().spawn(async move {
+                            SharedShape::convex_decomposition(&vertices, &indices)
+                        });
+                        let h_shape = cached_shapes.add(GltfCachedShape::Task(task));
+                        shape_lookup.0.insert(h_mesh.clone(), h_shape.clone());
+
                         let base_name = maybe_name
                             .unwrap()
                             .strip_suffix("_collider")
@@ -288,8 +328,8 @@ fn update_gltf(
                         let index = collider_counter.entry(base_name).or_default();
                         *index += 1u32;
 
-                        commands.entity(spawned_ent).insert(MeshCollider {
-                            shape: MeshColliderShape::TriMesh(vertices, indices),
+                        commands.entity(spawned_ent).insert(PendingGltfCollider {
+                            h_shape,
                             collision_mask: collider_bits,
                             mesh_name: Some(base_name.to_owned()),
                             index: *index,
@@ -320,6 +360,46 @@ fn update_gltf(
             commands
                 .entity(bevy_scene_entity)
                 .insert(GltfProcessed { animation_roots });
+        }
+    }
+}
+
+fn attach_ready_colliders(
+    mut commands: Commands,
+    mut pending_colliders: Query<(Entity, &mut PendingGltfCollider)>,
+    mut cached_shapes: ResMut<Assets<GltfCachedShape>>,
+) {
+    for (entity, pending) in pending_colliders.iter_mut() {
+        let Some(cached_shape) = cached_shapes.get_mut(&pending.h_shape) else {
+            panic!("shape or task should have been added")
+        };
+
+        let (maybe_shape, maybe_update_asset) = match cached_shape {
+            GltfCachedShape::Shape(shape) => (Some(shape.clone()), None),
+            GltfCachedShape::Task(task) => {
+                if task.is_finished() {
+                    let shape = future::block_on(future::poll_once(task)).unwrap();
+                    (Some(shape.clone()), Some(shape))
+                } else {
+                    (None, None)
+                }
+            }
+        };
+
+        if let Some(shape) = maybe_shape {
+            commands
+                .entity(entity)
+                .insert(MeshCollider {
+                    shape: MeshColliderShape::Shape(shape),
+                    collision_mask: pending.collision_mask,
+                    mesh_name: pending.mesh_name.clone(),
+                    index: pending.index,
+                })
+                .remove::<PendingGltfCollider>();
+        }
+
+        if let Some(shape) = maybe_update_asset {
+            *cached_shapes.get_mut(&pending.h_shape).unwrap() = GltfCachedShape::Shape(shape);
         }
     }
 }

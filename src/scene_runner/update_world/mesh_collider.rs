@@ -44,7 +44,7 @@ pub enum MeshColliderShape {
     Cylinder { radius_top: f32, radius_bottom: f32 },
     Plane,
     Sphere,
-    TriMesh(Vec<Point<Real>>, Vec<[u32; 3]>),
+    Shape(SharedShape),
 }
 
 impl From<PbMeshCollider> for MeshCollider {
@@ -372,7 +372,9 @@ fn update_colliders(
             }
             MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.05, 0.5),
             MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),
-            MeshColliderShape::TriMesh(vertices, indices) => ColliderBuilder::convex_decomposition(vertices, indices),
+            MeshColliderShape::Shape(shape) => {
+                ColliderBuilder::new(shape.clone())
+            },
         }
         .collision_groups(InteractionGroups {
             memberships: Group::from_bits_truncate(collider_def.collision_mask),
