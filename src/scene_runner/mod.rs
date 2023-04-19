@@ -82,11 +82,22 @@ pub struct LoadSceneEvent {
     pub location: SceneIpfsLocation,
 }
 
+// this component is present on the bevy entity which maps to a scene entity explicitly
 #[derive(Component, Debug)]
 pub struct SceneEntity {
     pub root: Entity,
     pub scene_id: SceneId,
     pub id: SceneEntityId,
+}
+
+// this component is present on bevy entities which either
+// - map to a scene entity
+// - are owned by a scene entity
+#[derive(Component, Debug)]
+pub struct ContainerEntity {
+    pub container: Entity,
+    pub root: Entity,
+    pub container_id: SceneEntityId,
 }
 
 // plugin which creates and runs scripts
@@ -427,37 +438,47 @@ fn process_scene_entity_lifecycle(
         if !context.nascent.is_empty() {
             debug!("{:?}: nascent: {:?}", root, context.nascent);
         }
-        commands.entity(root).with_children(|child_builder| {
-            for scene_entity_id in std::mem::take(&mut context.nascent) {
-                if context.bevy_entity(scene_entity_id).is_some() {
-                    continue;
-                }
-                context.associate_bevy_entity(
-                    scene_entity_id,
-                    child_builder
-                        .spawn((
-                            PbrBundle {
-                                // TODO remove these and replace with spatial bundle when mesh and material components are supported
-                                material: material.clone(),
-                                ..Default::default()
-                            },
-                            SceneEntity {
-                                scene_id,
-                                root,
-                                id: scene_entity_id,
-                            },
-                            TargetParent(root),
-                        ))
-                        .id(),
-                );
 
-                debug!(
-                    "spawned {:?} -> {:?}",
-                    scene_entity_id,
-                    context.bevy_entity(scene_entity_id).unwrap()
-                );
+        for scene_entity_id in std::mem::take(&mut context.nascent) {
+            if context.bevy_entity(scene_entity_id).is_some() {
+                continue;
             }
-        });
+
+            let spawned = commands
+                .spawn((
+                    PbrBundle {
+                        // TODO remove these and replace with spatial bundle when mesh and material components are supported
+                        material: material.clone(),
+                        ..Default::default()
+                    },
+                    SceneEntity {
+                        scene_id,
+                        root,
+                        id: scene_entity_id,
+                    },
+                    TargetParent(root),
+                ))
+                .id();
+
+            commands.entity(spawned).insert(ContainerEntity {
+                root,
+                container: spawned,
+                container_id: scene_entity_id,
+            });
+
+            commands.entity(root).add_child(spawned);
+
+            context.associate_bevy_entity(
+                scene_entity_id,
+                spawned,
+            );
+
+            debug!(
+                "spawned {:?} -> {:?}",
+                scene_entity_id,
+                context.bevy_entity(scene_entity_id).unwrap()
+            );
+        }
 
         // update deleted entities list, used by crdt processors to filter results
         deleted_entities.0 = std::mem::take(&mut context.death_row);

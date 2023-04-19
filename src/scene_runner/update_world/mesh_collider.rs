@@ -1,4 +1,6 @@
-use bevy::{prelude::*, utils::HashMap, render::mesh::VertexAttributeValues};
+use std::borrow::Borrow;
+
+use bevy::{prelude::*, render::mesh::VertexAttributeValues, utils::HashMap};
 use rapier3d::prelude::*;
 
 use crate::{
@@ -7,25 +9,42 @@ use crate::{
         proto_components::sdk::components::{pb_mesh_collider, ColliderLayer, PbMeshCollider},
         SceneComponentId, SceneEntityId,
     },
-    scene_runner::{DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneSets, update_world::mesh_renderer::truncated_cone::TruncatedCone},
+    scene_runner::{
+        update_world::mesh_renderer::truncated_cone::TruncatedCone, DeletedSceneEntities,
+        RendererSceneContext, SceneSets, ContainerEntity,
+    },
 };
 
 use super::AddCrdtInterfaceExt;
 
 pub struct MeshColliderPlugin;
 
-#[derive(Component, Debug)]
+#[derive(Component)]
 pub struct MeshCollider {
-    shape: MeshColliderShape,
-    collision_mask: u32,
+    pub shape: MeshColliderShape,
+    pub collision_mask: u32,
+    pub mesh_name: Option<String>,
+    pub index: u32,
 }
 
-#[derive(Debug)]
+impl Default for MeshCollider {
+    fn default() -> Self {
+        Self {
+            shape: MeshColliderShape::Box,
+            collision_mask: ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32,
+            mesh_name: Default::default(),
+            index: Default::default(),
+        }
+    }
+}
+
+// #[derive(Debug)]
 pub enum MeshColliderShape {
     Box,
     Cylinder { radius_top: f32, radius_bottom: f32 },
     Plane,
     Sphere,
+    TriMesh(Vec<Point<Real>>, Vec<[u32; 3]>),
 }
 
 impl From<PbMeshCollider> for MeshCollider {
@@ -51,6 +70,7 @@ impl From<PbMeshCollider> for MeshCollider {
                 .collision_mask
                 .unwrap_or(ColliderLayer::ClPointer as i32 | ColliderLayer::ClPhysics as i32)
                 as u32,
+            ..Default::default()
         }
     }
 }
@@ -70,9 +90,26 @@ impl Plugin for MeshColliderPlugin {
     }
 }
 
+#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Component)]
+pub struct ColliderId {
+    pub entity: SceneEntityId,
+    pub name: Option<String>,
+    pub index: u32,
+}
+
+impl ColliderId {
+    pub fn new(entity: SceneEntityId, name: Option<String>, index: u32) -> Self {
+        Self {
+            entity,
+            name,
+            index,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct RaycastResult {
-    pub id: SceneEntityId,
+    pub id: ColliderId,
     pub toi: f32,
     pub normal: Vec3,
 }
@@ -85,8 +122,8 @@ struct ColliderState {
 #[derive(Component, Default)]
 pub struct SceneColliderData {
     collider_set: ColliderSet,
-    scaled_collider: bimap::BiMap<SceneEntityId, ColliderHandle>,
-    collider_state: HashMap<SceneEntityId, ColliderState>,
+    scaled_collider: bimap::BiMap<ColliderId, ColliderHandle>,
+    collider_state: HashMap<ColliderId, ColliderState>,
     query_state_valid_at: Option<f32>,
     query_state: Option<rapier3d::pipeline::QueryPipeline>,
     dummy_rapier_structs: (IslandManager, RigidBodySet),
@@ -95,53 +132,68 @@ pub struct SceneColliderData {
 const SCALE_EPSILON: f32 = 0.001;
 
 impl SceneColliderData {
-    pub fn set_collider(&mut self, id: SceneEntityId, new_collider: Collider) {
+    pub fn set_collider(&mut self, id: &ColliderId, new_collider: Collider) {
         self.remove_collider(id);
 
         self.collider_state.insert(
-            id,
+            id.to_owned(),
             ColliderState {
                 base_collider: new_collider.clone(),
                 scale: Vec3::ONE,
             },
         );
         let handle = self.collider_set.insert(new_collider);
-        self.scaled_collider.insert(id, handle);
+        self.scaled_collider.insert(id.to_owned(), handle);
         self.query_state_valid_at = None;
-        debug!("set {id} collider");
+        debug!("set {id:?} collider");
     }
 
-    pub fn update_collider_transform(&mut self, id: SceneEntityId, transform: &GlobalTransform) {
+    pub fn update_collider_transform(&mut self, id: &ColliderId, transform: &GlobalTransform) {
         if let Some(handle) = self.get_collider(id) {
             if let Some(collider) = self.collider_set.get_mut(handle) {
                 let (req_scale, rotation, translation) = transform.to_scale_rotation_translation();
                 let ColliderState {
                     base_collider,
                     scale,
-                } = self.collider_state.get(&id).unwrap();
+                } = self.collider_state.get(id).unwrap();
+
+                fn scale_shape(s: &dyn Shape, req_scale: Vec3) -> SharedShape {
+                    match s.as_typed_shape() {
+                        TypedShape::Ball(b) => match b.scaled(&req_scale.into(), 5).unwrap() {
+                            itertools::Either::Left(ball) => {
+                                SharedShape::new(ball)
+                            }
+                            itertools::Either::Right(convex) => {
+                                SharedShape::new(convex)
+                            }
+                        },
+                        TypedShape::Cuboid(c) => SharedShape::new(c.scaled(&req_scale.into())),
+                        TypedShape::ConvexPolyhedron(p) => SharedShape::new(
+                            p.clone().scaled(&req_scale.into()).unwrap(),
+                        ),
+                        TypedShape::Compound(c) => {
+                            let scaled_items = c.shapes().iter().map(|(iso, shape)| {
+                                let mut vector = iso.translation.vector;
+                                // TODO gotta be a clean way to do this
+                                vector[0] *= req_scale.x;
+                                vector[1] *= req_scale.y;
+                                vector[2] *= req_scale.z;
+                                (
+                                    Isometry{rotation: iso.rotation, translation: Translation{ vector }},
+                                    scale_shape(shape.0.as_ref(), req_scale),
+                                )
+                            }).collect();
+                            SharedShape::compound(scaled_items)
+                        }
+                        _ => panic!(),
+                    }
+                }
 
                 // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
                 if (req_scale - *scale).length_squared() > SCALE_EPSILON {
-                    let base_shape = base_collider.shape();
-                    match base_shape.as_typed_shape() {
-                        TypedShape::Ball(b) => match b.scaled(&req_scale.into(), 5).unwrap() {
-                            itertools::Either::Left(ball) => {
-                                collider.set_shape(SharedShape::new(ball))
-                            }
-                            itertools::Either::Right(convex) => {
-                                collider.set_shape(SharedShape::new(convex))
-                            }
-                        },
-                        TypedShape::Cuboid(c) => {
-                            collider.set_shape(SharedShape::new(c.scaled(&req_scale.into())))
-                        }
-                        TypedShape::ConvexPolyhedron(p) => {
-                            collider.set_shape(SharedShape::new(p.clone().scaled(&req_scale.into()).unwrap()))
-                        },
-                        _ => panic!()
-                    };
+                    collider.set_shape(scale_shape(base_collider.shape(), req_scale));
                 }
-                self.collider_state.get_mut(&id).unwrap().scale = req_scale;
+                self.collider_state.get_mut(id).unwrap().scale = req_scale;
 
                 collider.set_position(Isometry::from_parts(translation.into(), rotation.into()));
             }
@@ -190,7 +242,7 @@ impl SceneColliderData {
                 )),
             )
             .map(|(handle, intersection)| RaycastResult {
-                id: self.get_entity(handle).unwrap(),
+                id: self.get_id(handle).unwrap().clone(),
                 toi: intersection.toi,
                 normal: Vec3::from(intersection.normal),
             })
@@ -223,7 +275,7 @@ impl SceneColliderData {
             )),
             |handle, intersection| {
                 results.push(RaycastResult {
-                    id: self.get_entity(handle).unwrap(),
+                    id: self.get_id(handle).unwrap().clone(),
                     toi: intersection.toi,
                     normal: Vec3::from(intersection.normal),
                 });
@@ -234,8 +286,8 @@ impl SceneColliderData {
         results
     }
 
-    pub fn remove_collider(&mut self, id: SceneEntityId) {
-        if let Some(handle) = self.scaled_collider.get_by_left(&id) {
+    pub fn remove_collider(&mut self, id: &ColliderId) {
+        if let Some(handle) = self.scaled_collider.get_by_left(id) {
             self.collider_set.remove(
                 *handle,
                 &mut self.dummy_rapier_structs.0,
@@ -244,16 +296,25 @@ impl SceneColliderData {
             );
         }
 
-        self.scaled_collider.remove_by_left(&id);
-        self.collider_state.remove(&id);
+        self.scaled_collider.remove_by_left(id);
+        self.collider_state.remove(id);
     }
 
-    pub fn get_collider(&self, id: SceneEntityId) -> Option<ColliderHandle> {
-        self.scaled_collider.get_by_left(&id).copied()
+    // TODO use map of maps to make this faster?
+    pub fn remove_colliders(&mut self, id: SceneEntityId) {
+        let remove_keys = self.collider_state.keys().filter(|k| k.entity == id).cloned().collect::<Vec<_>>();
+
+        for key in remove_keys {
+            self.remove_collider(&key);
+        }
     }
 
-    pub fn get_entity(&self, handle: ColliderHandle) -> Option<SceneEntityId> {
-        self.scaled_collider.get_by_right(&handle).copied()
+    pub fn get_collider(&self, id: &ColliderId) -> Option<ColliderHandle> {
+        self.scaled_collider.get_by_left(id).copied()
+    }
+
+    pub fn get_id(&self, handle: ColliderHandle) -> Option<&ColliderId> {
+        self.scaled_collider.get_by_right(&handle)
     }
 }
 
@@ -270,7 +331,7 @@ fn update_scene_collider_data(
 
 // collider state component
 #[derive(Component)]
-pub struct HasCollider;
+pub struct HasCollider(ColliderId);
 
 #[allow(clippy::type_complexity)]
 fn update_colliders(
@@ -278,31 +339,29 @@ fn update_colliders(
     // add colliders
     // any entity with a mesh collider that we're not already using, or where the mesh collider has changed
     new_colliders: Query<
-        (Entity, &SceneEntity, &MeshCollider),
+        (Entity, &MeshCollider, &ContainerEntity),
         Or<(Changed<MeshCollider>, Without<HasCollider>)>,
     >,
     // remove colliders
     // any entities with a live collider handle that don't have a mesh collider
-    colliders_without_source: Query<
-        (Entity, &SceneEntity),
-        (With<HasCollider>, Without<MeshCollider>),
-    >,
+    colliders_without_source: Query<(Entity, &ContainerEntity, &HasCollider), Without<MeshCollider>>,
     // remove colliders for deleted entities
     mut scene_data: Query<(&mut SceneColliderData, Option<&DeletedSceneEntities>)>,
 ) {
     // add colliders
     // any entity with a mesh collider that we're not using, or where the mesh collider has changed
-    for (ent, scene_ent, collider_def) in new_colliders.iter() {
-        let collider = match collider_def.shape {
+    for (ent, collider_def, container) in new_colliders.iter() {
+        let collider = match &collider_def.shape {
             MeshColliderShape::Box => ColliderBuilder::cuboid(0.5, 0.5, 0.5),
             MeshColliderShape::Cylinder { radius_top, radius_bottom } => {
                 // TODO we could use explicit support points to make queries faster
-                let mesh: Mesh = TruncatedCone{ base_radius: radius_top, tip_radius: radius_bottom, ..Default::default() }.into();
+                let mesh: Mesh = TruncatedCone{ base_radius: *radius_top, tip_radius: *radius_bottom, ..Default::default() }.into();
                 let VertexAttributeValues::Float32x3(positions) = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else { panic!() };
-                ColliderBuilder::convex_hull(&positions.into_iter().map(|p| Point::from(*p)).collect::<Vec<_>>()).unwrap()
+                ColliderBuilder::convex_hull(&positions.iter().map(|p| Point::from(*p)).collect::<Vec<_>>()).unwrap()
             }
             MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.05, 0.5),
             MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),
+            MeshColliderShape::TriMesh(vertices, indices) => ColliderBuilder::convex_decomposition(vertices, indices),
         }
         .collision_groups(InteractionGroups {
             memberships: Group::from_bits_truncate(collider_def.collision_mask),
@@ -310,25 +369,26 @@ fn update_colliders(
         })
         .build();
 
-        debug!("{} adding collider", scene_ent.id);
-        let Ok((mut scene_data, _)) = scene_data.get_mut(scene_ent.root) else {
-            warn!("missing scene root for {scene_ent:?}");
+        let collider_id = ColliderId::new(container.container_id, collider_def.mesh_name.to_owned(), collider_def.index);
+        error!("{:?} adding collider", collider_id);
+        let Ok((mut scene_data, _)) = scene_data.get_mut(container.root) else {
+            warn!("missing scene root for {collider_id:?}");
             continue;
         };
 
-        scene_data.set_collider(scene_ent.id, collider);
-        commands.entity(ent).insert(HasCollider);
+        scene_data.set_collider(collider_id.borrow(), collider);
+        commands.entity(ent).insert(HasCollider(collider_id));
     }
 
     // remove colliders
     // any entities with a live collider handle that don't have a mesh collider or a mesh definition
-    for (ent, scene_ent) in colliders_without_source.iter() {
-        let Ok((mut scene_data, _)) = scene_data.get_mut(scene_ent.root) else {
-            warn!("missing scene root for {scene_ent:?}");
+    for (ent, container, collider) in colliders_without_source.iter() {
+        let Ok((mut scene_data, _)) = scene_data.get_mut(container.root) else {
+            warn!("missing scene root for {container:?}");
             continue;
         };
 
-        scene_data.remove_collider(scene_ent.id);
+        scene_data.remove_collider(collider.0.borrow());
         commands.entity(ent).remove::<HasCollider>();
     }
 
@@ -336,7 +396,7 @@ fn update_colliders(
     for (mut scene_data, maybe_deleted_entities) in &mut scene_data {
         if let Some(deleted_entities) = maybe_deleted_entities {
             for deleted_entity in &deleted_entities.0 {
-                scene_data.remove_collider(*deleted_entity);
+                scene_data.remove_colliders(*deleted_entity);
             }
         }
     }
@@ -345,20 +405,19 @@ fn update_colliders(
 #[allow(clippy::type_complexity)]
 fn update_collider_transforms(
     changed_colliders: Query<
-        (&SceneEntity, &GlobalTransform),
+        (&ContainerEntity, &HasCollider, &GlobalTransform),
         (
-            With<HasCollider>,                                  // has some collider
-            Or<(Changed<GlobalTransform>, Added<HasCollider>)>, // which needs updating
+            Or<(Changed<GlobalTransform>, Added<HasCollider>)>, // needs updating
         ),
     >,
     mut scene_data: Query<&mut SceneColliderData>,
 ) {
-    for (scene_ent, global_transform) in changed_colliders.iter() {
-        let Ok(mut scene_data) = scene_data.get_mut(scene_ent.root) else {
-            warn!("missing scene root for {scene_ent:?}");
+    for (container, collider, global_transform) in changed_colliders.iter() {
+        let Ok(mut scene_data) = scene_data.get_mut(container.root) else {
+            warn!("missing scene root for {container:?}");
             continue;
         };
 
-        scene_data.update_collider_transform(scene_ent.id, global_transform);
+        scene_data.update_collider_transform(&collider.0, global_transform);
     }
 }

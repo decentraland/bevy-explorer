@@ -18,8 +18,8 @@ use crate::{
         proto_components::{
             common::Vector3,
             sdk::components::{
-                common::RaycastHit, pb_raycast::Direction, PbRaycast, PbRaycastResult,
-                RaycastQueryType,
+                common::RaycastHit, pb_raycast::Direction, ColliderLayer, PbRaycast,
+                PbRaycastResult, RaycastQueryType,
             },
         },
         SceneComponentId,
@@ -120,7 +120,9 @@ fn run_raycasts(
                         origin,
                         direction,
                         raycast.0.max_distance,
-                        raycast.0.collision_mask.unwrap_or(u32::MAX),
+                        raycast.0.collision_mask.unwrap_or(
+                            ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32,
+                        ),
                     )
                     .map(|hit| vec![hit])
                     .unwrap_or_default(),
@@ -129,7 +131,9 @@ fn run_raycasts(
                     origin,
                     direction,
                     raycast.0.max_distance,
-                    raycast.0.collision_mask.unwrap_or(u32::MAX),
+                    raycast.0.collision_mask.unwrap_or(
+                        ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32,
+                    ),
                 ),
                 RaycastQueryType::RqtNone => Vec::default(),
             };
@@ -157,8 +161,8 @@ fn run_raycasts(
                     direction: Some(Vector3::world_vec_from_vec3(&direction)),
                     normal_hit: Some(Vector3::world_vec_from_vec3(&result.normal)),
                     length: result.toi,
-                    mesh_name: Default::default(),
-                    entity_id: result.id.as_proto_u32(),
+                    mesh_name: result.id.name,
+                    entity_id: result.id.entity.as_proto_u32(),
                 }
             };
 
