@@ -13,9 +13,12 @@ use serde::Deserialize;
 
 use crate::{
     dcl::interface::ComponentPosition,
-    dcl_component::{proto_components::sdk::components::{PbGltfContainer, ColliderLayer}, SceneComponentId, SceneEntityId},
+    dcl_component::{
+        proto_components::sdk::components::{ColliderLayer, PbGltfContainer},
+        SceneComponentId, SceneEntityId,
+    },
     ipfs::{IpfsLoaderExt, SceneDefinition},
-    scene_runner::{SceneEntity, SceneSets, ContainerEntity},
+    scene_runner::{ContainerEntity, SceneEntity, SceneSets},
 };
 
 use super::{
@@ -46,7 +49,7 @@ impl Plugin for GltfDefinitionPlugin {
 }
 
 #[derive(Component, Debug)]
-pub struct GltfEntity{
+pub struct GltfEntity {
     pub container_id: SceneEntityId,
 }
 
@@ -67,7 +70,10 @@ fn update_gltf(
     mut commands: Commands,
     new_gltfs: Query<(Entity, &SceneEntity, &GltfDefinition), Changed<GltfDefinition>>,
     unprocessed_gltfs: Query<(Entity, &SceneEntity, &Handle<Gltf>), Without<GltfLoaded>>,
-    ready_gltfs: Query<(Entity, &SceneEntity, &GltfLoaded, &GltfDefinition), Without<GltfProcessed>>,
+    ready_gltfs: Query<
+        (Entity, &SceneEntity, &GltfLoaded, &GltfDefinition),
+        Without<GltfProcessed>,
+    >,
     gltf_spawned_entities: Query<(
         Option<&Name>,
         &Transform,
@@ -141,7 +147,9 @@ fn update_gltf(
     for (bevy_scene_entity, dcl_scene_entity, loaded, _definition) in ready_gltfs.iter() {
         if loaded.0.is_none() {
             // nothing to process
-            commands.entity(bevy_scene_entity).insert(GltfProcessed::default());
+            commands
+                .entity(bevy_scene_entity)
+                .insert(GltfProcessed::default());
             continue;
         }
         let instance = loaded.0.as_ref().unwrap();
@@ -154,40 +162,44 @@ fn update_gltf(
 
             // special behaviours, mainly from ADR-215
             // position
-                // children of root nodes -> rotate (why ?!)
+            // children of root nodes -> rotate (why ?!)
             // skinned mesh
-                // fix zero bone weights
-                // ignore any mask bits, never create collider
+            // fix zero bone weights
+            // ignore any mask bits, never create collider
             // colliders
-                // name == *_collider -> not visible
-                // node extras.dcl_collider_mask -> specifies collider mask
-                // name != *_collider -> default collider mask 0
-                // name == *_collider -> default collider mask CL_PHYSICS
-                // PbGltfContainer.disable_physics_colliders -> mask &= ~CL_PHYSICS (switch off physics bit)            
-                // PbGltfContainer.create_pointer_colliders && name != *collider -> mask |= CL_POINTERS (switch on pointers bit)            
-                // if mask != 0 create collider
+            // name == *_collider -> not visible
+            // node extras.dcl_collider_mask -> specifies collider mask
+            // name != *_collider -> default collider mask 0
+            // name == *_collider -> default collider mask CL_PHYSICS
+            // PbGltfContainer.disable_physics_colliders -> mask &= ~CL_PHYSICS (switch off physics bit)
+            // PbGltfContainer.create_pointer_colliders && name != *collider -> mask |= CL_POINTERS (switch on pointers bit)
+            // if mask != 0 create collider
 
             // create a counter per name so we can make unique collider handles
             let mut collider_counter: HashMap<_, u32> = HashMap::default();
 
             for spawned_ent in scene_spawner.iter_instance_entities(*instance) {
                 // add a container node so other systems can reference the root
-                commands.entity(spawned_ent).insert(ContainerEntity{
+                commands.entity(spawned_ent).insert(ContainerEntity {
                     container: bevy_scene_entity,
                     root: dcl_scene_entity.root,
                     container_id: dcl_scene_entity.id,
                 });
 
-                if let Ok((maybe_name, transform, parent, maybe_player, maybe_h_mesh, maybe_extras)) =
-                    gltf_spawned_entities.get(spawned_ent)
-                {  
+                if let Ok((
+                    maybe_name,
+                    transform,
+                    parent,
+                    maybe_player,
+                    maybe_h_mesh,
+                    maybe_extras,
+                )) = gltf_spawned_entities.get(spawned_ent)
+                {
                     // children of root nodes -> rotate
                     if parent.get() == bevy_scene_entity {
                         let mut rotated = *transform;
-                        rotated.rotate_around(
-                            Vec3::ZERO,
-                            Quat::from_rotation_y(std::f32::consts::PI),
-                        );
+                        rotated
+                            .rotate_around(Vec3::ZERO, Quat::from_rotation_y(std::f32::consts::PI));
                         commands.entity(spawned_ent).insert(rotated);
                     }
 
@@ -213,13 +225,15 @@ fn update_gltf(
 
                     if is_collider {
                         // make invisible by removing mesh handle
-                        // TODO - this will break with toggling, we need to store the handle somewhere 
+                        // TODO - this will break with toggling, we need to store the handle somewhere
                         commands.entity(spawned_ent).remove::<Handle<Mesh>>();
                     }
 
                     // get specified or default collider bits
                     let mut collider_bits = maybe_extras
-                        .and_then(|extras| serde_json::from_str::<DclNodeExtras>(&extras.value).ok())
+                        .and_then(|extras| {
+                            serde_json::from_str::<DclNodeExtras>(&extras.value).ok()
+                        })
                         .and_then(|extras| extras.dcl_collision_mask)
                         .unwrap_or({
                             if is_collider {
@@ -247,24 +261,34 @@ fn update_gltf(
                         // create the collider
                         let scale = transform.scale;
                         let VertexAttributeValues::Float32x3(positions) = mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else { panic!() };
-                        let vertices = positions.iter().map(|p| {
-                            Point::from([
-                                p[0] * scale.x,
-                                p[1] * scale.y,
-                                p[2] * scale.z,
-                            ])
-                        }).collect();
+                        let vertices = positions
+                            .iter()
+                            .map(|p| Point::from([p[0] * scale.x, p[1] * scale.y, p[2] * scale.z]))
+                            .collect();
                         let indices: Vec<_> = match mesh_data.indices() {
-                            Some(Indices::U16(u16s)) => u16s.chunks_exact(3).map(|ix| [ix[0] as u32,ix[1] as u32,ix[2] as u32]).collect(),
-                            Some(Indices::U32(u32s)) => u32s.chunks_exact(3).map(|ix| [ix[0], ix[1], ix[2]]).collect(),
-                            None => (0u32..positions.len() as u32).collect::<Vec<_>>().chunks_exact(3).map(|ix| [ix[0], ix[1], ix[2]]).collect(),
+                            Some(Indices::U16(u16s)) => u16s
+                                .chunks_exact(3)
+                                .map(|ix| [ix[0] as u32, ix[1] as u32, ix[2] as u32])
+                                .collect(),
+                            Some(Indices::U32(u32s)) => u32s
+                                .chunks_exact(3)
+                                .map(|ix| [ix[0], ix[1], ix[2]])
+                                .collect(),
+                            None => (0u32..positions.len() as u32)
+                                .collect::<Vec<_>>()
+                                .chunks_exact(3)
+                                .map(|ix| [ix[0], ix[1], ix[2]])
+                                .collect(),
                         };
 
-                        let base_name = maybe_name.unwrap().strip_suffix("_collider").unwrap_or_else(|| maybe_name.unwrap());
+                        let base_name = maybe_name
+                            .unwrap()
+                            .strip_suffix("_collider")
+                            .unwrap_or_else(|| maybe_name.unwrap());
                         let index = collider_counter.entry(base_name).or_default();
                         *index += 1u32;
 
-                        commands.entity(spawned_ent).insert(MeshCollider{
+                        commands.entity(spawned_ent).insert(MeshCollider {
                             shape: MeshColliderShape::TriMesh(vertices, indices),
                             collision_mask: collider_bits,
                             mesh_name: Some(base_name.to_owned()),
@@ -288,7 +312,7 @@ fn update_gltf(
                             {
                                 weights[0] = 1.0;
                             }
-                        }                       
+                        }
                     }
                 }
             }

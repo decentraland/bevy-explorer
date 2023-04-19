@@ -468,10 +468,7 @@ fn process_scene_entity_lifecycle(
 
             commands.entity(root).add_child(spawned);
 
-            context.associate_bevy_entity(
-                scene_entity_id,
-                spawned,
-            );
+            context.associate_bevy_entity(scene_entity_id, spawned);
 
             debug!(
                 "spawned {:?} -> {:?}",

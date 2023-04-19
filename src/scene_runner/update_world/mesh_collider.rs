@@ -10,8 +10,8 @@ use crate::{
         SceneComponentId, SceneEntityId,
     },
     scene_runner::{
-        update_world::mesh_renderer::truncated_cone::TruncatedCone, DeletedSceneEntities,
-        RendererSceneContext, SceneSets, ContainerEntity,
+        update_world::mesh_renderer::truncated_cone::TruncatedCone, ContainerEntity,
+        DeletedSceneEntities, RendererSceneContext, SceneSets,
     },
 };
 
@@ -160,29 +160,32 @@ impl SceneColliderData {
                 fn scale_shape(s: &dyn Shape, req_scale: Vec3) -> SharedShape {
                     match s.as_typed_shape() {
                         TypedShape::Ball(b) => match b.scaled(&req_scale.into(), 5).unwrap() {
-                            itertools::Either::Left(ball) => {
-                                SharedShape::new(ball)
-                            }
-                            itertools::Either::Right(convex) => {
-                                SharedShape::new(convex)
-                            }
+                            itertools::Either::Left(ball) => SharedShape::new(ball),
+                            itertools::Either::Right(convex) => SharedShape::new(convex),
                         },
                         TypedShape::Cuboid(c) => SharedShape::new(c.scaled(&req_scale.into())),
-                        TypedShape::ConvexPolyhedron(p) => SharedShape::new(
-                            p.clone().scaled(&req_scale.into()).unwrap(),
-                        ),
+                        TypedShape::ConvexPolyhedron(p) => {
+                            SharedShape::new(p.clone().scaled(&req_scale.into()).unwrap())
+                        }
                         TypedShape::Compound(c) => {
-                            let scaled_items = c.shapes().iter().map(|(iso, shape)| {
-                                let mut vector = iso.translation.vector;
-                                // TODO gotta be a clean way to do this
-                                vector[0] *= req_scale.x;
-                                vector[1] *= req_scale.y;
-                                vector[2] *= req_scale.z;
-                                (
-                                    Isometry{rotation: iso.rotation, translation: Translation{ vector }},
-                                    scale_shape(shape.0.as_ref(), req_scale),
-                                )
-                            }).collect();
+                            let scaled_items = c
+                                .shapes()
+                                .iter()
+                                .map(|(iso, shape)| {
+                                    let mut vector = iso.translation.vector;
+                                    // TODO gotta be a clean way to do this
+                                    vector[0] *= req_scale.x;
+                                    vector[1] *= req_scale.y;
+                                    vector[2] *= req_scale.z;
+                                    (
+                                        Isometry {
+                                            rotation: iso.rotation,
+                                            translation: Translation { vector },
+                                        },
+                                        scale_shape(shape.0.as_ref(), req_scale),
+                                    )
+                                })
+                                .collect();
                             SharedShape::compound(scaled_items)
                         }
                         _ => panic!(),
@@ -302,7 +305,12 @@ impl SceneColliderData {
 
     // TODO use map of maps to make this faster?
     pub fn remove_colliders(&mut self, id: SceneEntityId) {
-        let remove_keys = self.collider_state.keys().filter(|k| k.entity == id).cloned().collect::<Vec<_>>();
+        let remove_keys = self
+            .collider_state
+            .keys()
+            .filter(|k| k.entity == id)
+            .cloned()
+            .collect::<Vec<_>>();
 
         for key in remove_keys {
             self.remove_collider(&key);
@@ -344,7 +352,10 @@ fn update_colliders(
     >,
     // remove colliders
     // any entities with a live collider handle that don't have a mesh collider
-    colliders_without_source: Query<(Entity, &ContainerEntity, &HasCollider), Without<MeshCollider>>,
+    colliders_without_source: Query<
+        (Entity, &ContainerEntity, &HasCollider),
+        Without<MeshCollider>,
+    >,
     // remove colliders for deleted entities
     mut scene_data: Query<(&mut SceneColliderData, Option<&DeletedSceneEntities>)>,
 ) {
@@ -369,7 +380,11 @@ fn update_colliders(
         })
         .build();
 
-        let collider_id = ColliderId::new(container.container_id, collider_def.mesh_name.to_owned(), collider_def.index);
+        let collider_id = ColliderId::new(
+            container.container_id,
+            collider_def.mesh_name.to_owned(),
+            collider_def.index,
+        );
         error!("{:?} adding collider", collider_id);
         let Ok((mut scene_data, _)) = scene_data.get_mut(container.root) else {
             warn!("missing scene root for {collider_id:?}");

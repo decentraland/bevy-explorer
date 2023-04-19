@@ -5,7 +5,9 @@ use bevy::{
 
 use crate::{
     dcl_component::{transform_and_parent::DclTransformAndParent, DclReader, FromDclReader},
-    scene_runner::{DeletedSceneEntities, RendererSceneContext, SceneEntity, TargetParent, ContainerEntity},
+    scene_runner::{
+        ContainerEntity, DeletedSceneEntities, RendererSceneContext, SceneEntity, TargetParent,
+    },
 };
 
 use super::CrdtLWWStateComponent;

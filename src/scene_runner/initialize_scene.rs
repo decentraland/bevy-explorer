@@ -20,8 +20,8 @@ use crate::{
         SceneMeta,
     },
     scene_runner::{
-        renderer_context::RendererSceneContext, DeletedSceneEntities, SceneEntity,
-        SceneThreadHandle, ContainerEntity,
+        renderer_context::RendererSceneContext, ContainerEntity, DeletedSceneEntities, SceneEntity,
+        SceneThreadHandle,
     },
 };
 
