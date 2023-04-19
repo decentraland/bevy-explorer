@@ -395,7 +395,7 @@ fn update_colliders(
             collider_def.mesh_name.to_owned(),
             collider_def.index,
         );
-        error!("{:?} adding collider", collider_id);
+        debug!("{:?} adding collider", collider_id);
         let Ok((mut scene_data, _)) = scene_data.get_mut(container.root) else {
             warn!("missing scene root for {collider_id:?}");
             continue;
