@@ -1,6 +1,9 @@
 use std::{f32::consts::FRAC_PI_2, time::Duration};
 
-use bevy::{pbr::DirectionalLightShadowMap, prelude::*};
+use bevy::{
+    pbr::{wireframe::WireframePlugin, DirectionalLightShadowMap},
+    prelude::*,
+};
 use bevy_atmosphere::{
     prelude::{AtmosphereCamera, AtmosphereModel, AtmospherePlugin, Nishita},
     system_param::AtmosphereMut,
@@ -15,6 +18,7 @@ impl Plugin for VisualsPlugin {
         app.insert_resource(DirectionalLightShadowMap { size: 4096 })
             .insert_resource(AtmosphereModel::default())
             .add_plugin(AtmospherePlugin)
+            .add_plugin(WireframePlugin)
             .add_system(daylight_cycle)
             .add_system(setup);
     }

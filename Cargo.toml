@@ -6,10 +6,10 @@ edition = "2021"
 [features]
 dcl-assert = []
 gen-tests = []
+tracy = ["bevy/trace_tracy"]
 
 [dependencies]
 bevy = { version = "0.10", features=["jpeg"] }
-# bevy = { version = "0.10", features = ["trace_tracy"] }
 deno_core = "0.170.*"
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
@@ -36,6 +36,7 @@ urn = "0.7.0"
 bevy_console = "0.7.0"
 clap = "4.1.10"
 bevy_atmosphere = "0.6.0"
+petgraph = "0.6.3"
 
 [dev-dependencies]
 petgraph = "0.6.3"

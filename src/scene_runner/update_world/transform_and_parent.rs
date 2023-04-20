@@ -5,7 +5,9 @@ use bevy::{
 
 use crate::{
     dcl_component::{transform_and_parent::DclTransformAndParent, DclReader, FromDclReader},
-    scene_runner::{DeletedSceneEntities, RendererSceneContext, SceneEntity, TargetParent},
+    scene_runner::{
+        ContainerEntity, DeletedSceneEntities, RendererSceneContext, SceneEntity, TargetParent,
+    },
 };
 
 use super::CrdtLWWStateComponent;
@@ -65,6 +67,11 @@ pub(crate) fn process_transform_and_parent_updates(
                                         ))
                                         .set_parent(root)
                                         .id();
+                                    commands.entity(new_entity).insert(ContainerEntity {
+                                        root,
+                                        container: new_entity,
+                                        container_id: dcl_tp.parent(),
+                                    });
                                     scene_context
                                         .associate_bevy_entity(dcl_tp.parent(), new_entity);
                                     new_entity

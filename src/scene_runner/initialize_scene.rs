@@ -20,7 +20,7 @@ use crate::{
         SceneMeta,
     },
     scene_runner::{
-        renderer_context::RendererSceneContext, DeletedSceneEntities, SceneEntity,
+        renderer_context::RendererSceneContext, ContainerEntity, DeletedSceneEntities, SceneEntity,
         SceneThreadHandle,
     },
 };
@@ -296,6 +296,11 @@ pub(crate) fn initialize_scene(
                 root,
                 scene_id,
                 id: SceneEntityId::ROOT,
+            },
+            ContainerEntity {
+                root,
+                container: root,
+                container_id: SceneEntityId::ROOT,
             },
             SceneThreadHandle { sender: main_sx },
         ));
