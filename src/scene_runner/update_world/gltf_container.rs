@@ -1,3 +1,6 @@
+// TODO
+// - gltf collider flags
+// - clean up of cached colliders (when mesh is unloaded?)
 use std::collections::BTreeMap;
 
 use bevy::{
