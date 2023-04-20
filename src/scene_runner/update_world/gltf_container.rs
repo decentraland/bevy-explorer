@@ -403,14 +403,15 @@ fn attach_ready_colliders(
             panic!("shape or task should have been added")
         };
 
-        let (maybe_shape, maybe_update_asset) = match cached_shape {
-            GltfCachedShape::Shape(shape) => (Some(shape.clone()), None),
+        let maybe_shape = match cached_shape {
+            GltfCachedShape::Shape(shape) => Some(shape.clone()),
             GltfCachedShape::Task(task) => {
                 if task.is_finished() {
                     let shape = future::block_on(future::poll_once(task)).unwrap();
-                    (Some(shape.clone()), Some(shape))
+                    *cached_shape = GltfCachedShape::Shape(shape.clone());
+                    Some(shape)
                 } else {
-                    (None, None)
+                    None
                 }
             }
         };
@@ -425,10 +426,6 @@ fn attach_ready_colliders(
                     index: pending.index,
                 })
                 .remove::<PendingGltfCollider>();
-        }
-
-        if let Some(shape) = maybe_update_asset {
-            *cached_shapes.get_mut(&pending.h_shape).unwrap() = GltfCachedShape::Shape(shape);
         }
     }
 }
