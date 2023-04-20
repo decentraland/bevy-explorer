@@ -1,7 +1,10 @@
 use std::borrow::Borrow;
 
 use bevy::{
-    pbr::wireframe::Wireframe, prelude::*, render::mesh::VertexAttributeValues, utils::HashMap,
+    pbr::{wireframe::Wireframe, NotShadowCaster, NotShadowReceiver},
+    prelude::*,
+    render::mesh::VertexAttributeValues,
+    utils::HashMap,
 };
 use bevy_console::ConsoleCommand;
 use rapier3d::prelude::*;
@@ -547,6 +550,8 @@ fn render_debug_colliders(
                         ..Default::default()
                     },
                     Wireframe,
+                    NotShadowCaster,
+                    NotShadowReceiver,
                 ))
                 .id();
 
