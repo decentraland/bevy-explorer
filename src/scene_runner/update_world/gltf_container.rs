@@ -79,6 +79,7 @@ pub struct GltfEntity {
 struct GltfLoaded(Option<InstanceId>);
 #[derive(Component, Default)]
 pub struct GltfProcessed {
+    pub instance_id: Option<InstanceId>,
     pub animation_roots: HashSet<Entity>,
 }
 
@@ -93,7 +94,16 @@ struct DclNodeExtras {
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_gltf(
     mut commands: Commands,
-    new_gltfs: Query<(Entity, &SceneEntity, &GltfDefinition), Changed<GltfDefinition>>,
+    new_gltfs: Query<
+        (
+            Entity,
+            &SceneEntity,
+            &GltfDefinition,
+            Option<&GltfLoaded>,
+            Option<&GltfProcessed>,
+        ),
+        Changed<GltfDefinition>,
+    >,
     unprocessed_gltfs: Query<(Entity, &SceneEntity, &Handle<Gltf>), Without<GltfLoaded>>,
     ready_gltfs: Query<
         (Entity, &SceneEntity, &GltfLoaded, &GltfDefinition),
@@ -112,16 +122,30 @@ fn update_gltf(
     asset_server: Res<AssetServer>,
     gltfs: Res<Assets<Gltf>>,
     mut scene_spawner: ResMut<SceneSpawner>,
-    mesh_handles: Query<(Option<&Handle<Mesh>>, &Transform, &Parent)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut cached_shapes: ResMut<Assets<GltfCachedShape>>,
     mut shape_lookup: ResMut<MeshToShape>,
     _debug_name_query: Query<(Entity, Option<&Name>, Option<&Children>)>,
 ) {
-    // TODO: clean up old gltf data
-
-    for (ent, scene_ent, gltf) in new_gltfs.iter() {
+    for (ent, scene_ent, gltf, maybe_loaded, maybe_processed) in new_gltfs.iter() {
         debug!("{} has {}", scene_ent.id, gltf.0.src);
+
+        if let Some(GltfLoaded(Some(instance))) = maybe_loaded {
+            // clean up from loaded state
+            scene_spawner.despawn_instance(*instance);
+        }
+        if let Some(GltfProcessed {
+            instance_id: Some(instance),
+            ..
+        }) = maybe_processed
+        {
+            // clean up from processed state
+            scene_spawner.despawn_instance(*instance);
+        }
+        commands
+            .entity(ent)
+            .remove::<GltfLoaded>()
+            .remove::<GltfProcessed>();
 
         let Ok(h_scene_def) = scene_def_handles.get(scene_ent.root) else {
             warn!("no scene definition found, can't process file request");
@@ -189,18 +213,18 @@ fn update_gltf(
 
             // special behaviours, mainly from ADR-215
             // position
-            // children of root nodes -> rotate (why ?!)
+            // - children of root nodes -> rotate (why ?! - probably bevy rhs coordinate system specific)
             // skinned mesh
-            // fix zero bone weights
-            // ignore any mask bits, never create collider
+            // - fix zero bone weights (bevy specific, unity and three.js do this automatically)
+            // - ignore any mask bits, never create collider
             // colliders
-            // name == *_collider -> not visible
-            // node extras.dcl_collider_mask -> specifies collider mask
-            // name != *_collider -> default collider mask 0
-            // name == *_collider -> default collider mask CL_PHYSICS
-            // PbGltfContainer.disable_physics_colliders -> mask &= ~CL_PHYSICS (switch off physics bit)
-            // PbGltfContainer.create_pointer_colliders && name != *collider -> mask |= CL_POINTERS (switch on pointers bit)
-            // if mask != 0 create collider
+            // - name == *_collider -> not visible
+            // - node extras.dcl_collider_mask -> specifies collider mask
+            // - name != *_collider -> default collider mask 0
+            // - name == *_collider -> default collider mask CL_PHYSICS
+            // - PbGltfContainer.disable_physics_colliders -> mask &= ~CL_PHYSICS (switch off physics bit)
+            // - PbGltfContainer.create_pointer_colliders && name != *collider -> mask |= CL_POINTERS (switch on pointers bit)
+            // - if mask != 0 create collider
 
             // create a counter per name so we can make unique collider handles
             let mut collider_counter: HashMap<_, u32> = HashMap::default();
@@ -239,7 +263,7 @@ fn update_gltf(
                     let Some(h_mesh) = maybe_h_mesh else {
                         continue;
                     };
-                    let Some(mesh_data) = meshes.get(h_mesh) else {
+                    let Some(mesh_data) = meshes.get_mut(h_mesh) else {
                         error!("gltf contained mesh not loaded?!");
                         continue;
                     };
@@ -285,6 +309,7 @@ fn update_gltf(
                     }
 
                     if collider_bits != 0 && !is_skinned {
+                        // get or create handle to collider shape
                         let h_shape = match shape_lookup.0.get(h_mesh) {
                             Some(cached_shape_handle)
                                 if cached_shapes.get(cached_shape_handle).is_some() =>
@@ -292,7 +317,7 @@ fn update_gltf(
                                 cached_shape_handle.clone()
                             }
                             _ => {
-                                // create the collider
+                                // asynchronously create the collider
                                 let scale = transform.scale;
                                 let VertexAttributeValues::Float32x3(positions) = mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else { panic!() };
                                 let vertices: Vec<_> = positions
@@ -348,28 +373,22 @@ fn update_gltf(
 
                     if is_skinned {
                         // fix zero joint weights, same way as unity and three.js
-                        // TODO: remove if https://github.com/bevyengine/bevy/pull/8316 is merged
-                        if let Some(VertexAttributeValues::Float32x4(joint_weights)) = mesh_handles
-                            .get(spawned_ent)
-                            .ok()
-                            .and_then(|(h_mesh, ..)| h_mesh)
-                            .and_then(|h_mesh| meshes.get_mut(h_mesh))
-                            .and_then(|mesh| mesh.attribute_mut(Mesh::ATTRIBUTE_JOINT_WEIGHT))
+                        // TODO: remove when bevy 0.11 is released
+                        let Some(VertexAttributeValues::Float32x4(joint_weights)) = mesh_data.attribute_mut(Mesh::ATTRIBUTE_JOINT_WEIGHT) else { panic!("is_skinned but no bone weights") };
+                        for weights in joint_weights
+                            .iter_mut()
+                            .filter(|weights| *weights == &[0.0, 0.0, 0.0, 0.0])
                         {
-                            for weights in joint_weights
-                                .iter_mut()
-                                .filter(|weights| *weights == &[0.0, 0.0, 0.0, 0.0])
-                            {
-                                weights[0] = 1.0;
-                            }
+                            weights[0] = 1.0;
                         }
                     }
                 }
             }
 
-            commands
-                .entity(bevy_scene_entity)
-                .insert(GltfProcessed { animation_roots });
+            commands.entity(bevy_scene_entity).insert(GltfProcessed {
+                animation_roots,
+                instance_id: Some(*instance),
+            });
         }
     }
 }
@@ -414,6 +433,7 @@ fn attach_ready_colliders(
     }
 }
 
+// debug show the gltf graph
 fn _node_graph(
     scene_entity_query: &Query<(Entity, Option<&Name>, Option<&Children>)>,
     root: Entity,
