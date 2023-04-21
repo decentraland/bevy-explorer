@@ -21,6 +21,7 @@ use crate::{
 use self::{
     initialize_scene::SceneLifecyclePlugin,
     renderer_context::RendererSceneContext,
+    update_scene::SceneInputPlugin,
     update_world::{CrdtExtractors, SceneOutputPlugin},
 };
 
@@ -28,6 +29,7 @@ pub mod initialize_scene;
 pub mod renderer_context;
 #[cfg(test)]
 pub mod test;
+pub mod update_scene;
 pub mod update_world;
 
 // system sets used for ordering
@@ -182,6 +184,7 @@ impl Plugin for SceneRunnerPlugin {
             end_time: Instant::now(),
         });
 
+        app.add_plugin(SceneInputPlugin);
         app.add_plugin(SceneOutputPlugin);
     }
 }
