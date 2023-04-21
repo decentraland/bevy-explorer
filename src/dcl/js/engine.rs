@@ -9,12 +9,14 @@ use tokio::sync::mpsc::Receiver;
 
 use crate::{
     dcl::{
-        crdt::lww::LWWEntry, interface::ComponentPosition, CrdtComponentInterfaces, CrdtStore,
-        RendererResponse, SceneResponse,
+        crdt::{growonly::CrdtGOEntry, lww::LWWEntry},
+        interface::ComponentPosition,
+        CrdtComponentInterfaces, CrdtStore, RendererResponse, SceneResponse,
     },
     dcl_assert,
     dcl_component::{
-        DclReader, DclReaderError, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter,
+        DclReader, DclReaderError, DclWriter, SceneComponentId, SceneCrdtTimestamp, SceneEntityId,
+        ToDclWriter,
     },
 };
 
@@ -157,8 +159,9 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
         }
     }
 
-    let updates = typemap.take_updates();
     let census = entity_map.take_census();
+    typemap.clean_up(&census.died);
+    let updates = typemap.take_updates();
 
     let sender = op_state.borrow_mut::<SyncSender<SceneResponse>>();
     sender
@@ -173,16 +176,16 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
 fn put_component(
     entity_id: &SceneEntityId,
     component_id: &SceneComponentId,
-    data: &LWWEntry,
+    entry: &LWWEntry,
 ) -> Vec<u8> {
-    let content_len = data.data.len();
-    let length = content_len + 12 + if data.is_some { 4 } else { 0 } + 8;
+    let content_len = entry.data.len();
+    let length = content_len + 12 + if entry.is_some { 4 } else { 0 } + 8;
 
     let mut buf = Vec::with_capacity(length);
     let mut writer = DclWriter::new(&mut buf);
     writer.write_u32(length as u32);
 
-    if data.is_some {
+    if entry.is_some {
         writer.write(&CrdtMessageType::PutComponent);
     } else {
         writer.write(&CrdtMessageType::DeleteComponent);
@@ -190,12 +193,35 @@ fn put_component(
 
     writer.write(entity_id);
     writer.write(component_id);
-    writer.write(&data.timestamp);
+    writer.write(&entry.timestamp);
 
-    if data.is_some {
+    if entry.is_some {
         writer.write_u32(content_len as u32);
-        writer.write_raw(&data.data)
+        writer.write_raw(&entry.data)
     }
+
+    buf
+}
+
+fn append_component(
+    entity_id: &SceneEntityId,
+    component_id: &SceneComponentId,
+    entry: &CrdtGOEntry,
+) -> Vec<u8> {
+    let content_len = entry.data.len();
+    let length = content_len + 12 + 4 + 8;
+
+    let mut buf = Vec::with_capacity(length);
+    let mut writer = DclWriter::new(&mut buf);
+    writer.write_u32(length as u32);
+    writer.write(&CrdtMessageType::AppendValue);
+
+    writer.write(entity_id);
+    writer.write(component_id);
+    writer.write(&SceneCrdtTimestamp(0));
+
+    writer.write_u32(content_len as u32);
+    writer.write_raw(&entry.data);
 
     buf
 }
@@ -213,6 +239,13 @@ async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<OpState>>) -> Vec<Vec<u
             for (component_id, lww) in updates.lww.iter() {
                 for (entity_id, data) in lww.last_write.iter() {
                     results.push(put_component(entity_id, component_id, data));
+                }
+            }
+            for (component_id, go) in updates.go.iter() {
+                for (entity_id, data) in go.0.iter() {
+                    for item in data.iter() {
+                        results.push(append_component(entity_id, component_id, item));
+                    }
                 }
             }
             results
