@@ -59,7 +59,7 @@ impl Default for CameraController {
             key_run: KeyCode::LShift,
             key_roll_left: KeyCode::T,
             key_roll_right: KeyCode::Y,
-            mouse_key_enable_mouse: MouseButton::Left,
+            mouse_key_enable_mouse: MouseButton::Right,
             keyboard_key_enable_mouse: KeyCode::M,
             walk_speed: 5.0,
             run_speed: 50.0,
@@ -204,7 +204,9 @@ fn camera_controller(
                 mouse_delta += mouse_event.delta;
             }
         }
-        if mouse_button_input.just_released(options.mouse_key_enable_mouse) {
+        if mouse_button_input.just_released(options.mouse_key_enable_mouse)
+            || (key_input.just_pressed(options.keyboard_key_enable_mouse) && !*move_toggled)
+        {
             for mut window in &mut windows {
                 window.cursor.grab_mode = CursorGrabMode::None;
                 window.cursor.visible = true;

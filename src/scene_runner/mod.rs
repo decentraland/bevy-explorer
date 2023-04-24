@@ -5,6 +5,7 @@ use std::{
 };
 
 use bevy::{
+    core::FrameCount,
     prelude::*,
     utils::{FloatOrd, HashMap, HashSet, Instant},
 };
@@ -363,6 +364,7 @@ fn receive_scene_updates(
     mut updates: ResMut<SceneUpdates>,
     mut scenes: Query<&mut RendererSceneContext>,
     crdt_interfaces: Res<CrdtExtractors>,
+    frame: Res<FrameCount>,
 ) {
     loop {
         let maybe_completed_job = match updates.receiver().try_recv() {
@@ -389,6 +391,7 @@ fn receive_scene_updates(
                         census.died.len()
                     );
                     if let Ok(mut context) = scenes.get_mut(*root) {
+                        context.last_update_frame = frame.0;
                         context.in_flight = false;
                         context.nascent = census.born;
                         context.death_row = census.died;

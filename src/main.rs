@@ -5,10 +5,10 @@
 mod camera_controller;
 pub mod console;
 pub mod dcl;
-mod dcl_component;
-mod input_handler;
+pub mod dcl_component;
+pub mod input_handler;
 pub mod ipfs;
-mod scene_runner;
+pub mod scene_runner;
 pub mod visuals;
 
 use bevy::{

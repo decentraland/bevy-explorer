@@ -18,8 +18,8 @@ use crate::{
 use self::{
     animation::AnimatorPlugin, billboard::BillboardPlugin, gltf_container::GltfDefinitionPlugin,
     material::MaterialDefinitionPlugin, mesh_collider::MeshColliderPlugin,
-    mesh_renderer::MeshDefinitionPlugin, raycast::RaycastPlugin,
-    transform_and_parent::process_transform_and_parent_updates,
+    mesh_renderer::MeshDefinitionPlugin, pointer_events::PointerEventsPlugin,
+    raycast::RaycastPlugin, transform_and_parent::process_transform_and_parent_updates,
 };
 
 use super::{DeletedSceneEntities, RendererSceneContext, SceneLoopSchedule, SceneLoopSets};
@@ -30,6 +30,7 @@ pub mod gltf_container;
 pub mod material;
 pub mod mesh_collider;
 pub mod mesh_renderer;
+pub mod pointer_events;
 pub mod raycast;
 pub mod transform_and_parent;
 
@@ -124,6 +125,7 @@ impl Plugin for SceneOutputPlugin {
         app.add_plugin(AnimatorPlugin);
         app.add_plugin(BillboardPlugin);
         app.add_plugin(RaycastPlugin);
+        app.add_plugin(PointerEventsPlugin);
     }
 }
 

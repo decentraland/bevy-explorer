@@ -1,10 +1,10 @@
 // TODO
 // [x] - handle continuous properly
 // [x] - don't run every renderer frame
-// [/] - then prevent scene execution until raycasts are run (not exactly required now, we run raycasts once on first frame after request arrives)
-// - probably change renderer context to contain frame number as well as dt so we can track precisely track run state
-// - move into scene loop
-// - consider how global raycasts interact with this setup
+// [/] - then prevent scene execution until raycasts are run (not required now, we run raycasts once on first frame after request arrives, required for ponter events anyway)
+// [x] - probably change renderer context to contain frame number as well as dt so we can track precisely track run state
+// [ ] - move into scene loop
+// [/] - consider how global raycasts interact with this setup (it works, pointer events use a global raycast already. but need to optimise by ordering scenes based on ray)
 
 use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
@@ -79,13 +79,13 @@ fn run_raycasts(
         {
             // check if we need to run
             let continuous = raycast.raycast.continuous.unwrap_or(false);
-            if !continuous && raycast.last_run > 0.0 {
+            if !continuous && raycast.last_run > 0 {
                 continue;
             }
-            if continuous && raycast.last_run >= context.last_sent {
+            if continuous && raycast.last_run >= context.last_update_frame {
                 continue;
             }
-            raycast.last_run = context.last_sent;
+            raycast.last_run = context.last_update_frame;
 
             // execute the raycast
             let raycast = &raycast.raycast;
@@ -116,7 +116,7 @@ fn run_raycasts(
             let results = match raycast.query_type() {
                 RaycastQueryType::RqtHitFirst => scene_data
                     .cast_ray_nearest(
-                        context.last_sent,
+                        context.last_update_frame,
                         origin,
                         direction,
                         raycast.max_distance,
@@ -127,7 +127,7 @@ fn run_raycasts(
                     .map(|hit| vec![hit])
                     .unwrap_or_default(),
                 RaycastQueryType::RqtQueryAll => scene_data.cast_ray_all(
-                    context.last_sent,
+                    context.last_update_frame,
                     origin,
                     direction,
                     raycast.max_distance,

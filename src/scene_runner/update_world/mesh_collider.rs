@@ -101,7 +101,7 @@ impl Plugin for MeshColliderPlugin {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Component)]
+#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ColliderId {
     pub entity: SceneEntityId,
     pub name: Option<String>,
@@ -135,7 +135,7 @@ pub struct SceneColliderData {
     collider_set: ColliderSet,
     scaled_collider: bimap::BiMap<ColliderId, ColliderHandle>,
     collider_state: HashMap<ColliderId, ColliderState>,
-    query_state_valid_at: Option<f32>,
+    query_state_valid_at: Option<u32>,
     query_state: Option<rapier3d::pipeline::QueryPipeline>,
     dummy_rapier_structs: (IslandManager, RigidBodySet),
 }
@@ -160,7 +160,7 @@ impl SceneColliderData {
     }
 
     pub fn update_collider_transform(&mut self, id: &ColliderId, transform: &GlobalTransform) {
-        if let Some(handle) = self.get_collider(id) {
+        if let Some(handle) = self.get_collider_handle(id) {
             if let Some(collider) = self.collider_set.get_mut(handle) {
                 let (req_scale, rotation, translation) = transform.to_scale_rotation_translation();
                 let ColliderState {
@@ -214,8 +214,8 @@ impl SceneColliderData {
         }
     }
 
-    fn update_pipeline(&mut self, scene_time: f32) {
-        if self.query_state_valid_at != Some(scene_time) {
+    fn update_pipeline(&mut self, scene_frame: u32) {
+        if self.query_state_valid_at != Some(scene_frame) {
             if self.query_state.is_none() {
                 self.query_state = Some(Default::default());
             }
@@ -223,13 +223,13 @@ impl SceneColliderData {
                 .as_mut()
                 .unwrap()
                 .update(&self.dummy_rapier_structs.1, &self.collider_set);
-            self.query_state_valid_at = Some(scene_time);
+            self.query_state_valid_at = Some(scene_frame);
         }
     }
 
     pub fn cast_ray_nearest(
         &mut self,
-        scene_time: f32,
+        scene_time: u32,
         origin: Vec3,
         direction: Vec3,
         distance: f32,
@@ -264,7 +264,7 @@ impl SceneColliderData {
 
     pub fn cast_ray_all(
         &mut self,
-        scene_time: f32,
+        scene_time: u32,
         origin: Vec3,
         direction: Vec3,
         distance: f32,
@@ -300,6 +300,32 @@ impl SceneColliderData {
         results
     }
 
+    pub fn closest_point<F: Fn(&ColliderId) -> bool>(
+        &mut self,
+        scene_time: u32,
+        origin: Vec3,
+        filter: F,
+    ) -> Option<Vec3> {
+        self.update_pipeline(scene_time);
+
+        // rapier's api demands a fat pointer for whatever reason
+        let predicate: &dyn Fn(ColliderHandle, &Collider) -> bool =
+            &|h: ColliderHandle, _: &Collider| self.get_id(h).map_or(false, &filter);
+        let q = QueryFilter::new().predicate(&predicate);
+
+        self.query_state
+            .as_ref()
+            .unwrap()
+            .project_point(
+                &self.dummy_rapier_structs.1,
+                &self.collider_set,
+                &Point::from(origin),
+                true,
+                q,
+            )
+            .map(|(_, point)| point.point.into())
+    }
+
     pub fn remove_collider(&mut self, id: &ColliderId) {
         if let Some(handle) = self.scaled_collider.get_by_left(id) {
             self.collider_set.remove(
@@ -328,8 +354,13 @@ impl SceneColliderData {
         }
     }
 
-    pub fn get_collider(&self, id: &ColliderId) -> Option<ColliderHandle> {
+    pub fn get_collider_handle(&self, id: &ColliderId) -> Option<ColliderHandle> {
         self.scaled_collider.get_by_left(id).copied()
+    }
+
+    pub fn get_collider(&self, id: &ColliderId) -> Option<&Collider> {
+        self.get_collider_handle(id)
+            .and_then(|h| self.collider_set.get(h))
     }
 
     pub fn get_id(&self, handle: ColliderHandle) -> Option<&ColliderId> {
@@ -350,7 +381,7 @@ fn update_scene_collider_data(
 
 // collider state component
 #[derive(Component)]
-pub struct HasCollider(ColliderId);
+pub struct HasCollider(pub ColliderId);
 
 #[allow(clippy::type_complexity)]
 fn update_colliders(
