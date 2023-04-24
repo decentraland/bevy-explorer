@@ -267,7 +267,7 @@ fn send_hover_events(
                                         global_origin: None,
                                         direction: None,
                                         normal_hit: None,
-                                        length: 0.0,
+                                        length: distance,
                                         mesh_name: mesh_name.clone(),
                                         entity_id: scene_entity.id.as_proto_u32(),
                                     }),
@@ -407,7 +407,7 @@ fn send_action_events(
         }
     }
 
-    // send events to any scene roots that asked
+    // send events to scene roots
     for (mut context, _) in scenes.iter_mut() {
         for down in input_mgr.iter_just_down() {
             context.update_crdt(
