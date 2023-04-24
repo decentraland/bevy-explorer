@@ -75,6 +75,10 @@ impl<'a> DclReader<'a> {
         self.buffer.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn pos(&self) -> usize {
         self.pos
     }

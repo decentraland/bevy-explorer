@@ -6,6 +6,7 @@ use bevy::{
     app::{PluginGroupBuilder, ScheduleRunnerPlugin},
     diagnostic::DiagnosticsPlugin,
     gltf::GltfPlugin,
+    input::InputPlugin,
     log::LogPlugin,
     prelude::*,
     render::mesh::MeshPlugin,
@@ -83,6 +84,7 @@ impl PluginGroup for TestPlugins {
             .add(AssetPlugin::default())
             .add(MeshPlugin)
             .add(GltfPlugin)
+            .add(InputPlugin)
             .add(ScenePlugin)
             .add(ConsolePlugin)
     }

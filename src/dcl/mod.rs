@@ -36,7 +36,8 @@ pub enum RendererResponse {
     Ok(CrdtStore),
 }
 
-// data from scene to renderer
+#[allow(clippy::large_enum_variant)] // we don't care since the error case is very rare
+                                     // data from scene to renderer
 pub enum SceneResponse {
     Error(SceneId, String),
     Ok(SceneId, SceneCensus, CrdtStore),

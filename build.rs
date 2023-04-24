@@ -9,6 +9,8 @@ fn main() -> Result<()> {
         "material",
         "gltf_container",
         "animator",
+        "pointer_events",
+        "pointer_events_result",
     ];
 
     let sources = components

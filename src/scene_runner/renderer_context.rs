@@ -41,6 +41,8 @@ pub struct RendererSceneContext {
 
     // time of last message sent to scene
     pub last_sent: f32,
+    // time of last updates to bevy world from scene
+    pub last_update_frame: u32,
     // currently running?
     pub in_flight: bool,
     // currently broken (record and keep for debug purposes and to avoid spamming reloads)
@@ -60,6 +62,7 @@ impl RendererSceneContext {
             unparented_entities: HashSet::new(),
             hierarchy_changed: false,
             last_sent: 0.0,
+            last_update_frame: 0,
             in_flight: false,
             broken: false,
             priority,
