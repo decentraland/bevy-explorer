@@ -190,18 +190,18 @@ fn update_pointer_target(
         },
     );
 
+    *hover_target = PointerTarget::None;
     if let Some((scene_entity, hit)) = maybe_nearest_hit {
         let context = scenes
             .get_component::<RendererSceneContext>(scene_entity)
             .unwrap();
-        let container = context.bevy_entity(hit.id.entity).unwrap();
-        let mesh_name = hit.id.name;
-        *hover_target = PointerTarget::Some {
-            container,
-            mesh_name,
-        };
-    } else {
-        *hover_target = PointerTarget::None;
+        if let Some(container) = context.bevy_entity(hit.id.entity) {
+            let mesh_name = hit.id.name;
+            *hover_target = PointerTarget::Some {
+                container,
+                mesh_name,
+            };
+        }
     }
 }
 

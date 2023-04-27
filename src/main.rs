@@ -13,9 +13,11 @@ pub mod visuals;
 
 use bevy::{
     core::FrameCount,
+    core_pipeline::tonemapping::{DebandDither, Tonemapping},
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::CascadeShadowConfigBuilder,
     prelude::*,
+    render::view::ColorGrading,
 };
 
 use bevy_console::ConsoleOpen;
@@ -160,8 +162,8 @@ fn main() {
     .add_plugin(VisualsPlugin)
     .add_startup_system(setup)
     .insert_resource(AmbientLight {
-        color: Color::BLUE,
-        brightness: 0.05,
+        color: Color::rgb(0.5, 0.5, 1.0),
+        brightness: 0.25,
     });
 
     if final_config.graphics.log_fps {
@@ -192,8 +194,16 @@ fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<Asset
     // add a camera
     commands.spawn((
         Camera3dBundle {
-            transform: Transform::from_translation(Vec3::new(16.0 * 77.5, 10.0, 16.0 * 7.5))
+            transform: Transform::from_translation(Vec3::new(16.0 * 77.5, 2.0, 16.0 * 7.5))
                 .looking_at(Vec3::new(1.0, 8.0, -1.0), Vec3::Y),
+            tonemapping: Tonemapping::TonyMcMapface,
+            dither: DebandDither::Enabled,
+            color_grading: ColorGrading {
+                exposure: -0.5,
+                gamma: 1.5,
+                pre_saturation: 1.0,
+                post_saturation: 1.0,
+            },
             ..Default::default()
         },
         PrimaryCamera,
@@ -203,6 +213,7 @@ fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<Asset
     // add a directional light so it looks nicer
     commands.spawn(DirectionalLightBundle {
         directional_light: DirectionalLight {
+            color: Color::rgb(1.0, 1.0, 0.7),
             shadows_enabled: true,
             ..Default::default()
         },
