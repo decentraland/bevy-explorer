@@ -46,3 +46,6 @@ const console = {
     log: function(text) { Deno.core.print("LOG  :" + text + "\n") },
     error: function(text) { Deno.core.print("ERROR: " + text + "\n") },
 }
+
+// timeout handler
+globalThis.setImmediate = (fn) => Promise.resolve().then(fn)
