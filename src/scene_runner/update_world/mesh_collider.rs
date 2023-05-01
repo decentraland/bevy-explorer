@@ -89,8 +89,14 @@ impl Plugin for MeshColliderPlugin {
             ComponentPosition::EntityOnly,
         );
 
+        // collider components are created in SceneSets::Loop (by PbMeshCollider messages) and
+        // in SceneSets::PostLoop (by gltf processing).
+        // they are positioned in SceneSets::PostInit and
+        // they are used in SceneSets::Input (for raycasts).
+        // we want to avoid using CoreSet::PostUpdate as that's where we create/destroy scenes,
+        // so we use SceneSets::Init for adding colliders to the scene collider data (qbvh).
+        app.add_system(update_colliders.in_set(SceneSets::Init));
         app.add_system(update_scene_collider_data.in_set(SceneSets::PostInit));
-        app.add_system(update_colliders.in_set(SceneSets::PostLoop));
 
         // update collider transforms before queries and scenes are run, but after global transforms are updated (at end of prior frame)
         app.add_system(update_collider_transforms.in_set(SceneSets::PostInit));
@@ -338,6 +344,7 @@ impl SceneColliderData {
 
         self.scaled_collider.remove_by_left(id);
         self.collider_state.remove(id);
+        self.query_state_valid_at = None;
     }
 
     // TODO use map of maps to make this faster?

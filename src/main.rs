@@ -20,19 +20,23 @@ use bevy::{
     render::view::ColorGrading,
 };
 
-use bevy_console::ConsoleOpen;
+use bevy_console::{ConsoleCommand, ConsoleOpen};
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 use camera_controller::CameraController;
 use ipfs::ChangeRealmEvent;
 use scene_runner::{
-    initialize_scene::SceneLoading, renderer_context::RendererSceneContext, PrimaryCamera,
-    SceneRunnerPlugin,
+    initialize_scene::{SceneLoadDistance, SceneLoading},
+    renderer_context::RendererSceneContext,
+    PrimaryCamera, SceneRunnerPlugin,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    camera_controller::CameraControllerPlugin, console::ConsolePlugin, ipfs::IpfsIoPlugin,
-    scene_runner::SceneSets, visuals::VisualsPlugin,
+    camera_controller::CameraControllerPlugin,
+    console::{ConsolePlugin, DoAddConsoleCommand},
+    ipfs::IpfsIoPlugin,
+    scene_runner::SceneSets,
+    visuals::VisualsPlugin,
 };
 
 // macro for assertions
@@ -58,7 +62,7 @@ pub struct GraphicsSettings {
 impl Default for GraphicsSettings {
     fn default() -> Self {
         Self {
-            vsync: true,
+            vsync: false,
             log_fps: true,
         }
     }
@@ -180,12 +184,19 @@ fn main() {
     );
     println!("up: realm1, down: realm2");
 
+    app.add_console_command::<ChangeLocationCommand, _>(change_location);
+    app.add_console_command::<SceneDistanceCommand, _>(scene_distance);
+
     // replay any warnings
     for warning in warnings {
         warn!(warning);
     }
 
     app.insert_resource(final_config);
+
+    // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
+    // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
+    // bevy_mod_debugdump::print_main_schedule(&mut app);
 
     app.run()
 }
@@ -294,12 +305,13 @@ fn update_fps(
     }
 }
 
+// TODO remove this debug code. it's just useful to quickly switch realms with up/down keys
 fn input(
     keys: Res<Input<KeyCode>>,
     mut load: EventWriter<ChangeRealmEvent>,
     frame: Res<FrameCount>,
     loading_scenes: Query<(), With<SceneLoading>>,
-    running_scenes: Query<(), With<RendererSceneContext>>,
+    running_scenes: Query<&RendererSceneContext>,
 ) {
     let realm = if keys.pressed(KeyCode::Up) {
         "https://sdk-test-scenes.decentraland.zone"
@@ -317,7 +329,22 @@ fn input(
 
     if frame.0 % 1000 == 0 {
         info!("{} loading", loading_scenes.iter().count());
-        info!("{} running", running_scenes.iter().count());
+
+        let running = running_scenes
+            .iter()
+            .filter(|context| !context.broken && context.blocked.is_empty())
+            .count();
+        let blocked = running_scenes
+            .iter()
+            .filter(|context| !context.broken && !context.blocked.is_empty())
+            .count();
+        let broken = running_scenes
+            .iter()
+            .filter(|context| context.broken)
+            .count();
+        info!("{} running", running);
+        info!("{} blocked", blocked);
+        info!("{} broken", broken);
     }
 }
 
@@ -329,5 +356,48 @@ impl console::DoAddConsoleCommand for App {
         system: impl IntoSystemConfig<U>,
     ) -> &mut Self {
         bevy_console::AddConsoleCommand::add_console_command::<T, U>(self, system)
+    }
+}
+
+// TODO move these somewhere better
+/// set location
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/teleport")]
+struct ChangeLocationCommand {
+    x: i32,
+    y: i32,
+}
+
+fn change_location(
+    mut input: ConsoleCommand<ChangeLocationCommand>,
+    mut player: Query<&mut Transform, With<PrimaryCamera>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        if let Ok(mut transform) = player.get_single_mut() {
+            transform.translation.x = command.x as f32 * 16.0;
+            transform.translation.z = command.y as f32 * 16.0;
+            input.reply_ok(format!("new location: {:?}", (command.x, command.y)));
+            return;
+        }
+
+        input.reply_failed("failed to set location");
+    }
+}
+
+/// set scene load distance (defaults to 100.0m)
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/scene_distance")]
+struct SceneDistanceCommand {
+    distance: Option<f32>,
+}
+
+fn scene_distance(
+    mut input: ConsoleCommand<SceneDistanceCommand>,
+    mut scene_load_distance: ResMut<SceneLoadDistance>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let distance = command.distance.unwrap_or(100.0);
+        scene_load_distance.0 = distance;
+        input.reply_failed("set scene load distance to {distance}");
     }
 }

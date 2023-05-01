@@ -35,9 +35,9 @@ impl Default for TruncatedCone {
 
 impl From<TruncatedCone> for Mesh {
     fn from(c: TruncatedCone) -> Self {
-        debug_assert!(c.base_radius > 0.0);
-        debug_assert!(c.tip_radius > 0.0);
-        debug_assert!(c.height > 0.0);
+        debug_assert!(c.base_radius >= 0.0);
+        debug_assert!(c.tip_radius >= 0.0);
+        debug_assert!(c.height >= 0.0);
         debug_assert!(c.resolution > 2);
         debug_assert!(c.segments > 0);
 

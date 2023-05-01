@@ -24,7 +24,9 @@ use crate::{
         SceneComponentId, SceneEntityId,
     },
     ipfs::{IpfsLoaderExt, SceneDefinition},
-    scene_runner::{ContainerEntity, SceneEntity, SceneSets},
+    scene_runner::{
+        renderer_context::RendererSceneContext, ContainerEntity, SceneEntity, SceneSets,
+    },
 };
 
 use super::{
@@ -54,6 +56,7 @@ impl Plugin for GltfDefinitionPlugin {
         app.add_system(attach_ready_colliders.in_set(SceneSets::PostLoop));
         app.add_asset::<GltfCachedShape>();
         app.init_resource::<MeshToShape>();
+        app.add_system(check_gltfs_ready.in_set(SceneSets::PostInit));
     }
 }
 
@@ -210,7 +213,7 @@ fn update_gltf(
         if scene_spawner.instance_is_ready(*instance) {
             let mut animation_roots = HashSet::default();
 
-            // let graph = node_graph(&debug_name_query, bevy_scene_entity);
+            // let graph = _node_graph(&_debug_name_query, bevy_scene_entity);
             // println!("{bevy_scene_entity:?}");
             // println!("{graph}");
 
@@ -273,9 +276,17 @@ fn update_gltf(
 
                     let is_skinned = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
 
-                    let is_collider = maybe_name
-                        .map(|name| name.as_str().ends_with("_collider"))
-                        .unwrap_or(false);
+                    let mut collider_base_name =
+                        maybe_name.and_then(|name| name.as_str().strip_suffix("_collider"));
+
+                    if collider_base_name.is_none() {
+                        // check parent name also
+                        collider_base_name = gltf_spawned_entities
+                            .get_component::<Name>(parent.get())
+                            .map(|name| name.as_str().strip_suffix("_collider"))
+                            .unwrap_or(None)
+                    }
+                    let is_collider = collider_base_name.is_some();
 
                     if is_collider {
                         // make invisible by removing mesh handle
@@ -358,18 +369,16 @@ fn update_gltf(
                             }
                         };
 
-                        let base_name = maybe_name
-                            .unwrap()
-                            .strip_suffix("_collider")
-                            .unwrap_or_else(|| maybe_name.unwrap());
-                        let index = collider_counter.entry(base_name).or_default();
+                        let index = collider_counter
+                            .entry(collider_base_name.to_owned())
+                            .or_default();
                         *index += 1u32;
 
                         commands.entity(spawned_ent).insert(PendingGltfCollider {
                             h_shape,
                             h_mesh: h_mesh.clone_weak(),
                             collision_mask: collider_bits,
-                            mesh_name: Some(base_name.to_owned()),
+                            mesh_name: collider_base_name.map(ToOwned::to_owned),
                             index: *index,
                         });
                     }
@@ -433,6 +442,34 @@ fn attach_ready_colliders(
     }
 }
 
+pub const GLTF_LOADING: &str = "gltfs loading";
+
+fn check_gltfs_ready(
+    mut scenes: Query<(Entity, &mut RendererSceneContext)>,
+    unready_gltfs: Query<&SceneEntity, (With<GltfDefinition>, Without<GltfProcessed>)>,
+    unready_colliders: Query<&ContainerEntity, With<PendingGltfCollider>>,
+) {
+    let mut unready_scenes = HashSet::default();
+
+    for ent in &unready_gltfs {
+        unready_scenes.insert(ent.root);
+    }
+
+    for ent in &unready_colliders {
+        unready_scenes.insert(ent.root);
+    }
+
+    for (root, mut context) in scenes.iter_mut() {
+        if unready_scenes.contains(&root) {
+            debug!("{root:?} blocked on gltfs");
+            context.blocked.insert(GLTF_LOADING);
+        } else {
+            debug!("{root:?} not blocked on gltfs");
+            context.blocked.remove(GLTF_LOADING);
+        }
+    }
+}
+
 // debug show the gltf graph
 fn _node_graph(
     scene_entity_query: &Query<(Entity, Option<&Name>, Option<&Children>)>,
@@ -445,7 +482,7 @@ fn _node_graph(
     while let Some(ent) = to_check.pop() {
         debug!("current: {ent:?}, to_check: {to_check:?}");
         let Ok((ent, name, maybe_children)) = scene_entity_query.get(ent) else {
-            panic!()
+            return "?".to_owned();
         };
 
         let graph_node = *graph_nodes
@@ -455,7 +492,15 @@ fn _node_graph(
         if let Some(children) = maybe_children {
             let sorted_children_with_name: BTreeMap<_, _> = children
                 .iter()
-                .map(|c| (scene_entity_query.get(*c).unwrap().1, c))
+                .map(|c| {
+                    (
+                        scene_entity_query
+                            .get(*c)
+                            .map(|q| q.1.map(|name| name.as_str().to_owned()))
+                            .unwrap_or(Some(String::from("?"))),
+                        c,
+                    )
+                })
                 .collect();
 
             to_check.extend(sorted_children_with_name.values().copied());

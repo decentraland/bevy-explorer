@@ -152,7 +152,7 @@ fn update_pointer_target(
     };
     let cursor_position = if window.cursor.grab_mode == bevy::window::CursorGrabMode::Locked {
         // if pointer locked, just middle
-        Vec2::splat(0.5)
+        Vec2::new(window.width(), window.height()) / 2.0
     } else {
         let Some(cursor_position) = window.cursor_position() else {
             // outside window

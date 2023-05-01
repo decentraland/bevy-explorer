@@ -49,6 +49,9 @@ pub struct RendererSceneContext {
     pub broken: bool,
 
     pub crdt_store: CrdtStore,
+
+    // readiness to update, if anything blocks the scene should not run
+    pub blocked: HashSet<&'static str>,
 }
 
 impl RendererSceneContext {
@@ -67,6 +70,7 @@ impl RendererSceneContext {
             broken: false,
             priority,
             crdt_store: Default::default(),
+            blocked: Default::default(),
         };
 
         new_context.live_entities[SceneEntityId::ROOT.id as usize] =

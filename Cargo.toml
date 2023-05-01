@@ -37,6 +37,8 @@ bevy_console = "0.7.0"
 clap = "4.1.10"
 bevy_atmosphere = "0.6.0"
 petgraph = "0.6.3"
+# requires local version due to once_cell version conflict. probably resolved by updating deno
+# bevy_mod_debugdump = { path = "../bevy_mod_debugdump" }
 
 [dev-dependencies]
 petgraph = "0.6.3"

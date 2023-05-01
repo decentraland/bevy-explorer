@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use bevy::{
     math::Vec3Swizzles,
     prelude::*,
-    scene::scene_spawner_system,
     tasks::{IoTaskPool, Task},
     utils::{HashMap, HashSet},
 };
@@ -42,7 +41,6 @@ impl Plugin for SceneLifecyclePlugin {
                 load_scene_javascript,
                 initialize_scene,
             )
-                .after(scene_spawner_system) // these can despawn scenes, make sure that the scene spawner system doesn't try to write to deleted entities
                 .in_set(SceneSets::Init),
         );
 

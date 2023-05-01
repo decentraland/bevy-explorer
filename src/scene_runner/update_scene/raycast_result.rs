@@ -26,6 +26,7 @@ use crate::{
     },
     scene_runner::{
         update_world::{
+            gltf_container::GLTF_LOADING,
             mesh_collider::{RaycastResult, SceneColliderData},
             raycast::Raycast,
         },
@@ -77,6 +78,12 @@ fn run_raycasts(
         if let Ok((mut context, mut scene_data, scene_transform)) =
             scene_datas.get_mut(scene_ent.root)
         {
+            // check if we can run
+            if context.blocked.contains(GLTF_LOADING) {
+                debug!("raycast skipped, waiting for gltfs");
+                continue;
+            }
+
             // check if we need to run
             let continuous = raycast.raycast.continuous.unwrap_or(false);
             if !continuous && raycast.last_run > 0 {
@@ -86,6 +93,7 @@ fn run_raycasts(
                 continue;
             }
             raycast.last_run = context.last_update_frame;
+            debug!("running raycast");
 
             // execute the raycast
             let raycast = &raycast.raycast;

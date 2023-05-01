@@ -7,6 +7,7 @@ use std::{
 use bevy::{
     core::FrameCount,
     prelude::*,
+    scene::scene_spawner_system,
     utils::{FloatOrd, HashMap, HashSet, Instant},
 };
 
@@ -132,12 +133,13 @@ impl Plugin for SceneRunnerPlugin {
 
         app.configure_sets(
             (
-                SceneSets::Init,
+                SceneSets::Init.after(scene_spawner_system),
                 SceneSets::PostInit,
                 SceneSets::Input,
                 SceneSets::RunLoop,
                 SceneSets::PostLoop,
             )
+                .in_base_set(CoreSet::Update)
                 .chain(),
         );
         app.add_system(
@@ -148,13 +150,26 @@ impl Plugin for SceneRunnerPlugin {
         app.add_system(
             apply_system_buffers
                 .after(SceneSets::PostInit)
+                .before(SceneSets::Input),
+        );
+        app.add_system(
+            apply_system_buffers
+                .after(SceneSets::Input)
                 .before(SceneSets::RunLoop),
+        );
+        app.add_system(
+            apply_system_buffers
+                .after(SceneSets::RunLoop)
+                .before(SceneSets::PostLoop),
         );
 
         app.add_plugin(SceneLifecyclePlugin);
 
-        app.add_system(update_scene_priority.in_set(SceneSets::Init));
-        app.add_system(run_scene_loop.in_set(SceneSets::RunLoop));
+        app.add_systems(
+            (update_scene_priority, run_scene_loop)
+                .chain()
+                .in_set(SceneSets::RunLoop),
+        );
 
         let mut scene_schedule = Schedule::new();
 
@@ -251,7 +266,7 @@ fn update_scene_priority(
         .iter_mut()
         .filter(|(ent, _, context)| {
             missing_in_flight.remove(ent);
-            !context.in_flight && !context.broken
+            !context.in_flight && !context.broken && context.blocked.is_empty()
         })
         .filter_map(|(ent, transform, mut context)| {
             let distance = (transform.translation() - camera_translation).length();
