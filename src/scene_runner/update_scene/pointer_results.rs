@@ -256,6 +256,7 @@ fn send_hover_events(
                             .and_then(|info| info.max_distance)
                             .unwrap_or(10.0);
                         if distance <= max_distance {
+                            let tick_number = context.tick_number;
                             context.update_crdt(
                                 SceneComponentId::POINTER_RESULT,
                                 CrdtType::GO_ENT,
@@ -274,7 +275,7 @@ fn send_hover_events(
                                     state: ev_type as i32,
                                     timestamp: frame.0,
                                     analog: None,
-                                    tick_number: 0, // TODO
+                                    tick_number,
                                 },
                             );
                         }
@@ -363,6 +364,7 @@ fn send_action_events(
                             .and_then(|info| info.max_distance)
                             .unwrap_or(10.0);
                         if distance <= max_distance {
+                            let tick_number = context.tick_number;
                             context.update_crdt(
                                 SceneComponentId::POINTER_RESULT,
                                 CrdtType::GO_ENT,
@@ -381,7 +383,7 @@ fn send_action_events(
                                     state: ev_type as i32,
                                     timestamp: frame.0,
                                     analog: None,
-                                    tick_number: 0, // TODO
+                                    tick_number,
                                 },
                             );
                         }
@@ -411,6 +413,7 @@ fn send_action_events(
 
     // send events to scene roots
     for (mut context, _) in scenes.iter_mut() {
+        let tick_number = context.tick_number;
         for down in input_mgr.iter_just_down() {
             context.update_crdt(
                 SceneComponentId::POINTER_RESULT,
@@ -430,7 +433,7 @@ fn send_action_events(
                     state: PointerEventType::PetDown as i32,
                     timestamp: frame.0,
                     analog: None,
-                    tick_number: 0, // TODO
+                    tick_number,
                 },
             );
         }
@@ -454,7 +457,7 @@ fn send_action_events(
                     state: PointerEventType::PetUp as i32,
                     timestamp: frame.0,
                     analog: None,
-                    tick_number: 0, // TODO
+                    tick_number,
                 },
             );
         }
