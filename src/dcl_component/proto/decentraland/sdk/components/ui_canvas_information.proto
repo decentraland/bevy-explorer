@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/common/border_rect.proto";
+
+import "decentraland/sdk/components/common/id.proto";
+option (common.ecs_component_id) = 1054;
+
+// This component is created by the renderer and used by the scenes to know the resolution of the UI canvas
+message PBUiCanvasInformation {
+  // informs the scene about the resolution used for the UI rendering
+  float device_pixel_ratio = 1;
+  // informs about the width of the canvas, in virtual pixels. this value does not change when the pixel ratio changes.
+  int32 width = 2;
+  // informs about the height of the canvas, in virtual pixels. this value does not change when the pixel ratio changes.
+  int32 height = 3;
+  // informs the sdk about the interactable area. some implementations may change
+  // this area depending on the HUD that is being shown. this value may change at
+  // any time by the Renderer to create reactive UIs. as an example, an explorer with the
+  // chat UI hidden and with no minimap could have a rect that covers the whole screen.
+  // on the contrary, if the chat UI is shown, the rect would be smaller.
+  decentraland.common.BorderRect interactable_area = 4;
+}

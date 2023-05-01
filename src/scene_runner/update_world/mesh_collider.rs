@@ -75,7 +75,7 @@ impl From<PbMeshCollider> for MeshCollider {
             // TODO update to u32
             collision_mask: value
                 .collision_mask
-                .unwrap_or(ColliderLayer::ClPointer as i32 | ColliderLayer::ClPhysics as i32)
+                .unwrap_or(ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32)
                 as u32,
             ..Default::default()
         }

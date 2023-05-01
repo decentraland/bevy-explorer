@@ -6,5 +6,13 @@ message BorderRect {
   float top = 1;
   float left = 2;
   float right = 3;
-  float bottom = 4; 
+  float bottom = 4;
+}
+
+// Defines a rect with x, y, width and height
+message Rect {
+  float x = 1;
+  float y = 2;
+  float width = 3;
+  float height = 4;
 }

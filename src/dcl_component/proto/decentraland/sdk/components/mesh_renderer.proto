@@ -21,8 +21,8 @@ message PBMeshRenderer {
 
     // CylinderMesh renders a truncated cone shape.
     message CylinderMesh {
-        optional float radius_top = 1;    // (default 1.0)
-        optional float radius_bottom = 2; // (default 1.0)
+        optional float radius_top = 1;    // (default 0.5)
+        optional float radius_bottom = 2; // (default 0.5)
     }
 
     // PlaneMesh renders a 2D rectangular shape.

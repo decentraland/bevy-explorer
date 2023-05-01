@@ -20,8 +20,8 @@ message PBMeshCollider {
 
   // CylinderMesh is a truncated cone shape that contains the Entity.
   message CylinderMesh {
-    optional float radius_top = 1;    // (default 1.0)
-    optional float radius_bottom = 2; // (default 1.0)
+    optional float radius_top = 1;    // (default 0.5)
+    optional float radius_bottom = 2; // (default 0.5)
   }
 
   // PlaneMesh is a 2D rectangle described by the Entity's Transform.
@@ -30,7 +30,7 @@ message PBMeshCollider {
   // SphereMesh is a sphere shape that contains the Entity.
   message SphereMesh {}
 
-  optional int32 collision_mask = 1; // enabled ColliderLayers (default CL_POINTER | CL_PHYSICS)
+  optional uint32 collision_mask = 1; // enabled ColliderLayers (default CL_POINTER | CL_PHYSICS)
 
   oneof mesh {
     BoxMesh box = 2;
@@ -45,7 +45,7 @@ enum ColliderLayer {
   CL_NONE = 0;           // no collisions
   CL_POINTER = 1;        // collisions with the player's pointer ray (e.g. mouse cursor hovering)
   CL_PHYSICS = 2;        // collision affecting your player's physics i.e. walls, floor, moving platfroms
-  CL_VISIBLE_MESHES = 4; // all visible meshes, use with extreme care since the performance penalty is high
+  CL_RESERVED1 = 4;
   CL_RESERVED2 = 8;
   CL_RESERVED3 = 16;
   CL_RESERVED4 = 32;

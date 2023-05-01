@@ -17,4 +17,5 @@ message PBRaycastResult {
   decentraland.common.Vector3 global_origin = 2; // the starting point of the ray in global coordinates
   decentraland.common.Vector3 direction = 3;     // the direction vector of the ray in global coordinates
   repeated decentraland.sdk.components.common.RaycastHit hits = 4; // zero or more hits
+  uint32 tick_number = 5;                        // number of tick in which the event was produced, equals to EngineInfo.tick_number
 }

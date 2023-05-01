@@ -45,6 +45,7 @@ impl DclProtoComponent for sdk::components::PbGltfContainer {}
 impl DclProtoComponent for sdk::components::PbAnimator {}
 impl DclProtoComponent for sdk::components::PbPointerEvents {}
 impl DclProtoComponent for sdk::components::PbPointerEventsResult {}
+impl DclProtoComponent for sdk::components::PbEngineInfo {}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}

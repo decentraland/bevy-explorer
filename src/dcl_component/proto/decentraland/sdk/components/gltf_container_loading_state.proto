@@ -1,0 +1,13 @@
+syntax = "proto3";
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+option (common.ecs_component_id) = 1049;
+
+import "decentraland/sdk/components/common/loading_state.proto";
+
+// GltfContainerLoadingState is set by the engine and provides information about
+// the current state of the GltfContainer of an entity.
+message PBGltfContainerLoadingState {
+  common.LoadingState current_state = 1;
+}

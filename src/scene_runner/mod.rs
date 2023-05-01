@@ -396,7 +396,7 @@ fn receive_scene_updates(
                         None
                     }
                 }
-                SceneResponse::Ok(scene_id, census, mut crdt) => {
+                SceneResponse::Ok(scene_id, census, mut crdt, runtime) => {
                     let root = updates.scene_ids.get(&scene_id).unwrap();
                     debug!(
                         "scene {:?}/{:?} received updates! [+{}, -{}]",
@@ -406,6 +406,8 @@ fn receive_scene_updates(
                         census.died.len()
                     );
                     if let Ok(mut context) = scenes.get_mut(*root) {
+                        context.tick_number += 1;
+                        context.total_runtime += runtime.0;
                         context.last_update_frame = frame.0;
                         context.in_flight = false;
                         context.nascent = census.born;

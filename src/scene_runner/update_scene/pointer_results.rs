@@ -274,6 +274,7 @@ fn send_hover_events(
                                     state: ev_type as i32,
                                     timestamp: frame.0,
                                     analog: None,
+                                    tick_number: 0, // TODO
                                 },
                             );
                         }
@@ -380,6 +381,7 @@ fn send_action_events(
                                     state: ev_type as i32,
                                     timestamp: frame.0,
                                     analog: None,
+                                    tick_number: 0, // TODO
                                 },
                             );
                         }
@@ -428,6 +430,7 @@ fn send_action_events(
                     state: PointerEventType::PetDown as i32,
                     timestamp: frame.0,
                     analog: None,
+                    tick_number: 0, // TODO
                 },
             );
         }
@@ -451,6 +454,7 @@ fn send_action_events(
                     state: PointerEventType::PetUp as i32,
                     timestamp: frame.0,
                     analog: None,
+                    tick_number: 0, // TODO
                 },
             );
         }

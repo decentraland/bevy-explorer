@@ -179,6 +179,7 @@ fn run_raycasts(
                 global_origin: Some(Vector3::world_vec_from_vec3(&scene_origin)),
                 direction: Some(Vector3::world_vec_from_vec3(&direction)),
                 hits: results.into_iter().map(make_hit).collect(),
+                tick_number: 0, // TODO
             };
 
             context.update_crdt(
