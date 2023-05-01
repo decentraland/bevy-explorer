@@ -22,7 +22,7 @@ use crate::{
                 RaycastQueryType,
             },
         },
-        SceneComponentId,
+        SceneComponentId, SceneEntityId,
     },
     scene_runner::{
         update_world::{
@@ -64,7 +64,7 @@ fn debug_raycast(mut input: ConsoleCommand<DebugRaycastCommand>, mut debug: ResM
 
 fn run_raycasts(
     mut raycast_requests: Query<(Entity, &SceneEntity, &mut Raycast, &GlobalTransform)>,
-    _target_positions: Query<(Entity, &GlobalTransform)>,
+    target_positions: Query<&GlobalTransform>,
     mut scene_datas: Query<(
         &mut RendererSceneContext,
         &mut SceneColliderData,
@@ -113,7 +113,14 @@ fn run_raycasts(
                 Some(Direction::GlobalTarget(point)) => {
                     point.world_vec_to_vec3() + scene_translation - origin
                 }
-                Some(Direction::TargetEntity(_id)) => todo!(),
+                Some(Direction::TargetEntity(id)) => {
+                    let target_position = context
+                        .bevy_entity(SceneEntityId::from_proto_u32(*id))
+                        .and_then(|entity| target_positions.get(entity).ok())
+                        .map(|gt| gt.translation())
+                        .unwrap_or(origin);
+                    target_position - origin
+                },
                 None => {
                     warn!("no direction on raycast");
                     continue;
