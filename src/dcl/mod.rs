@@ -30,6 +30,8 @@ pub struct SceneCensus {
     pub died: HashSet<SceneEntityId>,
 }
 
+pub struct SceneElapsedTime(pub f32);
+
 // data from renderer to scene
 #[derive(Debug)]
 pub enum RendererResponse {
@@ -40,7 +42,7 @@ pub enum RendererResponse {
                                      // data from scene to renderer
 pub enum SceneResponse {
     Error(SceneId, String),
-    Ok(SceneId, SceneCensus, CrdtStore),
+    Ok(SceneId, SceneCensus, CrdtStore, SceneElapsedTime),
 }
 
 static SCENE_ID: Lazy<AtomicU32> = Lazy::new(Default::default);

@@ -12,7 +12,7 @@ use crate::ipfs::SceneJsFile;
 
 use super::{
     interface::{CrdtComponentInterfaces, CrdtStore},
-    RendererResponse, SceneId, SceneResponse, VM_HANDLES,
+    RendererResponse, SceneId, SceneResponse, VM_HANDLES, SceneElapsedTime,
 };
 
 pub mod context;
@@ -135,6 +135,8 @@ pub(crate) fn scene_thread(
             .unwrap_or(elapsed)
             - elapsed;
         elapsed += dt;
+
+        state.borrow_mut().put(SceneElapsedTime(elapsed.as_secs_f32()));
 
         // run the onUpdate function
         let result = run_script(&mut runtime, &script, "onUpdate", (), |scope| {

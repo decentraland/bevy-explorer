@@ -11,7 +11,7 @@ use crate::{
     dcl::{
         crdt::{growonly::CrdtGOEntry, lww::LWWEntry},
         interface::ComponentPosition,
-        CrdtComponentInterfaces, CrdtStore, RendererResponse, SceneResponse,
+        CrdtComponentInterfaces, CrdtStore, RendererResponse, SceneResponse, SceneElapsedTime,
     },
     dcl_assert,
     dcl_component::{
@@ -128,6 +128,7 @@ fn process_message(
 #[op(v8)]
 fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
     let mut op_state = op_state.borrow_mut();
+    let elapsed_time = op_state.borrow::<SceneElapsedTime>().0;
     let mut entity_map = op_state.take::<SceneSceneContext>();
     let mut typemap = op_state.take::<CrdtStore>();
     let writers = op_state.take::<CrdtComponentInterfaces>();
@@ -165,7 +166,7 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
 
     let sender = op_state.borrow_mut::<SyncSender<SceneResponse>>();
     sender
-        .send(SceneResponse::Ok(entity_map.scene_id, census, updates))
+        .send(SceneResponse::Ok(entity_map.scene_id, census, updates, SceneElapsedTime(elapsed_time)))
         .expect("failed to send to renderer");
 
     op_state.put(writers);

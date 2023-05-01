@@ -1,6 +1,7 @@
 use std::io::Result;
 fn main() -> Result<()> {
     let components = [
+        "engine_info",
         "billboard",
         "raycast",
         "raycast_result",
