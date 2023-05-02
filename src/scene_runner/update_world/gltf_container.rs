@@ -55,7 +55,11 @@ impl Plugin for GltfDefinitionPlugin {
         );
 
         app.add_system(update_gltf.in_set(SceneSets::PostLoop));
-        app.add_system(attach_ready_colliders.after(update_gltf).in_set(SceneSets::PostLoop));
+        app.add_system(
+            attach_ready_colliders
+                .after(update_gltf)
+                .in_set(SceneSets::PostLoop),
+        );
         app.add_asset::<GltfCachedShape>();
         app.init_resource::<MeshToShape>();
         app.add_system(check_gltfs_ready.in_set(SceneSets::PostInit));

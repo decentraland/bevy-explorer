@@ -22,7 +22,9 @@ impl Plugin for PointerResultPlugin {
         app.init_resource::<InputMap>();
         app.init_resource::<PointerTarget>();
         app.add_systems(
-            (update_pointer_target, send_hover_events, send_action_events).chain().in_set(SceneSets::Input),
+            (update_pointer_target, send_hover_events, send_action_events)
+                .chain()
+                .in_set(SceneSets::Input),
         );
     }
 }
