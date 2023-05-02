@@ -276,15 +276,15 @@ pub(crate) fn load_scene_javascript(
         };
 
         // get main.crdt
-        let serialized_crdt = match maybe_h_crdt {
+        let maybe_serialized_crdt = match maybe_h_crdt {
             Some(ref h_crdt) => match main_crdts.get(h_crdt) {
-                Some(crdt) => crdt.clone().0,
+                Some(crdt) => Some(crdt.clone().0),
                 None => {
                     fail("failed to load crdt");
                     continue;
                 }
             },
-            None => Vec::default(),
+            None => None,
         };
 
         let h_code = match asset_server.load_content_file::<SceneJsFile>(&meta.main, &definition.id)
@@ -322,33 +322,38 @@ pub(crate) fn load_scene_javascript(
 
         scene_updates.scene_ids.insert(scene_id, root);
 
-        // get full main.crdt
-        let mut main_crdt = CrdtStore::default();
-        let mut context = CrdtContext::new(scene_id);
-        let mut stream = DclReader::new(&serialized_crdt);
-        main_crdt.process_message_stream(
-            &mut context,
-            &crdt_component_interfaces,
-            &mut stream,
-            false,
-        );
+        if let Some(serialized_crdt) = maybe_serialized_crdt {
+            // get full main.crdt
+            let mut main_crdt = CrdtStore::default();
+            let mut context = CrdtContext::new(scene_id);
+            let mut stream = DclReader::new(&serialized_crdt);
+            main_crdt.process_message_stream(
+                &mut context,
+                &crdt_component_interfaces,
+                &mut stream,
+                false,
+            );
 
-        // send initial updates into renderer
-        let census = context.take_census();
-        main_crdt.clean_up(&census.died);
-        let updates = main_crdt.clone().take_updates();
+            // send initial updates into renderer
+            let census = context.take_census();
+            main_crdt.clean_up(&census.died);
+            let updates = main_crdt.clone().take_updates();
 
-        if let Err(e) = scene_updates.sender.send(SceneResponse::Ok(
-            context.scene_id,
-            census,
-            updates,
-            SceneElapsedTime(0.0),
-        )) {
-            error!("failed to send initial updates to renderer: {e}");
+            if let Err(e) = scene_updates.sender.send(SceneResponse::Ok(
+                context.scene_id,
+                census,
+                updates,
+                SceneElapsedTime(0.0),
+            )) {
+                error!("failed to send initial updates to renderer: {e}");
+            }
+
+            // and store to post to the scene thread on first request
+            renderer_context.crdt_store = main_crdt;
+        } else {
+            // explicitly set initial tick as run
+            renderer_context.tick_number = 0;
         }
-
-        // and store to post to the scene thread on first request
-        renderer_context.crdt_store = main_crdt;
 
         commands.entity(root).insert((
             SpatialBundle {
