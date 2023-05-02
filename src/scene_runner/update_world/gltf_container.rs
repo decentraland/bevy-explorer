@@ -222,7 +222,7 @@ fn update_gltf(
         }
     }
 
-    for (bevy_scene_entity, dcl_scene_entity, loaded, _definition) in ready_gltfs.iter() {
+    for (bevy_scene_entity, dcl_scene_entity, loaded, definition) in ready_gltfs.iter() {
         if loaded.0.is_none() {
             // nothing to process
             commands
@@ -317,32 +317,37 @@ fn update_gltf(
                     }
 
                     // get specified or default collider bits
-                    let mut collider_bits = maybe_extras
+                    // try mesh node first
+                    let collider_bits = maybe_extras
                         .and_then(|extras| {
                             serde_json::from_str::<DclNodeExtras>(&extras.value).ok()
                         })
                         .and_then(|extras| extras.dcl_collision_mask)
-                        .unwrap_or({
-                            if is_collider {
-                                // colliders default to physics
-                                ColliderLayer::ClPhysics as u32
-                            } else {
-                                // non-colliders default to nothing
-                                0
-                            }
+                        .unwrap_or_else(|| {
+                            // then try parent node
+                            gltf_spawned_entities
+                                .get_component::<GltfExtras>(parent.get())
+                                .ok()
+                                .and_then(|extras| {
+                                    serde_json::from_str::<DclNodeExtras>(&extras.value).ok()
+                                })
+                                .and_then(|extras| extras.dcl_collision_mask)
+                                .unwrap_or({
+                                    //fall back to container-specified default
+                                    if is_collider {
+                                        definition.0.invisible_meshes_collision_mask.unwrap_or(
+                                            // colliders default to physics + pointers
+                                            ColliderLayer::ClPhysics as u32
+                                                | ColliderLayer::ClPointer as u32,
+                                        )
+                                    } else {
+                                        definition.0.visible_meshes_collision_mask.unwrap_or(
+                                            // non-colliders default to nothing
+                                            0,
+                                        )
+                                    }
+                                })
                         });
-
-                    // TODO plug in disable_physics_colliders once proto message is updated
-                    if false {
-                        // switch off physics bit
-                        collider_bits &= !(ColliderLayer::ClPhysics as u32);
-                    }
-
-                    // TODO plug in create_pointer_colliders once proto message is updated
-                    if false {
-                        // switch on pointer bit
-                        collider_bits |= ColliderLayer::ClPointer as u32;
-                    }
 
                     if collider_bits != 0 && !is_skinned {
                         // get or create handle to collider shape
