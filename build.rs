@@ -9,6 +9,7 @@ fn main() -> Result<()> {
         "mesh_collider",
         "material",
         "gltf_container",
+        "gltf_container_loading_state",
         "animator",
         "pointer_events",
         "pointer_events_result",

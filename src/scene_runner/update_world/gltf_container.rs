@@ -18,9 +18,11 @@ use rapier3d::prelude::*;
 use serde::Deserialize;
 
 use crate::{
-    dcl::interface::ComponentPosition,
+    dcl::interface::{ComponentPosition, CrdtType},
     dcl_component::{
-        proto_components::sdk::components::{ColliderLayer, PbGltfContainer},
+        proto_components::sdk::components::{
+            common::LoadingState, ColliderLayer, PbGltfContainer, PbGltfContainerLoadingState,
+        },
         SceneComponentId, SceneEntityId,
     },
     ipfs::{IpfsLoaderExt, SceneDefinition},
@@ -57,6 +59,7 @@ impl Plugin for GltfDefinitionPlugin {
         app.add_asset::<GltfCachedShape>();
         app.init_resource::<MeshToShape>();
         app.add_system(check_gltfs_ready.in_set(SceneSets::PostInit));
+        app.add_system(update_container_finished.in_set(SceneSets::Input));
     }
 }
 
@@ -131,8 +134,22 @@ fn update_gltf(
     mut meshes: ResMut<Assets<Mesh>>,
     mut cached_shapes: ResMut<Assets<GltfCachedShape>>,
     mut shape_lookup: ResMut<MeshToShape>,
+    mut contexts: Query<&mut RendererSceneContext>,
     _debug_name_query: Query<(Entity, Option<&Name>, Option<&Children>)>,
 ) {
+    let mut set_state = |scene_ent: &SceneEntity, current_state: LoadingState| {
+        if let Ok(mut context) = contexts.get_mut(scene_ent.root) {
+            context.update_crdt(
+                SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
+                CrdtType::LWW_ANY,
+                scene_ent.id,
+                &PbGltfContainerLoadingState {
+                    current_state: current_state as i32,
+                },
+            );
+        };
+    };
+
     for (ent, scene_ent, gltf, maybe_loaded, maybe_processed) in new_gltfs.iter() {
         debug!("{} has {}", scene_ent.id, gltf.0.src);
 
@@ -167,19 +184,22 @@ fn update_gltf(
             Ok(h_gltf) => h_gltf,
             Err(e) => {
                 warn!("gltf content file not found: {e}");
+                set_state(scene_ent, LoadingState::NotFound);
                 commands.entity(ent).remove::<GltfLoaded>();
                 continue;
             }
         };
 
+        set_state(scene_ent, LoadingState::Loading);
         commands.entity(ent).insert(h_gltf).remove::<GltfLoaded>();
     }
 
-    for (ent, _scene_ent, h_gltf) in unprocessed_gltfs.iter() {
+    for (ent, scene_ent, h_gltf) in unprocessed_gltfs.iter() {
         match asset_server.get_load_state(h_gltf) {
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed => {
                 warn!("failed to process gltf");
+                set_state(scene_ent, LoadingState::FinishedWithError);
                 commands.entity(ent).insert(GltfLoaded(None));
                 continue;
             }
@@ -196,6 +216,7 @@ fn update_gltf(
             }
             None => {
                 warn!("no default scene found in gltf.");
+                set_state(scene_ent, LoadingState::FinishedWithError);
                 commands.entity(ent).insert(GltfLoaded(None));
             }
         }
@@ -212,6 +233,7 @@ fn update_gltf(
         let instance = loaded.0.as_ref().unwrap();
         if scene_spawner.instance_is_ready(*instance) {
             let mut animation_roots = HashSet::default();
+            let mut pending_colliders = HashSet::default();
 
             // let graph = _node_graph(&_debug_name_query, bevy_scene_entity);
             // println!("{bevy_scene_entity:?}");
@@ -374,6 +396,8 @@ fn update_gltf(
                             .or_default();
                         *index += 1u32;
 
+                        pending_colliders.insert(h_shape.clone_weak());
+
                         commands.entity(spawned_ent).insert(PendingGltfCollider {
                             h_shape,
                             h_mesh: h_mesh.clone_weak(),
@@ -397,10 +421,13 @@ fn update_gltf(
                 }
             }
 
-            commands.entity(bevy_scene_entity).insert(GltfProcessed {
-                animation_roots,
-                instance_id: Some(*instance),
-            });
+            commands.entity(bevy_scene_entity).insert((
+                GltfProcessed {
+                    animation_roots,
+                    instance_id: Some(*instance),
+                },
+                PendingGltfColliders(pending_colliders),
+            ));
         }
     }
 }
@@ -465,6 +492,39 @@ fn check_gltfs_ready(
             context.blocked.insert(GLTF_LOADING);
         } else {
             context.blocked.remove(GLTF_LOADING);
+        }
+    }
+}
+
+// list of pending shapes for a gltf container
+#[derive(Component)]
+pub struct PendingGltfColliders(pub HashSet<Handle<GltfCachedShape>>);
+
+// set loading finished once all colliders resolved
+fn update_container_finished(
+    mut commands: Commands,
+    mut loading_containers: Query<(Entity, &SceneEntity, &mut PendingGltfColliders)>,
+    colliders: Res<Assets<GltfCachedShape>>,
+    mut contexts: Query<&mut RendererSceneContext>,
+) {
+    for (entity, scene_ent, mut pending) in loading_containers.iter_mut() {
+        pending.0.retain(|h_shape| match colliders.get(h_shape) {
+            Some(shape) => matches!(shape, GltfCachedShape::Task(_)),
+            None => true,
+        });
+
+        if pending.0.is_empty() {
+            commands.entity(entity).remove::<PendingGltfColliders>();
+            if let Ok(mut context) = contexts.get_mut(scene_ent.root) {
+                context.update_crdt(
+                    SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
+                    CrdtType::LWW_ANY,
+                    scene_ent.id,
+                    &PbGltfContainerLoadingState {
+                        current_state: LoadingState::Finished as i32,
+                    },
+                );
+            }
         }
     }
 }
