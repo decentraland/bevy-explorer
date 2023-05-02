@@ -317,10 +317,38 @@ pub(crate) fn load_scene_javascript(
         commands.entity(root).insert(());
 
         let scene_id = get_next_scene_id();
-        let renderer_context = RendererSceneContext::new(scene_id, base, root, 1.0);
+        let mut renderer_context = RendererSceneContext::new(scene_id, base, root, 1.0);
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?})");
 
         scene_updates.scene_ids.insert(scene_id, root);
+
+        // get full main.crdt
+        let mut main_crdt = CrdtStore::default();
+        let mut context = CrdtContext::new(scene_id);
+        let mut stream = DclReader::new(&serialized_crdt);
+        main_crdt.process_message_stream(
+            &mut context,
+            &crdt_component_interfaces,
+            &mut stream,
+            false,
+        );
+
+        // send initial updates into renderer
+        let census = context.take_census();
+        main_crdt.clean_up(&census.died);
+        let updates = main_crdt.clone().take_updates();
+
+        if let Err(e) = scene_updates.sender.send(SceneResponse::Ok(
+            context.scene_id,
+            census,
+            updates,
+            SceneElapsedTime(0.0),
+        )) {
+            error!("failed to send initial updates to renderer: {e}");
+        }
+
+        // and store to post to the scene thread on first request
+        renderer_context.crdt_store = main_crdt;
 
         commands.entity(root).insert((
             SpatialBundle {
@@ -345,31 +373,6 @@ pub(crate) fn load_scene_javascript(
             },
         ));
 
-        // get filtered renderer crdt
-        let mut renderer_crdt = CrdtStore::default();
-        let mut context = CrdtContext::new(scene_id);
-        let mut stream = DclReader::new(&serialized_crdt);
-        renderer_crdt.process_message_stream(
-            &mut context,
-            &crdt_component_interfaces,
-            &mut stream,
-            true,
-        );
-
-        // send initial updates into renderer
-        let census = context.take_census();
-        renderer_crdt.clean_up(&census.died);
-        let updates = renderer_crdt.take_updates();
-
-        if let Err(e) = scene_updates.sender.send(SceneResponse::Ok(
-            context.scene_id,
-            census,
-            updates,
-            SceneElapsedTime(0.0),
-        )) {
-            error!("failed to send initial updates to renderer: {e}");
-        }
-
         commands.entity(root).insert(h_code);
         *state = SceneLoading::Javascript;
     }
@@ -389,10 +392,9 @@ pub(crate) fn initialize_scene(
     scene_js_files: Res<Assets<SceneJsFile>>,
     asset_server: Res<AssetServer>,
 ) {
-    for (root, _, h_code, context) in loading_scenes
-        .iter()
-        .filter(|(_, state, ..)| matches!(state, SceneLoading::Javascript))
-    {
+    for (root, _, h_code, context) in loading_scenes.iter().filter(|(_, state, _, context)| {
+        matches!(state, SceneLoading::Javascript) && context.tick_number == 0
+    }) {
         debug!("checking for js");
         let mut fail = |msg: &str| {
             warn!("{root:?} failed to initialize scene: {msg}");
@@ -413,7 +415,7 @@ pub(crate) fn initialize_scene(
             continue;
         };
 
-        info!("{root:?}: starting scene");
+        info!("{root:?}: starting scene sandbox");
 
         let thread_sx = scene_updates.sender.clone();
 

@@ -77,7 +77,7 @@ impl RendererSceneContext {
             crdt_store: Default::default(),
             blocked: Default::default(),
             total_runtime: 0.0,
-            tick_number: 0,
+            tick_number: u32::MAX,
         };
 
         new_context.live_entities[SceneEntityId::ROOT.id as usize] =

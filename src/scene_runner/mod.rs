@@ -406,7 +406,7 @@ fn receive_scene_updates(
                         census.died.len()
                     );
                     if let Ok(mut context) = scenes.get_mut(*root) {
-                        context.tick_number += 1;
+                        context.tick_number = context.tick_number.wrapping_add(1);
                         context.total_runtime += runtime.0;
                         context.last_update_frame = frame.0;
                         context.in_flight = false;
