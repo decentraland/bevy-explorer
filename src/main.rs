@@ -315,7 +315,7 @@ fn input(
     keys: Res<Input<KeyCode>>,
     mut load: EventWriter<ChangeRealmEvent>,
     frame: Res<FrameCount>,
-    loading_scenes: Query<(), With<SceneLoading>>,
+    loading_scenes: Query<&SceneLoading>,
     running_scenes: Query<&RendererSceneContext>,
 ) {
     let realm = if keys.pressed(KeyCode::Up) {
@@ -333,7 +333,13 @@ fn input(
     }
 
     if frame.0 % 1000 == 0 {
-        info!("{} loading", loading_scenes.iter().count());
+        info!(
+            "{} loading ({:?})",
+            loading_scenes.iter().count(),
+            loading_scenes.iter().fold(String::new(), |msg, loadng| {
+                format!("{msg}, {loadng:?}")
+            })
+        );
 
         let running = running_scenes
             .iter()
@@ -348,7 +354,15 @@ fn input(
             .filter(|context| context.broken)
             .count();
         info!("{} running", running);
-        info!("{} blocked", blocked);
+        info!(
+            "{} blocked ({:?})",
+            blocked,
+            running_scenes
+                .iter()
+                .filter(|context| !context.broken && !context.blocked.is_empty())
+                .map(|context| &context.blocked)
+                .collect::<Vec<_>>()
+        );
         info!("{} broken", broken);
     }
 }

@@ -71,7 +71,7 @@ impl ToDclWriter for CrdtMessageType {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct CrdtStore {
     pub lww: HashMap<SceneComponentId, CrdtLWWState>,
     pub go: HashMap<SceneComponentId, CrdtGOState>,

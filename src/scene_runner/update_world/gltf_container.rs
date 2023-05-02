@@ -464,7 +464,6 @@ fn check_gltfs_ready(
             debug!("{root:?} blocked on gltfs");
             context.blocked.insert(GLTF_LOADING);
         } else {
-            debug!("{root:?} not blocked on gltfs");
             context.blocked.remove(GLTF_LOADING);
         }
     }

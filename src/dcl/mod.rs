@@ -53,11 +53,7 @@ static SCENE_ID: Lazy<AtomicU32> = Lazy::new(Default::default);
 pub(crate) static VM_HANDLES: Lazy<Mutex<HashMap<SceneId, IsolateHandle>>> =
     Lazy::new(Default::default);
 
-pub fn spawn_scene(
-    scene_js: SceneJsFile,
-    crdt_component_interfaces: CrdtComponentInterfaces,
-    renderer_sender: SyncSender<SceneResponse>,
-) -> (SceneId, Sender<RendererResponse>) {
+pub fn get_next_scene_id() -> SceneId {
     let mut id = SceneId(SCENE_ID.fetch_add(1, Ordering::Relaxed));
 
     if id.0 == 0 {
@@ -67,6 +63,15 @@ pub fn spawn_scene(
         id = SceneId(SCENE_ID.fetch_add(1, Ordering::Relaxed));
     }
 
+    id
+}
+
+pub fn spawn_scene(
+    scene_js: SceneJsFile,
+    crdt_component_interfaces: CrdtComponentInterfaces,
+    renderer_sender: SyncSender<SceneResponse>,
+    id: SceneId,
+) -> Sender<RendererResponse> {
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
 
     std::thread::Builder::new()
@@ -82,5 +87,5 @@ pub fn spawn_scene(
         })
         .unwrap();
 
-    (id, main_sx)
+    main_sx
 }

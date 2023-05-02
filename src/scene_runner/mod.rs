@@ -21,7 +21,7 @@ use crate::{
 };
 
 use self::{
-    initialize_scene::SceneLifecyclePlugin,
+    initialize_scene::{SceneLifecyclePlugin, SceneLoading},
     renderer_context::RendererSceneContext,
     update_scene::SceneInputPlugin,
     update_world::{CrdtExtractors, SceneOutputPlugin},
@@ -213,7 +213,7 @@ fn run_scene_loop(world: &mut World) {
     #[cfg(debug_assertions)]
     let millis = 100;
     #[cfg(not(debug_assertions))]
-    let millis = 16;
+    let millis = 100;
     let end_time = last_end_time + Duration::from_millis(millis);
     world.resource_mut::<SceneUpdates>().loop_end_time = end_time;
 
@@ -246,7 +246,7 @@ fn run_scene_loop(world: &mut World) {
 }
 
 fn update_scene_priority(
-    mut scenes: Query<(Entity, &GlobalTransform, &mut RendererSceneContext)>,
+    mut scenes: Query<(Entity, &GlobalTransform, &mut RendererSceneContext), Without<SceneLoading>>,
     camera: Query<&GlobalTransform, With<PrimaryCamera>>,
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
