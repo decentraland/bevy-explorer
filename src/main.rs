@@ -205,6 +205,11 @@ fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<Asset
     // add a camera
     commands.spawn((
         Camera3dBundle {
+            camera: Camera {
+                // TODO enable when we can use gizmos instead of debuglines in bevy 0.11
+                // hdr: true,
+                ..Default::default()
+            },
             transform: Transform::from_translation(Vec3::new(16.0 * 77.5, 2.0, 16.0 * 7.5))
                 .looking_at(Vec3::new(1.0, 8.0, -1.0), Vec3::Y),
             tonemapping: Tonemapping::TonyMcMapface,

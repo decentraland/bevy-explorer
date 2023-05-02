@@ -23,6 +23,10 @@ pub mod js;
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct SceneId(u32);
 
+impl SceneId {
+    pub const DUMMY: SceneId = SceneId(0);
+}
+
 // message from scene describing new and deleted entities
 pub struct SceneCensus {
     pub scene_id: SceneId,
@@ -54,11 +58,13 @@ pub fn spawn_scene(
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SyncSender<SceneResponse>,
 ) -> (SceneId, Sender<RendererResponse>) {
-    let id = SceneId(SCENE_ID.fetch_add(1, Ordering::Relaxed));
+    let mut id = SceneId(SCENE_ID.fetch_add(1, Ordering::Relaxed));
 
     if id.0 == 0 {
         // synchronously create and drop a single runtime to hopefully avoid initial segfaults
         create_runtime();
+        // and skip the dummy id
+        id = SceneId(SCENE_ID.fetch_add(1, Ordering::Relaxed));
     }
 
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);

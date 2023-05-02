@@ -1,10 +1,13 @@
 use bevy::prelude::Plugin;
 
-use self::{pointer_results::PointerResultPlugin, raycast_result::RaycastResultPlugin, engine_info::EngineInfoPlugin};
+use self::{
+    engine_info::EngineInfoPlugin, pointer_results::PointerResultPlugin,
+    raycast_result::RaycastResultPlugin,
+};
 
+pub mod engine_info;
 pub mod pointer_results;
 pub mod raycast_result;
-pub mod engine_info;
 
 pub struct SceneInputPlugin;
 

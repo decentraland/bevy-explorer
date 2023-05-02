@@ -7,15 +7,13 @@ use deno_core::{
 };
 use tokio::sync::mpsc::Receiver;
 
-use self::context::SceneSceneContext;
 use crate::ipfs::SceneJsFile;
 
 use super::{
-    interface::{CrdtComponentInterfaces, CrdtStore},
-    RendererResponse, SceneId, SceneResponse, VM_HANDLES, SceneElapsedTime,
+    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
+    RendererResponse, SceneElapsedTime, SceneId, SceneResponse, VM_HANDLES,
 };
 
-pub mod context;
 pub mod engine;
 
 // marker to indicate shutdown has been triggered
@@ -70,7 +68,7 @@ pub(crate) fn scene_thread(
     thread_sx: SyncSender<SceneResponse>,
     thread_rx: Receiver<RendererResponse>,
 ) {
-    let scene_context = SceneSceneContext::new(scene_id);
+    let scene_context = CrdtContext::new(scene_id);
     let mut runtime = create_runtime();
 
     // store handle
@@ -136,7 +134,9 @@ pub(crate) fn scene_thread(
             - elapsed;
         elapsed += dt;
 
-        state.borrow_mut().put(SceneElapsedTime(elapsed.as_secs_f32()));
+        state
+            .borrow_mut()
+            .put(SceneElapsedTime(elapsed.as_secs_f32()));
 
         // run the onUpdate function
         let result = run_script(&mut runtime, &script, "onUpdate", (), |scope| {

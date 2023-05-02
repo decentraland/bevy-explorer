@@ -33,7 +33,10 @@ impl SceneEntityId {
     }
 
     pub fn from_proto_u32(id: u32) -> Self {
-        SceneEntityId { id: id as u16, generation: (id >> 16) as u16 }
+        SceneEntityId {
+            id: id as u16,
+            generation: (id >> 16) as u16,
+        }
     }
 }
 

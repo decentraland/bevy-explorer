@@ -120,7 +120,7 @@ fn run_raycasts(
                         .map(|gt| gt.translation())
                         .unwrap_or(origin);
                     target_position - origin
-                },
+                }
                 None => {
                     warn!("no direction on raycast");
                     continue;

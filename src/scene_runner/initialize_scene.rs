@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
 use bevy::{
+    asset::{AssetLoader, LoadedAsset},
     math::Vec3Swizzles,
     prelude::*,
+    reflect::TypeUuid,
     tasks::{IoTaskPool, Task},
     utils::{HashMap, HashSet},
 };
@@ -11,8 +13,11 @@ use isahc::{http::StatusCode, AsyncReadResponseExt, RequestExt};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    dcl::{interface::CrdtComponentInterfaces, spawn_scene},
-    dcl_component::SceneEntityId,
+    dcl::{
+        interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
+        spawn_scene, SceneId,
+    },
+    dcl_component::{DclReader, SceneEntityId},
     ipfs::{
         ipfs_path::{EntityType, IpfsPath},
         CurrentRealm, IpfsIo, IpfsLoaderExt, SceneDefinition, SceneIpfsLocation, SceneJsFile,
@@ -26,6 +31,34 @@ use crate::{
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryCamera, SceneSets, SceneUpdates};
 
+pub struct CrdtLoader;
+
+impl AssetLoader for CrdtLoader {
+    fn load<'a>(
+        &'a self,
+        bytes: &'a [u8],
+        load_context: &'a mut bevy::asset::LoadContext,
+    ) -> bevy::utils::BoxedFuture<'a, anyhow::Result<(), anyhow::Error>> {
+        Box::pin(async move {
+            let mut context = CrdtContext::new(SceneId::DUMMY);
+            let mut crdt = CrdtStore::default();
+            let mut stream = DclReader::new(bytes);
+            crdt.process_message_stream(
+                &mut context,
+                &CrdtComponentInterfaces::default(),
+                &mut stream,
+                false,
+            );
+            load_context.set_default_asset(LoadedAsset::new(SerializedCrdtStore(crdt)));
+            Ok(())
+        })
+    }
+
+    fn extensions(&self) -> &[&str] {
+        &["crdt"]
+    }
+}
+
 pub struct SceneLifecyclePlugin;
 
 impl Plugin for SceneLifecyclePlugin {
@@ -33,6 +66,8 @@ impl Plugin for SceneLifecyclePlugin {
         app.init_resource::<LiveScenes>();
         app.init_resource::<ScenePointers>();
         app.insert_resource(SceneLoadDistance(100.0));
+        app.add_asset::<SerializedCrdtStore>();
+        app.add_asset_loader(CrdtLoader);
 
         app.add_systems(
             (
@@ -61,6 +96,7 @@ pub enum SceneLoading {
     SceneSpawned,
     SceneEntity,
     SceneMeta,
+    MainCrdt(Option<Handle<SerializedCrdtStore>>),
     Javascript,
     Failed,
 }
@@ -151,6 +187,54 @@ pub(crate) fn load_scene_json(
         *state = SceneLoading::SceneMeta;
     }
 }
+
+pub(crate) fn load_scene_crdt(
+    mut commands: Commands,
+    mut loading_scenes: Query<(
+        Entity,
+        &mut SceneLoading,
+        &Handle<SceneDefinition>,
+        &Handle<SceneMeta>,
+    )>,
+    scene_definitions: Res<Assets<SceneDefinition>>,
+    asset_server: Res<AssetServer>,
+) {
+    for (entity, mut state, h_scene, h_meta) in loading_scenes
+        .iter_mut()
+        .filter(|(_, state, _, _)| matches!(**state, SceneLoading::SceneMeta))
+    {
+        let mut fail = |msg: &str| {
+            warn!("{entity:?} failed to initialize scene: {msg}");
+            commands.entity(entity).insert(SceneLoading::Failed);
+        };
+
+        match asset_server.get_load_state(h_meta) {
+            bevy::asset::LoadState::Loaded => (),
+            bevy::asset::LoadState::Failed => {
+                fail("scene.json could not be loaded");
+                continue;
+            }
+            _ => continue,
+        }
+        let Some(definition) = scene_definitions.get(h_scene) else {
+            fail("definition was dropped");
+            continue;
+        };
+
+        if definition.content.hash("main.crdt").is_some() {
+            let h_crdt: Handle<SerializedCrdtStore> = asset_server
+                .load_content_file("main.crdt", &definition.id)
+                .unwrap();
+            *state = SceneLoading::MainCrdt(Some(h_crdt));
+        } else {
+            *state = SceneLoading::MainCrdt(None);
+        };
+    }
+}
+
+#[derive(TypeUuid)]
+#[uuid = "e5f49bd0-15b0-43c1-8609-00bf8e1d23d4"]
+pub struct SerializedCrdtStore(pub CrdtStore);
 
 pub(crate) fn load_scene_javascript(
     mut commands: Commands,
