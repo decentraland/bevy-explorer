@@ -29,7 +29,14 @@ impl SceneEntityId {
     pub const CAMERA: SceneEntityId = Self::reserved(2);
 
     pub fn as_proto_u32(&self) -> Option<u32> {
-        Some((self.id as u32) << 16 | self.generation as u32)
+        Some(self.id as u32 | (self.generation as u32) << 16)
+    }
+
+    pub fn from_proto_u32(id: u32) -> Self {
+        SceneEntityId {
+            id: id as u16,
+            generation: (id >> 16) as u16,
+        }
     }
 }
 
@@ -43,6 +50,8 @@ impl SceneComponentId {
     pub const MESH_COLLIDER: SceneComponentId = SceneComponentId(1019);
     pub const GLTF_CONTAINER: SceneComponentId = SceneComponentId(1041);
     pub const ANIMATOR: SceneComponentId = SceneComponentId(1042);
+    pub const ENGINE_INFO: SceneComponentId = SceneComponentId(1048);
+    pub const GLTF_CONTAINER_LOADING_STATE: SceneComponentId = SceneComponentId(1049);
     pub const POINTER_EVENTS: SceneComponentId = SceneComponentId(1062);
     pub const POINTER_RESULT: SceneComponentId = SceneComponentId(1063);
     pub const RAYCAST: SceneComponentId = SceneComponentId(1067);

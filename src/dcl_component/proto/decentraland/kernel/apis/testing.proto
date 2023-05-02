@@ -1,0 +1,55 @@
+syntax = "proto3";
+package decentraland.kernel.apis;
+
+service TestingService {
+  // sends a test result to the test runner
+  rpc LogTestResult(TestResult) returns (TestResultResponse) {}
+  // send a list of all planned tests to the test runner
+  rpc Plan(TestPlan) returns (TestPlanResponse) {}
+  // sets the camera position and rotation in the engine
+  rpc SetCameraTransform (SetCameraTransformTestCommand) returns (SetCameraTransformTestCommandResponse) {}
+}
+
+
+message TestResult {
+    string name = 1;
+    bool ok = 2;
+    optional string error = 3;
+    optional string stack = 4;
+
+    // how many ADR-148 ticks were spent running this test
+    uint32 total_frames = 5;
+
+    // total time in seconds spent running this test
+    float total_time = 6;
+}
+message TestResultResponse {}
+
+message TestPlan {
+  message TestPlanEntry {
+    string name = 1;
+  }
+
+  repeated TestPlanEntry tests = 1;
+}
+message TestPlanResponse {}
+
+message SetCameraTransformTestCommand {
+  Vector3 position = 1;
+  Quaternion rotation = 2;
+
+  message Vector3 {
+    float x = 1;
+    float y = 2;
+    float z = 3;
+  }
+
+  message Quaternion {
+    float x = 1;
+    float y = 2;
+    float z = 3;
+    float w = 4;
+  }
+}
+message SetCameraTransformTestCommandResponse {}
+

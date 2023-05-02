@@ -1,45 +1,20 @@
 // Engine module
 
-use bevy::prelude::{debug, error, info, warn};
+use bevy::prelude::{debug, info};
 use deno_core::{op, OpDecl, OpState};
-use num::{FromPrimitive, ToPrimitive};
-use num_derive::{FromPrimitive, ToPrimitive};
 use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
 use tokio::sync::mpsc::Receiver;
 
 use crate::{
     dcl::{
         crdt::{growonly::CrdtGOEntry, lww::LWWEntry},
-        interface::ComponentPosition,
-        CrdtComponentInterfaces, CrdtStore, RendererResponse, SceneResponse,
+        interface::{crdt_context::CrdtContext, CrdtMessageType},
+        CrdtComponentInterfaces, CrdtStore, RendererResponse, SceneElapsedTime, SceneResponse,
     },
-    dcl_assert,
-    dcl_component::{
-        DclReader, DclReaderError, DclWriter, SceneComponentId, SceneCrdtTimestamp, SceneEntityId,
-        ToDclWriter,
-    },
+    dcl_component::{DclReader, DclWriter, SceneComponentId, SceneCrdtTimestamp, SceneEntityId},
 };
 
 use super::ShuttingDown;
-
-use super::context::SceneSceneContext;
-
-const CRDT_HEADER_SIZE: usize = 8;
-
-#[derive(FromPrimitive, ToPrimitive, Debug)]
-pub enum CrdtMessageType {
-    PutComponent = 1,
-    DeleteComponent = 2,
-
-    DeleteEntity = 3,
-    AppendValue = 4,
-}
-
-impl ToDclWriter for CrdtMessageType {
-    fn to_writer(&self, buf: &mut DclWriter) {
-        buf.write_u32(ToPrimitive::to_u32(self).unwrap())
-    }
-}
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
@@ -49,115 +24,19 @@ pub fn ops() -> Vec<OpDecl> {
     ]
 }
 
-// handles a single message from the buffer
-fn process_message(
-    writers: &CrdtComponentInterfaces,
-    typemap: &mut CrdtStore,
-    entity_map: &mut SceneSceneContext,
-    crdt_type: CrdtMessageType,
-    stream: &mut DclReader,
-) -> Result<(), DclReaderError> {
-    match crdt_type {
-        CrdtMessageType::PutComponent => {
-            let entity = stream.read()?;
-            let component = stream.read()?;
-            let timestamp = stream.read()?;
-            let content_len = stream.read_u32()? as usize;
-
-            debug!("PUT e:{entity:?}, c: {component:?}, timestamp: {timestamp:?}, content len: {content_len}");
-            dcl_assert!(content_len == stream.len());
-
-            // check for a writer
-            let Some(writer) = writers.0.get(&component) else {
-                return Ok(())
-            };
-
-            match (writer.position(), entity == SceneEntityId::ROOT) {
-                (ComponentPosition::RootOnly, false) | (ComponentPosition::EntityOnly, true) => {
-                    warn!("invalid position for component {:?}", component);
-                    return Ok(());
-                }
-                _ => (),
-            }
-
-            // create the entity (if not already dead)
-            if !entity_map.init(entity) {
-                return Ok(());
-            }
-
-            // attempt to write (may fail due to a later write)
-            typemap.try_update(component, *writer, entity, timestamp, Some(stream));
-        }
-        CrdtMessageType::DeleteComponent => {
-            let entity = stream.read()?;
-            let component = stream.read()?;
-            let timestamp = stream.read()?;
-
-            // check for a writer
-            let Some(writer) = writers.0.get(&component) else {
-                return Ok(())
-            };
-
-            match (writer.position(), entity == SceneEntityId::ROOT) {
-                (ComponentPosition::RootOnly, false) | (ComponentPosition::EntityOnly, true) => {
-                    warn!("invalid position for component {:?}", component);
-                    return Ok(());
-                }
-                _ => (),
-            }
-
-            // check the entity still lives (don't create here, no need)
-            if entity_map.is_dead(entity) {
-                return Ok(());
-            }
-
-            // attempt to write (may fail due to a later write)
-            typemap.try_update(component, *writer, entity, timestamp, None);
-        }
-        CrdtMessageType::DeleteEntity => {
-            let entity = stream.read()?;
-            entity_map.kill(entity);
-        }
-        CrdtMessageType::AppendValue => unimplemented!(),
-    }
-
-    Ok(())
-}
-
 // receive and process a buffer of crdt messages
 #[op(v8)]
 fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
     let mut op_state = op_state.borrow_mut();
-    let mut entity_map = op_state.take::<SceneSceneContext>();
+    let elapsed_time = op_state.borrow::<SceneElapsedTime>().0;
+    let mut entity_map = op_state.take::<CrdtContext>();
     let mut typemap = op_state.take::<CrdtStore>();
     let writers = op_state.take::<CrdtComponentInterfaces>();
     let mut stream = DclReader::new(messages);
     debug!("BATCH len: {}", stream.len());
 
     // collect commands
-    while stream.len() > CRDT_HEADER_SIZE {
-        let pos = stream.pos();
-        let length = stream.read_u32().unwrap() as usize;
-        let crdt_type = stream.read_u32().unwrap();
-
-        debug!("[{pos}] crdt_type: {crdt_type}, length: {length}");
-        let mut message_stream = stream.take_reader(length.saturating_sub(8));
-
-        match FromPrimitive::from_u32(crdt_type) {
-            Some(crdt_type) => {
-                if let Err(e) = process_message(
-                    &writers,
-                    &mut typemap,
-                    &mut entity_map,
-                    crdt_type,
-                    &mut message_stream,
-                ) {
-                    error!("CRDT Buffer error: {:?}", e);
-                };
-            }
-            None => error!("CRDT Header error: unhandled crdt message type {crdt_type}"),
-        }
-    }
+    typemap.process_message_stream(&mut entity_map, &writers, &mut stream, true);
 
     let census = entity_map.take_census();
     typemap.clean_up(&census.died);
@@ -165,7 +44,12 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
 
     let sender = op_state.borrow_mut::<SyncSender<SceneResponse>>();
     sender
-        .send(SceneResponse::Ok(entity_map.scene_id, census, updates))
+        .send(SceneResponse::Ok(
+            entity_map.scene_id,
+            census,
+            updates,
+            SceneElapsedTime(elapsed_time),
+        ))
         .expect("failed to send to renderer");
 
     op_state.put(writers);

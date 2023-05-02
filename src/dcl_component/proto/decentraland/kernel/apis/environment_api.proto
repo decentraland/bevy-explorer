@@ -59,7 +59,7 @@ message GetExplorerConfigurationRequest {}
 message GetDecentralandTimeRequest {}
 
 service EnvironmentApiService {
-  // @deprecated, only available for SDK6 compatibility
+  // @deprecated, only available for SDK6 compatibility. Use runtime_api instead
   rpc GetBootstrapData(GetBootstrapDataRequest) returns (BootstrapDataResponse) {}
   // @deprecated, only available for SDK6 compatibility. Needs migration
   rpc IsPreviewMode(IsPreviewModeRequest) returns (PreviewModeResponse) {}

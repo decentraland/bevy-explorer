@@ -22,10 +22,11 @@ use crate::{
                 RaycastQueryType,
             },
         },
-        SceneComponentId,
+        SceneComponentId, SceneEntityId,
     },
     scene_runner::{
         update_world::{
+            gltf_container::GLTF_LOADING,
             mesh_collider::{RaycastResult, SceneColliderData},
             raycast::Raycast,
         },
@@ -63,7 +64,7 @@ fn debug_raycast(mut input: ConsoleCommand<DebugRaycastCommand>, mut debug: ResM
 
 fn run_raycasts(
     mut raycast_requests: Query<(Entity, &SceneEntity, &mut Raycast, &GlobalTransform)>,
-    _target_positions: Query<(Entity, &GlobalTransform)>,
+    target_positions: Query<&GlobalTransform>,
     mut scene_datas: Query<(
         &mut RendererSceneContext,
         &mut SceneColliderData,
@@ -77,6 +78,12 @@ fn run_raycasts(
         if let Ok((mut context, mut scene_data, scene_transform)) =
             scene_datas.get_mut(scene_ent.root)
         {
+            // check if we can run
+            if context.blocked.contains(GLTF_LOADING) {
+                debug!("raycast skipped, waiting for gltfs");
+                continue;
+            }
+
             // check if we need to run
             let continuous = raycast.raycast.continuous.unwrap_or(false);
             if !continuous && raycast.last_run > 0 {
@@ -86,6 +93,7 @@ fn run_raycasts(
                 continue;
             }
             raycast.last_run = context.last_update_frame;
+            debug!("running raycast");
 
             // execute the raycast
             let raycast = &raycast.raycast;
@@ -105,7 +113,14 @@ fn run_raycasts(
                 Some(Direction::GlobalTarget(point)) => {
                     point.world_vec_to_vec3() + scene_translation - origin
                 }
-                Some(Direction::TargetEntity(_id)) => todo!(),
+                Some(Direction::TargetEntity(id)) => {
+                    let target_position = context
+                        .bevy_entity(SceneEntityId::from_proto_u32(*id))
+                        .and_then(|entity| target_positions.get(entity).ok())
+                        .map(|gt| gt.translation())
+                        .unwrap_or(origin);
+                    target_position - origin
+                }
                 None => {
                     warn!("no direction on raycast");
                     continue;
@@ -171,6 +186,7 @@ fn run_raycasts(
                 global_origin: Some(Vector3::world_vec_from_vec3(&scene_origin)),
                 direction: Some(Vector3::world_vec_from_vec3(&direction)),
                 hits: results.into_iter().map(make_hit).collect(),
+                tick_number: context.tick_number,
             };
 
             context.update_crdt(

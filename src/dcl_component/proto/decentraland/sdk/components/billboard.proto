@@ -4,6 +4,7 @@ package decentraland.sdk.components;
 
 import "decentraland/sdk/components/common/id.proto";
 
+// https://adr.decentraland.org/adr/ADR-198
 option (common.ecs_component_id) = 1090;
 
 // The Billboard component makes an Entity automatically reorient its rotation to face the camera. 
@@ -17,6 +18,7 @@ message PBBillboard {
 }
 
 // BillboardMode indicates one or more axis for automatic rotation, in OR-able bit flag form.
+// Only the values below and the (BM_X | BM_Y) combination are valid.
 enum BillboardMode {
   BM_NONE = 0;
   BM_X = 1;

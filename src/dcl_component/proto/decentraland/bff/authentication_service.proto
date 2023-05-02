@@ -1,5 +1,12 @@
 syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+
 package decentraland.bff;
+
+enum DisconnectionReason {
+  DR_KICKED = 0;
+}
 
 message GetChallengeRequest {
   string address = 1;
@@ -21,7 +28,12 @@ message WelcomePeerInformation {
   repeated string available_modules = 2;
 }
 
+message DisconnectionMessage {
+  DisconnectionReason reason = 1;
+}
+
 service BffAuthenticationService {
   rpc GetChallenge(GetChallengeRequest) returns (GetChallengeResponse) {}
   rpc Authenticate(SignedChallenge) returns (WelcomePeerInformation) {}
+  rpc GetDisconnectionMessage(google.protobuf.Empty) returns (DisconnectionMessage) {}
 }

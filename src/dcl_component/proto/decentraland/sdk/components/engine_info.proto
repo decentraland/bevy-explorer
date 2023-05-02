@@ -1,0 +1,15 @@
+syntax = "proto3";
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+option (common.ecs_component_id) = 1048;
+
+// EngineInfo provides information about the graphics engine running the scene.
+// The values of this component are written at the "physics" stage of the ADR-148. Meaning
+// the tick_number and frame_number of the same frame could be used as correlation numbers
+// for timestamps in other components.
+message PBEngineInfo {
+  uint32 frame_number = 1; // frame counter of the engine
+  float total_runtime = 2; // total runtime of this scene in seconds
+  uint32 tick_number  = 3; // tick counter of the scene as per ADR-148
+}

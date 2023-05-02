@@ -7,14 +7,14 @@ use crate::{
 
 type LiveTable = Vec<(u16, bool)>;
 
-pub struct SceneSceneContext {
+pub struct CrdtContext {
     pub scene_id: SceneId,
     live_entities: LiveTable,
     nascent: HashSet<SceneEntityId>,
     death_row: HashSet<SceneEntityId>,
 }
 
-impl SceneSceneContext {
+impl CrdtContext {
     pub fn new(scene_id: SceneId) -> Self {
         Self {
             scene_id,

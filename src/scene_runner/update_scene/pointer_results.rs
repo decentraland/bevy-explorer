@@ -22,7 +22,9 @@ impl Plugin for PointerResultPlugin {
         app.init_resource::<InputMap>();
         app.init_resource::<PointerTarget>();
         app.add_systems(
-            (update_pointer_target, send_hover_events, send_action_events).in_set(SceneSets::Input),
+            (update_pointer_target, send_hover_events, send_action_events)
+                .chain()
+                .in_set(SceneSets::Input),
         );
     }
 }
@@ -152,7 +154,7 @@ fn update_pointer_target(
     };
     let cursor_position = if window.cursor.grab_mode == bevy::window::CursorGrabMode::Locked {
         // if pointer locked, just middle
-        Vec2::splat(0.5)
+        Vec2::new(window.width(), window.height()) / 2.0
     } else {
         let Some(cursor_position) = window.cursor_position() else {
             // outside window
@@ -256,6 +258,7 @@ fn send_hover_events(
                             .and_then(|info| info.max_distance)
                             .unwrap_or(10.0);
                         if distance <= max_distance {
+                            let tick_number = context.tick_number;
                             context.update_crdt(
                                 SceneComponentId::POINTER_RESULT,
                                 CrdtType::GO_ENT,
@@ -274,6 +277,7 @@ fn send_hover_events(
                                     state: ev_type as i32,
                                     timestamp: frame.0,
                                     analog: None,
+                                    tick_number,
                                 },
                             );
                         }
@@ -362,6 +366,7 @@ fn send_action_events(
                             .and_then(|info| info.max_distance)
                             .unwrap_or(10.0);
                         if distance <= max_distance {
+                            let tick_number = context.tick_number;
                             context.update_crdt(
                                 SceneComponentId::POINTER_RESULT,
                                 CrdtType::GO_ENT,
@@ -380,6 +385,7 @@ fn send_action_events(
                                     state: ev_type as i32,
                                     timestamp: frame.0,
                                     analog: None,
+                                    tick_number,
                                 },
                             );
                         }
@@ -409,6 +415,7 @@ fn send_action_events(
 
     // send events to scene roots
     for (mut context, _) in scenes.iter_mut() {
+        let tick_number = context.tick_number;
         for down in input_mgr.iter_just_down() {
             context.update_crdt(
                 SceneComponentId::POINTER_RESULT,
@@ -428,6 +435,7 @@ fn send_action_events(
                     state: PointerEventType::PetDown as i32,
                     timestamp: frame.0,
                     analog: None,
+                    tick_number,
                 },
             );
         }
@@ -451,6 +459,7 @@ fn send_action_events(
                     state: PointerEventType::PetUp as i32,
                     timestamp: frame.0,
                     analog: None,
+                    tick_number,
                 },
             );
         }

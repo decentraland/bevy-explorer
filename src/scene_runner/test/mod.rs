@@ -46,7 +46,7 @@ impl console::DoAddConsoleCommand for App {
     }
 }
 
-use super::PrimaryCamera;
+use super::{initialize_scene::SceneLoading, PrimaryCamera};
 
 pub struct TestPlugins;
 
@@ -124,9 +124,17 @@ fn init_test_app(entity_json: &str) -> App {
     });
 
     // run app once to get the scene initialized
-    let mut q = app.world.query::<&RendererSceneContext>();
+    let mut q = app
+        .world
+        .query_filtered::<&RendererSceneContext, Without<SceneLoading>>();
     while q.get_single(&mut app.world).is_err() {
         app.update();
+        // if let Ok(loading) = app.world.query::<&SceneLoading>().get_single(&mut app.world) {
+        //     warn!("load state: {loading:?}");
+        // }
+        // if let Ok(context) = app.world.query::<&RendererSceneContext>().get_single(&mut app.world) {
+        //     warn!("context tick: {:?} (blocked: {:?})", context.tick_number, context.blocked);
+        // }
     }
 
     app

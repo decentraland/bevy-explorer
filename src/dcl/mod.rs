@@ -23,12 +23,18 @@ pub mod js;
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct SceneId(u32);
 
+impl SceneId {
+    pub const DUMMY: SceneId = SceneId(0);
+}
+
 // message from scene describing new and deleted entities
 pub struct SceneCensus {
     pub scene_id: SceneId,
     pub born: HashSet<SceneEntityId>,
     pub died: HashSet<SceneEntityId>,
 }
+
+pub struct SceneElapsedTime(pub f32);
 
 // data from renderer to scene
 #[derive(Debug)]
@@ -40,25 +46,32 @@ pub enum RendererResponse {
                                      // data from scene to renderer
 pub enum SceneResponse {
     Error(SceneId, String),
-    Ok(SceneId, SceneCensus, CrdtStore),
+    Ok(SceneId, SceneCensus, CrdtStore, SceneElapsedTime),
 }
 
 static SCENE_ID: Lazy<AtomicU32> = Lazy::new(Default::default);
 pub(crate) static VM_HANDLES: Lazy<Mutex<HashMap<SceneId, IsolateHandle>>> =
     Lazy::new(Default::default);
 
-pub fn spawn_scene(
-    scene_js: SceneJsFile,
-    crdt_component_interfaces: CrdtComponentInterfaces,
-    renderer_sender: SyncSender<SceneResponse>,
-) -> (SceneId, Sender<RendererResponse>) {
-    let id = SceneId(SCENE_ID.fetch_add(1, Ordering::Relaxed));
+pub fn get_next_scene_id() -> SceneId {
+    let mut id = SceneId(SCENE_ID.fetch_add(1, Ordering::Relaxed));
 
     if id.0 == 0 {
         // synchronously create and drop a single runtime to hopefully avoid initial segfaults
         create_runtime();
+        // and skip the dummy id
+        id = SceneId(SCENE_ID.fetch_add(1, Ordering::Relaxed));
     }
 
+    id
+}
+
+pub fn spawn_scene(
+    scene_js: SceneJsFile,
+    crdt_component_interfaces: CrdtComponentInterfaces,
+    renderer_sender: SyncSender<SceneResponse>,
+    id: SceneId,
+) -> Sender<RendererResponse> {
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
 
     std::thread::Builder::new()
@@ -74,5 +87,5 @@ pub fn spawn_scene(
         })
         .unwrap();
 
-    (id, main_sx)
+    main_sx
 }

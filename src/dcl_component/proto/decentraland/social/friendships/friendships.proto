@@ -1,16 +1,20 @@
+// ***
+// FOR INTERNAL USE ONLY, IN BETA VERSION OF THE PROTOCOL.
+// SUBJECT TO CHANGE.
+// ***
+
 syntax = "proto3";
 package decentraland.social.friendships;
 
-import "google/protobuf/empty.proto";
-
-// Validation and anti-spam errors
-enum FriendshipErrorCode {
-  TOO_MANY_REQUESTS_SENT = 0;
-  NOT_ENOUGH_TIME_PASSED = 1;
-  BLOCKED_USER = 2;
-  NON_EXISTING_USER = 3;
-  INVALID_REQUEST = 4;
-  UNKNOWN = 5;
+enum ServiceErrors {
+  // proto3 requires that first value in enum have numeric value of 0
+  UNKNOWN = 0;
+  BAD_REQUEST = 400;
+  UNAUTHORIZED = 401;
+  FORBIDDEN = 403;
+  NOT_FOUND = 404;
+  TOO_MANY_REQUESTS = 429;
+  INTERNAL_SERVER_ERROR = 500;
 }
 
 // This message is a response that is sent from the server to the client
@@ -75,25 +79,29 @@ message CancelResponse { User user = 1; }
 
 message CancelPayload { User user = 1; }
 
-message UpdateFriendshipPayload { FriendshipEventPayload event = 1; }
-
-message UpdateFriendshipResponse {
-  oneof response {
-    FriendshipErrorCode error = 1;
-    FriendshipEventResponse event = 2;
-  }
+message UpdateFriendshipPayload {
+  FriendshipEventPayload event = 1;
+  // For internal use only, subject to change.
+  optional Payload auth_token = 2;
 }
+
+message UpdateFriendshipResponse { FriendshipEventResponse event = 1; }
 
 message SubscribeFriendshipEventsUpdatesResponse {
   repeated FriendshipEventResponse events = 1;
 }
 
+message Payload {
+  // For internal use only, subject to change.
+  optional string synapse_token = 1;
+}
+
 service FriendshipsService {
   // Get the list of friends for the authenticated user
-  rpc GetFriends(google.protobuf.Empty) returns (stream Users) {}
+  rpc GetFriends(Payload) returns (stream Users) {}
 
   // Get the list of request events for the authenticated user
-  rpc GetRequestEvents(google.protobuf.Empty) returns (RequestEvents) {}
+  rpc GetRequestEvents(Payload) returns (RequestEvents) {}
 
   // Update friendship status: REQUEST, ACCEPT, REJECT, CANCEL, DELETE
   rpc UpdateFriendshipEvent(UpdateFriendshipPayload)
@@ -101,6 +109,6 @@ service FriendshipsService {
 
   // Subscribe to updates of friendship status: REQUEST, ACCEPT, REJECT, CANCEL,
   // DELETE
-  rpc SubscribeFriendshipEventsUpdates(google.protobuf.Empty)
+  rpc SubscribeFriendshipEventsUpdates(Payload)
       returns (stream SubscribeFriendshipEventsUpdatesResponse) {}
 }

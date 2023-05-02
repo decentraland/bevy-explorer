@@ -18,13 +18,17 @@ use rapier3d::prelude::*;
 use serde::Deserialize;
 
 use crate::{
-    dcl::interface::ComponentPosition,
+    dcl::interface::{ComponentPosition, CrdtType},
     dcl_component::{
-        proto_components::sdk::components::{ColliderLayer, PbGltfContainer},
+        proto_components::sdk::components::{
+            common::LoadingState, ColliderLayer, PbGltfContainer, PbGltfContainerLoadingState,
+        },
         SceneComponentId, SceneEntityId,
     },
     ipfs::{IpfsLoaderExt, SceneDefinition},
-    scene_runner::{ContainerEntity, SceneEntity, SceneSets},
+    scene_runner::{
+        renderer_context::RendererSceneContext, ContainerEntity, SceneEntity, SceneSets,
+    },
 };
 
 use super::{
@@ -51,9 +55,15 @@ impl Plugin for GltfDefinitionPlugin {
         );
 
         app.add_system(update_gltf.in_set(SceneSets::PostLoop));
-        app.add_system(attach_ready_colliders.in_set(SceneSets::PostLoop));
+        app.add_system(
+            attach_ready_colliders
+                .after(update_gltf)
+                .in_set(SceneSets::PostLoop),
+        );
         app.add_asset::<GltfCachedShape>();
         app.init_resource::<MeshToShape>();
+        app.add_system(check_gltfs_ready.in_set(SceneSets::PostInit));
+        app.add_system(update_container_finished.in_set(SceneSets::Input));
     }
 }
 
@@ -128,8 +138,22 @@ fn update_gltf(
     mut meshes: ResMut<Assets<Mesh>>,
     mut cached_shapes: ResMut<Assets<GltfCachedShape>>,
     mut shape_lookup: ResMut<MeshToShape>,
+    mut contexts: Query<&mut RendererSceneContext>,
     _debug_name_query: Query<(Entity, Option<&Name>, Option<&Children>)>,
 ) {
+    let mut set_state = |scene_ent: &SceneEntity, current_state: LoadingState| {
+        if let Ok(mut context) = contexts.get_mut(scene_ent.root) {
+            context.update_crdt(
+                SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
+                CrdtType::LWW_ANY,
+                scene_ent.id,
+                &PbGltfContainerLoadingState {
+                    current_state: current_state as i32,
+                },
+            );
+        };
+    };
+
     for (ent, scene_ent, gltf, maybe_loaded, maybe_processed) in new_gltfs.iter() {
         debug!("{} has {}", scene_ent.id, gltf.0.src);
 
@@ -164,19 +188,22 @@ fn update_gltf(
             Ok(h_gltf) => h_gltf,
             Err(e) => {
                 warn!("gltf content file not found: {e}");
+                set_state(scene_ent, LoadingState::NotFound);
                 commands.entity(ent).remove::<GltfLoaded>();
                 continue;
             }
         };
 
+        set_state(scene_ent, LoadingState::Loading);
         commands.entity(ent).insert(h_gltf).remove::<GltfLoaded>();
     }
 
-    for (ent, _scene_ent, h_gltf) in unprocessed_gltfs.iter() {
+    for (ent, scene_ent, h_gltf) in unprocessed_gltfs.iter() {
         match asset_server.get_load_state(h_gltf) {
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed => {
                 warn!("failed to process gltf");
+                set_state(scene_ent, LoadingState::FinishedWithError);
                 commands.entity(ent).insert(GltfLoaded(None));
                 continue;
             }
@@ -193,12 +220,13 @@ fn update_gltf(
             }
             None => {
                 warn!("no default scene found in gltf.");
+                set_state(scene_ent, LoadingState::FinishedWithError);
                 commands.entity(ent).insert(GltfLoaded(None));
             }
         }
     }
 
-    for (bevy_scene_entity, dcl_scene_entity, loaded, _definition) in ready_gltfs.iter() {
+    for (bevy_scene_entity, dcl_scene_entity, loaded, definition) in ready_gltfs.iter() {
         if loaded.0.is_none() {
             // nothing to process
             commands
@@ -209,8 +237,9 @@ fn update_gltf(
         let instance = loaded.0.as_ref().unwrap();
         if scene_spawner.instance_is_ready(*instance) {
             let mut animation_roots = HashSet::default();
+            let mut pending_colliders = HashSet::default();
 
-            // let graph = node_graph(&debug_name_query, bevy_scene_entity);
+            // let graph = _node_graph(&_debug_name_query, bevy_scene_entity);
             // println!("{bevy_scene_entity:?}");
             // println!("{graph}");
 
@@ -273,9 +302,17 @@ fn update_gltf(
 
                     let is_skinned = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
 
-                    let is_collider = maybe_name
-                        .map(|name| name.as_str().ends_with("_collider"))
-                        .unwrap_or(false);
+                    let mut collider_base_name =
+                        maybe_name.and_then(|name| name.as_str().strip_suffix("_collider"));
+
+                    if collider_base_name.is_none() {
+                        // check parent name also
+                        collider_base_name = gltf_spawned_entities
+                            .get_component::<Name>(parent.get())
+                            .map(|name| name.as_str().strip_suffix("_collider"))
+                            .unwrap_or(None)
+                    }
+                    let is_collider = collider_base_name.is_some();
 
                     if is_collider {
                         // make invisible by removing mesh handle
@@ -284,32 +321,37 @@ fn update_gltf(
                     }
 
                     // get specified or default collider bits
-                    let mut collider_bits = maybe_extras
+                    // try mesh node first
+                    let collider_bits = maybe_extras
                         .and_then(|extras| {
                             serde_json::from_str::<DclNodeExtras>(&extras.value).ok()
                         })
                         .and_then(|extras| extras.dcl_collision_mask)
-                        .unwrap_or({
-                            if is_collider {
-                                // colliders default to physics
-                                ColliderLayer::ClPhysics as u32
-                            } else {
-                                // non-colliders default to nothing
-                                0
-                            }
+                        .unwrap_or_else(|| {
+                            // then try parent node
+                            gltf_spawned_entities
+                                .get_component::<GltfExtras>(parent.get())
+                                .ok()
+                                .and_then(|extras| {
+                                    serde_json::from_str::<DclNodeExtras>(&extras.value).ok()
+                                })
+                                .and_then(|extras| extras.dcl_collision_mask)
+                                .unwrap_or({
+                                    //fall back to container-specified default
+                                    if is_collider {
+                                        definition.0.invisible_meshes_collision_mask.unwrap_or(
+                                            // colliders default to physics + pointers
+                                            ColliderLayer::ClPhysics as u32
+                                                | ColliderLayer::ClPointer as u32,
+                                        )
+                                    } else {
+                                        definition.0.visible_meshes_collision_mask.unwrap_or(
+                                            // non-colliders default to nothing
+                                            0,
+                                        )
+                                    }
+                                })
                         });
-
-                    // TODO plug in disable_physics_colliders once proto message is updated
-                    if false {
-                        // switch off physics bit
-                        collider_bits &= !(ColliderLayer::ClPhysics as u32);
-                    }
-
-                    // TODO plug in create_pointer_colliders once proto message is updated
-                    if false {
-                        // switch on pointer bit
-                        collider_bits |= ColliderLayer::ClPointer as u32;
-                    }
 
                     if collider_bits != 0 && !is_skinned {
                         // get or create handle to collider shape
@@ -358,18 +400,18 @@ fn update_gltf(
                             }
                         };
 
-                        let base_name = maybe_name
-                            .unwrap()
-                            .strip_suffix("_collider")
-                            .unwrap_or_else(|| maybe_name.unwrap());
-                        let index = collider_counter.entry(base_name).or_default();
+                        let index = collider_counter
+                            .entry(collider_base_name.to_owned())
+                            .or_default();
                         *index += 1u32;
+
+                        pending_colliders.insert(h_shape.clone_weak());
 
                         commands.entity(spawned_ent).insert(PendingGltfCollider {
                             h_shape,
                             h_mesh: h_mesh.clone_weak(),
                             collision_mask: collider_bits,
-                            mesh_name: Some(base_name.to_owned()),
+                            mesh_name: collider_base_name.map(ToOwned::to_owned),
                             index: *index,
                         });
                     }
@@ -388,10 +430,13 @@ fn update_gltf(
                 }
             }
 
-            commands.entity(bevy_scene_entity).insert(GltfProcessed {
-                animation_roots,
-                instance_id: Some(*instance),
-            });
+            commands.entity(bevy_scene_entity).insert((
+                GltfProcessed {
+                    animation_roots,
+                    instance_id: Some(*instance),
+                },
+                PendingGltfColliders(pending_colliders),
+            ));
         }
     }
 }
@@ -433,6 +478,66 @@ fn attach_ready_colliders(
     }
 }
 
+pub const GLTF_LOADING: &str = "gltfs loading";
+
+fn check_gltfs_ready(
+    mut scenes: Query<(Entity, &mut RendererSceneContext)>,
+    unready_gltfs: Query<&SceneEntity, (With<GltfDefinition>, Without<GltfProcessed>)>,
+    unready_colliders: Query<&ContainerEntity, With<PendingGltfCollider>>,
+) {
+    let mut unready_scenes = HashSet::default();
+
+    for ent in &unready_gltfs {
+        unready_scenes.insert(ent.root);
+    }
+
+    for ent in &unready_colliders {
+        unready_scenes.insert(ent.root);
+    }
+
+    for (root, mut context) in scenes.iter_mut() {
+        if unready_scenes.contains(&root) && context.tick_number == 0 {
+            debug!("{root:?} blocked on gltfs");
+            context.blocked.insert(GLTF_LOADING);
+        } else {
+            context.blocked.remove(GLTF_LOADING);
+        }
+    }
+}
+
+// list of pending shapes for a gltf container
+#[derive(Component)]
+pub struct PendingGltfColliders(pub HashSet<Handle<GltfCachedShape>>);
+
+// set loading finished once all colliders resolved
+fn update_container_finished(
+    mut commands: Commands,
+    mut loading_containers: Query<(Entity, &SceneEntity, &mut PendingGltfColliders)>,
+    colliders: Res<Assets<GltfCachedShape>>,
+    mut contexts: Query<&mut RendererSceneContext>,
+) {
+    for (entity, scene_ent, mut pending) in loading_containers.iter_mut() {
+        pending.0.retain(|h_shape| match colliders.get(h_shape) {
+            Some(shape) => matches!(shape, GltfCachedShape::Task(_)),
+            None => true,
+        });
+
+        if pending.0.is_empty() {
+            commands.entity(entity).remove::<PendingGltfColliders>();
+            if let Ok(mut context) = contexts.get_mut(scene_ent.root) {
+                context.update_crdt(
+                    SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
+                    CrdtType::LWW_ANY,
+                    scene_ent.id,
+                    &PbGltfContainerLoadingState {
+                        current_state: LoadingState::Finished as i32,
+                    },
+                );
+            }
+        }
+    }
+}
+
 // debug show the gltf graph
 fn _node_graph(
     scene_entity_query: &Query<(Entity, Option<&Name>, Option<&Children>)>,
@@ -445,7 +550,7 @@ fn _node_graph(
     while let Some(ent) = to_check.pop() {
         debug!("current: {ent:?}, to_check: {to_check:?}");
         let Ok((ent, name, maybe_children)) = scene_entity_query.get(ent) else {
-            panic!()
+            return "?".to_owned();
         };
 
         let graph_node = *graph_nodes
@@ -455,7 +560,15 @@ fn _node_graph(
         if let Some(children) = maybe_children {
             let sorted_children_with_name: BTreeMap<_, _> = children
                 .iter()
-                .map(|c| (scene_entity_query.get(*c).unwrap().1, c))
+                .map(|c| {
+                    (
+                        scene_entity_query
+                            .get(*c)
+                            .map(|q| q.1.map(|name| name.as_str().to_owned()))
+                            .unwrap_or(Some(String::from("?"))),
+                        c,
+                    )
+                })
                 .collect();
 
             to_check.extend(sorted_children_with_name.values().copied());

@@ -1,9 +1,11 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, scene::scene_spawner_system};
 use bevy_console::{
-    Command, ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine,
-    ToggleConsoleKey,
+    Command, ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, ConsoleSet,
+    PrintConsoleLine, ToggleConsoleKey,
 };
 use clap::Parser;
+
+use crate::scene_runner::SceneSets;
 
 pub trait DoAddConsoleCommand {
     fn add_console_command<T: Command, U>(&mut self, system: impl IntoSystemConfig<U>)
@@ -42,6 +44,16 @@ impl Plugin for ConsolePlugin {
         .add_console_command::<ExitCommand, _>(exit_command)
         .init_resource::<PendingCommands>()
         .add_system(send_pending);
+
+        app.configure_sets(
+            (
+                ConsoleSet::ConsoleUI,
+                ConsoleSet::Commands,
+                ConsoleSet::PostCommands.before(SceneSets::Init),
+            )
+                .in_base_set(CoreSet::Update)
+                .after(scene_spawner_system),
+        );
     }
 }
 

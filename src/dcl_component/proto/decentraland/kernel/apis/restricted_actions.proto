@@ -1,22 +1,18 @@
 syntax = "proto3";
 package decentraland.kernel.apis;
 
-message Vector3 {
-    float x = 1;
-    float y = 2;
-    float z = 3;
-}
+import "decentraland/common/vectors.proto";
 
 message MovePlayerToResponse { }
 
 message MovePlayerToRequest {
-  Vector3 new_relative_position = 1;
-  optional Vector3 camera_target = 2;
+  decentraland.common.Vector3 new_relative_position = 1;
+  optional decentraland.common.Vector3 camera_target = 2;
 }
 
 message TeleportToRequest {
-  Vector3 world_position = 1;
-  optional Vector3 camera_target = 2;
+  decentraland.common.Vector3 world_position = 1;
+  optional decentraland.common.Vector3 camera_target = 2;
 }
 
 message TriggerEmoteResponse { }
