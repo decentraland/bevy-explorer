@@ -295,6 +295,14 @@ pub struct EndpointConfig {
     pub public_url: String,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct CommsConfig {
+    pub healthy: bool,
+    pub protocol: String,
+    #[serde(rename = "fixedAdapter")]
+    pub fixed_adapter: Option<String>,
+}
+
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct ServerConfiguration {
     #[serde(rename = "scenesUrn")]
@@ -304,6 +312,7 @@ pub struct ServerConfiguration {
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct ServerAbout {
     pub content: Option<EndpointConfig>,
+    pub comms: Option<CommsConfig>,
     pub configurations: Option<ServerConfiguration>,
 }
 
@@ -386,6 +395,7 @@ pub struct ChangeRealmEvent {
 pub struct CurrentRealm {
     pub address: String,
     pub config: ServerConfiguration,
+    pub comms: Option<CommsConfig>,
 }
 
 #[allow(clippy::type_complexity)]
@@ -405,6 +415,7 @@ fn change_realm(
                     *current_realm = CurrentRealm {
                         address: realm.clone(),
                         config: about.configurations.clone().unwrap_or_default(),
+                        comms: about.comms.clone(),
                     };
 
                     match about.configurations {

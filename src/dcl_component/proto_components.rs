@@ -14,6 +14,18 @@ pub mod sdk {
     }
 }
 
+pub mod kernel {
+    #[allow(clippy::all)]
+    pub mod comms {
+        pub mod rfc5 {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/decentraland.kernel.comms.rfc5.rs"
+            ));
+        }
+    }
+}
+
 #[allow(clippy::all)]
 pub mod common {
     include!(concat!(env!("OUT_DIR"), "/decentraland.common.rs"));

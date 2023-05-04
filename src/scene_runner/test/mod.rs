@@ -109,6 +109,7 @@ fn init_test_app(entity_json: &str) -> App {
         configurations: Some(ServerConfiguration {
             scenes_urn: Some(vec![urn]),
         }),
+        ..Default::default()
     });
 
     // startup system to create camera and fire load event
