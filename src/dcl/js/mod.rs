@@ -2,6 +2,7 @@ use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender, time::Duration};
 
 use bevy::prelude::{debug, error, info_span};
 use deno_core::{
+    ascii_str,
     error::{generic_error, AnyError},
     include_js_files, op, v8, Extension, JsRuntime, OpState, RuntimeOptions,
 };
@@ -30,12 +31,13 @@ pub fn create_runtime() -> JsRuntime {
         .ops(engine::ops())
         // set startup JS script
         .js(include_js_files!(
-            prefix "example:init",
+            BevyExplorer
             "init.js",
         ))
         // remove core deno ops that are not required
         .middleware(|op| {
-            const ALLOW: [&str; 5] = [
+            const ALLOW: [&str; 6] = [
+                "op_run_microtasks", // TODO check if we can remove this on next deno version
                 "op_print",
                 "op_eval_context",
                 "op_require",
@@ -55,7 +57,7 @@ pub fn create_runtime() -> JsRuntime {
     // create runtime
     JsRuntime::new(RuntimeOptions {
         v8_platform: v8::Platform::new(1, false).make_shared().into(),
-        extensions_with_js: vec![ext],
+        extensions: vec![ext],
         ..Default::default()
     })
 }
@@ -99,7 +101,7 @@ pub(crate) fn scene_thread(
         .put(runtime.v8_isolate().thread_safe_handle());
 
     // load module
-    let script = runtime.execute_script("<loader>", "require (\"~scene.js\")");
+    let script = runtime.execute_script("<loader>", ascii_str!("require (\"~scene.js\")"));
 
     let script = match script {
         Err(e) => {

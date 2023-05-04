@@ -1,7 +1,7 @@
 // this code is executed as the runtime is created, all scopes get these definitions
 
 // required for async ops (engine.sendMessage is declared as async)
-Deno.core.initializeAsyncOps();
+// Deno.core.initializeAsyncOps();
 
 // load a cjs/node-style module
 // TODO: consider using deno.land/std/node's `createRequire` directly.
@@ -18,7 +18,7 @@ function require(moduleName) {
     const head = "(function (exports, require, module, __filename, __dirname) { (function (exports, require, module, __filename, __dirname) {";
     const foot = "\n}).call(this, exports, require, module, __filename, __dirname); })";
     source = `${head}${source}${foot}`;
-    const [wrapped, err] = Deno.core.evalContext(source, moduleName);
+    const [wrapped, err] = Deno.core.evalContext(source, "file://${moduleName}");
     if (err) {
         throw err.thrown;
     }
