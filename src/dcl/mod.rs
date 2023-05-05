@@ -70,6 +70,7 @@ pub fn spawn_scene(
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SyncSender<SceneResponse>,
+    global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     id: SceneId,
 ) -> Sender<RendererResponse> {
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
@@ -83,6 +84,7 @@ pub fn spawn_scene(
                 crdt_component_interfaces,
                 renderer_sender,
                 thread_rx,
+                global_update_receiver,
             )
         })
         .unwrap();

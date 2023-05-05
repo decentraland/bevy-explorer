@@ -1,17 +1,17 @@
 // Engine module
 
-use bevy::prelude::{debug, info};
+use bevy::prelude::{debug, info, warn};
 use deno_core::{op, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::{broadcast::error::TryRecvError, mpsc::Receiver};
 
 use crate::{
     dcl::{
-        crdt::{growonly::CrdtGOEntry, lww::LWWEntry},
-        interface::{crdt_context::CrdtContext, CrdtMessageType},
+        crdt::{append_component, put_component},
+        interface::crdt_context::CrdtContext,
         CrdtComponentInterfaces, CrdtStore, RendererResponse, SceneElapsedTime, SceneResponse,
     },
-    dcl_component::{DclReader, DclWriter, SceneComponentId, SceneCrdtTimestamp, SceneEntityId},
+    dcl_component::DclReader,
 };
 
 use super::ShuttingDown;
@@ -57,78 +57,30 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
     op_state.put(typemap);
 }
 
-fn put_component(
-    entity_id: &SceneEntityId,
-    component_id: &SceneComponentId,
-    entry: &LWWEntry,
-) -> Vec<u8> {
-    let content_len = entry.data.len();
-    let length = content_len + 12 + if entry.is_some { 4 } else { 0 } + 8;
-
-    let mut buf = Vec::with_capacity(length);
-    let mut writer = DclWriter::new(&mut buf);
-    writer.write_u32(length as u32);
-
-    if entry.is_some {
-        writer.write(&CrdtMessageType::PutComponent);
-    } else {
-        writer.write(&CrdtMessageType::DeleteComponent);
-    }
-
-    writer.write(entity_id);
-    writer.write(component_id);
-    writer.write(&entry.timestamp);
-
-    if entry.is_some {
-        writer.write_u32(content_len as u32);
-        writer.write_raw(&entry.data)
-    }
-
-    buf
-}
-
-fn append_component(
-    entity_id: &SceneEntityId,
-    component_id: &SceneComponentId,
-    entry: &CrdtGOEntry,
-) -> Vec<u8> {
-    let content_len = entry.data.len();
-    let length = content_len + 12 + 4 + 8;
-
-    let mut buf = Vec::with_capacity(length);
-    let mut writer = DclWriter::new(&mut buf);
-    writer.write_u32(length as u32);
-    writer.write(&CrdtMessageType::AppendValue);
-
-    writer.write(entity_id);
-    writer.write(component_id);
-    writer.write(&SceneCrdtTimestamp(0));
-
-    writer.write_u32(content_len as u32);
-    writer.write_raw(&entry.data);
-
-    buf
-}
-
 #[op(v8)]
 async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<OpState>>) -> Vec<Vec<u8>> {
     let mut receiver = op_state.borrow_mut().take::<Receiver<RendererResponse>>();
     let response = receiver.recv().await;
     op_state.borrow_mut().put(receiver);
 
-    let results = match response {
+    let mut results = match response {
         Some(RendererResponse::Ok(updates)) => {
             let mut results = Vec::new();
             // TODO: consider writing directly into a v8 buffer
             for (component_id, lww) in updates.lww.iter() {
                 for (entity_id, data) in lww.last_write.iter() {
-                    results.push(put_component(entity_id, component_id, data));
+                    results.push(put_component(
+                        entity_id,
+                        component_id,
+                        &data.timestamp,
+                        data.is_some.then_some(data.data.as_slice()),
+                    ));
                 }
             }
             for (component_id, go) in updates.go.iter() {
                 for (entity_id, data) in go.0.iter() {
                     for item in data.iter() {
-                        results.push(append_component(entity_id, component_id, item));
+                        results.push(append_component(entity_id, component_id, &item.data));
                     }
                 }
             }
@@ -141,6 +93,20 @@ async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<OpState>>) -> Vec<Vec<u
             Default::default()
         }
     };
+
+    let mut borrow = op_state.borrow_mut();
+    let global_update_receiver = borrow.borrow_mut::<tokio::sync::broadcast::Receiver<Vec<u8>>>();
+    loop {
+        match global_update_receiver.try_recv() {
+            Ok(next) => results.push(next),
+            Err(TryRecvError::Empty) => break,
+            Err(TryRecvError::Lagged(_)) => (), // continue on with whatever we can still get
+            Err(TryRecvError::Closed) => {
+                warn!("global receiver shut down");
+                break;
+            }
+        }
+    }
 
     results
 }

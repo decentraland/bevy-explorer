@@ -105,18 +105,20 @@ impl CrdtStore {
         crdt_type: CrdtType,
         entity: SceneEntityId,
         maybe_new_data: Option<&mut DclReader>,
-    ) {
+    ) -> SceneCrdtTimestamp {
         match crdt_type {
             CrdtType::LWW(_) => self
                 .lww
                 .entry(component_id)
                 .or_insert_with(CrdtLWWState::default)
                 .force_update(entity, maybe_new_data),
-            CrdtType::GO(_) => self
-                .go
-                .entry(component_id)
-                .or_default()
-                .append(entity, maybe_new_data.unwrap()),
+            CrdtType::GO(_) => {
+                self.go
+                    .entry(component_id)
+                    .or_default()
+                    .append(entity, maybe_new_data.unwrap());
+                SceneCrdtTimestamp(0)
+            }
         }
     }
 
@@ -154,7 +156,7 @@ impl CrdtStore {
     }
 
     // handles a single message from the buffer
-    fn process_message(
+    pub fn process_message(
         &mut self,
         writers: &CrdtComponentInterfaces,
         entity_map: &mut CrdtContext,

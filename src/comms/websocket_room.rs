@@ -26,7 +26,7 @@ use crate::{
 };
 
 use super::{
-    foreign_player::{ForeignPlayerState, PlayerUpdate},
+    global_crdt::{GlobalCrdtState, PlayerUpdate},
     wallet::{SimpleAuthChain, Wallet},
     NetworkMessage,
 };
@@ -60,7 +60,7 @@ fn connect_websocket(
     mut commands: Commands,
     mut new_websockets: Query<(Entity, &mut WebsocketRoomTransport), Without<WebSocketConnection>>,
     wallet: Res<Wallet>,
-    player_state: Res<ForeignPlayerState>,
+    player_state: Res<GlobalCrdtState>,
 ) {
     for (entity, mut new_transport) in new_websockets.iter_mut() {
         let remote_address = new_transport.address.to_owned();
@@ -80,7 +80,7 @@ fn connect_websocket(
 fn reconnect_websocket(
     mut websockets: Query<(&mut WebsocketRoomTransport, &mut WebSocketConnection)>,
     wallet: Res<Wallet>,
-    player_state: Res<ForeignPlayerState>,
+    player_state: Res<GlobalCrdtState>,
 ) {
     for (mut transport, mut conn) in websockets.iter_mut() {
         if transport.retries < 3 {
@@ -124,6 +124,13 @@ async fn websocket_room_handler_inner(
     sender: Sender<PlayerUpdate>,
 ) -> Result<(), anyhow::Error> {
     debug!(">> stream connect async : {remote_address}");
+
+    let remote_address = if remote_address.starts_with("ws:") || remote_address.starts_with("wss:")
+    {
+        remote_address
+    } else {
+        format!("wss://{remote_address}")
+    };
 
     let mut request = remote_address.into_client_request()?;
     request

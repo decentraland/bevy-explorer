@@ -309,11 +309,25 @@ pub struct ServerConfiguration {
     pub scenes_urn: Option<Vec<String>>,
 }
 
-#[derive(Deserialize, Debug, Clone, Default)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ServerAbout {
     pub content: Option<EndpointConfig>,
     pub comms: Option<CommsConfig>,
     pub configurations: Option<ServerConfiguration>,
+}
+
+impl Default for ServerAbout {
+    fn default() -> Self {
+        Self {
+            content: None,
+            comms: Some(CommsConfig {
+                healthy: true,
+                protocol: "v3".to_owned(),
+                fixed_adapter: Some("offline:offline".to_owned()),
+            }),
+            configurations: Default::default(),
+        }
+    }
 }
 
 pub struct IpfsIoPlugin {

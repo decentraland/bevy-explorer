@@ -18,6 +18,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 
 use crate::{
+    comms::{wallet::WalletPlugin, CommsPlugin},
     console::{self, ConsolePlugin},
     dcl::interface::{CrdtStore, CrdtType},
     dcl_component::{
@@ -87,6 +88,8 @@ impl PluginGroup for TestPlugins {
             .add(InputPlugin)
             .add(ScenePlugin)
             .add(ConsolePlugin)
+            .add(CommsPlugin)
+            .add(WalletPlugin)
     }
 }
 

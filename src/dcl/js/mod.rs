@@ -69,6 +69,7 @@ pub(crate) fn scene_thread(
     crdt_component_interfaces: CrdtComponentInterfaces,
     thread_sx: SyncSender<SceneResponse>,
     thread_rx: Receiver<RendererResponse>,
+    global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
 ) {
     let scene_context = CrdtContext::new(scene_id);
     let mut runtime = create_runtime();
@@ -91,6 +92,7 @@ pub(crate) fn scene_thread(
     // store channels
     state.borrow_mut().put(thread_sx);
     state.borrow_mut().put(thread_rx);
+    state.borrow_mut().put(global_update_receiver);
 
     // store crdt state
     state.borrow_mut().put(CrdtStore::default());

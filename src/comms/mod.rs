@@ -1,5 +1,5 @@
 pub mod broadcast_position;
-pub mod foreign_player;
+pub mod global_crdt;
 pub mod wallet;
 pub mod websocket_room;
 
@@ -15,7 +15,7 @@ use crate::{
 
 use self::{
     broadcast_position::BroadcastPositionPlugin,
-    foreign_player::ForeignPlayerPlugin,
+    global_crdt::GlobalCrdtPlugin,
     websocket_room::{WebsocketRoomPlugin, WebsocketRoomTransport},
 };
 
@@ -25,7 +25,7 @@ impl Plugin for CommsPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(WebsocketRoomPlugin);
         app.add_plugin(BroadcastPositionPlugin);
-        app.add_plugin(ForeignPlayerPlugin);
+        app.add_plugin(GlobalCrdtPlugin);
         app.add_system(process_realm_change);
     }
 }
@@ -115,12 +115,15 @@ fn process_realm_change(
                             },
                         ));
                     }
+                    "offline" => {
+                        info!("comms offline");
+                    }
                     _ => {
                         warn!("unrecognised fixed adapter protocol: {protocol}");
                     }
                 }
             } else {
-                warn!("no fixed adapter");
+                warn!("no fixed adapter, i don't understand anything else");
             }
         } else {
             warn!("missing comms!");
