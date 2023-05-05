@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use bevy::prelude::*;
+use bevy::{prelude::*, utils::HashMap};
 use bimap::BiMap;
 use ethers::types::H160;
 use tokio::sync::{broadcast, mpsc};
@@ -11,10 +11,10 @@ use crate::{
         SceneId,
     },
     dcl_component::{
-        proto_components::kernel::comms::rfc4::{self, packet::Message},
+        proto_components::{kernel::comms::rfc4::{self, packet::Message}},
         transform_and_parent::{DclQuat, DclTransformAndParent, DclTranslation},
         DclReader, SceneComponentId, SceneEntityId, ToDclWriter,
-    },
+    }, scene_runner::update_world::{mesh_renderer::MeshDefinition, material::MaterialDefinition},
 };
 
 const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 6..=406;
@@ -84,37 +84,51 @@ fn process_updates(
     mut players: Query<&mut ForeignPlayer>,
     time: Res<Time>,
 ) {
+    let mut created_this_frame = HashMap::default(); 
+
     while let Ok(update) = state.ext_receiver.try_recv() {
         // create/update timestamp on the foreign player
-        let (_entity, scene_id) = match state.lookup.get_by_left(&update.address) {
-            Some(existing) => {
-                let mut foreign_player = players.get_mut(*existing).unwrap();
-                foreign_player.last_update = time.elapsed_seconds();
-                (*existing, foreign_player.scene_id)
-            }
-            None => {
-                let Some(next_free) = state.context.new_in_range(&FOREIGN_PLAYER_RANGE) else {
-                    warn!("no space for any more players!");
-                    continue;
-                };
+        let (entity, scene_id) = if let Some((entity, scene_id)) = created_this_frame.get(&update.address) {
+            (*entity, *scene_id) 
+        } else if let Some(existing) = state.lookup.get_by_left(&update.address) {
+            let mut foreign_player = players.get_mut(*existing).unwrap();
+            foreign_player.last_update = time.elapsed_seconds();
+            (*existing, foreign_player.scene_id)
+        } else {
+            let Some(next_free) = state.context.new_in_range(&FOREIGN_PLAYER_RANGE) else {
+                warn!("no space for any more players!");
+                continue;
+            };
 
-                let new_entity = commands
-                    .spawn(ForeignPlayer {
-                        address: update.address,
-                        last_update: time.elapsed_seconds(),
-                        scene_id: next_free,
-                    })
-                    .id();
+            let new_entity = commands
+                .spawn(ForeignPlayer {
+                    address: update.address,
+                    last_update: time.elapsed_seconds(),
+                    scene_id: next_free,
+                })
+                .id();
 
-                state.lookup.insert(update.address, new_entity);
-                (new_entity, next_free)
-            }
+            state.lookup.insert(update.address, new_entity);
+
+            //hack in a marker for foreign avatar
+            commands.entity(new_entity).insert((
+                SpatialBundle::default(),
+                MeshDefinition::Sphere { },
+                MaterialDefinition {
+                    material: Color::rgba(1.0,1.0,0.0, 0.6).into(),
+                    shadow_caster: true,
+                }
+            ));
+
+            debug!("created player entity: {} -> {:?},{}", update.address, new_entity, next_free);
+            created_this_frame.insert(update.address.clone(), (new_entity, next_free));
+            (new_entity, next_free)
         };
 
         // process update
         match update.message {
             Message::Position(pos) => {
-                let buf = DclTransformAndParent {
+                let dcl_transform = DclTransformAndParent {
                     translation: DclTranslation([pos.position_x, pos.position_y, pos.position_z]),
                     rotation: DclQuat([
                         pos.rotation_x,
@@ -124,14 +138,15 @@ fn process_updates(
                     ]),
                     scale: Vec3::ONE,
                     parent: SceneEntityId::WORLD_ORIGIN,
-                }
-                .to_vec();
+                };
+                let buf = dcl_transform.to_vec();
                 state.store.force_update(
                     SceneComponentId::TRANSFORM,
                     CrdtType::LWW_ANY,
                     scene_id,
                     Some(&mut DclReader::new(&buf)),
                 );
+                commands.entity(entity).insert(dcl_transform.to_bevy_transform());
                 if let Err(e) = state.int_sender.send(buf) {
                     error!("failed to send foreign player update: {e}");
                 }

@@ -33,7 +33,7 @@ fn broadcast_position(
         return;
     };
     let time = time.elapsed_seconds_f64();
-    let elapsed = *last_sent - time;
+    let elapsed = time - *last_sent;
     if elapsed < DYNAMIC_FREQ {
         return;
     }
@@ -56,6 +56,7 @@ fn broadcast_position(
         rotation_w: dcl_rotation.0[3],
     };
 
+    debug!("sending position: {position_packet:?}");
     let packet = rfc4::Packet {
         message: Some(rfc4::packet::Message::Position(position_packet)),
     };
