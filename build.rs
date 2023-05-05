@@ -23,6 +23,7 @@ fn main() -> Result<()> {
         .collect::<Vec<_>>();
 
     sources.push("src/dcl_component/proto/decentraland/kernel/comms/rfc5/ws_comms.proto".into());
+    sources.push("src/dcl_component/proto/decentraland/kernel/comms/rfc4/comms.proto".into());
 
     prost_build::compile_protos(&sources, &["src/dcl_component/proto/"])?;
     Ok(())

@@ -1,18 +1,31 @@
+pub mod broadcast_position;
+pub mod foreign_player;
 pub mod wallet;
 pub mod websocket_room;
 
 use bevy::prelude::*;
+use bimap::BiMap;
+use ethers::types::H160;
 use tokio::sync::mpsc::Sender;
 
-use crate::ipfs::CurrentRealm;
+use crate::{
+    dcl_component::{DclWriter, ToDclWriter},
+    ipfs::CurrentRealm,
+};
 
-use self::websocket_room::{WebsocketRoomAdapter, WebsocketRoomPlugin};
+use self::{
+    broadcast_position::BroadcastPositionPlugin,
+    foreign_player::ForeignPlayerPlugin,
+    websocket_room::{WebsocketRoomPlugin, WebsocketRoomTransport},
+};
 
 pub struct CommsPlugin;
 
 impl Plugin for CommsPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(WebsocketRoomPlugin);
+        app.add_plugin(BroadcastPositionPlugin);
+        app.add_plugin(ForeignPlayerPlugin);
         app.add_system(process_realm_change);
     }
 }
@@ -29,25 +42,46 @@ pub struct Peer {
     pub address: String, // H160
 }
 
-pub enum AdapterType {
+pub enum TransportType {
     WebsocketRoom,
 }
 
 pub struct NetworkMessage {
     pub data: Vec<u8>,
-    pub reliable: bool,
+    pub unreliable: bool,
+}
+
+impl NetworkMessage {
+    pub fn unreliable<D: ToDclWriter>(message: &D) -> Self {
+        let mut data = Vec::new();
+        let mut writer = DclWriter::new(&mut data);
+        message.to_writer(&mut writer);
+        Self {
+            data,
+            unreliable: true,
+        }
+    }
+
+    pub fn reliable<D: ToDclWriter>(message: &D) -> Self {
+        Self {
+            unreliable: false,
+            ..Self::unreliable(message)
+        }
+    }
 }
 
 #[derive(Component)]
-pub struct Adapter {
-    pub adapter_type: AdapterType,
+pub struct Transport {
+    pub transport_type: TransportType,
     pub sender: Sender<NetworkMessage>,
+    pub user_alias: Option<u32>,
+    pub foreign_aliases: BiMap<u32, H160>,
 }
 
 fn process_realm_change(
     mut commands: Commands,
     realm: Res<CurrentRealm>,
-    adapters: Query<Entity, With<Adapter>>,
+    adapters: Query<Entity, With<Transport>>,
 ) {
     if realm.is_changed() {
         for adapter in adapters.iter() {
@@ -68,13 +102,16 @@ fn process_realm_change(
                         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
 
                         commands.spawn((
-                            Adapter {
-                                adapter_type: AdapterType::WebsocketRoom,
+                            Transport {
+                                transport_type: TransportType::WebsocketRoom,
                                 sender,
+                                user_alias: None,
+                                foreign_aliases: Default::default(),
                             },
-                            WebsocketRoomAdapter {
+                            WebsocketRoomTransport {
                                 address: address.to_owned(),
-                                receiver,
+                                receiver: Some(receiver),
+                                retries: 0,
                             },
                         ));
                     }
@@ -88,5 +125,20 @@ fn process_realm_change(
         } else {
             warn!("missing comms!");
         }
+    }
+}
+
+trait AsH160 {
+    fn as_h160(&self) -> Option<H160>;
+}
+
+impl AsH160 for &str {
+    fn as_h160(&self) -> Option<H160> {
+        let Ok(hex_bytes) = hex::decode(self.as_bytes()) else { return None };
+        if hex_bytes.len() != H160::len_bytes() {
+            return None;
+        }
+
+        Some(H160::from_slice(hex_bytes.as_slice()))
     }
 }

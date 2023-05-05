@@ -6,7 +6,7 @@ use super::{DclReader, DclReaderError, FromDclReader, SceneEntityId, ToDclWriter
 // for bevy: +z -> backward
 // DclTranslation internal format is wire format (+z = forward)
 #[derive(Debug, Default, Clone, Copy)]
-pub struct DclTranslation([f32; 3]);
+pub struct DclTranslation(pub [f32; 3]);
 
 impl FromDclReader for DclTranslation {
     fn from_reader(reader: &mut DclReader) -> Result<Self, DclReaderError> {
@@ -33,7 +33,7 @@ impl DclTranslation {
 
 // internal format is wire format (+z = forward)
 #[derive(Debug, Clone, Copy)]
-pub struct DclQuat([f32; 4]);
+pub struct DclQuat(pub [f32; 4]);
 
 impl FromDclReader for DclQuat {
     fn from_reader(buf: &mut DclReader) -> Result<Self, DclReaderError> {

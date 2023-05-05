@@ -24,7 +24,7 @@ use bevy::{
 use bevy_console::{ConsoleCommand, ConsoleOpen};
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 use camera_controller::CameraController;
-use comms::Adapter;
+use comms::Transport;
 use ipfs::ChangeRealmEvent;
 use scene_runner::{
     initialize_scene::{SceneLoadDistance, SceneLoading},
@@ -322,7 +322,7 @@ fn input(
     frame: Res<FrameCount>,
     loading_scenes: Query<&SceneLoading>,
     running_scenes: Query<&RendererSceneContext>,
-    adapters: Query<&Adapter>,
+    adapters: Query<&Transport>,
 ) {
     let realm = if keys.just_pressed(KeyCode::Up) {
         "https://sdk-test-scenes.decentraland.zone"
@@ -370,7 +370,7 @@ fn input(
                 .collect::<Vec<_>>()
         );
         info!("{} broken", broken);
-        info!("{} adapters", adapters.iter().count());
+        info!("{} transports", adapters.iter().count());
     }
 }
 

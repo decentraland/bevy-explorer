@@ -1,3 +1,5 @@
+use std::ops::RangeInclusive;
+
 use bevy::{prelude::debug, utils::HashSet};
 
 use crate::{
@@ -12,6 +14,7 @@ pub struct CrdtContext {
     live_entities: LiveTable,
     nascent: HashSet<SceneEntityId>,
     death_row: HashSet<SceneEntityId>,
+    last_new: u16,
 }
 
 impl CrdtContext {
@@ -21,6 +24,7 @@ impl CrdtContext {
             live_entities: Vec::from_iter(std::iter::repeat((0, false)).take(u16::MAX as usize)),
             nascent: Default::default(),
             death_row: Default::default(),
+            last_new: u16::MAX,
         }
     }
 
@@ -88,5 +92,26 @@ impl CrdtContext {
 
     pub fn is_dead(&self, entity: SceneEntityId) -> bool {
         self.entity_entry(entity.id).0 > entity.generation
+    }
+
+    pub fn new_in_range(&mut self, range: &RangeInclusive<u16>) -> Option<SceneEntityId> {
+        let mut next_new = self.last_new.wrapping_add(1);
+        if !range.contains(&self.last_new) {
+            self.last_new = *range.start();
+        }
+
+        while next_new != self.last_new {
+            if !self.entity_entry(next_new).1 {
+                let new_id = SceneEntityId::new(next_new, self.entity_entry(next_new).0);
+                self.init(new_id);
+                return Some(new_id);
+            }
+            next_new += 1;
+            if !range.contains(&self.last_new) {
+                self.last_new = *range.start();
+            }
+        }
+
+        None
     }
 }
