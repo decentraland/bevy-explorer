@@ -62,27 +62,34 @@ fn connect_websocket(
     wallet: Res<Wallet>,
     player_state: Res<GlobalCrdtState>,
 ) {
-    for (entity, mut new_transport) in new_websockets.iter_mut() {
+    for (transport_id, mut new_transport) in new_websockets.iter_mut() {
         let remote_address = new_transport.address.to_owned();
         let wallet = wallet.clone();
         let receiver = new_transport.receiver.take().unwrap();
         let sender = player_state.get_sender();
         let task = IoTaskPool::get().spawn(websocket_room_handler(
+            transport_id,
             remote_address,
             wallet,
             receiver,
             sender,
         ));
-        commands.entity(entity).insert(WebSocketConnection(task));
+        commands
+            .entity(transport_id)
+            .insert(WebSocketConnection(task));
     }
 }
 
 fn reconnect_websocket(
-    mut websockets: Query<(&mut WebsocketRoomTransport, &mut WebSocketConnection)>,
+    mut websockets: Query<(
+        Entity,
+        &mut WebsocketRoomTransport,
+        &mut WebSocketConnection,
+    )>,
     wallet: Res<Wallet>,
     player_state: Res<GlobalCrdtState>,
 ) {
-    for (mut transport, mut conn) in websockets.iter_mut() {
+    for (transport_id, mut transport, mut conn) in websockets.iter_mut() {
         if transport.retries < 3 {
             if conn.0.is_finished() {
                 transport.retries += 1;
@@ -92,6 +99,7 @@ fn reconnect_websocket(
                 let wallet = wallet.clone();
                 let sender = player_state.get_sender();
                 let task = IoTaskPool::get().spawn(websocket_room_handler(
+                    transport_id,
                     remote_address,
                     wallet,
                     receiver,
@@ -108,16 +116,20 @@ fn reconnect_websocket(
 }
 
 async fn websocket_room_handler(
+    transport_id: Entity,
     remote_address: String,
     wallet: Wallet,
     mut receiver: Receiver<NetworkMessage>,
     sender: Sender<PlayerUpdate>,
 ) -> (Receiver<NetworkMessage>, anyhow::Error) {
-    let res = websocket_room_handler_inner(remote_address, wallet, &mut receiver, sender).await;
+    let res =
+        websocket_room_handler_inner(transport_id, remote_address, wallet, &mut receiver, sender)
+            .await;
     (receiver, res.err().unwrap_or(anyhow!("connection closed")))
 }
 
 async fn websocket_room_handler_inner(
+    transport_id: Entity,
     remote_address: String,
     wallet: Wallet,
     receiver: &mut Receiver<NetworkMessage>,
@@ -164,7 +176,7 @@ async fn websocket_room_handler_inner(
                 from_alias = welcome.alias;
                 foreign_aliases = BiMap::from_iter(welcome.peer_identities.into_iter().flat_map(
                     |(alias, address)| {
-                        if let Some(h160) = (&address[2..]).as_h160() {
+                        if let Some(h160) = address.as_h160() {
                             Some((alias, h160))
                         } else {
                             warn!("failed to parse hash: {}", address);
@@ -239,7 +251,7 @@ async fn websocket_room_handler_inner(
                 }
                 ws_packet::Message::PeerJoinMessage(peer) => {
                     debug!("peer joined: {} -> {}", peer.alias, peer.address);
-                    if let Some(h160) = (&peer.address[2..]).as_h160() {
+                    if let Some(h160) = peer.address.as_h160() {
                         foreign_aliases.insert(peer.alias, h160);
                     } else {
                         warn!("failed to parse hash: {}", peer.address);
@@ -267,7 +279,9 @@ async fn websocket_room_handler_inner(
                         continue;
                     };
 
+                    debug!("[tid: {:?}] received message {:?} from {:?}", transport_id, message, address);
                     sender.send(PlayerUpdate {
+                        transport_id,
                         message,
                         address,
                     }).await?;

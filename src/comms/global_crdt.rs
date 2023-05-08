@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 
 use bevy::{prelude::*, utils::HashMap};
 use bimap::BiMap;
-use ethers::types::H160;
+use ethers::types::Address;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::{
@@ -18,6 +18,8 @@ use crate::{
     },
     scene_runner::update_world::{material::MaterialDefinition, mesh_renderer::MeshDefinition},
 };
+
+use super::profile::{ProfileEvent, ProfileEventType};
 
 const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 6..=406;
 
@@ -38,13 +40,15 @@ impl Plugin for GlobalCrdtPlugin {
             lookup: Default::default(),
         });
         app.add_system(process_updates);
+        app.add_system(despawn_players);
     }
 }
 
 #[derive(Debug)]
 pub struct PlayerUpdate {
+    pub transport_id: Entity,
     pub message: rfc4::packet::Message,
-    pub address: H160,
+    pub address: Address,
 }
 
 #[derive(Resource)]
@@ -58,7 +62,7 @@ pub struct GlobalCrdtState {
     // receiver for broadcast updates (we keep it to ensure it doesn't get closed)
     context: CrdtContext,
     store: CrdtStore,
-    lookup: BiMap<H160, Entity>,
+    lookup: BiMap<Address, Entity>,
 }
 
 impl GlobalCrdtState {
@@ -73,29 +77,36 @@ impl GlobalCrdtState {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct ForeignPlayer {
-    pub address: H160,
+    pub address: Address,
+    pub transport_id: Entity,
     pub last_update: f32,
     pub scene_id: SceneEntityId,
+    pub profile_version: u32,
 }
+
+#[derive(Component)]
+pub struct TransportRef(Entity);
 
 fn process_updates(
     mut commands: Commands,
     mut state: ResMut<GlobalCrdtState>,
     mut players: Query<&mut ForeignPlayer>,
     time: Res<Time>,
+    mut profile_events: EventWriter<ProfileEvent>,
 ) {
     let mut created_this_frame = HashMap::default();
 
     while let Ok(update) = state.ext_receiver.try_recv() {
-        // create/update timestamp on the foreign player
+        // create/update timestamp/transport_id on the foreign player
         let (entity, scene_id) =
             if let Some((entity, scene_id)) = created_this_frame.get(&update.address) {
                 (*entity, *scene_id)
             } else if let Some(existing) = state.lookup.get_by_left(&update.address) {
                 let mut foreign_player = players.get_mut(*existing).unwrap();
                 foreign_player.last_update = time.elapsed_seconds();
+                foreign_player.transport_id = update.transport_id;
                 (*existing, foreign_player.scene_id)
             } else {
                 let Some(next_free) = state.context.new_in_range(&FOREIGN_PLAYER_RANGE) else {
@@ -106,8 +117,10 @@ fn process_updates(
                 let new_entity = commands
                     .spawn(ForeignPlayer {
                         address: update.address,
+                        transport_id: update.transport_id,
                         last_update: time.elapsed_seconds(),
                         scene_id: next_free,
+                        profile_version: 0,
                     })
                     .id();
 
@@ -118,13 +131,13 @@ fn process_updates(
                     SpatialBundle::default(),
                     MeshDefinition::Sphere {},
                     MaterialDefinition {
-                        material: Color::rgba(1.0, 1.0, 0.0, 0.6).into(),
+                        material: Color::rgba(1.0, 0.0, 0.0, 0.6).into(),
                         shadow_caster: true,
                     },
                 ));
 
-                debug!(
-                    "created player entity: {} -> {:?},{}",
+                info!(
+                    "creating new player: {} -> {:?} / {}",
                     update.address, new_entity, next_free
                 );
                 created_this_frame.insert(update.address, (new_entity, next_free));
@@ -170,12 +183,42 @@ fn process_updates(
                     Vec3::new(pos.position_x, pos.position_y, pos.position_z)
                 );
             }
-            Message::ProfileVersion(_) => (),
-            Message::ProfileRequest(_) => (),
-            Message::ProfileResponse(_) => (),
+            Message::ProfileVersion(version) => {
+                profile_events.send(ProfileEvent {
+                    sender: entity,
+                    event: ProfileEventType::Version(version),
+                });
+            }
+            Message::ProfileRequest(request) => {
+                profile_events.send(ProfileEvent {
+                    sender: entity,
+                    event: ProfileEventType::Request(request),
+                });
+            }
+            Message::ProfileResponse(response) => {
+                profile_events.send(ProfileEvent {
+                    sender: entity,
+                    event: ProfileEventType::Response(response),
+                });
+            }
             Message::Chat(_) => (),
             Message::Scene(_) => (),
             Message::Voice(_) => (),
+        }
+    }
+}
+
+fn despawn_players(
+    mut commands: Commands,
+    players: Query<(Entity, &ForeignPlayer)>,
+    time: Res<Time>,
+) {
+    for (entity, player) in players.iter() {
+        if player.last_update + 5.0 < time.elapsed_seconds() {
+            if let Some(commands) = commands.get_entity(entity) {
+                info!("removing stale player: {entity:?} : {player:?}");
+                commands.despawn_recursive();
+            }
         }
     }
 }

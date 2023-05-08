@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use ethers::{
     prelude::rand::thread_rng,
     signers::{LocalWallet, Signer, WalletError},
-    types::{transaction::eip2718::TypedTransaction, Address, Signature, H160},
+    types::{transaction::eip2718::TypedTransaction, Address, Signature},
 };
 use serde::{Deserialize, Serialize};
 
@@ -74,7 +74,7 @@ impl ObjSafeWalletSigner for LocalWallet {
 pub struct SimpleAuthChain(Vec<ChainLink>);
 
 impl SimpleAuthChain {
-    pub fn new(signer_address: H160, payload: String, signature: Signature) -> Self {
+    pub fn new(signer_address: Address, payload: String, signature: Signature) -> Self {
         Self(vec![
             ChainLink {
                 ty: "SIGNER".to_owned(),

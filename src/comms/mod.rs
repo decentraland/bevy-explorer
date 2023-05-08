@@ -1,11 +1,12 @@
 pub mod broadcast_position;
 pub mod global_crdt;
+pub mod profile;
 pub mod wallet;
 pub mod websocket_room;
 
 use bevy::prelude::*;
 use bimap::BiMap;
-use ethers::types::H160;
+use ethers::types::{Address, H160};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
@@ -16,6 +17,7 @@ use crate::{
 use self::{
     broadcast_position::BroadcastPositionPlugin,
     global_crdt::GlobalCrdtPlugin,
+    profile::UserProfilePlugin,
     websocket_room::{WebsocketRoomPlugin, WebsocketRoomTransport},
 };
 
@@ -26,6 +28,7 @@ impl Plugin for CommsPlugin {
         app.add_plugin(WebsocketRoomPlugin);
         app.add_plugin(BroadcastPositionPlugin);
         app.add_plugin(GlobalCrdtPlugin);
+        app.add_plugin(UserProfilePlugin);
         app.add_system(process_realm_change);
     }
 }
@@ -33,13 +36,6 @@ impl Plugin for CommsPlugin {
 pub struct TransportAlias {
     pub adapter: Entity,
     pub alias: u32,
-}
-
-#[derive(Component)]
-pub struct Peer {
-    pub local_id: u32,
-    pub transport_aliases: Vec<TransportAlias>,
-    pub address: String, // H160
 }
 
 pub enum TransportType {
@@ -75,7 +71,7 @@ pub struct Transport {
     pub transport_type: TransportType,
     pub sender: Sender<NetworkMessage>,
     pub user_alias: Option<u32>,
-    pub foreign_aliases: BiMap<u32, H160>,
+    pub foreign_aliases: BiMap<u32, Address>,
 }
 
 fn process_realm_change(
@@ -137,11 +133,21 @@ trait AsH160 {
 
 impl AsH160 for &str {
     fn as_h160(&self) -> Option<H160> {
+        if self.starts_with("0x") {
+            return (&self[2..]).as_h160();
+        }
+
         let Ok(hex_bytes) = hex::decode(self.as_bytes()) else { return None };
         if hex_bytes.len() != H160::len_bytes() {
             return None;
         }
 
         Some(H160::from_slice(hex_bytes.as_slice()))
+    }
+}
+
+impl AsH160 for String {
+    fn as_h160(&self) -> Option<H160> {
+        self.as_str().as_h160()
     }
 }

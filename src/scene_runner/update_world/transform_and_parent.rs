@@ -94,7 +94,10 @@ pub(crate) fn process_transform_and_parent_updates(
                 (Transform::default(), root)
             };
 
-            let (mut target_transform, mut target_parent) = entities.get_mut(entity).unwrap();
+            let Ok((mut target_transform, mut target_parent)) = entities.get_mut(entity) else {
+                warn!("failed to find entity for transform update?!");
+                continue;
+            };
             *target_transform = transform;
             if new_target_parent != target_parent.0 {
                 // update the target

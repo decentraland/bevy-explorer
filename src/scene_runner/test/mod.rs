@@ -88,8 +88,8 @@ impl PluginGroup for TestPlugins {
             .add(InputPlugin)
             .add(ScenePlugin)
             .add(ConsolePlugin)
-            .add(CommsPlugin)
             .add(WalletPlugin)
+            .add(CommsPlugin)
     }
 }
 
