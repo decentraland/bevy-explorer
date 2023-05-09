@@ -78,9 +78,9 @@ impl Plugin for SceneLifecyclePlugin {
 
         app.add_systems(
             (
-                process_realm_change,
                 load_active_entities,
                 process_scene_lifecycle,
+                process_realm_change,
             )
                 .chain()
                 .in_base_set(CoreSet::PostUpdate),
@@ -538,7 +538,7 @@ pub fn process_realm_change(
     mut spawn: EventWriter<LoadSceneEvent>,
 ) {
     if current_realm.is_changed() {
-        info!("realm change! purging scenes");
+        info!("realm change `{}`! purging scenes", current_realm.address);
         let mut realm_scene_urns = HashSet::default();
         for urn in current_realm
             .config

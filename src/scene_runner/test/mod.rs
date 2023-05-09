@@ -105,10 +105,7 @@ fn init_test_app(entity_json: &str) -> App {
     let ipfs = app.world.resource::<AssetServer>().ipfs();
     let urn = format!("urn:decentraland:entity:{entity_json}");
     ipfs.set_realm_about(ServerAbout {
-        content: Some(crate::ipfs::EndpointConfig {
-            healthy: true,
-            public_url: "dummy".to_owned(),
-        }),
+        content: None,
         configurations: Some(ServerConfiguration {
             scenes_urn: Some(vec![urn]),
         }),
