@@ -26,7 +26,7 @@
 // helper to get a url-encoded path
 macro_rules! urlpath {
     ($value: expr) => {
-        Path::new(From::<&str>::from(&urlencoding::encode($value)))
+        Path::new(urlencoding::encode($value).as_ref())
     };
 }
 

@@ -134,7 +134,7 @@ impl RendererSceneContext {
         let mut buf = Vec::new();
         DclWriter::new(&mut buf).write(data);
         self.crdt_store
-            .force_update(component_id, crdt_type, id, Some(&mut DclReader::new(&buf)))
+            .force_update(component_id, crdt_type, id, Some(&mut DclReader::new(&buf)));
     }
 
     #[allow(dead_code)]
@@ -145,6 +145,6 @@ impl RendererSceneContext {
         id: SceneEntityId,
     ) {
         self.crdt_store
-            .force_update(component_id, crdt_type, id, None)
+            .force_update(component_id, crdt_type, id, None);
     }
 }

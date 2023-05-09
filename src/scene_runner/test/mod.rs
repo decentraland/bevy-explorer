@@ -18,6 +18,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 
 use crate::{
+    comms::{wallet::WalletPlugin, CommsPlugin},
     console::{self, ConsolePlugin},
     dcl::interface::{CrdtStore, CrdtType},
     dcl_component::{
@@ -87,6 +88,8 @@ impl PluginGroup for TestPlugins {
             .add(InputPlugin)
             .add(ScenePlugin)
             .add(ConsolePlugin)
+            .add(WalletPlugin)
+            .add(CommsPlugin)
     }
 }
 
@@ -102,13 +105,11 @@ fn init_test_app(entity_json: &str) -> App {
     let ipfs = app.world.resource::<AssetServer>().ipfs();
     let urn = format!("urn:decentraland:entity:{entity_json}");
     ipfs.set_realm_about(ServerAbout {
-        content: Some(crate::ipfs::EndpointConfig {
-            healthy: true,
-            public_url: "dummy".to_owned(),
-        }),
+        content: None,
         configurations: Some(ServerConfiguration {
             scenes_urn: Some(vec![urn]),
         }),
+        ..Default::default()
     });
 
     // startup system to create camera and fire load event

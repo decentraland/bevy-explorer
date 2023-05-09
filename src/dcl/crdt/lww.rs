@@ -68,7 +68,7 @@ impl CrdtLWWState {
         new_timestamp: SceneCrdtTimestamp,
         maybe_new_data: Option<&mut DclReader>,
         force: bool,
-    ) -> bool {
+    ) -> Option<SceneCrdtTimestamp> {
         match self.last_write.entry(entity) {
             Entry::Occupied(o) => {
                 let entry = o.into_mut();
@@ -91,8 +91,10 @@ impl CrdtLWWState {
                         None => entry.is_some = false,
                     }
                     self.updates.insert(entity);
+                    Some(entry.timestamp)
+                } else {
+                    None
                 }
-                update
             }
             Entry::Vacant(v) => {
                 v.insert(LWWEntry {
@@ -103,7 +105,7 @@ impl CrdtLWWState {
                         .unwrap_or_default(),
                 });
                 self.updates.insert(entity);
-                true
+                Some(new_timestamp)
             }
         }
     }
@@ -115,10 +117,16 @@ impl CrdtLWWState {
         maybe_new_data: Option<&mut DclReader>,
     ) -> bool {
         self.perform_update(entity, new_timestamp, maybe_new_data, false)
+            .is_some()
     }
 
-    pub fn force_update(&mut self, entity: SceneEntityId, maybe_new_data: Option<&mut DclReader>) {
-        self.perform_update(entity, SceneCrdtTimestamp(0), maybe_new_data, true);
+    pub fn force_update(
+        &mut self,
+        entity: SceneEntityId,
+        maybe_new_data: Option<&mut DclReader>,
+    ) -> SceneCrdtTimestamp {
+        self.perform_update(entity, SceneCrdtTimestamp(0), maybe_new_data, true)
+            .unwrap()
     }
 }
 

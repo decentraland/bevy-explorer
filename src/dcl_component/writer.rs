@@ -64,6 +64,13 @@ impl<'a> Deref for DclWriter<'a> {
 
 pub trait ToDclWriter {
     fn to_writer(&self, buf: &mut DclWriter);
+
+    fn to_vec(&self) -> Vec<u8> {
+        let mut buf = Vec::default();
+        let mut writer = DclWriter::new(&mut buf);
+        self.to_writer(&mut writer);
+        buf
+    }
 }
 
 unsafe impl<'a> prost::bytes::BufMut for DclWriter<'a> {

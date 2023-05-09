@@ -13,12 +13,16 @@ use isahc::{http::StatusCode, AsyncReadResponseExt, RequestExt};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    comms::global_crdt::GlobalCrdtState,
     dcl::{
         get_next_scene_id,
-        interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
+        interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
         spawn_scene, SceneElapsedTime, SceneResponse,
     },
-    dcl_component::{DclReader, SceneEntityId},
+    dcl_component::{
+        transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
+        SceneEntityId,
+    },
     ipfs::{
         ipfs_path::{EntityType, IpfsPath},
         CurrentRealm, IpfsIo, IpfsLoaderExt, SceneDefinition, SceneIpfsLocation, SceneJsFile,
@@ -74,9 +78,9 @@ impl Plugin for SceneLifecyclePlugin {
 
         app.add_systems(
             (
-                process_realm_change,
                 load_active_entities,
                 process_scene_lifecycle,
+                process_realm_change,
             )
                 .chain()
                 .in_base_set(CoreSet::PostUpdate),
@@ -84,13 +88,13 @@ impl Plugin for SceneLifecyclePlugin {
     }
 }
 
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Debug)]
 pub enum SceneLoading {
     SceneSpawned,
     SceneEntity,
     SceneMeta,
     MainCrdt(Option<Handle<SerializedCrdtStore>>),
-    Javascript,
+    Javascript(Option<tokio::sync::broadcast::Receiver<Vec<u8>>>),
     Failed,
 }
 
@@ -232,9 +236,9 @@ pub struct SerializedCrdtStore(pub Vec<u8>);
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn load_scene_javascript(
     mut commands: Commands,
-    mut loading_scenes: Query<(
+    loading_scenes: Query<(
         Entity,
-        &mut SceneLoading,
+        &SceneLoading,
         &Handle<SceneDefinition>,
         &Handle<SceneMeta>,
     )>,
@@ -244,9 +248,10 @@ pub(crate) fn load_scene_javascript(
     asset_server: Res<AssetServer>,
     crdt_component_interfaces: Res<CrdtExtractors>,
     mut scene_updates: ResMut<SceneUpdates>,
+    global_scene: Res<GlobalCrdtState>,
 ) {
-    for (root, mut state, h_scene, h_meta) in loading_scenes
-        .iter_mut()
+    for (root, state, h_scene, h_meta) in loading_scenes
+        .iter()
         .filter(|(_, state, _, _)| matches!(**state, SceneLoading::MainCrdt(_)))
     {
         let mut fail = |msg: &str| {
@@ -254,7 +259,7 @@ pub(crate) fn load_scene_javascript(
             commands.entity(root).insert(SceneLoading::Failed);
         };
 
-        let SceneLoading::MainCrdt(maybe_h_crdt) = state.clone() else { panic!("wrong load state in load_scene_javascript")};
+        let SceneLoading::MainCrdt(ref maybe_h_crdt) = state else { panic!("wrong load state in load_scene_javascript")};
         if let Some(ref h_crdt) = maybe_h_crdt {
             match asset_server.get_load_state(h_crdt) {
                 bevy::asset::LoadState::Loaded => (),
@@ -322,12 +327,27 @@ pub(crate) fn load_scene_javascript(
 
         scene_updates.scene_ids.insert(scene_id, root);
 
+        // start from the global shared crdt state
+        let (mut initial_crdt, global_updates) = global_scene.subscribe();
+
+        // set the world origin (for parents of world-space entities, using world-space coords as local coords)
+        let mut buf = Vec::new();
+        DclWriter::new(&mut buf).write(&DclTransformAndParent::from_bevy_transform_and_parent(
+            &Transform::from_translation(Vec3::new(-initial_position.x, 0.0, initial_position.y)),
+            SceneEntityId::ROOT,
+        ));
+        initial_crdt.force_update(
+            SceneComponentId::TRANSFORM,
+            CrdtType::LWW_ANY,
+            SceneEntityId::WORLD_ORIGIN,
+            Some(&mut DclReader::new(&buf)),
+        );
+
         if let Some(serialized_crdt) = maybe_serialized_crdt {
-            // get full main.crdt
-            let mut main_crdt = CrdtStore::default();
+            // add main.crdt
             let mut context = CrdtContext::new(scene_id);
             let mut stream = DclReader::new(&serialized_crdt);
-            main_crdt.process_message_stream(
+            initial_crdt.process_message_stream(
                 &mut context,
                 &crdt_component_interfaces,
                 &mut stream,
@@ -336,8 +356,8 @@ pub(crate) fn load_scene_javascript(
 
             // send initial updates into renderer
             let census = context.take_census();
-            main_crdt.clean_up(&census.died);
-            let updates = main_crdt.clone().take_updates();
+            initial_crdt.clean_up(&census.died);
+            let updates = initial_crdt.clone().take_updates();
 
             if let Err(e) = scene_updates.sender.send(SceneResponse::Ok(
                 context.scene_id,
@@ -347,13 +367,13 @@ pub(crate) fn load_scene_javascript(
             )) {
                 error!("failed to send initial updates to renderer: {e}");
             }
-
-            // and store to post to the scene thread on first request
-            renderer_context.crdt_store = main_crdt;
         } else {
             // explicitly set initial tick as run
             renderer_context.tick_number = 0;
         }
+
+        // store main.crdt + initial global state to post to the scene thread on first request
+        renderer_context.crdt_store = initial_crdt;
 
         commands.entity(root).insert((
             SpatialBundle {
@@ -378,8 +398,9 @@ pub(crate) fn load_scene_javascript(
             },
         ));
 
-        commands.entity(root).insert(h_code);
-        *state = SceneLoading::Javascript;
+        commands
+            .entity(root)
+            .insert((h_code, SceneLoading::Javascript(Some(global_updates))));
     }
 }
 
@@ -388,18 +409,20 @@ pub(crate) fn initialize_scene(
     mut commands: Commands,
     scene_updates: Res<SceneUpdates>,
     crdt_component_interfaces: Res<CrdtExtractors>,
-    loading_scenes: Query<(
+    mut loading_scenes: Query<(
         Entity,
-        &SceneLoading,
+        &mut SceneLoading,
         &Handle<SceneJsFile>,
         &RendererSceneContext,
     )>,
     scene_js_files: Res<Assets<SceneJsFile>>,
     asset_server: Res<AssetServer>,
 ) {
-    for (root, _, h_code, context) in loading_scenes.iter().filter(|(_, state, _, context)| {
-        matches!(state, SceneLoading::Javascript) && context.tick_number == 0
-    }) {
+    for (root, mut state, h_code, context) in loading_scenes.iter_mut() {
+        if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 0 {
+            continue;
+        }
+
         debug!("checking for js");
         let mut fail = |msg: &str| {
             warn!("{root:?} failed to initialize scene: {msg}");
@@ -424,6 +447,12 @@ pub(crate) fn initialize_scene(
 
         let thread_sx = scene_updates.sender.clone();
 
+        let global_updates = match *state {
+            SceneLoading::Javascript(ref mut global_updates) => global_updates.take(),
+            _ => panic!("bad state"),
+        }
+        .unwrap();
+
         let crdt_component_interfaces = CrdtComponentInterfaces(HashMap::from_iter(
             crdt_component_interfaces
                 .0
@@ -436,6 +465,7 @@ pub(crate) fn initialize_scene(
             js_file.clone(),
             crdt_component_interfaces,
             thread_sx,
+            global_updates,
             scene_id,
         );
 
@@ -508,7 +538,7 @@ pub fn process_realm_change(
     mut spawn: EventWriter<LoadSceneEvent>,
 ) {
     if current_realm.is_changed() {
-        info!("realm change! purging scenes");
+        info!("realm change `{}`! purging scenes", current_realm.address);
         let mut realm_scene_urns = HashSet::default();
         for urn in current_realm
             .config

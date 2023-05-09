@@ -3,6 +3,7 @@
 // - budget -> deadline is just last end + frame time
 
 mod camera_controller;
+pub mod comms;
 pub mod console;
 pub mod dcl;
 pub mod dcl_component;
@@ -23,6 +24,7 @@ use bevy::{
 use bevy_console::{ConsoleCommand, ConsoleOpen};
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 use camera_controller::CameraController;
+use comms::Transport;
 use ipfs::ChangeRealmEvent;
 use scene_runner::{
     initialize_scene::{SceneLoadDistance, SceneLoading},
@@ -33,6 +35,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     camera_controller::CameraControllerPlugin,
+    comms::{wallet::WalletPlugin, CommsPlugin},
     console::{ConsolePlugin, DoAddConsoleCommand},
     ipfs::IpfsIoPlugin,
     scene_runner::SceneSets,
@@ -164,6 +167,8 @@ fn main() {
     .add_plugin(CameraControllerPlugin)
     .add_plugin(ConsolePlugin)
     .add_plugin(VisualsPlugin)
+    .add_plugin(WalletPlugin)
+    .add_plugin(CommsPlugin)
     .add_startup_system(setup)
     .insert_resource(AmbientLight {
         color: Color::rgb(0.5, 0.5, 1.0),
@@ -317,10 +322,11 @@ fn input(
     frame: Res<FrameCount>,
     loading_scenes: Query<&SceneLoading>,
     running_scenes: Query<&RendererSceneContext>,
+    adapters: Query<&Transport>,
 ) {
-    let realm = if keys.pressed(KeyCode::Up) {
+    let realm = if keys.just_pressed(KeyCode::Up) {
         "https://sdk-test-scenes.decentraland.zone"
-    } else if keys.pressed(KeyCode::Down) {
+    } else if keys.just_pressed(KeyCode::Down) {
         "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-23c44f78405b2ee2e063a808d3b031905bc59800"
     } else {
         ""
@@ -364,6 +370,7 @@ fn input(
                 .collect::<Vec<_>>()
         );
         info!("{} broken", broken);
+        info!("{} transports", adapters.iter().count());
     }
 }
 

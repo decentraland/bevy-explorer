@@ -15,8 +15,8 @@ pub struct MaterialDefinitionPlugin;
 
 #[derive(Component, Debug, Default)]
 pub struct MaterialDefinition {
-    material: StandardMaterial,
-    shadow_caster: bool,
+    pub material: StandardMaterial,
+    pub shadow_caster: bool,
 }
 
 impl From<PbMaterial> for MaterialDefinition {

@@ -1,3 +1,5 @@
+use std::ops::RangeInclusive;
+
 // structs representing dcl components and de/serialization
 use bevy::prelude::Vec3;
 
@@ -27,6 +29,9 @@ impl SceneEntityId {
     pub const ROOT: SceneEntityId = Self::reserved(0);
     pub const PLAYER: SceneEntityId = Self::reserved(1);
     pub const CAMERA: SceneEntityId = Self::reserved(2);
+    pub const WORLD_ORIGIN: SceneEntityId = Self::reserved(5);
+
+    pub const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 6..=405;
 
     pub fn as_proto_u32(&self) -> Option<u32> {
         Some(self.id as u32 | (self.generation as u32) << 16)
@@ -37,6 +42,10 @@ impl SceneEntityId {
             id: id as u16,
             generation: (id >> 16) as u16,
         }
+    }
+
+    pub fn new(id: u16, generation: u16) -> Self {
+        Self { id, generation }
     }
 }
 

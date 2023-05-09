@@ -14,6 +14,24 @@ pub mod sdk {
     }
 }
 
+pub mod kernel {
+    #[allow(clippy::all)]
+    pub mod comms {
+        pub mod rfc5 {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/decentraland.kernel.comms.rfc5.rs"
+            ));
+        }
+        pub mod rfc4 {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/decentraland.kernel.comms.rfc4.rs"
+            ));
+        }
+    }
+}
+
 #[allow(clippy::all)]
 pub mod common {
     include!(concat!(env!("OUT_DIR"), "/decentraland.common.rs"));
@@ -47,6 +65,7 @@ impl DclProtoComponent for sdk::components::PbPointerEvents {}
 impl DclProtoComponent for sdk::components::PbPointerEventsResult {}
 impl DclProtoComponent for sdk::components::PbEngineInfo {}
 impl DclProtoComponent for sdk::components::PbGltfContainerLoadingState {}
+impl DclProtoComponent for kernel::comms::rfc4::Packet {}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}
