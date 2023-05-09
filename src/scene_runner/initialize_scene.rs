@@ -1,16 +1,11 @@
-use std::path::PathBuf;
-
 use bevy::{
     asset::{AssetLoader, LoadedAsset},
     math::Vec3Swizzles,
     prelude::*,
     reflect::TypeUuid,
-    tasks::{IoTaskPool, Task},
     utils::{HashMap, HashSet},
 };
 use futures_lite::future;
-use isahc::{http::StatusCode, AsyncReadResponseExt, RequestExt};
-use serde::{Deserialize, Serialize};
 
 use crate::{
     comms::global_crdt::GlobalCrdtState,
@@ -25,8 +20,8 @@ use crate::{
     },
     ipfs::{
         ipfs_path::{EntityType, IpfsPath},
-        CurrentRealm, IpfsIo, IpfsLoaderExt, SceneDefinition, SceneIpfsLocation, SceneJsFile,
-        SceneMeta,
+        ActiveEntityTask, CurrentRealm, IpfsIo, IpfsLoaderExt, SceneDefinition, SceneIpfsLocation,
+        SceneJsFile, SceneMeta,
     },
     scene_runner::{
         renderer_context::RendererSceneContext, ContainerEntity, DeletedSceneEntities, SceneEntity,
@@ -78,9 +73,9 @@ impl Plugin for SceneLifecyclePlugin {
 
         app.add_systems(
             (
+                process_realm_change,
                 load_active_entities,
                 process_scene_lifecycle,
-                process_realm_change,
             )
                 .chain()
                 .in_base_set(CoreSet::PostUpdate),
@@ -531,11 +526,9 @@ fn parcels_in_range(focus: &GlobalTransform, range: f32) -> Vec<IVec2> {
 }
 
 pub fn process_realm_change(
-    mut commands: Commands,
     current_realm: Res<CurrentRealm>,
     mut pointers: ResMut<ScenePointers>,
     mut live_scenes: ResMut<LiveScenes>,
-    mut spawn: EventWriter<LoadSceneEvent>,
 ) {
     if current_realm.is_changed() {
         info!("realm change `{}`! purging scenes", current_realm.address);
@@ -577,22 +570,6 @@ pub fn process_realm_change(
         live_scenes
             .0
             .retain(|hash, _| realm_scene_ids.contains_key(hash));
-
-        // load the remaining unloaded scenes
-        let to_load: HashSet<_> = realm_scene_ids
-            .into_iter()
-            .filter(|(hash, _)| !live_scenes.0.contains_key(hash))
-            .collect();
-
-        for (hash, urn) in to_load {
-            let entity = commands.spawn(SceneLoading::SceneSpawned).id();
-            info!("spawning scene {:?} @ ??: {entity:?}", hash);
-            live_scenes.0.insert(hash, entity);
-            spawn.send(LoadSceneEvent {
-                entity: Some(entity),
-                location: SceneIpfsLocation::Urn(urn),
-            });
-        }
     }
 }
 
@@ -602,12 +579,7 @@ fn load_active_entities(
     focus: Query<&GlobalTransform, With<PrimaryCamera>>,
     range: Res<SceneLoadDistance>,
     mut pointers: ResMut<ScenePointers>,
-    mut pointer_request: Local<
-        Option<(
-            HashSet<IVec2>,
-            Task<Result<HashSet<ActiveEntity>, anyhow::Error>>,
-        )>,
-    >,
+    mut pointer_request: Local<Option<(HashSet<IVec2>, ActiveEntityTask)>>,
     asset_server: Res<AssetServer>,
 ) {
     if realm.is_changed() {
@@ -617,22 +589,24 @@ fn load_active_entities(
     }
 
     if pointer_request.is_none() {
-        if let Some(url) = asset_server.active_endpoint() {
+        if asset_server.active_endpoint().is_some() {
             // load required pointers
             let Ok(focus) = focus.get_single() else {
                 return;
             };
+
             let parcels: HashSet<_> = parcels_in_range(focus, range.0)
                 .into_iter()
                 .filter(|parcel| !pointers.0.contains_key(parcel))
                 .collect();
 
+            let pointers = parcels
+                .iter()
+                .map(|parcel| format!("{},{}", parcel.x, parcel.y))
+                .collect();
+
             if !parcels.is_empty() {
-                let cache_path = asset_server.ipfs_cache_path().to_owned();
-                *pointer_request = Some((
-                    parcels.clone(),
-                    IoTaskPool::get().spawn(request_active_entities(url, parcels, cache_path)),
-                ));
+                *pointer_request = Some((parcels, asset_server.ipfs().active_entities(&pointers)));
             }
         }
     } else if pointer_request.as_ref().unwrap().1.is_finished() {
@@ -685,7 +659,7 @@ pub fn process_scene_lifecycle(
     mut spawn: EventWriter<LoadSceneEvent>,
     pointers: Res<ScenePointers>,
 ) {
-    let mut required_scene_ids: HashSet<String> = HashSet::default();
+    let mut required_scene_ids: HashSet<(String, Option<String>)> = HashSet::default();
 
     // add realm-defined scenes to requirements
     if let Some(scenes) = current_realm.config.scenes_urn.as_ref() {
@@ -695,6 +669,7 @@ pub fn process_scene_lifecycle(
                 .ok()?
                 .context_free_hash()
                 .ok()?
+                .map(|hash| (hash, Some(hacked_urn)))
         }))
     }
 
@@ -710,6 +685,7 @@ pub fn process_scene_lifecycle(
                     .get(&parcel)
                     .and_then(PointerResult::hash)
                     .map(ToOwned::to_owned)
+                    .map(|hash| (hash, None))
             },
         ));
     }
@@ -717,7 +693,7 @@ pub fn process_scene_lifecycle(
     // record which scene entities we should keep
     let required_entities: HashMap<_, _> = required_scene_ids
         .iter()
-        .flat_map(|scene| live_scenes.0.get(scene).map(|ent| (ent, scene)))
+        .flat_map(|(hash, maybe_urn)| live_scenes.0.get(hash).map(|ent| (ent, (hash, maybe_urn))))
         .collect();
 
     let mut existing_ids = HashSet::default();
@@ -725,7 +701,7 @@ pub fn process_scene_lifecycle(
     // despawn any no-longer required entities
     for entity in &scene_entities {
         match required_entities.get(&entity) {
-            Some(hash) => {
+            Some((hash, _)) => {
                 existing_ids.insert(<&String>::clone(hash));
             }
             None => {
@@ -739,81 +715,19 @@ pub fn process_scene_lifecycle(
     drop(required_entities);
 
     // spawn any newly required scenes
-    for required_scene_id in required_scene_ids
+    for (required_scene_hash, maybe_urn) in required_scene_ids
         .iter()
-        .filter(|id| !existing_ids.contains(id))
+        .filter(|(hash, _)| !existing_ids.contains(hash))
     {
         let entity = commands.spawn(SceneLoading::SceneSpawned).id();
-        info!("spawning scene {:?} @ ??: {entity:?}", required_scene_id);
-        live_scenes.0.insert(required_scene_id.clone(), entity);
+        info!("spawning scene {:?} @ ??: {entity:?}", required_scene_hash);
+        live_scenes.0.insert(required_scene_hash.clone(), entity);
         spawn.send(LoadSceneEvent {
             entity: Some(entity),
-            location: SceneIpfsLocation::Hash(required_scene_id.clone()),
+            location: match maybe_urn {
+                Some(urn) => SceneIpfsLocation::Urn(urn.to_owned()),
+                None => SceneIpfsLocation::Hash(required_scene_hash.to_owned()),
+            },
         })
     }
-}
-
-#[derive(Serialize)]
-struct ActiveEntitiesRequest {
-    pointers: Vec<String>,
-}
-
-#[derive(Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ActiveEntity {
-    id: String,
-    pointers: Vec<String>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct ActiveEntitiesResponse(Vec<serde_json::Value>);
-
-async fn request_active_entities(
-    url: String,
-    pointers: HashSet<IVec2>,
-    cache_path: PathBuf,
-) -> Result<HashSet<ActiveEntity>, anyhow::Error> {
-    let body = serde_json::to_string(&ActiveEntitiesRequest {
-        pointers: pointers
-            .into_iter()
-            .map(|p| format!("{},{}", p.x, p.y))
-            .collect(),
-    })?;
-    let mut response = isahc::Request::post(url)
-        .header("content-type", "application/json")
-        .body(body)?
-        .send_async()
-        .await?;
-
-    if response.status() != StatusCode::OK {
-        return Err(anyhow::anyhow!("status: {}", response.status()));
-    }
-
-    let active_entities = response
-        .json::<ActiveEntitiesResponse>()
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    let mut res = HashSet::default();
-    for entity in active_entities.0 {
-        let id = entity
-            .get("id")
-            .ok_or(anyhow::anyhow!(
-                "no id field on active entity: {:?}",
-                entity
-            ))?
-            .as_str()
-            .unwrap();
-        // cache to file system
-        let mut cache_path = cache_path.clone();
-        cache_path.push(id);
-
-        if id.starts_with("b64-") || !cache_path.exists() {
-            let file = std::fs::File::create(&cache_path)?;
-            serde_json::to_writer(file, &vec![&entity])?;
-        }
-
-        // return active entity struct
-        res.insert(serde_json::from_value(entity)?);
-    }
-
-    Ok(res)
 }

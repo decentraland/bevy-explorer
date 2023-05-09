@@ -12,8 +12,8 @@ use bevy::{
     asset::{Asset, AssetIo, AssetIoError, AssetLoader, FileAssetIo, LoadedAsset},
     prelude::*,
     reflect::TypeUuid,
-    tasks::IoTaskPool,
-    utils::HashMap,
+    tasks::{IoTaskPool, Task},
+    utils::{HashMap, HashSet},
 };
 use bevy_common_assets::json::JsonAssetPlugin;
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
@@ -564,7 +564,78 @@ impl IpfsIo {
     pub fn cache_path(&self) -> &Path {
         self.default_fs_path.as_path()
     }
+
+    // load entities from pointers and cache urls
+    pub fn active_entities(&self, pointers: &Vec<String>) -> ActiveEntityTask {
+        let active_url = self
+            .realm_config_receiver
+            .borrow()
+            .as_ref()
+            .and_then(|(_, about)| about.content.as_ref())
+            .map(|content| format!("{}/entities/active", &content.public_url));
+
+        let body = serde_json::to_string(&ActiveEntitiesRequest { pointers });
+        let cache_path = self.cache_path().to_owned();
+
+        IoTaskPool::get().spawn(async move {
+            let active_url = active_url.ok_or(anyhow!("not connected"))?;
+            let body = body?;
+            let mut response = isahc::Request::post(active_url)
+                .header("content-type", "application/json")
+                .body(body)?
+                .send_async()
+                .await?;
+
+            if response.status() != StatusCode::OK {
+                return Err(anyhow::anyhow!("status: {}", response.status()));
+            }
+
+            let active_entities = response
+                .json::<ActiveEntitiesResponse>()
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
+            let mut res = HashSet::default();
+            for entity in active_entities.0 {
+                let id = entity
+                    .get("id")
+                    .ok_or(anyhow::anyhow!(
+                        "no id field on active entity: {:?}",
+                        entity
+                    ))?
+                    .as_str()
+                    .unwrap();
+                // cache to file system
+                let cache_path = cache_path.join(id);
+
+                if id.starts_with("b64-") || !cache_path.exists() {
+                    let file = std::fs::File::create(&cache_path)?;
+                    serde_json::to_writer(file, &vec![&entity])?;
+                }
+
+                // return active entity struct
+                res.insert(serde_json::from_value(entity)?);
+            }
+
+            Ok(res)
+        })
+    }
 }
+
+pub type ActiveEntityTask = Task<Result<HashSet<ActiveEntity>, anyhow::Error>>;
+
+#[derive(Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ActiveEntity {
+    pub id: String,
+    pub pointers: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct ActiveEntitiesRequest<'a> {
+    pointers: &'a Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ActiveEntitiesResponse(Vec<serde_json::Value>);
 
 impl AssetIo for IpfsIo {
     fn load_path<'a>(
