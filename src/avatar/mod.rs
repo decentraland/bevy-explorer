@@ -20,6 +20,7 @@ pub struct AvatarPlugin;
 impl Plugin for AvatarPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<WearablePointers>();
+        app.init_resource::<WearableMetas>();
         app.add_system(load_base_wearables);
         app.add_system(update_avatars);
     }
@@ -28,17 +29,39 @@ impl Plugin for AvatarPlugin {
 #[derive(Resource, Default, Debug)]
 pub struct WearablePointers(HashMap<Urn, String>);
 
-pub struct WearableManifests(HashMap<String, WearableManifest>);
-
-pub struct WearableManifest {}
+#[derive(Resource, Default, Debug)]
+pub struct WearableMetas(HashMap<String, WearableMeta>);
 
 #[derive(Deserialize, Debug)]
-pub struct WearableMeta {}
+pub struct WearableMeta {
+    pub description: String,
+    pub thumbnail: String,
+    pub rarity: String,
+    pub data: WearableData,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct WearableData {
+    pub tags: Vec<String>,
+    pub category: String,
+    pub representations: Vec<WearableRepresentation>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct WearableRepresentation {
+    pub body_shapes: Vec<String>,
+    pub main_file: String,
+    pub override_replaces: Vec<String>,
+    pub override_hides: Vec<String>,
+    pub contents: Vec<String>,
+}
 
 fn load_base_wearables(
     mut once: Local<bool>,
     mut task: Local<Option<ActiveEntityTask>>,
     mut wearable_pointers: ResMut<WearablePointers>,
+    mut wearable_metas: ResMut<WearableMetas>,
     asset_server: Res<AssetServer>,
 ) {
     if *once || asset_server.active_endpoint().is_none() {
@@ -55,6 +78,17 @@ fn load_base_wearables(
             Some(Err(e)) => warn!("failed to acquire base wearables: {e}"),
             Some(Ok(active_entities)) => {
                 for entity in active_entities {
+                    let Some(metadata) = entity.metadata else {
+                        warn!("no metadata on wearable");
+                        continue;
+                    };
+                    let wearable_data = match serde_json::from_value::<WearableMeta>(metadata) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            warn!("failed to deserialize wearable data: {e}");
+                            continue;
+                        },
+                    };
                     for pointer in entity.pointers {
                         match Urn::from_str(&pointer) {
                             Ok(urn) => {
@@ -65,11 +99,11 @@ fn load_base_wearables(
                             }
                         };
                     }
+
+                    wearable_metas.0.insert(entity.id, wearable_data);
                 }
                 *task = None;
                 *once = true;
-                println!("found items");
-                println!("{wearable_pointers:?}");
             }
         },
     }
