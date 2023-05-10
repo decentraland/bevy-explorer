@@ -20,7 +20,7 @@ use crate::{
     },
     ipfs::{
         ipfs_path::{EntityType, IpfsPath},
-        ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsIo, IpfsLoaderExt, SceneIpfsLocation,
+        ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsLoaderExt, SceneIpfsLocation,
         SceneJsFile,
     },
     scene_runner::{
@@ -161,8 +161,9 @@ pub(crate) fn load_scene_json(
             continue;
         }
 
-        let ipfs_io = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
-        ipfs_io.add_collection(definition.id.clone(), definition.content.clone());
+        asset_server
+            .ipfs()
+            .add_collection(definition.id.clone(), definition.content.clone());
 
         if definition.content.hash("main.crdt").is_some() {
             let h_crdt: Handle<SerializedCrdtStore> = asset_server

@@ -13,7 +13,7 @@ use bevy::{
     prelude::*,
     reflect::TypeUuid,
     tasks::{IoTaskPool, Task},
-    utils::{HashMap, HashSet},
+    utils::HashMap,
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use bimap::BiMap;
@@ -25,13 +25,13 @@ use crate::console::DoAddConsoleCommand;
 
 use self::ipfs_path::{normalize_path, EntityType, IpfsPath, IpfsType};
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct TypedIpfsRef {
     file: String,
     hash: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct EntityDefinitionJson {
     id: Option<String>,
     pointers: Vec<String>,
@@ -558,16 +558,9 @@ impl IpfsIo {
                 .json::<ActiveEntitiesResponse>()
                 .await
                 .map_err(|e| anyhow::anyhow!(e))?;
-            let mut res = HashSet::default();
+            let mut res = Vec::default();
             for entity in active_entities.0 {
-                let id = entity
-                    .get("id")
-                    .ok_or(anyhow::anyhow!(
-                        "no id field on active entity: {:?}",
-                        entity
-                    ))?
-                    .as_str()
-                    .unwrap();
+                let id = entity.id.as_ref().unwrap();
                 // cache to file system
                 let cache_path = cache_path.join(id);
 
@@ -577,7 +570,11 @@ impl IpfsIo {
                 }
 
                 // return active entity struct
-                res.insert(serde_json::from_value(entity)?);
+                res.push(ActiveEntity {
+                    id: entity.id.unwrap(),
+                    pointers: entity.pointers,
+                    metadata: entity.metadata,
+                });
             }
 
             Ok(res)
@@ -585,12 +582,13 @@ impl IpfsIo {
     }
 }
 
-pub type ActiveEntityTask = Task<Result<HashSet<ActiveEntity>, anyhow::Error>>;
+pub type ActiveEntityTask = Task<Result<Vec<ActiveEntity>, anyhow::Error>>;
 
-#[derive(Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Deserialize, Debug)]
 pub struct ActiveEntity {
     pub id: String,
     pub pointers: Vec<String>,
+    pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -599,7 +597,7 @@ struct ActiveEntitiesRequest<'a> {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct ActiveEntitiesResponse(Vec<serde_json::Value>);
+pub struct ActiveEntitiesResponse(Vec<EntityDefinitionJson>);
 
 impl AssetIo for IpfsIo {
     fn load_path<'a>(

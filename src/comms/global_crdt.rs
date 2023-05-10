@@ -175,7 +175,7 @@ fn process_updates(
                     Some(&buf),
                 );
                 if let Err(e) = state.int_sender.send(crdt_message) {
-                    error!("failed to send foreign player update: {e}");
+                    error!("failed to send foreign player update to scenes: {e}");
                 }
                 debug!(
                     "player: {:#x} -> {}",
