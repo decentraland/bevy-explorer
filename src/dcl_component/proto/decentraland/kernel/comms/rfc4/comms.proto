@@ -1,4 +1,4 @@
-// This file maps to the definition in https://rfc.decentraland.org/rfc/RFC-4
+// This file maps to the definition in https://adr.decentraland.org/adr/ADR-104
 // It is mandatory to also update that RFC when modifying this file
 
 syntax = "proto3";
