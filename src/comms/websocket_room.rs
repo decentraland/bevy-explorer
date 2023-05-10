@@ -14,7 +14,6 @@ use prost::Message;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::{
-    comms::AsH160,
     dcl_assert,
     dcl_component::proto_components::kernel::comms::{
         rfc4,
@@ -22,7 +21,7 @@ use crate::{
             ws_packet, WsChallengeRequired, WsIdentification, WsPacket, WsPeerUpdate,
             WsSignedChallenge, WsWelcome,
         },
-    },
+    }, util::AsH160,
 };
 
 use super::{

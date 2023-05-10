@@ -5,7 +5,7 @@ use bevy::{
     reflect::TypeUuid,
     utils::{HashMap, HashSet},
 };
-use futures_lite::future;
+use serde::Deserialize;
 
 use crate::{
     comms::global_crdt::GlobalCrdtState,
@@ -20,13 +20,13 @@ use crate::{
     },
     ipfs::{
         ipfs_path::{EntityType, IpfsPath},
-        ActiveEntityTask, CurrentRealm, IpfsIo, IpfsLoaderExt, SceneDefinition, SceneIpfsLocation,
-        SceneJsFile, SceneMeta,
+        ActiveEntityTask, CurrentRealm, IpfsIo, IpfsLoaderExt, EntityDefinition, SceneIpfsLocation,
+        SceneJsFile,
     },
     scene_runner::{
         renderer_context::RendererSceneContext, ContainerEntity, DeletedSceneEntities, SceneEntity,
         SceneThreadHandle,
-    },
+    }, util::TaskExt,
 };
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryCamera, SceneSets, SceneUpdates};
@@ -64,7 +64,6 @@ impl Plugin for SceneLifecyclePlugin {
             (
                 load_scene_entity,
                 load_scene_json,
-                load_scene_crdt,
                 load_scene_javascript,
                 initialize_scene,
             )
@@ -87,7 +86,6 @@ impl Plugin for SceneLifecyclePlugin {
 pub enum SceneLoading {
     SceneSpawned,
     SceneEntity,
-    SceneMeta,
     MainCrdt(Option<Handle<SerializedCrdtStore>>),
     Javascript(Option<tokio::sync::broadcast::Receiver<Vec<u8>>>),
     Failed,
@@ -109,10 +107,10 @@ pub(crate) fn load_scene_entity(
 
         let h_scene = match &event.location {
             SceneIpfsLocation::Hash(hash) => {
-                asset_server.load_hash::<SceneDefinition>(hash, EntityType::Scene)
+                asset_server.load_hash::<EntityDefinition>(hash, EntityType::Scene)
             }
             SceneIpfsLocation::Urn(urn) => {
-                match asset_server.load_urn::<SceneDefinition>(urn, EntityType::Scene) {
+                match asset_server.load_urn::<EntityDefinition>(urn, EntityType::Scene) {
                     Ok(h_scene) => h_scene,
                     Err(e) => {
                         warn!("failed to parse urn: {e}");
@@ -129,15 +127,14 @@ pub(crate) fn load_scene_entity(
 
 pub(crate) fn load_scene_json(
     mut commands: Commands,
-    mut loading_scenes: Query<(Entity, &mut SceneLoading, &Handle<SceneDefinition>)>,
-    scene_definitions: Res<Assets<SceneDefinition>>,
+    mut loading_scenes: Query<(Entity, &mut SceneLoading, &Handle<EntityDefinition>)>,
+    scene_definitions: Res<Assets<EntityDefinition>>,
     asset_server: Res<AssetServer>,
 ) {
     for (entity, mut state, h_scene) in loading_scenes
         .iter_mut()
         .filter(|(_, state, _)| matches!(**state, SceneLoading::SceneEntity))
     {
-        debug!("checking json");
         let mut fail = |msg: &str| {
             warn!("{entity:?} failed to initialize scene: {msg}");
             commands.entity(entity).insert(SceneLoading::Failed);
@@ -166,53 +163,6 @@ pub(crate) fn load_scene_json(
         let ipfs_io = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
         ipfs_io.add_collection(definition.id.clone(), definition.content.clone());
 
-        let h_meta = match asset_server.load_content_file::<SceneMeta>("scene.json", &definition.id)
-        {
-            Ok(h_meta) => h_meta,
-            Err(e) => {
-                fail(&format!("couldn't load scene.json: {e}"));
-                continue;
-            }
-        };
-
-        commands.entity(entity).insert(h_meta);
-        *state = SceneLoading::SceneMeta;
-    }
-}
-
-pub(crate) fn load_scene_crdt(
-    mut commands: Commands,
-    mut loading_scenes: Query<(
-        Entity,
-        &mut SceneLoading,
-        &Handle<SceneDefinition>,
-        &Handle<SceneMeta>,
-    )>,
-    scene_definitions: Res<Assets<SceneDefinition>>,
-    asset_server: Res<AssetServer>,
-) {
-    for (entity, mut state, h_scene, h_meta) in loading_scenes
-        .iter_mut()
-        .filter(|(_, state, _, _)| matches!(**state, SceneLoading::SceneMeta))
-    {
-        let mut fail = |msg: &str| {
-            warn!("{entity:?} failed to initialize scene: {msg}");
-            commands.entity(entity).insert(SceneLoading::Failed);
-        };
-
-        match asset_server.get_load_state(h_meta) {
-            bevy::asset::LoadState::Loaded => (),
-            bevy::asset::LoadState::Failed => {
-                fail("scene.json could not be loaded");
-                continue;
-            }
-            _ => continue,
-        }
-        let Some(definition) = scene_definitions.get(h_scene) else {
-            fail("definition was dropped");
-            continue;
-        };
-
         if definition.content.hash("main.crdt").is_some() {
             let h_crdt: Handle<SerializedCrdtStore> = asset_server
                 .load_content_file("main.crdt", &definition.id)
@@ -222,6 +172,17 @@ pub(crate) fn load_scene_crdt(
             *state = SceneLoading::MainCrdt(None);
         };
     }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct SceneMetaScene {
+    pub base: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct SceneMeta {
+    pub main: String,
+    pub scene: SceneMetaScene,
 }
 
 #[derive(TypeUuid, Default, Clone)]
@@ -234,20 +195,18 @@ pub(crate) fn load_scene_javascript(
     loading_scenes: Query<(
         Entity,
         &SceneLoading,
-        &Handle<SceneDefinition>,
-        &Handle<SceneMeta>,
+        &Handle<EntityDefinition>,
     )>,
-    scene_definitions: Res<Assets<SceneDefinition>>,
-    scene_metas: Res<Assets<SceneMeta>>,
+    scene_definitions: Res<Assets<EntityDefinition>>,
     main_crdts: Res<Assets<SerializedCrdtStore>>,
     asset_server: Res<AssetServer>,
     crdt_component_interfaces: Res<CrdtExtractors>,
     mut scene_updates: ResMut<SceneUpdates>,
     global_scene: Res<GlobalCrdtState>,
 ) {
-    for (root, state, h_scene, h_meta) in loading_scenes
+    for (root, state, h_scene) in loading_scenes
         .iter()
-        .filter(|(_, state, _, _)| matches!(**state, SceneLoading::MainCrdt(_)))
+        .filter(|(_, state, _)| matches!(**state, SceneLoading::MainCrdt(_)))
     {
         let mut fail = |msg: &str| {
             warn!("{root:?} failed to initialize scene: {msg}");
@@ -270,7 +229,11 @@ pub(crate) fn load_scene_javascript(
             fail("definition was dropped");
             continue;
         };
-        let Some(meta) = scene_metas.get(h_meta) else {
+        let Some(meta) = &definition.metadata else {
+            fail("definition didn't contain metadata");
+            continue;
+        };
+        let Ok(meta) = serde_json::from_value::<SceneMeta>(meta.clone()) else {
             fail("scene.json did not resolve to expected format");
             continue;
         };
@@ -304,8 +267,6 @@ pub(crate) fn load_scene_javascript(
         ));
 
         // spawn bevy-side scene
-        let meta = scene_metas.get(h_meta).unwrap();
-
         let (pointer_x, pointer_y) = meta.scene.base.split_once(',').unwrap();
         let pointer_x = pointer_x.parse::<i32>().unwrap();
         let pointer_y = pointer_y.parse::<i32>().unwrap();
@@ -585,11 +546,11 @@ fn load_active_entities(
     if realm.is_changed() {
         // drop current request
         *pointer_request = None;
-        return;
     }
 
     if pointer_request.is_none() {
-        if asset_server.active_endpoint().is_some() {
+        let has_scene_urns = !realm.config.scenes_urn.as_ref().map_or(true, Vec::is_empty);
+        if !has_scene_urns && asset_server.active_endpoint().is_some() {
             // load required pointers
             let Ok(focus) = focus.get_single() else {
                 return;
@@ -609,11 +570,11 @@ fn load_active_entities(
                 *pointer_request = Some((parcels, asset_server.ipfs().active_entities(&pointers)));
             }
         }
-    } else if pointer_request.as_ref().unwrap().1.is_finished() {
+    } else if let Some(task_result) = pointer_request.as_mut().unwrap().1.complete() {
         // process active scenes in the requested set
-        let (mut requested_parcels, mut task) = pointer_request.take().unwrap();
+        let (mut requested_parcels, _) = pointer_request.take().unwrap();
 
-        let Ok(retrieved_parcels) = future::block_on(future::poll_once(&mut task)).unwrap() else {
+        let Ok(retrieved_parcels) = task_result else {
             warn!("failed to retrieve active scenes, will retry");
             return;
         };

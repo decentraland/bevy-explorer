@@ -2,17 +2,17 @@ use bevy::{prelude::*, utils::HashMap};
 use ethers::types::Address;
 use serde::{Deserialize, Serialize};
 
-use crate::dcl_component::proto_components::kernel::comms::rfc4::{
+use crate::{dcl_component::proto_components::kernel::comms::rfc4::{
     self, AnnounceProfileVersion, ProfileRequest, ProfileResponse,
-};
+}, util::AsH160, avatar::Avatar};
 
-use super::{global_crdt::ForeignPlayer, wallet::Wallet, AsH160, NetworkMessage, Transport};
+use super::{global_crdt::ForeignPlayer, wallet::Wallet, NetworkMessage, Transport};
 
 #[derive(Component, Serialize, Deserialize)]
 pub struct UserProfile {
-    version: u32,
-    content: String,
-    base_url: String,
+    pub version: u32,
+    pub content: SerializedProfile,
+    pub base_url: String,
 }
 
 pub struct UserProfilePlugin;
@@ -31,7 +31,7 @@ impl Plugin for UserProfilePlugin {
         };
         app.insert_resource(CurrentUserProfile(UserProfile {
             version: 1,
-            content: serde_json::to_string(&avatar).unwrap(),
+            content: avatar,
             base_url: "https://sdk-test-scenes.decentraland.zone/content/contents/".to_owned(),
         }));
     }
@@ -112,7 +112,7 @@ pub fn process_profile_events(
     for ev in events.iter() {
         match &ev.event {
             ProfileEventType::Request(r) => {
-                if let Some(req_address) = r.address.as_str().as_h160() {
+                if let Some(req_address) = r.address.as_h160() {
                     if req_address == wallet.address() {
                         let Ok((player, _)) = players.get(ev.sender) else {
                             continue;
@@ -131,7 +131,7 @@ pub fn process_profile_events(
                         let response = rfc4::Packet {
                             message: Some(rfc4::packet::Message::ProfileResponse(
                                 rfc4::ProfileResponse {
-                                    serialized_profile: current_profile.0.content.clone(),
+                                    serialized_profile: serde_json::to_string(&current_profile.0.content).unwrap(),
                                     base_url: current_profile.0.base_url.clone(),
                                 },
                             )),
@@ -149,11 +149,27 @@ pub fn process_profile_events(
                 }
             }
             ProfileEventType::Response(r) => {
-                if let Ok((player, maybe_profile)) = players.get_mut(ev.sender) {
-                    // need to check the version somehow
+                if let Ok((mut player, maybe_profile)) = players.get_mut(ev.sender) {
+                    let serialized_profile: SerializedProfile = match serde_json::from_str(&r.serialized_profile) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            warn!("failed to parse profile: {e}");
+                            continue;
+                        }                        
+                    };
+                    let version = serialized_profile.version;
+
+                    // check/update profile version
+                    if version < player.profile_version {
+                        return;
+                    }
+                    if version > player.profile_version {
+                        player.profile_version = version;
+                    }
+
                     let profile = UserProfile {
-                        version: player.profile_version,
-                        content: r.serialized_profile.clone(),
+                        version,
+                        content: serialized_profile,
                         base_url: r.base_url.clone(),
                     };
 
@@ -178,11 +194,12 @@ pub fn process_profile_events(
 }
 
 #[derive(Serialize, Deserialize)]
-struct SerializedProfile {
+pub struct SerializedProfile {
     #[serde(rename = "userId")]
     pub user_id: Option<String>,
     pub name: String,
     pub description: String,
+    pub version: u32,
     #[serde(rename = "ethAddress")]
     pub eth_address: String,
     #[serde(rename = "tutorialStep")]
@@ -195,12 +212,12 @@ struct SerializedProfile {
     pub has_claimed_name: Option<bool>,
     #[serde(rename = "hasConnectedWeb3")]
     pub has_connected_web3: Option<bool>,
-    pub avatar: serde_json::Value,
+    pub avatar: Avatar,
 }
 
 impl Default for SerializedProfile {
     fn default() -> Self {
-        let avatar: serde_json::Value = serde_json::from_str("
+        let avatar = serde_json::from_str("
             {
                 \"bodyShape\":\"urn:decentraland:off-chain:base-avatars:BaseFemale\",
                 \"wearables\":[
@@ -232,6 +249,7 @@ impl Default for SerializedProfile {
             user_id: Default::default(),
             name: Default::default(),
             description: Default::default(),
+            version: Default::default(),
             eth_address: "0x0000000000000000000000000000000000000000".to_owned(),
             tutorial_step: Default::default(),
             email: Default::default(),

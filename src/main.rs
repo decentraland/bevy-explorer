@@ -12,6 +12,7 @@ pub mod input_handler;
 pub mod ipfs;
 pub mod scene_runner;
 pub mod visuals;
+pub mod util;
 
 use bevy::{
     core::FrameCount,

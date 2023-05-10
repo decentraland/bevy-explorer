@@ -6,7 +6,7 @@ pub mod websocket_room;
 
 use bevy::prelude::*;
 use bimap::BiMap;
-use ethers::types::{Address, H160};
+use ethers::types::Address;
 use tokio::sync::mpsc::Sender;
 
 use crate::{
@@ -124,30 +124,5 @@ fn process_realm_change(
         } else {
             warn!("missing comms!");
         }
-    }
-}
-
-trait AsH160 {
-    fn as_h160(&self) -> Option<H160>;
-}
-
-impl AsH160 for &str {
-    fn as_h160(&self) -> Option<H160> {
-        if self.starts_with("0x") {
-            return (&self[2..]).as_h160();
-        }
-
-        let Ok(hex_bytes) = hex::decode(self.as_bytes()) else { return None };
-        if hex_bytes.len() != H160::len_bytes() {
-            return None;
-        }
-
-        Some(H160::from_slice(hex_bytes.as_slice()))
-    }
-}
-
-impl AsH160 for String {
-    fn as_h160(&self) -> Option<H160> {
-        self.as_str().as_h160()
     }
 }
