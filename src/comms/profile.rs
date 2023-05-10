@@ -2,9 +2,13 @@ use bevy::{prelude::*, utils::HashMap};
 use ethers::types::Address;
 use serde::{Deserialize, Serialize};
 
-use crate::{dcl_component::proto_components::kernel::comms::rfc4::{
-    self, AnnounceProfileVersion, ProfileRequest, ProfileResponse,
-}, util::AsH160, avatar::Avatar};
+use crate::{
+    avatar::Avatar,
+    dcl_component::proto_components::kernel::comms::rfc4::{
+        self, AnnounceProfileVersion, ProfileRequest, ProfileResponse,
+    },
+    util::AsH160,
+};
 
 use super::{global_crdt::ForeignPlayer, wallet::Wallet, NetworkMessage, Transport};
 
@@ -131,7 +135,10 @@ pub fn process_profile_events(
                         let response = rfc4::Packet {
                             message: Some(rfc4::packet::Message::ProfileResponse(
                                 rfc4::ProfileResponse {
-                                    serialized_profile: serde_json::to_string(&current_profile.0.content).unwrap(),
+                                    serialized_profile: serde_json::to_string(
+                                        &current_profile.0.content,
+                                    )
+                                    .unwrap(),
                                     base_url: current_profile.0.base_url.clone(),
                                 },
                             )),
@@ -150,13 +157,14 @@ pub fn process_profile_events(
             }
             ProfileEventType::Response(r) => {
                 if let Ok((mut player, maybe_profile)) = players.get_mut(ev.sender) {
-                    let serialized_profile: SerializedProfile = match serde_json::from_str(&r.serialized_profile) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            warn!("failed to parse profile: {e}");
-                            continue;
-                        }                        
-                    };
+                    let serialized_profile: SerializedProfile =
+                        match serde_json::from_str(&r.serialized_profile) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                warn!("failed to parse profile: {e}");
+                                continue;
+                            }
+                        };
                     let version = serialized_profile.version;
 
                     // check/update profile version

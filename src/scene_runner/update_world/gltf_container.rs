@@ -25,7 +25,7 @@ use crate::{
         },
         SceneComponentId, SceneEntityId,
     },
-    ipfs::{IpfsLoaderExt, EntityDefinition},
+    ipfs::{EntityDefinition, IpfsLoaderExt},
     scene_runner::{
         renderer_context::RendererSceneContext, ContainerEntity, SceneEntity, SceneSets,
     },

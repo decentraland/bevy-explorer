@@ -1,12 +1,19 @@
 use std::str::FromStr;
 
-use bevy::{prelude::*, utils::{HashMap, HashSet}};
-use serde::{Serialize, Deserialize};
+use bevy::{
+    prelude::*,
+    utils::{HashMap, HashSet},
+};
+use serde::{Deserialize, Serialize};
 use urn::Urn;
 
 pub mod base_wearables;
 
-use crate::{ipfs::{ActiveEntityTask, IpfsLoaderExt}, util::TaskExt, comms::{global_crdt::ForeignPlayer, profile::UserProfile}};
+use crate::{
+    comms::{global_crdt::ForeignPlayer, profile::UserProfile},
+    ipfs::{ActiveEntityTask, IpfsLoaderExt},
+    util::TaskExt,
+};
 
 pub struct AvatarPlugin;
 
@@ -23,14 +30,10 @@ pub struct WearablePointers(HashMap<Urn, String>);
 
 pub struct WearableManifests(HashMap<String, WearableManifest>);
 
-pub struct WearableManifest {
-
-}
+pub struct WearableManifest {}
 
 #[derive(Deserialize, Debug)]
-pub struct WearableMeta {
-
-}
+pub struct WearableMeta {}
 
 fn load_base_wearables(
     mut once: Local<bool>,
@@ -47,26 +50,28 @@ fn load_base_wearables(
             let pointers = base_wearables::base_wearables();
             *task = Some(asset_server.ipfs().active_entities(&pointers));
         }
-        Some(ref mut active_task) => {
-            match active_task.complete() {
-                None => (),
-                Some(Err(e)) => warn!("failed to acquire base wearables: {e}"),
-                Some(Ok(active_entities)) => {
-                    for entity in active_entities {
-                        for pointer in entity.pointers {
-                            match Urn::from_str(&pointer) {
-                                Ok(urn) => { wearable_pointers.0.insert(urn, entity.id.clone()); },
-                                Err(e) => { warn!("failed to parse wearable urn: {e}"); },
-                            };
-                        }
+        Some(ref mut active_task) => match active_task.complete() {
+            None => (),
+            Some(Err(e)) => warn!("failed to acquire base wearables: {e}"),
+            Some(Ok(active_entities)) => {
+                for entity in active_entities {
+                    for pointer in entity.pointers {
+                        match Urn::from_str(&pointer) {
+                            Ok(urn) => {
+                                wearable_pointers.0.insert(urn, entity.id.clone());
+                            }
+                            Err(e) => {
+                                warn!("failed to parse wearable urn: {e}");
+                            }
+                        };
                     }
-                    *task = None;
-                    *once = true;
-                    println!("found items");
-                    println!("{wearable_pointers:?}");
                 }
+                *task = None;
+                *once = true;
+                println!("found items");
+                println!("{wearable_pointers:?}");
             }
-        }
+        },
     }
 }
 
@@ -113,7 +118,7 @@ pub struct AvatarSnapshots {
 
 #[derive(Serialize, Deserialize)]
 pub struct Avatar {
-    #[serde(rename="bodyShape")]
+    #[serde(rename = "bodyShape")]
     body_shape: String,
     eyes: AvatarColor,
     hair: AvatarColor,

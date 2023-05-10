@@ -20,13 +20,14 @@ use crate::{
     },
     ipfs::{
         ipfs_path::{EntityType, IpfsPath},
-        ActiveEntityTask, CurrentRealm, IpfsIo, IpfsLoaderExt, EntityDefinition, SceneIpfsLocation,
+        ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsIo, IpfsLoaderExt, SceneIpfsLocation,
         SceneJsFile,
     },
     scene_runner::{
         renderer_context::RendererSceneContext, ContainerEntity, DeletedSceneEntities, SceneEntity,
         SceneThreadHandle,
-    }, util::TaskExt,
+    },
+    util::TaskExt,
 };
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryCamera, SceneSets, SceneUpdates};
@@ -192,11 +193,7 @@ pub struct SerializedCrdtStore(pub Vec<u8>);
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn load_scene_javascript(
     mut commands: Commands,
-    loading_scenes: Query<(
-        Entity,
-        &SceneLoading,
-        &Handle<EntityDefinition>,
-    )>,
+    loading_scenes: Query<(Entity, &SceneLoading, &Handle<EntityDefinition>)>,
     scene_definitions: Res<Assets<EntityDefinition>>,
     main_crdts: Res<Assets<SerializedCrdtStore>>,
     asset_server: Res<AssetServer>,

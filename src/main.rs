@@ -11,8 +11,8 @@ pub mod dcl_component;
 pub mod input_handler;
 pub mod ipfs;
 pub mod scene_runner;
-pub mod visuals;
 pub mod util;
+pub mod visuals;
 
 use bevy::{
     core::FrameCount,

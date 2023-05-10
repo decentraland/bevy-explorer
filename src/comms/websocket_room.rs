@@ -21,7 +21,8 @@ use crate::{
             ws_packet, WsChallengeRequired, WsIdentification, WsPacket, WsPeerUpdate,
             WsSignedChallenge, WsWelcome,
         },
-    }, util::AsH160,
+    },
+    util::AsH160,
 };
 
 use super::{

@@ -325,8 +325,7 @@ impl Plugin for IpfsIoPlugin {
             .add_asset::<EntityDefinition>()
             .add_asset::<SceneJsFile>()
             .init_asset_loader::<EntityDefinitionLoader>()
-            .init_asset_loader::<SceneJsLoader>()
-            ;
+            .init_asset_loader::<SceneJsLoader>();
 
         app.add_event::<ChangeRealmEvent>();
         app.init_resource::<CurrentRealm>();
