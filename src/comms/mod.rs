@@ -10,14 +10,14 @@ use ethers::types::Address;
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    dcl_component::{DclWriter, ToDclWriter},
+    dcl_component::{proto_components::kernel::comms::rfc4, DclWriter, ToDclWriter},
     ipfs::CurrentRealm,
 };
 
 use self::{
     broadcast_position::BroadcastPositionPlugin,
     global_crdt::GlobalCrdtPlugin,
-    profile::UserProfilePlugin,
+    profile::{CurrentUserProfile, UserProfilePlugin},
     websocket_room::{WebsocketRoomPlugin, WebsocketRoomTransport},
 };
 
@@ -78,6 +78,7 @@ fn process_realm_change(
     mut commands: Commands,
     realm: Res<CurrentRealm>,
     adapters: Query<Entity, With<Transport>>,
+    current_profile: Res<CurrentUserProfile>,
 ) {
     if realm.is_changed() {
         for adapter in adapters.iter() {
@@ -96,6 +97,20 @@ fn process_realm_change(
                     "ws-room" => {
                         info!("starting ws-room adapter");
                         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
+
+                        // queue a profile version message
+                        let response = rfc4::Packet {
+                            message: Some(rfc4::packet::Message::ProfileResponse(
+                                rfc4::ProfileResponse {
+                                    serialized_profile: serde_json::to_string(
+                                        &current_profile.0.content,
+                                    )
+                                    .unwrap(),
+                                    base_url: current_profile.0.base_url.clone(),
+                                },
+                            )),
+                        };
+                        let _ = sender.try_send(NetworkMessage::reliable(&response));
 
                         commands.spawn((
                             Transport {

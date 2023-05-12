@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{f32::consts::PI, str::FromStr};
 
 use bevy::{
     ecs::system::SystemParam,
@@ -181,7 +181,13 @@ fn update_avatar_info(
             player.scene_id,
             &PbAvatarEquippedData {
                 urns: avatar.wearables.to_vec(),
-                emotes: avatar.emotes.as_ref().unwrap_or(&Vec::default()).to_vec(),
+                emotes: avatar
+                    .emotes
+                    .as_ref()
+                    .unwrap_or(&Vec::default())
+                    .iter()
+                    .map(|emote| emote.urn.clone())
+                    .collect(),
             },
         )
     }
@@ -264,7 +270,12 @@ fn update_base_avatar_shape(
                     .avatar
                     .emotes
                     .as_ref()
-                    .map(Clone::clone)
+                    .map(|emotes| {
+                        emotes
+                            .iter()
+                            .map(|emote| emote.urn.clone())
+                            .collect::<Vec<_>>()
+                    })
                     .unwrap_or_default(),
             }));
         }
@@ -604,7 +615,10 @@ fn update_render_avatar(
         debug!("avatar definition loaded: {wearables:?}");
         commands.entity(entity).with_children(|commands| {
             commands.spawn((
-                SpatialBundle::default(),
+                SpatialBundle {
+                    transform: Transform::from_rotation(Quat::from_rotation_y(PI)),
+                    ..Default::default()
+                },
                 AvatarDefinition {
                     body: body_wearable,
                     wearables,
@@ -810,8 +824,10 @@ fn process_avatar(
                 {
                     debug!("setting eye color {:?}", def.eyes_color);
                     let base_color = if mask.is_some() {
-                        Color::BLACK
+                        error!("mask is some");
+                        Color::WHITE
                     } else {
+                        error!("mask is none");
                         Color::WHITE
                     };
                     let emissive = if mask.is_some() {
@@ -988,6 +1004,12 @@ pub struct AvatarSnapshots {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct AvatarEmote {
+    pub slot: u32,
+    pub urn: String,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct AvatarWireFormat {
     name: Option<String>,
     #[serde(rename = "bodyShape")]
@@ -996,6 +1018,6 @@ pub struct AvatarWireFormat {
     hair: Option<AvatarColor>,
     skin: Option<AvatarColor>,
     wearables: Vec<String>,
-    emotes: Option<Vec<String>>,
+    emotes: Option<Vec<AvatarEmote>>,
     snapshots: Option<AvatarSnapshots>,
 }

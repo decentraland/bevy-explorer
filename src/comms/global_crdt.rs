@@ -164,7 +164,7 @@ fn process_transport_updates(
                     SpatialBundle::default(),
                     MeshDefinition::Sphere {},
                     MaterialDefinition {
-                        material: Color::rgba(1.0, 0.0, 0.0, 0.6).into(),
+                        material: Color::rgba(1.0, 0.0, 0.0, 0.1).into(),
                         shadow_caster: true,
                     },
                 ));

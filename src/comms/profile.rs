@@ -53,7 +53,7 @@ pub struct ProfileEvent {
 }
 
 #[derive(Resource)]
-pub struct CurrentUserProfile(UserProfile);
+pub struct CurrentUserProfile(pub UserProfile);
 
 fn request_missing_profiles(
     missing_profiles: Query<&mut ForeignPlayer, Without<UserProfile>>,
@@ -165,7 +165,7 @@ pub fn process_profile_events(
                                 continue;
                             }
                         };
-                    let version = serialized_profile.version;
+                    let version = serialized_profile.version as u32;
 
                     // check/update profile version
                     if version < player.profile_version {
@@ -188,7 +188,7 @@ pub fn process_profile_events(
                         // debug turn it green
                         commands.entity(ev.sender).insert(
                             crate::scene_runner::update_world::material::MaterialDefinition {
-                                material: Color::rgba(0.0, 1.0, 0.0, 0.6).into(),
+                                material: Color::rgba(0.0, 1.0, 0.0, 0.1).into(),
                                 shadow_caster: true,
                             },
                         );
@@ -207,7 +207,7 @@ pub struct SerializedProfile {
     pub user_id: Option<String>,
     pub name: String,
     pub description: String,
-    pub version: u32,
+    pub version: i64,
     #[serde(rename = "ethAddress")]
     pub eth_address: String,
     #[serde(rename = "tutorialStep")]
@@ -242,7 +242,7 @@ impl Default for SerializedProfile {
                     \"body\":\"QmSav1o6QK37Jj1yhbmhYk9MJc6c2H5DWbWzPVsg9JLYfF\"
                 },
                 \"eyes\":{
-                    \"color\":{\"r\":0.0,\"g\":0.0,\"b\":1.0,\"a\":1}
+                    \"color\":{\"r\":0.37254902720451355,\"g\":0.2235294133424759,\"b\":0.19607843458652496,\"a\":1}
                 },
                 \"hair\":{
                     \"color\":{\"r\":0.5960784554481506,\"g\":0.37254902720451355,\"b\":0.21568627655506134,\"a\":1}
