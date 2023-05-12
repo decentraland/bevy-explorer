@@ -163,7 +163,7 @@ pub(crate) fn load_scene_json(
 
         asset_server
             .ipfs()
-            .add_collection(definition.id.clone(), definition.content.clone());
+            .add_collection(definition.id.clone(), definition.content.clone(), None);
 
         if definition.content.hash("main.crdt").is_some() {
             let h_crdt: Handle<SerializedCrdtStore> = asset_server
@@ -439,7 +439,7 @@ pub struct LiveScenes(pub HashMap<String, Entity>);
 pub const PARCEL_SIZE: f32 = 16.0;
 
 #[derive(Resource, Default, Debug)]
-pub struct ScenePointers(HashMap<IVec2, PointerResult>);
+pub struct ScenePointers(pub HashMap<IVec2, PointerResult>);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum PointerResult {

@@ -7,14 +7,17 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::{
     dcl::{
-        crdt::put_component,
+        crdt::{append_component, put_component},
         interface::{crdt_context::CrdtContext, CrdtStore, CrdtType},
         SceneId,
     },
     dcl_component::{
-        proto_components::kernel::comms::rfc4::{self, packet::Message},
+        proto_components::{
+            kernel::comms::rfc4::{self, packet::Message},
+            sdk::components::PbPlayerIdentityData,
+        },
         transform_and_parent::{DclQuat, DclTransformAndParent, DclTranslation},
-        DclReader, SceneComponentId, SceneEntityId, ToDclWriter,
+        DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter,
     },
     scene_runner::update_world::{material::MaterialDefinition, mesh_renderer::MeshDefinition},
 };
@@ -39,7 +42,7 @@ impl Plugin for GlobalCrdtPlugin {
             store: Default::default(),
             lookup: Default::default(),
         });
-        app.add_system(process_updates);
+        app.add_system(process_transport_updates);
         app.add_system(despawn_players);
     }
 }
@@ -75,6 +78,27 @@ impl GlobalCrdtState {
     pub fn subscribe(&self) -> (CrdtStore, broadcast::Receiver<Vec<u8>>) {
         (self.store.clone(), self.int_sender.subscribe())
     }
+
+    pub fn update_crdt(
+        &mut self,
+        component_id: SceneComponentId,
+        crdt_type: CrdtType,
+        id: SceneEntityId,
+        data: &impl ToDclWriter,
+    ) {
+        let mut buf = Vec::new();
+        DclWriter::new(&mut buf).write(data);
+        let timestamp =
+            self.store
+                .force_update(component_id, crdt_type, id, Some(&mut DclReader::new(&buf)));
+        let crdt_message = match crdt_type {
+            CrdtType::LWW(_) => put_component(&id, &component_id, &timestamp, Some(&buf)),
+            CrdtType::GO(_) => append_component(&id, &component_id, &buf),
+        };
+        if let Err(e) = self.int_sender.send(crdt_message) {
+            error!("failed to send foreign player update to scenes: {e}");
+        }
+    }
 }
 
 #[derive(Component, Debug)]
@@ -89,7 +113,7 @@ pub struct ForeignPlayer {
 #[derive(Component)]
 pub struct TransportRef(Entity);
 
-fn process_updates(
+fn process_transport_updates(
     mut commands: Commands,
     mut state: ResMut<GlobalCrdtState>,
     mut players: Query<&mut ForeignPlayer>,
@@ -110,9 +134,18 @@ fn process_updates(
                 (*existing, foreign_player.scene_id)
             } else {
                 let Some(next_free) = state.context.new_in_range(&FOREIGN_PLAYER_RANGE) else {
-                warn!("no space for any more players!");
-                continue;
-            };
+                    warn!("no space for any more players!");
+                    continue;
+                };
+
+                state.update_crdt(
+                    SceneComponentId::PLAYER_IDENTITY_DATA,
+                    CrdtType::LWW_ANY,
+                    next_free,
+                    &PbPlayerIdentityData {
+                        address: format!("{:#x}", update.address),
+                    },
+                );
 
                 let new_entity = commands
                     .spawn(ForeignPlayer {
@@ -158,29 +191,19 @@ fn process_updates(
                     scale: Vec3::ONE,
                     parent: SceneEntityId::WORLD_ORIGIN,
                 };
-                let buf = dcl_transform.to_vec();
-                let timestamp = state.store.force_update(
-                    SceneComponentId::TRANSFORM,
-                    CrdtType::LWW_ANY,
-                    scene_id,
-                    Some(&mut DclReader::new(&buf)),
-                );
-                commands
-                    .entity(entity)
-                    .insert(dcl_transform.to_bevy_transform());
-                let crdt_message = put_component(
-                    &scene_id,
-                    &SceneComponentId::TRANSFORM,
-                    &timestamp,
-                    Some(&buf),
-                );
-                if let Err(e) = state.int_sender.send(crdt_message) {
-                    error!("failed to send foreign player update to scenes: {e}");
-                }
                 debug!(
                     "player: {:#x} -> {}",
                     update.address,
                     Vec3::new(pos.position_x, pos.position_y, pos.position_z)
+                );
+                commands
+                    .entity(entity)
+                    .insert(dcl_transform.to_bevy_transform());
+                state.update_crdt(
+                    SceneComponentId::TRANSFORM,
+                    CrdtType::LWW_ANY,
+                    scene_id,
+                    &dcl_transform,
                 );
             }
             Message::ProfileVersion(version) => {

@@ -13,6 +13,12 @@ fn main() -> Result<()> {
         "animator",
         "pointer_events",
         "pointer_events_result",
+        "avatar_customization",
+        "avatar_emote_command",
+        "avatar_equipped_data",
+        "player_identity_data",
+        "avatar_shape",
+        "avatar_attach",
     ];
 
     let mut sources = components
@@ -25,6 +31,13 @@ fn main() -> Result<()> {
     sources.push("src/dcl_component/proto/decentraland/kernel/comms/rfc5/ws_comms.proto".into());
     sources.push("src/dcl_component/proto/decentraland/kernel/comms/rfc4/comms.proto".into());
 
-    prost_build::compile_protos(&sources, &["src/dcl_component/proto/"])?;
+    let serde_components = ["Color3"];
+
+    let mut config = prost_build::Config::new();
+    for component in serde_components {
+        config.type_attribute(component, "#[derive(serde::Serialize, serde::Deserialize)]");
+    }
+
+    config.compile_protos(&sources, &["src/dcl_component/proto/"])?;
     Ok(())
 }

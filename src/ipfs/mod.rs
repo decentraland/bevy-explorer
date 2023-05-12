@@ -426,8 +426,8 @@ fn change_realm(
     }
 }
 
-struct IpfsModifier {
-    base_url: Option<String>,
+pub struct IpfsModifier {
+    pub base_url: Option<String>,
 }
 
 #[derive(Default)]
@@ -518,11 +518,13 @@ impl IpfsIo {
         }
     }
 
-    pub fn add_collection(&self, hash: String, collection: ContentMap) {
-        self.context
-            .blocking_write()
-            .collections
-            .insert(hash, collection);
+    pub fn add_collection(&self, hash: String, collection: ContentMap, modifier: Option<IpfsModifier>) {
+        let mut write = self.context.blocking_write();
+
+        if let Some(modifier) = modifier {
+            write.modifiers.insert(hash.clone(), modifier);
+        }
+        write.collections.insert(hash, collection);
     }
 
     pub fn cache_path(&self) -> &Path {
@@ -570,10 +572,15 @@ impl IpfsIo {
                 }
 
                 // return active entity struct
-                res.push(ActiveEntity {
+                res.push(EntityDefinition {
                     id: entity.id.unwrap(),
                     pointers: entity.pointers,
                     metadata: entity.metadata,
+                    content: ContentMap(BiMap::from_iter(entity
+                        .content
+                        .into_iter()
+                        .map(|ipfs| (normalize_path(&ipfs.file), ipfs.hash))
+                    )),
                 });
             }
 
@@ -582,12 +589,13 @@ impl IpfsIo {
     }
 }
 
-pub type ActiveEntityTask = Task<Result<Vec<ActiveEntity>, anyhow::Error>>;
+pub type ActiveEntityTask = Task<Result<Vec<EntityDefinition>, anyhow::Error>>;
 
-#[derive(Deserialize, Debug)]
+#[derive(Debug)]
 pub struct ActiveEntity {
     pub id: String,
     pub pointers: Vec<String>,
+    pub content: ContentMap,
     pub metadata: Option<serde_json::Value>,
 }
 
@@ -681,6 +689,7 @@ impl AssetIo for IpfsIo {
                     }
                 }
 
+                debug!("remote url: `{remote}` completed");
                 Ok(data)
             }
         })

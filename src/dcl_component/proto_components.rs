@@ -65,6 +65,12 @@ impl DclProtoComponent for sdk::components::PbPointerEvents {}
 impl DclProtoComponent for sdk::components::PbPointerEventsResult {}
 impl DclProtoComponent for sdk::components::PbEngineInfo {}
 impl DclProtoComponent for sdk::components::PbGltfContainerLoadingState {}
+impl DclProtoComponent for sdk::components::PbAvatarShape {}
+impl DclProtoComponent for sdk::components::PbAvatarAttach {}
+impl DclProtoComponent for sdk::components::PbAvatarCustomization {}
+impl DclProtoComponent for sdk::components::PbAvatarEmoteCommand {}
+impl DclProtoComponent for sdk::components::PbAvatarEquippedData {}
+impl DclProtoComponent for sdk::components::PbPlayerIdentityData {}
 impl DclProtoComponent for kernel::comms::rfc4::Packet {}
 
 // VECTOR3 conversions

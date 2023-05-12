@@ -6,8 +6,8 @@ option (common.ecs_component_id) = 1087;
 
 // AvatarCustomizations sets all modifiers over the avatar's apparence. This 
 message PBAvatarCustomization {
-  decentraland.common.Color4 skin_color = 1;
-  decentraland.common.Color4 eyes_color = 2;
-  decentraland.common.Color4 hair_color = 3;
+  decentraland.common.Color3 skin_color = 1;
+  decentraland.common.Color3 eyes_color = 2;
+  decentraland.common.Color3 hair_color = 3;
   string body_shape_urn = 4;
 }

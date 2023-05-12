@@ -117,7 +117,7 @@ fn update_gltf(
         ),
         Changed<GltfDefinition>,
     >,
-    unprocessed_gltfs: Query<(Entity, &SceneEntity, &Handle<Gltf>), Without<GltfLoaded>>,
+    unprocessed_gltfs: Query<(Entity, &SceneEntity, &Handle<Gltf>), (With<GltfDefinition>, Without<GltfLoaded>)>,
     ready_gltfs: Query<
         (Entity, &SceneEntity, &GltfLoaded, &GltfDefinition),
         Without<GltfProcessed>,

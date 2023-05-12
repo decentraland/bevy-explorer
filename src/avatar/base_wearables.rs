@@ -283,6 +283,17 @@ const BASE_WEARABLES: [&str; 278] = [
 pub fn base_wearables() -> Vec<String> {
     BASE_WEARABLES
         .iter()
-        .map(|wearable| format!("urn:decentraland:off-chain:base-avatars:{}", wearable))
+        .map(|wearable| {
+            format!("urn:decentraland:off-chain:base-avatars:{}", wearable).to_lowercase()
+        })
         .collect()
 }
+
+pub fn default_bodyshape() -> String {
+    format!(
+        "urn:decentraland:off-chain:base-avatars:{}",
+        BASE_WEARABLES[0]
+    ).to_lowercase()
+}
+
+pub const URL: &str = "https://peer.decentraland.org/content/contents/";

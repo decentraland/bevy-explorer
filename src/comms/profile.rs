@@ -3,11 +3,10 @@ use ethers::types::Address;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    avatar::Avatar,
     dcl_component::proto_components::kernel::comms::rfc4::{
         self, AnnounceProfileVersion, ProfileRequest, ProfileResponse,
     },
-    util::AsH160,
+    util::AsH160, avatar::AvatarWireFormat,
 };
 
 use super::{global_crdt::ForeignPlayer, wallet::Wallet, NetworkMessage, Transport};
@@ -220,7 +219,7 @@ pub struct SerializedProfile {
     pub has_claimed_name: Option<bool>,
     #[serde(rename = "hasConnectedWeb3")]
     pub has_connected_web3: Option<bool>,
-    pub avatar: Avatar,
+    pub avatar: AvatarWireFormat,
 }
 
 impl Default for SerializedProfile {
