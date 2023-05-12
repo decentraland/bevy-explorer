@@ -234,6 +234,7 @@ fn process_transport_updates(
 fn despawn_players(
     mut commands: Commands,
     players: Query<(Entity, &ForeignPlayer)>,
+    mut state: ResMut<GlobalCrdtState>,
     time: Res<Time>,
 ) {
     for (entity, player) in players.iter() {
@@ -242,6 +243,8 @@ fn despawn_players(
                 info!("removing stale player: {entity:?} : {player:?}");
                 commands.despawn_recursive();
             }
+
+            state.lookup.remove_by_right(&entity);
         }
     }
 }

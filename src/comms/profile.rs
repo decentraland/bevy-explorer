@@ -3,10 +3,11 @@ use ethers::types::Address;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    avatar::AvatarWireFormat,
     dcl_component::proto_components::kernel::comms::rfc4::{
         self, AnnounceProfileVersion, ProfileRequest, ProfileResponse,
     },
-    util::AsH160, avatar::AvatarWireFormat,
+    util::AsH160,
 };
 
 use super::{global_crdt::ForeignPlayer, wallet::Wallet, NetworkMessage, Transport};
@@ -232,7 +233,7 @@ impl Default for SerializedProfile {
                     \"urn:decentraland:off-chain:base-avatars:f_jeans\",
                     \"urn:decentraland:off-chain:base-avatars:bun_shoes\",
                     \"urn:decentraland:off-chain:base-avatars:standard_hair\",
-                    \"urn:decentraland:off-chain:base-avatars:f_eyes_00\",
+                    \"urn:decentraland:off-chain:base-avatars:f_eyes_01\",
                     \"urn:decentraland:off-chain:base-avatars:f_eyebrows_00\",
                     \"urn:decentraland:off-chain:base-avatars:f_mouth_00\"
                 ],
@@ -241,7 +242,7 @@ impl Default for SerializedProfile {
                     \"body\":\"QmSav1o6QK37Jj1yhbmhYk9MJc6c2H5DWbWzPVsg9JLYfF\"
                 },
                 \"eyes\":{
-                    \"color\":{\"r\":0.37254902720451355,\"g\":0.2235294133424759,\"b\":0.19607843458652496,\"a\":1}
+                    \"color\":{\"r\":0.0,\"g\":0.0,\"b\":1.0,\"a\":1}
                 },
                 \"hair\":{
                     \"color\":{\"r\":0.5960784554481506,\"g\":0.37254902720451355,\"b\":0.21568627655506134,\"a\":1}

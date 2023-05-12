@@ -293,7 +293,8 @@ pub fn default_bodyshape() -> String {
     format!(
         "urn:decentraland:off-chain:base-avatars:{}",
         BASE_WEARABLES[0]
-    ).to_lowercase()
+    )
+    .to_lowercase()
 }
 
 pub const URL: &str = "https://peer.decentraland.org/content/contents/";

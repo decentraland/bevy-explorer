@@ -518,7 +518,12 @@ impl IpfsIo {
         }
     }
 
-    pub fn add_collection(&self, hash: String, collection: ContentMap, modifier: Option<IpfsModifier>) {
+    pub fn add_collection(
+        &self,
+        hash: String,
+        collection: ContentMap,
+        modifier: Option<IpfsModifier>,
+    ) {
         let mut write = self.context.blocking_write();
 
         if let Some(modifier) = modifier {
@@ -576,10 +581,11 @@ impl IpfsIo {
                     id: entity.id.unwrap(),
                     pointers: entity.pointers,
                     metadata: entity.metadata,
-                    content: ContentMap(BiMap::from_iter(entity
-                        .content
-                        .into_iter()
-                        .map(|ipfs| (normalize_path(&ipfs.file), ipfs.hash))
+                    content: ContentMap(BiMap::from_iter(
+                        entity
+                            .content
+                            .into_iter()
+                            .map(|ipfs| (normalize_path(&ipfs.file), ipfs.hash)),
                     )),
                 });
             }
