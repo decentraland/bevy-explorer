@@ -5,6 +5,7 @@ use bevy::{
     gltf::Gltf,
     math::Vec3Swizzles,
     prelude::*,
+    render::view::NoFrustumCulling,
     scene::InstanceId,
     utils::{HashMap, HashSet},
 };
@@ -751,11 +752,17 @@ fn spawn_scenes(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn process_avatar(
     mut commands: Commands,
     query: Query<(Entity, &AvatarDefinition, &AvatarLoaded), Without<AvatarProcessed>>,
     scene_spawner: Res<SceneSpawner>,
-    mut instance_ents: Query<(&mut Visibility, &Parent, Option<&Handle<StandardMaterial>>)>,
+    mut instance_ents: Query<(
+        &mut Visibility,
+        &Parent,
+        Option<&Handle<StandardMaterial>>,
+        Option<&Handle<Mesh>>,
+    )>,
     named_ents: Query<&Name>,
     asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -779,11 +786,21 @@ fn process_avatar(
 
         // hide and colour the base model
         for scene_ent in scene_spawner.iter_instance_entities(loaded_avatar.body_instance) {
-            let Ok((mut vis, parent, maybe_h_mat)) = instance_ents.get_mut(scene_ent) else { continue };
+            let Ok((mut vis, parent, maybe_h_mat, maybe_h_mesh)) = instance_ents.get_mut(scene_ent) else { continue };
             let Ok(name) = named_ents.get(parent.get()) else { continue };
             let name = name.to_lowercase();
 
             debug!("name: {name}");
+
+            if maybe_h_mesh.is_some() {
+                // disable frustum culling - some strange effect causes Aabb gen to fail
+                // commands.entity(scene_ent).insert(Aabb::from_min_max(
+                //     Vec3::new(-1.21, 0.0, -0.7),
+                //     Vec3::new(1.21, 2.42, 0.7),
+                // ));
+                commands.entity(scene_ent).insert(NoFrustumCulling);
+            }
+
             if let Some(h_mat) = maybe_h_mat {
                 debug!("mat: {:?}", asset_server.get_handle_path(h_mat));
 
@@ -944,11 +961,18 @@ fn process_avatar(
             };
 
             for scene_ent in scene_spawner.iter_instance_entities(*instance) {
-                let Ok((_, _, maybe_h_mat)) = instance_ents.get(scene_ent) else { continue };
+                let Ok((_, _, maybe_h_mat, maybe_h_mesh)) = instance_ents.get(scene_ent) else { continue };
+
+                if maybe_h_mesh.is_some() {
+                    // disable frustum culling - some strange effect causes Aabb gen to fail
+                    // commands.entity(scene_ent).insert(Aabb::from_min_max(
+                    //     Vec3::new(-1.21, 0.0, -0.7),
+                    //     Vec3::new(1.21, 2.42, 0.7),
+                    // ));
+                    commands.entity(scene_ent).insert(NoFrustumCulling);
+                }
 
                 if let Some(h_mat) = maybe_h_mat {
-                    debug!("mat: {:?}", asset_server.get_handle_path(h_mat));
-
                     if loaded_avatar.skin_materials.contains(h_mat) {
                         if let Some(mat) = materials.get(h_mat) {
                             let new_mat = StandardMaterial {
