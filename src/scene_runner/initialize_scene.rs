@@ -565,7 +565,10 @@ fn load_active_entities(
                 .collect();
 
             if !parcels.is_empty() {
-                *pointer_request = Some((parcels, asset_server.ipfs().active_entities(&pointers, None)));
+                *pointer_request = Some((
+                    parcels,
+                    asset_server.ipfs().active_entities(&pointers, None),
+                ));
             }
         }
     } else if let Some(task_result) = pointer_request.as_mut().unwrap().1.complete() {

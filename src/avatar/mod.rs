@@ -108,7 +108,11 @@ fn load_base_wearables(
     match *task {
         None => {
             let pointers = base_wearables::base_wearables();
-            *task = Some(asset_server.ipfs().active_entities(&pointers, Some(base_wearables::BASE_URL)));
+            *task = Some(
+                asset_server
+                    .ipfs()
+                    .active_entities(&pointers, Some(base_wearables::BASE_URL)),
+            );
         }
         Some(ref mut active_task) => match active_task.complete() {
             None => (),
@@ -358,7 +362,7 @@ fn select_avatar(
 
                 error!("npc avatar {:?}", scene_ent);
             }
-        
+
             continue;
         };
 
@@ -578,9 +582,13 @@ pub struct AvatarDefinition {
 #[derive(Component)]
 pub struct RetryRenderAvatar;
 
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn update_render_avatar(
     mut commands: Commands,
-    query: Query<(Entity, &AvatarSelection, Option<&Children>), Or<(Changed<AvatarSelection>, With<RetryRenderAvatar>)>>,
+    query: Query<
+        (Entity, &AvatarSelection, Option<&Children>),
+        Or<(Changed<AvatarSelection>, With<RetryRenderAvatar>)>,
+    >,
     mut removed_selections: RemovedComponents<AvatarSelection>,
     children: Query<&Children>,
     avatar_render_entities: Query<(), With<AvatarDefinition>>,
@@ -616,11 +624,11 @@ fn update_render_avatar(
         let body = selection.shape.body_shape.as_ref().unwrap().to_lowercase();
         println!("body: {}", body);
         let body = Urn::from_str(&body).unwrap();
-        let Some(hash) = wearable_pointers.0.get(&body) else { 
+        let Some(hash) = wearable_pointers.0.get(&body) else {
             // TODO this will check every frame but never request
             commands.entity(entity).insert(RetryRenderAvatar);
             debug!("waiting for hash from body {body}");
-            continue 
+            continue
         };
         let meta = wearable_metas.0.get(hash).unwrap();
         let body_shape = &meta.data.representations[0].body_shapes[0].to_lowercase();
@@ -653,11 +661,11 @@ fn update_render_avatar(
                     let meta = wearable_metas.0.get(hash).unwrap();
 
                     WearableDefinition::new(meta, &asset_server, body_shape, hash)
-                } else { 
+                } else {
                     commands.entity(entity).insert(RetryRenderAvatar);
                     debug!("waiting for hash from wearable {wearable}");
-                    all_loaded = false; 
-                    None 
+                    all_loaded = false;
+                    None
                 }
             })
             .collect();
