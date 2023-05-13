@@ -297,4 +297,5 @@ pub fn default_bodyshape() -> String {
     .to_lowercase()
 }
 
-pub const URL: &str = "https://peer.decentraland.org/content/contents/";
+pub const CONTENT_URL: &str = "https://peer.decentraland.org/content/contents/";
+pub const BASE_URL: &str = "https://peer.decentraland.org/content";

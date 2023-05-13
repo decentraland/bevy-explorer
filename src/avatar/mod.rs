@@ -108,19 +108,19 @@ fn load_base_wearables(
     match *task {
         None => {
             let pointers = base_wearables::base_wearables();
-            *task = Some(asset_server.ipfs().active_entities(&pointers));
+            *task = Some(asset_server.ipfs().active_entities(&pointers, Some(base_wearables::BASE_URL)));
         }
         Some(ref mut active_task) => match active_task.complete() {
             None => (),
             Some(Err(e)) => warn!("failed to acquire base wearables: {e}"),
             Some(Ok(active_entities)) => {
-                error!("{:?}", active_entities.get(0));
+                debug!("first active entity: {:?}", active_entities.get(0));
                 for entity in active_entities {
                     asset_server.ipfs().add_collection(
                         entity.id.clone(),
                         entity.content,
                         Some(IpfsModifier {
-                            base_url: Some(base_wearables::URL.to_owned()),
+                            base_url: Some(base_wearables::CONTENT_URL.to_owned()),
                         }),
                     );
 
@@ -319,6 +319,7 @@ fn select_avatar(
         Option<&mut AvatarSelection>,
     )>,
     scene_avatar_defs: Query<(Entity, &SceneEntity, &AvatarShape, Changed<AvatarShape>)>,
+    orphaned_avatar_selections: Query<Entity, (With<AvatarSelection>, Without<AvatarShape>)>,
     containing_scene: ContainingScene,
 ) {
     struct AvatarUpdate {
@@ -347,7 +348,19 @@ fn select_avatar(
     }
 
     for (ent, scene_ent, scene_avatar_shape, changed) in scene_avatar_defs.iter() {
-        let Some(mut update) = updates.get_mut(&scene_ent.id) else { continue };
+        let Some(mut update) = updates.get_mut(&scene_ent.id) else {
+            // this is an NPC avatar, attach selection immediately
+            if changed {
+                commands.entity(ent).insert(AvatarSelection {
+                    scene: Some(scene_ent.root),
+                    shape: scene_avatar_shape.0.clone(),
+                });
+
+                error!("npc avatar {:?}", scene_ent);
+            }
+        
+            continue;
+        };
 
         if Some(scene_ent.root) != update.active_scene {
             continue;
@@ -365,6 +378,7 @@ fn select_avatar(
         }
     }
 
+    // update avatar selection on foreign players
     for (entity, player, base_shape, _, maybe_prev_selection) in root_avatar_defs.iter_mut() {
         let update = updates.remove(&player.scene_id).unwrap();
         let needs_update =
@@ -386,6 +400,13 @@ fn select_avatar(
                     shape,
                 });
             }
+        }
+    }
+
+    // remove any orphans
+    for entity in &orphaned_avatar_selections {
+        if let Some(mut commands) = commands.get_entity(entity) {
+            commands.remove::<AvatarSelection>();
         }
     }
 }
@@ -554,15 +575,33 @@ pub struct AvatarDefinition {
     hides: HashSet<WearableCategory>,
 }
 
+#[derive(Component)]
+pub struct RetryRenderAvatar;
+
 fn update_render_avatar(
     mut commands: Commands,
-    query: Query<(Entity, &AvatarSelection, Option<&Children>), Changed<AvatarSelection>>,
+    query: Query<(Entity, &AvatarSelection, Option<&Children>), Or<(Changed<AvatarSelection>, With<RetryRenderAvatar>)>>,
+    mut removed_selections: RemovedComponents<AvatarSelection>,
+    children: Query<&Children>,
     avatar_render_entities: Query<(), With<AvatarDefinition>>,
     wearable_pointers: Res<WearablePointers>,
     wearable_metas: Res<WearableMetas>,
     asset_server: Res<AssetServer>,
 ) {
+    for entity in removed_selections.iter() {
+        if let Ok(children) = children.get(entity) {
+            for render_child in children
+                .iter()
+                .filter(|child| avatar_render_entities.get(**child).is_ok())
+            {
+                commands.entity(*render_child).despawn_recursive();
+            }
+        }
+    }
+
     for (entity, selection, maybe_children) in &query {
+        commands.entity(entity).remove::<RetryRenderAvatar>();
+
         debug!("updating render avatar");
         // remove existing children
         if let Some(children) = maybe_children {
@@ -577,7 +616,12 @@ fn update_render_avatar(
         let body = selection.shape.body_shape.as_ref().unwrap().to_lowercase();
         println!("body: {}", body);
         let body = Urn::from_str(&body).unwrap();
-        let hash = wearable_pointers.0.get(&body).unwrap();
+        let Some(hash) = wearable_pointers.0.get(&body) else { 
+            // TODO this will check every frame but never request
+            commands.entity(entity).insert(RetryRenderAvatar);
+            debug!("waiting for hash from body {body}");
+            continue 
+        };
         let meta = wearable_metas.0.get(hash).unwrap();
         let body_shape = &meta.data.representations[0].body_shapes[0].to_lowercase();
 
@@ -598,18 +642,29 @@ fn update_render_avatar(
             }
         };
 
+        let mut all_loaded = true;
         let wearables: Vec<_> = selection
             .shape
             .wearables
             .iter()
             .flat_map(|wearable| {
                 let wearable = Urn::from_str(wearable).unwrap();
-                let hash = wearable_pointers.0.get(&wearable).unwrap();
-                let meta = wearable_metas.0.get(hash).unwrap();
+                if let Some(hash) = wearable_pointers.0.get(&wearable) {
+                    let meta = wearable_metas.0.get(hash).unwrap();
 
-                WearableDefinition::new(meta, &asset_server, body_shape, hash)
+                    WearableDefinition::new(meta, &asset_server, body_shape, hash)
+                } else { 
+                    commands.entity(entity).insert(RetryRenderAvatar);
+                    debug!("waiting for hash from wearable {wearable}");
+                    all_loaded = false; 
+                    None 
+                }
             })
             .collect();
+
+        if !all_loaded {
+            continue;
+        }
 
         let hides = HashSet::from_iter(wearables.iter().flat_map(|w| w.hides.iter()).copied());
 
@@ -686,6 +741,7 @@ fn spawn_scenes(
             .and_then(|h_gltf| gltfs.get(h_gltf))
         else {
             warn!("failed to load body gltf");
+            warn!("state: {:?}", asset_server.get_load_state(def.body.model.as_ref().unwrap()));
             commands.entity(ent).insert(AvatarProcessed);
             continue;
         };

@@ -537,13 +537,19 @@ impl IpfsIo {
     }
 
     // load entities from pointers and cache urls
-    pub fn active_entities(&self, pointers: &Vec<String>) -> ActiveEntityTask {
-        let active_url = self
-            .realm_config_receiver
-            .borrow()
-            .as_ref()
-            .and_then(|(_, about)| about.content.as_ref())
-            .map(|content| format!("{}/entities/active", &content.public_url));
+    pub fn active_entities(&self, pointers: &Vec<String>, endpoint: Option<&str>) -> ActiveEntityTask {
+        let active_url = match endpoint {
+            Some(url) => Some(url.to_owned()),
+            None => {
+                self
+                .realm_config_receiver
+                .borrow()
+                .as_ref()
+                .and_then(|(_, about)| about.content.as_ref())
+                .map(|content| content.public_url.to_owned())
+            },
+        }
+            .map(|url| format!("{url}/entities/active"));
 
         let body = serde_json::to_string(&ActiveEntitiesRequest { pointers });
         let cache_path = self.cache_path().to_owned();
