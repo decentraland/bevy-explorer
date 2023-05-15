@@ -416,12 +416,14 @@ fn receive_scene_updates(
                         for (component_id, interface) in crdt_interfaces.0.iter() {
                             interface.updates_to_entity(*component_id, &mut crdt, &mut commands);
                         }
+                        dcl_assert!(
+                            updates.jobs_in_flight.contains(root) || context.tick_number == 0
+                        );
                     } else {
                         debug!(
                             "no scene entity, probably got dropped before we processed the result"
                         );
                     }
-                    dcl_assert!(updates.jobs_in_flight.contains(root));
                     Some(*root)
                 }
             },

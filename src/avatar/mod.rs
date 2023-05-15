@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use urn::Urn;
 
 pub mod base_wearables;
+pub mod mask_material;
 
 use crate::{
     comms::{
@@ -38,10 +39,13 @@ use crate::{
     util::TaskExt,
 };
 
+use self::mask_material::{MaskMaterial, MaskMaterialPlugin};
+
 pub struct AvatarPlugin;
 
 impl Plugin for AvatarPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugin(MaskMaterialPlugin);
         app.init_resource::<WearablePointers>();
         app.init_resource::<WearableMetas>();
         app.add_system(load_base_wearables);
@@ -50,7 +54,7 @@ impl Plugin for AvatarPlugin {
         app.add_system(select_avatar);
         app.add_system(update_render_avatar);
         app.add_system(spawn_scenes);
-        app.add_system(process_avatar);
+        app.add_system(process_avatar.in_base_set(CoreSet::PostUpdate));
 
         app.add_crdt_lww_component::<PbAvatarShape, AvatarShape>(
             SceneComponentId::AVATAR_SHAPE,
@@ -526,7 +530,9 @@ impl WearableDefinition {
             let texture = representation
                 .contents
                 .iter()
-                .find(|f| f.ends_with(".png") && !f.ends_with("_mask.png"))
+                .find(|f| {
+                    f.to_lowercase().ends_with(".png") && !f.to_lowercase().ends_with("_mask.png")
+                })
                 .and_then(|f| {
                     asset_server
                         .load_content_file::<Image>(f, content_hash)
@@ -535,7 +541,7 @@ impl WearableDefinition {
             let mask = representation
                 .contents
                 .iter()
-                .find(|f| f.ends_with("_mask.png"))
+                .find(|f| f.to_lowercase().ends_with("_mask.png"))
                 .and_then(|f| {
                     asset_server
                         .load_content_file::<Image>(f, content_hash)
@@ -544,7 +550,7 @@ impl WearableDefinition {
 
             (None, texture, mask)
         } else {
-            if !representation.main_file.ends_with(".glb") {
+            if !representation.main_file.to_lowercase().ends_with(".glb") {
                 warn!(
                     "expected .glb main file, found {}",
                     representation.main_file
@@ -816,7 +822,7 @@ fn spawn_scenes(
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn process_avatar(
     mut commands: Commands,
     query: Query<(Entity, &AvatarDefinition, &AvatarLoaded), Without<AvatarProcessed>>,
@@ -830,6 +836,7 @@ fn process_avatar(
     named_ents: Query<&Name>,
     asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut mask_materials: ResMut<Assets<MaskMaterial>>,
 ) {
     for (avatar_ent, def, loaded_avatar) in query.iter() {
         let not_loaded = !scene_spawner.instance_is_ready(loaded_avatar.body_instance)
@@ -895,123 +902,67 @@ fn process_avatar(
                 }
             }
 
-            if name.ends_with("mask_eyes") {
-                *vis = Visibility::Hidden;
+            let masks = [
+                ("mask_eyes", def.eyes_color, WearableCategory::EYES),
+                ("mask_eyebrows", def.hair_color, WearableCategory::EYEBROWS),
+                ("mask_mouth", def.skin_color, WearableCategory::MOUTH),
+            ];
 
-                if let Some(WearableDefinition { texture, mask, .. }) = def
-                    .wearables
-                    .iter()
-                    .find(|w| w.category == WearableCategory::EYES)
-                {
-                    debug!("setting eye color {:?}", def.eyes_color);
-                    let base_color = if mask.is_some() {
-                        error!("mask is some");
-                        Color::WHITE
-                    } else {
-                        error!("mask is none");
-                        Color::WHITE
-                    };
-                    let emissive = if mask.is_some() {
-                        def.eyes_color
-                    } else {
-                        Color::BLACK
-                    };
+            for (suffix, color, category) in masks.into_iter() {
+                if name.ends_with(suffix) {
+                    *vis = Visibility::Hidden;
 
-                    let material = materials.add(StandardMaterial {
-                        base_color,
-                        base_color_texture: texture.clone(),
-                        emissive,
-                        emissive_texture: mask.clone(),
-                        alpha_mode: AlphaMode::Blend,
-                        ..Default::default()
-                    });
-                    commands.entity(scene_ent).insert(material);
-                    *vis = Visibility::Inherited;
+                    if let Some(WearableDefinition { texture, mask, .. }) =
+                        def.wearables.iter().find(|w| w.category == category)
+                    {
+                        debug!("setting {suffix} color {:?}", color);
+                        if let Some(mask) = mask.as_ref() {
+                            debug!("using mask for {suffix}");
+                            let mask_material = mask_materials.add(MaskMaterial {
+                                color,
+                                base_texture: texture.clone().unwrap(),
+                                mask_texture: mask.clone(),
+                            });
+                            commands
+                                .entity(scene_ent)
+                                .insert(mask_material)
+                                .remove::<Handle<StandardMaterial>>();
+                        } else {
+                            debug!("no mask for {suffix}");
+                            let material = materials.add(StandardMaterial {
+                                base_color: color,
+                                base_color_texture: texture.clone(),
+                                alpha_mode: AlphaMode::Blend,
+                                ..Default::default()
+                            });
+                            commands.entity(scene_ent).insert(material);
+                        };
+                        *vis = Visibility::Inherited;
+                    }
                 }
-            } else if name.ends_with("mask_eyebrows") {
-                *vis = Visibility::Hidden;
+            }
 
-                if let Some(WearableDefinition { texture, mask, .. }) = def
-                    .wearables
-                    .iter()
-                    .find(|w| w.category == WearableCategory::EYEBROWS)
-                {
-                    let base_color = if mask.is_some() {
-                        Color::BLACK
-                    } else {
-                        def.hair_color
-                    };
-                    let emissive = if mask.is_some() {
-                        def.hair_color
-                    } else {
-                        Color::BLACK
-                    };
+            let hiders = [
+                ("ubody_basemesh", WearableCategory::UPPER_BODY),
+                ("lbody_basemesh", WearableCategory::LOWER_BODY),
+                ("feet_basemesh", WearableCategory::FEET),
+                ("head", WearableCategory::HEAD),
+                ("head_basemesh", WearableCategory::HEAD),
+                ("mask_eyes", WearableCategory::HEAD),
+                ("mask_eyebrows", WearableCategory::HEAD),
+                ("mask_mouth", WearableCategory::HEAD),
+            ];
 
-                    debug!("setting eyebrow color {:?}", def.hair_color);
-                    let material = materials.add(StandardMaterial {
-                        base_color,
-                        base_color_texture: texture.clone(),
-                        emissive,
-                        emissive_texture: mask.clone(),
-                        alpha_mode: AlphaMode::Blend,
-                        ..Default::default()
-                    });
-                    commands.entity(scene_ent).insert(material);
-                    *vis = Visibility::Inherited;
-                }
-            } else if name.ends_with("mask_mouth") {
-                *vis = Visibility::Hidden;
-
-                if let Some(WearableDefinition { texture, mask, .. }) = def
-                    .wearables
-                    .iter()
-                    .find(|w| w.category == WearableCategory::MOUTH)
-                {
-                    let base_color = if mask.is_some() {
-                        Color::BLACK
-                    } else {
-                        def.skin_color
-                    };
-                    let emissive = if mask.is_some() {
-                        def.skin_color
-                    } else {
-                        Color::BLACK
-                    };
-
-                    debug!("setting mouth color {:?}", def.skin_color);
-                    let material = materials.add(StandardMaterial {
-                        base_color,
-                        base_color_texture: texture.clone(),
-                        emissive,
-                        emissive_texture: mask.clone(),
-                        alpha_mode: AlphaMode::Blend,
-                        ..Default::default()
-                    });
-                    commands.entity(scene_ent).insert(material);
-                    *vis = Visibility::Inherited;
-                }
-            } else {
-                let hiders = [
-                    ("ubody_basemesh", WearableCategory::UPPER_BODY),
-                    ("lbody_basemesh", WearableCategory::LOWER_BODY),
-                    ("feet_basemesh", WearableCategory::FEET),
-                    ("head", WearableCategory::HEAD),
-                    ("head_basemesh", WearableCategory::HEAD),
-                    ("mask_eyes", WearableCategory::HEAD),
-                    ("mask_eyebrows", WearableCategory::HEAD),
-                    ("mask_mouth", WearableCategory::HEAD),
-                ];
-
-                for (hidename, category) in hiders {
-                    if name.ends_with(hidename) {
-                        // todo construct hides better so we don't need to scan the wearables here
-                        if def.hides.contains(&category)
-                            || def.wearables.iter().any(|w| {
-                                w.category == WearableCategory::SKIN || w.category == category
-                            })
-                        {
-                            *vis = Visibility::Hidden;
-                        }
+            for (hidename, category) in hiders {
+                if name.ends_with(hidename) {
+                    // todo construct hides better so we don't need to scan the wearables here
+                    if def.hides.contains(&category)
+                        || def
+                            .wearables
+                            .iter()
+                            .any(|w| w.category == WearableCategory::SKIN || w.category == category)
+                    {
+                        *vis = Visibility::Hidden;
                     }
                 }
             }
