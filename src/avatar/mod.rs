@@ -67,8 +67,14 @@ impl Plugin for AvatarPlugin {
     }
 }
 
+#[derive(Debug)]
+pub enum WearablePointerResult {
+    Exists(String),
+    Missing,
+}
+
 #[derive(Resource, Default, Debug)]
-pub struct WearablePointers(HashMap<Urn, String>);
+pub struct WearablePointers(HashMap<Urn, WearablePointerResult>);
 
 #[derive(Resource, Default, Debug)]
 pub struct WearableMetas(HashMap<String, WearableMeta>);
@@ -146,7 +152,9 @@ fn load_base_wearables(
                     for pointer in entity.pointers {
                         match Urn::from_str(&pointer) {
                             Ok(urn) => {
-                                wearable_pointers.0.insert(urn, entity.id.clone());
+                                wearable_pointers
+                                    .0
+                                    .insert(urn, WearablePointerResult::Exists(entity.id.clone()));
                             }
                             Err(e) => {
                                 warn!("failed to parse wearable urn: {e}");
@@ -437,9 +445,9 @@ impl WearableCategory {
     const LOWER_BODY: WearableCategory = WearableCategory::new("lower_body", false);
     const FEET: WearableCategory = WearableCategory::new("feet", false);
     const EARRING: WearableCategory = WearableCategory::new("earring", true);
-    const EYEWEAR: WearableCategory = WearableCategory::new("eyewear", true);
-    const HAT: WearableCategory = WearableCategory::new("hat", true);
-    const HELMET: WearableCategory = WearableCategory::new("helmet", true);
+    const EYEWEAR: WearableCategory = WearableCategory::new("eyewear", false);
+    const HAT: WearableCategory = WearableCategory::new("hat", false);
+    const HELMET: WearableCategory = WearableCategory::new("helmet", false);
     const MASK: WearableCategory = WearableCategory::new("mask", true);
     const TIARA: WearableCategory = WearableCategory::new("tiara", true);
     const TOP_HEAD: WearableCategory = WearableCategory::new("top_head", true);
@@ -598,10 +606,72 @@ fn update_render_avatar(
     mut removed_selections: RemovedComponents<AvatarSelection>,
     children: Query<&Children>,
     avatar_render_entities: Query<(), With<AvatarDefinition>>,
-    wearable_pointers: Res<WearablePointers>,
-    wearable_metas: Res<WearableMetas>,
+    mut wearable_pointers: ResMut<WearablePointers>,
+    mut wearable_metas: ResMut<WearableMetas>,
     asset_server: Res<AssetServer>,
+    mut wearable_task: Local<Option<(ActiveEntityTask, HashSet<Urn>)>>,
 ) {
+    let mut missing_wearables = HashSet::default();
+
+    if let Some((mut task, mut wearables)) = wearable_task.take() {
+        match task.complete() {
+            Some(Ok(entities)) => {
+                debug!("got results: {:?}", entities.len());
+
+                for entity in entities {
+                    asset_server.ipfs().add_collection(
+                        entity.id.clone(),
+                        entity.content,
+                        Some(IpfsModifier {
+                            base_url: Some(base_wearables::CONTENT_URL.to_owned()),
+                        }),
+                    );
+
+                    let Some(metadata) = entity.metadata else {
+                        warn!("no metadata on wearable");
+                        continue;
+                    };
+                    let wearable_data = match serde_json::from_value::<WearableMeta>(metadata) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            warn!("failed to deserialize wearable data: {e}");
+                            continue;
+                        }
+                    };
+                    for pointer in entity.pointers {
+                        match Urn::from_str(&pointer) {
+                            Ok(urn) => {
+                                wearables.remove(&urn);
+                                wearable_pointers
+                                    .0
+                                    .insert(urn, WearablePointerResult::Exists(entity.id.clone()));
+                            }
+                            Err(e) => {
+                                warn!("failed to parse wearable urn: {e}");
+                            }
+                        };
+                    }
+
+                    wearable_metas.0.insert(entity.id, wearable_data);
+                }
+
+                for urn in wearables {
+                    debug!("missing {urn}");
+                    wearable_pointers
+                        .0
+                        .insert(urn, WearablePointerResult::Missing);
+                }
+            }
+            Some(Err(e)) => {
+                warn!("failed to resolve entities: {e}");
+            }
+            None => {
+                debug!("waiting for wearable resolve");
+                *wearable_task = Some((task, wearables));
+            }
+        }
+    }
+
     for entity in removed_selections.iter() {
         if let Ok(children) = children.get(entity) {
             for render_child in children
@@ -628,18 +698,25 @@ fn update_render_avatar(
         }
 
         let body = selection.shape.body_shape.as_ref().unwrap().to_lowercase();
-        println!("body: {}", body);
         let body = Urn::from_str(&body).unwrap();
-        let Some(hash) = wearable_pointers.0.get(&body) else {
-            // TODO this will check every frame but never request
-            commands.entity(entity).insert(RetryRenderAvatar);
-            debug!("waiting for hash from body {body}");
-            continue
+        let hash = match wearable_pointers.0.get(&body) {
+            Some(WearablePointerResult::Exists(hash)) => hash,
+            Some(WearablePointerResult::Missing) => {
+                debug!("failed to resolve body {body}");
+                // don't retry
+                continue;
+            }
+            None => {
+                debug!("waiting for hash from body {body}");
+                missing_wearables.insert(body);
+                commands.entity(entity).insert(RetryRenderAvatar);
+                continue;
+            }
         };
-        let meta = wearable_metas.0.get(hash).unwrap();
-        let body_shape = &meta.data.representations[0].body_shapes[0].to_lowercase();
+        let body_meta = wearable_metas.0.get(hash).unwrap();
+        let body_shape = &body_meta.data.representations[0].body_shapes[0].to_lowercase();
 
-        let ext = meta.data.representations[0]
+        let ext = body_meta.data.representations[0]
             .main_file
             .rsplit_once('.')
             .unwrap()
@@ -648,30 +725,26 @@ fn update_render_avatar(
             panic!("{ext}");
         }
 
-        let body_wearable = match WearableDefinition::new(meta, &asset_server, "", hash) {
-            Some(body) => body,
-            None => {
-                warn!("failed to load body shape, can't render");
-                return;
-            }
-        };
-
         let mut all_loaded = true;
-        let wearables: Vec<_> = selection
+        let wearable_hashes: Vec<_> = selection
             .shape
             .wearables
             .iter()
             .flat_map(|wearable| {
                 let wearable = Urn::from_str(wearable).unwrap();
-                if let Some(hash) = wearable_pointers.0.get(&wearable) {
-                    let meta = wearable_metas.0.get(hash).unwrap();
-
-                    WearableDefinition::new(meta, &asset_server, body_shape, hash)
-                } else {
-                    commands.entity(entity).insert(RetryRenderAvatar);
-                    debug!("waiting for hash from wearable {wearable}");
-                    all_loaded = false;
-                    None
+                match wearable_pointers.0.get(&wearable) {
+                    Some(WearablePointerResult::Exists(hash)) => Some(hash),
+                    Some(WearablePointerResult::Missing) => {
+                        debug!("skipping failed wearable {wearable}");
+                        None
+                    }
+                    None => {
+                        commands.entity(entity).insert(RetryRenderAvatar);
+                        debug!("waiting for hash from wearable {wearable}");
+                        all_loaded = false;
+                        missing_wearables.insert(wearable);
+                        None
+                    }
                 }
             })
             .collect();
@@ -679,6 +752,23 @@ fn update_render_avatar(
         if !all_loaded {
             continue;
         }
+
+        // load wearable gtlf/images
+        let body_wearable = match WearableDefinition::new(body_meta, &asset_server, "", hash) {
+            Some(body) => body,
+            None => {
+                warn!("failed to load body shape, can't render");
+                return;
+            }
+        };
+
+        let wearables = wearable_hashes
+            .into_iter()
+            .flat_map(|hash| {
+                let meta = wearable_metas.0.get(hash).unwrap();
+                WearableDefinition::new(meta, &asset_server, body_shape, hash)
+            })
+            .collect::<Vec<_>>();
 
         let hides = HashSet::from_iter(wearables.iter().flat_map(|w| w.hides.iter()).copied());
 
@@ -693,12 +783,48 @@ fn update_render_avatar(
                     body: body_wearable,
                     wearables,
                     hides,
-                    skin_color: selection.shape.skin_color.unwrap().into(),
-                    hair_color: selection.shape.hair_color.unwrap().into(),
-                    eyes_color: selection.shape.eye_color.unwrap().into(),
+                    skin_color: selection
+                        .shape
+                        .skin_color
+                        .unwrap_or(Color3 {
+                            r: 0.6,
+                            g: 0.462,
+                            b: 0.356,
+                        })
+                        .into(),
+                    hair_color: selection
+                        .shape
+                        .hair_color
+                        .unwrap_or(Color3 {
+                            r: 0.283,
+                            g: 0.142,
+                            b: 0.0,
+                        })
+                        .into(),
+                    eyes_color: selection
+                        .shape
+                        .eye_color
+                        .unwrap_or(Color3 {
+                            r: 0.6,
+                            g: 0.462,
+                            b: 0.356,
+                        })
+                        .into(),
                 },
             ));
         });
+    }
+
+    if wearable_task.is_none() && !missing_wearables.is_empty() {
+        debug!("requesting: {:?}", missing_wearables);
+        let pointers = missing_wearables
+            .iter()
+            .map(|urn| urn.to_string())
+            .collect();
+        *wearable_task = Some((
+            asset_server.ipfs().active_entities(&pointers, None),
+            missing_wearables,
+        ));
     }
 }
 
@@ -756,6 +882,8 @@ fn spawn_scenes(
         else {
             warn!("failed to load body gltf");
             warn!("state: {:?}", asset_server.get_load_state(def.body.model.as_ref().unwrap()));
+            warn!("handle is strong? {}", def.body.model.as_ref().unwrap().is_strong());
+            warn!("handle: {:?}", def.body.model.as_ref().unwrap());
             commands.entity(ent).insert(AvatarProcessed);
             continue;
         };
@@ -784,13 +912,21 @@ fn spawn_scenes(
                 .map(|(_, h)| h.clone_weak()),
         );
 
-        let body_instance = scene_spawner.spawn_as_child(h_scene.clone_weak(), ent);
+        let body_instance = scene_spawner.spawn_as_child(h_scene.clone(), ent);
 
         let instances = def
             .wearables
             .iter()
             .flat_map(|wearable| &wearable.model)
-            .map(|h_gltf| {
+            .flat_map(|h_gltf| {
+                match asset_server.get_load_state(h_gltf) {
+                    bevy::asset::LoadState::Loaded => (),
+                    otherwise => {
+                        warn!("wearable gltf didn't work out: {otherwise:?}");
+                        return None;
+                    }
+                }
+
                 let gltf = gltfs.get(h_gltf).unwrap();
                 let gltf_scene_handle = gltf.default_scene.as_ref();
 
@@ -808,8 +944,10 @@ fn spawn_scenes(
                         .map(|(_, h)| h.clone_weak()),
                 );
 
-                gltf_scene_handle
-                    .map(|h_scene| scene_spawner.spawn_as_child(h_scene.clone_weak(), ent))
+                Some(
+                    gltf_scene_handle
+                        .map(|h_scene| scene_spawner.spawn_as_child(h_scene.clone(), ent)),
+                )
             });
 
         debug!("avatar files loaded");

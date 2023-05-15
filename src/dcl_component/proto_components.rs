@@ -118,12 +118,12 @@ impl Copy for common::Color3 {}
 impl Copy for common::Color4 {}
 impl From<common::Color4> for bevy::prelude::Color {
     fn from(value: common::Color4) -> Self {
-        bevy::prelude::Color::rgba_linear(value.r, value.g, value.b, value.a)
+        bevy::prelude::Color::rgba(value.r, value.g, value.b, value.a)
     }
 }
 
 impl From<common::Color3> for bevy::prelude::Color {
     fn from(value: common::Color3) -> Self {
-        bevy::prelude::Color::rgb_linear(value.r, value.g, value.b)
+        bevy::prelude::Color::rgb(value.r, value.g, value.b)
     }
 }
