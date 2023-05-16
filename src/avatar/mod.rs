@@ -441,7 +441,7 @@ impl WearableCategory {
     const EYES: WearableCategory = WearableCategory::texture("eyes");
     const EYEBROWS: WearableCategory = WearableCategory::texture("eyebrows");
     const MOUTH: WearableCategory = WearableCategory::texture("mouth");
-    
+
     const FACIAL_HAIR: WearableCategory = WearableCategory::model("facial_hair");
     const HAIR: WearableCategory = WearableCategory::model("hair");
     const HEAD: WearableCategory = WearableCategory::model("head");
@@ -459,11 +459,17 @@ impl WearableCategory {
     const SKIN: WearableCategory = WearableCategory::model("skin");
 
     const fn model(slot: &'static str) -> Self {
-        Self { slot, is_texture: false }
+        Self {
+            slot,
+            is_texture: false,
+        }
     }
 
     const fn texture(slot: &'static str) -> Self {
-        Self { slot, is_texture: true }
+        Self {
+            slot,
+            is_texture: true,
+        }
     }
 }
 
