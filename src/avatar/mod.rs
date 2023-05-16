@@ -171,6 +171,7 @@ fn load_base_wearables(
     }
 }
 
+// send received avatar info into scenes
 fn update_avatar_info(
     updated_players: Query<(&ForeignPlayer, &UserProfile), Changed<UserProfile>>,
     mut global_state: ResMut<GlobalCrdtState>,
@@ -228,6 +229,7 @@ impl From<PbAvatarAttach> for AvatarAttachment {
     }
 }
 
+// set (foreign) user's default avatar shape based on profile data
 fn update_base_avatar_shape(
     mut commands: Commands,
     root_avatar_defs: Query<(Entity, &ForeignPlayer, &UserProfile), Changed<UserProfile>>,
@@ -299,6 +301,7 @@ fn update_base_avatar_shape(
     }
 }
 
+// helper to get the scene entity containing a given world position
 #[derive(SystemParam)]
 pub struct ContainingScene<'w, 's> {
     transforms: Query<'w, 's, &'static GlobalTransform, With<SceneEntity>>,
@@ -324,6 +327,7 @@ pub struct AvatarSelection {
     shape: PbAvatarShape,
 }
 
+// choose the avatar shape based on current scene of the player
 #[allow(clippy::type_complexity)]
 fn select_avatar(
     mut commands: Commands,
@@ -434,27 +438,32 @@ pub struct WearableCategory {
 }
 
 impl WearableCategory {
-    const EYEBROWS: WearableCategory = WearableCategory::new("eyebrows", true);
-    const EYES: WearableCategory = WearableCategory::new("eyes", true);
-    const FACIAL_HAIR: WearableCategory = WearableCategory::new("facial_hair", true);
-    const HAIR: WearableCategory = WearableCategory::new("hair", false);
-    const HEAD: WearableCategory = WearableCategory::new("head", true);
-    const BODY_SHAPE: WearableCategory = WearableCategory::new("body_shape", false);
-    const MOUTH: WearableCategory = WearableCategory::new("mouth", true);
-    const UPPER_BODY: WearableCategory = WearableCategory::new("upper_body", false);
-    const LOWER_BODY: WearableCategory = WearableCategory::new("lower_body", false);
-    const FEET: WearableCategory = WearableCategory::new("feet", false);
-    const EARRING: WearableCategory = WearableCategory::new("earring", true);
-    const EYEWEAR: WearableCategory = WearableCategory::new("eyewear", false);
-    const HAT: WearableCategory = WearableCategory::new("hat", false);
-    const HELMET: WearableCategory = WearableCategory::new("helmet", false);
-    const MASK: WearableCategory = WearableCategory::new("mask", true);
-    const TIARA: WearableCategory = WearableCategory::new("tiara", true);
-    const TOP_HEAD: WearableCategory = WearableCategory::new("top_head", true);
-    const SKIN: WearableCategory = WearableCategory::new("skin", true);
+    const EYES: WearableCategory = WearableCategory::texture("eyes");
+    const EYEBROWS: WearableCategory = WearableCategory::texture("eyebrows");
+    const MOUTH: WearableCategory = WearableCategory::texture("mouth");
+    
+    const FACIAL_HAIR: WearableCategory = WearableCategory::model("facial_hair");
+    const HAIR: WearableCategory = WearableCategory::model("hair");
+    const HEAD: WearableCategory = WearableCategory::model("head");
+    const BODY_SHAPE: WearableCategory = WearableCategory::model("body_shape");
+    const UPPER_BODY: WearableCategory = WearableCategory::model("upper_body");
+    const LOWER_BODY: WearableCategory = WearableCategory::model("lower_body");
+    const FEET: WearableCategory = WearableCategory::model("feet");
+    const EARRING: WearableCategory = WearableCategory::model("earring");
+    const EYEWEAR: WearableCategory = WearableCategory::model("eyewear");
+    const HAT: WearableCategory = WearableCategory::model("hat");
+    const HELMET: WearableCategory = WearableCategory::model("helmet");
+    const MASK: WearableCategory = WearableCategory::model("mask");
+    const TIARA: WearableCategory = WearableCategory::model("tiara");
+    const TOP_HEAD: WearableCategory = WearableCategory::model("top_head");
+    const SKIN: WearableCategory = WearableCategory::model("skin");
 
-    const fn new(slot: &'static str, is_texture: bool) -> Self {
-        Self { slot, is_texture }
+    const fn model(slot: &'static str) -> Self {
+        Self { slot, is_texture: false }
+    }
+
+    const fn texture(slot: &'static str) -> Self {
+        Self { slot, is_texture: true }
     }
 }
 
@@ -596,6 +605,7 @@ pub struct AvatarDefinition {
 #[derive(Component)]
 pub struct RetryRenderAvatar;
 
+// load wearables and create renderable avatar entity once all loaded
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn update_render_avatar(
     mut commands: Commands,
@@ -613,6 +623,7 @@ fn update_render_avatar(
 ) {
     let mut missing_wearables = HashSet::default();
 
+    // update resources with active entity results
     if let Some((mut task, mut wearables)) = wearable_task.take() {
         match task.complete() {
             Some(Ok(entities)) => {
@@ -655,6 +666,7 @@ fn update_render_avatar(
                     wearable_metas.0.insert(entity.id, wearable_data);
                 }
 
+                // any urns left in the hashset were requested but not returned
                 for urn in wearables {
                     debug!("missing {urn}");
                     wearable_pointers
@@ -672,6 +684,7 @@ fn update_render_avatar(
         }
     }
 
+    // remove renderable entities when avatar selection is removed
     for entity in removed_selections.iter() {
         if let Ok(children) = children.get(entity) {
             for render_child in children
@@ -697,6 +710,7 @@ fn update_render_avatar(
             }
         }
 
+        // get body shape
         let body = selection.shape.body_shape.as_ref().unwrap().to_lowercase();
         let body = Urn::from_str(&body).unwrap();
         let hash = match wearable_pointers.0.get(&body) {
@@ -725,6 +739,7 @@ fn update_render_avatar(
             panic!("{ext}");
         }
 
+        // get wearables
         let mut all_loaded = true;
         let wearable_hashes: Vec<_> = selection
             .shape
@@ -842,6 +857,7 @@ pub struct AvatarSpawned;
 #[derive(Component)]
 pub struct AvatarProcessed;
 
+// instantiate avatar gltfs
 #[allow(clippy::type_complexity)]
 fn spawn_scenes(
     mut commands: Commands,
@@ -851,29 +867,23 @@ fn spawn_scenes(
     mut scene_spawner: ResMut<SceneSpawner>,
 ) {
     for (ent, def) in query.iter() {
-        let not_loaded = matches!(
-            asset_server.get_load_state(def.body.model.as_ref().unwrap()),
-            bevy::asset::LoadState::Loading
-        ) || def.wearables.iter().any(|wearable| {
-            wearable.model.as_ref().map_or(false, |h| {
+        let any_loading = def
+            .body
+            .model
+            .iter()
+            .chain(
+                def.wearables
+                    .iter()
+                    .flat_map(|wearable| wearable.model.as_ref()),
+            )
+            .any(|h_model| {
                 matches!(
-                    asset_server.get_load_state(h),
+                    asset_server.get_load_state(h_model),
                     bevy::asset::LoadState::Loading
                 )
-            }) || wearable.texture.as_ref().map_or(false, |h| {
-                matches!(
-                    asset_server.get_load_state(h),
-                    bevy::asset::LoadState::Loading
-                )
-            }) || wearable.mask.as_ref().map_or(false, |h| {
-                matches!(
-                    asset_server.get_load_state(h),
-                    bevy::asset::LoadState::Loading
-                )
-            })
-        });
+            });
 
-        if not_loaded {
+        if any_loading {
             continue;
         }
 
@@ -881,9 +891,6 @@ fn spawn_scenes(
             .and_then(|h_gltf| gltfs.get(h_gltf))
         else {
             warn!("failed to load body gltf");
-            warn!("state: {:?}", asset_server.get_load_state(def.body.model.as_ref().unwrap()));
-            warn!("handle is strong? {}", def.body.model.as_ref().unwrap().is_strong());
-            warn!("handle: {:?}", def.body.model.as_ref().unwrap());
             commands.entity(ent).insert(AvatarProcessed);
             continue;
         };
@@ -960,6 +967,7 @@ fn spawn_scenes(
     }
 }
 
+// update materials and hide base parts
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn process_avatar(
     mut commands: Commands,
@@ -972,7 +980,6 @@ fn process_avatar(
         Option<&Handle<Mesh>>,
     )>,
     named_ents: Query<&Name>,
-    asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut mask_materials: ResMut<Assets<MaskMaterial>>,
 ) {
@@ -1011,8 +1018,6 @@ fn process_avatar(
             }
 
             if let Some(h_mat) = maybe_h_mat {
-                debug!("mat: {:?}", asset_server.get_handle_path(h_mat));
-
                 if loaded_avatar.skin_materials.contains(h_mat) {
                     if let Some(mat) = materials.get(h_mat) {
                         let new_mat = StandardMaterial {
@@ -1106,7 +1111,7 @@ fn process_avatar(
             }
         }
 
-        // color the components
+        // color the components of wearables
         for instance in &loaded_avatar.wearable_instances {
             let Some(instance) = instance else {
                 warn!("failed to load instance for wearable");
