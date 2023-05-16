@@ -9,7 +9,7 @@ use bevy_atmosphere::{
     system_param::AtmosphereMut,
 };
 
-use crate::scene_runner::PrimaryCamera;
+use crate::{scene_runner::PrimaryUser, PrimaryCamera};
 
 pub struct VisualsPlugin;
 
@@ -92,7 +92,7 @@ struct Ground;
 
 fn move_ground(
     mut ground: Query<&mut Transform, With<Ground>>,
-    cam: Query<&GlobalTransform, With<PrimaryCamera>>,
+    cam: Query<&GlobalTransform, With<PrimaryUser>>,
 ) {
     let Ok(mut transform) = ground.get_single_mut() else {
         return;

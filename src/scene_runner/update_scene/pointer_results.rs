@@ -11,8 +11,9 @@ use crate::{
     },
     scene_runner::{
         update_world::{mesh_collider::SceneColliderData, pointer_events::PointerEvents},
-        PrimaryCamera, RendererSceneContext, SceneEntity, SceneSets,
+        PrimaryUser, RendererSceneContext, SceneEntity, SceneSets,
     },
+    PrimaryCamera,
 };
 
 pub struct PointerResultPlugin;
@@ -208,7 +209,7 @@ fn update_pointer_target(
 }
 
 fn send_hover_events(
-    camera: Query<&GlobalTransform, With<PrimaryCamera>>,
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
     new_target: Res<PointerTarget>,
     mut prior_target: Local<PointerTarget>,
     pointer_requests: Query<(&SceneEntity, Option<&PointerEvents>)>,
@@ -221,13 +222,12 @@ fn send_hover_events(
 
     debug!("hover target : {:?}", new_target);
 
-    let Ok(camera_position) = camera.get_single() else {
+    let Ok(player_position) = player.get_single() else {
         // can't do much without a camera
         return
     };
 
-    // TODO use player position instead of camera position
-    let player_translation = camera_position.translation();
+    let player_translation = player_position.translation();
 
     let mut send_event = |entity: &Entity,
                           mesh_name: &Option<String>,
@@ -309,20 +309,19 @@ fn send_hover_events(
 }
 
 fn send_action_events(
-    camera: Query<&GlobalTransform, With<PrimaryCamera>>,
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
     target: Res<PointerTarget>,
     pointer_requests: Query<(&SceneEntity, Option<&PointerEvents>)>,
     mut scenes: Query<(&mut RendererSceneContext, &mut SceneColliderData)>,
     input_mgr: InputManager,
     frame: Res<FrameCount>,
 ) {
-    let Ok(camera_position) = camera.get_single() else {
+    let Ok(player_position) = player.get_single() else {
         // can't do much without a camera
         return
     };
 
-    // TODO use player position instead of camera position
-    let player_translation = camera_position.translation();
+    let player_translation = player_position.translation();
 
     let mut send_event = |entity: &Entity,
                           mesh_name: &Option<String>,

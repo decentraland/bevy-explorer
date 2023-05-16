@@ -47,7 +47,7 @@ impl console::DoAddConsoleCommand for App {
     }
 }
 
-use super::{initialize_scene::SceneLoading, PrimaryCamera};
+use super::{initialize_scene::SceneLoading, PrimaryUser};
 
 pub struct TestPlugins;
 
@@ -114,7 +114,7 @@ fn init_test_app(entity_json: &str) -> App {
 
     // startup system to create camera and fire load event
     app.add_startup_system(move |mut commands: Commands| {
-        commands.spawn((Camera3dBundle::default(), PrimaryCamera));
+        commands.spawn((SpatialBundle::default(), PrimaryUser));
     });
 
     // replace the scene loop schedule with a dummy so we can better control it

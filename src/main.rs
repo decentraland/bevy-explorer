@@ -31,7 +31,7 @@ use ipfs::ChangeRealmEvent;
 use scene_runner::{
     initialize_scene::{SceneLoadDistance, SceneLoading},
     renderer_context::RendererSceneContext,
-    PrimaryCamera, SceneRunnerPlugin,
+    PrimaryUser, SceneRunnerPlugin,
 };
 use serde::{Deserialize, Serialize};
 
@@ -88,6 +88,9 @@ impl Default for AppConfig {
         }
     }
 }
+
+#[derive(Component)]
+pub struct PrimaryCamera;
 
 fn main() {
     // warnings before log init must be stored and replayed later
@@ -211,6 +214,15 @@ fn main() {
 }
 
 fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<AssetServer>) {
+    // create the main player
+    commands.spawn((
+        SpatialBundle {
+            transform: Transform::from_translation(Vec3::new(16.0 * 77.5, 0.0, 16.0 * 7.5)),
+            ..Default::default()
+        },
+        PrimaryUser,
+    ));
+
     // add a camera
     commands.spawn((
         Camera3dBundle {
@@ -219,7 +231,7 @@ fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<Asset
                 // hdr: true,
                 ..Default::default()
             },
-            transform: Transform::from_translation(Vec3::new(16.0 * 77.5, 2.0, 16.0 * 7.5))
+            transform: Transform::from_translation(Vec3::new(16.0 * 77.5, 2.42, 16.0 * 7.5))
                 .looking_at(Vec3::new(1.0, 8.0, -1.0), Vec3::Y),
             tonemapping: Tonemapping::TonyMcMapface,
             dither: DebandDither::Enabled,
@@ -400,7 +412,7 @@ struct ChangeLocationCommand {
 
 fn change_location(
     mut input: ConsoleCommand<ChangeLocationCommand>,
-    mut player: Query<&mut Transform, With<PrimaryCamera>>,
+    mut player: Query<&mut Transform, With<PrimaryUser>>,
 ) {
     if let Some(Ok(command)) = input.take() {
         if let Ok(mut transform) = player.get_single_mut() {

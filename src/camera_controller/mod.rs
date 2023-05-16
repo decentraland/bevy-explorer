@@ -12,7 +12,10 @@ use bevy_console::ConsoleOpen;
 use std::f32::consts::*;
 use std::fmt;
 
-use crate::scene_runner::SceneSets;
+use crate::{
+    scene_runner::{PrimaryUser, SceneSets},
+    PrimaryCamera,
+};
 
 /// Based on Valorant's default sensitivity, not entirely sure why it is exactly 1.0 / 180.0,
 /// but I'm guessing it is a misunderstanding between degrees/radians and then sticking with
@@ -110,6 +113,7 @@ impl Plugin for CameraControllerPlugin {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn camera_controller(
     time: Res<Time>,
     mut windows: Query<&mut Window>,
@@ -117,13 +121,16 @@ fn camera_controller(
     mouse_button_input: Res<Input<MouseButton>>,
     key_input: Res<Input<KeyCode>>,
     mut move_toggled: Local<bool>,
-    mut query: Query<(&mut Transform, &mut CameraController), With<Camera>>,
+    mut camera: Query<(&mut Transform, &mut CameraController), With<PrimaryCamera>>,
+    mut player: Query<&mut Transform, (With<PrimaryUser>, Without<PrimaryCamera>)>,
 ) {
     let dt = time.delta_seconds();
 
-    if let Ok((mut transform, mut options)) = query.get_single_mut() {
+    if let (Ok(mut player_transform), Ok((mut camera_transform, mut options))) =
+        (player.get_single_mut(), camera.get_single_mut())
+    {
         if !options.initialized {
-            let (yaw, pitch, roll) = transform.rotation.to_euler(EulerRot::YXZ);
+            let (yaw, pitch, roll) = camera_transform.rotation.to_euler(EulerRot::YXZ);
             options.yaw = yaw;
             options.pitch = pitch;
             options.roll = roll;
@@ -182,11 +189,22 @@ fn camera_controller(
                 options.velocity = Vec3::ZERO;
             }
         }
-        let forward = transform.forward();
-        let right = transform.right();
-        transform.translation += options.velocity.x * dt * right
-            + options.velocity.y * dt * Vec3::Y
-            + options.velocity.z * dt * forward;
+        let forward = camera_transform.forward();
+        let right = camera_transform.right();
+        if options.velocity.length() > 0.0 {
+            player_transform.translation += options.velocity.x * dt * right
+                + options.velocity.y * dt * Vec3::Y
+                + options.velocity.z * dt * forward;
+            let turn_vector =
+                (options.velocity.x * right + options.velocity.z * forward) * (Vec3::X + Vec3::Z);
+            if turn_vector.length() > 0.0 {
+                let target_direction = Transform::default()
+                    .looking_at(turn_vector, Vec3::Y)
+                    .rotation;
+                player_transform.rotation =
+                    player_transform.rotation.lerp(target_direction, dt * 10.0);
+            }
+        }
 
         // Handle mouse input
         let mut mouse_delta = Vec2::ZERO;
@@ -218,8 +236,12 @@ fn camera_controller(
         options.pitch = (options.pitch - mouse_delta.y * RADIANS_PER_DOT * options.sensitivity)
             .clamp(-PI / 2., PI / 2.);
         options.yaw -= mouse_delta.x * RADIANS_PER_DOT * options.sensitivity;
-        transform.rotation =
+        camera_transform.rotation =
             Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
         // }
+
+        camera_transform.translation = player_transform.translation
+            + Vec3::Y * 2.0
+            + camera_transform.rotation.mul_vec3(Vec3::Z * 5.0);
     }
 }

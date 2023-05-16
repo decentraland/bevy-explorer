@@ -30,7 +30,7 @@ use crate::{
     util::TaskExt,
 };
 
-use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryCamera, SceneSets, SceneUpdates};
+use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 
 pub struct CrdtLoader;
 
@@ -535,7 +535,7 @@ pub fn process_realm_change(
 #[allow(clippy::type_complexity)]
 fn load_active_entities(
     realm: Res<CurrentRealm>,
-    focus: Query<&GlobalTransform, With<PrimaryCamera>>,
+    focus: Query<&GlobalTransform, With<PrimaryUser>>,
     range: Res<SceneLoadDistance>,
     mut pointers: ResMut<ScenePointers>,
     mut pointer_request: Local<Option<(HashSet<IVec2>, ActiveEntityTask)>>,
@@ -614,7 +614,7 @@ fn load_active_entities(
 pub fn process_scene_lifecycle(
     mut commands: Commands,
     current_realm: Res<CurrentRealm>,
-    focus: Query<&GlobalTransform, With<PrimaryCamera>>,
+    focus: Query<&GlobalTransform, With<PrimaryUser>>,
     scene_entities: Query<Entity, Or<(With<SceneLoading>, With<RendererSceneContext>)>>,
     range: Res<SceneLoadDistance>,
     mut live_scenes: ResMut<LiveScenes>,

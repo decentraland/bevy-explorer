@@ -7,12 +7,13 @@ use crate::{
     dcl_component::proto_components::kernel::comms::rfc4::{
         self, AnnounceProfileVersion, ProfileRequest, ProfileResponse,
     },
+    scene_runner::PrimaryUser,
     util::AsH160,
 };
 
 use super::{global_crdt::ForeignPlayer, wallet::Wallet, NetworkMessage, Transport};
 
-#[derive(Component, Serialize, Deserialize)]
+#[derive(Component, Serialize, Deserialize, Clone)]
 pub struct UserProfile {
     pub version: u32,
     pub content: SerializedProfile,
@@ -24,7 +25,11 @@ pub struct UserProfilePlugin;
 impl Plugin for UserProfilePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
-            (request_missing_profiles, process_profile_events), // .in_set(TODO)
+            (
+                request_missing_profiles,
+                process_profile_events,
+                setup_primary_profile,
+            ), // .in_set(TODO)
         );
         app.add_event::<ProfileEvent>();
         let wallet = app.world.resource::<Wallet>();
@@ -38,6 +43,18 @@ impl Plugin for UserProfilePlugin {
             content: avatar,
             base_url: "https://sdk-test-scenes.decentraland.zone/content/contents/".to_owned(),
         }));
+    }
+}
+
+pub fn setup_primary_profile(
+    mut commands: Commands,
+    player: Query<(Entity, Option<&UserProfile>), With<PrimaryUser>>,
+    profile: Res<CurrentUserProfile>,
+) {
+    if let Ok((player, maybe_profile)) = player.get_single() {
+        if maybe_profile.is_none() || profile.is_changed() {
+            commands.entity(player).insert(profile.0.clone());
+        }
     }
 }
 
@@ -201,7 +218,7 @@ pub fn process_profile_events(
     last_sent_request.retain(|_, req_time| *req_time > time.elapsed_seconds() - 10.0);
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SerializedProfile {
     #[serde(rename = "userId")]
     pub user_id: Option<String>,

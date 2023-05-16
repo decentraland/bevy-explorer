@@ -19,6 +19,7 @@ use crate::{
     comms::{
         global_crdt::{ForeignPlayer, GlobalCrdtState},
         profile::UserProfile,
+        wallet::Wallet,
     },
     dcl::interface::{ComponentPosition, CrdtType},
     dcl_component::{
@@ -28,13 +29,13 @@ use crate::{
                 PbAvatarAttach, PbAvatarCustomization, PbAvatarEquippedData, PbAvatarShape,
             },
         },
-        SceneComponentId,
+        SceneComponentId, SceneEntityId,
     },
     ipfs::{ActiveEntityTask, IpfsLoaderExt, IpfsModifier},
     scene_runner::{
         initialize_scene::{LiveScenes, PointerResult, ScenePointers, PARCEL_SIZE},
         update_world::AddCrdtInterfaceExt,
-        SceneEntity,
+        PrimaryUser, SceneEntity,
     },
     util::TaskExt,
 };
@@ -232,14 +233,20 @@ impl From<PbAvatarAttach> for AvatarAttachment {
 // set (foreign) user's default avatar shape based on profile data
 fn update_base_avatar_shape(
     mut commands: Commands,
-    root_avatar_defs: Query<(Entity, &ForeignPlayer, &UserProfile), Changed<UserProfile>>,
+    root_avatar_defs: Query<(Entity, Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
+    current_user_wallet: Res<Wallet>,
 ) {
-    for (ent, player, profile) in &root_avatar_defs {
-        debug!("updating default avatar for {}", player.scene_id);
+    for (ent, maybe_player, profile) in &root_avatar_defs {
+        let (id, address) = match maybe_player {
+            Some(player) => (player.scene_id, player.address),
+            None => (SceneEntityId::PLAYER, current_user_wallet.address()),
+        };
+
+        debug!("updating default avatar for {id}");
 
         if let Some(mut commands) = commands.get_entity(ent) {
             commands.insert(AvatarShape(PbAvatarShape {
-                id: format!("{:#x}", player.address),
+                id: format!("{:#x}", address),
                 name: Some(profile.content.name.to_owned()),
                 body_shape: Some(
                     profile
@@ -331,13 +338,16 @@ pub struct AvatarSelection {
 #[allow(clippy::type_complexity)]
 fn select_avatar(
     mut commands: Commands,
-    mut root_avatar_defs: Query<(
-        Entity,
-        &ForeignPlayer,
-        &AvatarShape,
-        Changed<AvatarShape>,
-        Option<&mut AvatarSelection>,
-    )>,
+    mut root_avatar_defs: Query<
+        (
+            Entity,
+            Option<&ForeignPlayer>,
+            &AvatarShape,
+            Changed<AvatarShape>,
+            Option<&mut AvatarSelection>,
+        ),
+        Or<(With<ForeignPlayer>, With<PrimaryUser>)>,
+    >,
     scene_avatar_defs: Query<(Entity, &SceneEntity, &AvatarShape, Changed<AvatarShape>)>,
     orphaned_avatar_selections: Query<Entity, (With<AvatarSelection>, Without<AvatarShape>)>,
     containing_scene: ContainingScene,
@@ -352,9 +362,13 @@ fn select_avatar(
     let mut updates = HashMap::default();
 
     // set up initial state
-    for (entity, player, base_shape, changed, maybe_prev_selection) in root_avatar_defs.iter() {
+    for (entity, maybe_player, base_shape, changed, maybe_prev_selection) in root_avatar_defs.iter()
+    {
+        let id = maybe_player
+            .map(|p| p.scene_id)
+            .unwrap_or(SceneEntityId::PLAYER);
         updates.insert(
-            player.scene_id,
+            id,
             AvatarUpdate {
                 update_shape: changed.then_some(base_shape.0.clone()),
                 active_scene: containing_scene.get(entity),
@@ -399,15 +413,21 @@ fn select_avatar(
     }
 
     // update avatar selection on foreign players
-    for (entity, player, base_shape, _, maybe_prev_selection) in root_avatar_defs.iter_mut() {
-        let update = updates.remove(&player.scene_id).unwrap();
+    for (entity, maybe_player, base_shape, _, maybe_prev_selection) in root_avatar_defs.iter_mut() {
+        let id = maybe_player
+            .map(|p| p.scene_id)
+            .unwrap_or(SceneEntityId::PLAYER);
+        let Some(update) = updates.remove(&id) else {
+            error!("apparently i never inserted {id}?!");
+            continue;
+        };
         let needs_update =
             update.current_source != update.prev_source || update.update_shape.is_some();
 
         if needs_update {
             debug!(
                 "updating selected avatar for {} -> {:?}",
-                player.scene_id, update.current_source
+                id, update.current_source
             );
 
             let shape = update.update_shape.unwrap_or(base_shape.0.clone());
@@ -1185,19 +1205,19 @@ struct AvatarColor {
     pub color: Color3,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AvatarSnapshots {
     pub face256: String,
     pub body: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AvatarEmote {
     pub slot: u32,
     pub urn: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AvatarWireFormat {
     name: Option<String>,
     #[serde(rename = "bodyShape")]

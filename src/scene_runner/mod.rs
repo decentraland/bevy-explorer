@@ -15,9 +15,11 @@ use crate::{
     dcl::{interface::CrdtType, RendererResponse, SceneId, SceneResponse},
     dcl_assert,
     dcl_component::{
-        transform_and_parent::DclTransformAndParent, DclWriter, SceneComponentId, SceneEntityId,
+        transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
+        SceneEntityId,
     },
     ipfs::SceneIpfsLocation,
+    PrimaryCamera,
 };
 
 use self::{
@@ -247,7 +249,7 @@ fn run_scene_loop(world: &mut World) {
 
 fn update_scene_priority(
     mut scenes: Query<(Entity, &GlobalTransform, &mut RendererSceneContext), Without<SceneLoading>>,
-    camera: Query<&GlobalTransform, With<PrimaryCamera>>,
+    camera: Query<&GlobalTransform, With<PrimaryUser>>,
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
 ) {
@@ -300,7 +302,7 @@ fn update_scene_priority(
 const MAX_CONCURRENT_SCENES: usize = 8;
 
 #[derive(Component)]
-pub struct PrimaryCamera;
+pub struct PrimaryUser;
 
 fn send_scene_updates(
     mut scenes: Query<(
@@ -311,6 +313,7 @@ fn send_scene_updates(
     )>,
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
     camera: Query<&GlobalTransform, With<PrimaryCamera>>,
 ) {
     let updates = &mut *updates;
@@ -329,29 +332,28 @@ fn send_scene_updates(
 
     // generate updates for camera and player
     let crdt_store = &mut context.crdt_store;
-    let mut affine = camera.single().affine();
-    affine.translation -= scene_transform.affine().translation;
-    let camera_relative_transform = Transform::from(GlobalTransform::from(affine));
+
     let mut buf = Vec::default();
-    let mut writer = DclWriter::new(&mut buf);
-    writer.write(&DclTransformAndParent::from_bevy_transform_and_parent(
-        &camera_relative_transform,
-        SceneEntityId::ROOT,
-    ));
+    for (mut affine, id) in [
+        (player.single().affine(), SceneEntityId::PLAYER),
+        (camera.single().affine(), SceneEntityId::CAMERA),
+    ] {
+        buf.clear();
+        affine.translation -= scene_transform.affine().translation;
+        let relative_transform = Transform::from(GlobalTransform::from(affine));
 
-    crdt_store.force_update(
-        SceneComponentId::TRANSFORM,
-        CrdtType::LWW_ENT,
-        SceneEntityId::CAMERA,
-        Some(&mut writer.reader()),
-    );
+        DclWriter::new(&mut buf).write(&DclTransformAndParent::from_bevy_transform_and_parent(
+            &relative_transform,
+            SceneEntityId::ROOT,
+        ));
 
-    crdt_store.force_update(
-        SceneComponentId::TRANSFORM,
-        CrdtType::LWW_ENT,
-        SceneEntityId::PLAYER,
-        Some(&mut writer.reader()),
-    );
+        crdt_store.force_update(
+            SceneComponentId::TRANSFORM,
+            CrdtType::LWW_ENT,
+            id,
+            Some(&mut DclReader::new(&buf)),
+        );
+    }
 
     if let Err(e) = handle
         .sender
