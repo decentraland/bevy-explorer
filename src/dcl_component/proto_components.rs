@@ -65,6 +65,12 @@ impl DclProtoComponent for sdk::components::PbPointerEvents {}
 impl DclProtoComponent for sdk::components::PbPointerEventsResult {}
 impl DclProtoComponent for sdk::components::PbEngineInfo {}
 impl DclProtoComponent for sdk::components::PbGltfContainerLoadingState {}
+impl DclProtoComponent for sdk::components::PbAvatarShape {}
+impl DclProtoComponent for sdk::components::PbAvatarAttach {}
+impl DclProtoComponent for sdk::components::PbAvatarCustomization {}
+impl DclProtoComponent for sdk::components::PbAvatarEmoteCommand {}
+impl DclProtoComponent for sdk::components::PbAvatarEquippedData {}
+impl DclProtoComponent for sdk::components::PbPlayerIdentityData {}
 impl DclProtoComponent for kernel::comms::rfc4::Packet {}
 
 // VECTOR3 conversions
@@ -112,12 +118,12 @@ impl Copy for common::Color3 {}
 impl Copy for common::Color4 {}
 impl From<common::Color4> for bevy::prelude::Color {
     fn from(value: common::Color4) -> Self {
-        bevy::prelude::Color::rgba_linear(value.r, value.g, value.b, value.a)
+        bevy::prelude::Color::rgba(value.r, value.g, value.b, value.a)
     }
 }
 
 impl From<common::Color3> for bevy::prelude::Color {
     fn from(value: common::Color3) -> Self {
-        bevy::prelude::Color::rgb_linear(value.r, value.g, value.b)
+        bevy::prelude::Color::rgb(value.r, value.g, value.b)
     }
 }

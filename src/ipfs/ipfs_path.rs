@@ -127,7 +127,9 @@ impl IpfsType {
                 .get(scene_hash)
                 .ok_or_else(|| anyhow::anyhow!("required collection hash not found: {scene_hash}"))?
                 .hash(file_path)
-                .ok_or_else(|| anyhow::anyhow!("file not found in content map: {file_path:?}"))
+                .ok_or_else(|| {
+                    anyhow::anyhow!("file not found in content map: {file_path:?} in {scene_hash}")
+                })
                 .map(ToOwned::to_owned),
             IpfsType::Pointer {
                 entity_type: pointer_type,

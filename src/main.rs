@@ -2,6 +2,7 @@
 // - separate js crate
 // - budget -> deadline is just last end + frame time
 
+pub mod avatar;
 mod camera_controller;
 pub mod comms;
 pub mod console;
@@ -10,6 +11,7 @@ pub mod dcl_component;
 pub mod input_handler;
 pub mod ipfs;
 pub mod scene_runner;
+pub mod util;
 pub mod visuals;
 
 use bevy::{
@@ -34,6 +36,7 @@ use scene_runner::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    avatar::AvatarPlugin,
     camera_controller::CameraControllerPlugin,
     comms::{wallet::WalletPlugin, CommsPlugin},
     console::{ConsolePlugin, DoAddConsoleCommand},
@@ -169,6 +172,7 @@ fn main() {
     .add_plugin(VisualsPlugin)
     .add_plugin(WalletPlugin)
     .add_plugin(CommsPlugin)
+    .add_plugin(AvatarPlugin)
     .add_startup_system(setup)
     .insert_resource(AmbientLight {
         color: Color::rgb(0.5, 0.5, 1.0),

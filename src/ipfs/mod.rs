@@ -12,10 +12,9 @@ use bevy::{
     asset::{Asset, AssetIo, AssetIoError, AssetLoader, FileAssetIo, LoadedAsset},
     prelude::*,
     reflect::TypeUuid,
-    tasks::IoTaskPool,
+    tasks::{IoTaskPool, Task},
     utils::HashMap,
 };
-use bevy_common_assets::json::JsonAssetPlugin;
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use bimap::BiMap;
 use isahc::{http::StatusCode, prelude::Configurable, AsyncReadResponseExt, RequestExt};
@@ -26,38 +25,27 @@ use crate::console::DoAddConsoleCommand;
 
 use self::ipfs_path::{normalize_path, EntityType, IpfsPath, IpfsType};
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct TypedIpfsRef {
     file: String,
     hash: String,
 }
 
-#[derive(Deserialize)]
-pub struct SceneDefinitionJson {
+#[derive(Serialize, Deserialize, Debug)]
+pub struct EntityDefinitionJson {
     id: Option<String>,
     pointers: Vec<String>,
     content: Vec<TypedIpfsRef>,
     metadata: Option<serde_json::Value>,
 }
 
-#[derive(Deserialize, Debug)]
-pub struct SceneMetaScene {
-    pub base: String,
-}
-
-#[derive(Deserialize, TypeUuid, Debug)]
-#[uuid = "5b587f78-4650-4132-8788-6fe683bec3aa"]
-pub struct SceneMeta {
-    pub main: String,
-    pub scene: SceneMetaScene,
-}
-
 #[derive(TypeUuid, Debug, Default)]
 #[uuid = "d373738a-208e-4560-9e2e-020e5c64a852"]
-pub struct SceneDefinition {
+pub struct EntityDefinition {
     pub id: String,
-    pub pointers: Vec<IVec2>,
+    pub pointers: Vec<String>,
     pub content: ContentMap,
+    pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(TypeUuid, Debug, Clone)]
@@ -65,9 +53,9 @@ pub struct SceneDefinition {
 pub struct SceneJsFile(pub Arc<String>);
 
 #[derive(Default)]
-pub struct SceneDefinitionLoader;
+pub struct EntityDefinitionLoader;
 
-impl AssetLoader for SceneDefinitionLoader {
+impl AssetLoader for EntityDefinitionLoader {
     fn load<'a>(
         &'a self,
         bytes: &'a [u8],
@@ -76,7 +64,7 @@ impl AssetLoader for SceneDefinitionLoader {
         Box::pin(async move {
             let maybe_definition_json = {
                 // try to parse as a vec
-                let definition_json_vec: Result<Vec<SceneDefinitionJson>, _> =
+                let definition_json_vec: Result<Vec<EntityDefinitionJson>, _> =
                     serde_json::from_reader(bytes);
                 match definition_json_vec {
                     Ok(mut vec) => vec.pop(),
@@ -88,7 +76,7 @@ impl AssetLoader for SceneDefinitionLoader {
             };
             let Some(definition_json) = maybe_definition_json else {
                 // if the source was an empty vec, we have loaded a pointer with no content, just set default
-                load_context.set_default_asset(LoadedAsset::new(SceneDefinition::default()));
+                load_context.set_default_asset(LoadedAsset::new(EntityDefinition::default()));
                 return Ok(());
             };
             let content = ContentMap(BiMap::from_iter(
@@ -97,18 +85,8 @@ impl AssetLoader for SceneDefinitionLoader {
                     .into_iter()
                     .map(|ipfs| (normalize_path(&ipfs.file), ipfs.hash)),
             ));
-            let pointers = definition_json
-                .pointers
-                .iter()
-                .map(|pointer_str| {
-                    let (pointer_x, pointer_y) = pointer_str.split_once(',').unwrap();
-                    let pointer_x = pointer_x.parse::<i32>().unwrap();
-                    let pointer_y = pointer_y.parse::<i32>().unwrap();
-                    IVec2::new(pointer_x, pointer_y)
-                })
-                .collect();
             let id = definition_json.id.unwrap_or_else(|| {
-                // we must have been loaded as an entity with the format "$ipfs/$entity/{hash}.scene_entity" - use the ipfs path to resolve the id
+                // we must have been loaded as an entity with the format "$ipfs/$entity/{hash}.entity_type" - use the ipfs path to resolve the id
                 load_context
                     .path()
                     .file_name()
@@ -121,24 +99,11 @@ impl AssetLoader for SceneDefinitionLoader {
                     .to_owned()
             });
 
-            if let Some(metadata) = definition_json.metadata {
-                // store this metadata to the filesystem so subsequent resolves of the scene.json work even if the file is not actually available from the realm's content server
-                if let Some(hash) = content.hash("scene.json") {
-                    let ipfs: &IpfsIo = load_context.asset_io().downcast_ref().unwrap();
-                    let mut cache_path = ipfs.cache_path().to_owned();
-                    cache_path.push(hash);
-
-                    if hash.starts_with("b64-") || !cache_path.exists() {
-                        let file = std::fs::File::create(&cache_path)?;
-                        serde_json::to_writer(file, &metadata)?;
-                    }
-                }
-            }
-
-            let definition = SceneDefinition {
+            let definition = EntityDefinition {
                 id,
-                pointers,
+                pointers: definition_json.pointers,
                 content,
+                metadata: definition_json.metadata,
             };
             load_context.set_default_asset(LoadedAsset::new(definition));
             Ok(())
@@ -357,11 +322,10 @@ impl Plugin for IpfsIoPlugin {
 
         // the asset server is constructed and added the resource manager
         app.insert_resource(AssetServer::new(ipfs_io))
-            .add_asset::<SceneDefinition>()
+            .add_asset::<EntityDefinition>()
             .add_asset::<SceneJsFile>()
-            .init_asset_loader::<SceneDefinitionLoader>()
-            .init_asset_loader::<SceneJsLoader>()
-            .add_plugin(JsonAssetPlugin::<SceneMeta>::new(&["scene.json"]));
+            .init_asset_loader::<EntityDefinitionLoader>()
+            .init_asset_loader::<SceneJsLoader>();
 
         app.add_event::<ChangeRealmEvent>();
         app.init_resource::<CurrentRealm>();
@@ -462,8 +426,8 @@ fn change_realm(
     }
 }
 
-struct IpfsModifier {
-    base_url: Option<String>,
+pub struct IpfsModifier {
+    pub base_url: Option<String>,
 }
 
 #[derive(Default)]
@@ -554,17 +518,108 @@ impl IpfsIo {
         }
     }
 
-    pub fn add_collection(&self, hash: String, collection: ContentMap) {
-        self.context
-            .blocking_write()
-            .collections
-            .insert(hash, collection);
+    pub fn add_collection(
+        &self,
+        hash: String,
+        collection: ContentMap,
+        modifier: Option<IpfsModifier>,
+    ) {
+        let mut write = self.context.blocking_write();
+
+        if let Some(modifier) = modifier {
+            write.modifiers.insert(hash.clone(), modifier);
+        }
+        write.collections.insert(hash, collection);
     }
 
     pub fn cache_path(&self) -> &Path {
         self.default_fs_path.as_path()
     }
+
+    // load entities from pointers and cache urls
+    pub fn active_entities(
+        &self,
+        pointers: &Vec<String>,
+        endpoint: Option<&str>,
+    ) -> ActiveEntityTask {
+        let active_url = match endpoint {
+            Some(url) => Some(url.to_owned()),
+            None => self
+                .realm_config_receiver
+                .borrow()
+                .as_ref()
+                .and_then(|(_, about)| about.content.as_ref())
+                .map(|content| content.public_url.to_owned()),
+        }
+        .map(|url| format!("{url}/entities/active"));
+
+        let body = serde_json::to_string(&ActiveEntitiesRequest { pointers });
+        let cache_path = self.cache_path().to_owned();
+
+        IoTaskPool::get().spawn(async move {
+            let active_url = active_url.ok_or(anyhow!("not connected"))?;
+            let body = body?;
+            let mut response = isahc::Request::post(active_url)
+                .header("content-type", "application/json")
+                .body(body)?
+                .send_async()
+                .await?;
+
+            if response.status() != StatusCode::OK {
+                return Err(anyhow::anyhow!("status: {}", response.status()));
+            }
+
+            let active_entities = response
+                .json::<ActiveEntitiesResponse>()
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
+            let mut res = Vec::default();
+            for entity in active_entities.0 {
+                let id = entity.id.as_ref().unwrap();
+                // cache to file system
+                let cache_path = cache_path.join(id);
+
+                if id.starts_with("b64-") || !cache_path.exists() {
+                    let file = std::fs::File::create(&cache_path)?;
+                    serde_json::to_writer(file, &entity)?;
+                }
+
+                // return active entity struct
+                res.push(EntityDefinition {
+                    id: entity.id.unwrap(),
+                    pointers: entity.pointers,
+                    metadata: entity.metadata,
+                    content: ContentMap(BiMap::from_iter(
+                        entity
+                            .content
+                            .into_iter()
+                            .map(|ipfs| (normalize_path(&ipfs.file), ipfs.hash)),
+                    )),
+                });
+            }
+
+            Ok(res)
+        })
+    }
 }
+
+pub type ActiveEntityTask = Task<Result<Vec<EntityDefinition>, anyhow::Error>>;
+
+#[derive(Debug)]
+pub struct ActiveEntity {
+    pub id: String,
+    pub pointers: Vec<String>,
+    pub content: ContentMap,
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Serialize)]
+struct ActiveEntitiesRequest<'a> {
+    pointers: &'a Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ActiveEntitiesResponse(Vec<EntityDefinitionJson>);
 
 impl AssetIo for IpfsIo {
     fn load_path<'a>(
@@ -648,6 +703,7 @@ impl AssetIo for IpfsIo {
                     }
                 }
 
+                debug!("remote url: `{remote}` completed");
                 Ok(data)
             }
         })

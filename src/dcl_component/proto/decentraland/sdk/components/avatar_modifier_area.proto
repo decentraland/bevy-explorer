@@ -7,14 +7,14 @@ import "decentraland/sdk/components/common/id.proto";
 
 option (common.ecs_component_id) = 1070;
 
-// The AvatarModifierArea component can be attached to an Entity to define a region of space where 
+// The AvatarModifierArea component can be attached to an Entity to define a region of space where
 // avatar behavior changes.
 //
-// The Entity's Transform position determines the center-point of the region, while its size is 
-// given as a vector in the `area` property below. The Transform rotation is applied, but the scale 
+// The Entity's Transform position determines the center-point of the region, while its size is
+// given as a vector in the `area` property below. The Transform rotation is applied, but the scale
 // is ignored.
 //
-// The modifier effect is only applied to avatars inside the region. It does not affect how players 
+// The modifier effect is only applied to avatars inside the region. It does not affect how players
 // standing inside it see avatars on the other side of the boundary.
 //
 // Note that, while commonly used to delineate a 2D area in a scene (hence the name), the region

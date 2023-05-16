@@ -1,16 +1,11 @@
-use std::path::PathBuf;
-
 use bevy::{
     asset::{AssetLoader, LoadedAsset},
     math::Vec3Swizzles,
     prelude::*,
     reflect::TypeUuid,
-    tasks::{IoTaskPool, Task},
     utils::{HashMap, HashSet},
 };
-use futures_lite::future;
-use isahc::{http::StatusCode, AsyncReadResponseExt, RequestExt};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::{
     comms::global_crdt::GlobalCrdtState,
@@ -25,13 +20,14 @@ use crate::{
     },
     ipfs::{
         ipfs_path::{EntityType, IpfsPath},
-        CurrentRealm, IpfsIo, IpfsLoaderExt, SceneDefinition, SceneIpfsLocation, SceneJsFile,
-        SceneMeta,
+        ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsLoaderExt, SceneIpfsLocation,
+        SceneJsFile,
     },
     scene_runner::{
         renderer_context::RendererSceneContext, ContainerEntity, DeletedSceneEntities, SceneEntity,
         SceneThreadHandle,
     },
+    util::TaskExt,
 };
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryCamera, SceneSets, SceneUpdates};
@@ -69,7 +65,6 @@ impl Plugin for SceneLifecyclePlugin {
             (
                 load_scene_entity,
                 load_scene_json,
-                load_scene_crdt,
                 load_scene_javascript,
                 initialize_scene,
             )
@@ -78,9 +73,9 @@ impl Plugin for SceneLifecyclePlugin {
 
         app.add_systems(
             (
+                process_realm_change,
                 load_active_entities,
                 process_scene_lifecycle,
-                process_realm_change,
             )
                 .chain()
                 .in_base_set(CoreSet::PostUpdate),
@@ -92,7 +87,6 @@ impl Plugin for SceneLifecyclePlugin {
 pub enum SceneLoading {
     SceneSpawned,
     SceneEntity,
-    SceneMeta,
     MainCrdt(Option<Handle<SerializedCrdtStore>>),
     Javascript(Option<tokio::sync::broadcast::Receiver<Vec<u8>>>),
     Failed,
@@ -114,10 +108,10 @@ pub(crate) fn load_scene_entity(
 
         let h_scene = match &event.location {
             SceneIpfsLocation::Hash(hash) => {
-                asset_server.load_hash::<SceneDefinition>(hash, EntityType::Scene)
+                asset_server.load_hash::<EntityDefinition>(hash, EntityType::Scene)
             }
             SceneIpfsLocation::Urn(urn) => {
-                match asset_server.load_urn::<SceneDefinition>(urn, EntityType::Scene) {
+                match asset_server.load_urn::<EntityDefinition>(urn, EntityType::Scene) {
                     Ok(h_scene) => h_scene,
                     Err(e) => {
                         warn!("failed to parse urn: {e}");
@@ -134,15 +128,14 @@ pub(crate) fn load_scene_entity(
 
 pub(crate) fn load_scene_json(
     mut commands: Commands,
-    mut loading_scenes: Query<(Entity, &mut SceneLoading, &Handle<SceneDefinition>)>,
-    scene_definitions: Res<Assets<SceneDefinition>>,
+    mut loading_scenes: Query<(Entity, &mut SceneLoading, &Handle<EntityDefinition>)>,
+    scene_definitions: Res<Assets<EntityDefinition>>,
     asset_server: Res<AssetServer>,
 ) {
     for (entity, mut state, h_scene) in loading_scenes
         .iter_mut()
         .filter(|(_, state, _)| matches!(**state, SceneLoading::SceneEntity))
     {
-        debug!("checking json");
         let mut fail = |msg: &str| {
             warn!("{entity:?} failed to initialize scene: {msg}");
             commands.entity(entity).insert(SceneLoading::Failed);
@@ -168,55 +161,9 @@ pub(crate) fn load_scene_json(
             continue;
         }
 
-        let ipfs_io = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
-        ipfs_io.add_collection(definition.id.clone(), definition.content.clone());
-
-        let h_meta = match asset_server.load_content_file::<SceneMeta>("scene.json", &definition.id)
-        {
-            Ok(h_meta) => h_meta,
-            Err(e) => {
-                fail(&format!("couldn't load scene.json: {e}"));
-                continue;
-            }
-        };
-
-        commands.entity(entity).insert(h_meta);
-        *state = SceneLoading::SceneMeta;
-    }
-}
-
-pub(crate) fn load_scene_crdt(
-    mut commands: Commands,
-    mut loading_scenes: Query<(
-        Entity,
-        &mut SceneLoading,
-        &Handle<SceneDefinition>,
-        &Handle<SceneMeta>,
-    )>,
-    scene_definitions: Res<Assets<SceneDefinition>>,
-    asset_server: Res<AssetServer>,
-) {
-    for (entity, mut state, h_scene, h_meta) in loading_scenes
-        .iter_mut()
-        .filter(|(_, state, _, _)| matches!(**state, SceneLoading::SceneMeta))
-    {
-        let mut fail = |msg: &str| {
-            warn!("{entity:?} failed to initialize scene: {msg}");
-            commands.entity(entity).insert(SceneLoading::Failed);
-        };
-
-        match asset_server.get_load_state(h_meta) {
-            bevy::asset::LoadState::Loaded => (),
-            bevy::asset::LoadState::Failed => {
-                fail("scene.json could not be loaded");
-                continue;
-            }
-            _ => continue,
-        }
-        let Some(definition) = scene_definitions.get(h_scene) else {
-            fail("definition was dropped");
-            continue;
-        };
+        asset_server
+            .ipfs()
+            .add_collection(definition.id.clone(), definition.content.clone(), None);
 
         if definition.content.hash("main.crdt").is_some() {
             let h_crdt: Handle<SerializedCrdtStore> = asset_server
@@ -229,6 +176,17 @@ pub(crate) fn load_scene_crdt(
     }
 }
 
+#[derive(Deserialize, Debug)]
+pub struct SceneMetaScene {
+    pub base: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct SceneMeta {
+    pub main: String,
+    pub scene: SceneMetaScene,
+}
+
 #[derive(TypeUuid, Default, Clone)]
 #[uuid = "e5f49bd0-15b0-43c1-8609-00bf8e1d23d4"]
 pub struct SerializedCrdtStore(pub Vec<u8>);
@@ -236,23 +194,17 @@ pub struct SerializedCrdtStore(pub Vec<u8>);
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn load_scene_javascript(
     mut commands: Commands,
-    loading_scenes: Query<(
-        Entity,
-        &SceneLoading,
-        &Handle<SceneDefinition>,
-        &Handle<SceneMeta>,
-    )>,
-    scene_definitions: Res<Assets<SceneDefinition>>,
-    scene_metas: Res<Assets<SceneMeta>>,
+    loading_scenes: Query<(Entity, &SceneLoading, &Handle<EntityDefinition>)>,
+    scene_definitions: Res<Assets<EntityDefinition>>,
     main_crdts: Res<Assets<SerializedCrdtStore>>,
     asset_server: Res<AssetServer>,
     crdt_component_interfaces: Res<CrdtExtractors>,
     mut scene_updates: ResMut<SceneUpdates>,
     global_scene: Res<GlobalCrdtState>,
 ) {
-    for (root, state, h_scene, h_meta) in loading_scenes
+    for (root, state, h_scene) in loading_scenes
         .iter()
-        .filter(|(_, state, _, _)| matches!(**state, SceneLoading::MainCrdt(_)))
+        .filter(|(_, state, _)| matches!(**state, SceneLoading::MainCrdt(_)))
     {
         let mut fail = |msg: &str| {
             warn!("{root:?} failed to initialize scene: {msg}");
@@ -275,7 +227,11 @@ pub(crate) fn load_scene_javascript(
             fail("definition was dropped");
             continue;
         };
-        let Some(meta) = scene_metas.get(h_meta) else {
+        let Some(meta) = &definition.metadata else {
+            fail("definition didn't contain metadata");
+            continue;
+        };
+        let Ok(meta) = serde_json::from_value::<SceneMeta>(meta.clone()) else {
             fail("scene.json did not resolve to expected format");
             continue;
         };
@@ -309,8 +265,6 @@ pub(crate) fn load_scene_javascript(
         ));
 
         // spawn bevy-side scene
-        let meta = scene_metas.get(h_meta).unwrap();
-
         let (pointer_x, pointer_y) = meta.scene.base.split_once(',').unwrap();
         let pointer_x = pointer_x.parse::<i32>().unwrap();
         let pointer_y = pointer_y.parse::<i32>().unwrap();
@@ -485,7 +439,7 @@ pub struct LiveScenes(pub HashMap<String, Entity>);
 pub const PARCEL_SIZE: f32 = 16.0;
 
 #[derive(Resource, Default, Debug)]
-pub struct ScenePointers(HashMap<IVec2, PointerResult>);
+pub struct ScenePointers(pub HashMap<IVec2, PointerResult>);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum PointerResult {
@@ -531,11 +485,9 @@ fn parcels_in_range(focus: &GlobalTransform, range: f32) -> Vec<IVec2> {
 }
 
 pub fn process_realm_change(
-    mut commands: Commands,
     current_realm: Res<CurrentRealm>,
     mut pointers: ResMut<ScenePointers>,
     mut live_scenes: ResMut<LiveScenes>,
-    mut spawn: EventWriter<LoadSceneEvent>,
 ) {
     if current_realm.is_changed() {
         info!("realm change `{}`! purging scenes", current_realm.address);
@@ -577,22 +529,6 @@ pub fn process_realm_change(
         live_scenes
             .0
             .retain(|hash, _| realm_scene_ids.contains_key(hash));
-
-        // load the remaining unloaded scenes
-        let to_load: HashSet<_> = realm_scene_ids
-            .into_iter()
-            .filter(|(hash, _)| !live_scenes.0.contains_key(hash))
-            .collect();
-
-        for (hash, urn) in to_load {
-            let entity = commands.spawn(SceneLoading::SceneSpawned).id();
-            info!("spawning scene {:?} @ ??: {entity:?}", hash);
-            live_scenes.0.insert(hash, entity);
-            spawn.send(LoadSceneEvent {
-                entity: Some(entity),
-                location: SceneIpfsLocation::Urn(urn),
-            });
-        }
     }
 }
 
@@ -602,44 +538,44 @@ fn load_active_entities(
     focus: Query<&GlobalTransform, With<PrimaryCamera>>,
     range: Res<SceneLoadDistance>,
     mut pointers: ResMut<ScenePointers>,
-    mut pointer_request: Local<
-        Option<(
-            HashSet<IVec2>,
-            Task<Result<HashSet<ActiveEntity>, anyhow::Error>>,
-        )>,
-    >,
+    mut pointer_request: Local<Option<(HashSet<IVec2>, ActiveEntityTask)>>,
     asset_server: Res<AssetServer>,
 ) {
     if realm.is_changed() {
         // drop current request
         *pointer_request = None;
-        return;
     }
 
     if pointer_request.is_none() {
-        if let Some(url) = asset_server.active_endpoint() {
+        let has_scene_urns = !realm.config.scenes_urn.as_ref().map_or(true, Vec::is_empty);
+        if !has_scene_urns && asset_server.active_endpoint().is_some() {
             // load required pointers
             let Ok(focus) = focus.get_single() else {
                 return;
             };
+
             let parcels: HashSet<_> = parcels_in_range(focus, range.0)
                 .into_iter()
                 .filter(|parcel| !pointers.0.contains_key(parcel))
                 .collect();
 
+            let pointers = parcels
+                .iter()
+                .map(|parcel| format!("{},{}", parcel.x, parcel.y))
+                .collect();
+
             if !parcels.is_empty() {
-                let cache_path = asset_server.ipfs_cache_path().to_owned();
                 *pointer_request = Some((
-                    parcels.clone(),
-                    IoTaskPool::get().spawn(request_active_entities(url, parcels, cache_path)),
+                    parcels,
+                    asset_server.ipfs().active_entities(&pointers, None),
                 ));
             }
         }
-    } else if pointer_request.as_ref().unwrap().1.is_finished() {
+    } else if let Some(task_result) = pointer_request.as_mut().unwrap().1.complete() {
         // process active scenes in the requested set
-        let (mut requested_parcels, mut task) = pointer_request.take().unwrap();
+        let (mut requested_parcels, _) = pointer_request.take().unwrap();
 
-        let Ok(retrieved_parcels) = future::block_on(future::poll_once(&mut task)).unwrap() else {
+        let Ok(retrieved_parcels) = task_result else {
             warn!("failed to retrieve active scenes, will retry");
             return;
         };
@@ -685,7 +621,7 @@ pub fn process_scene_lifecycle(
     mut spawn: EventWriter<LoadSceneEvent>,
     pointers: Res<ScenePointers>,
 ) {
-    let mut required_scene_ids: HashSet<String> = HashSet::default();
+    let mut required_scene_ids: HashSet<(String, Option<String>)> = HashSet::default();
 
     // add realm-defined scenes to requirements
     if let Some(scenes) = current_realm.config.scenes_urn.as_ref() {
@@ -695,6 +631,7 @@ pub fn process_scene_lifecycle(
                 .ok()?
                 .context_free_hash()
                 .ok()?
+                .map(|hash| (hash, Some(hacked_urn)))
         }))
     }
 
@@ -710,6 +647,7 @@ pub fn process_scene_lifecycle(
                     .get(&parcel)
                     .and_then(PointerResult::hash)
                     .map(ToOwned::to_owned)
+                    .map(|hash| (hash, None))
             },
         ));
     }
@@ -717,7 +655,7 @@ pub fn process_scene_lifecycle(
     // record which scene entities we should keep
     let required_entities: HashMap<_, _> = required_scene_ids
         .iter()
-        .flat_map(|scene| live_scenes.0.get(scene).map(|ent| (ent, scene)))
+        .flat_map(|(hash, maybe_urn)| live_scenes.0.get(hash).map(|ent| (ent, (hash, maybe_urn))))
         .collect();
 
     let mut existing_ids = HashSet::default();
@@ -725,7 +663,7 @@ pub fn process_scene_lifecycle(
     // despawn any no-longer required entities
     for entity in &scene_entities {
         match required_entities.get(&entity) {
-            Some(hash) => {
+            Some((hash, _)) => {
                 existing_ids.insert(<&String>::clone(hash));
             }
             None => {
@@ -739,81 +677,19 @@ pub fn process_scene_lifecycle(
     drop(required_entities);
 
     // spawn any newly required scenes
-    for required_scene_id in required_scene_ids
+    for (required_scene_hash, maybe_urn) in required_scene_ids
         .iter()
-        .filter(|id| !existing_ids.contains(id))
+        .filter(|(hash, _)| !existing_ids.contains(hash))
     {
         let entity = commands.spawn(SceneLoading::SceneSpawned).id();
-        info!("spawning scene {:?} @ ??: {entity:?}", required_scene_id);
-        live_scenes.0.insert(required_scene_id.clone(), entity);
+        info!("spawning scene {:?} @ ??: {entity:?}", required_scene_hash);
+        live_scenes.0.insert(required_scene_hash.clone(), entity);
         spawn.send(LoadSceneEvent {
             entity: Some(entity),
-            location: SceneIpfsLocation::Hash(required_scene_id.clone()),
+            location: match maybe_urn {
+                Some(urn) => SceneIpfsLocation::Urn(urn.to_owned()),
+                None => SceneIpfsLocation::Hash(required_scene_hash.to_owned()),
+            },
         })
     }
-}
-
-#[derive(Serialize)]
-struct ActiveEntitiesRequest {
-    pointers: Vec<String>,
-}
-
-#[derive(Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ActiveEntity {
-    id: String,
-    pointers: Vec<String>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct ActiveEntitiesResponse(Vec<serde_json::Value>);
-
-async fn request_active_entities(
-    url: String,
-    pointers: HashSet<IVec2>,
-    cache_path: PathBuf,
-) -> Result<HashSet<ActiveEntity>, anyhow::Error> {
-    let body = serde_json::to_string(&ActiveEntitiesRequest {
-        pointers: pointers
-            .into_iter()
-            .map(|p| format!("{},{}", p.x, p.y))
-            .collect(),
-    })?;
-    let mut response = isahc::Request::post(url)
-        .header("content-type", "application/json")
-        .body(body)?
-        .send_async()
-        .await?;
-
-    if response.status() != StatusCode::OK {
-        return Err(anyhow::anyhow!("status: {}", response.status()));
-    }
-
-    let active_entities = response
-        .json::<ActiveEntitiesResponse>()
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    let mut res = HashSet::default();
-    for entity in active_entities.0 {
-        let id = entity
-            .get("id")
-            .ok_or(anyhow::anyhow!(
-                "no id field on active entity: {:?}",
-                entity
-            ))?
-            .as_str()
-            .unwrap();
-        // cache to file system
-        let mut cache_path = cache_path.clone();
-        cache_path.push(id);
-
-        if id.starts_with("b64-") || !cache_path.exists() {
-            let file = std::fs::File::create(&cache_path)?;
-            serde_json::to_writer(file, &vec![&entity])?;
-        }
-
-        // return active entity struct
-        res.insert(serde_json::from_value(entity)?);
-    }
-
-    Ok(res)
 }

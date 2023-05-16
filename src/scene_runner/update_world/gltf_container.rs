@@ -25,7 +25,7 @@ use crate::{
         },
         SceneComponentId, SceneEntityId,
     },
-    ipfs::{IpfsLoaderExt, SceneDefinition},
+    ipfs::{EntityDefinition, IpfsLoaderExt},
     scene_runner::{
         renderer_context::RendererSceneContext, ContainerEntity, SceneEntity, SceneSets,
     },
@@ -117,7 +117,10 @@ fn update_gltf(
         ),
         Changed<GltfDefinition>,
     >,
-    unprocessed_gltfs: Query<(Entity, &SceneEntity, &Handle<Gltf>), Without<GltfLoaded>>,
+    unprocessed_gltfs: Query<
+        (Entity, &SceneEntity, &Handle<Gltf>),
+        (With<GltfDefinition>, Without<GltfLoaded>),
+    >,
     ready_gltfs: Query<
         (Entity, &SceneEntity, &GltfLoaded, &GltfDefinition),
         Without<GltfProcessed>,
@@ -130,8 +133,8 @@ fn update_gltf(
         Option<&Handle<Mesh>>,
         Option<&GltfExtras>,
     )>,
-    scene_def_handles: Query<&Handle<SceneDefinition>>,
-    scene_defs: Res<Assets<SceneDefinition>>,
+    scene_def_handles: Query<&Handle<EntityDefinition>>,
+    scene_defs: Res<Assets<EntityDefinition>>,
     asset_server: Res<AssetServer>,
     gltfs: Res<Assets<Gltf>>,
     mut scene_spawner: ResMut<SceneSpawner>,

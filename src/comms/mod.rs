@@ -6,18 +6,18 @@ pub mod websocket_room;
 
 use bevy::prelude::*;
 use bimap::BiMap;
-use ethers::types::{Address, H160};
+use ethers::types::Address;
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    dcl_component::{DclWriter, ToDclWriter},
+    dcl_component::{proto_components::kernel::comms::rfc4, DclWriter, ToDclWriter},
     ipfs::CurrentRealm,
 };
 
 use self::{
     broadcast_position::BroadcastPositionPlugin,
     global_crdt::GlobalCrdtPlugin,
-    profile::UserProfilePlugin,
+    profile::{CurrentUserProfile, UserProfilePlugin},
     websocket_room::{WebsocketRoomPlugin, WebsocketRoomTransport},
 };
 
@@ -78,6 +78,7 @@ fn process_realm_change(
     mut commands: Commands,
     realm: Res<CurrentRealm>,
     adapters: Query<Entity, With<Transport>>,
+    current_profile: Res<CurrentUserProfile>,
 ) {
     if realm.is_changed() {
         for adapter in adapters.iter() {
@@ -96,6 +97,20 @@ fn process_realm_change(
                     "ws-room" => {
                         info!("starting ws-room adapter");
                         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
+
+                        // queue a profile version message
+                        let response = rfc4::Packet {
+                            message: Some(rfc4::packet::Message::ProfileResponse(
+                                rfc4::ProfileResponse {
+                                    serialized_profile: serde_json::to_string(
+                                        &current_profile.0.content,
+                                    )
+                                    .unwrap(),
+                                    base_url: current_profile.0.base_url.clone(),
+                                },
+                            )),
+                        };
+                        let _ = sender.try_send(NetworkMessage::reliable(&response));
 
                         commands.spawn((
                             Transport {
@@ -124,30 +139,5 @@ fn process_realm_change(
         } else {
             warn!("missing comms!");
         }
-    }
-}
-
-trait AsH160 {
-    fn as_h160(&self) -> Option<H160>;
-}
-
-impl AsH160 for &str {
-    fn as_h160(&self) -> Option<H160> {
-        if self.starts_with("0x") {
-            return (&self[2..]).as_h160();
-        }
-
-        let Ok(hex_bytes) = hex::decode(self.as_bytes()) else { return None };
-        if hex_bytes.len() != H160::len_bytes() {
-            return None;
-        }
-
-        Some(H160::from_slice(hex_bytes.as_slice()))
-    }
-}
-
-impl AsH160 for String {
-    fn as_h160(&self) -> Option<H160> {
-        self.as_str().as_h160()
     }
 }
