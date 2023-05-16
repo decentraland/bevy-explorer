@@ -67,11 +67,11 @@ impl SceneComponentId {
     pub const RAYCAST_RESULT: SceneComponentId = SceneComponentId(1068);
     pub const AVATAR_SHAPE: SceneComponentId = SceneComponentId(1080);
     pub const AVATAR_ATTACHMENT: SceneComponentId = SceneComponentId(1073);
-    pub const PLAYER_IDENTITY_DATA: SceneComponentId = SceneComponentId(1089);
     pub const AVATAR_CUSTOMIZATION: SceneComponentId = SceneComponentId(1087);
     pub const AVATAR_EMOTE_COMMAND: SceneComponentId = SceneComponentId(1088);
-    pub const AVATAR_EQUIPPED_DATA: SceneComponentId = SceneComponentId(1086);
+    pub const AVATAR_EQUIPPED_DATA: SceneComponentId = SceneComponentId(1089);
     pub const BILLBOARD: SceneComponentId = SceneComponentId(1090);
+    pub const PLAYER_IDENTITY_DATA: SceneComponentId = SceneComponentId(1091);
 }
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy)]
