@@ -14,6 +14,7 @@ use urn::Urn;
 
 pub mod base_wearables;
 pub mod mask_material;
+pub mod movement;
 
 use crate::{
     comms::{
@@ -40,13 +41,17 @@ use crate::{
     util::TaskExt,
 };
 
-use self::mask_material::{MaskMaterial, MaskMaterialPlugin};
+use self::{
+    mask_material::{MaskMaterial, MaskMaterialPlugin},
+    movement::PlayerMovementPlugin,
+};
 
 pub struct AvatarPlugin;
 
 impl Plugin for AvatarPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(MaskMaterialPlugin);
+        app.add_plugin(PlayerMovementPlugin);
         app.init_resource::<WearablePointers>();
         app.init_resource::<WearableMetas>();
         app.add_system(load_base_wearables);
@@ -876,10 +881,6 @@ pub struct AvatarLoaded {
     skin_materials: HashSet<Handle<StandardMaterial>>,
     hair_materials: HashSet<Handle<StandardMaterial>>,
 }
-
-#[derive(Component)]
-pub struct AvatarSpawned;
-
 #[derive(Component)]
 pub struct AvatarProcessed;
 

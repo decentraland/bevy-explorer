@@ -33,7 +33,8 @@ use crate::{
             transform_and_parent::process_transform_and_parent_updates, CrdtLWWStateComponent,
         },
         RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
-    }, PrimaryCamera,
+    },
+    PrimaryCamera,
 };
 
 #[cfg(test)]
