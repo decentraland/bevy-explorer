@@ -63,16 +63,23 @@ fn update_avatar_actual_position(
     time: Res<Time>,
 ) {
     for (target, mut actual) in avatars.iter_mut() {
-        // arrive at target position by time + 0.1
-        let time_left = (target.time + 0.2 - time.elapsed_seconds()).clamp(0.0, 1.0);
-        if time_left == 0.0 {
+        // arrive at target position by time + 0.5
+        let walk_time_left = target.time + 0.5 - time.elapsed_seconds();
+        if walk_time_left <= 0.0 {
             actual.translation = target.translation;
+        } else {
+            let walk_fraction = (time.delta_seconds() / walk_time_left).min(1.0);
+            actual.translation =
+                actual.translation + (target.translation - actual.translation) * walk_fraction;
+        }
+
+        // turn a bit faster
+        let turn_time_left = target.time + 0.2 - time.elapsed_seconds();
+        if turn_time_left <= 0.0 {
             actual.rotation = target.rotation;
         } else {
-            let fraction = time.delta_seconds() / time_left;
-            actual.translation =
-                actual.translation + (target.translation - actual.translation) * fraction;
-            actual.rotation = actual.rotation.lerp(target.rotation, fraction);
+            let turn_fraction = (time.delta_seconds() / turn_time_left).min(1.0);
+            actual.rotation = actual.rotation.lerp(target.rotation, turn_fraction);
         }
     }
 }
