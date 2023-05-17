@@ -5,13 +5,14 @@
 //! - Copy the code for the `CameraControllerPlugin` and add the plugin to your App.
 //! - Attach the `CameraController` component to an entity with a `Camera3dBundle`.
 
-use bevy::{input::mouse::MouseMotion, prelude::*};
+use bevy::{input::mouse::MouseMotion, math::Vec3Swizzles, prelude::*};
 use bevy::{input::mouse::MouseWheel, window::CursorGrabMode};
 use bevy_console::ConsoleOpen;
 
 use std::f32::consts::*;
 
 use crate::{
+    avatar::movement::Velocity,
     scene_runner::{PrimaryUser, SceneSets},
     PrimaryCamera,
 };
@@ -63,8 +64,8 @@ impl Default for CameraController {
             key_roll_right: KeyCode::Y,
             mouse_key_enable_mouse: MouseButton::Right,
             keyboard_key_enable_mouse: KeyCode::M,
-            walk_speed: 5.0,
-            run_speed: 50.0,
+            walk_speed: 1.5,
+            run_speed: 6.0,
             friction: 0.5,
             pitch: 0.0,
             yaw: 0.0,
@@ -91,7 +92,7 @@ impl Plugin for CameraControllerPlugin {
 #[derive(Resource, Default)]
 pub struct CameraDistance(pub f32);
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn camera_controller(
     time: Res<Time>,
     mut windows: Query<&mut Window>,
@@ -101,13 +102,15 @@ fn camera_controller(
     key_input: Res<Input<KeyCode>>,
     mut move_toggled: Local<bool>,
     mut camera: Query<(&mut Transform, &mut CameraController), With<PrimaryCamera>>,
-    mut player: Query<&mut Transform, (With<PrimaryUser>, Without<PrimaryCamera>)>,
+    mut player: Query<(&mut Transform, &mut Velocity), (With<PrimaryUser>, Without<PrimaryCamera>)>,
     mut camera_distance: ResMut<CameraDistance>,
 ) {
     let dt = time.delta_seconds();
 
-    if let (Ok(mut player_transform), Ok((mut camera_transform, mut options))) =
-        (player.get_single_mut(), camera.get_single_mut())
+    if let (
+        Ok((mut player_transform, mut player_velocity)),
+        Ok((mut camera_transform, mut options)),
+    ) = (player.get_single_mut(), camera.get_single_mut())
     {
         if !options.initialized {
             let (yaw, pitch, roll) = camera_transform.rotation.to_euler(EulerRot::YXZ);
@@ -169,22 +172,23 @@ fn camera_controller(
                 options.velocity = Vec3::ZERO;
             }
         }
-        let forward = camera_transform.forward();
-        let right = camera_transform.right();
+
+        let ground = Vec3::X + Vec3::Z;
+        let forward = (camera_transform.forward() * ground).normalize();
+        let right = (camera_transform.right() * ground).normalize();
         if options.velocity.length() > 0.0 {
-            player_transform.translation += options.velocity.x * dt * right
-                + options.velocity.y * dt * Vec3::Y
-                + options.velocity.z * dt * forward;
-            let turn_vector =
-                (options.velocity.x * right + options.velocity.z * forward) * (Vec3::X + Vec3::Z);
-            if turn_vector.length() > 0.0 {
+            let direction_vector = options.velocity.x * right + options.velocity.z * forward;
+            player_transform.translation += direction_vector * dt;
+            if direction_vector.length() > 0.0 {
                 let target_direction = Transform::default()
-                    .looking_at(turn_vector, Vec3::Y)
+                    .looking_at(direction_vector, Vec3::Y)
                     .rotation;
                 player_transform.rotation =
                     player_transform.rotation.lerp(target_direction, dt * 10.0);
             }
         }
+
+        player_velocity.0 = options.velocity.xz().length();
 
         // Handle mouse input
         let mut mouse_delta = Vec2::ZERO;

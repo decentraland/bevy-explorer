@@ -1,4 +1,8 @@
+use std::time::Duration;
+
 use bevy::{gltf::Gltf, prelude::*, utils::HashMap};
+
+use super::movement::Velocity;
 
 #[derive(Resource, Default)]
 pub struct AvatarAnimations(pub HashMap<String, Handle<AnimationClip>>);
@@ -26,6 +30,7 @@ fn load_animations(
         *builtin_animations = Some(vec![
             asset_server.load("animations/walk.glb"),
             asset_server.load("animations/idle.glb"),
+            asset_server.load("animations/run.glb"),
         ]);
     } else {
         builtin_animations.as_mut().unwrap().retain(|h_gltf| {
@@ -44,30 +49,46 @@ fn load_animations(
 }
 
 fn animate(
-    avatars: Query<(Entity, &Transform, &AvatarAnimPlayer)>,
+    avatars: Query<(Entity, &AvatarAnimPlayer, &Velocity)>,
     mut players: Query<&mut AnimationPlayer>,
     animations: Res<AvatarAnimations>,
-    mut positions: Local<HashMap<Entity, Vec3>>,
+    mut velocities: Local<HashMap<Entity, f32>>,
+    mut playing: Local<HashMap<Entity, &str>>,
+    time: Res<Time>,
 ) {
-    let (Some(idle), Some(walk)) = (animations.0.get("Idle_Male"), animations.0.get("Walk")) else {
-        return;
-    };
+    let prior_velocities = std::mem::take(&mut *velocities);
+    let prior_playing = std::mem::take(&mut *playing);
 
-    let prior_positions = std::mem::take(&mut *positions);
-
-    for (avatar_ent, avatar_pos, animplayer_ent) in avatars.iter() {
-        let changed = prior_positions
-            .get(&avatar_ent)
-            .map_or(true, |prior| *prior != avatar_pos.translation);
-
-        if let Ok(mut player) = players.get_mut(animplayer_ent.0) {
-            if changed {
-                player.play(walk.clone()).repeat();
-            } else {
-                player.play(idle.clone()).repeat();
+    let mut play = |anim: &'static str, speed: f32, ent: Entity| {
+        if let Some(clip) = animations.0.get(anim) {
+            if let Ok(mut player) = players.get_mut(ent) {
+                if Some(&anim) != prior_playing.get(&ent) {
+                    player
+                        .play_with_transition(clip.clone(), Duration::from_millis(100))
+                        .repeat();
+                }
+                player.set_speed(speed);
+                playing.insert(ent, anim);
             }
         }
+    };
 
-        positions.insert(avatar_ent, avatar_pos.translation);
+    for (avatar_ent, animplayer_ent, velocity) in avatars.iter() {
+        let prior_velocity = prior_velocities.get(&avatar_ent).copied().unwrap_or(0.0);
+
+        let ratio = time.delta_seconds().clamp(0.0, 0.1) / 0.1;
+        let damped_velocity = velocity.0 * ratio + prior_velocity * (1.0 - ratio);
+
+        if damped_velocity > 0.1 {
+            if damped_velocity < 2.0 {
+                play("Walk", damped_velocity / 1.5, animplayer_ent.0);
+            } else {
+                play("Run", damped_velocity / 4.5, animplayer_ent.0);
+            }
+        } else {
+            play("Idle_Male", 1.0, animplayer_ent.0);
+        }
+
+        velocities.insert(avatar_ent, damped_velocity);
     }
 }

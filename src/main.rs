@@ -14,6 +14,7 @@ pub mod scene_runner;
 pub mod util;
 pub mod visuals;
 
+use avatar::movement::Velocity;
 use bevy::{
     core::FrameCount,
     core_pipeline::tonemapping::{DebandDither, Tonemapping},
@@ -221,6 +222,7 @@ fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<Asset
             ..Default::default()
         },
         PrimaryUser,
+        Velocity(0.0),
     ));
 
     // add a camera
