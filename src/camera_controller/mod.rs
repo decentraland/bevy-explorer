@@ -233,7 +233,7 @@ fn camera_controller(
         // }
 
         camera_transform.translation = player_transform.translation
-            + Vec3::Y * 2.0
+            + Vec3::Y * (1.81 + 0.2 * camera_distance.0)
             + camera_transform
                 .rotation
                 .mul_vec3(Vec3::Z * 5.0 * camera_distance.0);
