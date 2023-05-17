@@ -100,13 +100,9 @@ fn process_realm_change(
 
                         // queue a profile version message
                         let response = rfc4::Packet {
-                            message: Some(rfc4::packet::Message::ProfileResponse(
-                                rfc4::ProfileResponse {
-                                    serialized_profile: serde_json::to_string(
-                                        &current_profile.0.content,
-                                    )
-                                    .unwrap(),
-                                    base_url: current_profile.0.base_url.clone(),
+                            message: Some(rfc4::packet::Message::ProfileVersion(
+                                rfc4::AnnounceProfileVersion {
+                                    profile_version: current_profile.0.version,
                                 },
                             )),
                         };

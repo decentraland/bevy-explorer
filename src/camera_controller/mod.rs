@@ -5,12 +5,11 @@
 //! - Copy the code for the `CameraControllerPlugin` and add the plugin to your App.
 //! - Attach the `CameraController` component to an entity with a `Camera3dBundle`.
 
-use bevy::window::CursorGrabMode;
 use bevy::{input::mouse::MouseMotion, prelude::*};
+use bevy::{input::mouse::MouseWheel, window::CursorGrabMode};
 use bevy_console::ConsoleOpen;
 
 use std::f32::consts::*;
-use std::fmt;
 
 use crate::{
     scene_runner::{PrimaryUser, SceneSets},
@@ -75,32 +74,6 @@ impl Default for CameraController {
     }
 }
 
-impl fmt::Display for CameraController {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "
-Freecam Controls:
-    MOUSE\t- Move camera orientation
-    {:?}/{:?}\t- Enable mouse movement
-    {:?}{:?}\t- forward/backward
-    {:?}{:?}\t- strafe left/right
-    {:?}\t- 'run'
-    {:?}\t- up
-    {:?}\t- down",
-            self.mouse_key_enable_mouse,
-            self.keyboard_key_enable_mouse,
-            self.key_forward,
-            self.key_back,
-            self.key_left,
-            self.key_right,
-            self.key_run,
-            self.key_up,
-            self.key_down
-        )
-    }
-}
-
 pub struct CameraControllerPlugin;
 
 impl Plugin for CameraControllerPlugin {
@@ -110,19 +83,26 @@ impl Plugin for CameraControllerPlugin {
                 .in_set(SceneSets::Input)
                 .run_if(|console_open: Res<ConsoleOpen>| !console_open.open),
         );
+        app.add_system(hide_player_in_first_person);
+        app.insert_resource(CameraDistance(1.0));
     }
 }
+
+#[derive(Resource, Default)]
+pub struct CameraDistance(pub f32);
 
 #[allow(clippy::too_many_arguments)]
 fn camera_controller(
     time: Res<Time>,
     mut windows: Query<&mut Window>,
     mut mouse_events: EventReader<MouseMotion>,
+    mut wheel_events: EventReader<MouseWheel>,
     mouse_button_input: Res<Input<MouseButton>>,
     key_input: Res<Input<KeyCode>>,
     mut move_toggled: Local<bool>,
     mut camera: Query<(&mut Transform, &mut CameraController), With<PrimaryCamera>>,
     mut player: Query<&mut Transform, (With<PrimaryUser>, Without<PrimaryCamera>)>,
+    mut camera_distance: ResMut<CameraDistance>,
 ) {
     let dt = time.delta_seconds();
 
@@ -231,6 +211,14 @@ fn camera_controller(
             }
         }
 
+        if let Some(event) = wheel_events.iter().last() {
+            if event.y > 0.0 {
+                camera_distance.0 = 0f32.max((camera_distance.0 - 0.05) * 0.9);
+            } else if event.y < 0.0 {
+                camera_distance.0 = 1f32.min((camera_distance.0 / 0.9) + 0.05);
+            }
+        }
+
         // if mouse_delta != Vec2::ZERO {
         // Apply look update
         options.pitch = (options.pitch - mouse_delta.y * RADIANS_PER_DOT * options.sensitivity)
@@ -242,6 +230,21 @@ fn camera_controller(
 
         camera_transform.translation = player_transform.translation
             + Vec3::Y * 2.0
-            + camera_transform.rotation.mul_vec3(Vec3::Z * 5.0);
+            + camera_transform
+                .rotation
+                .mul_vec3(Vec3::Z * 5.0 * camera_distance.0);
+    }
+}
+
+fn hide_player_in_first_person(
+    distance: Res<CameraDistance>,
+    mut player: Query<&mut Visibility, With<PrimaryUser>>,
+) {
+    if let Ok(mut vis) = player.get_single_mut() {
+        if distance.0 < 0.1 && *vis != Visibility::Hidden {
+            *vis = Visibility::Hidden;
+        } else if distance.0 > 0.1 && *vis != Visibility::Inherited {
+            *vis = Visibility::Inherited;
+        }
     }
 }

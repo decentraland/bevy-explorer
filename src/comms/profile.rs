@@ -11,7 +11,11 @@ use crate::{
     util::AsH160,
 };
 
-use super::{global_crdt::ForeignPlayer, wallet::Wallet, NetworkMessage, Transport};
+use super::{
+    global_crdt::{process_transport_updates, ForeignPlayer},
+    wallet::Wallet,
+    NetworkMessage, Transport,
+};
 
 #[derive(Component, Serialize, Deserialize, Clone)]
 pub struct UserProfile {
@@ -29,7 +33,8 @@ impl Plugin for UserProfilePlugin {
                 request_missing_profiles,
                 process_profile_events,
                 setup_primary_profile,
-            ), // .in_set(TODO)
+            )
+                .before(process_transport_updates), // .in_set(TODO)
         );
         app.add_event::<ProfileEvent>();
         let wallet = app.world.resource::<Wallet>();
@@ -170,6 +175,8 @@ pub fn process_profile_events(
             ProfileEventType::Version(v) => {
                 if let Ok((mut player, _)) = players.get_mut(ev.sender) {
                     player.profile_version = v.profile_version;
+                } else {
+                    warn!("profile version for unknown player {:?}", ev.sender);
                 }
             }
             ProfileEventType::Response(r) => {
@@ -210,6 +217,8 @@ pub fn process_profile_events(
                             },
                         );
                     }
+                } else {
+                    warn!("profile update for unknown player {:?}", ev.sender);
                 }
             }
         }
@@ -274,7 +283,7 @@ impl Default for SerializedProfile {
             user_id: Default::default(),
             name: Default::default(),
             description: Default::default(),
-            version: Default::default(),
+            version: 1,
             eth_address: "0x0000000000000000000000000000000000000000".to_owned(),
             tutorial_step: Default::default(),
             email: Default::default(),

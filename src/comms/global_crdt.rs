@@ -113,7 +113,7 @@ pub struct ForeignPlayer {
 #[derive(Component)]
 pub struct TransportRef(Entity);
 
-fn process_transport_updates(
+pub fn process_transport_updates(
     mut commands: Commands,
     mut state: ResMut<GlobalCrdtState>,
     mut players: Query<&mut ForeignPlayer>,

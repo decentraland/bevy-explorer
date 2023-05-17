@@ -33,7 +33,7 @@ use crate::{
             transform_and_parent::process_transform_and_parent_updates, CrdtLWWStateComponent,
         },
         RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
-    },
+    }, PrimaryCamera,
 };
 
 #[cfg(test)]
@@ -114,7 +114,7 @@ fn init_test_app(entity_json: &str) -> App {
 
     // startup system to create camera and fire load event
     app.add_startup_system(move |mut commands: Commands| {
-        commands.spawn((SpatialBundle::default(), PrimaryUser));
+        commands.spawn((SpatialBundle::default(), PrimaryUser, PrimaryCamera));
     });
 
     // replace the scene loop schedule with a dummy so we can better control it
