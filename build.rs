@@ -39,5 +39,10 @@ fn main() -> Result<()> {
     }
 
     config.compile_protos(&sources, &["src/dcl_component/proto/"])?;
+
+    for source in sources {
+        println!("cargo:rerun-if-changed={source}");
+    }
+
     Ok(())
 }

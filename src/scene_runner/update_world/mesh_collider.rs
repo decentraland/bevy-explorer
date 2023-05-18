@@ -1,5 +1,3 @@
-use std::borrow::Borrow;
-
 use bevy::{
     pbr::{wireframe::Wireframe, NotShadowCaster, NotShadowReceiver},
     prelude::*,
@@ -441,7 +439,7 @@ fn update_colliders(
             continue;
         };
 
-        scene_data.set_collider(collider_id.borrow(), collider);
+        scene_data.set_collider(&collider_id, collider);
         commands.entity(ent).insert(HasCollider(collider_id));
     }
 
@@ -453,7 +451,7 @@ fn update_colliders(
             continue;
         };
 
-        scene_data.remove_collider(collider.0.borrow());
+        scene_data.remove_collider(&collider.0);
         commands.entity(ent).remove::<HasCollider>();
     }
 

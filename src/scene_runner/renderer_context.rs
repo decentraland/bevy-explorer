@@ -113,7 +113,7 @@ impl RendererSceneContext {
     }
 
     pub fn set_dead(&mut self, entity: SceneEntityId) {
-        let mut entry = self.entity_entry_mut(entity.id);
+        let entry = self.entity_entry_mut(entity.id);
         if entry.0 == entity.generation {
             entry.0 += 1;
             entry.1 = None;

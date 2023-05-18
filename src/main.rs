@@ -184,7 +184,7 @@ fn main() {
     });
 
     if final_config.graphics.log_fps {
-        app.add_plugin(FrameTimeDiagnosticsPlugin::default())
+        app.add_plugin(FrameTimeDiagnosticsPlugin)
             .add_plugin(LogDiagnosticsPlugin::default());
 
         app.add_system(update_fps);

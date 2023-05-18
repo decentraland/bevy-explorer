@@ -391,7 +391,7 @@ fn select_avatar(
     }
 
     for (ent, scene_ent, scene_avatar_shape, changed) in scene_avatar_defs.iter() {
-        let Some(mut update) = updates.get_mut(&scene_ent.id) else {
+        let Some(update) = updates.get_mut(&scene_ent.id) else {
             // this is an NPC avatar, attach selection immediately
             if changed {
                 commands.entity(ent).insert(AvatarSelection {
