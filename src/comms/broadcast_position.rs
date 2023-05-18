@@ -5,7 +5,7 @@ use crate::{
         proto_components::kernel::comms::rfc4,
         transform_and_parent::{DclQuat, DclTranslation},
     },
-    scene_runner::PrimaryCamera,
+    scene_runner::PrimaryUser,
 };
 
 use super::{NetworkMessage, Transport};
@@ -22,7 +22,7 @@ const STATIC_FREQ: f64 = 1.0;
 const DYNAMIC_FREQ: f64 = 0.1;
 
 fn broadcast_position(
-    player: Query<&GlobalTransform, With<PrimaryCamera>>,
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
     transports: Query<&Transport>,
     mut last_position: Local<(Vec3, Quat)>,
     mut last_sent: Local<f64>,

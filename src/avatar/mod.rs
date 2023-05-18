@@ -5,20 +5,24 @@ use bevy::{
     gltf::Gltf,
     math::Vec3Swizzles,
     prelude::*,
-    render::view::NoFrustumCulling,
+    render::{mesh::skinning::SkinnedMesh, view::NoFrustumCulling},
     scene::InstanceId,
     utils::{HashMap, HashSet},
 };
 use serde::{Deserialize, Serialize};
 use urn::Urn;
 
+pub mod animate;
 pub mod base_wearables;
 pub mod mask_material;
+pub mod movement;
 
 use crate::{
+    avatar::animate::AvatarAnimPlayer,
     comms::{
         global_crdt::{ForeignPlayer, GlobalCrdtState},
         profile::UserProfile,
+        wallet::Wallet,
     },
     dcl::interface::{ComponentPosition, CrdtType},
     dcl_component::{
@@ -28,24 +32,30 @@ use crate::{
                 PbAvatarAttach, PbAvatarCustomization, PbAvatarEquippedData, PbAvatarShape,
             },
         },
-        SceneComponentId,
+        SceneComponentId, SceneEntityId,
     },
     ipfs::{ActiveEntityTask, IpfsLoaderExt, IpfsModifier},
     scene_runner::{
         initialize_scene::{LiveScenes, PointerResult, ScenePointers, PARCEL_SIZE},
         update_world::AddCrdtInterfaceExt,
-        SceneEntity,
+        PrimaryUser, SceneEntity,
     },
     util::TaskExt,
 };
 
-use self::mask_material::{MaskMaterial, MaskMaterialPlugin};
+use self::{
+    animate::AvatarAnimationPlugin,
+    mask_material::{MaskMaterial, MaskMaterialPlugin},
+    movement::PlayerMovementPlugin,
+};
 
 pub struct AvatarPlugin;
 
 impl Plugin for AvatarPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(MaskMaterialPlugin);
+        app.add_plugin(PlayerMovementPlugin);
+        app.add_plugin(AvatarAnimationPlugin);
         app.init_resource::<WearablePointers>();
         app.init_resource::<WearableMetas>();
         app.add_system(load_base_wearables);
@@ -232,14 +242,20 @@ impl From<PbAvatarAttach> for AvatarAttachment {
 // set (foreign) user's default avatar shape based on profile data
 fn update_base_avatar_shape(
     mut commands: Commands,
-    root_avatar_defs: Query<(Entity, &ForeignPlayer, &UserProfile), Changed<UserProfile>>,
+    root_avatar_defs: Query<(Entity, Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
+    current_user_wallet: Res<Wallet>,
 ) {
-    for (ent, player, profile) in &root_avatar_defs {
-        debug!("updating default avatar for {}", player.scene_id);
+    for (ent, maybe_player, profile) in &root_avatar_defs {
+        let (id, address) = match maybe_player {
+            Some(player) => (player.scene_id, player.address),
+            None => (SceneEntityId::PLAYER, current_user_wallet.address()),
+        };
+
+        debug!("updating default avatar for {id}");
 
         if let Some(mut commands) = commands.get_entity(ent) {
             commands.insert(AvatarShape(PbAvatarShape {
-                id: format!("{:#x}", player.address),
+                id: format!("{:#x}", address),
                 name: Some(profile.content.name.to_owned()),
                 body_shape: Some(
                     profile
@@ -331,13 +347,16 @@ pub struct AvatarSelection {
 #[allow(clippy::type_complexity)]
 fn select_avatar(
     mut commands: Commands,
-    mut root_avatar_defs: Query<(
-        Entity,
-        &ForeignPlayer,
-        &AvatarShape,
-        Changed<AvatarShape>,
-        Option<&mut AvatarSelection>,
-    )>,
+    mut root_avatar_defs: Query<
+        (
+            Entity,
+            Option<&ForeignPlayer>,
+            &AvatarShape,
+            Changed<AvatarShape>,
+            Option<&mut AvatarSelection>,
+        ),
+        Or<(With<ForeignPlayer>, With<PrimaryUser>)>,
+    >,
     scene_avatar_defs: Query<(Entity, &SceneEntity, &AvatarShape, Changed<AvatarShape>)>,
     orphaned_avatar_selections: Query<Entity, (With<AvatarSelection>, Without<AvatarShape>)>,
     containing_scene: ContainingScene,
@@ -352,9 +371,13 @@ fn select_avatar(
     let mut updates = HashMap::default();
 
     // set up initial state
-    for (entity, player, base_shape, changed, maybe_prev_selection) in root_avatar_defs.iter() {
+    for (entity, maybe_player, base_shape, changed, maybe_prev_selection) in root_avatar_defs.iter()
+    {
+        let id = maybe_player
+            .map(|p| p.scene_id)
+            .unwrap_or(SceneEntityId::PLAYER);
         updates.insert(
-            player.scene_id,
+            id,
             AvatarUpdate {
                 update_shape: changed.then_some(base_shape.0.clone()),
                 active_scene: containing_scene.get(entity),
@@ -376,7 +399,7 @@ fn select_avatar(
                     shape: scene_avatar_shape.0.clone(),
                 });
 
-                error!("npc avatar {:?}", scene_ent);
+                debug!("npc avatar {:?}", scene_ent);
             }
 
             continue;
@@ -399,15 +422,21 @@ fn select_avatar(
     }
 
     // update avatar selection on foreign players
-    for (entity, player, base_shape, _, maybe_prev_selection) in root_avatar_defs.iter_mut() {
-        let update = updates.remove(&player.scene_id).unwrap();
+    for (entity, maybe_player, base_shape, _, maybe_prev_selection) in root_avatar_defs.iter_mut() {
+        let id = maybe_player
+            .map(|p| p.scene_id)
+            .unwrap_or(SceneEntityId::PLAYER);
+        let Some(update) = updates.remove(&id) else {
+            error!("apparently i never inserted {id}?!");
+            continue;
+        };
         let needs_update =
             update.current_source != update.prev_source || update.update_shape.is_some();
 
         if needs_update {
             debug!(
                 "updating selected avatar for {} -> {:?}",
-                player.scene_id, update.current_source
+                id, update.current_source
             );
 
             let shape = update.update_shape.unwrap_or(base_shape.0.clone());
@@ -527,7 +556,7 @@ impl WearableDefinition {
                 meta.data.representations.iter().find(|rep| rep.body_shapes.iter().any(|rep_shape| rep_shape.to_lowercase() == *body_shape))
             }
         ) else {
-            warn!("no representation for body shape");
+            warn!("no representation for body shape {body_shape}");
             return None;
         };
 
@@ -856,10 +885,6 @@ pub struct AvatarLoaded {
     skin_materials: HashSet<Handle<StandardMaterial>>,
     hair_materials: HashSet<Handle<StandardMaterial>>,
 }
-
-#[derive(Component)]
-pub struct AvatarSpawned;
-
 #[derive(Component)]
 pub struct AvatarProcessed;
 
@@ -977,7 +1002,7 @@ fn spawn_scenes(
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn process_avatar(
     mut commands: Commands,
-    query: Query<(Entity, &AvatarDefinition, &AvatarLoaded), Without<AvatarProcessed>>,
+    query: Query<(Entity, &AvatarDefinition, &AvatarLoaded, &Parent), Without<AvatarProcessed>>,
     scene_spawner: Res<SceneSpawner>,
     mut instance_ents: Query<(
         &mut Visibility,
@@ -986,10 +1011,11 @@ fn process_avatar(
         Option<&Handle<Mesh>>,
     )>,
     named_ents: Query<&Name>,
+    mut skins: Query<&mut SkinnedMesh>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut mask_materials: ResMut<Assets<MaskMaterial>>,
 ) {
-    for (avatar_ent, def, loaded_avatar) in query.iter() {
+    for (avatar_ent, def, loaded_avatar, root_player_entity) in query.iter() {
         let not_loaded = !scene_spawner.instance_is_ready(loaded_avatar.body_instance)
             || loaded_avatar
                 .wearable_instances
@@ -1005,22 +1031,31 @@ fn process_avatar(
         }
 
         let mut colored_materials = HashMap::default();
+        let mut armature_node = None;
+        let mut target_armature_entities = HashMap::default();
 
         // hide and colour the base model
         for scene_ent in scene_spawner.iter_instance_entities(loaded_avatar.body_instance) {
-            let Ok((mut vis, parent, maybe_h_mat, maybe_h_mesh)) = instance_ents.get_mut(scene_ent) else { continue };
-            let Ok(name) = named_ents.get(parent.get()) else { continue };
+            let Ok((mut vis, parent, maybe_h_mat, _maybe_h_mesh)) = instance_ents.get_mut(scene_ent) else { continue };
+
+            let Ok(name) = named_ents.get(scene_ent) else { continue };
             let name = name.to_lowercase();
 
-            debug!("name: {name}");
+            // add animation player to armature root
+            if name.to_lowercase() == "armature" && armature_node.is_none() {
+                commands
+                    .entity(scene_ent)
+                    .insert(AnimationPlayer::default());
+                // record the node with the animator
+                commands
+                    .entity(root_player_entity.get())
+                    .insert(AvatarAnimPlayer(scene_ent));
+                armature_node = Some(scene_ent);
+            }
 
-            if maybe_h_mesh.is_some() {
-                // disable frustum culling - some strange effect causes Aabb gen to fail
-                // commands.entity(scene_ent).insert(Aabb::from_min_max(
-                //     Vec3::new(-1.21, 0.0, -0.7),
-                //     Vec3::new(1.21, 2.42, 0.7),
-                // ));
-                commands.entity(scene_ent).insert(NoFrustumCulling);
+            // record bone entities
+            if name.to_lowercase().starts_with("avatar_") {
+                target_armature_entities.insert(name.to_lowercase(), scene_ent);
             }
 
             if let Some(h_mat) = maybe_h_mat {
@@ -1057,8 +1092,13 @@ fn process_avatar(
                 ("mask_mouth", def.skin_color, WearableCategory::MOUTH),
             ];
 
+            let Ok(parent_name) = named_ents.get(parent.get()) else { continue };
+            let parent_name = parent_name.to_lowercase();
+
+            debug!("parent: {parent_name}");
+
             for (suffix, color, category) in masks.into_iter() {
-                if name.ends_with(suffix) {
+                if parent_name.ends_with(suffix) {
                     *vis = Visibility::Hidden;
 
                     if let Some(WearableDefinition { texture, mask, .. }) =
@@ -1103,7 +1143,7 @@ fn process_avatar(
             ];
 
             for (hidename, category) in hiders {
-                if name.ends_with(hidename) {
+                if parent_name.ends_with(hidename) {
                     // todo construct hides better so we don't need to scan the wearables here
                     if def.hides.contains(&category)
                         || def
@@ -1117,6 +1157,16 @@ fn process_avatar(
             }
         }
 
+        let Some(armature_node) = armature_node else {
+            warn!("no armature node!");
+            continue;
+        };
+
+        if target_armature_entities.is_empty() {
+            warn!("boneless body!");
+            continue;
+        }
+
         // color the components of wearables
         for instance in &loaded_avatar.wearable_instances {
             let Some(instance) = instance else {
@@ -1124,15 +1174,34 @@ fn process_avatar(
                 continue;
             };
 
+            let mut armature_map = HashMap::default();
+
             for scene_ent in scene_spawner.iter_instance_entities(*instance) {
-                let Ok((_, _, maybe_h_mat, maybe_h_mesh)) = instance_ents.get(scene_ent) else { continue };
+                let Ok((_, parent, maybe_h_mat, maybe_h_mesh)) = instance_ents.get(scene_ent) else { continue };
+
+                let Ok(parent_name) = named_ents.get(parent.get()) else { continue };
+                let parent_name = parent_name.to_lowercase();
+
+                let Ok(name) = named_ents.get(scene_ent) else { continue };
+                let name = name.to_lowercase();
+
+                // record bone entities so we can remap them
+                if name.to_lowercase().starts_with("avatar_") {
+                    if let Some(target) = target_armature_entities.get(&name.to_lowercase()) {
+                        armature_map.insert(scene_ent, target);
+                    }
+                    commands.entity(scene_ent).despawn_recursive();
+                    continue;
+                }
+
+                // move children of the root to the body mesh
+                if parent_name.to_lowercase() == "armature" {
+                    commands.entity(scene_ent).set_parent(armature_node);
+                }
 
                 if maybe_h_mesh.is_some() {
                     // disable frustum culling - some strange effect causes Aabb gen to fail
-                    // commands.entity(scene_ent).insert(Aabb::from_min_max(
-                    //     Vec3::new(-1.21, 0.0, -0.7),
-                    //     Vec3::new(1.21, 2.42, 0.7),
-                    // ));
+                    // TODO figure out why
                     commands.entity(scene_ent).insert(NoFrustumCulling);
                 }
 
@@ -1164,6 +1233,25 @@ fn process_avatar(
                     }
                 }
             }
+
+            // remap bones
+            for scene_ent in scene_spawner.iter_instance_entities(*instance) {
+                if let Ok(mut skin) = skins.get_mut(scene_ent) {
+                    let joints =
+                        skin.joints
+                            .iter()
+                            .map(|joint| {
+                                *armature_map.get(joint).unwrap_or_else(|| {
+                            let original_name = named_ents.get(*joint);
+                            warn!("missing armature node in wearable mapping: {original_name:?}");
+                            armature_map.values().next().unwrap()
+                        })
+                            })
+                            .copied()
+                            .collect();
+                    skin.joints = joints;
+                }
+            }
         }
 
         let wearable_models = def.wearables.iter().filter(|w| w.model.is_some()).count();
@@ -1185,19 +1273,19 @@ struct AvatarColor {
     pub color: Color3,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AvatarSnapshots {
     pub face256: String,
     pub body: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AvatarEmote {
     pub slot: u32,
     pub urn: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AvatarWireFormat {
     name: Option<String>,
     #[serde(rename = "bodyShape")]

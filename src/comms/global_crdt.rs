@@ -44,6 +44,7 @@ impl Plugin for GlobalCrdtPlugin {
         });
         app.add_system(process_transport_updates);
         app.add_system(despawn_players);
+        app.add_event::<PlayerPositionEvent>();
     }
 }
 
@@ -110,15 +111,24 @@ pub struct ForeignPlayer {
     pub profile_version: u32,
 }
 
+pub struct PlayerPositionEvent {
+    pub index: u32,
+    pub player: Entity,
+    pub time: f32,
+    pub translation: DclTranslation,
+    pub rotation: DclQuat,
+}
+
 #[derive(Component)]
 pub struct TransportRef(Entity);
 
-fn process_transport_updates(
+pub fn process_transport_updates(
     mut commands: Commands,
     mut state: ResMut<GlobalCrdtState>,
     mut players: Query<&mut ForeignPlayer>,
     time: Res<Time>,
     mut profile_events: EventWriter<ProfileEvent>,
+    mut position_events: EventWriter<PlayerPositionEvent>,
 ) {
     let mut created_this_frame = HashMap::default();
 
@@ -196,15 +206,27 @@ fn process_transport_updates(
                     update.address,
                     Vec3::new(pos.position_x, pos.position_y, pos.position_z)
                 );
-                commands
-                    .entity(entity)
-                    .insert(dcl_transform.to_bevy_transform());
+                // commands
+                //     .entity(entity)
+                //     .insert(dcl_transform.to_bevy_transform());
                 state.update_crdt(
                     SceneComponentId::TRANSFORM,
                     CrdtType::LWW_ANY,
                     scene_id,
                     &dcl_transform,
                 );
+                position_events.send(PlayerPositionEvent {
+                    index: pos.index,
+                    time: time.elapsed_seconds(),
+                    player: entity,
+                    translation: DclTranslation([pos.position_x, pos.position_y, pos.position_z]),
+                    rotation: DclQuat([
+                        pos.rotation_x,
+                        pos.rotation_y,
+                        pos.rotation_z,
+                        pos.rotation_w,
+                    ]),
+                })
             }
             Message::ProfileVersion(version) => {
                 profile_events.send(ProfileEvent {

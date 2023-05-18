@@ -9,7 +9,7 @@ use bevy_atmosphere::{
     system_param::AtmosphereMut,
 };
 
-use crate::scene_runner::PrimaryCamera;
+use crate::{scene_runner::PrimaryUser, PrimaryCamera};
 
 pub struct VisualsPlugin;
 
@@ -56,6 +56,7 @@ fn setup(
                 base_color: Color::rgb(0.15, 0.2, 0.05),
                 perceptual_roughness: 1.0,
                 metallic: 0.0,
+                depth_bias: -10.0,
                 ..Default::default()
             }),
             ..Default::default()
@@ -92,7 +93,7 @@ struct Ground;
 
 fn move_ground(
     mut ground: Query<&mut Transform, With<Ground>>,
-    cam: Query<&GlobalTransform, With<PrimaryCamera>>,
+    cam: Query<&GlobalTransform, With<PrimaryUser>>,
 ) {
     let Ok(mut transform) = ground.get_single_mut() else {
         return;
@@ -102,5 +103,5 @@ fn move_ground(
         return;
     };
 
-    transform.translation = target.translation() * Vec3::new(1.0, 0.0, 1.0) + Vec3::Y * -0.1;
+    transform.translation = target.translation() * Vec3::new(1.0, 0.0, 1.0);
 }

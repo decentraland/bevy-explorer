@@ -9,7 +9,8 @@ use bevy::prelude::*;
 use crate::{
     dcl::interface::ComponentPosition,
     dcl_component::{proto_components::sdk::components::PbBillboard, SceneComponentId},
-    scene_runner::{PrimaryCamera, SceneSets},
+    scene_runner::SceneSets,
+    PrimaryCamera,
 };
 
 use super::AddCrdtInterfaceExt;
@@ -55,7 +56,7 @@ impl From<PbBillboard> for Billboard {
 
 pub(crate) fn update_billboards(
     global_transforms: Query<&GlobalTransform>,
-    mut q: Query<(&mut Transform, &GlobalTransform, &Billboard, &Parent), Without<PrimaryCamera>>,
+    mut q: Query<(&mut Transform, &GlobalTransform, &Billboard, &Parent)>,
     cam: Query<&GlobalTransform, With<PrimaryCamera>>,
 ) {
     let Ok(cam_global_transform) = cam.get_single() else {

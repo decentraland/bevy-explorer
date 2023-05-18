@@ -7,12 +7,17 @@ use crate::{
     dcl_component::proto_components::kernel::comms::rfc4::{
         self, AnnounceProfileVersion, ProfileRequest, ProfileResponse,
     },
+    scene_runner::PrimaryUser,
     util::AsH160,
 };
 
-use super::{global_crdt::ForeignPlayer, wallet::Wallet, NetworkMessage, Transport};
+use super::{
+    global_crdt::{process_transport_updates, ForeignPlayer},
+    wallet::Wallet,
+    NetworkMessage, Transport,
+};
 
-#[derive(Component, Serialize, Deserialize)]
+#[derive(Component, Serialize, Deserialize, Clone)]
 pub struct UserProfile {
     pub version: u32,
     pub content: SerializedProfile,
@@ -24,7 +29,12 @@ pub struct UserProfilePlugin;
 impl Plugin for UserProfilePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
-            (request_missing_profiles, process_profile_events), // .in_set(TODO)
+            (
+                request_missing_profiles,
+                process_profile_events,
+                setup_primary_profile,
+            )
+                .before(process_transport_updates), // .in_set(TODO)
         );
         app.add_event::<ProfileEvent>();
         let wallet = app.world.resource::<Wallet>();
@@ -38,6 +48,18 @@ impl Plugin for UserProfilePlugin {
             content: avatar,
             base_url: "https://sdk-test-scenes.decentraland.zone/content/contents/".to_owned(),
         }));
+    }
+}
+
+pub fn setup_primary_profile(
+    mut commands: Commands,
+    player: Query<(Entity, Option<&UserProfile>), With<PrimaryUser>>,
+    profile: Res<CurrentUserProfile>,
+) {
+    if let Ok((player, maybe_profile)) = player.get_single() {
+        if maybe_profile.is_none() || profile.is_changed() {
+            commands.entity(player).insert(profile.0.clone());
+        }
     }
 }
 
@@ -153,6 +175,8 @@ pub fn process_profile_events(
             ProfileEventType::Version(v) => {
                 if let Ok((mut player, _)) = players.get_mut(ev.sender) {
                     player.profile_version = v.profile_version;
+                } else {
+                    warn!("profile version for unknown player {:?}", ev.sender);
                 }
             }
             ProfileEventType::Response(r) => {
@@ -193,6 +217,8 @@ pub fn process_profile_events(
                             },
                         );
                     }
+                } else {
+                    warn!("profile update for unknown player {:?}", ev.sender);
                 }
             }
         }
@@ -201,7 +227,7 @@ pub fn process_profile_events(
     last_sent_request.retain(|_, req_time| *req_time > time.elapsed_seconds() - 10.0);
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SerializedProfile {
     #[serde(rename = "userId")]
     pub user_id: Option<String>,
@@ -257,7 +283,7 @@ impl Default for SerializedProfile {
             user_id: Default::default(),
             name: Default::default(),
             description: Default::default(),
-            version: Default::default(),
+            version: 1,
             eth_address: "0x0000000000000000000000000000000000000000".to_owned(),
             tutorial_step: Default::default(),
             email: Default::default(),

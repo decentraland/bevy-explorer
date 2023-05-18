@@ -97,13 +97,15 @@ impl CrdtContext {
     pub fn new_in_range(&mut self, range: &RangeInclusive<u16>) -> Option<SceneEntityId> {
         let mut next_new = self.last_new.wrapping_add(1);
         if !range.contains(&self.last_new) {
-            self.last_new = *range.start();
+            self.last_new = *range.end();
+            next_new = *range.start();
         }
 
         while next_new != self.last_new {
             if !self.entity_entry(next_new).1 {
                 let new_id = SceneEntityId::new(next_new, self.entity_entry(next_new).0);
                 self.init(new_id);
+                self.last_new = next_new;
                 return Some(new_id);
             }
             next_new += 1;

@@ -5,14 +5,17 @@
 //! - Copy the code for the `CameraControllerPlugin` and add the plugin to your App.
 //! - Attach the `CameraController` component to an entity with a `Camera3dBundle`.
 
-use bevy::window::CursorGrabMode;
-use bevy::{input::mouse::MouseMotion, prelude::*};
+use bevy::{input::mouse::MouseMotion, math::Vec3Swizzles, prelude::*};
+use bevy::{input::mouse::MouseWheel, window::CursorGrabMode};
 use bevy_console::ConsoleOpen;
 
 use std::f32::consts::*;
-use std::fmt;
 
-use crate::scene_runner::SceneSets;
+use crate::{
+    avatar::movement::Velocity,
+    scene_runner::{PrimaryUser, SceneSets},
+    PrimaryCamera,
+};
 
 /// Based on Valorant's default sensitivity, not entirely sure why it is exactly 1.0 / 180.0,
 /// but I'm guessing it is a misunderstanding between degrees/radians and then sticking with
@@ -61,40 +64,14 @@ impl Default for CameraController {
             key_roll_right: KeyCode::Y,
             mouse_key_enable_mouse: MouseButton::Right,
             keyboard_key_enable_mouse: KeyCode::M,
-            walk_speed: 5.0,
-            run_speed: 50.0,
+            walk_speed: 1.5,
+            run_speed: 6.0,
             friction: 0.5,
             pitch: 0.0,
             yaw: 0.0,
             roll: 0.0,
             velocity: Vec3::ZERO,
         }
-    }
-}
-
-impl fmt::Display for CameraController {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "
-Freecam Controls:
-    MOUSE\t- Move camera orientation
-    {:?}/{:?}\t- Enable mouse movement
-    {:?}{:?}\t- forward/backward
-    {:?}{:?}\t- strafe left/right
-    {:?}\t- 'run'
-    {:?}\t- up
-    {:?}\t- down",
-            self.mouse_key_enable_mouse,
-            self.keyboard_key_enable_mouse,
-            self.key_forward,
-            self.key_back,
-            self.key_left,
-            self.key_right,
-            self.key_run,
-            self.key_up,
-            self.key_down
-        )
     }
 }
 
@@ -107,23 +84,36 @@ impl Plugin for CameraControllerPlugin {
                 .in_set(SceneSets::Input)
                 .run_if(|console_open: Res<ConsoleOpen>| !console_open.open),
         );
+        app.add_system(hide_player_in_first_person);
+        app.insert_resource(CameraDistance(1.0));
     }
 }
 
+#[derive(Resource, Default)]
+pub struct CameraDistance(pub f32);
+
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn camera_controller(
     time: Res<Time>,
     mut windows: Query<&mut Window>,
     mut mouse_events: EventReader<MouseMotion>,
+    mut wheel_events: EventReader<MouseWheel>,
     mouse_button_input: Res<Input<MouseButton>>,
     key_input: Res<Input<KeyCode>>,
     mut move_toggled: Local<bool>,
-    mut query: Query<(&mut Transform, &mut CameraController), With<Camera>>,
+    mut camera: Query<(&mut Transform, &mut CameraController), With<PrimaryCamera>>,
+    mut player: Query<(&mut Transform, &mut Velocity), (With<PrimaryUser>, Without<PrimaryCamera>)>,
+    mut camera_distance: ResMut<CameraDistance>,
 ) {
     let dt = time.delta_seconds();
 
-    if let Ok((mut transform, mut options)) = query.get_single_mut() {
+    if let (
+        Ok((mut player_transform, mut player_velocity)),
+        Ok((mut camera_transform, mut options)),
+    ) = (player.get_single_mut(), camera.get_single_mut())
+    {
         if !options.initialized {
-            let (yaw, pitch, roll) = transform.rotation.to_euler(EulerRot::YXZ);
+            let (yaw, pitch, roll) = camera_transform.rotation.to_euler(EulerRot::YXZ);
             options.yaw = yaw;
             options.pitch = pitch;
             options.roll = roll;
@@ -182,11 +172,23 @@ fn camera_controller(
                 options.velocity = Vec3::ZERO;
             }
         }
-        let forward = transform.forward();
-        let right = transform.right();
-        transform.translation += options.velocity.x * dt * right
-            + options.velocity.y * dt * Vec3::Y
-            + options.velocity.z * dt * forward;
+
+        let ground = Vec3::X + Vec3::Z;
+        let forward = (camera_transform.forward() * ground).normalize();
+        let right = (camera_transform.right() * ground).normalize();
+        if options.velocity.length() > 0.0 {
+            let direction_vector = options.velocity.x * right + options.velocity.z * forward;
+            player_transform.translation += direction_vector * dt;
+            if direction_vector.length() > 0.0 {
+                let target_direction = Transform::default()
+                    .looking_at(direction_vector, Vec3::Y)
+                    .rotation;
+                player_transform.rotation =
+                    player_transform.rotation.lerp(target_direction, dt * 10.0);
+            }
+        }
+
+        player_velocity.0 = options.velocity.xz().length();
 
         // Handle mouse input
         let mut mouse_delta = Vec2::ZERO;
@@ -213,13 +215,40 @@ fn camera_controller(
             }
         }
 
+        if let Some(event) = wheel_events.iter().last() {
+            if event.y > 0.0 {
+                camera_distance.0 = 0f32.max((camera_distance.0 - 0.05) * 0.9);
+            } else if event.y < 0.0 {
+                camera_distance.0 = 1f32.min((camera_distance.0 / 0.9) + 0.05);
+            }
+        }
+
         // if mouse_delta != Vec2::ZERO {
         // Apply look update
         options.pitch = (options.pitch - mouse_delta.y * RADIANS_PER_DOT * options.sensitivity)
             .clamp(-PI / 2., PI / 2.);
         options.yaw -= mouse_delta.x * RADIANS_PER_DOT * options.sensitivity;
-        transform.rotation =
+        camera_transform.rotation =
             Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
         // }
+
+        camera_transform.translation = player_transform.translation
+            + Vec3::Y * (1.81 + 0.2 * camera_distance.0)
+            + camera_transform
+                .rotation
+                .mul_vec3(Vec3::Z * 5.0 * camera_distance.0);
+    }
+}
+
+fn hide_player_in_first_person(
+    distance: Res<CameraDistance>,
+    mut player: Query<&mut Visibility, With<PrimaryUser>>,
+) {
+    if let Ok(mut vis) = player.get_single_mut() {
+        if distance.0 < 0.1 && *vis != Visibility::Hidden {
+            *vis = Visibility::Hidden;
+        } else if distance.0 > 0.1 && *vis != Visibility::Inherited {
+            *vis = Visibility::Inherited;
+        }
     }
 }
