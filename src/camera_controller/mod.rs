@@ -92,6 +92,7 @@ impl Plugin for CameraControllerPlugin {
         );
         app.add_system(hide_player_in_first_person);
         app.add_system(update_user_position);
+        app.add_system(update_ground_height);
         app.insert_resource(CameraDistance(1.0));
     }
 }
@@ -304,22 +305,20 @@ fn update_user_position(
         *transform = target.transform;
 
         if transform.translation.y > 0.0 {
-            println!("flying");
             target.vertical_speed -= time.delta_seconds() * GRAVITY;
             target.is_grounded = false;
             transform.translation.y += target.vertical_speed * time.delta_seconds();
         } else {
             target.vertical_speed = 0f32.max(target.vertical_speed - time.delta_seconds() * GRAVITY);
             if target.vertical_speed == 0.0 {
-                println!("still grounded");
                 target.is_grounded = true;
             } else {
-                println!("grounded no more");
                 transform.translation.y = target.vertical_speed * time.delta_seconds();
                 target.is_grounded = false;
             }
         }
 
+        target.vertical_speed = target.vertical_speed.max(-5.0);
         return;
     };
 
@@ -364,4 +363,28 @@ fn update_user_position(
     //     println!("[{}] grounded -> {new_grounded}, y: {}, dy: {}", frame.0, transform.translation.y, target.vertical_speed);
     // }
     target.is_grounded = eff_movement.grounded || transform.translation.y == 0.0;
+    target.vertical_speed = target.vertical_speed.max(-5.0);
+}
+
+#[derive(Component)]
+pub struct GroundHeight(pub f32);
+
+fn update_ground_height(
+    mut q: Query<(Entity, &GlobalTransform, &mut GroundHeight)>,
+    mut scene_datas: Query<(
+        &mut RendererSceneContext,
+        &mut SceneColliderData,
+        &GlobalTransform,
+    )>,
+    containing_scene: ContainingScene,
+) {
+    for (ent, transform, mut height) in q.iter_mut() {
+        let Some((context, mut collider_data, _scene_transform)) = containing_scene.get(ent).and_then(|scene| scene_datas.get_mut(scene).ok()) else {
+            height.0 = transform.translation().y;
+            continue;
+        };
+
+        height.0 =
+            collider_data.get_groundheight(context.last_update_frame, transform.translation());
+    }
 }

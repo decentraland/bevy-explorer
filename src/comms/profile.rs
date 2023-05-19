@@ -209,13 +209,6 @@ pub fn process_profile_events(
                         *existing_profile = profile;
                     } else {
                         commands.entity(ev.sender).insert(profile);
-                        // debug turn it green
-                        commands.entity(ev.sender).insert(
-                            crate::scene_runner::update_world::material::MaterialDefinition {
-                                material: Color::rgba(0.0, 1.0, 0.0, 0.1).into(),
-                                shadow_caster: true,
-                            },
-                        );
                     }
                 } else {
                     warn!("profile update for unknown player {:?}", ev.sender);

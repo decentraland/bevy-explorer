@@ -7,7 +7,7 @@ use bevy::{
 use bevy_console::ConsoleCommand;
 use rapier3d::{
     control::{EffectiveCharacterMovement, KinematicCharacterController},
-    parry::shape::Capsule,
+    parry::shape::{Ball, Capsule},
     prelude::*,
 };
 
@@ -267,6 +267,25 @@ impl SceneColliderData {
                 toi: intersection.toi,
                 normal: Vec3::from(intersection.normal),
             })
+    }
+
+    pub fn get_groundheight(&mut self, scene_time: u32, origin: Vec3) -> f32 {
+        self.update_pipeline(scene_time);
+        let contact = self.query_state.as_ref().unwrap().cast_shape(
+            &self.dummy_rapier_structs.1,
+            &self.collider_set,
+            &(origin + Vec3::Y).into(),
+            &(-Vec3::Y).into(),
+            &Ball::new(0.35),
+            10.0,
+            true,
+            QueryFilter::default(),
+        );
+
+        contact
+            .map(|(_, toi)| toi.toi - 1.0 + 0.35)
+            .unwrap_or(10.0)
+            .min(origin.y)
     }
 
     pub fn move_character(

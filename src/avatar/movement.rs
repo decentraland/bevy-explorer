@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 use crate::{
+    camera_controller::GroundHeight,
     comms::global_crdt::{ForeignPlayer, PlayerPositionEvent},
     dcl_component::{transform_and_parent::DclTransformAndParent, SceneEntityId},
 };
@@ -65,10 +66,15 @@ fn update_avatar_target_position(
 }
 
 fn update_avatar_actual_position(
-    mut avatars: Query<(&PlayerTargetPosition, &mut Transform, &mut Velocity)>,
+    mut avatars: Query<(
+        &PlayerTargetPosition,
+        &mut Transform,
+        &mut Velocity,
+        &GroundHeight,
+    )>,
     time: Res<Time>,
 ) {
-    for (target, mut actual, mut vel) in avatars.iter_mut() {
+    for (target, mut actual, mut vel, ground_height) in avatars.iter_mut() {
         // arrive at target position by time + 0.5
         let walk_time_left = target.time + 0.5 - time.elapsed_seconds();
         if walk_time_left <= 0.0 {
@@ -79,6 +85,14 @@ fn update_avatar_actual_position(
             let delta = (target.translation - actual.translation) * walk_fraction;
             vel.0 = delta.length() / time.delta_seconds();
             actual.translation += delta;
+        }
+
+        // fall
+        if actual.translation.y > target.translation.y && ground_height.0 > -0.1 {
+            actual.translation.y = target
+                .translation
+                .y
+                .max(actual.translation.y - 5.0 * time.delta_seconds());
         }
 
         // turn a bit faster

@@ -28,7 +28,7 @@ use bevy::{
 
 use bevy_console::{ConsoleCommand, ConsoleOpen};
 use bevy_prototype_debug_lines::DebugLinesPlugin;
-use camera_controller::{CameraController, UserTargetPosition};
+use camera_controller::{CameraController, GroundHeight, UserTargetPosition};
 use comms::Transport;
 use ipfs::ChangeRealmEvent;
 use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
@@ -244,6 +244,7 @@ fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<Asset
             vertical_speed: 0.0,
             is_grounded: true,
         },
+        GroundHeight(0.0),
     ));
 
     // add a camera

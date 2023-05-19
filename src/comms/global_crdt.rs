@@ -6,6 +6,7 @@ use ethers::types::Address;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::{
+    camera_controller::GroundHeight,
     dcl::{
         crdt::{append_component, put_component},
         interface::{crdt_context::CrdtContext, CrdtStore, CrdtType},
@@ -19,7 +20,6 @@ use crate::{
         transform_and_parent::{DclQuat, DclTransformAndParent, DclTranslation},
         DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter,
     },
-    scene_runner::update_world::{material::MaterialDefinition, mesh_renderer::MeshDefinition},
 };
 
 use super::profile::{ProfileEvent, ProfileEventType};
@@ -158,26 +158,20 @@ pub fn process_transport_updates(
                 );
 
                 let new_entity = commands
-                    .spawn(ForeignPlayer {
-                        address: update.address,
-                        transport_id: update.transport_id,
-                        last_update: time.elapsed_seconds(),
-                        scene_id: next_free,
-                        profile_version: 0,
-                    })
+                    .spawn((
+                        SpatialBundle::default(),
+                        GroundHeight(0.0),
+                        ForeignPlayer {
+                            address: update.address,
+                            transport_id: update.transport_id,
+                            last_update: time.elapsed_seconds(),
+                            scene_id: next_free,
+                            profile_version: 0,
+                        },
+                    ))
                     .id();
 
                 state.lookup.insert(update.address, new_entity);
-
-                //hack in a marker for foreign avatar
-                commands.entity(new_entity).insert((
-                    SpatialBundle::default(),
-                    MeshDefinition::Sphere {},
-                    MaterialDefinition {
-                        material: Color::rgba(1.0, 0.0, 0.0, 0.1).into(),
-                        shadow_caster: true,
-                    },
-                ));
 
                 info!(
                     "creating new player: {} -> {:?} / {}",

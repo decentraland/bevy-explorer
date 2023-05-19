@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use bevy::{gltf::Gltf, prelude::*, utils::HashMap};
 
-use crate::camera_controller::UserTargetPosition;
+use crate::camera_controller::GroundHeight;
 
 use super::movement::Velocity;
 
@@ -52,16 +52,10 @@ fn load_animations(
 }
 
 fn animate(
-    avatars: Query<(
-        Entity,
-        &AvatarAnimPlayer,
-        &Velocity,
-        Option<&UserTargetPosition>,
-    )>,
+    avatars: Query<(Entity, &AvatarAnimPlayer, &Velocity, &GroundHeight)>,
     mut players: Query<&mut AnimationPlayer>,
     animations: Res<AvatarAnimations>,
     mut velocities: Local<HashMap<Entity, f32>>,
-    mut jumping: Local<bool>, // todo use ground cast
     mut playing: Local<HashMap<Entity, &str>>,
     time: Res<Time>,
 ) {
@@ -77,7 +71,7 @@ fn animate(
                         .repeat();
                 }
 
-                if anim == "Jump" && player.elapsed() >= 1.0 {
+                if anim == "Jump" && player.elapsed() >= 0.75 {
                     player.pause();
                 } else {
                     player.resume();
@@ -89,21 +83,14 @@ fn animate(
         }
     };
 
-    for (avatar_ent, animplayer_ent, velocity, maybe_utp) in avatars.iter() {
+    for (avatar_ent, animplayer_ent, velocity, ground_height) in avatars.iter() {
         let prior_velocity = prior_velocities.get(&avatar_ent).copied().unwrap_or(0.0);
         let ratio = time.delta_seconds().clamp(0.0, 0.1) / 0.1;
         let damped_velocity = velocity.0 * ratio + prior_velocity * (1.0 - ratio);
 
-        if let Some(utp) = maybe_utp {
-            if !utp.is_grounded {
-                if *jumping {
-                    play("Jump", 1.25, animplayer_ent.0);
-                    continue;
-                }
-                *jumping = true;
-            } else {
-                *jumping = false;
-            }
+        if ground_height.0 > 0.2 {
+            play("Jump", 1.25, animplayer_ent.0);
+            continue;
         }
 
         if damped_velocity > 0.1 {
