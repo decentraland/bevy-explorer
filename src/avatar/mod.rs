@@ -320,14 +320,17 @@ fn update_base_avatar_shape(
 // helper to get the scene entity containing a given world position
 #[derive(SystemParam)]
 pub struct ContainingScene<'w, 's> {
-    transforms: Query<'w, 's, &'static GlobalTransform, With<SceneEntity>>,
+    transforms: Query<'w, 's, &'static GlobalTransform>,
     pointers: Res<'w, ScenePointers>,
     live_scenes: Res<'w, LiveScenes>,
 }
 
 impl<'w, 's> ContainingScene<'w, 's> {
-    fn get(&self, ent: Entity) -> Option<Entity> {
-        let parcel = (self.transforms.get(ent).ok()?.translation().xz() / PARCEL_SIZE).as_ivec2();
+    pub fn get(&self, ent: Entity) -> Option<Entity> {
+        let parcel = (self.transforms.get(ent).ok()?.translation().xz() * Vec2::new(1.0, -1.0)
+            / PARCEL_SIZE)
+            .floor()
+            .as_ivec2();
 
         if let Some(PointerResult::Exists(hash)) = self.pointers.0.get(&parcel) {
             self.live_scenes.0.get(hash).copied()

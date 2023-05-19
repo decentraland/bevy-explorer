@@ -2,6 +2,8 @@ use std::time::Duration;
 
 use bevy::{gltf::Gltf, prelude::*, utils::HashMap};
 
+use crate::camera_controller::UserTargetPosition;
+
 use super::movement::Velocity;
 
 #[derive(Resource, Default)]
@@ -31,6 +33,7 @@ fn load_animations(
             asset_server.load("animations/walk.glb"),
             asset_server.load("animations/idle.glb"),
             asset_server.load("animations/run.glb"),
+            asset_server.load("animations/jump.glb"),
         ]);
     } else {
         builtin_animations.as_mut().unwrap().retain(|h_gltf| {
@@ -49,10 +52,16 @@ fn load_animations(
 }
 
 fn animate(
-    avatars: Query<(Entity, &AvatarAnimPlayer, &Velocity)>,
+    avatars: Query<(
+        Entity,
+        &AvatarAnimPlayer,
+        &Velocity,
+        Option<&UserTargetPosition>,
+    )>,
     mut players: Query<&mut AnimationPlayer>,
     animations: Res<AvatarAnimations>,
     mut velocities: Local<HashMap<Entity, f32>>,
+    mut jumping: Local<bool>, // todo use ground cast
     mut playing: Local<HashMap<Entity, &str>>,
     time: Res<Time>,
 ) {
@@ -67,17 +76,35 @@ fn animate(
                         .play_with_transition(clip.clone(), Duration::from_millis(100))
                         .repeat();
                 }
+
+                if anim == "Jump" && player.elapsed() >= 1.0 {
+                    player.pause();
+                } else {
+                    player.resume();
+                }
+
                 player.set_speed(speed);
                 playing.insert(ent, anim);
             }
         }
     };
 
-    for (avatar_ent, animplayer_ent, velocity) in avatars.iter() {
+    for (avatar_ent, animplayer_ent, velocity, maybe_utp) in avatars.iter() {
         let prior_velocity = prior_velocities.get(&avatar_ent).copied().unwrap_or(0.0);
-
         let ratio = time.delta_seconds().clamp(0.0, 0.1) / 0.1;
         let damped_velocity = velocity.0 * ratio + prior_velocity * (1.0 - ratio);
+
+        if let Some(utp) = maybe_utp {
+            if !utp.is_grounded {
+                if *jumping {
+                    play("Jump", 1.25, animplayer_ent.0);
+                    continue;
+                }
+                *jumping = true;
+            } else {
+                *jumping = false;
+            }
+        }
 
         if damped_velocity > 0.1 {
             if damped_velocity < 2.0 {

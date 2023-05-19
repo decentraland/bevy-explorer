@@ -14,6 +14,8 @@ pub mod scene_runner;
 pub mod util;
 pub mod visuals;
 
+use std::f32::consts::PI;
+
 use avatar::movement::Velocity;
 use bevy::{
     core::FrameCount,
@@ -26,9 +28,10 @@ use bevy::{
 
 use bevy_console::{ConsoleCommand, ConsoleOpen};
 use bevy_prototype_debug_lines::DebugLinesPlugin;
-use camera_controller::CameraController;
+use camera_controller::{CameraController, UserTargetPosition};
 use comms::Transport;
 use ipfs::ChangeRealmEvent;
+use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 use scene_runner::{
     initialize_scene::{SceneLoadDistance, SceneLoading},
     renderer_context::RendererSceneContext,
@@ -223,6 +226,24 @@ fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<Asset
         },
         PrimaryUser,
         Velocity(0.0),
+        UserTargetPosition {
+            transform: Transform::from_translation(Vec3::new(16.0 * 77.5, 0.0, 16.0 * 7.5)),
+            controller: KinematicCharacterController {
+                offset: CharacterLength::Absolute(0.01),
+                slide: true,
+                autostep: Some(CharacterAutostep {
+                    max_height: CharacterLength::Absolute(0.5),
+                    min_width: CharacterLength::Absolute(0.25),
+                    include_dynamic_bodies: true,
+                }),
+                max_slope_climb_angle: PI * 4.0,
+                min_slope_slide_angle: PI * 5.0 / 4.0,
+                snap_to_ground: Some(CharacterLength::Absolute(0.1)),
+                ..Default::default()
+            },
+            vertical_speed: 0.0,
+            is_grounded: true,
+        },
     ));
 
     // add a camera

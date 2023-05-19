@@ -5,7 +5,11 @@ use bevy::{
     utils::HashMap,
 };
 use bevy_console::ConsoleCommand;
-use rapier3d::prelude::*;
+use rapier3d::{
+    control::{EffectiveCharacterMovement, KinematicCharacterController},
+    parry::shape::Capsule,
+    prelude::*,
+};
 
 use crate::{
     console::DoAddConsoleCommand,
@@ -263,6 +267,30 @@ impl SceneColliderData {
                 toi: intersection.toi,
                 normal: Vec3::from(intersection.normal),
             })
+    }
+
+    pub fn move_character(
+        &mut self,
+        scene_time: u32,
+        origin: Vec3,
+        target: Vec3,
+        character: &KinematicCharacterController,
+    ) -> EffectiveCharacterMovement {
+        self.update_pipeline(scene_time);
+        character.move_shape(
+            0.00,
+            &self.dummy_rapier_structs.1,
+            &self.collider_set,
+            self.query_state.as_ref().unwrap(),
+            &Capsule::new_y(0.65, 0.35),
+            &Isometry {
+                rotation: Default::default(),
+                translation: (origin + Vec3::Y * 1.0).into(),
+            },
+            (target - origin).into(),
+            QueryFilter::default(),
+            |_| {},
+        )
     }
 
     pub fn cast_ray_all(

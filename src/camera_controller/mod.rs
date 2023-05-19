@@ -5,15 +5,19 @@
 //! - Copy the code for the `CameraControllerPlugin` and add the plugin to your App.
 //! - Attach the `CameraController` component to an entity with a `Camera3dBundle`.
 
-use bevy::{input::mouse::MouseMotion, math::Vec3Swizzles, prelude::*};
+use bevy::{core::FrameCount, input::mouse::MouseMotion, math::Vec3Swizzles, prelude::*};
 use bevy::{input::mouse::MouseWheel, window::CursorGrabMode};
 use bevy_console::ConsoleOpen;
+use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 
 use std::f32::consts::*;
 
 use crate::{
-    avatar::movement::Velocity,
-    scene_runner::{PrimaryUser, SceneSets},
+    avatar::{movement::Velocity, ContainingScene},
+    scene_runner::{
+        renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
+        PrimaryUser, SceneSets,
+    },
     PrimaryCamera,
 };
 
@@ -33,6 +37,7 @@ pub struct CameraController {
     pub key_right: KeyCode,
     pub key_up: KeyCode,
     pub key_down: KeyCode,
+    pub key_jump: KeyCode,
     pub key_run: KeyCode,
     pub key_roll_left: KeyCode,
     pub key_roll_right: KeyCode,
@@ -62,6 +67,7 @@ impl Default for CameraController {
             key_run: KeyCode::LShift,
             key_roll_left: KeyCode::T,
             key_roll_right: KeyCode::Y,
+            key_jump: KeyCode::Space,
             mouse_key_enable_mouse: MouseButton::Right,
             keyboard_key_enable_mouse: KeyCode::M,
             walk_speed: 1.5,
@@ -85,12 +91,21 @@ impl Plugin for CameraControllerPlugin {
                 .run_if(|console_open: Res<ConsoleOpen>| !console_open.open),
         );
         app.add_system(hide_player_in_first_person);
+        app.add_system(update_user_position);
         app.insert_resource(CameraDistance(1.0));
     }
 }
 
 #[derive(Resource, Default)]
 pub struct CameraDistance(pub f32);
+
+#[derive(Component)]
+pub struct UserTargetPosition {
+    pub transform: Transform,
+    pub controller: KinematicCharacterController,
+    pub vertical_speed: f32,
+    pub is_grounded: bool,
+}
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn camera_controller(
@@ -102,13 +117,16 @@ fn camera_controller(
     key_input: Res<Input<KeyCode>>,
     mut move_toggled: Local<bool>,
     mut camera: Query<(&mut Transform, &mut CameraController), With<PrimaryCamera>>,
-    mut player: Query<(&mut Transform, &mut Velocity), (With<PrimaryUser>, Without<PrimaryCamera>)>,
+    mut player: Query<
+        (&Transform, &mut UserTargetPosition, &mut Velocity),
+        (With<PrimaryUser>, Without<PrimaryCamera>),
+    >,
     mut camera_distance: ResMut<CameraDistance>,
 ) {
     let dt = time.delta_seconds();
 
     if let (
-        Ok((mut player_transform, mut player_velocity)),
+        Ok((starting_transform, mut target, mut player_velocity)),
         Ok((mut camera_transform, mut options)),
     ) = (player.get_single_mut(), camera.get_single_mut())
     {
@@ -124,6 +142,11 @@ fn camera_controller(
         }
 
         // Handle key input
+        if key_input.pressed(options.key_jump) && target.is_grounded && target.vertical_speed <= 0.0
+        {
+            target.vertical_speed = 7.0;
+        }
+
         let mut axis_input = Vec3::ZERO;
         if key_input.pressed(options.key_forward) {
             axis_input.z += 1.0;
@@ -176,16 +199,13 @@ fn camera_controller(
         let ground = Vec3::X + Vec3::Z;
         let forward = (camera_transform.forward() * ground).normalize();
         let right = (camera_transform.right() * ground).normalize();
-        if options.velocity.length() > 0.0 {
-            let direction_vector = options.velocity.x * right + options.velocity.z * forward;
-            player_transform.translation += direction_vector * dt;
-            if direction_vector.length() > 0.0 {
-                let target_direction = Transform::default()
-                    .looking_at(direction_vector, Vec3::Y)
-                    .rotation;
-                player_transform.rotation =
-                    player_transform.rotation.lerp(target_direction, dt * 10.0);
-            }
+        let direction_vector = options.velocity.x * right + options.velocity.z * forward;
+        target.transform.translation = starting_transform.translation + direction_vector * dt;
+        if direction_vector.length() > 0.0 {
+            let target_direction = Transform::default()
+                .looking_at(direction_vector, Vec3::Y)
+                .rotation;
+            target.transform.rotation = target.transform.rotation.lerp(target_direction, dt * 10.0);
         }
 
         player_velocity.0 = options.velocity.xz().length();
@@ -223,16 +243,14 @@ fn camera_controller(
             }
         }
 
-        // if mouse_delta != Vec2::ZERO {
         // Apply look update
         options.pitch = (options.pitch - mouse_delta.y * RADIANS_PER_DOT * options.sensitivity)
             .clamp(-PI / 2., PI / 2.);
         options.yaw -= mouse_delta.x * RADIANS_PER_DOT * options.sensitivity;
         camera_transform.rotation =
             Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
-        // }
 
-        camera_transform.translation = player_transform.translation
+        camera_transform.translation = starting_transform.translation
             + Vec3::Y * (1.81 + 0.2 * camera_distance.0)
             + camera_transform
                 .rotation
@@ -251,4 +269,99 @@ fn hide_player_in_first_person(
             *vis = Visibility::Inherited;
         }
     }
+}
+
+pub const GRAVITY: f32 = 19.8;
+
+fn update_user_position(
+    mut player: Query<(Entity, &mut Transform, &mut UserTargetPosition)>,
+    mut scene_datas: Query<(
+        &mut RendererSceneContext,
+        &mut SceneColliderData,
+        &GlobalTransform,
+    )>,
+    containing_scene: ContainingScene,
+    time: Res<Time>,
+    _frame: Res<FrameCount>,
+) {
+    let Ok((user_ent, mut transform, mut target)) = player.get_single_mut() else {
+        return;
+    };
+
+    // unset autostep when jumping
+    if target.vertical_speed > 0.0 {
+        target.controller.autostep = None;
+    } else {
+        target.controller.autostep = Some(CharacterAutostep {
+            max_height: CharacterLength::Absolute(0.5),
+            min_width: CharacterLength::Absolute(0.25),
+            include_dynamic_bodies: true,
+        });
+    }
+
+    let Some((context, mut collider_data, _scene_transform)) = containing_scene.get(user_ent).and_then(|scene| scene_datas.get_mut(scene).ok()) else {
+        // no scene, just update
+        *transform = target.transform;
+
+        if transform.translation.y > 0.0 {
+            println!("flying");
+            target.vertical_speed -= time.delta_seconds() * GRAVITY;
+            target.is_grounded = false;
+            transform.translation.y += target.vertical_speed * time.delta_seconds();
+        } else {
+            target.vertical_speed = 0f32.max(target.vertical_speed - time.delta_seconds() * GRAVITY);
+            if target.vertical_speed == 0.0 {
+                println!("still grounded");
+                target.is_grounded = true;
+            } else {
+                println!("grounded no more");
+                transform.translation.y = target.vertical_speed * time.delta_seconds();
+                target.is_grounded = false;
+            }
+        }
+
+        return;
+    };
+
+    let mut eff_movement = collider_data.move_character(
+        context.last_update_frame,
+        transform.translation,
+        target.transform.translation + Vec3::Y * target.vertical_speed * time.delta_seconds(),
+        &target.controller,
+    );
+    let eff_translation = Vec3::from(eff_movement.translation);
+    let eff_xz = eff_translation.xz();
+    let target_xz = (target.transform.translation - transform.translation).xz();
+    if target_xz.length() > 0.0
+        && !eff_movement.grounded
+        && eff_xz.length() / target_xz.length() < 0.5
+    {
+        // try again just falling - to avoid sticking to walls when running/jumping at them
+        eff_movement = collider_data.move_character(
+            context.last_update_frame,
+            transform.translation,
+            transform.translation + Vec3::Y * target.vertical_speed * time.delta_seconds(),
+            &target.controller,
+        );
+        eff_movement.translation.x = eff_xz.x;
+        eff_movement.translation.z = eff_xz.y;
+    }
+
+    transform.translation += Vec3::from(eff_movement.translation);
+    transform.translation.y = transform.translation.y.max(0.0);
+    transform.rotation = target.transform.rotation;
+
+    if eff_movement.grounded || transform.translation.y == 0.0 {
+        target.vertical_speed = target.vertical_speed.max(0.0);
+    } else {
+        target.vertical_speed = (eff_movement.translation.y / time.delta_seconds()
+            - time.delta_seconds() * GRAVITY)
+            .min(target.vertical_speed - time.delta_seconds() * GRAVITY);
+    }
+
+    // let new_grounded = eff_movement.grounded || transform.translation.y == 0.0;
+    // if new_grounded != target.is_grounded {
+    //     println!("[{}] grounded -> {new_grounded}, y: {}, dy: {}", frame.0, transform.translation.y, target.vertical_speed);
+    // }
+    target.is_grounded = eff_movement.grounded || transform.translation.y == 0.0;
 }
