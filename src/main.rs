@@ -3,20 +3,17 @@
 // - budget -> deadline is just last end + frame time
 
 pub mod avatar;
-mod camera_controller;
 pub mod comms;
 pub mod console;
 pub mod dcl;
 pub mod dcl_component;
-pub mod input_handler;
 pub mod ipfs;
 pub mod scene_runner;
+pub mod user_input;
 pub mod util;
 pub mod visuals;
 
-use std::f32::consts::PI;
-
-use avatar::movement::Velocity;
+use avatar::AvatarDynamicState;
 use bevy::{
     core::FrameCount,
     core_pipeline::tonemapping::{DebandDither, Tonemapping},
@@ -28,24 +25,23 @@ use bevy::{
 
 use bevy_console::{ConsoleCommand, ConsoleOpen};
 use bevy_prototype_debug_lines::DebugLinesPlugin;
-use camera_controller::{CameraController, GroundHeight, UserTargetPosition};
 use comms::Transport;
 use ipfs::ChangeRealmEvent;
-use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 use scene_runner::{
     initialize_scene::{SceneLoadDistance, SceneLoading},
     renderer_context::RendererSceneContext,
     PrimaryUser, SceneRunnerPlugin,
 };
 use serde::{Deserialize, Serialize};
+use user_input::camera::PrimaryCamera;
 
 use crate::{
     avatar::AvatarPlugin,
-    camera_controller::CameraControllerPlugin,
     comms::{wallet::WalletPlugin, CommsPlugin},
     console::{ConsolePlugin, DoAddConsoleCommand},
     ipfs::IpfsIoPlugin,
     scene_runner::SceneSets,
+    user_input::UserInputPlugin,
     visuals::VisualsPlugin,
 };
 
@@ -92,9 +88,6 @@ impl Default for AppConfig {
         }
     }
 }
-
-#[derive(Component)]
-pub struct PrimaryCamera;
 
 fn main() {
     // warnings before log init must be stored and replayed later
@@ -174,7 +167,7 @@ fn main() {
     )
     .add_plugin(DebugLinesPlugin::with_depth_test(true))
     .add_plugin(SceneRunnerPlugin) // script engine plugin
-    .add_plugin(CameraControllerPlugin)
+    .add_plugin(UserInputPlugin)
     .add_plugin(ConsolePlugin)
     .add_plugin(VisualsPlugin)
     .add_plugin(WalletPlugin)
@@ -224,27 +217,8 @@ fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<Asset
             transform: Transform::from_translation(Vec3::new(16.0 * 77.5, 0.0, 16.0 * 7.5)),
             ..Default::default()
         },
-        PrimaryUser,
-        Velocity(0.0),
-        UserTargetPosition {
-            transform: Transform::from_translation(Vec3::new(16.0 * 77.5, 0.0, 16.0 * 7.5)),
-            controller: KinematicCharacterController {
-                offset: CharacterLength::Absolute(0.01),
-                slide: true,
-                autostep: Some(CharacterAutostep {
-                    max_height: CharacterLength::Absolute(0.5),
-                    min_width: CharacterLength::Absolute(0.25),
-                    include_dynamic_bodies: true,
-                }),
-                max_slope_climb_angle: PI * 4.0,
-                min_slope_slide_angle: PI * 5.0 / 4.0,
-                snap_to_ground: Some(CharacterLength::Absolute(0.1)),
-                ..Default::default()
-            },
-            vertical_speed: 0.0,
-            is_grounded: true,
-        },
-        GroundHeight(0.0),
+        PrimaryUser::default(),
+        AvatarDynamicState::default(),
     ));
 
     // add a camera
@@ -267,8 +241,7 @@ fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<Asset
             },
             ..Default::default()
         },
-        PrimaryCamera,
-        CameraController::default(),
+        PrimaryCamera::default(),
     ));
 
     // add a directional light so it looks nicer

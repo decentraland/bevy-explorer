@@ -1,10 +1,8 @@
 use std::time::Duration;
 
-use bevy::{gltf::Gltf, prelude::*, utils::HashMap};
+use bevy::{gltf::Gltf, math::Vec3Swizzles, prelude::*, utils::HashMap};
 
-use crate::camera_controller::GroundHeight;
-
-use super::movement::Velocity;
+use super::AvatarDynamicState;
 
 #[derive(Resource, Default)]
 pub struct AvatarAnimations(pub HashMap<String, Handle<AnimationClip>>);
@@ -51,21 +49,24 @@ fn load_animations(
     }
 }
 
+// TODO this function is a POS
 fn animate(
-    avatars: Query<(Entity, &AvatarAnimPlayer, &Velocity, &GroundHeight)>,
+    avatars: Query<(Entity, &AvatarAnimPlayer, &AvatarDynamicState)>,
     mut players: Query<&mut AnimationPlayer>,
     animations: Res<AvatarAnimations>,
-    mut velocities: Local<HashMap<Entity, f32>>,
+    mut velocities: Local<HashMap<Entity, Vec3>>,
     mut playing: Local<HashMap<Entity, &str>>,
     time: Res<Time>,
 ) {
     let prior_velocities = std::mem::take(&mut *velocities);
     let prior_playing = std::mem::take(&mut *playing);
 
-    let mut play = |anim: &'static str, speed: f32, ent: Entity| {
+    let mut play = |anim: &'static str, speed: f32, ent: Entity, restart: bool| {
         if let Some(clip) = animations.0.get(anim) {
             if let Ok(mut player) = players.get_mut(ent) {
-                if Some(&anim) != prior_playing.get(&ent) {
+                if restart && player.elapsed() == 0.75 {
+                    player.start(clip.clone()).repeat();
+                } else if Some(&anim) != prior_playing.get(&ent) || restart {
                     player
                         .play_with_transition(clip.clone(), Duration::from_millis(100))
                         .repeat();
@@ -83,24 +84,33 @@ fn animate(
         }
     };
 
-    for (avatar_ent, animplayer_ent, velocity, ground_height) in avatars.iter() {
-        let prior_velocity = prior_velocities.get(&avatar_ent).copied().unwrap_or(0.0);
+    for (avatar_ent, animplayer_ent, dynamic_state) in avatars.iter() {
+        let prior_velocity = prior_velocities
+            .get(&avatar_ent)
+            .copied()
+            .unwrap_or(Vec3::ZERO);
         let ratio = time.delta_seconds().clamp(0.0, 0.1) / 0.1;
-        let damped_velocity = velocity.0 * ratio + prior_velocity * (1.0 - ratio);
+        let damped_velocity = dynamic_state.velocity * ratio + prior_velocity * (1.0 - ratio);
 
-        if ground_height.0 > 0.2 {
-            play("Jump", 1.25, animplayer_ent.0);
+        if dynamic_state.ground_height > 0.2 {
+            play(
+                "Jump",
+                1.25,
+                animplayer_ent.0,
+                dynamic_state.velocity.y > 0.0,
+            );
             continue;
         }
 
-        if damped_velocity > 0.1 {
-            if damped_velocity < 2.0 {
-                play("Walk", damped_velocity / 1.5, animplayer_ent.0);
+        let damped_velocity_len = damped_velocity.xz().length();
+        if damped_velocity_len > 0.1 {
+            if damped_velocity_len < 2.0 {
+                play("Walk", damped_velocity_len / 1.5, animplayer_ent.0, false);
             } else {
-                play("Run", damped_velocity / 4.5, animplayer_ent.0);
+                play("Run", damped_velocity_len / 4.5, animplayer_ent.0, false);
             }
         } else {
-            play("Idle_Male", 1.0, animplayer_ent.0);
+            play("Idle_Male", 1.0, animplayer_ent.0, false);
         }
 
         velocities.insert(avatar_ent, damped_velocity);

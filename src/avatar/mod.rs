@@ -14,8 +14,8 @@ use urn::Urn;
 
 pub mod animate;
 pub mod base_wearables;
+pub mod foreign_dynamics;
 pub mod mask_material;
-pub mod movement;
 
 use crate::{
     avatar::animate::AvatarAnimPlayer,
@@ -45,8 +45,8 @@ use crate::{
 
 use self::{
     animate::AvatarAnimationPlugin,
+    foreign_dynamics::PlayerMovementPlugin,
     mask_material::{MaskMaterial, MaskMaterialPlugin},
-    movement::PlayerMovementPlugin,
 };
 
 pub struct AvatarPlugin;
@@ -75,6 +75,12 @@ impl Plugin for AvatarPlugin {
             ComponentPosition::Any,
         );
     }
+}
+
+#[derive(Component, Default)]
+pub struct AvatarDynamicState {
+    pub velocity: Vec3,
+    pub ground_height: f32,
 }
 
 #[derive(Debug)]

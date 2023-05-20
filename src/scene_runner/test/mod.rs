@@ -34,6 +34,7 @@ use crate::{
         },
         RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
     },
+    user_input::InputMap,
     PrimaryCamera,
 };
 
@@ -102,6 +103,7 @@ fn init_test_app(entity_json: &str) -> App {
     app.add_asset::<Shader>();
     app.add_plugin(MaterialPlugin::<StandardMaterial>::default());
     app.add_plugin(SceneRunnerPlugin);
+    app.init_resource::<InputMap>();
 
     let ipfs = app.world.resource::<AssetServer>().ipfs();
     let urn = format!("urn:decentraland:entity:{entity_json}");
@@ -115,7 +117,11 @@ fn init_test_app(entity_json: &str) -> App {
 
     // startup system to create camera and fire load event
     app.add_startup_system(move |mut commands: Commands| {
-        commands.spawn((SpatialBundle::default(), PrimaryUser, PrimaryCamera));
+        commands.spawn((
+            SpatialBundle::default(),
+            PrimaryUser::default(),
+            PrimaryCamera::default(),
+        ));
     });
 
     // replace the scene loop schedule with a dummy so we can better control it

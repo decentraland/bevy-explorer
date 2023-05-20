@@ -6,7 +6,6 @@ use ethers::types::Address;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::{
-    camera_controller::GroundHeight,
     dcl::{
         crdt::{append_component, put_component},
         interface::{crdt_context::CrdtContext, CrdtStore, CrdtType},
@@ -160,7 +159,6 @@ pub fn process_transport_updates(
                 let new_entity = commands
                     .spawn((
                         SpatialBundle::default(),
-                        GroundHeight(0.0),
                         ForeignPlayer {
                             address: update.address,
                             transport_id: update.transport_id,

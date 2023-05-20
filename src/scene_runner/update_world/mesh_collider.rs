@@ -274,7 +274,7 @@ impl SceneColliderData {
         let contact = self.query_state.as_ref().unwrap().cast_shape(
             &self.dummy_rapier_structs.1,
             &self.collider_set,
-            &(origin + Vec3::Y).into(),
+            &(origin + Vec3::Y * 0.5).into(),
             &(-Vec3::Y).into(),
             &Ball::new(0.35),
             10.0,
@@ -283,7 +283,7 @@ impl SceneColliderData {
         );
 
         contact
-            .map(|(_, toi)| toi.toi - 1.0 + 0.35)
+            .map(|(_, toi)| toi.toi - 0.5 + 0.35)
             .unwrap_or(10.0)
             .min(origin.y)
     }
@@ -292,7 +292,7 @@ impl SceneColliderData {
         &mut self,
         scene_time: u32,
         origin: Vec3,
-        target: Vec3,
+        direction: Vec3,
         character: &KinematicCharacterController,
     ) -> EffectiveCharacterMovement {
         self.update_pipeline(scene_time);
@@ -306,7 +306,7 @@ impl SceneColliderData {
                 rotation: Default::default(),
                 translation: (origin + Vec3::Y * 1.0).into(),
             },
-            (target - origin).into(),
+            direction.into(),
             QueryFilter::default(),
             |_| {},
         )

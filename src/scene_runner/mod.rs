@@ -19,7 +19,7 @@ use crate::{
         SceneEntityId,
     },
     ipfs::SceneIpfsLocation,
-    PrimaryCamera,
+    user_input::camera::PrimaryCamera,
 };
 
 use self::{
@@ -302,7 +302,21 @@ fn update_scene_priority(
 const MAX_CONCURRENT_SCENES: usize = 8;
 
 #[derive(Component)]
-pub struct PrimaryUser;
+pub struct PrimaryUser {
+    pub walk_speed: f32,
+    pub run_speed: f32,
+    pub friction: f32,
+}
+
+impl Default for PrimaryUser {
+    fn default() -> Self {
+        Self {
+            walk_speed: 1.5,
+            run_speed: 6.0,
+            friction: 0.5,
+        }
+    }
+}
 
 fn send_scene_updates(
     mut scenes: Query<(

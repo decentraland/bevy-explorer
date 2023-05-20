@@ -1,4 +1,4 @@
-use bevy::{core::FrameCount, ecs::system::SystemParam, prelude::*, utils::HashMap};
+use bevy::{core::FrameCount, prelude::*};
 
 use crate::{
     dcl::interface::CrdtType,
@@ -13,14 +13,13 @@ use crate::{
         update_world::{mesh_collider::SceneColliderData, pointer_events::PointerEvents},
         PrimaryUser, RendererSceneContext, SceneEntity, SceneSets,
     },
-    PrimaryCamera,
+    user_input::{camera::PrimaryCamera, InputManager},
 };
 
 pub struct PointerResultPlugin;
 
 impl Plugin for PointerResultPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<InputMap>();
         app.init_resource::<PointerTarget>();
         app.add_systems(
             (update_pointer_target, send_hover_events, send_action_events)
@@ -28,104 +27,6 @@ impl Plugin for PointerResultPlugin {
                 .in_set(SceneSets::Input),
         );
     }
-}
-
-// TODO move me somewhere sensible
-#[derive(Resource)]
-pub struct InputMap {
-    inputs: HashMap<InputAction, InputItem>,
-}
-
-impl Default for InputMap {
-    fn default() -> Self {
-        Self {
-            inputs: HashMap::from_iter(
-                [
-                    (InputAction::IaPointer, InputItem::Mouse(MouseButton::Left)),
-                    (InputAction::IaPrimary, InputItem::Key(KeyCode::E)),
-                    (InputAction::IaSecondary, InputItem::Key(KeyCode::F)),
-                    // (InputAction::IaAny, InputItem::Key(KeyCode::E)),
-                    // (InputAction::IaForward, InputItem::Key(KeyCode::E)),
-                    // (InputAction::IaBackward, InputItem::Key(KeyCode::E)),
-                    // (InputAction::IaRight, InputItem::Key(KeyCode::E)),
-                    // (InputAction::IaLeft, InputItem::Key(KeyCode::E)),
-                    // (InputAction::IaJump, InputItem::Key(KeyCode::E)),
-                    // (InputAction::IaWalk, InputItem::Key(KeyCode::E)),
-                    // (InputAction::IaAction3, InputItem::Key(KeyCode::E)),
-                    // (InputAction::IaAction4, InputItem::Key(KeyCode::E)),
-                    // (InputAction::IaAction5, InputItem::Key(KeyCode::E)),
-                    // (InputAction::IaAction6, InputItem::Key(KeyCode::E)),
-                ]
-                .into_iter(),
-            ),
-        }
-    }
-}
-
-#[derive(SystemParam)]
-pub struct InputManager<'w> {
-    map: Res<'w, InputMap>,
-    mouse_input: Res<'w, Input<MouseButton>>,
-    key_input: Res<'w, Input<KeyCode>>,
-}
-
-impl<'w> InputManager<'w> {
-    pub fn just_down(&self, action: InputAction) -> bool {
-        self.map
-            .inputs
-            .get(&action)
-            .map_or(false, |item| match item {
-                InputItem::Key(k) => self.key_input.just_pressed(*k),
-                InputItem::Mouse(mb) => self.mouse_input.just_pressed(*mb),
-            })
-    }
-
-    pub fn just_up(&self, action: InputAction) -> bool {
-        self.map
-            .inputs
-            .get(&action)
-            .map_or(false, |item| match item {
-                InputItem::Key(k) => self.key_input.just_released(*k),
-                InputItem::Mouse(mb) => self.mouse_input.just_released(*mb),
-            })
-    }
-
-    pub fn is_down(&self, action: InputAction) -> bool {
-        self.map
-            .inputs
-            .get(&action)
-            .map_or(false, |item| match item {
-                InputItem::Key(k) => self.key_input.pressed(*k),
-                InputItem::Mouse(mb) => self.mouse_input.pressed(*mb),
-            })
-    }
-
-    pub fn iter_just_down(&self) -> impl Iterator<Item = &InputAction> {
-        self.map
-            .inputs
-            .iter()
-            .filter(|(_, button)| match button {
-                InputItem::Key(k) => self.key_input.just_pressed(*k),
-                InputItem::Mouse(m) => self.mouse_input.just_pressed(*m),
-            })
-            .map(|(action, _)| action)
-    }
-
-    pub fn iter_just_up(&self) -> impl Iterator<Item = &InputAction> {
-        self.map
-            .inputs
-            .iter()
-            .filter(|(_, button)| match button {
-                InputItem::Key(k) => self.key_input.just_released(*k),
-                InputItem::Mouse(m) => self.mouse_input.just_released(*m),
-            })
-            .map(|(action, _)| action)
-    }
-}
-
-pub enum InputItem {
-    Key(KeyCode),
-    Mouse(MouseButton),
 }
 
 #[derive(Default, Debug, Resource, Clone, PartialEq, Eq)]

@@ -1,16 +1,26 @@
 use bevy::prelude::*;
 
 use crate::{
-    camera_controller::GroundHeight,
     comms::global_crdt::{ForeignPlayer, PlayerPositionEvent},
     dcl_component::{transform_and_parent::DclTransformAndParent, SceneEntityId},
+    scene_runner::{
+        renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
+    },
 };
+
+use super::{AvatarDynamicState, ContainingScene};
 
 pub struct PlayerMovementPlugin;
 
 impl Plugin for PlayerMovementPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems((update_avatar_target_position, update_avatar_actual_position).chain());
+        app.add_systems(
+            (
+                update_foreign_user_target_position,
+                update_foreign_user_actual_position,
+            )
+                .chain(),
+        );
     }
 }
 
@@ -22,10 +32,7 @@ struct PlayerTargetPosition {
     index: u32,
 }
 
-#[derive(Component)]
-pub struct Velocity(pub f32);
-
-fn update_avatar_target_position(
+fn update_foreign_user_target_position(
     mut commands: Commands,
     mut move_events: EventReader<PlayerPositionEvent>,
     mut players: Query<(&ForeignPlayer, Option<&mut PlayerTargetPosition>)>,
@@ -58,41 +65,39 @@ fn update_avatar_target_position(
                         rotation: bevy_trans.rotation,
                         index: ev.index,
                     },
-                    Velocity(0.0),
+                    AvatarDynamicState::default(),
                 ));
             }
         }
     }
 }
 
-fn update_avatar_actual_position(
+fn update_foreign_user_actual_position(
     mut avatars: Query<(
+        Entity,
         &PlayerTargetPosition,
         &mut Transform,
-        &mut Velocity,
-        &GroundHeight,
+        &mut AvatarDynamicState,
     )>,
+    mut scene_datas: Query<(
+        &mut RendererSceneContext,
+        &mut SceneColliderData,
+        &GlobalTransform,
+    )>,
+    containing_scene: ContainingScene,
     time: Res<Time>,
 ) {
-    for (target, mut actual, mut vel, ground_height) in avatars.iter_mut() {
+    for (foreign_ent, target, mut actual, mut dynamic_state) in avatars.iter_mut() {
         // arrive at target position by time + 0.5
         let walk_time_left = target.time + 0.5 - time.elapsed_seconds();
         if walk_time_left <= 0.0 {
             actual.translation = target.translation;
-            vel.0 = 0.0;
+            dynamic_state.velocity = Vec3::ZERO;
         } else {
             let walk_fraction = (time.delta_seconds() / walk_time_left).min(1.0);
             let delta = (target.translation - actual.translation) * walk_fraction;
-            vel.0 = delta.length() / time.delta_seconds();
+            dynamic_state.velocity = delta / time.delta_seconds();
             actual.translation += delta;
-        }
-
-        // fall
-        if actual.translation.y > target.translation.y && ground_height.0 > -0.1 {
-            actual.translation.y = target
-                .translation
-                .y
-                .max(actual.translation.y - 5.0 * time.delta_seconds());
         }
 
         // turn a bit faster
@@ -102,6 +107,33 @@ fn update_avatar_actual_position(
         } else {
             let turn_fraction = (time.delta_seconds() / turn_time_left).min(1.0);
             actual.rotation = actual.rotation.lerp(target.rotation, turn_fraction);
+        }
+
+        // update ground height
+        // get containing scene
+        match containing_scene
+            .get(foreign_ent)
+            .and_then(|scene| scene_datas.get_mut(scene).ok())
+        {
+            Some((context, mut collider_data, _scene_transform)) => {
+                dynamic_state.ground_height =
+                    collider_data.get_groundheight(context.last_update_frame, actual.translation);
+            }
+            None => {
+                dynamic_state.ground_height = actual.translation.y;
+            }
+        };
+
+        // fall
+        if actual.translation.y > target.translation.y && dynamic_state.ground_height > 0.0 {
+            let updated_y = target
+                .translation
+                .y
+                .max(actual.translation.y - 15.0 * time.delta_seconds())
+                .max(actual.translation.y - dynamic_state.ground_height);
+
+            dynamic_state.ground_height += updated_y - actual.translation.y;
+            actual.translation.y = updated_y;
         }
     }
 }
