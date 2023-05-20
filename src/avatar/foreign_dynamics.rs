@@ -5,10 +5,11 @@ use crate::{
     dcl_component::{transform_and_parent::DclTransformAndParent, SceneEntityId},
     scene_runner::{
         renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
+        ContainingScene,
     },
 };
 
-use super::{AvatarDynamicState, ContainingScene};
+use super::AvatarDynamicState;
 
 pub struct PlayerMovementPlugin;
 

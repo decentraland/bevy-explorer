@@ -4,10 +4,10 @@ use bevy::{core::FrameCount, math::Vec3Swizzles, prelude::*};
 use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 
 use crate::{
-    avatar::{AvatarDynamicState, ContainingScene},
+    avatar::AvatarDynamicState,
     scene_runner::{
         renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
-        PrimaryUser,
+        ContainingScene, PrimaryUser,
     },
 };
 pub const GRAVITY: f32 = 20.0;
@@ -76,9 +76,6 @@ pub fn update_user_position(
         controller.autostep = None;
     }
 
-    // debug!("velocity in: {} - translation in: {}", dynamic_state.velocity, dynamic_state.velocity * dt);
-    // debug!("velocity 0 : {}", dynamic_state.velocity);
-
     // get allowed movement
     let eff_movement = collider_data.move_character(
         context.last_update_frame,
@@ -86,28 +83,6 @@ pub fn update_user_position(
         dynamic_state.velocity * dt,
         &controller,
     );
-
-    // debug!("translation out: {}", eff_movement.translation);
-
-    // let eff_translation = Vec3::from(eff_movement.translation);
-    // let eff_xz = eff_translation.xz();
-    // if target_xz.length() > 0.0
-    //     && dynamic_state.ground_height > 0.0
-    //     && eff_xz.length() / target_xz.length() < 0.1
-    // {
-    //     println!("blocked");
-    //     // our x/z motion was significantly reduced while we are in mid air
-    //     // recalculate just vertically a bit backwards to avoid sticking to walls when running/jumping at them
-    //     eff_movement = collider_data.move_character(
-    //         context.last_update_frame,
-    //         transform.translation - Vec3::new(target_xz.x, 0.0, target_xz.y).normalize_or_zero() * 0.02,
-    //         dynamic_state.velocity * Vec3::Y * dt,
-    //         &controller,
-    //     );
-    //     // with the original x/z motion
-    //     eff_movement.translation.x = eff_xz.x;
-    //     eff_movement.translation.z = eff_xz.y;
-    // }
 
     transform.translation += Vec3::from(eff_movement.translation);
     transform.translation.y = transform.translation.y.max(0.0);
@@ -117,7 +92,6 @@ pub fn update_user_position(
         collider_data.get_groundheight(context.last_update_frame, transform.translation);
 
     // update vertical velocity
-    // debug!("velocity 2 : {}", dynamic_state.velocity);
     if dynamic_state.ground_height <= 0.0 || transform.translation.y == 0.0 {
         // on the floor, set vertical velocity to zero
         dynamic_state.velocity.y = dynamic_state.velocity.y.max(0.0);
@@ -127,10 +101,8 @@ pub fn update_user_position(
     } else {
         dynamic_state.velocity.y -= g_force;
     }
-    // debug!("velocity 3 : {}", dynamic_state.velocity);
     // cap fall speed
     dynamic_state.velocity.y = dynamic_state.velocity.y.max(-15.0);
-    // debug!("velocity 4 : {}", dynamic_state.velocity);
 
     // friction
     let mult = 0.001f32.powf(dt);
@@ -141,6 +113,4 @@ pub fn update_user_position(
         dynamic_state.velocity.x = 0.0;
         dynamic_state.velocity.z = 0.0;
     }
-
-    // println!("ground height: {}", dynamic_state.ground_height);
 }

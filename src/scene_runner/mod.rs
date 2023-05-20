@@ -6,6 +6,8 @@ use std::{
 
 use bevy::{
     core::FrameCount,
+    ecs::system::SystemParam,
+    math::Vec3Swizzles,
     prelude::*,
     scene::scene_spawner_system,
     utils::{FloatOrd, HashMap, HashSet, Instant},
@@ -23,7 +25,9 @@ use crate::{
 };
 
 use self::{
-    initialize_scene::{SceneLifecyclePlugin, SceneLoading},
+    initialize_scene::{
+        LiveScenes, PointerResult, SceneLifecyclePlugin, SceneLoading, ScenePointers, PARCEL_SIZE,
+    },
     renderer_context::RendererSceneContext,
     update_scene::SceneInputPlugin,
     update_world::{CrdtExtractors, SceneOutputPlugin},
@@ -314,6 +318,29 @@ impl Default for PrimaryUser {
             walk_speed: 1.5,
             run_speed: 6.0,
             friction: 0.5,
+        }
+    }
+}
+
+// helper to get the scene entity containing a given world position
+#[derive(SystemParam)]
+pub struct ContainingScene<'w, 's> {
+    transforms: Query<'w, 's, &'static GlobalTransform>,
+    pointers: Res<'w, ScenePointers>,
+    live_scenes: Res<'w, LiveScenes>,
+}
+
+impl<'w, 's> ContainingScene<'w, 's> {
+    pub fn get(&self, ent: Entity) -> Option<Entity> {
+        let parcel = (self.transforms.get(ent).ok()?.translation().xz() * Vec2::new(1.0, -1.0)
+            / PARCEL_SIZE)
+            .floor()
+            .as_ivec2();
+
+        if let Some(PointerResult::Exists(hash)) = self.pointers.0.get(&parcel) {
+            self.live_scenes.0.get(hash).copied()
+        } else {
+            None
         }
     }
 }

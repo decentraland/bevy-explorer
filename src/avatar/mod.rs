@@ -1,9 +1,7 @@
 use std::{f32::consts::PI, str::FromStr};
 
 use bevy::{
-    ecs::system::SystemParam,
     gltf::Gltf,
-    math::Vec3Swizzles,
     prelude::*,
     render::{mesh::skinning::SkinnedMesh, view::NoFrustumCulling},
     scene::InstanceId,
@@ -35,11 +33,7 @@ use crate::{
         SceneComponentId, SceneEntityId,
     },
     ipfs::{ActiveEntityTask, IpfsLoaderExt, IpfsModifier},
-    scene_runner::{
-        initialize_scene::{LiveScenes, PointerResult, ScenePointers, PARCEL_SIZE},
-        update_world::AddCrdtInterfaceExt,
-        PrimaryUser, SceneEntity,
-    },
+    scene_runner::{update_world::AddCrdtInterfaceExt, ContainingScene, PrimaryUser, SceneEntity},
     util::TaskExt,
 };
 
@@ -319,29 +313,6 @@ fn update_base_avatar_shape(
                     })
                     .unwrap_or_default(),
             }));
-        }
-    }
-}
-
-// helper to get the scene entity containing a given world position
-#[derive(SystemParam)]
-pub struct ContainingScene<'w, 's> {
-    transforms: Query<'w, 's, &'static GlobalTransform>,
-    pointers: Res<'w, ScenePointers>,
-    live_scenes: Res<'w, LiveScenes>,
-}
-
-impl<'w, 's> ContainingScene<'w, 's> {
-    pub fn get(&self, ent: Entity) -> Option<Entity> {
-        let parcel = (self.transforms.get(ent).ok()?.translation().xz() * Vec2::new(1.0, -1.0)
-            / PARCEL_SIZE)
-            .floor()
-            .as_ivec2();
-
-        if let Some(PointerResult::Exists(hash)) = self.pointers.0.get(&parcel) {
-            self.live_scenes.0.get(hash).copied()
-        } else {
-            None
         }
     }
 }
