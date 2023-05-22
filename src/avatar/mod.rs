@@ -33,7 +33,10 @@ use crate::{
         SceneComponentId, SceneEntityId,
     },
     ipfs::{ActiveEntityTask, IpfsLoaderExt, IpfsModifier},
-    scene_runner::{update_world::AddCrdtInterfaceExt, ContainingScene, PrimaryUser, SceneEntity},
+    scene_runner::{
+        update_world::{mesh_collider::ColliderId, AddCrdtInterfaceExt},
+        ContainingScene, PrimaryUser, SceneEntity,
+    },
     util::TaskExt,
 };
 
@@ -75,6 +78,7 @@ impl Plugin for AvatarPlugin {
 pub struct AvatarDynamicState {
     pub velocity: Vec3,
     pub ground_height: f32,
+    pub ground_collider: Option<ColliderId>,
 }
 
 #[derive(Debug)]

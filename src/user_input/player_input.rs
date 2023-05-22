@@ -13,6 +13,7 @@ pub(crate) fn update_user_velocity(
     camera: Query<&Transform, With<PrimaryCamera>>,
     mut player: Query<(&mut AvatarDynamicState, &PrimaryUser)>,
     input: InputManager,
+    time: Res<Time>,
 ) {
     let (
         Ok((mut dynamic_state, user)),
@@ -50,7 +51,7 @@ pub(crate) fn update_user_velocity(
         } else {
             user.walk_speed
         };
-        axis_input = axis_input.normalize() * max_speed;
+        axis_input = axis_input.normalize() * max_speed * time.delta_seconds();
 
         let ground = Vec3::X + Vec3::Z;
         let forward = (camera_transform.forward() * ground).xz().normalize();
@@ -58,7 +59,7 @@ pub(crate) fn update_user_velocity(
 
         axis_input = right * axis_input.x + forward * axis_input.y;
 
-        dynamic_state.velocity.x = axis_input.x;
-        dynamic_state.velocity.z = axis_input.y;
+        dynamic_state.velocity.x += axis_input.x;
+        dynamic_state.velocity.z += axis_input.y;
     }
 }

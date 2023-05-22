@@ -315,9 +315,9 @@ pub struct PrimaryUser {
 impl Default for PrimaryUser {
     fn default() -> Self {
         Self {
-            walk_speed: 1.5,
-            run_speed: 6.0,
-            friction: 0.5,
+            walk_speed: 10.0,
+            run_speed: 40.0,
+            friction: 500.0,
         }
     }
 }
@@ -450,7 +450,8 @@ fn receive_scene_updates(
                     );
                     if let Ok(mut context) = scenes.get_mut(*root) {
                         context.tick_number = context.tick_number.wrapping_add(1);
-                        context.total_runtime += runtime.0;
+                        context.last_update_dt = runtime.0 - context.total_runtime;
+                        context.total_runtime = runtime.0;
                         context.last_update_frame = frame.0;
                         context.in_flight = false;
                         context.nascent = census.born;

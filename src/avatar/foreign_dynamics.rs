@@ -117,8 +117,10 @@ fn update_foreign_user_actual_position(
             .and_then(|scene| scene_datas.get_mut(scene).ok())
         {
             Some((context, mut collider_data, _scene_transform)) => {
-                dynamic_state.ground_height =
-                    collider_data.get_groundheight(context.last_update_frame, actual.translation);
+                dynamic_state.ground_height = collider_data
+                    .get_groundheight(context.last_update_frame, actual.translation)
+                    .map(|(h, _)| h)
+                    .unwrap_or(actual.translation.y);
             }
             None => {
                 dynamic_state.ground_height = actual.translation.y;

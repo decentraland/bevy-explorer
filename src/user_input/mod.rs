@@ -3,6 +3,7 @@ pub mod dynamics;
 pub mod player_input;
 
 use bevy::{ecs::system::SystemParam, prelude::*, utils::HashMap};
+use bevy_console::ConsoleOpen;
 
 use crate::{
     dcl_component::proto_components::sdk::components::common::InputAction,
@@ -21,7 +22,14 @@ pub struct UserInputPlugin;
 impl Plugin for UserInputPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<InputMap>();
-        app.add_systems((update_camera, update_user_velocity, update_user_position).chain());
+        app.add_systems(
+            (
+                update_camera.run_if(|console: Res<ConsoleOpen>| !console.open),
+                update_user_velocity.run_if(|console: Res<ConsoleOpen>| !console.open),
+                update_user_position,
+            )
+                .chain(),
+        );
         app.add_system(hide_player_in_first_person);
     }
 }
