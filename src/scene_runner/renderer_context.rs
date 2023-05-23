@@ -57,6 +57,8 @@ pub struct RendererSceneContext {
     pub total_runtime: f32,
     // scene tick number
     pub tick_number: u32,
+    // last tick delta
+    pub last_update_dt: f32,
 }
 
 impl RendererSceneContext {
@@ -78,6 +80,7 @@ impl RendererSceneContext {
             blocked: Default::default(),
             total_runtime: 0.0,
             tick_number: u32::MAX,
+            last_update_dt: 0.0,
         };
 
         new_context.live_entities[SceneEntityId::ROOT.id as usize] =

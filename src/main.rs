@@ -3,18 +3,17 @@
 // - budget -> deadline is just last end + frame time
 
 pub mod avatar;
-mod camera_controller;
 pub mod comms;
 pub mod console;
 pub mod dcl;
 pub mod dcl_component;
-pub mod input_handler;
 pub mod ipfs;
 pub mod scene_runner;
+pub mod user_input;
 pub mod util;
 pub mod visuals;
 
-use avatar::movement::Velocity;
+use avatar::AvatarDynamicState;
 use bevy::{
     core::FrameCount,
     core_pipeline::tonemapping::{DebandDither, Tonemapping},
@@ -26,7 +25,6 @@ use bevy::{
 
 use bevy_console::{ConsoleCommand, ConsoleOpen};
 use bevy_prototype_debug_lines::DebugLinesPlugin;
-use camera_controller::CameraController;
 use comms::Transport;
 use ipfs::ChangeRealmEvent;
 use scene_runner::{
@@ -35,14 +33,15 @@ use scene_runner::{
     PrimaryUser, SceneRunnerPlugin,
 };
 use serde::{Deserialize, Serialize};
+use user_input::camera::PrimaryCamera;
 
 use crate::{
     avatar::AvatarPlugin,
-    camera_controller::CameraControllerPlugin,
     comms::{wallet::WalletPlugin, CommsPlugin},
     console::{ConsolePlugin, DoAddConsoleCommand},
     ipfs::IpfsIoPlugin,
     scene_runner::SceneSets,
+    user_input::UserInputPlugin,
     visuals::VisualsPlugin,
 };
 
@@ -89,9 +88,6 @@ impl Default for AppConfig {
         }
     }
 }
-
-#[derive(Component)]
-pub struct PrimaryCamera;
 
 fn main() {
     // warnings before log init must be stored and replayed later
@@ -171,7 +167,7 @@ fn main() {
     )
     .add_plugin(DebugLinesPlugin::with_depth_test(true))
     .add_plugin(SceneRunnerPlugin) // script engine plugin
-    .add_plugin(CameraControllerPlugin)
+    .add_plugin(UserInputPlugin)
     .add_plugin(ConsolePlugin)
     .add_plugin(VisualsPlugin)
     .add_plugin(WalletPlugin)
@@ -221,8 +217,8 @@ fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<Asset
             transform: Transform::from_translation(Vec3::new(16.0 * 77.5, 0.0, 16.0 * 7.5)),
             ..Default::default()
         },
-        PrimaryUser,
-        Velocity(0.0),
+        PrimaryUser::default(),
+        AvatarDynamicState::default(),
     ));
 
     // add a camera
@@ -245,8 +241,7 @@ fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<Asset
             },
             ..Default::default()
         },
-        PrimaryCamera,
-        CameraController::default(),
+        PrimaryCamera::default(),
     ));
 
     // add a directional light so it looks nicer

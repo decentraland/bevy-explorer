@@ -10,7 +10,7 @@ use crate::{
     dcl::interface::ComponentPosition,
     dcl_component::{proto_components::sdk::components::PbBillboard, SceneComponentId},
     scene_runner::SceneSets,
-    PrimaryCamera,
+    user_input::camera::PrimaryCamera,
 };
 
 use super::AddCrdtInterfaceExt;

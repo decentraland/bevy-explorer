@@ -6,6 +6,8 @@ use std::{
 
 use bevy::{
     core::FrameCount,
+    ecs::system::SystemParam,
+    math::Vec3Swizzles,
     prelude::*,
     scene::scene_spawner_system,
     utils::{FloatOrd, HashMap, HashSet, Instant},
@@ -19,11 +21,13 @@ use crate::{
         SceneEntityId,
     },
     ipfs::SceneIpfsLocation,
-    PrimaryCamera,
+    user_input::camera::PrimaryCamera,
 };
 
 use self::{
-    initialize_scene::{SceneLifecyclePlugin, SceneLoading},
+    initialize_scene::{
+        LiveScenes, PointerResult, SceneLifecyclePlugin, SceneLoading, ScenePointers, PARCEL_SIZE,
+    },
     renderer_context::RendererSceneContext,
     update_scene::SceneInputPlugin,
     update_world::{CrdtExtractors, SceneOutputPlugin},
@@ -302,7 +306,73 @@ fn update_scene_priority(
 const MAX_CONCURRENT_SCENES: usize = 8;
 
 #[derive(Component)]
-pub struct PrimaryUser;
+pub struct PrimaryUser {
+    pub walk_speed: f32,
+    pub run_speed: f32,
+    pub friction: f32,
+}
+
+impl Default for PrimaryUser {
+    fn default() -> Self {
+        Self {
+            walk_speed: 10.0,
+            run_speed: 40.0,
+            friction: 500.0,
+        }
+    }
+}
+
+// helper to get the scene entity containing a given world position
+#[derive(SystemParam)]
+pub struct ContainingScene<'w, 's> {
+    transforms: Query<'w, 's, &'static GlobalTransform>,
+    pointers: Res<'w, ScenePointers>,
+    live_scenes: Res<'w, LiveScenes>,
+}
+
+impl<'w, 's> ContainingScene<'w, 's> {
+    pub fn get(&self, ent: Entity) -> Option<Entity> {
+        let parcel = (self.transforms.get(ent).ok()?.translation().xz() * Vec2::new(1.0, -1.0)
+            / PARCEL_SIZE)
+            .floor()
+            .as_ivec2();
+
+        if let Some(PointerResult::Exists(hash)) = self.pointers.0.get(&parcel) {
+            self.live_scenes.0.get(hash).copied()
+        } else {
+            None
+        }
+    }
+
+    // get all scenes within radius of the given entity
+    pub fn get_area(&self, ent: Entity, radius: f32) -> Vec<Entity> {
+        let Ok(focus) = self.transforms.get(ent).map(|t| t.translation().xz() * Vec2::new(1.0, -1.0)) else {
+            return Default::default();
+        };
+
+        let min_point = focus - Vec2::splat(radius);
+        let max_point = focus + Vec2::splat(radius);
+
+        let min_parcel = (min_point / PARCEL_SIZE).floor().as_ivec2();
+        let max_parcel = (max_point / PARCEL_SIZE).floor().as_ivec2();
+
+        let mut results = Vec::default();
+
+        for parcel_x in min_parcel.x..=max_parcel.x {
+            for parcel_y in min_parcel.y..=max_parcel.y {
+                if let Some(PointerResult::Exists(hash)) =
+                    self.pointers.0.get(&IVec2::new(parcel_x, parcel_y))
+                {
+                    if let Some(scene) = self.live_scenes.0.get(hash).copied() {
+                        results.push(scene)
+                    }
+                }
+            }
+        }
+
+        results
+    }
+}
 
 fn send_scene_updates(
     mut scenes: Query<(
@@ -409,7 +479,8 @@ fn receive_scene_updates(
                     );
                     if let Ok(mut context) = scenes.get_mut(*root) {
                         context.tick_number = context.tick_number.wrapping_add(1);
-                        context.total_runtime += runtime.0;
+                        context.last_update_dt = runtime.0 - context.total_runtime;
+                        context.total_runtime = runtime.0;
                         context.last_update_frame = frame.0;
                         context.in_flight = false;
                         context.nascent = census.born;

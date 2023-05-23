@@ -2,12 +2,20 @@ use bevy::{
     pbr::{wireframe::Wireframe, NotShadowCaster, NotShadowReceiver},
     prelude::*,
     render::mesh::VertexAttributeValues,
-    utils::HashMap,
+    utils::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
-use rapier3d::prelude::*;
+use rapier3d::{
+    control::{EffectiveCharacterMovement, KinematicCharacterController},
+    parry::{
+        query::{NonlinearRigidMotion, TOIStatus},
+        shape::{Ball, Capsule},
+    },
+    prelude::*,
+};
 
 use crate::{
+    avatar::AvatarDynamicState,
     console::DoAddConsoleCommand,
     dcl::interface::ComponentPosition,
     dcl_component::{
@@ -16,7 +24,11 @@ use crate::{
     },
     scene_runner::{
         update_world::mesh_renderer::truncated_cone::TruncatedCone, ContainerEntity,
-        DeletedSceneEntities, RendererSceneContext, SceneSets,
+        ContainingScene, DeletedSceneEntities, PrimaryUser, RendererSceneContext, SceneSets,
+    },
+    user_input::dynamics::{
+        PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS,
+        PLAYER_GROUND_THRESHOLD,
     },
 };
 
@@ -130,6 +142,8 @@ pub struct RaycastResult {
 
 struct ColliderState {
     base_collider: Collider,
+    translation: Vec3,
+    rotation: Quat,
     scale: Vec3,
 }
 
@@ -153,6 +167,8 @@ impl SceneColliderData {
             id.to_owned(),
             ColliderState {
                 base_collider: new_collider.clone(),
+                translation: Vec3::ZERO,
+                rotation: Quat::IDENTITY,
                 scale: Vec3::ONE,
             },
         );
@@ -162,13 +178,21 @@ impl SceneColliderData {
         debug!("set {id:?} collider");
     }
 
-    pub fn update_collider_transform(&mut self, id: &ColliderId, transform: &GlobalTransform) {
+    pub fn update_collider_transform(
+        &mut self,
+        id: &ColliderId,
+        transform: &GlobalTransform,
+        cast_with: Option<&ColliderSet>,
+    ) -> (Option<Transform>, Option<TOI>) {
         if let Some(handle) = self.get_collider_handle(id) {
             if let Some(collider) = self.collider_set.get_mut(handle) {
-                let (req_scale, rotation, translation) = transform.to_scale_rotation_translation();
+                let (req_scale, req_rotation, req_translation) =
+                    transform.to_scale_rotation_translation();
                 let ColliderState {
                     base_collider,
-                    scale,
+                    translation: init_translation,
+                    scale: init_scale,
+                    rotation: init_rotation,
                 } = self.collider_state.get(id).unwrap();
 
                 fn scale_shape(s: &dyn Shape, req_scale: Vec3) -> SharedShape {
@@ -206,15 +230,57 @@ impl SceneColliderData {
                     }
                 }
 
-                // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
-                if (req_scale - *scale).length_squared() > SCALE_EPSILON {
+                let mut cast_result = None;
+                if (req_scale - *init_scale).length_squared() > SCALE_EPSILON {
+                    // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
                     collider.set_shape(scale_shape(base_collider.shape(), req_scale));
+                } else if let Some(colliders) = cast_with {
+                    // if scale doesn't change then just shapecast to hit colliders
+                    let mut pipeline = QueryPipeline::new();
+                    pipeline.update(&self.dummy_rapier_structs.1, colliders);
+                    let euler_axes =
+                        (req_rotation * init_rotation.inverse()).to_euler(EulerRot::XYZ);
+                    cast_result = pipeline
+                        .nonlinear_cast_shape(
+                            &self.dummy_rapier_structs.1,
+                            colliders,
+                            &NonlinearRigidMotion {
+                                start: Isometry::from_parts(
+                                    (*init_translation).into(),
+                                    (*init_rotation).into(),
+                                ),
+                                local_center: Default::default(),
+                                linvel: (req_translation - *init_translation).into(),
+                                angvel: [euler_axes.0, euler_axes.1, euler_axes.2].into(),
+                            },
+                            base_collider.shape(),
+                            0.0,
+                            1.0,
+                            true,
+                            QueryFilter::default(),
+                        )
+                        .map(|(_, toi)| toi);
                 }
-                self.collider_state.get_mut(id).unwrap().scale = req_scale;
+                let initial_transform = Transform {
+                    translation: *init_translation,
+                    rotation: *init_rotation,
+                    scale: *init_scale,
+                };
 
-                collider.set_position(Isometry::from_parts(translation.into(), rotation.into()));
+                let state_mut = self.collider_state.get_mut(id).unwrap();
+                state_mut.translation = req_translation;
+                state_mut.rotation = req_rotation;
+                state_mut.scale = req_scale;
+
+                collider.set_position(Isometry::from_parts(
+                    req_translation.into(),
+                    req_rotation.into(),
+                ));
+                return (Some(initial_transform), cast_result);
             }
         }
+
+        (None, None)
     }
 
     fn update_pipeline(&mut self, scene_frame: u32) {
@@ -263,6 +329,49 @@ impl SceneColliderData {
                 toi: intersection.toi,
                 normal: Vec3::from(intersection.normal),
             })
+    }
+
+    pub fn get_groundheight(&mut self, scene_time: u32, origin: Vec3) -> Option<(f32, ColliderId)> {
+        self.update_pipeline(scene_time);
+        let contact = self.query_state.as_ref().unwrap().cast_shape(
+            &self.dummy_rapier_structs.1,
+            &self.collider_set,
+            &(origin + Vec3::Y * PLAYER_COLLIDER_RADIUS).into(),
+            &(-Vec3::Y).into(),
+            &Ball::new(PLAYER_COLLIDER_RADIUS),
+            10.0,
+            true,
+            QueryFilter::default(),
+        );
+
+        contact.map(|(handle, toi)| (toi.toi, self.get_id(handle).unwrap().clone()))
+    }
+
+    pub fn move_character(
+        &mut self,
+        scene_time: u32,
+        origin: Vec3,
+        direction: Vec3,
+        character: &KinematicCharacterController,
+    ) -> EffectiveCharacterMovement {
+        self.update_pipeline(scene_time);
+        character.move_shape(
+            0.00,
+            &self.dummy_rapier_structs.1,
+            &self.collider_set,
+            self.query_state.as_ref().unwrap(),
+            &Capsule::new_y(
+                PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
+                PLAYER_COLLIDER_RADIUS,
+            ),
+            &Isometry {
+                rotation: Default::default(),
+                translation: (origin + Vec3::Y * 1.0).into(),
+            },
+            direction.into(),
+            QueryFilter::default(),
+            |_| {},
+        )
     }
 
     pub fn cast_ray_all(
@@ -474,14 +583,126 @@ fn update_collider_transforms(
         ),
     >,
     mut scene_data: Query<&mut SceneColliderData>,
+    containing_scene: ContainingScene,
+    mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
 ) {
+    let mut containing_scenes = HashSet::default();
+    let mut parent_collider = None;
+    let mut player_transform = None;
+
+    if let Ok((player, transform, state)) = player.get_single_mut() {
+        player_transform = Some(transform);
+        if state.ground_height < PLAYER_GROUND_THRESHOLD {
+            parent_collider = state.ground_collider.clone();
+        }
+        containing_scenes.extend(containing_scene.get_area(player, PLAYER_COLLIDER_RADIUS));
+    }
+
+    let mut player_collider_set = ColliderSet::default();
+    player_collider_set.insert(
+        ColliderBuilder::new(SharedShape::capsule_y(
+            PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
+            PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP,
+        ))
+        .position(Isometry::from_parts(
+            player_transform
+                .as_ref()
+                .map(|t| t.translation + Vec3::Y)
+                .unwrap_or_default()
+                .into(),
+            Default::default(),
+        ))
+        .build(),
+    );
+
     for (container, collider, global_transform) in changed_colliders.iter() {
         let Ok(mut scene_data) = scene_data.get_mut(container.root) else {
             warn!("missing scene root for {container:?}");
             continue;
         };
 
-        scene_data.update_collider_transform(&collider.0, global_transform);
+        let (maybe_original_transform, maybe_toi) = scene_data.update_collider_transform(
+            &collider.0,
+            global_transform,
+            if containing_scenes.contains(&container.root) {
+                Some(&player_collider_set)
+            } else {
+                None
+            },
+        );
+
+        if let Some(original_transform) = maybe_original_transform {
+            if let Some(toi) = maybe_toi {
+                match toi.status {
+                    TOIStatus::Penetrating => {
+                        // skip push for penetrating collider
+                    }
+                    _ => {
+                        // get contact point at toi
+                        // use 0.9 cap to avoid clipping
+                        let ratio = toi.toi.min(0.9);
+                        let relative_hit_point = Vec3::from(toi.witness2);
+                        let (new_scale, new_rotation, new_translation) =
+                            global_transform.to_scale_rotation_translation();
+                        let transform_at_toi = Transform {
+                            translation: original_transform.translation * (1.0 - ratio)
+                                + new_translation * ratio,
+                            rotation: original_transform.rotation.lerp(new_rotation, ratio),
+                            // we use a unit scale because the scale is embedded in the collider mesh/support fn,
+                            // so the witness point is actually wrt a unit scale
+                            // we know that scale doesn't change because we can't shape-cast a non-constant shape anyway
+                            // TODO fix this somehow (stepping in the update? yuck tho)
+                            scale: Vec3::ONE,
+                        };
+                        let contact_at_toi = GlobalTransform::from(transform_at_toi)
+                            .transform_point(relative_hit_point);
+                        // get contact point at end
+                        // unit scale - see above
+                        let contact_at_end =
+                            global_transform.transform_point(relative_hit_point) / new_scale;
+
+                        // add diff as velocity or as motion?
+                        let req_translation = contact_at_end - contact_at_toi;
+                        let dot_w_normal1 = req_translation
+                            .normalize_or_zero()
+                            .dot(Vec3::from(toi.normal1));
+                        let dot_w_normal2 = req_translation
+                            .normalize_or_zero()
+                            .dot(Vec3::from(toi.normal2));
+                        if req_translation.length() > 1.0 {
+                            // disregard too large deltas as the collider probably just warped
+                            // TODO we could check this before updating based on translation?
+                            warn!("disregarding push due to large delta: {}, toi: {}, normal dot1: {}, 2: {}", req_translation, toi.toi, dot_w_normal1, dot_w_normal2);
+                            continue;
+                        }
+                        // add extra 0.1 due to character controller offset / collider size difference
+                        player_transform.as_mut().unwrap().translation +=
+                            req_translation.normalize_or_zero() * (req_translation.length() + 0.01);
+                        debug!(
+                            "[{:?} - scale = {}] push {} = {} -> 1 = {}",
+                            collider.0, new_scale, ratio, contact_at_toi, contact_at_end
+                        );
+                        debug!("toi: {toi:?}");
+                    }
+                }
+            }
+
+            if Some((&container.root, &collider.0)) == parent_collider.as_ref().map(|(a, b)| (a, b))
+            {
+                let player_transform = player_transform.as_deref_mut().unwrap();
+                let player_global_transform = GlobalTransform::from(*player_transform);
+                let relative_position =
+                    player_global_transform.reparented_to(&original_transform.into());
+                let new_position = global_transform.mul_transform(relative_position);
+                let (_, rotation, translation) = new_position.to_scale_rotation_translation();
+                let planar_direction = ((rotation * -Vec3::Z) * (Vec3::X + Vec3::Z)).normalize();
+                let planar_rotation = Transform::default()
+                    .looking_at(planar_direction, Vec3::Y)
+                    .rotation;
+                player_transform.translation = translation;
+                player_transform.rotation = planar_rotation;
+            }
+        }
     }
 }
 
@@ -518,6 +739,7 @@ fn render_debug_colliders(
     mut debug_entities: Local<HashMap<Entity, Entity>>,
     with_collider: Query<(Entity, &MeshCollider), With<HasCollider>>,
     changed_collider: Query<Entity, Changed<MeshCollider>>,
+    player: Query<Entity, With<PrimaryUser>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut debug_material: Local<Option<Handle<StandardMaterial>>>,
@@ -546,6 +768,37 @@ fn render_debug_colliders(
             if let Some(mut commands) = commands.get_entity(debug_ent) {
                 commands.despawn();
             }
+        }
+    }
+
+    if let Ok(player) = player.get_single() {
+        if !debug_entities.contains_key(&player) {
+            let h_mesh = meshes.add(
+                bevy::prelude::shape::Capsule {
+                    radius: PLAYER_COLLIDER_RADIUS,
+                    rings: 1,
+                    depth: PLAYER_COLLIDER_HEIGHT - PLAYER_COLLIDER_RADIUS * 2.0,
+                    ..Default::default()
+                }
+                .into(),
+            );
+            let debug_ent = commands
+                .spawn((
+                    PbrBundle {
+                        mesh: h_mesh,
+                        material: debug_material.as_ref().unwrap().clone(),
+                        transform: Transform::from_translation(Vec3::Y),
+                        ..Default::default()
+                    },
+                    Wireframe,
+                    NotShadowCaster,
+                    NotShadowReceiver,
+                ))
+                .id();
+
+            commands.entity(player).add_child(debug_ent);
+
+            debug_entities.insert(player, debug_ent);
         }
     }
 

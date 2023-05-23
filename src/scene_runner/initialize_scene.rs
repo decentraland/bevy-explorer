@@ -179,6 +179,7 @@ pub(crate) fn load_scene_json(
 #[derive(Deserialize, Debug)]
 pub struct SceneMetaScene {
     pub base: String,
+    pub parcels: Vec<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -201,6 +202,7 @@ pub(crate) fn load_scene_javascript(
     crdt_component_interfaces: Res<CrdtExtractors>,
     mut scene_updates: ResMut<SceneUpdates>,
     global_scene: Res<GlobalCrdtState>,
+    mut pointers: ResMut<ScenePointers>,
 ) {
     for (root, state, h_scene) in loading_scenes
         .iter()
@@ -235,6 +237,17 @@ pub(crate) fn load_scene_javascript(
             fail("scene.json did not resolve to expected format");
             continue;
         };
+
+        // populate pointers
+        for pointer in meta.scene.parcels {
+            let (x, y) = pointer.split_once(',').unwrap();
+            let x = x.parse::<i32>().unwrap();
+            let y = y.parse::<i32>().unwrap();
+            let parcel = IVec2::new(x, y);
+            pointers
+                .0
+                .insert(parcel, PointerResult::Exists(definition.id.clone()));
+        }
 
         // get main.crdt
         let maybe_serialized_crdt = match maybe_h_crdt {
