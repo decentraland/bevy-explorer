@@ -50,6 +50,7 @@ fn load_animations(
 }
 
 // TODO this function is a POS
+// lots of magic numbers that don't even deserve to be constants, needs reworking
 fn animate(
     avatars: Query<(Entity, &AvatarAnimPlayer, &AvatarDynamicState)>,
     mut players: Query<&mut AnimationPlayer>,

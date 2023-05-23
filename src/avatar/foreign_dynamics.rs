@@ -7,6 +7,7 @@ use crate::{
         renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
         ContainingScene,
     },
+    user_input::dynamics::MAX_FALL_SPEED,
 };
 
 use super::AvatarDynamicState;
@@ -132,7 +133,7 @@ fn update_foreign_user_actual_position(
             let updated_y = target
                 .translation
                 .y
-                .max(actual.translation.y - 15.0 * time.delta_seconds())
+                .max(actual.translation.y - MAX_FALL_SPEED * time.delta_seconds())
                 .max(actual.translation.y - dynamic_state.ground_height);
 
             dynamic_state.ground_height += updated_y - actual.translation.y;

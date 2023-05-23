@@ -2,7 +2,7 @@ use bevy::{
     pbr::{wireframe::Wireframe, NotShadowCaster, NotShadowReceiver},
     prelude::*,
     render::mesh::VertexAttributeValues,
-    utils::HashMap,
+    utils::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
 use rapier3d::{
@@ -25,6 +25,10 @@ use crate::{
     scene_runner::{
         update_world::mesh_renderer::truncated_cone::TruncatedCone, ContainerEntity,
         ContainingScene, DeletedSceneEntities, PrimaryUser, RendererSceneContext, SceneSets,
+    },
+    user_input::dynamics::{
+        PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS,
+        PLAYER_GROUND_THRESHOLD,
     },
 };
 
@@ -332,9 +336,9 @@ impl SceneColliderData {
         let contact = self.query_state.as_ref().unwrap().cast_shape(
             &self.dummy_rapier_structs.1,
             &self.collider_set,
-            &(origin + Vec3::Y * 0.35).into(),
+            &(origin + Vec3::Y * PLAYER_COLLIDER_RADIUS).into(),
             &(-Vec3::Y).into(),
-            &Ball::new(0.35),
+            &Ball::new(PLAYER_COLLIDER_RADIUS),
             10.0,
             true,
             QueryFilter::default(),
@@ -356,7 +360,10 @@ impl SceneColliderData {
             &self.dummy_rapier_structs.1,
             &self.collider_set,
             self.query_state.as_ref().unwrap(),
-            &Capsule::new_y(0.65, 0.35),
+            &Capsule::new_y(
+                PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
+                PLAYER_COLLIDER_RADIUS,
+            ),
             &Isometry {
                 rotation: Default::default(),
                 translation: (origin + Vec3::Y * 1.0).into(),
@@ -579,32 +586,33 @@ fn update_collider_transforms(
     containing_scene: ContainingScene,
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
 ) {
-    let mut parent_scene = None;
+    let mut containing_scenes = HashSet::default();
     let mut parent_collider = None;
     let mut player_transform = None;
 
     if let Ok((player, transform, state)) = player.get_single_mut() {
-        if let Some(scene) = containing_scene.get(player) {
-            parent_scene = Some(scene);
-            player_transform = Some(transform);
-            if state.ground_height < 0.05 {
-                parent_collider = state.ground_collider.clone();
-            }
+        player_transform = Some(transform);
+        if state.ground_height < PLAYER_GROUND_THRESHOLD {
+            parent_collider = state.ground_collider.clone();
         }
+        containing_scenes.extend(containing_scene.get_area(player, PLAYER_COLLIDER_RADIUS));
     }
 
     let mut player_collider_set = ColliderSet::default();
     player_collider_set.insert(
-        ColliderBuilder::new(SharedShape::capsule_y(0.65, 0.34))
-            .position(Isometry::from_parts(
-                player_transform
-                    .as_ref()
-                    .map(|t| t.translation + Vec3::Y)
-                    .unwrap_or_default()
-                    .into(),
-                Default::default(),
-            ))
-            .build(),
+        ColliderBuilder::new(SharedShape::capsule_y(
+            PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
+            PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP,
+        ))
+        .position(Isometry::from_parts(
+            player_transform
+                .as_ref()
+                .map(|t| t.translation + Vec3::Y)
+                .unwrap_or_default()
+                .into(),
+            Default::default(),
+        ))
+        .build(),
     );
 
     for (container, collider, global_transform) in changed_colliders.iter() {
@@ -616,7 +624,7 @@ fn update_collider_transforms(
         let (maybe_original_transform, maybe_toi) = scene_data.update_collider_transform(
             &collider.0,
             global_transform,
-            if Some(container.root) == parent_scene {
+            if containing_scenes.contains(&container.root) {
                 Some(&player_collider_set)
             } else {
                 None
@@ -631,17 +639,19 @@ fn update_collider_transforms(
                     }
                     _ => {
                         // get contact point at toi
+                        // use 0.9 cap to avoid clipping
+                        let ratio = toi.toi.min(0.9);
                         let relative_hit_point = Vec3::from(toi.witness2);
                         let (new_scale, new_rotation, new_translation) =
                             global_transform.to_scale_rotation_translation();
                         let transform_at_toi = Transform {
-                            translation: original_transform.translation * (1.0 - toi.toi)
-                                + new_translation * toi.toi,
-                            rotation: original_transform.rotation.lerp(new_rotation, toi.toi),
-                            // TODO fix this somehow (stepping in the update? yuck tho)
+                            translation: original_transform.translation * (1.0 - ratio)
+                                + new_translation * ratio,
+                            rotation: original_transform.rotation.lerp(new_rotation, ratio),
                             // we use a unit scale because the scale is embedded in the collider mesh/support fn,
                             // so the witness point is actually wrt a unit scale
                             // we know that scale doesn't change because we can't shape-cast a non-constant shape anyway
+                            // TODO fix this somehow (stepping in the update? yuck tho)
                             scale: Vec3::ONE,
                         };
                         let contact_at_toi = GlobalTransform::from(transform_at_toi)
@@ -653,19 +663,31 @@ fn update_collider_transforms(
 
                         // add diff as velocity or as motion?
                         let req_translation = contact_at_end - contact_at_toi;
+                        let dot_w_normal1 = req_translation
+                            .normalize_or_zero()
+                            .dot(Vec3::from(toi.normal1));
+                        let dot_w_normal2 = req_translation
+                            .normalize_or_zero()
+                            .dot(Vec3::from(toi.normal2));
+                        if req_translation.length() > 1.0 {
+                            // disregard too large deltas as the collider probably just warped
+                            // TODO we could check this before updating based on translation?
+                            warn!("disregarding push due to large delta: {}, toi: {}, normal dot1: {}, 2: {}", req_translation, toi.toi, dot_w_normal1, dot_w_normal2);
+                            continue;
+                        }
                         // add extra 0.1 due to character controller offset / collider size difference
                         player_transform.as_mut().unwrap().translation +=
                             req_translation.normalize_or_zero() * (req_translation.length() + 0.01);
                         debug!(
                             "[{:?} - scale = {}] push {} = {} -> 1 = {}",
-                            collider.0, new_scale, toi.toi, contact_at_toi, contact_at_end
+                            collider.0, new_scale, ratio, contact_at_toi, contact_at_end
                         );
                         debug!("toi: {toi:?}");
                     }
                 }
             }
 
-            if Some(container.root) == parent_scene && Some(&collider.0) == parent_collider.as_ref()
+            if Some((&container.root, &collider.0)) == parent_collider.as_ref().map(|(a, b)| (a, b))
             {
                 let player_transform = player_transform.as_deref_mut().unwrap();
                 let player_global_transform = GlobalTransform::from(*player_transform);
@@ -753,9 +775,9 @@ fn render_debug_colliders(
         if !debug_entities.contains_key(&player) {
             let h_mesh = meshes.add(
                 bevy::prelude::shape::Capsule {
-                    radius: 0.34,
+                    radius: PLAYER_COLLIDER_RADIUS,
                     rings: 1,
-                    depth: 0.65 * 2.0,
+                    depth: PLAYER_COLLIDER_HEIGHT - PLAYER_COLLIDER_RADIUS * 2.0,
                     ..Default::default()
                 }
                 .into(),

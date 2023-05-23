@@ -6,7 +6,11 @@ use crate::{
     scene_runner::PrimaryUser,
 };
 
-use super::{camera::PrimaryCamera, InputManager};
+use super::{
+    camera::PrimaryCamera,
+    dynamics::{GRAVITY, MAX_JUMP_HEIGHT, PLAYER_GROUND_THRESHOLD},
+    InputManager,
+};
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub(crate) fn update_user_velocity(
@@ -24,10 +28,10 @@ pub(crate) fn update_user_velocity(
 
     // Handle key input
     if input.is_down(InputAction::IaJump)
-        && dynamic_state.ground_height < 0.05
+        && dynamic_state.ground_height < PLAYER_GROUND_THRESHOLD
         && dynamic_state.velocity.y <= 0.0
     {
-        dynamic_state.velocity.y = 7.0;
+        dynamic_state.velocity.y = (MAX_JUMP_HEIGHT * GRAVITY * 2.0).sqrt();
     }
 
     let mut axis_input = Vec2::ZERO;
@@ -54,8 +58,10 @@ pub(crate) fn update_user_velocity(
         axis_input = axis_input.normalize() * max_speed * time.delta_seconds();
 
         let ground = Vec3::X + Vec3::Z;
-        let forward = (camera_transform.forward() * ground).xz().normalize();
-        let right = (camera_transform.right() * ground).xz().normalize();
+        let forward = (camera_transform.forward() * ground)
+            .xz()
+            .normalize_or_zero();
+        let right = (camera_transform.right() * ground).xz().normalize_or_zero();
 
         axis_input = right * axis_input.x + forward * axis_input.y;
 

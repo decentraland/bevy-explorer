@@ -11,7 +11,7 @@ use crate::{
 };
 
 use self::{
-    camera::{update_camera, PrimaryCamera},
+    camera::{update_camera, update_camera_position, PrimaryCamera},
     dynamics::update_user_position,
     player_input::update_user_velocity,
 };
@@ -25,6 +25,7 @@ impl Plugin for UserInputPlugin {
         app.add_systems(
             (
                 update_camera.run_if(|console: Res<ConsoleOpen>| !console.open),
+                update_camera_position,
                 update_user_velocity.run_if(|console: Res<ConsoleOpen>| !console.open),
                 update_user_position,
             )

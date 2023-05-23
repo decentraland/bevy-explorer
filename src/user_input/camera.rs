@@ -49,14 +49,10 @@ pub fn update_camera(
     key_input: Res<Input<KeyCode>>,
     mut move_toggled: Local<bool>,
     mut camera: Query<(&mut Transform, &mut PrimaryCamera)>,
-    mut player: Query<&Transform, (With<PrimaryUser>, Without<PrimaryCamera>)>,
 ) {
     let dt = time.delta_seconds();
 
-    let (
-        Ok(player_transform),
-        Ok((mut camera_transform, mut options)),
-    ) = (player.get_single_mut(), camera.get_single_mut()) else {
+    let Ok((mut camera_transform, mut options)) = camera.get_single_mut() else {
         return;
     };
 
@@ -121,6 +117,18 @@ pub fn update_camera(
     options.yaw -= mouse_delta.x * options.sensitivity / 1000.0;
     camera_transform.rotation =
         Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
+}
+
+pub fn update_camera_position(
+    mut camera: Query<(&mut Transform, &PrimaryCamera)>,
+    mut player: Query<&Transform, (With<PrimaryUser>, Without<PrimaryCamera>)>,
+) {
+    let (
+        Ok(player_transform),
+        Ok((mut camera_transform, options)),
+    ) = (player.get_single_mut(), camera.get_single_mut()) else {
+        return;
+    };
 
     camera_transform.translation = player_transform.translation
         + Vec3::Y * (1.81 + 0.2 * options.distance)

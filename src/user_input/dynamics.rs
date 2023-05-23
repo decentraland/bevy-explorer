@@ -11,6 +11,15 @@ use crate::{
     },
 };
 pub const GRAVITY: f32 = 20.0;
+pub const MAX_FALL_SPEED: f32 = 15.0;
+pub const MAX_CLIMBABLE_INCLINE: f32 = 1.5 * PI / 4.0; // radians from up - equal to 60 degree incline
+pub const MAX_STEP_HEIGHT: f32 = 0.5;
+pub const MAX_JUMP_HEIGHT: f32 = 1.25;
+pub const PLAYER_GROUND_THRESHOLD: f32 = 0.05;
+
+pub const PLAYER_COLLIDER_RADIUS: f32 = 0.35;
+pub const PLAYER_COLLIDER_HEIGHT: f32 = 2.0;
+pub const PLAYER_COLLIDER_OVERLAP: f32 = 0.01;
 
 pub fn update_user_position(
     mut player: Query<(
@@ -33,7 +42,11 @@ pub fn update_user_position(
     };
 
     let dt = time.delta_seconds();
-    let g_force = dt * GRAVITY;
+    // we apply half gravity before motion and half after to avoid (significant) max height difference due to frame rate
+    let half_g_force = dt * GRAVITY * 0.5;
+    if dynamic_state.velocity.y != 0.0 {
+        dynamic_state.velocity.y -= half_g_force;
+    }
 
     // rotate towards velocity vec
     let target_xz = dynamic_state.velocity.xz() * dt;
@@ -46,18 +59,16 @@ pub fn update_user_position(
     }
 
     // get containing scene
-    match containing_scene
-        .get(user_ent)
-        .and_then(|scene| scene_datas.get_mut(scene).ok())
-    {
+    let scene = containing_scene.get(user_ent);
+    match scene.and_then(|scene| scene_datas.get_mut(scene).ok()) {
         None => {
             // no scene, just update translation directly
             transform.translation += dynamic_state.velocity * dt;
 
             if transform.translation.y > 0.0 {
-                dynamic_state.velocity.y -= g_force;
+                dynamic_state.velocity.y -= half_g_force;
             } else {
-                dynamic_state.velocity.y = 0f32.max(dynamic_state.velocity.y - g_force);
+                dynamic_state.velocity.y = 0f32.max(dynamic_state.velocity.y - half_g_force);
             }
 
             dynamic_state.ground_height = transform.translation.y;
@@ -65,15 +76,15 @@ pub fn update_user_position(
         Some((context, mut collider_data, _scene_transform)) => {
             // setup physics controller
             let mut controller = KinematicCharacterController {
-                offset: CharacterLength::Absolute(0.01),
+                offset: CharacterLength::Absolute(PLAYER_COLLIDER_OVERLAP),
                 slide: true,
                 autostep: Some(CharacterAutostep {
-                    max_height: CharacterLength::Absolute(0.5),
-                    min_width: CharacterLength::Absolute(0.75),
+                    max_height: CharacterLength::Absolute(MAX_STEP_HEIGHT),
+                    min_width: CharacterLength::Relative(0.75),
                     include_dynamic_bodies: true,
                 }),
-                max_slope_climb_angle: 1.5 * PI / 4.0,
-                min_slope_slide_angle: 1.5 * PI / 4.0,
+                max_slope_climb_angle: MAX_CLIMBABLE_INCLINE,
+                min_slope_slide_angle: MAX_CLIMBABLE_INCLINE,
                 snap_to_ground: Some(CharacterLength::Absolute(0.1)),
                 ..Default::default()
             };
@@ -98,7 +109,7 @@ pub fn update_user_position(
             (dynamic_state.ground_height, dynamic_state.ground_collider) = match collider_data
                 .get_groundheight(context.last_update_frame, transform.translation)
             {
-                Some((height, collider)) => (height, Some(collider)),
+                Some((height, collider)) => (height, Some((scene.unwrap(), collider))),
                 None => (transform.translation.y, None),
             };
 
@@ -109,15 +120,15 @@ pub fn update_user_position(
             } else if eff_movement.translation.y.abs() < (0.5 * dynamic_state.velocity.y * dt).abs()
             {
                 // vertical motion was blocked by something, use the effective motion
-                dynamic_state.velocity.y = eff_movement.translation.y / dt - g_force;
+                dynamic_state.velocity.y = eff_movement.translation.y / dt - half_g_force;
             } else {
-                dynamic_state.velocity.y -= g_force;
+                dynamic_state.velocity.y -= half_g_force;
             }
         }
     };
 
     // cap fall speed
-    dynamic_state.velocity.y = dynamic_state.velocity.y.max(-15.0);
+    dynamic_state.velocity.y = dynamic_state.velocity.y.max(-MAX_FALL_SPEED);
 
     // friction
     let mult = user.friction.recip().powf(dt);

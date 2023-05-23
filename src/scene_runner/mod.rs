@@ -343,6 +343,35 @@ impl<'w, 's> ContainingScene<'w, 's> {
             None
         }
     }
+
+    // get all scenes within radius of the given entity
+    pub fn get_area(&self, ent: Entity, radius: f32) -> Vec<Entity> {
+        let Ok(focus) = self.transforms.get(ent).map(|t| t.translation().xz() * Vec2::new(1.0, -1.0)) else {
+            return Default::default();
+        };
+
+        let min_point = focus - Vec2::splat(radius);
+        let max_point = focus + Vec2::splat(radius);
+
+        let min_parcel = (min_point / PARCEL_SIZE).floor().as_ivec2();
+        let max_parcel = (max_point / PARCEL_SIZE).floor().as_ivec2();
+
+        let mut results = Vec::default();
+
+        for parcel_x in min_parcel.x..=max_parcel.x {
+            for parcel_y in min_parcel.y..=max_parcel.y {
+                if let Some(PointerResult::Exists(hash)) =
+                    self.pointers.0.get(&IVec2::new(parcel_x, parcel_y))
+                {
+                    if let Some(scene) = self.live_scenes.0.get(hash).copied() {
+                        results.push(scene)
+                    }
+                }
+            }
+        }
+
+        results
+    }
 }
 
 fn send_scene_updates(

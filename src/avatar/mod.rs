@@ -78,7 +78,8 @@ impl Plugin for AvatarPlugin {
 pub struct AvatarDynamicState {
     pub velocity: Vec3,
     pub ground_height: f32,
-    pub ground_collider: Option<ColliderId>,
+    // (scene entity, collider id) of collider player is standing on
+    pub ground_collider: Option<(Entity, ColliderId)>,
 }
 
 #[derive(Debug)]

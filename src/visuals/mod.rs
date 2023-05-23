@@ -56,7 +56,7 @@ fn setup(
                 base_color: Color::rgb(0.15, 0.2, 0.05),
                 perceptual_roughness: 1.0,
                 metallic: 0.0,
-                depth_bias: -10.0,
+                depth_bias: -100.0,
                 ..Default::default()
             }),
             ..Default::default()
