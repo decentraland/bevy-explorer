@@ -126,8 +126,10 @@ fn init_test_app(entity_json: &str) -> App {
 
     // replace the scene loop schedule with a dummy so we can better control it
     app.world.remove_resource::<SceneLoopSchedule>().unwrap();
+    let mut skip_loop_schedule = Schedule::new();
+    skip_loop_schedule.add_system(|mut updates: ResMut<SceneUpdates>| updates.eligible_jobs = 0);
     app.world.insert_resource(SceneLoopSchedule {
-        schedule: Schedule::new(),
+        schedule: skip_loop_schedule,
         end_time: Instant::now(),
     });
 
@@ -144,6 +146,11 @@ fn init_test_app(entity_json: &str) -> App {
         //     warn!("context tick: {:?} (blocked: {:?})", context.tick_number, context.blocked);
         // }
     }
+
+    app.world.insert_resource(SceneLoopSchedule {
+        schedule: Schedule::new(),
+        end_time: Instant::now(),
+    });
 
     app
 }
