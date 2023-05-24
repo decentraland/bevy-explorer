@@ -676,6 +676,7 @@ fn update_render_avatar(
                                 wearable_pointers
                                     .0
                                     .insert(urn, WearablePointerResult::Exists(entity.id.clone()));
+                                debug!("{} -> {}", pointer, entity.id);
                             }
                             Err(e) => {
                                 warn!("failed to parse wearable urn: {e}");
@@ -1170,12 +1171,14 @@ fn process_avatar(
                 let Ok(name) = named_ents.get(scene_ent) else { continue };
                 let name = name.to_lowercase();
 
-                // record bone entities so we can remap them
+                // record bone entities so we can remap them, and delete this instance
                 if name.to_lowercase().starts_with("avatar_") {
                     if let Some(target) = target_armature_entities.get(&name.to_lowercase()) {
                         armature_map.insert(scene_ent, target);
                     }
-                    commands.entity(scene_ent).despawn_recursive();
+                    if parent_name == "armature" {
+                        commands.entity(scene_ent).despawn_recursive();
+                    }
                     continue;
                 }
 
