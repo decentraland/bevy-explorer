@@ -217,7 +217,7 @@ fn run_scene_loop(world: &mut World) {
     let last_end_time = loop_schedule.end_time;
     let _start_time = Instant::now();
     #[cfg(debug_assertions)]
-    let millis = 100;
+    let millis = 10000;
     #[cfg(not(debug_assertions))]
     let millis = 16;
     let end_time = last_end_time + Duration::from_millis(millis);
