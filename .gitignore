@@ -1,8 +1,7 @@
 /target
 Cargo.lock
 /assets/*
+!/assets/animations
 !/assets/fonts
-!/assets/tests
-!/assets/scenes
 !/assets/shaders
 .vscode/settings.json

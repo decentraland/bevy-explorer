@@ -143,7 +143,23 @@ fn update_gltf(
     mut shape_lookup: ResMut<MeshToShape>,
     mut contexts: Query<&mut RendererSceneContext>,
     _debug_name_query: Query<(Entity, Option<&Name>, Option<&Children>)>,
+    mut instances_to_despawn_when_ready: Local<Vec<InstanceId>>,
 ) {
+    // clean up old instances
+    instances_to_despawn_when_ready.retain(|instance| {
+        if scene_spawner.instance_is_ready(*instance) {
+            for entity in scene_spawner.iter_instance_entities(*instance) {
+                if let Some(mut commands) = commands.get_entity(entity) {
+                    // have to do this non-recursively and safely because we may have removed some entities already
+                    commands.despawn();
+                }
+            }
+            false
+        } else {
+            true
+        }
+    });
+
     let mut set_state = |scene_ent: &SceneEntity, current_state: LoadingState| {
         if let Ok(mut context) = contexts.get_mut(scene_ent.root) {
             context.update_crdt(
@@ -162,7 +178,7 @@ fn update_gltf(
 
         if let Some(GltfLoaded(Some(instance))) = maybe_loaded {
             // clean up from loaded state
-            scene_spawner.despawn_instance(*instance);
+            instances_to_despawn_when_ready.push(*instance);
         }
         if let Some(GltfProcessed {
             instance_id: Some(instance),
@@ -170,7 +186,7 @@ fn update_gltf(
         }) = maybe_processed
         {
             // clean up from processed state
-            scene_spawner.despawn_instance(*instance);
+            instances_to_despawn_when_ready.push(*instance);
         }
         commands
             .entity(ent)
