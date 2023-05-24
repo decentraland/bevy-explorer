@@ -219,7 +219,7 @@ fn run_scene_loop(world: &mut World) {
     #[cfg(debug_assertions)]
     let millis = 10000;
     #[cfg(not(debug_assertions))]
-    let millis = 10000;
+    let millis = 12;
     let end_time = last_end_time + Duration::from_millis(millis);
     world.resource_mut::<SceneUpdates>().loop_end_time = end_time;
 
