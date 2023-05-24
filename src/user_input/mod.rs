@@ -7,7 +7,7 @@ use bevy_console::ConsoleOpen;
 
 use crate::{
     dcl_component::proto_components::sdk::components::common::InputAction,
-    scene_runner::PrimaryUser,
+    scene_runner::{PrimaryUser, SceneSets},
 };
 
 use self::{
@@ -29,7 +29,8 @@ impl Plugin for UserInputPlugin {
                 update_user_velocity.run_if(|console: Res<ConsoleOpen>| !console.open),
                 update_user_position,
             )
-                .chain(),
+                .chain()
+                .in_set(SceneSets::Input),
         );
         app.add_system(hide_player_in_first_person);
     }
