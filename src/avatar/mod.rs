@@ -852,15 +852,20 @@ fn update_render_avatar(
     }
 
     if wearable_task.is_none() && !missing_wearables.is_empty() {
-        debug!("requesting: {:?}", missing_wearables);
+        let base_wearables = HashSet::from_iter(base_wearables::base_wearables());
         let pointers = missing_wearables
             .iter()
-            .map(|urn| urn.to_string())
-            .collect();
-        *wearable_task = Some((
-            asset_server.ipfs().active_entities(&pointers, None),
-            missing_wearables,
-        ));
+            .map(ToString::to_string)
+            .filter(|urn| !base_wearables.contains(urn))
+            .collect::<Vec<_>>();
+
+        if !pointers.is_empty() {
+            debug!("requesting: {:?}", missing_wearables);
+            *wearable_task = Some((
+                asset_server.ipfs().active_entities(&pointers, None),
+                missing_wearables,
+            ));
+        }
     }
 }
 
