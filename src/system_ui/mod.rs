@@ -181,7 +181,7 @@ fn display_chat(
                                 },
                             ),
                             TextSection::new(
-                                format!("{}", chat.message),
+                                chat.message.clone(),
                                 TextStyle {
                                     font: asset_server.load("fonts/FiraSans-Bold.ttf"),
                                     font_size: 15.0,
