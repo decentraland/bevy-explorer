@@ -675,9 +675,10 @@ fn update_collider_transforms(
                             warn!("disregarding push due to large delta: {}, toi: {}, normal dot1: {}, 2: {}", req_translation, toi.toi, dot_w_normal1, dot_w_normal2);
                             continue;
                         }
-                        // add extra 0.1 due to character controller offset / collider size difference
-                        player_transform.as_mut().unwrap().translation +=
-                            req_translation.normalize_or_zero() * (req_translation.length() + 0.01);
+                        // add extra 0.01 due to character controller offset / collider size difference
+                        player_transform.as_mut().unwrap().translation += req_translation
+                            .normalize_or_zero()
+                            * (req_translation.length() + PLAYER_COLLIDER_OVERLAP);
                         debug!(
                             "[{:?} - scale = {}] push {} = {} -> 1 = {}",
                             collider.0, new_scale, ratio, contact_at_toi, contact_at_end

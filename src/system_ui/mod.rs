@@ -1,3 +1,5 @@
+pub mod click_actions;
+pub mod interact_style;
 pub mod textbox;
 
 use bevy::ui;
@@ -14,7 +16,11 @@ use crate::{
     AppConfig,
 };
 
-use self::textbox::{update_textboxes, TextBox};
+use self::{
+    click_actions::{ClickActionPlugin, ClickActions},
+    interact_style::{Active, InteractStyle, InteractStylePlugin, InteractStyles},
+    textbox::{update_textboxes, TextBox},
+};
 
 pub struct SystemUiPlugin;
 
@@ -25,14 +31,33 @@ impl Plugin for SystemUiPlugin {
         app.add_system(update_fps);
         app.add_system(emit_chat);
         app.add_plugin(EguiPlugin);
+        app.add_plugin(ClickActionPlugin);
+        app.add_plugin(InteractStylePlugin);
         app.add_system(update_textboxes);
     }
 }
 
 #[derive(Component)]
-pub struct ChatBox;
+pub struct ChatBox {
+    tab: &'static str,
+}
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>, config: Res<AppConfig>) {
+#[derive(Component)]
+pub struct ChatTabs;
+
+#[allow(clippy::type_complexity)]
+fn setup(
+    mut commands: Commands,
+    mut actions: ResMut<ClickActions>,
+    asset_server: Res<AssetServer>,
+    config: Res<AppConfig>,
+) {
+    let tabstyle = TextStyle {
+        font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+        font_size: 20.0,
+        color: Color::rgb(0.1, 0.1, 0.1),
+    };
+
     commands
         .spawn((NodeBundle {
             style: ui::Style {
@@ -44,7 +69,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, config: Res<App
                 },
                 ..Default::default()
             },
-            // background_color: BackgroundColor(Color::rgba(0.0, 1.0, 0.0, 0.2)),
             ..Default::default()
         },))
         .with_children(|commands| {
@@ -94,47 +118,153 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, config: Res<App
             }
 
             // chat box
-            commands.spawn((
-                NodeBundle {
+            commands
+                .spawn(NodeBundle {
                     style: ui::Style {
-                        border: UiRect::all(Val::Px(5.0)),
-                        flex_direction: FlexDirection::Column,
-                        justify_content: JustifyContent::FlexEnd,
                         size: Size {
-                            width: Val::Percent(100.0),
-                            height: Val::Auto,
-                        },
-                        max_size: Size {
-                            width: Val::Percent(100.0),
+                            width: Val::Percent(30.0),
                             height: Val::Percent(50.0),
                         },
-                        ..Default::default()
-                    },
-                    background_color: BackgroundColor(Color::rgba(0.0, 0.0, 1.0, 0.2)),
-                    ..Default::default()
-                },
-                ChatBox,
-            ));
-
-            // chat entry line
-            commands.spawn((
-                NodeBundle {
-                    style: ui::Style {
-                        border: UiRect::all(Val::Px(5.0)),
+                        min_size: Size {
+                            width: Val::Px(200.0),
+                            ..default()
+                        },
                         flex_direction: FlexDirection::Column,
                         justify_content: JustifyContent::FlexEnd,
-                        size: Size {
-                            width: Val::Percent(100.0),
-                            height: Val::Px(30.0),
-                        },
+                        align_items: AlignItems::Stretch,
                         ..Default::default()
                     },
-                    background_color: BackgroundColor(Color::rgba(1.0, 0.0, 1.0, 0.2)),
                     ..Default::default()
-                },
-                TextBox::default(),
-                ChatInput,
-            ));
+                })
+                .with_children(|commands| {
+                    // buttons
+                    commands
+                        .spawn((
+                            NodeBundle {
+                                style: ui::Style {
+                                    flex_direction: FlexDirection::Row,
+                                    justify_content: JustifyContent::FlexStart,
+                                    flex_wrap: FlexWrap::Wrap,
+                                    size: Size::width(Val::Percent(100.0)),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            },
+                            ChatTabs,
+                        ))
+                        .with_children(|commands| {
+                            let button_bundle = (
+                                ButtonBundle {
+                                    // background_color: BackgroundColor(Color::rgba(
+                                    //     0.9, 0.9, 0.9, 1.0,
+                                    // )),
+                                    style: Style {
+                                        border: UiRect::all(Val::Px(5.0)),
+                                        ..Default::default()
+                                    },
+                                    ..Default::default()
+                                },
+                                InteractStyles {
+                                    active: InteractStyle {
+                                        background: Some(Color::rgba(1.0, 1.0, 1.0, 1.0)),
+                                    },
+                                    hover: InteractStyle {
+                                        background: Some(Color::rgba(0.7, 0.7, 0.7, 1.0)),
+                                    },
+                                    inactive: InteractStyle {
+                                        background: Some(Color::rgba(0.4, 0.4, 0.4, 1.0)),
+                                    },
+                                },
+                            );
+
+                            commands
+                                .spawn((
+                                    button_bundle.clone(),
+                                    actions.on_click((|| "Nearby").pipe(select_chat)),
+                                    ChatButton("Nearby"),
+                                    Active(true),
+                                ))
+                                .with_children(|commands| {
+                                    commands.spawn(TextBundle::from_section(
+                                        "NEARBY",
+                                        tabstyle.clone(),
+                                    ));
+                                });
+
+                            commands
+                                .spawn((
+                                    button_bundle.clone(),
+                                    actions.on_click((|| "Scene log").pipe(select_chat)),
+                                    ChatButton("Scene log"),
+                                    Active(false),
+                                ))
+                                .with_children(|commands| {
+                                    commands.spawn(TextBundle::from_section(
+                                        "SCENE LOG",
+                                        tabstyle.clone(),
+                                    ));
+                                });
+
+                            commands
+                                .spawn((
+                                    button_bundle,
+                                    actions.on_click((|| "Something Else").pipe(select_chat)),
+                                    ChatButton("Something Else"),
+                                    Active(false),
+                                ))
+                                .with_children(|commands| {
+                                    commands.spawn(TextBundle::from_section(
+                                        "SOMETHING ELSE",
+                                        tabstyle.clone(),
+                                    ));
+                                });
+                        });
+
+                    // chat display
+                    commands.spawn((
+                        NodeBundle {
+                            style: ui::Style {
+                                // border: UiRect::all(Val::Px(5.0)),
+                                flex_direction: FlexDirection::Column,
+                                justify_content: JustifyContent::FlexEnd,
+                                size: Size {
+                                    width: Val::Percent(100.0),
+                                    height: Val::Auto,
+                                },
+                                flex_grow: 1.0,
+                                ..Default::default()
+                            },
+                            background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.5, 0.2)),
+                            ..Default::default()
+                        },
+                        ChatBox { tab: "NEARBY" },
+                        Interaction::default(),
+                    ));
+
+                    // chat entry line
+                    commands.spawn((
+                        NodeBundle {
+                            style: ui::Style {
+                                border: UiRect::all(Val::Px(5.0)),
+                                flex_direction: FlexDirection::Column,
+                                justify_content: JustifyContent::FlexEnd,
+                                size: Size {
+                                    width: Val::Percent(100.0),
+                                    height: Val::Px(20.0),
+                                },
+                                ..Default::default()
+                            },
+                            background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.2, 0.8)),
+                            ..Default::default()
+                        },
+                        TextBox {
+                            enabled: true,
+                            ..Default::default()
+                        },
+                        ChatInput,
+                        Interaction::default(),
+                    ));
+                });
         });
 }
 
@@ -143,16 +273,27 @@ pub struct DisplayChatMessage {
     timestamp: f32,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn display_chat(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut chats: EventReader<ChatEvent>,
-    chatbox: Query<(Entity, Option<&Children>), With<ChatBox>>,
+    mut chatbox: Query<
+        (
+            Entity,
+            Option<&Children>,
+            &mut BackgroundColor,
+            &Interaction,
+        ),
+        With<ChatBox>,
+    >,
+    chat_input: Query<&Interaction, With<ChatInput>>,
     messages: Query<&DisplayChatMessage>,
     users: Query<&UserProfile>,
     time: Res<Time>,
 ) {
-    let (box_ent, maybe_children) = chatbox.single();
+    let (box_ent, maybe_children, mut bg, interaction) = chatbox.single_mut();
+    let input_interaction = chat_input.single();
 
     for chat in chats.iter() {
         let Ok(profile) = users.get(chat.sender) else {
@@ -208,6 +349,13 @@ fn display_chat(
                 }
             }
         }
+    }
+
+    if !matches!(interaction, Interaction::None) || !matches!(input_interaction, Interaction::None)
+    {
+        bg.0.set_a(0.6);
+    } else {
+        bg.0.set_a(0.1);
     }
 }
 
@@ -268,5 +416,47 @@ fn emit_chat(
             sender: player,
             message,
         });
+    }
+}
+
+#[derive(Component)]
+pub struct ChatButton(&'static str);
+
+fn select_chat(
+    In(tab): In<&'static str>,
+    mut chatbox: Query<(&mut ChatBox, &mut Style)>,
+    mut chatinput: Query<&mut Style, (With<ChatInput>, Without<ChatBox>)>,
+    mut buttons: Query<(&ChatButton, &mut Active)>,
+) {
+    let (mut chatbox, mut style) = chatbox.single_mut();
+
+    let clicked_current = chatbox.tab == tab;
+    let visible = matches!(style.display, Display::Flex);
+
+    let new_vis = if clicked_current && visible {
+        Display::None
+    } else {
+        Display::Flex
+    };
+
+    style.display = new_vis;
+
+    if !clicked_current {
+        println!("need to toggle here ...");
+        chatbox.tab = tab;
+    }
+
+    for (button, mut active) in buttons.iter_mut() {
+        if button.0 == tab {
+            println!("{} -> active ({})", button.0, !(clicked_current && visible));
+            active.0 = !(clicked_current && visible);
+        } else {
+            println!("{} -> not active", button.0);
+            active.0 = false;
+        }
+    }
+
+    for mut style in chatinput.iter_mut() {
+        style.display = new_vis;
     }
 }
