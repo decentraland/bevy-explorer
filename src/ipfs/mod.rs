@@ -3,7 +3,10 @@ pub mod ipfs_path;
 use std::{
     io::ErrorKind,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        atomic::{self, AtomicU16},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -24,6 +27,8 @@ use tokio::sync::RwLock;
 use crate::console::DoAddConsoleCommand;
 
 use self::ipfs_path::{normalize_path, EntityType, IpfsPath, IpfsType};
+
+const MAX_CONCURRENT_REQUESTS: usize = 8;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TypedIpfsRef {
@@ -443,6 +448,8 @@ pub struct IpfsIo {
     pub realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>,
     realm_config_sender: tokio::sync::watch::Sender<Option<(String, ServerAbout)>>,
     context: RwLock<IpfsContext>,
+    request_slots: tokio::sync::Semaphore,
+    reqno: AtomicU16,
 }
 
 impl IpfsIo {
@@ -455,6 +462,8 @@ impl IpfsIo {
             realm_config_receiver: receiver,
             realm_config_sender: sender,
             context: Default::default(),
+            request_slots: tokio::sync::Semaphore::new(MAX_CONCURRENT_REQUESTS),
+            reqno: default(),
         }
     }
 
@@ -558,6 +567,7 @@ impl IpfsIo {
 
         IoTaskPool::get().spawn(async move {
             let active_url = active_url.ok_or(anyhow!("not connected"))?;
+
             let body = body?;
             let mut response = isahc::Request::post(active_url)
                 .header("content-type", "application/json")
@@ -627,8 +637,12 @@ impl AssetIo for IpfsIo {
         path: &'a std::path::Path,
     ) -> bevy::utils::BoxedFuture<'a, Result<Vec<u8>, bevy::asset::AssetIoError>> {
         Box::pin(async move {
-            let wrap_err =
-                |e| bevy::asset::AssetIoError::Io(std::io::Error::new(ErrorKind::Other, e));
+            let wrap_err = |e| {
+                bevy::asset::AssetIoError::Io(std::io::Error::new(
+                    ErrorKind::Other,
+                    format!("w: {e}"),
+                ))
+            };
 
             debug!("request: {:?}", path);
 
@@ -659,6 +673,14 @@ impl AssetIo for IpfsIo {
             } else {
                 debug!("remote");
 
+                // get semaphore to limit concurrent requests
+                let _permit = self
+                    .request_slots
+                    .acquire()
+                    .await
+                    .map_err(|e| AssetIoError::Io(std::io::Error::new(ErrorKind::Other, e)))?;
+                let token = self.reqno.fetch_add(1, atomic::Ordering::SeqCst);
+
                 // wait till connected
                 self.connected().await.map_err(wrap_err)?;
 
@@ -666,28 +688,63 @@ impl AssetIo for IpfsIo {
                     .to_url(&*self.context.read().await)
                     .map_err(wrap_err)?;
 
-                debug!("remote url: `{remote}`");
-                let request = isahc::Request::get(&remote)
-                    .timeout(Duration::from_secs(120))
-                    .body(())
-                    .map_err(|e| AssetIoError::Io(std::io::Error::new(ErrorKind::Other, e)))?;
-                let mut response = request
-                    .send_async()
-                    .await
-                    .map_err(|e| AssetIoError::Io(std::io::Error::new(ErrorKind::Other, e)))?;
+                debug!("[{token:?}]: remote url: `{remote}`");
 
-                if !matches!(response.status(), StatusCode::OK) {
-                    return Err(AssetIoError::Io(std::io::Error::new(
-                        ErrorKind::Other,
-                        format!(
-                            "server responded with status {} requesting `{}`",
-                            response.status(),
-                            remote,
-                        ),
-                    )));
-                }
+                let mut attempt = 0;
+                let data = loop {
+                    attempt += 1;
 
-                let data = response.bytes().await?;
+                    let request = isahc::Request::get(&remote)
+                        .connect_timeout(Duration::from_secs(5 * attempt))
+                        .timeout(Duration::from_secs(30 * attempt))
+                        .body(())
+                        .map_err(|e| {
+                            AssetIoError::Io(std::io::Error::new(
+                                ErrorKind::Other,
+                                format!("[{token:?}]: {e}"),
+                            ))
+                        })?;
+
+                    let response = request.send_async().await;
+
+                    debug!("[{token:?}]: attempt {attempt}: response: {response:?}");
+
+                    let mut response = match response {
+                        Err(e) if e.is_timeout() && attempt <= 3 => continue,
+                        Err(e) => {
+                            return Err(AssetIoError::Io(std::io::Error::new(
+                                ErrorKind::Other,
+                                format!("[{token:?}]: {e}"),
+                            )))
+                        }
+                        Ok(response) if !matches!(response.status(), StatusCode::OK) => {
+                            return Err(AssetIoError::Io(std::io::Error::new(
+                                ErrorKind::Other,
+                                format!(
+                                    "[{token:?}]: server responded with status {} requesting `{}`",
+                                    response.status(),
+                                    remote,
+                                ),
+                            )))
+                        }
+                        Ok(response) => response,
+                    };
+
+                    let data = response.bytes().await;
+
+                    match data {
+                        Ok(data) => break data,
+                        Err(e) => {
+                            if matches!(e.kind(), std::io::ErrorKind::TimedOut) && attempt <= 3 {
+                                continue;
+                            }
+                            return Err(AssetIoError::Io(std::io::Error::new(
+                                ErrorKind::Other,
+                                format!("[{token:?}] {e}"),
+                            )));
+                        }
+                    }
+                };
 
                 if ipfs_path.should_cache() {
                     if let Some(hash) = hash {
@@ -703,7 +760,7 @@ impl AssetIo for IpfsIo {
                     }
                 }
 
-                debug!("remote url: `{remote}` completed");
+                debug!("[{token:?}]: completed remote url: `{remote}`");
                 Ok(data)
             }
         })
