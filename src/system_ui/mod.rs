@@ -1,8 +1,9 @@
 pub mod click_actions;
+pub mod focus;
 pub mod interact_style;
 pub mod textbox;
 
-use bevy::ui;
+use bevy::ui::{self, FocusPolicy};
 use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
@@ -17,7 +18,8 @@ use crate::{
 };
 
 use self::{
-    click_actions::{ClickActionPlugin, ClickActions},
+    click_actions::{UiActionPlugin, UiActions},
+    focus::{Focus, FocusPlugin},
     interact_style::{Active, InteractStyle, InteractStylePlugin, InteractStyles},
     textbox::{update_textboxes, TextBox},
 };
@@ -31,7 +33,8 @@ impl Plugin for SystemUiPlugin {
         app.add_system(update_fps);
         app.add_system(emit_chat);
         app.add_plugin(EguiPlugin);
-        app.add_plugin(ClickActionPlugin);
+        app.add_plugin(UiActionPlugin);
+        app.add_plugin(FocusPlugin);
         app.add_plugin(InteractStylePlugin);
         app.add_system(update_textboxes);
     }
@@ -45,10 +48,13 @@ pub struct ChatBox {
 #[derive(Component)]
 pub struct ChatTabs;
 
+#[derive(Component)]
+pub struct ChatboxContainer;
+
 #[allow(clippy::type_complexity)]
 fn setup(
     mut commands: Commands,
-    mut actions: ResMut<ClickActions>,
+    mut actions: ResMut<UiActions>,
     asset_server: Res<AssetServer>,
     config: Res<AppConfig>,
 ) {
@@ -119,23 +125,38 @@ fn setup(
 
             // chat box
             commands
-                .spawn(NodeBundle {
-                    style: ui::Style {
-                        size: Size {
-                            width: Val::Percent(30.0),
-                            height: Val::Percent(50.0),
+                .spawn((
+                    NodeBundle {
+                        style: ui::Style {
+                            size: Size {
+                                width: Val::Percent(30.0),
+                                height: Val::Percent(50.0),
+                            },
+                            min_size: Size {
+                                width: Val::Px(200.0),
+                                height: Val::Px(120.0),
+                            },
+                            flex_direction: FlexDirection::Column,
+                            justify_content: JustifyContent::FlexEnd,
+                            align_items: AlignItems::Stretch,
+                            ..Default::default()
                         },
-                        min_size: Size {
-                            width: Val::Px(200.0),
-                            ..default()
-                        },
-                        flex_direction: FlexDirection::Column,
-                        justify_content: JustifyContent::FlexEnd,
-                        align_items: AlignItems::Stretch,
                         ..Default::default()
                     },
-                    ..Default::default()
-                })
+                    ChatboxContainer,
+                    Interaction::None,
+                    actions.on_hover_enter(
+                        |mut chat: Query<&mut BackgroundColor, With<ChatBox>>| {
+                            chat.single_mut().0 = Color::rgba(0.0, 0.0, 0.25, 0.8);
+                        },
+                    ),
+                    actions.on_hover_exit(chatbox_defocus),
+                    actions.on_click(
+                        |mut commands: Commands, q: Query<Entity, With<ChatInput>>| {
+                            commands.entity(q.single()).remove::<Focus>().insert(Focus);
+                        },
+                    ),
+                ))
                 .with_children(|commands| {
                     // buttons
                     commands
@@ -153,71 +174,54 @@ fn setup(
                             ChatTabs,
                         ))
                         .with_children(|commands| {
-                            let button_bundle = (
-                                ButtonBundle {
-                                    // background_color: BackgroundColor(Color::rgba(
-                                    //     0.9, 0.9, 0.9, 1.0,
-                                    // )),
-                                    style: Style {
-                                        border: UiRect::all(Val::Px(5.0)),
-                                        ..Default::default()
-                                    },
-                                    ..Default::default()
-                                },
-                                InteractStyles {
-                                    active: InteractStyle {
-                                        background: Some(Color::rgba(1.0, 1.0, 1.0, 1.0)),
-                                    },
-                                    hover: InteractStyle {
-                                        background: Some(Color::rgba(0.7, 0.7, 0.7, 1.0)),
-                                    },
-                                    inactive: InteractStyle {
-                                        background: Some(Color::rgba(0.4, 0.4, 0.4, 1.0)),
-                                    },
-                                },
-                            );
+                            let mut make_button =
+                                |commands: &mut ChildBuilder, label: &'static str, active: bool| {
+                                    commands
+                                        .spawn((
+                                            ButtonBundle {
+                                                style: Style {
+                                                    border: UiRect::all(Val::Px(5.0)),
+                                                    margin: UiRect {
+                                                        bottom: Val::Px(1.0),
+                                                        ..UiRect::all(Val::Px(3.0))
+                                                    },
+                                                    ..Default::default()
+                                                },
+                                                focus_policy: FocusPolicy::Pass,
+                                                ..Default::default()
+                                            },
+                                            InteractStyles {
+                                                active: InteractStyle {
+                                                    background: Some(Color::rgba(
+                                                        1.0, 1.0, 1.0, 1.0,
+                                                    )),
+                                                },
+                                                hover: InteractStyle {
+                                                    background: Some(Color::rgba(
+                                                        0.7, 0.7, 0.7, 1.0,
+                                                    )),
+                                                },
+                                                inactive: InteractStyle {
+                                                    background: Some(Color::rgba(
+                                                        0.4, 0.4, 0.4, 1.0,
+                                                    )),
+                                                },
+                                            },
+                                            actions.on_click((move || label).pipe(select_chat_tab)),
+                                            ChatButton(label),
+                                            Active(active),
+                                        ))
+                                        .with_children(|commands| {
+                                            commands.spawn(TextBundle::from_section(
+                                                label,
+                                                tabstyle.clone(),
+                                            ));
+                                        });
+                                };
 
-                            commands
-                                .spawn((
-                                    button_bundle.clone(),
-                                    actions.on_click((|| "Nearby").pipe(select_chat)),
-                                    ChatButton("Nearby"),
-                                    Active(true),
-                                ))
-                                .with_children(|commands| {
-                                    commands.spawn(TextBundle::from_section(
-                                        "NEARBY",
-                                        tabstyle.clone(),
-                                    ));
-                                });
-
-                            commands
-                                .spawn((
-                                    button_bundle.clone(),
-                                    actions.on_click((|| "Scene log").pipe(select_chat)),
-                                    ChatButton("Scene log"),
-                                    Active(false),
-                                ))
-                                .with_children(|commands| {
-                                    commands.spawn(TextBundle::from_section(
-                                        "SCENE LOG",
-                                        tabstyle.clone(),
-                                    ));
-                                });
-
-                            commands
-                                .spawn((
-                                    button_bundle,
-                                    actions.on_click((|| "Something Else").pipe(select_chat)),
-                                    ChatButton("Something Else"),
-                                    Active(false),
-                                ))
-                                .with_children(|commands| {
-                                    commands.spawn(TextBundle::from_section(
-                                        "SOMETHING ELSE",
-                                        tabstyle.clone(),
-                                    ));
-                                });
+                            make_button(commands, "Nearby", true);
+                            make_button(commands, "Scene Log", false);
+                            make_button(commands, "Something Else", false);
                         });
 
                     // chat display
@@ -237,7 +241,7 @@ fn setup(
                             background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.5, 0.2)),
                             ..Default::default()
                         },
-                        ChatBox { tab: "NEARBY" },
+                        ChatBox { tab: "Nearby" },
                         Interaction::default(),
                     ));
 
@@ -263,6 +267,7 @@ fn setup(
                         },
                         ChatInput,
                         Interaction::default(),
+                        actions.on_defocus(chatbox_defocus),
                     ));
                 });
         });
@@ -278,22 +283,12 @@ fn display_chat(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut chats: EventReader<ChatEvent>,
-    mut chatbox: Query<
-        (
-            Entity,
-            Option<&Children>,
-            &mut BackgroundColor,
-            &Interaction,
-        ),
-        With<ChatBox>,
-    >,
-    chat_input: Query<&Interaction, With<ChatInput>>,
+    mut chatbox: Query<(Entity, Option<&Children>), With<ChatBox>>,
     messages: Query<&DisplayChatMessage>,
     users: Query<&UserProfile>,
     time: Res<Time>,
 ) {
-    let (box_ent, maybe_children, mut bg, interaction) = chatbox.single_mut();
-    let input_interaction = chat_input.single();
+    let (box_ent, maybe_children) = chatbox.single_mut();
 
     for chat in chats.iter() {
         let Ok(profile) = users.get(chat.sender) else {
@@ -349,13 +344,6 @@ fn display_chat(
                 }
             }
         }
-    }
-
-    if !matches!(interaction, Interaction::None) || !matches!(input_interaction, Interaction::None)
-    {
-        bg.0.set_a(0.6);
-    } else {
-        bg.0.set_a(0.1);
     }
 }
 
@@ -422,7 +410,7 @@ fn emit_chat(
 #[derive(Component)]
 pub struct ChatButton(&'static str);
 
-fn select_chat(
+fn select_chat_tab(
     In(tab): In<&'static str>,
     mut chatbox: Query<(&mut ChatBox, &mut Style)>,
     mut chatinput: Query<&mut Style, (With<ChatInput>, Without<ChatBox>)>,
@@ -460,3 +448,26 @@ fn select_chat(
         style.display = new_vis;
     }
 }
+
+fn chatbox_defocus(
+    mut chat: Query<(&mut BackgroundColor, &Interaction), With<ChatBox>>,
+    focused_input: Query<(), (With<ChatInput>, With<Focus>)>,
+) {
+    println!("container hover exit");
+
+    let (mut bg, interaction) = chat.single_mut();
+
+    // keep focus if either input has focus, or we are hovering
+    if focused_input.get_single().is_ok() || !matches!(interaction, Interaction::None) {
+        println!("no defocus");
+        return;
+    }
+
+    bg.0 = Color::rgba(0.0, 0.0, 0.25, 0.2);
+}
+
+trait Unit {
+    fn unit(&self) {}
+}
+
+impl<T> Unit for T {}

@@ -2,9 +2,9 @@ pub mod camera;
 pub mod dynamics;
 pub mod player_input;
 
-use bevy::{ecs::system::SystemParam, prelude::*, utils::HashMap};
+use bevy::{ecs::system::SystemParam, prelude::*, utils::HashMap, window::PrimaryWindow};
 use bevy_console::ConsoleOpen;
-use bevy_egui::EguiContexts;
+use bevy_egui::EguiContext;
 
 use crate::{
     dcl_component::proto_components::sdk::components::common::InputAction,
@@ -25,10 +25,13 @@ pub struct AcceptInput(bool);
 
 fn check_accept_input(
     console: Res<ConsoleOpen>,
-    mut egui: EguiContexts,
+    mut ctx: Query<&mut EguiContext, With<PrimaryWindow>>,
     mut should_accept: ResMut<AcceptInput>,
 ) {
-    should_accept.0 = !console.open && !egui.ctx_mut().wants_keyboard_input();
+    let Ok(mut ctx) = ctx.get_single_mut() else {
+        return;
+    };
+    should_accept.0 = !console.open && !ctx.get_mut().wants_keyboard_input();
 }
 
 pub fn should_accept_input(should_accept: Res<AcceptInput>) -> bool {
