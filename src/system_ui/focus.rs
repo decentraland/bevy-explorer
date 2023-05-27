@@ -32,7 +32,6 @@ fn defocus(
         for (entity, added) in focus_elements.iter() {
             if !added {
                 commands.entity(entity).remove::<Focus>();
-                println!("remove focus from {entity:?}");
             }
         }
     }
@@ -48,6 +47,5 @@ fn focus(
         .filter(|(_, interaction)| matches!(interaction, Interaction::Clicked))
     {
         commands.entity(entity).insert(Focus);
-        println!("add focus to {entity:?}");
     }
 }

@@ -132,6 +132,7 @@ pub struct ProfileEvent {
 pub struct ChatEvent {
     pub timestamp: f64,
     pub sender: Entity,
+    pub channel: String,
     pub message: String,
 }
 
@@ -257,10 +258,10 @@ pub fn process_transport_updates(
                 });
             }
             Message::Chat(chat) => {
-                println!("got chat");
                 chat_events.send(ChatEvent {
                     sender: entity,
                     timestamp: chat.timestamp,
+                    channel: "Nearby".to_owned(),
                     message: chat.message,
                 });
             }
