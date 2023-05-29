@@ -7,19 +7,19 @@ use bevy_egui::{
 use super::focus::Focus;
 
 #[derive(Component, Default)]
-pub struct TextBox {
+pub struct TextEntry {
     pub content: String,
     pub enabled: bool,
     pub messages: Vec<String>,
 }
 
 #[allow(clippy::type_complexity)]
-pub fn update_textboxes(
+pub fn update_text_entry_components(
     mut commands: Commands,
     mut egui_ctx: Query<&mut EguiContext, With<PrimaryWindow>>,
     mut q: Query<(
         Entity,
-        &mut TextBox,
+        &mut TextEntry,
         &Style,
         &Node,
         &GlobalTransform,
