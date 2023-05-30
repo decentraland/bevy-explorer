@@ -6,7 +6,7 @@ use bevy::{
     window::CursorGrabMode,
 };
 
-use crate::scene_runner::PrimaryUser;
+use crate::{scene_runner::PrimaryUser, system_ui::UiRoot};
 
 #[derive(Component)]
 pub struct PrimaryCamera {
@@ -45,6 +45,7 @@ pub fn update_camera(
     mut windows: Query<&mut Window>,
     mut mouse_events: EventReader<MouseMotion>,
     mut wheel_events: EventReader<MouseWheel>,
+    ui_root: Query<&Interaction, With<UiRoot>>,
     mouse_button_input: Res<Input<MouseButton>>,
     key_input: Res<Input<KeyCode>>,
     mut move_toggled: Local<bool>,
@@ -109,11 +110,13 @@ pub fn update_camera(
         }
     }
 
-    if let Some(event) = wheel_events.iter().last() {
-        if event.y > 0.0 {
-            options.distance = 0f32.max((options.distance - 0.05) * 0.9);
-        } else if event.y < 0.0 {
-            options.distance = 1f32.min((options.distance / 0.9) + 0.05);
+    if ui_root.get_single().ok() != Some(&Interaction::None) {
+        if let Some(event) = wheel_events.iter().last() {
+            if event.y > 0.0 {
+                options.distance = 0f32.max((options.distance - 0.05) * 0.9);
+            } else if event.y < 0.0 {
+                options.distance = 1f32.min((options.distance / 0.9) + 0.05);
+            }
         }
     }
 

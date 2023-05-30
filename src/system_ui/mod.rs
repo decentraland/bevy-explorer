@@ -2,6 +2,7 @@ pub mod chat;
 pub mod click_actions;
 pub mod focus;
 pub mod interact_style;
+pub mod scrollable;
 pub mod sysinfo;
 pub mod textentry;
 
@@ -10,8 +11,8 @@ use bevy_egui::EguiPlugin;
 
 use self::{
     chat::ChatPanelPlugin, click_actions::UiActionPlugin, focus::FocusPlugin,
-    interact_style::InteractStylePlugin, sysinfo::SysInfoPlanelPlugin,
-    textentry::update_text_entry_components,
+    interact_style::InteractStylePlugin, scrollable::ScrollablePlugin,
+    sysinfo::SysInfoPlanelPlugin, textentry::update_text_entry_components,
 };
 
 pub struct SystemUiPlugin;
@@ -24,6 +25,7 @@ impl Plugin for SystemUiPlugin {
         app.add_plugin(UiActionPlugin);
         app.add_plugin(FocusPlugin);
         app.add_plugin(InteractStylePlugin);
+        app.add_plugin(ScrollablePlugin);
         app.add_system(update_text_entry_components);
 
         app.add_plugin(SysInfoPlanelPlugin);
@@ -32,23 +34,30 @@ impl Plugin for SystemUiPlugin {
 }
 
 #[derive(Resource)]
-pub struct SystemUiRoot(Entity);
+struct SystemUiRoot(Entity);
+
+#[derive(Component)]
+pub struct UiRoot;
 
 #[allow(clippy::type_complexity)]
 fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
     let root = commands
-        .spawn(NodeBundle {
-            style: Style {
-                flex_direction: FlexDirection::Column,
-                justify_content: JustifyContent::SpaceBetween,
-                size: Size {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
+        .spawn((
+            NodeBundle {
+                style: Style {
+                    flex_direction: FlexDirection::Column,
+                    justify_content: JustifyContent::SpaceBetween,
+                    size: Size {
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                    },
+                    ..Default::default()
                 },
                 ..Default::default()
             },
-            ..Default::default()
-        })
+            Interaction::default(),
+            UiRoot,
+        ))
         .id();
 
     ui_root.0 = root;

@@ -9,6 +9,7 @@ use crate::{
     dcl_assert,
     dcl_component::proto_components::kernel::comms::rfc4,
     scene_runner::{renderer_context::RendererSceneContext, ContainingScene, PrimaryUser},
+    system_ui::scrollable::{ScrollDirection, Scrollable, SpawnScrollable, StartPosition},
     util::{RingBuffer, RingBufferReceiver},
 };
 
@@ -57,6 +58,9 @@ pub struct ChatTabs;
 #[derive(Component)]
 pub struct ChatButton(&'static str);
 
+#[derive(Component)]
+pub struct ChatOutput;
+
 // hide when chatbox is hidden
 #[derive(Component)]
 pub struct ChatToggle;
@@ -99,6 +103,7 @@ fn setup(
                         justify_content: JustifyContent::FlexEnd,
                         ..Default::default()
                     },
+                    focus_policy: FocusPolicy::Block,
                     ..Default::default()
                 },
                 ChatboxContainer,
@@ -168,29 +173,45 @@ fn setup(
                                     });
                             };
 
+                        // TODO take chat titles from the transport / link to transport
                         make_button(commands, "Nearby", true);
                         make_button(commands, "Scene Log", false);
                         make_button(commands, "System Log", false);
                     });
 
                 // chat display
-                commands
-                    .spawn((
+                commands.spawn_scrollable(
+                    (
                         NodeBundle {
                             style: ui::Style {
                                 size: Size {
                                     width: Val::Percent(100.0),
-                                    height: Val::Auto,
+                                    height: Val::Percent(30.0),
+                                },
+                                max_size: Size {
+                                    width: Val::Percent(100.0),
+                                    height: Val::Percent(80.0),
+                                },
+                                min_size: Size {
+                                    width: Val::Percent(100.0),
+                                    height: Val::Percent(30.0),
                                 },
                                 flex_grow: 1.0,
-                                // overflow: Overflow::Hidden,
+                                overflow: Overflow::Hidden,
                                 ..Default::default()
                             },
+                            background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.25, 0.2)),
                             ..Default::default()
                         },
+                        Interaction::default(),
                         ChatToggle,
-                    ))
-                    .with_children(|commands| {
+                        ChatOutput,
+                    ),
+                    Scrollable::new()
+                        .with_wheel(true)
+                        .with_drag(true)
+                        .with_direction(ScrollDirection::Vertical(StartPosition::End)),
+                    |commands| {
                         commands.spawn((
                             NodeBundle {
                                 style: ui::Style {
@@ -200,13 +221,8 @@ fn setup(
                                         width: Val::Percent(100.0),
                                         height: Val::Auto,
                                     },
-                                    max_size: Size {
-                                        width: Val::Percent(100.0),
-                                        height: Val::Auto,
-                                    },
                                     ..Default::default()
                                 },
-                                background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.25, 0.2)),
                                 ..Default::default()
                             },
                             ChatBox {
@@ -217,7 +233,8 @@ fn setup(
                             },
                             Interaction::default(),
                         ));
-                    });
+                    },
+                );
 
                 // chat entry line
                 commands.spawn((
@@ -458,6 +475,7 @@ fn emit_user_chat(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn select_chat_tab(
     In(tab): In<&'static str>,
     mut commands: Commands,
@@ -465,6 +483,7 @@ fn select_chat_tab(
     mut chatbox: Query<(Entity, &mut ChatBox)>,
     mut toggles: Query<&mut Style, With<ChatToggle>>,
     mut buttons: Query<(&ChatButton, &mut Active)>,
+    mut text_entry: Query<&mut TextEntry, With<ChatInput>>,
     time: Res<Time>,
 ) {
     let (entity, mut chatbox) = chatbox.single_mut();
@@ -501,6 +520,9 @@ fn select_chat_tab(
                 msgs.push(make_chat(&mut commands, &asset_server, message));
             }
             commands.entity(entity).replace_children(&msgs);
+            text_entry.single_mut().enabled = true;
+        } else {
+            text_entry.single_mut().enabled = false;
         }
         chatbox.active_tab = tab;
     }
@@ -520,7 +542,7 @@ fn select_chat_tab(
 
 fn update_chatbox_focus(
     interaction: Query<&Interaction, With<ChatboxContainer>>,
-    mut chat: Query<&mut BackgroundColor, With<ChatBox>>,
+    mut chat: Query<&mut BackgroundColor, With<ChatOutput>>,
     focused_input: Query<(), (With<ChatInput>, With<Focus>)>,
 ) {
     let mut bg = chat.single_mut();
