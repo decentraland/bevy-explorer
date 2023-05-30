@@ -243,8 +243,8 @@ async fn websocket_room_handler_inner(
 
             match message {
                 ws_packet::Message::ChallengeMessage(_) |
-                ws_packet::Message::PeerIdentification(_) => todo!(),
-                ws_packet::Message::SignedChallengeForServer(_) => todo!(),
+                ws_packet::Message::PeerIdentification(_) |
+                ws_packet::Message::SignedChallengeForServer(_) |
                 ws_packet::Message::WelcomeMessage(_) => {
                     warn!("unexpected bau message: {message:?}");
                     continue;

@@ -164,6 +164,7 @@ fn update_scrollables(
         &Node,
         &GlobalTransform,
         Changed<GlobalTransform>,
+        Changed<Node>,
         &Interaction,
     )>,
     mut bars: Query<
@@ -177,7 +178,7 @@ fn update_scrollables(
     mut clicked_slider: Local<Option<(Entity, Vec2)>>,
     mut wheel: EventReader<MouseWheel>,
 ) {
-    #[derive(Copy, Clone)]
+    #[derive(Copy, Clone, Debug)]
     enum UpdateSliderPosition {
         Abs(f32),
         Rel(f32),
@@ -190,7 +191,7 @@ fn update_scrollables(
         bar_position: Vec2,
         length: f32,
         start: StartPosition,
-        moved: bool,
+        redraw: bool,
         update_slider: Option<UpdateSliderPosition>,
     }
 
@@ -204,8 +205,16 @@ fn update_scrollables(
     let mut horizontal_scrollers = HashMap::default();
 
     // gather scrollable components that need scrollbars
-    for (entity, mut scrollable, scroll_content, node, transform, moved, interaction) in
-        scrollables.iter_mut()
+    for (
+        entity,
+        mut scrollable,
+        scroll_content,
+        node,
+        transform,
+        transform_changed,
+        node_changed,
+        interaction,
+    ) in scrollables.iter_mut()
     {
         let Ok((child_node, mut style, _)) = nodes.get_mut(scroll_content.0) else {
             warn!("scrollable hierarchy is broken");
@@ -241,6 +250,14 @@ fn update_scrollables(
             }
         }
 
+        // the reported content-size is rounded, and occasionally repositioning when it changes causes a loop of +/- 1 pixel
+        // so we allow 1 pixel tolerance (new content smaller) before redrawing
+        let change = scrollable.content_size - child_size;
+        let redraw = transform_changed
+            || node_changed
+            || change.max_element() > 0.0
+            || change.min_element() < -1.0;
+
         if ratio.x < 1.0 {
             // generate info for the required scrollbars
             if let Some(start) = scrollable.direction.horizontal() {
@@ -253,7 +270,7 @@ fn update_scrollables(
                         bar_position: ui_position + Vec2::new(5.0, parent_size.y - 10.0),
                         length: parent_size.x - 20.0,
                         start,
-                        moved: moved || child_size != scrollable.content_size,
+                        redraw,
                         update_slider: new_slider_deltas.map(|d| UpdateSliderPosition::Rel(-d.x)),
                     },
                 );
@@ -274,7 +291,7 @@ fn update_scrollables(
                         bar_position: ui_position + Vec2::new(parent_size.x - 10.0, 5.0),
                         length: parent_size.y - 20.0,
                         start,
-                        moved: moved || child_size != scrollable.content_size,
+                        redraw,
                         update_slider: new_slider_deltas.map(|d| UpdateSliderPosition::Rel(-d.y)),
                     },
                 );
@@ -299,7 +316,7 @@ fn update_scrollables(
             continue;
         };
 
-        if info.moved {
+        if info.redraw {
             // parent either moved, was resized or the content size changed. in any case, reposition/resize the bars
             style.position = UiRect {
                 left: Val::Px(info.bar_position.x),
@@ -340,7 +357,7 @@ fn update_scrollables(
         // if anything changes we will redraw the slider and re-paginate the content
         let mut update_position = false;
 
-        if info.moved {
+        if info.redraw {
             // parent moved/resized or content moved/resized
             update_position = true;
         } else if interaction == &Interaction::Clicked {
