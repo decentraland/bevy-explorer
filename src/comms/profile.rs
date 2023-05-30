@@ -3,16 +3,12 @@ use ethers::types::Address;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    avatar::AvatarWireFormat,
-    dcl_component::proto_components::kernel::comms::rfc4::{
-        self, AnnounceProfileVersion, ProfileRequest, ProfileResponse,
-    },
-    scene_runner::PrimaryUser,
-    util::AsH160,
+    avatar::AvatarWireFormat, dcl_component::proto_components::kernel::comms::rfc4,
+    scene_runner::PrimaryUser, util::AsH160,
 };
 
 use super::{
-    global_crdt::{process_transport_updates, ForeignPlayer},
+    global_crdt::{process_transport_updates, ForeignPlayer, ProfileEvent, ProfileEventType},
     wallet::Wallet,
     NetworkMessage, Transport,
 };
@@ -36,7 +32,6 @@ impl Plugin for UserProfilePlugin {
             )
                 .before(process_transport_updates), // .in_set(TODO)
         );
-        app.add_event::<ProfileEvent>();
         let wallet = app.world.resource::<Wallet>();
         let avatar = SerializedProfile {
             user_id: Some(format!("{:#x}", wallet.address())),
@@ -61,17 +56,6 @@ pub fn setup_primary_profile(
             commands.entity(player).insert(profile.0.clone());
         }
     }
-}
-
-pub enum ProfileEventType {
-    Request(ProfileRequest),
-    Version(AnnounceProfileVersion),
-    Response(ProfileResponse),
-}
-
-pub struct ProfileEvent {
-    pub sender: Entity,
-    pub event: ProfileEventType,
 }
 
 #[derive(Resource)]

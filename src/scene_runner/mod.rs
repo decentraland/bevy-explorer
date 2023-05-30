@@ -14,7 +14,10 @@ use bevy::{
 };
 
 use crate::{
-    dcl::{interface::CrdtType, RendererResponse, SceneId, SceneResponse},
+    dcl::{
+        interface::CrdtType, RendererResponse, SceneId, SceneLogLevel, SceneLogMessage,
+        SceneResponse,
+    },
     dcl_assert,
     dcl_component::{
         transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
@@ -219,7 +222,7 @@ fn run_scene_loop(world: &mut World) {
     #[cfg(debug_assertions)]
     let millis = 10000;
     #[cfg(not(debug_assertions))]
-    let millis = 10000;
+    let millis = 12;
     let end_time = last_end_time + Duration::from_millis(millis);
     world.resource_mut::<SceneUpdates>().loop_end_time = end_time;
 
@@ -456,19 +459,25 @@ fn receive_scene_updates(
     loop {
         let maybe_completed_job = match updates.receiver().try_recv() {
             Ok(response) => match response {
-                SceneResponse::Error(scene_id, msg) => {
-                    error!("[{scene_id:?}] error: {msg}");
+                SceneResponse::Error(scene_id, message) => {
+                    error!("[{scene_id:?}] error: {message}");
                     if let Some(root) = updates.scene_ids.get(&scene_id) {
                         if let Ok(mut context) = scenes.get_mut(*root) {
                             context.broken = true;
                             context.in_flight = false;
+                            let timestamp = context.total_runtime as f64 + 1.0;
+                            context.logs.send(SceneLogMessage {
+                                timestamp,
+                                level: SceneLogLevel::SystemError,
+                                message,
+                            });
                         }
                         Some(*root)
                     } else {
                         None
                     }
                 }
-                SceneResponse::Ok(scene_id, census, mut crdt, runtime) => {
+                SceneResponse::Ok(scene_id, census, mut crdt, runtime, messages) => {
                     let root = updates.scene_ids.get(&scene_id).unwrap();
                     debug!(
                         "scene {:?}/{:?} received updates! [+{}, -{}]",
@@ -485,6 +494,9 @@ fn receive_scene_updates(
                         context.in_flight = false;
                         context.nascent = census.born;
                         context.death_row = census.died;
+                        for message in messages.into_iter() {
+                            context.logs.send(message);
+                        }
                         let mut commands = commands.entity(*root);
                         for (component_id, interface) in crdt_interfaces.0.iter() {
                             interface.updates_to_entity(*component_id, &mut crdt, &mut commands);

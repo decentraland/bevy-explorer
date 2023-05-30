@@ -3,10 +3,11 @@ use bevy::{prelude::*, utils::HashSet};
 use crate::{
     dcl::{
         interface::{CrdtStore, CrdtType},
-        SceneId,
+        SceneId, SceneLogMessage,
     },
     dcl_assert,
     dcl_component::{DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter},
+    util::RingBuffer,
 };
 
 // contains a list of (SceneEntityId.generation, bevy entity) indexed by SceneEntityId.id
@@ -59,7 +60,12 @@ pub struct RendererSceneContext {
     pub tick_number: u32,
     // last tick delta
     pub last_update_dt: f32,
+
+    // message buffer
+    pub logs: RingBuffer<SceneLogMessage>,
 }
+
+pub const SCENE_LOG_BUFFER_SIZE: usize = 100;
 
 impl RendererSceneContext {
     pub fn new(scene_id: SceneId, base: IVec2, root: Entity, priority: f32) -> Self {
@@ -81,6 +87,7 @@ impl RendererSceneContext {
             total_runtime: 0.0,
             tick_number: u32::MAX,
             last_update_dt: 0.0,
+            logs: RingBuffer::new(1000, 100),
         };
 
         new_context.live_entities[SceneEntityId::ROOT.id as usize] =

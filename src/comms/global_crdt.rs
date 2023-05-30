@@ -21,8 +21,6 @@ use crate::{
     },
 };
 
-use super::profile::{ProfileEvent, ProfileEventType};
-
 const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 6..=406;
 
 pub struct GlobalCrdtPlugin;
@@ -44,6 +42,8 @@ impl Plugin for GlobalCrdtPlugin {
         app.add_system(process_transport_updates);
         app.add_system(despawn_players);
         app.add_event::<PlayerPositionEvent>();
+        app.add_event::<ProfileEvent>();
+        app.add_event::<ChatEvent>();
     }
 }
 
@@ -118,6 +118,24 @@ pub struct PlayerPositionEvent {
     pub rotation: DclQuat,
 }
 
+pub enum ProfileEventType {
+    Request(rfc4::ProfileRequest),
+    Version(rfc4::AnnounceProfileVersion),
+    Response(rfc4::ProfileResponse),
+}
+
+pub struct ProfileEvent {
+    pub sender: Entity,
+    pub event: ProfileEventType,
+}
+
+pub struct ChatEvent {
+    pub timestamp: f64,
+    pub sender: Entity,
+    pub channel: String,
+    pub message: String,
+}
+
 #[derive(Component)]
 pub struct TransportRef(Entity);
 
@@ -128,6 +146,7 @@ pub fn process_transport_updates(
     time: Res<Time>,
     mut profile_events: EventWriter<ProfileEvent>,
     mut position_events: EventWriter<PlayerPositionEvent>,
+    mut chat_events: EventWriter<ChatEvent>,
 ) {
     let mut created_this_frame = HashMap::default();
 
@@ -238,7 +257,14 @@ pub fn process_transport_updates(
                     event: ProfileEventType::Response(response),
                 });
             }
-            Message::Chat(_) => (),
+            Message::Chat(chat) => {
+                chat_events.send(ChatEvent {
+                    sender: entity,
+                    timestamp: chat.timestamp,
+                    channel: "Nearby".to_owned(),
+                    message: chat.message,
+                });
+            }
             Message::Scene(_) => (),
             Message::Voice(_) => (),
         }

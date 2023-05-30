@@ -46,7 +46,27 @@ pub enum RendererResponse {
                                      // data from scene to renderer
 pub enum SceneResponse {
     Error(SceneId, String),
-    Ok(SceneId, SceneCensus, CrdtStore, SceneElapsedTime),
+    Ok(
+        SceneId,
+        SceneCensus,
+        CrdtStore,
+        SceneElapsedTime,
+        Vec<SceneLogMessage>,
+    ),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum SceneLogLevel {
+    Log,
+    SceneError,
+    SystemError,
+}
+
+#[derive(Clone, Debug)]
+pub struct SceneLogMessage {
+    pub timestamp: f64, // scene local time
+    pub level: SceneLogLevel,
+    pub message: String,
 }
 
 static SCENE_ID: Lazy<AtomicU32> = Lazy::new(Default::default);

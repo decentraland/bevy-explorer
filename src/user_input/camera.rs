@@ -6,7 +6,7 @@ use bevy::{
     window::CursorGrabMode,
 };
 
-use crate::scene_runner::PrimaryUser;
+use crate::{scene_runner::PrimaryUser, system_ui::UiRoot};
 
 #[derive(Component)]
 pub struct PrimaryCamera {
@@ -45,10 +45,12 @@ pub fn update_camera(
     mut windows: Query<&mut Window>,
     mut mouse_events: EventReader<MouseMotion>,
     mut wheel_events: EventReader<MouseWheel>,
+    ui_root: Query<&Interaction, With<UiRoot>>,
     mouse_button_input: Res<Input<MouseButton>>,
     key_input: Res<Input<KeyCode>>,
     mut move_toggled: Local<bool>,
     mut camera: Query<(&mut Transform, &mut PrimaryCamera)>,
+    mut locked_cursor_position: Local<Option<Vec2>>,
 ) {
     let dt = time.delta_seconds();
 
@@ -88,6 +90,10 @@ pub fn update_camera(
 
             window.cursor.grab_mode = CursorGrabMode::Locked;
             window.cursor.visible = false;
+
+            let cursor_position = locked_cursor_position
+                .get_or_insert_with(|| window.cursor_position().unwrap_or_default());
+            window.set_cursor_position(Some(*cursor_position));
         }
 
         for mouse_event in mouse_events.iter() {
@@ -100,14 +106,17 @@ pub fn update_camera(
         for mut window in &mut windows {
             window.cursor.grab_mode = CursorGrabMode::None;
             window.cursor.visible = true;
+            *locked_cursor_position = None;
         }
     }
 
-    if let Some(event) = wheel_events.iter().last() {
-        if event.y > 0.0 {
-            options.distance = 0f32.max((options.distance - 0.05) * 0.9);
-        } else if event.y < 0.0 {
-            options.distance = 1f32.min((options.distance / 0.9) + 0.05);
+    if ui_root.get_single().ok() != Some(&Interaction::None) {
+        if let Some(event) = wheel_events.iter().last() {
+            if event.y > 0.0 {
+                options.distance = 0f32.max((options.distance - 0.05) * 0.9);
+            } else if event.y < 0.0 {
+                options.distance = 1f32.min((options.distance / 0.9) + 0.05);
+            }
         }
     }
 

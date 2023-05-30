@@ -2,8 +2,9 @@ pub mod camera;
 pub mod dynamics;
 pub mod player_input;
 
-use bevy::{ecs::system::SystemParam, prelude::*, utils::HashMap};
+use bevy::{ecs::system::SystemParam, prelude::*, utils::HashMap, window::PrimaryWindow};
 use bevy_console::ConsoleOpen;
+use bevy_egui::EguiContext;
 
 use crate::{
     dcl_component::proto_components::sdk::components::common::InputAction,
@@ -19,14 +20,34 @@ use self::{
 // plugin to pass user input messages to the scene
 pub struct UserInputPlugin;
 
+#[derive(Resource, Default)]
+pub struct AcceptInput(bool);
+
+fn check_accept_input(
+    console: Res<ConsoleOpen>,
+    mut ctx: Query<&mut EguiContext, With<PrimaryWindow>>,
+    mut should_accept: ResMut<AcceptInput>,
+) {
+    let Ok(mut ctx) = ctx.get_single_mut() else {
+        return;
+    };
+    should_accept.0 = !console.open && !ctx.get_mut().wants_keyboard_input();
+}
+
+pub fn should_accept_input(should_accept: Res<AcceptInput>) -> bool {
+    should_accept.0
+}
+
 impl Plugin for UserInputPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<InputMap>();
+        app.init_resource::<AcceptInput>();
         app.add_systems(
             (
-                update_camera.run_if(|console: Res<ConsoleOpen>| !console.open),
+                check_accept_input,
+                update_camera.run_if(should_accept_input),
                 update_camera_position,
-                update_user_velocity.run_if(|console: Res<ConsoleOpen>| !console.open),
+                update_user_velocity.run_if(should_accept_input),
                 update_user_position,
             )
                 .chain()

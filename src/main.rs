@@ -9,6 +9,7 @@ pub mod dcl;
 pub mod dcl_component;
 pub mod ipfs;
 pub mod scene_runner;
+pub mod system_ui;
 pub mod user_input;
 pub mod util;
 pub mod visuals;
@@ -17,7 +18,7 @@ use avatar::AvatarDynamicState;
 use bevy::{
     core::FrameCount,
     core_pipeline::tonemapping::{DebandDither, Tonemapping},
-    diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::CascadeShadowConfigBuilder,
     prelude::*,
     render::view::ColorGrading,
@@ -41,6 +42,7 @@ use crate::{
     console::{ConsolePlugin, DoAddConsoleCommand},
     ipfs::IpfsIoPlugin,
     scene_runner::SceneSets,
+    system_ui::SystemUiPlugin,
     user_input::UserInputPlugin,
     visuals::VisualsPlugin,
 };
@@ -168,6 +170,7 @@ fn main() {
     .add_plugin(DebugLinesPlugin::with_depth_test(true))
     .add_plugin(SceneRunnerPlugin) // script engine plugin
     .add_plugin(UserInputPlugin)
+    .add_plugin(SystemUiPlugin)
     .add_plugin(ConsolePlugin)
     .add_plugin(VisualsPlugin)
     .add_plugin(WalletPlugin)
@@ -182,8 +185,6 @@ fn main() {
     if final_config.graphics.log_fps {
         app.add_plugin(FrameTimeDiagnosticsPlugin)
             .add_plugin(LogDiagnosticsPlugin::default());
-
-        app.add_system(update_fps);
     }
 
     app.add_system(
@@ -210,11 +211,11 @@ fn main() {
     app.run()
 }
 
-fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<AssetServer>) {
+fn setup(mut commands: Commands) {
     // create the main player
     commands.spawn((
         SpatialBundle {
-            transform: Transform::from_translation(Vec3::new(16.0 * 77.5, 0.0, 16.0 * 7.5)),
+            transform: Transform::from_translation(Vec3::new(16.0 * 78.5, 0.0, 16.0 * 6.5)),
             ..Default::default()
         },
         PrimaryUser::default(),
@@ -229,8 +230,6 @@ fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<Asset
                 // hdr: true,
                 ..Default::default()
             },
-            transform: Transform::from_translation(Vec3::new(16.0 * 77.5, 2.42, 16.0 * 7.5))
-                .looking_at(Vec3::new(1.0, 8.0, -1.0), Vec3::Y),
             tonemapping: Tonemapping::TonyMcMapface,
             dither: DebandDither::Enabled,
             color_grading: ColorGrading {
@@ -259,73 +258,6 @@ fn setup(mut commands: Commands, config: Res<AppConfig>, asset_server: Res<Asset
         .into(),
         ..Default::default()
     });
-
-    // fps counter
-    if config.graphics.log_fps {
-        commands
-            .spawn(NodeBundle {
-                style: Style {
-                    size: Size::all(Val::Percent(100.)),
-                    justify_content: JustifyContent::SpaceBetween,
-                    ..default()
-                },
-                ..default()
-            })
-            .with_children(|parent| {
-                // left vertical fill (border)
-                parent
-                    .spawn(NodeBundle {
-                        style: Style {
-                            size: Size::new(Val::Px(80.), Val::Px(30.)),
-                            border: UiRect::all(Val::Px(2.)),
-                            ..default()
-                        },
-                        background_color: Color::rgb(0.15, 0.15, 0.15).into(),
-                        ..default()
-                    })
-                    .with_children(|parent| {
-                        // text
-                        parent.spawn((
-                            TextBundle::from_section(
-                                "Text Example",
-                                TextStyle {
-                                    font: asset_server.load("fonts/FiraSans-Bold.ttf"),
-                                    font_size: 20.0,
-                                    color: Color::GREEN,
-                                },
-                            )
-                            .with_style(Style {
-                                margin: UiRect::all(Val::Px(5.)),
-                                ..default()
-                            }),
-                            FpsLabel,
-                        ));
-                    });
-            });
-    }
-}
-
-#[derive(Component)]
-struct FpsLabel;
-
-fn update_fps(
-    mut q: Query<&mut Text, With<FpsLabel>>,
-    diagnostics: Res<Diagnostics>,
-    mut last_update: Local<u32>,
-    time: Res<Time>,
-) {
-    let tick = (time.elapsed_seconds() * 10.0) as u32;
-    if tick == *last_update {
-        return;
-    }
-    *last_update = tick;
-
-    if let Ok(mut text) = q.get_single_mut() {
-        if let Some(fps) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
-            let fps = fps.smoothed().unwrap_or_default();
-            text.sections[0].value = format!("fps: {fps:.0}");
-        }
-    }
 }
 
 // TODO remove this debug code. it's just useful to quickly switch realms with up/down keys

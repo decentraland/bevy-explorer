@@ -12,7 +12,8 @@ use crate::ipfs::SceneJsFile;
 
 use super::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
-    RendererResponse, SceneElapsedTime, SceneId, SceneResponse, VM_HANDLES,
+    RendererResponse, SceneElapsedTime, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse,
+    VM_HANDLES,
 };
 
 pub mod engine;
@@ -26,7 +27,7 @@ pub fn create_runtime() -> JsRuntime {
     // https://crates.io/crates/inventory or similar
     let ext = Extension::builder("decentraland")
         // add require operation
-        .ops(vec![op_require::decl()])
+        .ops(vec![op_require::decl(), op_log::decl(), op_error::decl()])
         // add plugin registrations
         .ops(engine::ops())
         // set startup JS script
@@ -36,11 +37,12 @@ pub fn create_runtime() -> JsRuntime {
         ))
         // remove core deno ops that are not required
         .middleware(|op| {
-            const ALLOW: [&str; 6] = [
+            const ALLOW: [&str; 7] = [
                 "op_run_microtasks", // TODO check if we can remove this on next deno version
-                "op_print",
                 "op_eval_context",
                 "op_require",
+                "op_log",
+                "op_error",
                 "op_crdt_send_to_renderer",
                 "op_crdt_recv_from_renderer",
             ];
@@ -96,6 +98,10 @@ pub(crate) fn scene_thread(
 
     // store crdt state
     state.borrow_mut().put(CrdtStore::default());
+
+    // store log output and initial elapsed of zero
+    state.borrow_mut().put(Vec::<SceneLogMessage>::default());
+    state.borrow_mut().put(SceneElapsedTime(0.0));
 
     // store kill handle
     state
@@ -230,4 +236,30 @@ fn op_require(
             "invalid module request `{module_spec}`"
         ))),
     }
+}
+
+#[op(v8)]
+fn op_log(state: Rc<RefCell<OpState>>, message: String) {
+    let time = state.borrow().borrow::<SceneElapsedTime>().0;
+    state
+        .borrow_mut()
+        .borrow_mut::<Vec<SceneLogMessage>>()
+        .push(SceneLogMessage {
+            timestamp: time as f64,
+            level: SceneLogLevel::Log,
+            message,
+        })
+}
+
+#[op(v8)]
+fn op_error(state: Rc<RefCell<OpState>>, message: String) {
+    let time = state.borrow().borrow::<SceneElapsedTime>().0;
+    state
+        .borrow_mut()
+        .borrow_mut::<Vec<SceneLogMessage>>()
+        .push(SceneLogMessage {
+            timestamp: time as f64,
+            level: SceneLogLevel::SceneError,
+            message,
+        })
 }

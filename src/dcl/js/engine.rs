@@ -9,7 +9,8 @@ use crate::{
     dcl::{
         crdt::{append_component, put_component},
         interface::crdt_context::CrdtContext,
-        CrdtComponentInterfaces, CrdtStore, RendererResponse, SceneElapsedTime, SceneResponse,
+        CrdtComponentInterfaces, CrdtStore, RendererResponse, SceneElapsedTime, SceneLogMessage,
+        SceneResponse,
     },
     dcl_component::DclReader,
 };
@@ -29,6 +30,8 @@ pub fn ops() -> Vec<OpDecl> {
 fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
     let mut op_state = op_state.borrow_mut();
     let elapsed_time = op_state.borrow::<SceneElapsedTime>().0;
+    let logs = op_state.take::<Vec<SceneLogMessage>>();
+    op_state.put(Vec::<SceneLogMessage>::default());
     let mut entity_map = op_state.take::<CrdtContext>();
     let mut typemap = op_state.take::<CrdtStore>();
     let writers = op_state.take::<CrdtComponentInterfaces>();
@@ -49,6 +52,7 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
             census,
             updates,
             SceneElapsedTime(elapsed_time),
+            logs,
         ))
         .expect("failed to send to renderer");
 
