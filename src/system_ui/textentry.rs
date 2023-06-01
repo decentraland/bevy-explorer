@@ -11,13 +11,14 @@ pub struct TextEntry {
     pub content: String,
     pub enabled: bool,
     pub messages: Vec<String>,
+    pub accept_line: bool,
 }
 
 #[allow(clippy::type_complexity)]
 pub fn update_text_entry_components(
     mut commands: Commands,
     mut egui_ctx: Query<&mut EguiContext, With<PrimaryWindow>>,
-    mut q: Query<(
+    mut text_entries: Query<(
         Entity,
         &mut TextEntry,
         &Style,
@@ -31,7 +32,7 @@ pub fn update_text_entry_components(
     let ctx = ctx.get_mut();
 
     for (entity, mut textbox, style, node, transform, maybe_interaction, maybe_focus) in
-        q.iter_mut()
+        text_entries.iter_mut()
     {
         let center = transform.translation().xy();
         let size = node.size();
@@ -49,14 +50,14 @@ pub fn update_text_entry_components(
                         TextEdit::singleline(&mut textbox.content)
                             .frame(false)
                             .desired_width(f32::INFINITY)
-                            .hint_text("say something"),
+                            .text_color(egui::Color32::WHITE),
                     );
 
                     // pass through focus and interaction
                     let mut defocus = false;
                     if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        let message = std::mem::take(&mut textbox.content);
-                        if !message.is_empty() {
+                        if textbox.accept_line && !textbox.content.is_empty() {
+                            let message = std::mem::take(&mut textbox.content);
                             response.request_focus();
                             textbox.messages.push(message);
                         } else {

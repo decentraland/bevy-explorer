@@ -9,12 +9,11 @@ use crate::{
     dcl_assert,
     dcl_component::proto_components::kernel::comms::rfc4,
     scene_runner::{renderer_context::RendererSceneContext, ContainingScene, PrimaryUser},
-    system_ui::scrollable::{ScrollDirection, Scrollable, SpawnScrollable, StartPosition},
+    system_ui::{scrollable::{ScrollDirection, Scrollable, SpawnScrollable, StartPosition}, ui_actions::{HoverEnter, On, HoverExit, Click, Defocus}},
     util::{RingBuffer, RingBufferReceiver},
 };
 
 use super::{
-    click_actions::UiActions,
     focus::Focus,
     interact_style::{Active, InteractStyle, InteractStyles},
     textentry::TextEntry,
@@ -67,7 +66,6 @@ pub struct ChatToggle;
 
 fn setup(
     mut commands: Commands,
-    mut actions: ResMut<UiActions>,
     asset_server: Res<AssetServer>,
     root: Res<SystemUiRoot>,
 ) {
@@ -108,9 +106,9 @@ fn setup(
                 },
                 ChatboxContainer,
                 Interaction::None,
-                actions.on_hover_enter(update_chatbox_focus),
-                actions.on_hover_exit(update_chatbox_focus),
-                actions.on_click(
+                On::<HoverEnter>::new(update_chatbox_focus),
+                On::<HoverExit>::new(update_chatbox_focus),
+                On::<Click>::new(
                     |mut commands: Commands, q: Query<Entity, With<ChatInput>>| {
                         commands.entity(q.single()).insert(Focus);
                     },
@@ -134,7 +132,7 @@ fn setup(
                         ChatTabs,
                     ))
                     .with_children(|commands| {
-                        let mut make_button =
+                        let make_button =
                             |commands: &mut ChildBuilder, label: &'static str, active: bool| {
                                 commands
                                     .spawn((
@@ -161,7 +159,7 @@ fn setup(
                                                 background: Some(Color::rgba(0.4, 0.4, 0.4, 1.0)),
                                             },
                                         },
-                                        actions.on_click((move || label).pipe(select_chat_tab)),
+                                        On::<Click>::new((move || label).pipe(select_chat_tab)),
                                         ChatButton(label),
                                         Active(active),
                                     ))
@@ -254,12 +252,13 @@ fn setup(
                     },
                     TextEntry {
                         enabled: true,
+                        accept_line: true,
                         ..Default::default()
                     },
                     ChatInput,
                     ChatToggle,
                     Interaction::default(),
-                    actions.on_defocus(update_chatbox_focus),
+                    On::<Defocus>::new(update_chatbox_focus),
                 ));
             });
     });

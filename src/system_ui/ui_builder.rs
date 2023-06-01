@@ -1,0 +1,70 @@
+use bevy::{ecs::system::EntityCommands, prelude::*};
+
+use super::{
+    ui_actions::{On, Click},
+    dialog::SpawnDialog,
+    interact_style::{Active, InteractStyle, InteractStyles},
+    BUTTON_TEXT_STYLE,
+};
+
+pub trait UiBuilderExt: SpawnDialog {}
+
+impl<'w, 's> UiBuilderExt for Commands<'w, 's> {}
+
+pub trait UiChildBuilderExt<'w, 's>: SpawnButton<'w, 's> {}
+
+impl<'w, 's, 'a> UiChildBuilderExt<'w, 's> for ChildBuilder<'w, 's, 'a> {}
+
+#[derive(Resource)]
+pub struct Held(Option<Entity>);
+
+pub trait SpawnButton<'w, 's> {
+    fn spawn_button<M>(
+        &mut self,
+        label: impl Into<String>,
+        action: impl IntoSystem<(), (), M>,
+    ) -> EntityCommands<'w, 's, '_>;
+}
+
+impl<'w, 's, 'a> SpawnButton<'w, 's> for ChildBuilder<'w, 's, 'a> {
+    fn spawn_button<M>(
+        &mut self,
+        label: impl Into<String>,
+        action: impl IntoSystem<(), (), M>,
+    ) -> EntityCommands<'w, 's, '_> {
+        let mut b = self.spawn((
+            NodeBundle {
+                style: Style {
+                    border: UiRect::all(Val::Px(10.0)),
+                    margin: UiRect::all(Val::Px(10.0)),
+                    ..Default::default()
+                },
+                background_color: Color::WHITE.into(),
+                ..Default::default()
+            },
+            Interaction::default(),
+            InteractStyles {
+                active: InteractStyle {
+                    background: Some(Color::rgba(1.0, 1.0, 1.0, 1.0)),
+                },
+                hover: InteractStyle {
+                    background: Some(Color::rgba(0.7, 0.7, 0.7, 1.0)),
+                },
+                inactive: InteractStyle {
+                    background: Some(Color::rgba(0.4, 0.4, 0.4, 1.0)),
+                },
+            },
+            Active(false),
+            On::<Click>::new(action),
+        ));
+
+        b.with_children(|commands| {
+            commands.spawn(
+                TextBundle::from_section(label, BUTTON_TEXT_STYLE.get().unwrap().clone())
+                    .with_text_alignment(TextAlignment::Center),
+            );
+        });
+
+        b
+    }
+}

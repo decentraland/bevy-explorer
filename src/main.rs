@@ -178,7 +178,7 @@ fn main() {
     .add_plugin(AvatarPlugin)
     .add_startup_system(setup)
     .insert_resource(AmbientLight {
-        color: Color::rgb(0.5, 0.5, 1.0),
+        color: Color::rgb(0.75, 0.75, 1.0),
         brightness: 0.25,
     });
 

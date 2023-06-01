@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use super::click_actions::run_ui_actions;
+use super::ui_actions::UiActionSet;
 
 #[derive(Component)]
 pub struct Focus;
@@ -15,7 +15,7 @@ impl Plugin for FocusPlugin {
         app.add_systems(
             (apply_system_buffers, defocus, focus)
                 .chain()
-                .after(run_ui_actions),
+                .after(UiActionSet),
         );
     }
 }
