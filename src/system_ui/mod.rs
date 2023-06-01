@@ -14,6 +14,8 @@ use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use once_cell::sync::OnceCell;
 
+use crate::common::UiRoot;
+
 use self::{
     chat::ChatPanelPlugin, color_picker::update_color_picker_components, focus::FocusPlugin,
     interact_style::InteractStylePlugin, profile::ProfileEditPlugin, scrollable::ScrollablePlugin,
@@ -47,9 +49,6 @@ impl Plugin for SystemUiPlugin {
 
 #[derive(Resource)]
 struct SystemUiRoot(Entity);
-
-#[derive(Component)]
-pub struct UiRoot;
 
 #[allow(clippy::type_complexity)]
 fn setup(

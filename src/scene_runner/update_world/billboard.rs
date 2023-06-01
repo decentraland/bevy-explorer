@@ -7,10 +7,10 @@ use bevy::math::Vec3Swizzles;
 use bevy::prelude::*;
 
 use crate::{
+    common::PrimaryCamera,
     dcl::interface::ComponentPosition,
     dcl_component::{proto_components::sdk::components::PbBillboard, SceneComponentId},
     scene_runner::SceneSets,
-    user_input::camera::PrimaryCamera,
 };
 
 use super::AddCrdtInterfaceExt;

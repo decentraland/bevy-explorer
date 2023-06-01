@@ -1,11 +1,11 @@
 use bevy::prelude::*;
 
 use crate::{
+    common::PrimaryUser,
     dcl_component::{
         proto_components::kernel::comms::rfc4,
         transform_and_parent::{DclQuat, DclTranslation},
     },
-    scene_runner::PrimaryUser,
 };
 
 use super::{NetworkMessage, Transport};

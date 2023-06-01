@@ -3,10 +3,12 @@
 // - budget -> deadline is just last end + frame time
 
 pub mod avatar;
+pub mod common;
 pub mod comms;
 pub mod console;
 pub mod dcl;
 pub mod dcl_component;
+pub mod input_manager;
 pub mod ipfs;
 pub mod scene_runner;
 pub mod system_ui;
@@ -23,18 +25,19 @@ use bevy::{
     prelude::*,
     render::view::ColorGrading,
 };
-
 use bevy_console::{ConsoleCommand, ConsoleOpen};
 use bevy_prototype_debug_lines::DebugLinesPlugin;
+
+use common::{PrimaryCamera, PrimaryUser};
 use comms::{profile::UserProfile, Transport};
 use ipfs::ChangeRealmEvent;
 use scene_runner::{
     initialize_scene::{SceneLoadDistance, SceneLoading},
     renderer_context::RendererSceneContext,
-    PrimaryUser, SceneRunnerPlugin,
+    update_world::mesh_collider::GroundCollider,
+    SceneRunnerPlugin,
 };
 use serde::{Deserialize, Serialize};
-use user_input::camera::PrimaryCamera;
 
 use crate::{
     avatar::AvatarPlugin,
@@ -44,7 +47,7 @@ use crate::{
     scene_runner::SceneSets,
     system_ui::SystemUiPlugin,
     user_input::UserInputPlugin,
-    visuals::VisualsPlugin,
+    visuals::VisualsPlugin, input_manager::InputManagerPlugin,
 };
 
 // macro for assertions
@@ -182,8 +185,10 @@ fn main() {
 
     app.insert_resource(final_config);
 
-    app.add_plugin(DebugLinesPlugin::with_depth_test(true))
-        .add_plugin(SceneRunnerPlugin) // script engine plugin
+    app
+        .add_plugin(DebugLinesPlugin::with_depth_test(true))
+        .add_plugin(InputManagerPlugin)
+        .add_plugin(SceneRunnerPlugin)
         .add_plugin(UserInputPlugin)
         .add_plugin(SystemUiPlugin)
         .add_plugin(ConsolePlugin)
@@ -228,6 +233,7 @@ fn setup(mut commands: Commands) {
         },
         PrimaryUser::default(),
         AvatarDynamicState::default(),
+        GroundCollider::default(),
     ));
 
     // add a camera

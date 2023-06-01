@@ -15,7 +15,7 @@ use rapier3d::{
 };
 
 use crate::{
-    avatar::AvatarDynamicState,
+    common::dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
     console::DoAddConsoleCommand,
     dcl::interface::ComponentPosition,
     dcl_component::{
@@ -25,10 +25,6 @@ use crate::{
     scene_runner::{
         update_world::mesh_renderer::truncated_cone::TruncatedCone, ContainerEntity,
         ContainingScene, DeletedSceneEntities, PrimaryUser, RendererSceneContext, SceneSets,
-    },
-    user_input::dynamics::{
-        PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS,
-        PLAYER_GROUND_THRESHOLD,
     },
 };
 
@@ -574,6 +570,10 @@ fn update_colliders(
     }
 }
 
+// (scene entity, collider id) of collider player is standing on
+#[derive(Component, Default)]
+pub struct GroundCollider(pub Option<(Entity, ColliderId)>);
+
 #[allow(clippy::type_complexity)]
 fn update_collider_transforms(
     changed_colliders: Query<
@@ -584,17 +584,15 @@ fn update_collider_transforms(
     >,
     mut scene_data: Query<&mut SceneColliderData>,
     containing_scene: ContainingScene,
-    mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
+    mut player: Query<(Entity, &mut Transform, &GroundCollider), With<PrimaryUser>>,
 ) {
     let mut containing_scenes = HashSet::default();
     let mut parent_collider = None;
     let mut player_transform = None;
 
-    if let Ok((player, transform, state)) = player.get_single_mut() {
+    if let Ok((player, transform, ground_collider)) = player.get_single_mut() {
         player_transform = Some(transform);
-        if state.ground_height < PLAYER_GROUND_THRESHOLD {
-            parent_collider = state.ground_collider.clone();
-        }
+        parent_collider = ground_collider.0.clone();
         containing_scenes.extend(containing_scene.get_area(player, PLAYER_COLLIDER_RADIUS));
     }
 

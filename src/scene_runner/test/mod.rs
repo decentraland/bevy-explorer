@@ -25,6 +25,7 @@ use crate::{
         transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
         SceneCrdtTimestamp, SceneEntityId,
     },
+    input_manager::InputMap,
     ipfs::{IpfsIoPlugin, IpfsLoaderExt, ServerAbout, ServerConfiguration},
     scene_runner::{
         process_scene_entity_lifecycle, receive_scene_updates, send_scene_updates,
@@ -34,7 +35,6 @@ use crate::{
         },
         RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
     },
-    user_input::InputMap,
     AppConfig, PrimaryCamera,
 };
 

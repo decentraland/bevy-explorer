@@ -9,7 +9,7 @@ use bevy_atmosphere::{
     system_param::AtmosphereMut,
 };
 
-use crate::{scene_runner::PrimaryUser, PrimaryCamera};
+use crate::{common::PrimaryUser, PrimaryCamera};
 
 pub struct VisualsPlugin;
 

@@ -4,11 +4,12 @@ use bevy::{
 };
 
 use crate::{
+    common::PrimaryUser,
     comms::{global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport},
     dcl::{SceneLogLevel, SceneLogMessage},
     dcl_assert,
     dcl_component::proto_components::kernel::comms::rfc4,
-    scene_runner::{renderer_context::RendererSceneContext, ContainingScene, PrimaryUser},
+    scene_runner::{renderer_context::RendererSceneContext, ContainingScene},
     system_ui::{
         scrollable::{ScrollDirection, Scrollable, SpawnScrollable, StartPosition},
         ui_actions::{Click, Defocus, HoverEnter, HoverExit, On},

@@ -7,7 +7,7 @@ use bevy::{
     scene::InstanceId,
     utils::{HashMap, HashSet},
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use urn::Urn;
 
 pub mod animate;
@@ -17,6 +17,7 @@ pub mod mask_material;
 
 use crate::{
     avatar::animate::AvatarAnimPlayer,
+    common::PrimaryUser,
     comms::{
         global_crdt::{ForeignPlayer, GlobalCrdtState},
         profile::UserProfile,
@@ -33,10 +34,7 @@ use crate::{
         SceneComponentId, SceneEntityId,
     },
     ipfs::{ActiveEntityTask, IpfsLoaderExt, IpfsModifier},
-    scene_runner::{
-        update_world::{mesh_collider::ColliderId, AddCrdtInterfaceExt},
-        ContainingScene, PrimaryUser, SceneEntity,
-    },
+    scene_runner::{update_world::AddCrdtInterfaceExt, ContainingScene, SceneEntity},
     util::TaskExt,
 };
 
@@ -78,8 +76,6 @@ impl Plugin for AvatarPlugin {
 pub struct AvatarDynamicState {
     pub velocity: Vec3,
     pub ground_height: f32,
-    // (scene entity, collider id) of collider player is standing on
-    pub ground_collider: Option<(Entity, ColliderId)>,
 }
 
 #[derive(Debug)]
@@ -1323,33 +1319,3 @@ fn process_avatar(
 
 #[derive(Component)]
 struct PendingAvatarTask(HashSet<Urn>);
-
-#[derive(Serialize, Deserialize, Copy, Clone)]
-pub struct AvatarColor {
-    pub color: Color3,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct AvatarSnapshots {
-    pub face256: String,
-    pub body: String,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct AvatarEmote {
-    pub slot: u32,
-    pub urn: String,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct AvatarWireFormat {
-    pub name: Option<String>,
-    #[serde(rename = "bodyShape")]
-    pub body_shape: Option<String>,
-    pub eyes: Option<AvatarColor>,
-    pub hair: Option<AvatarColor>,
-    pub skin: Option<AvatarColor>,
-    pub wearables: Vec<String>,
-    pub emotes: Option<Vec<AvatarEmote>>,
-    pub snapshots: Option<AvatarSnapshots>,
-}

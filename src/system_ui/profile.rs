@@ -4,10 +4,8 @@ use bevy::{prelude::*, ui::FocusPolicy, utils::HashMap};
 use urn::Urn;
 
 use crate::{
-    avatar::{
-        AvatarColor, WearableCategory, WearableMetas, WearablePointerResult, WearablePointers,
-    },
-    comms::profile::CurrentUserProfile,
+    avatar::{WearableCategory, WearableMetas, WearablePointerResult, WearablePointers},
+    comms::profile::{AvatarColor, CurrentUserProfile},
     ipfs::IpfsLoaderExt,
     system_ui::{
         color_picker::ColorPicker,

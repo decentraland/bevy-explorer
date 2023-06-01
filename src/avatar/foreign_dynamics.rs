@@ -1,13 +1,13 @@
 use bevy::prelude::*;
 
 use crate::{
+    common::dynamics::MAX_FALL_SPEED,
     comms::global_crdt::{ForeignPlayer, PlayerPositionEvent},
     dcl_component::{transform_and_parent::DclTransformAndParent, SceneEntityId},
     scene_runner::{
         renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
         ContainingScene,
     },
-    user_input::dynamics::MAX_FALL_SPEED,
 };
 
 use super::AvatarDynamicState;

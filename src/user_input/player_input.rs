@@ -2,15 +2,12 @@ use bevy::{math::Vec3Swizzles, prelude::*};
 
 use crate::{
     avatar::AvatarDynamicState,
+    common::{PrimaryCamera, PrimaryUser},
     dcl_component::proto_components::sdk::components::common::InputAction,
-    scene_runner::PrimaryUser,
+    input_manager::InputManager,
 };
 
-use super::{
-    camera::PrimaryCamera,
-    dynamics::{GRAVITY, MAX_JUMP_HEIGHT, PLAYER_GROUND_THRESHOLD},
-    InputManager,
-};
+use crate::common::dynamics::{GRAVITY, MAX_JUMP_HEIGHT, PLAYER_GROUND_THRESHOLD};
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub(crate) fn update_user_velocity(
