@@ -131,13 +131,22 @@ impl From<common::Color3> for bevy::prelude::Color {
 impl From<bevy::prelude::Color> for common::Color4 {
     fn from(value: bevy::prelude::Color) -> Self {
         let rgba = value.as_linear_rgba_f32();
-        common::Color4 { r: rgba[0], g: rgba[1], b: rgba[2], a: rgba[3] }
+        common::Color4 {
+            r: rgba[0],
+            g: rgba[1],
+            b: rgba[2],
+            a: rgba[3],
+        }
     }
 }
 
 impl From<bevy::prelude::Color> for common::Color3 {
     fn from(value: bevy::prelude::Color) -> Self {
         let rgba = value.as_linear_rgba_f32();
-        common::Color3 { r: rgba[0], g: rgba[1], b: rgba[2] }
+        common::Color3 {
+            r: rgba[0],
+            g: rgba[1],
+            b: rgba[2],
+        }
     }
 }

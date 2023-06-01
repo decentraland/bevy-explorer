@@ -103,22 +103,23 @@ pub struct WearablePointers(pub HashMap<Urn, WearablePointerResult>);
 #[derive(Resource, Default, Debug)]
 pub struct WearableMetas(pub HashMap<String, WearableMeta>);
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Component, Clone)]
 pub struct WearableMeta {
+    pub id: String,
     pub description: String,
     pub thumbnail: String,
     pub rarity: String,
     pub data: WearableData,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct WearableData {
     pub tags: Vec<String>,
     pub category: WearableCategory,
     pub representations: Vec<WearableRepresentation>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct WearableRepresentation {
     pub body_shapes: Vec<String>,
@@ -539,13 +540,39 @@ impl FromStr for WearableCategory {
     }
 }
 
-#[derive(Debug)]
+impl WearableCategory {
+    pub fn iter() -> impl Iterator<Item = &'static WearableCategory> {
+        [
+            Self::EYES,
+            Self::EYEBROWS,
+            Self::MOUTH,
+            Self::FACIAL_HAIR,
+            Self::HAIR,
+            Self::HEAD,
+            Self::UPPER_BODY,
+            Self::LOWER_BODY,
+            Self::FEET,
+            Self::EARRING,
+            Self::EYEWEAR,
+            Self::HAT,
+            Self::HELMET,
+            Self::MASK,
+            Self::TIARA,
+            Self::TOP_HEAD,
+            Self::SKIN,
+        ]
+        .iter()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct WearableDefinition {
-    category: WearableCategory,
-    hides: HashSet<WearableCategory>,
-    model: Option<Handle<Gltf>>,
-    texture: Option<Handle<Image>>,
-    mask: Option<Handle<Image>>,
+    pub category: WearableCategory,
+    pub hides: HashSet<WearableCategory>,
+    pub model: Option<Handle<Gltf>>,
+    pub texture: Option<Handle<Image>>,
+    pub mask: Option<Handle<Image>>,
+    pub thumbnail: Option<Handle<Image>>,
 }
 
 impl WearableDefinition {
@@ -627,12 +654,17 @@ impl WearableDefinition {
             (model, None, None)
         };
 
+        let thumbnail = asset_server
+            .load_content_file::<Image>(&meta.thumbnail, content_hash)
+            .ok();
+
         Some(Self {
             category,
             hides,
             model,
             texture,
             mask,
+            thumbnail,
         })
     }
 }

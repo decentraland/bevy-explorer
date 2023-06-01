@@ -1,5 +1,5 @@
 pub mod chat;
-pub mod ui_actions;
+pub mod color_picker;
 pub mod dialog;
 pub mod focus;
 pub mod interact_style;
@@ -7,17 +7,18 @@ pub mod profile;
 pub mod scrollable;
 pub mod sysinfo;
 pub mod textentry;
+pub mod ui_actions;
 pub mod ui_builder;
-pub mod color_picker;
 
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use once_cell::sync::OnceCell;
 
 use self::{
-    chat::ChatPanelPlugin, ui_actions::UiActionPlugin, focus::FocusPlugin,
+    chat::ChatPanelPlugin, color_picker::update_color_picker_components, focus::FocusPlugin,
     interact_style::InteractStylePlugin, profile::ProfileEditPlugin, scrollable::ScrollablePlugin,
-    sysinfo::SysInfoPlanelPlugin, textentry::update_text_entry_components, color_picker::update_color_picker_components,
+    sysinfo::SysInfoPlanelPlugin, textentry::update_text_entry_components,
+    ui_actions::UiActionPlugin,
 };
 
 static TITLE_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();

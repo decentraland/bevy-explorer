@@ -1,9 +1,9 @@
 use bevy::{ecs::system::EntityCommands, prelude::*};
 
 use super::{
-    ui_actions::{On, Click},
     dialog::SpawnDialog,
     interact_style::{Active, InteractStyle, InteractStyles},
+    ui_actions::{Click, On},
     BUTTON_TEXT_STYLE,
 };
 

@@ -1,8 +1,5 @@
 use bevy::{math::Vec3Swizzles, prelude::*, window::PrimaryWindow};
-use bevy_egui::{
-    egui,
-    EguiContext,
-};
+use bevy_egui::{egui, EguiContext};
 
 use crate::system_ui::ui_actions::DataChanged;
 
@@ -18,7 +15,7 @@ pub struct TextEntry {
 
 #[derive(Component)]
 pub struct ColorPicker {
-    pub color: [f32;3],
+    pub color: [f32; 3],
 }
 
 impl ColorPicker {

@@ -1,6 +1,9 @@
 use bevy::{prelude::*, ui::FocusPolicy};
 
-use super::{ui_actions::{On, Click}, BODY_TEXT_STYLE, BUTTON_TEXT_STYLE, TITLE_TEXT_STYLE};
+use super::{
+    ui_actions::{Click, On},
+    BODY_TEXT_STYLE, BUTTON_TEXT_STYLE, TITLE_TEXT_STYLE,
+};
 
 pub trait SpawnDialog {
     fn spawn_dialog_two<M, N>(
@@ -96,7 +99,7 @@ impl<'w, 's> SpawnDialog for Commands<'w, 's> {
                         commands.spawn((
                             TextBundle {
                                 style: Style {
-                                    margin: UiRect::all(Val::Px(10.0)),
+                                    // border: UiRect::all(Val::Px(10.0)),
                                     ..Default::default()
                                 },
                                 text: Text::from_section(
@@ -120,7 +123,7 @@ impl<'w, 's> SpawnDialog for Commands<'w, 's> {
                                     button_two_label,
                                     BUTTON_TEXT_STYLE.get().unwrap().clone(),
                                 ),
-                                background_color: Color::rgb(0.9, 0.9, 0.5).into(),
+                                background_color: Color::rgb(1.0, 1.0, 0.8).into(),
                                 ..Default::default()
                             },
                             Interaction::default(),

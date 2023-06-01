@@ -4,12 +4,25 @@ use bevy::{prelude::*, ui::FocusPolicy, utils::HashMap};
 use urn::Urn;
 
 use crate::{
-    avatar::{WearableCategory, WearableMetas, WearablePointerResult, WearablePointers, AvatarColor},
+    avatar::{
+        AvatarColor, WearableCategory, WearableDefinition, WearableMetas, WearablePointerResult,
+        WearablePointers,
+    },
     comms::profile::CurrentUserProfile,
-    system_ui::{textentry::TextEntry, ui_builder::SpawnButton, BODY_TEXT_STYLE, TITLE_TEXT_STYLE, color_picker::ColorPicker, ui_actions::{Defocus, DataChanged}, interact_style::Active},
+    system_ui::{
+        color_picker::ColorPicker,
+        interact_style::Active,
+        textentry::TextEntry,
+        ui_actions::{DataChanged, Defocus},
+        ui_builder::SpawnButton,
+        BODY_TEXT_STYLE, TITLE_TEXT_STYLE,
+    },
 };
 
-use super::{ui_actions::{On, Click}, dialog::SpawnDialog};
+use super::{
+    dialog::SpawnDialog,
+    ui_actions::{Click, On},
+};
 
 pub struct ProfileEditPlugin;
 
@@ -64,13 +77,15 @@ pub struct SkinColorEntry;
 pub struct MaleEntry;
 #[derive(Component, Default)]
 pub struct FemaleEntry;
-
+#[derive(Component)]
+pub struct WearableButton(String);
 fn toggle_profile_ui(
     mut root_commands: Commands,
     window: Query<(Entity, &EditWindow)>,
     current_profile: Res<CurrentUserProfile>,
     wearable_pointers: Res<WearablePointers>,
     wearable_metas: Res<WearableMetas>,
+    asset_server: Res<AssetServer>,
 ) {
     let spacer = NodeBundle {
         style: Style {
@@ -114,8 +129,8 @@ fn toggle_profile_ui(
                         .ok()
                         .and_then(|urn| wearable_pointers.0.get(&urn))
                         .and_then(WearablePointerResult::hash)
-                        .and_then(|hash| wearable_metas.0.get(hash).map(|meta| (meta, hash)))
-                        .map(|(meta, hash)| (meta.data.category, hash.to_owned()))
+                        .and_then(|hash| wearable_metas.0.get(hash))
+                        .map(|meta| (meta.data.category, wearable.to_owned()))
                 })
                 .collect(),
             eyes: content.avatar.eyes.clone().unwrap().color.into(),
@@ -126,6 +141,27 @@ fn toggle_profile_ui(
         };
 
         let build_copy = edit_window.clone();
+        // collect wearables before closures to capture
+        let mut wearables = HashMap::new();
+        for body_shape in [
+            "urn:decentraland:off-chain:base-avatars:basefemale",
+            "urn:decentraland:off-chain:base-avatars:basemale",
+        ] {
+            let mut cats = HashMap::default();
+            for category in WearableCategory::iter() {
+                let items = wearable_metas
+                    .0
+                    .iter()
+                    .filter(|(_, meta)| &meta.data.category == category)
+                    .flat_map(|(hash, meta)| {
+                        WearableDefinition::new(meta, &asset_server, &body_shape, hash)
+                            .map(|def| (def, meta.clone()))
+                    })
+                    .collect::<Vec<_>>();
+                cats.insert(*category, items);
+            }
+            wearables.insert(body_shape, cats);
+        }
 
         let window = root_commands
             .spawn((
@@ -147,7 +183,7 @@ fn toggle_profile_ui(
             ))
             .id();
 
-        root_commands.entity(window).with_children(|commands| {
+        root_commands.entity(window).with_children(move |commands| {
             // title
             commands.spawn(
                 TextBundle::from_section(
@@ -168,7 +204,7 @@ fn toggle_profile_ui(
                     background_color: Color::GREEN.into(),
                     ..Default::default()
                 })
-                .with_children(|commands| {
+                .with_children(move |commands| {
                     // name
                     commands
                         .spawn(NodeBundle::default())
@@ -210,7 +246,8 @@ fn toggle_profile_ui(
                         });
                     
                     // gender
-                    let is_female = &build_copy.bodyshape.to_lowercase() == "urn:decentraland:off-chain:base-avatars:basefemale";
+                    let body_shape = build_copy.bodyshape.to_lowercase();
+                    let is_female = &body_shape == "urn:decentraland:off-chain:base-avatars:basefemale";
                     commands.spawn(NodeBundle{
                         style: Style {
                             justify_content: JustifyContent::SpaceBetween,
@@ -274,6 +311,7 @@ fn toggle_profile_ui(
     
                     }
 
+                    // colors
                     commands.spawn(NodeBundle{
                         style: Style {
                             flex_direction: FlexDirection::Column,
@@ -285,6 +323,81 @@ fn toggle_profile_ui(
                         color_setting::<EyeColorEntry>(commands, "Eye color: ", build_copy.eyes, |w, c| w.eyes = c);
                         color_setting::<SkinColorEntry>(commands, "Skin color: ", build_copy.skin, |w, c| w.skin = c);
                     });
+
+                    // wearables
+                    let cats = wearables.get(body_shape.as_str()).unwrap();
+                    for category in WearableCategory::iter() {
+                        let Some(data) = cats.get(category) else {
+                            continue;
+                        };
+
+                        let data = data.clone();
+                        commands.spawn(NodeBundle{
+                            style: Style {
+                                flex_wrap: FlexWrap::Wrap,
+                                // align_self: AlignSelf::FlexStart,
+                                // max_size: Size::width(Val::Px(20.0)),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        }).with_children(|commands| {
+                            commands.spawn(TextBundle::from_section(
+                                format!("{}: ", category.slot),
+                                BODY_TEXT_STYLE.get().unwrap().clone(),
+                            ));
+
+                            for (def, meta) in data.into_iter() {
+                                let color = if build_copy.wearables.values().any(|v| v == &meta.id) {
+                                    Color::WHITE
+                                } else {
+                                    Color::NONE
+                                };
+                                commands.spawn(NodeBundle{
+                                    style: Style {
+                                        margin: UiRect::all(Val::Px(2.0)),
+                                        border: UiRect::all(Val::Px(2.0)),
+                                        ..Default::default()
+                                    },
+                                    background_color: color.into(),
+                                    ..Default::default()
+                                }).with_children(|commands| {
+                                    commands.spawn((
+                                        ImageBundle {
+                                            image: def.thumbnail.clone().unwrap_or_default().into(),
+                                            style: Style {
+                                                size: Size::all(Val::Px(50.0)),
+                                                max_size: Size::all(Val::Px(50.0)),
+                                                ..Default::default()
+                                            },
+                                            ..Default::default()
+                                        },
+                                        Interaction::default(),
+                                        WearableButton(meta.id.clone()),
+                                        On::<Click>::new(move |mut commands: Commands, mut window: Query<&mut EditWindow>, q: Query<(&WearableButton, &Parent)>| {
+                                            let mut window = window.single_mut();
+                                            if window.wearables.get(&def.category) == Some(&meta.id) {
+                                                println!("unselect");
+                                                window.wearables.remove(&def.category);
+                                            } else {
+                                                println!("wearables before: {:?}", window.wearables);
+                                                println!("select {}", meta.id);
+                                                window.wearables.insert(def.category, meta.id.clone());
+                                                println!("wearables after: {:?}", window.wearables);
+                                            }
+                                            window.modified = true;
+                                            for (w, p) in q.iter() {
+                                                if window.wearables.values().any(|v| v == &w.0) {
+                                                    commands.entity(p.get()).insert(BackgroundColor(Color::WHITE));
+                                                } else {
+                                                    commands.entity(p.get()).insert(BackgroundColor(Color::NONE));
+                                                }
+                                            }
+                                        }),
+                                    ));
+                                });
+                            }
+                        });
+                    }
                 });
 
             // buttons
@@ -307,7 +420,7 @@ fn toggle_profile_ui(
                         if edit.modified {
                             println!("modified name: {}", edit.name);
                             profile.0.content.name = edit.name.clone();
-                            println!("modified base: {}", edit.name);
+                            println!("modified base: {}", edit.bodyshape);
                             profile.0.content.avatar.body_shape = Some(edit.bodyshape.clone());
                             println!("modified hair: {:?}", edit.hair);
                             profile.0.content.avatar.hair = Some(AvatarColor{ color: edit.hair.into() });
@@ -315,6 +428,10 @@ fn toggle_profile_ui(
                             profile.0.content.avatar.eyes = Some(AvatarColor{ color: edit.eyes.into() });
                             println!("modified eyes: {:?}", edit.skin);
                             profile.0.content.avatar.skin = Some(AvatarColor{ color: edit.skin.into() });
+                            println!("base wearables: {:?}", profile.0.content.avatar.wearables);
+                            println!("mod wearables: {:?}", edit.wearables);
+                            profile.0.content.avatar.wearables = edit.wearables.values().cloned().collect();
+                            println!("new wearables: {:?}", profile.0.content.avatar.wearables);
                             profile.0.version += 1;
                         }
                         commands.entity(window).despawn_recursive()

@@ -3,7 +3,14 @@
 pub struct UiActionPlugin;
 use std::marker::PhantomData;
 
-use bevy::{ecs::{system::BoxedSystem, query::{ReadOnlyWorldQuery, WorldQuery}}, prelude::*, utils::HashSet};
+use bevy::{
+    ecs::{
+        query::{ReadOnlyWorldQuery, WorldQuery},
+        system::BoxedSystem,
+    },
+    prelude::*,
+    utils::HashSet,
+};
 
 use super::focus::Focus;
 
@@ -12,28 +19,30 @@ pub struct UiActionSet;
 
 impl Plugin for UiActionPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .init_resource::<UiActions::<HoverEnter>>()
-            .init_resource::<UiActions::<Click>>()
-            .init_resource::<UiActions::<HoverExit>>()
-            .init_resource::<UiActions::<Focus>>()
-            .init_resource::<UiActions::<Defocus>>()
-            .init_resource::<UiActions::<DataChanged>>()
-
-            .add_systems((
-                gather_actions::<HoverEnter>,
-                gather_actions::<Click>,
-                gather_actions::<HoverExit>,
-                gather_actions::<Focus>,
-                gather_actions::<Defocus>,
-                gather_actions::<DataChanged>,
-                run_actions::<HoverEnter>,
-                run_actions::<Click>,
-                run_actions::<HoverExit>,
-                run_actions::<Focus>,
-                run_actions::<Defocus>,
-                run_actions::<DataChanged>,
-            ).chain().in_set(UiActionSet));
+        app.init_resource::<UiActions<HoverEnter>>()
+            .init_resource::<UiActions<Click>>()
+            .init_resource::<UiActions<HoverExit>>()
+            .init_resource::<UiActions<Focus>>()
+            .init_resource::<UiActions<Defocus>>()
+            .init_resource::<UiActions<DataChanged>>()
+            .add_systems(
+                (
+                    gather_actions::<HoverEnter>,
+                    gather_actions::<Click>,
+                    gather_actions::<HoverExit>,
+                    gather_actions::<Focus>,
+                    gather_actions::<Defocus>,
+                    gather_actions::<DataChanged>,
+                    run_actions::<HoverEnter>,
+                    run_actions::<Click>,
+                    run_actions::<HoverExit>,
+                    run_actions::<Focus>,
+                    run_actions::<Defocus>,
+                    run_actions::<DataChanged>,
+                )
+                    .chain()
+                    .in_set(UiActionSet),
+            );
     }
 }
 
@@ -41,11 +50,8 @@ impl Plugin for UiActionPlugin {
 pub struct On<M: ActionMarker>(Option<ActionImpl>, PhantomData<M>);
 
 impl<M: ActionMarker> On<M> {
-    pub fn new<S>(system: impl IntoSystem<(),(),S>) -> Self {
-        Self(
-            Some(ActionImpl::new(system)),
-            Default::default(),
-        )
+    pub fn new<S>(system: impl IntoSystem<(), (), S>) -> Self {
+        Self(Some(ActionImpl::new(system)), Default::default())
     }
 }
 
@@ -134,7 +140,9 @@ fn gather_actions<M: ActionMarker>(
     mut new_actions: Query<(Entity, &mut On<M>), Without<ActionIndex<M>>>,
 ) {
     for (ent, mut action) in new_actions.iter_mut() {
-        commands.entity(ent).insert(ActionIndex::<M>(ui_actions.0.len(), Default::default()));
+        commands
+            .entity(ent)
+            .insert(ActionIndex::<M>(ui_actions.0.len(), Default::default()));
         ui_actions.0.push(action.0.take().unwrap());
     }
 }
@@ -143,9 +151,7 @@ pub fn run_actions<M: ActionMarker>(world: &mut World) {
     let action_list: HashSet<usize> = world
         .query::<(&ActionIndex<M>, M::Component)>()
         .iter(world)
-        .filter_map(|(action, param)| {
-            M::activate(param).then_some(action.0)
-        })
+        .filter_map(|(action, param)| M::activate(param).then_some(action.0))
         .collect();
 
     world.resource_scope(|world: &mut World, mut ui_actions: Mut<UiActions<M>>| {

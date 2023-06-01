@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     avatar::AvatarWireFormat, dcl_component::proto_components::kernel::comms::rfc4,
-    scene_runner::PrimaryUser, util::AsH160,
+    scene_runner::PrimaryUser, util::AsH160, AppConfig,
 };
 
 use super::{
@@ -33,27 +33,63 @@ impl Plugin for UserProfilePlugin {
                 .before(process_transport_updates), // .in_set(TODO)
         );
         let wallet = app.world.resource::<Wallet>();
-        let avatar = SerializedProfile {
-            user_id: Some(format!("{:#x}", wallet.address())),
-            name: "bevy user".to_owned(),
-            ..Default::default()
+
+        let profile = app.world.resource::<AppConfig>().profile.clone();
+
+        let user_profile = UserProfile {
+            version: profile.version,
+            content: SerializedProfile {
+                user_id: Some(format!("{:#x}", wallet.address())),
+                ..profile.content
+            },
+            base_url: profile.base_url,
         };
-        app.insert_resource(CurrentUserProfile(UserProfile {
-            version: 1,
-            content: avatar,
-            base_url: "https://sdk-test-scenes.decentraland.zone/content/contents/".to_owned(),
-        }));
+        app.insert_resource(CurrentUserProfile(user_profile));
     }
 }
 
 pub fn setup_primary_profile(
     mut commands: Commands,
     player: Query<(Entity, Option<&UserProfile>), With<PrimaryUser>>,
-    profile: Res<CurrentUserProfile>,
+    current_profile: Res<CurrentUserProfile>,
+    transports: Query<&Transport>,
 ) {
     if let Ok((player, maybe_profile)) = player.get_single() {
-        if maybe_profile.is_none() || profile.is_changed() {
-            commands.entity(player).insert(profile.0.clone());
+        if maybe_profile.is_none() || current_profile.is_changed() {
+            // update component
+            commands.entity(player).insert(current_profile.0.clone());
+
+            // send over network
+            debug!(
+                "sending profile new version {:?}",
+                current_profile.0.version
+            );
+            let response = rfc4::Packet {
+                message: Some(rfc4::packet::Message::ProfileResponse(
+                    rfc4::ProfileResponse {
+                        serialized_profile: serde_json::to_string(&current_profile.0.content)
+                            .unwrap(),
+                        base_url: current_profile.0.base_url.clone(),
+                    },
+                )),
+            };
+            for transport in &transports {
+                let _ = transport
+                    .sender
+                    .try_send(NetworkMessage::reliable(&response));
+            }
+
+            // store to app config
+            let mut config: AppConfig = std::fs::read("config.json")
+                .ok()
+                .and_then(|f| serde_json::from_slice(&f).ok())
+                .unwrap_or(Default::default());
+            config.profile = current_profile.0.clone();
+            if let Err(e) =
+                std::fs::write("config.json", serde_json::to_string(&config).unwrap())
+            {
+                warn!("failed to write to config: {e}");
+            }
         }
     }
 }
@@ -258,7 +294,7 @@ impl Default for SerializedProfile {
 
         Self {
             user_id: Default::default(),
-            name: Default::default(),
+            name: "Bevy User".to_string(),
             description: Default::default(),
             version: 1,
             eth_address: "0x0000000000000000000000000000000000000000".to_owned(),

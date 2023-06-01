@@ -26,7 +26,7 @@ use bevy::{
 
 use bevy_console::{ConsoleCommand, ConsoleOpen};
 use bevy_prototype_debug_lines::DebugLinesPlugin;
-use comms::Transport;
+use comms::{profile::UserProfile, Transport};
 use ipfs::ChangeRealmEvent;
 use scene_runner::{
     initialize_scene::{SceneLoadDistance, SceneLoading},
@@ -79,6 +79,7 @@ impl Default for GraphicsSettings {
 #[derive(Serialize, Deserialize, Resource)]
 pub struct AppConfig {
     server: String,
+    profile: UserProfile,
     graphics: GraphicsSettings,
 }
 
@@ -86,6 +87,11 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             server: "https://sdk-test-scenes.decentraland.zone".to_owned(),
+            profile: UserProfile {
+                version: 1,
+                content: Default::default(),
+                base_url: "https://sdk-test-scenes.decentraland.zone/content/contents/".to_owned(),
+            },
             graphics: Default::default(),
         }
     }
@@ -110,6 +116,7 @@ fn main() {
             .value_from_str("--server")
             .ok()
             .unwrap_or(base_config.server),
+        profile: base_config.profile,
         graphics: GraphicsSettings {
             vsync: args
                 .value_from_str("--vsync")
@@ -166,26 +173,29 @@ fn main() {
                 starting_realm: Some(final_config.server.clone()),
                 cache_root: Default::default(),
             }),
-    )
-    .add_plugin(DebugLinesPlugin::with_depth_test(true))
-    .add_plugin(SceneRunnerPlugin) // script engine plugin
-    .add_plugin(UserInputPlugin)
-    .add_plugin(SystemUiPlugin)
-    .add_plugin(ConsolePlugin)
-    .add_plugin(VisualsPlugin)
-    .add_plugin(WalletPlugin)
-    .add_plugin(CommsPlugin)
-    .add_plugin(AvatarPlugin)
-    .add_startup_system(setup)
-    .insert_resource(AmbientLight {
-        color: Color::rgb(0.75, 0.75, 1.0),
-        brightness: 0.25,
-    });
+    );
 
     if final_config.graphics.log_fps {
         app.add_plugin(FrameTimeDiagnosticsPlugin)
             .add_plugin(LogDiagnosticsPlugin::default());
     }
+
+    app.insert_resource(final_config);
+
+    app.add_plugin(DebugLinesPlugin::with_depth_test(true))
+        .add_plugin(SceneRunnerPlugin) // script engine plugin
+        .add_plugin(UserInputPlugin)
+        .add_plugin(SystemUiPlugin)
+        .add_plugin(ConsolePlugin)
+        .add_plugin(VisualsPlugin)
+        .add_plugin(WalletPlugin)
+        .add_plugin(CommsPlugin)
+        .add_plugin(AvatarPlugin)
+        .add_startup_system(setup)
+        .insert_resource(AmbientLight {
+            color: Color::rgb(0.75, 0.75, 1.0),
+            brightness: 0.25,
+        });
 
     app.add_system(
         input
@@ -201,8 +211,6 @@ fn main() {
     for warning in warnings {
         warn!(warning);
     }
-
-    app.insert_resource(final_config);
 
     // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
     // probably resolved by updating deno. TODO: add feature flag for this after bumping deno

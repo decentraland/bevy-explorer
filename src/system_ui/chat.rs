@@ -9,7 +9,10 @@ use crate::{
     dcl_assert,
     dcl_component::proto_components::kernel::comms::rfc4,
     scene_runner::{renderer_context::RendererSceneContext, ContainingScene, PrimaryUser},
-    system_ui::{scrollable::{ScrollDirection, Scrollable, SpawnScrollable, StartPosition}, ui_actions::{HoverEnter, On, HoverExit, Click, Defocus}},
+    system_ui::{
+        scrollable::{ScrollDirection, Scrollable, SpawnScrollable, StartPosition},
+        ui_actions::{Click, Defocus, HoverEnter, HoverExit, On},
+    },
     util::{RingBuffer, RingBufferReceiver},
 };
 
@@ -64,11 +67,7 @@ pub struct ChatOutput;
 #[derive(Component)]
 pub struct ChatToggle;
 
-fn setup(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    root: Res<SystemUiRoot>,
-) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>, root: Res<SystemUiRoot>) {
     let tabstyle = TextStyle {
         font: asset_server.load("fonts/FiraSans-Bold.ttf"),
         font_size: 20.0,
@@ -132,44 +131,43 @@ fn setup(
                         ChatTabs,
                     ))
                     .with_children(|commands| {
-                        let make_button =
-                            |commands: &mut ChildBuilder, label: &'static str, active: bool| {
-                                commands
-                                    .spawn((
-                                        ButtonBundle {
-                                            style: Style {
-                                                border: UiRect::all(Val::Px(5.0)),
-                                                margin: UiRect {
-                                                    bottom: Val::Px(1.0),
-                                                    ..UiRect::all(Val::Px(3.0))
-                                                },
-                                                ..Default::default()
+                        let make_button = |commands: &mut ChildBuilder,
+                                           label: &'static str,
+                                           active: bool| {
+                            commands
+                                .spawn((
+                                    ButtonBundle {
+                                        style: Style {
+                                            border: UiRect::all(Val::Px(5.0)),
+                                            margin: UiRect {
+                                                bottom: Val::Px(1.0),
+                                                ..UiRect::all(Val::Px(3.0))
                                             },
-                                            focus_policy: FocusPolicy::Pass,
                                             ..Default::default()
                                         },
-                                        InteractStyles {
-                                            active: InteractStyle {
-                                                background: Some(Color::rgba(1.0, 1.0, 1.0, 1.0)),
-                                            },
-                                            hover: InteractStyle {
-                                                background: Some(Color::rgba(0.7, 0.7, 0.7, 1.0)),
-                                            },
-                                            inactive: InteractStyle {
-                                                background: Some(Color::rgba(0.4, 0.4, 0.4, 1.0)),
-                                            },
+                                        focus_policy: FocusPolicy::Pass,
+                                        ..Default::default()
+                                    },
+                                    InteractStyles {
+                                        active: InteractStyle {
+                                            background: Some(Color::rgba(1.0, 1.0, 1.0, 1.0)),
                                         },
-                                        On::<Click>::new((move || label).pipe(select_chat_tab)),
-                                        ChatButton(label),
-                                        Active(active),
-                                    ))
-                                    .with_children(|commands| {
-                                        commands.spawn(TextBundle::from_section(
-                                            label,
-                                            tabstyle.clone(),
-                                        ));
-                                    });
-                            };
+                                        hover: InteractStyle {
+                                            background: Some(Color::rgba(0.7, 0.7, 0.7, 1.0)),
+                                        },
+                                        inactive: InteractStyle {
+                                            background: Some(Color::rgba(0.4, 0.4, 0.4, 1.0)),
+                                        },
+                                    },
+                                    On::<Click>::new((move || label).pipe(select_chat_tab)),
+                                    ChatButton(label),
+                                    Active(active),
+                                ))
+                                .with_children(|commands| {
+                                    commands
+                                        .spawn(TextBundle::from_section(label, tabstyle.clone()));
+                                });
+                        };
 
                         // TODO take chat titles from the transport / link to transport
                         make_button(commands, "Nearby", true);
