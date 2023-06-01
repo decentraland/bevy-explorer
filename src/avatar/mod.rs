@@ -91,7 +91,7 @@ pub enum WearablePointerResult {
 impl WearablePointerResult {
     pub fn hash(&self) -> Option<&str> {
         match self {
-            WearablePointerResult::Exists(h) => Some(&h),
+            WearablePointerResult::Exists(h) => Some(h),
             WearablePointerResult::Missing => None,
         }
     }

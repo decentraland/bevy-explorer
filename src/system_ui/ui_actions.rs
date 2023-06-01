@@ -58,13 +58,13 @@ impl<M: ActionMarker> On<M> {
 pub trait ActionMarker: Send + Sync + 'static {
     type Component: ReadOnlyWorldQuery;
 
-    fn activate<'a>(param: <Self::Component as WorldQuery>::Item<'a>) -> bool;
+    fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool;
 }
 
 pub struct Click;
 impl ActionMarker for Click {
     type Component = &'static Interaction;
-    fn activate<'a>(param: <Self::Component as WorldQuery>::Item<'a>) -> bool {
+    fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
         matches!(param, Interaction::Clicked)
     }
 }
@@ -72,27 +72,27 @@ impl ActionMarker for Click {
 pub struct HoverEnter;
 impl ActionMarker for HoverEnter {
     type Component = &'static Interaction;
-    fn activate<'a>(param: <Self::Component as WorldQuery>::Item<'a>) -> bool {
+    fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
         matches!(param, Interaction::Hovered)
     }
 }
 pub struct HoverExit;
 impl ActionMarker for HoverExit {
     type Component = &'static Interaction;
-    fn activate<'a>(param: <Self::Component as WorldQuery>::Item<'a>) -> bool {
+    fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
         matches!(param, Interaction::None)
     }
 }
 impl ActionMarker for Focus {
     type Component = Option<&'static Focus>;
-    fn activate<'a>(param: <Self::Component as WorldQuery>::Item<'a>) -> bool {
+    fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
         param.is_some()
     }
 }
 pub struct Defocus;
 impl ActionMarker for Defocus {
     type Component = Option<&'static Focus>;
-    fn activate<'a>(param: <Self::Component as WorldQuery>::Item<'a>) -> bool {
+    fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
         param.is_none()
     }
 }
@@ -101,7 +101,7 @@ impl ActionMarker for Defocus {
 pub struct DataChanged;
 impl ActionMarker for DataChanged {
     type Component = Changed<DataChanged>;
-    fn activate<'a>(param: <Self::Component as WorldQuery>::Item<'a>) -> bool {
+    fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
         param
     }
 }

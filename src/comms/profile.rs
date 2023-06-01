@@ -85,9 +85,7 @@ pub fn setup_primary_profile(
                 .and_then(|f| serde_json::from_slice(&f).ok())
                 .unwrap_or(Default::default());
             config.profile = current_profile.0.clone();
-            if let Err(e) =
-                std::fs::write("config.json", serde_json::to_string(&config).unwrap())
-            {
+            if let Err(e) = std::fs::write("config.json", serde_json::to_string(&config).unwrap()) {
                 warn!("failed to write to config: {e}");
             }
         }

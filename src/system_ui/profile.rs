@@ -5,17 +5,18 @@ use urn::Urn;
 
 use crate::{
     avatar::{
-        AvatarColor, WearableCategory, WearableDefinition, WearableMetas, WearablePointerResult,
-        WearablePointers,
+        AvatarColor, WearableCategory, WearableMetas, WearablePointerResult, WearablePointers,
     },
     comms::profile::CurrentUserProfile,
+    ipfs::IpfsLoaderExt,
     system_ui::{
         color_picker::ColorPicker,
         interact_style::Active,
+        scrollable::{ScrollDirection, Scrollable, SpawnScrollable, StartPosition},
         textentry::TextEntry,
         ui_actions::{DataChanged, Defocus},
         ui_builder::SpawnButton,
-        BODY_TEXT_STYLE, TITLE_TEXT_STYLE,
+        TITLE_TEXT_STYLE,
     },
 };
 
@@ -98,21 +99,15 @@ fn toggle_profile_ui(
     if let Ok((ent, edit)) = window.get_single() {
         if !edit.modified {
             root_commands.entity(ent).despawn_recursive();
-            println!("despawned");
         } else {
             // spawn confirm
             root_commands.spawn_dialog_two(
                 "Discard Changes".to_owned(),
                 "Are you sure you want to discard your changes?".to_owned(),
                 "Discard",
-                move |mut commands: Commands| {
-                    println!("despawned eventually");
-                    commands.entity(ent).despawn_recursive()
-                },
+                move |mut commands: Commands| commands.entity(ent).despawn_recursive(),
                 "Cancel",
-                || {
-                    println!("cancelled");
-                },
+                || {},
             );
         }
     } else {
@@ -133,19 +128,18 @@ fn toggle_profile_ui(
                         .map(|meta| (meta.data.category, wearable.to_owned()))
                 })
                 .collect(),
-            eyes: content.avatar.eyes.clone().unwrap().color.into(),
-            hair: content.avatar.hair.clone().unwrap().color.into(),
-            skin: content.avatar.skin.clone().unwrap().color.into(),
+            eyes: content.avatar.eyes.unwrap().color.into(),
+            hair: content.avatar.hair.unwrap().color.into(),
+            skin: content.avatar.skin.unwrap().color.into(),
             modified: false,
-            ..Default::default()
         };
 
         let build_copy = edit_window.clone();
         // collect wearables before closures to capture
         let mut wearables = HashMap::new();
         for body_shape in [
-            "urn:decentraland:off-chain:base-avatars:basefemale",
-            "urn:decentraland:off-chain:base-avatars:basemale",
+            "urn:decentraland:off-chain:base-avatars:basefemale".to_owned(),
+            "urn:decentraland:off-chain:base-avatars:basemale".to_owned(),
         ] {
             let mut cats = HashMap::default();
             for category in WearableCategory::iter() {
@@ -154,8 +148,18 @@ fn toggle_profile_ui(
                     .iter()
                     .filter(|(_, meta)| &meta.data.category == category)
                     .flat_map(|(hash, meta)| {
-                        WearableDefinition::new(meta, &asset_server, &body_shape, hash)
-                            .map(|def| (def, meta.clone()))
+                        if meta.data.representations.iter().any(|rep| {
+                            rep.body_shapes
+                                .iter()
+                                .any(|shape| shape.to_lowercase() == body_shape)
+                        }) {
+                            asset_server
+                                .load_content_file::<Image>(&meta.thumbnail, hash)
+                                .ok()
+                                .map(|thumb| (thumb, meta.id.clone()))
+                        } else {
+                            None
+                        }
                     })
                     .collect::<Vec<_>>();
                 cats.insert(*category, items);
@@ -176,7 +180,7 @@ fn toggle_profile_ui(
                     },
                     focus_policy: FocusPolicy::Block,
                     z_index: ZIndex::Local(1),
-                    background_color: Color::RED.into(),
+                    background_color: Color::rgb(0.9, 0.9, 1.0).into(),
                     ..Default::default()
                 },
                 edit_window,
@@ -189,129 +193,32 @@ fn toggle_profile_ui(
                 TextBundle::from_section(
                     "Edit Profile", TITLE_TEXT_STYLE.get().unwrap().clone(),
                 )
-                .with_text_alignment(TextAlignment::Center)
-                .with_background_color(Color::BLUE),
+                .with_text_alignment(TextAlignment::Center),
             );
 
             // content
-            commands
-                .spawn(NodeBundle {
-                    style: Style {
-                        flex_direction: FlexDirection::Column,
-                        flex_grow: 1.0,
-                        ..Default::default()
-                    },
-                    background_color: Color::GREEN.into(),
-                    ..Default::default()
-                })
-                .with_children(move |commands| {
-                    // name
-                    commands
-                        .spawn(NodeBundle::default())
-                        .with_children(|commands| {
-                            commands.spawn(TextBundle::from_section(
-                                "Name: ",
-                                BODY_TEXT_STYLE.get().unwrap().clone(),
-                            ));
-                            commands.spawn((
-                                NodeBundle {
-                                    style: Style {
-                                        size: Size{ width: Val::Px(100.0), height: Val::Px(20.0) },
-                                        ..Default::default()
-                                    },
-                                    background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.2, 0.8)),
-                                    ..Default::default()
-                                },
-                                TextEntry{
-                                    content: build_copy.name.clone(),
-                                    enabled: true,
-                                    ..Default::default()
-                                },
-                                Interaction::default(),
-                                NameEntry,
-                                On::<Defocus>::new(
-                                    |
-                                        mut window: Query<&mut EditWindow>,
-                                        name: Query<&TextEntry, With<NameEntry>>,
-                                    | {
-                                        let mut window = window.single_mut();
-                                        let name = name.single();
-                                        if !name.content.is_empty() && name.content != window.name {
-                                            window.name = name.content.clone();
-                                            window.modified = true;
-                                        }
-                                    }
-                                ),
-                            ));
-                        });
-                    
-                    // gender
-                    let body_shape = build_copy.bodyshape.to_lowercase();
-                    let is_female = &body_shape == "urn:decentraland:off-chain:base-avatars:basefemale";
-                    commands.spawn(NodeBundle{
+            commands.spawn_scrollable(
+                (
+                    NodeBundle {
                         style: Style {
-                            justify_content: JustifyContent::SpaceBetween,
-                            align_items: AlignItems::Center,
+                            max_size: Size {
+                                width: Val::Percent(100.0),
+                                height: Val::Percent(80.0),
+                            },
+                            flex_direction: FlexDirection::Column,
+                            flex_grow: 1.0,
+                            overflow: Overflow::Hidden,
                             ..Default::default()
                         },
                         ..Default::default()
-                    }).with_children(|commands| {
-                        commands.spawn(TextBundle::from_section("Gender", BODY_TEXT_STYLE.get().unwrap().clone()));
-                        let mut male = commands.spawn_button("Male", |mut male: Query<&mut Active, (With<MaleEntry>, Without<FemaleEntry>)>, mut female: Query<&mut Active, With<FemaleEntry>>, mut window: Query<&mut EditWindow>| {
-                            male.single_mut().0 = true;
-                            female.single_mut().0 = false;
-                            let mut window = window.single_mut();
-                            window.bodyshape = "urn:decentraland:off-chain:base-avatars:BaseMale".into();
-                            window.modified = true;
-                        });
-                        male.insert(MaleEntry);
-                        if !is_female {
-                            male.insert(Active(true));
-                        }
-                        let mut female = commands.spawn_button("Female", |mut male: Query<&mut Active, (With<MaleEntry>, Without<FemaleEntry>)>, mut female: Query<&mut Active, With<FemaleEntry>>, mut window: Query<&mut EditWindow>| {
-                            male.single_mut().0 = false;
-                            female.single_mut().0 = true;
-                            let mut window = window.single_mut();
-                            window.bodyshape = "urn:decentraland:off-chain:base-avatars:BaseFemale".into();
-                            window.modified = true;
-                        });
-                        female.insert(FemaleEntry);
-                        if is_female {
-                            female.insert(Active(true));
-                        }
-                    });
-
-                    fn color_setting<T: Component + Default>(commands: &mut ChildBuilder, label: &str, color: Color, setter: impl Fn(&mut EditWindow, Color) + Send + Sync + 'static) {
-                        commands.spawn(NodeBundle::default()).with_children(move |commands| {
-                            commands.spawn(TextBundle::from_section(label, BODY_TEXT_STYLE.get().unwrap().clone()));
-                            commands.spawn((
-                                NodeBundle{
-                                    style: Style {
-                                        size: Size::all(Val::Px(40.0)),
-                                        ..Default::default()
-                                    },
-                                    ..Default::default()
-                                },
-                                ColorPicker::new_linear(color),
-                                T::default(),
-                                On::<DataChanged>::new(
-                                    move |
-                                        mut window: Query<&mut EditWindow>,
-                                        picker: Query<&ColorPicker, With<T>>,
-                                    | {
-                                        let mut window = window.single_mut();
-                                        let picker = picker.single();
-                                        setter(&mut window, picker.get_linear());
-                                        window.modified = true;
-                                    }
-                                ),
-                                Interaction::default(),
-                            ));
-                        });
-    
-                    }
-
-                    // colors
+                    },
+                    Interaction::default(),
+                ),
+                Scrollable::new()
+                    .with_wheel(true)
+                    .with_drag(true)
+                    .with_direction(ScrollDirection::Vertical(StartPosition::Start)),
+                move |commands| {
                     commands.spawn(NodeBundle{
                         style: Style {
                             flex_direction: FlexDirection::Column,
@@ -319,85 +226,199 @@ fn toggle_profile_ui(
                         },
                         ..Default::default()
                     }).with_children(|commands| {
-                        color_setting::<HairColorEntry>(commands, "Hair color: ", build_copy.hair, |w, c| w.hair = c);
-                        color_setting::<EyeColorEntry>(commands, "Eye color: ", build_copy.eyes, |w, c| w.eyes = c);
-                        color_setting::<SkinColorEntry>(commands, "Skin color: ", build_copy.skin, |w, c| w.skin = c);
-                    });
+                        // name
+                        commands
+                            .spawn(NodeBundle::default())
+                            .with_children(|commands| {
+                                commands.spawn(TextBundle::from_section(
+                                    "Name: ",
+                                    TITLE_TEXT_STYLE.get().unwrap().clone(),
+                                ));
+                                commands.spawn((
+                                    NodeBundle {
+                                        style: Style {
+                                            size: Size{ width: Val::Px(100.0), height: Val::Px(20.0) },
+                                            ..Default::default()
+                                        },
+                                        background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.2, 0.8)),
+                                        ..Default::default()
+                                    },
+                                    TextEntry{
+                                        content: build_copy.name.clone(),
+                                        enabled: true,
+                                        ..Default::default()
+                                    },
+                                    Interaction::default(),
+                                    NameEntry,
+                                    On::<Defocus>::new(
+                                        |
+                                            mut window: Query<&mut EditWindow>,
+                                            name: Query<&TextEntry, With<NameEntry>>,
+                                        | {
+                                            let mut window = window.single_mut();
+                                            let name = name.single();
+                                            if !name.content.is_empty() && name.content != window.name {
+                                                window.name = name.content.clone();
+                                                window.modified = true;
+                                            }
+                                        }
+                                    ),
+                                ));
+                            });
 
-                    // wearables
-                    let cats = wearables.get(body_shape.as_str()).unwrap();
-                    for category in WearableCategory::iter() {
-                        let Some(data) = cats.get(category) else {
-                            continue;
-                        };
-
-                        let data = data.clone();
+                        // gender
+                        let body_shape = build_copy.bodyshape.to_lowercase();
+                        let is_female = &body_shape == "urn:decentraland:off-chain:base-avatars:basefemale";
                         commands.spawn(NodeBundle{
                             style: Style {
-                                flex_wrap: FlexWrap::Wrap,
-                                // align_self: AlignSelf::FlexStart,
-                                // max_size: Size::width(Val::Px(20.0)),
+                                // justify_content: JustifyContent::SpaceBetween,
+                                align_items: AlignItems::Center,
                                 ..Default::default()
                             },
                             ..Default::default()
                         }).with_children(|commands| {
-                            commands.spawn(TextBundle::from_section(
-                                format!("{}: ", category.slot),
-                                BODY_TEXT_STYLE.get().unwrap().clone(),
-                            ));
-
-                            for (def, meta) in data.into_iter() {
-                                let color = if build_copy.wearables.values().any(|v| v == &meta.id) {
-                                    Color::WHITE
-                                } else {
-                                    Color::NONE
-                                };
-                                commands.spawn(NodeBundle{
-                                    style: Style {
-                                        margin: UiRect::all(Val::Px(2.0)),
-                                        border: UiRect::all(Val::Px(2.0)),
-                                        ..Default::default()
-                                    },
-                                    background_color: color.into(),
-                                    ..Default::default()
-                                }).with_children(|commands| {
-                                    commands.spawn((
-                                        ImageBundle {
-                                            image: def.thumbnail.clone().unwrap_or_default().into(),
-                                            style: Style {
-                                                size: Size::all(Val::Px(50.0)),
-                                                max_size: Size::all(Val::Px(50.0)),
-                                                ..Default::default()
-                                            },
-                                            ..Default::default()
-                                        },
-                                        Interaction::default(),
-                                        WearableButton(meta.id.clone()),
-                                        On::<Click>::new(move |mut commands: Commands, mut window: Query<&mut EditWindow>, q: Query<(&WearableButton, &Parent)>| {
-                                            let mut window = window.single_mut();
-                                            if window.wearables.get(&def.category) == Some(&meta.id) {
-                                                println!("unselect");
-                                                window.wearables.remove(&def.category);
-                                            } else {
-                                                println!("wearables before: {:?}", window.wearables);
-                                                println!("select {}", meta.id);
-                                                window.wearables.insert(def.category, meta.id.clone());
-                                                println!("wearables after: {:?}", window.wearables);
-                                            }
-                                            window.modified = true;
-                                            for (w, p) in q.iter() {
-                                                if window.wearables.values().any(|v| v == &w.0) {
-                                                    commands.entity(p.get()).insert(BackgroundColor(Color::WHITE));
-                                                } else {
-                                                    commands.entity(p.get()).insert(BackgroundColor(Color::NONE));
-                                                }
-                                            }
-                                        }),
-                                    ));
-                                });
+                            commands.spawn(TextBundle::from_section("Gender", TITLE_TEXT_STYLE.get().unwrap().clone()));
+                            let mut male = commands.spawn_button("Male", |mut male: Query<&mut Active, (With<MaleEntry>, Without<FemaleEntry>)>, mut female: Query<&mut Active, With<FemaleEntry>>, mut window: Query<&mut EditWindow>| {
+                                male.single_mut().0 = true;
+                                female.single_mut().0 = false;
+                                let mut window = window.single_mut();
+                                window.bodyshape = "urn:decentraland:off-chain:base-avatars:BaseMale".into();
+                                window.modified = true;
+                            });
+                            male.insert(MaleEntry);
+                            if !is_female {
+                                male.insert(Active(true));
+                            }
+                            let mut female = commands.spawn_button("Female", |mut male: Query<&mut Active, (With<MaleEntry>, Without<FemaleEntry>)>, mut female: Query<&mut Active, With<FemaleEntry>>, mut window: Query<&mut EditWindow>| {
+                                male.single_mut().0 = false;
+                                female.single_mut().0 = true;
+                                let mut window = window.single_mut();
+                                window.bodyshape = "urn:decentraland:off-chain:base-avatars:BaseFemale".into();
+                                window.modified = true;
+                            });
+                            female.insert(FemaleEntry);
+                            if is_female {
+                                female.insert(Active(true));
                             }
                         });
-                    }
+
+                        fn color_setting<T: Component + Default>(commands: &mut ChildBuilder, label: &str, color: Color, setter: impl Fn(&mut EditWindow, Color) + Send + Sync + 'static) {
+                            commands.spawn(NodeBundle::default()).with_children(move |commands| {
+                                commands.spawn(TextBundle::from_section(label, TITLE_TEXT_STYLE.get().unwrap().clone()));
+                                commands.spawn((
+                                    NodeBundle{
+                                        style: Style {
+                                            size: Size::all(Val::Px(40.0)),
+                                            ..Default::default()
+                                        },
+                                        ..Default::default()
+                                    },
+                                    ColorPicker::new_linear(color),
+                                    T::default(),
+                                    On::<DataChanged>::new(
+                                        move |
+                                            mut window: Query<&mut EditWindow>,
+                                            picker: Query<&ColorPicker, With<T>>,
+                                        | {
+                                            let mut window = window.single_mut();
+                                            let picker = picker.single();
+                                            setter(&mut window, picker.get_linear());
+                                            window.modified = true;
+                                        }
+                                    ),
+                                    Interaction::default(),
+                                ));
+                            });
+                        }
+
+                        // colors
+                        commands.spawn(NodeBundle{
+                            style: Style {
+                                flex_direction: FlexDirection::Column,
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        }).with_children(|commands| {
+                            color_setting::<HairColorEntry>(commands, "Hair color: ", build_copy.hair, |w, c| w.hair = c);
+                            color_setting::<EyeColorEntry>(commands, "Eye color: ", build_copy.eyes, |w, c| w.eyes = c);
+                            color_setting::<SkinColorEntry>(commands, "Skin color: ", build_copy.skin, |w, c| w.skin = c);
+                        });
+
+                        // wearables
+                        let cats = wearables.get(body_shape.as_str()).unwrap();
+                        for category in WearableCategory::iter() {
+                            let Some(data) = cats.get(category) else {
+                                continue;
+                            };
+                            if data.is_empty() {
+                                continue;
+                            }
+
+                            let data = data.clone();
+                            commands.spawn(NodeBundle{
+                                style: Style {
+                                    flex_wrap: FlexWrap::Wrap,
+                                    align_content: AlignContent::Center,
+                                    // align_self: AlignSelf::FlexStart,
+                                    // max_size: Size::width(Val::Px(20.0)),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            }).with_children(|commands| {
+                                commands.spawn(TextBundle::from_section(
+                                    format!("{}: ", category.slot),
+                                    TITLE_TEXT_STYLE.get().unwrap().clone(),
+                                ));
+
+                                for (thumb, id) in data.into_iter() {
+                                    let color = if build_copy.wearables.values().any(|v| v == &id) {
+                                        Color::rgb(1.0,1.0,0.5)
+                                    } else {
+                                        Color::NONE
+                                    };
+                                    commands.spawn(NodeBundle{
+                                        style: Style {
+                                            margin: UiRect::all(Val::Px(2.0)),
+                                            border: UiRect::all(Val::Px(2.0)),
+                                            ..Default::default()
+                                        },
+                                        background_color: color.into(),
+                                        ..Default::default()
+                                    }).with_children(|commands| {
+                                        commands.spawn((
+                                            ImageBundle {
+                                                image: thumb.clone().into(),
+                                                style: Style {
+                                                    size: Size::all(Val::Px(100.0)),
+                                                    max_size: Size::all(Val::Px(100.0)),
+                                                    ..Default::default()
+                                                },
+                                                ..Default::default()
+                                            },
+                                            Interaction::default(),
+                                            WearableButton(id.clone()),
+                                            On::<Click>::new(move |mut commands: Commands, mut window: Query<&mut EditWindow>, q: Query<(&WearableButton, &Parent)>| {
+                                                let mut window = window.single_mut();
+                                                if window.wearables.get(category) == Some(&id) {
+                                                    window.wearables.remove(category);
+                                                } else {
+                                                    window.wearables.insert(*category, id.clone());
+                                                }
+                                                window.modified = true;
+                                                for (w, p) in q.iter() {
+                                                    if window.wearables.values().any(|v| v == &w.0) {
+                                                        commands.entity(p.get()).insert(BackgroundColor(Color::rgb(1.0,1.0,0.5)));
+                                                    } else {
+                                                        commands.entity(p.get()).insert(BackgroundColor(Color::NONE));
+                                                    }
+                                                }
+                                            }),
+                                        ));
+                                    });
+                                }
+                            });
+                        }
+                    });
                 });
 
             // buttons
@@ -408,36 +429,26 @@ fn toggle_profile_ui(
                         size: Size::width(Val::Percent(100.0)),
                         ..Default::default()
                     },
-                    background_color: Color::YELLOW.into(),
                     ..Default::default()
                 })
                 .with_children(move |commands| {
                     commands.spawn(spacer);
 
                     commands.spawn_button("Apply", move |mut commands: Commands, q: Query<&EditWindow>, mut profile: ResMut<CurrentUserProfile>| {
-                        println!("apply");
                         let edit = q.single();
                         if edit.modified {
-                            println!("modified name: {}", edit.name);
                             profile.0.content.name = edit.name.clone();
-                            println!("modified base: {}", edit.bodyshape);
                             profile.0.content.avatar.body_shape = Some(edit.bodyshape.clone());
-                            println!("modified hair: {:?}", edit.hair);
                             profile.0.content.avatar.hair = Some(AvatarColor{ color: edit.hair.into() });
-                            println!("modified eyes: {:?}", edit.eyes);
                             profile.0.content.avatar.eyes = Some(AvatarColor{ color: edit.eyes.into() });
-                            println!("modified eyes: {:?}", edit.skin);
                             profile.0.content.avatar.skin = Some(AvatarColor{ color: edit.skin.into() });
-                            println!("base wearables: {:?}", profile.0.content.avatar.wearables);
-                            println!("mod wearables: {:?}", edit.wearables);
                             profile.0.content.avatar.wearables = edit.wearables.values().cloned().collect();
-                            println!("new wearables: {:?}", profile.0.content.avatar.wearables);
                             profile.0.version += 1;
+                            profile.0.content.version = profile.0.version as i64;
                         }
                         commands.entity(window).despawn_recursive()
                     });
                     commands.spawn_button("Cancel", move |mut commands: Commands, q: Query<(Entity, &EditWindow)>| {
-                        println!("cancel");
                         let (ent, edit) = q.single();
                         if !edit.modified {
                             commands.entity(ent).despawn_recursive()
@@ -448,19 +459,14 @@ fn toggle_profile_ui(
                                 "Are you sure you want to discard your changes?".to_owned(),
                                 "Discard",
                                 move |mut commands: Commands| {
-                                    println!("despawned eventually");
                                     commands.entity(ent).despawn_recursive()
                                 },
                                 "Cancel",
-                                || {
-                                    println!("cancelled");
-                                },
+                                || {},
                             );
                         }
                     });
                 });
         });
-
-        println!("spawned");
     }
 }
