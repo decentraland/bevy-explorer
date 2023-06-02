@@ -1,5 +1,7 @@
 use bevy::{input::mouse::MouseWheel, prelude::*, utils::HashMap, window::PrimaryWindow};
 
+use super::ui_builder::SpawnSpacer;
+
 pub struct ScrollablePlugin;
 
 impl Plugin for ScrollablePlugin {
@@ -55,13 +57,7 @@ impl SpawnScrollable for ChildBuilder<'_, '_, '_> {
                             })
                             .with_children(|commands| spawn_children(commands))
                             .id();
-                        commands.spawn(NodeBundle {
-                            style: Style {
-                                flex_grow: 1.0,
-                                ..Default::default()
-                            },
-                            ..Default::default()
-                        });
+                        commands.spacer();
                     });
             })
             .insert(ScrollContent(content));
@@ -204,6 +200,8 @@ fn update_scrollables(
     let mut vertical_scrollers = HashMap::default();
     let mut horizontal_scrollers = HashMap::default();
 
+    let wheel_events = wheel.iter().collect::<Vec<_>>();
+
     // gather scrollable components that need scrollbars
     for (
         entity,
@@ -239,14 +237,21 @@ fn update_scrollables(
 
             *clicked_slider = Some((entity, cursor_position));
         }
-        if scrollable.wheel && interaction != &Interaction::None {
-            for ev in wheel.iter() {
-                let unit = match ev.unit {
-                    bevy::input::mouse::MouseScrollUnit::Line => 20.0,
-                    bevy::input::mouse::MouseScrollUnit::Pixel => 1.0,
-                };
-                *new_slider_deltas.get_or_insert(Default::default()) +=
-                    Vec2::new(ev.x, ev.y) * unit / slide_amount;
+        if scrollable.wheel {
+            // we check only if the cursor is within our frame - this means scrollables can still be scrolled when
+            // blocking dialogs cover them. TODO: make this better, requires either
+            // - check all children for interaction (yuck)
+            // - add some context to FocusPolicy (e.g. FocusPolicy::Block(HashSet<Buttons>))
+            // - add another system to manage "container" focus based on child focus
+            if cursor_position.clamp(ui_position, ui_position + parent_size) == cursor_position {
+                for ev in wheel_events.iter() {
+                    let unit = match ev.unit {
+                        bevy::input::mouse::MouseScrollUnit::Line => 20.0,
+                        bevy::input::mouse::MouseScrollUnit::Pixel => 1.0,
+                    };
+                    *new_slider_deltas.get_or_insert(Default::default()) +=
+                        Vec2::new(ev.x, ev.y) * unit / slide_amount;
+                }
             }
         }
 
@@ -312,7 +317,7 @@ fn update_scrollables(
         };
 
         let Some(info) = source.get_mut(&bar.parent) else {
-            commands.entity(entity).despawn();
+            commands.entity(entity).despawn_recursive();
             continue;
         };
 
@@ -350,7 +355,7 @@ fn update_scrollables(
             &mut horizontal_scrollers
         };
         let Some(info) = source.get(&slider.parent) else {
-            commands.entity(entity).despawn();
+            commands.entity(entity).despawn_recursive();
             continue;
         };
 

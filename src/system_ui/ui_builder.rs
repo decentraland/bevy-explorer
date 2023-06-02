@@ -1,4 +1,4 @@
-use bevy::{ecs::system::EntityCommands, prelude::*};
+use bevy::{ecs::system::EntityCommands, prelude::*, ui::FocusPolicy};
 
 use super::{
     dialog::SpawnDialog,
@@ -11,7 +11,7 @@ pub trait UiBuilderExt: SpawnDialog {}
 
 impl<'w, 's> UiBuilderExt for Commands<'w, 's> {}
 
-pub trait UiChildBuilderExt<'w, 's>: SpawnButton<'w, 's> {}
+pub trait UiChildBuilderExt<'w, 's>: SpawnButton<'w, 's> + SpawnSpacer<'w, 's> {}
 
 impl<'w, 's, 'a> UiChildBuilderExt<'w, 's> for ChildBuilder<'w, 's, 'a> {}
 
@@ -40,6 +40,7 @@ impl<'w, 's, 'a> SpawnButton<'w, 's> for ChildBuilder<'w, 's, 'a> {
                     ..Default::default()
                 },
                 background_color: Color::WHITE.into(),
+                focus_policy: FocusPolicy::Block,
                 ..Default::default()
             },
             Interaction::default(),
@@ -66,5 +67,21 @@ impl<'w, 's, 'a> SpawnButton<'w, 's> for ChildBuilder<'w, 's, 'a> {
         });
 
         b
+    }
+}
+
+pub trait SpawnSpacer<'w, 's> {
+    fn spacer(&mut self) -> EntityCommands<'w, 's, '_>;
+}
+
+impl<'w, 's, 'a> SpawnSpacer<'w, 's> for ChildBuilder<'w, 's, 'a> {
+    fn spacer(&mut self) -> EntityCommands<'w, 's, '_> {
+        self.spawn(NodeBundle {
+            style: Style {
+                flex_grow: 1.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
     }
 }

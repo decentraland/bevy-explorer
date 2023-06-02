@@ -9,18 +9,14 @@ use crate::{
     ipfs::IpfsLoaderExt,
     system_ui::{
         color_picker::ColorPicker,
+        dialog::SpawnDialog,
         interact_style::Active,
         scrollable::{ScrollDirection, Scrollable, SpawnScrollable, StartPosition},
         textentry::TextEntry,
-        ui_actions::{DataChanged, Defocus},
-        ui_builder::SpawnButton,
+        ui_actions::{Click, DataChanged, Defocus, On},
+        ui_builder::{SpawnButton, SpawnSpacer},
         TITLE_TEXT_STYLE,
     },
-};
-
-use super::{
-    dialog::SpawnDialog,
-    ui_actions::{Click, On},
 };
 
 pub struct ProfileEditPlugin;
@@ -86,14 +82,6 @@ fn toggle_profile_ui(
     wearable_metas: Res<WearableMetas>,
     asset_server: Res<AssetServer>,
 ) {
-    let spacer = NodeBundle {
-        style: Style {
-            flex_grow: 1.0,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-
     if let Ok((ent, edit)) = window.get_single() {
         if !edit.modified {
             root_commands.entity(ent).despawn_recursive();
@@ -208,6 +196,7 @@ fn toggle_profile_ui(
                             overflow: Overflow::Hidden,
                             ..Default::default()
                         },
+                        focus_policy: FocusPolicy::Block,
                         ..Default::default()
                     },
                     Interaction::default(),
@@ -391,6 +380,7 @@ fn toggle_profile_ui(
                                                     max_size: Size::all(Val::Px(100.0)),
                                                     ..Default::default()
                                                 },
+                                                focus_policy: FocusPolicy::Block,
                                                 ..Default::default()
                                             },
                                             Interaction::default(),
@@ -430,7 +420,7 @@ fn toggle_profile_ui(
                     ..Default::default()
                 })
                 .with_children(move |commands| {
-                    commands.spawn(spacer);
+                    commands.spacer();
 
                     commands.spawn_button("Apply", move |mut commands: Commands, q: Query<&EditWindow>, mut profile: ResMut<CurrentUserProfile>| {
                         let edit = q.single();

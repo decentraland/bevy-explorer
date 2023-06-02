@@ -2,6 +2,7 @@ use bevy::{prelude::*, ui::FocusPolicy};
 
 use super::{
     ui_actions::{Click, On},
+    ui_builder::SpawnSpacer,
     BODY_TEXT_STYLE, BUTTON_TEXT_STYLE, TITLE_TEXT_STYLE,
 };
 
@@ -29,51 +30,51 @@ impl<'w, 's> SpawnDialog for Commands<'w, 's> {
     ) {
         let mut dialog_inner = None;
         let dialog = self
-            .spawn((
-                NodeBundle {
-                    style: Style {
-                        flex_direction: FlexDirection::Row,
-                        position_type: PositionType::Absolute,
-                        align_self: AlignSelf::Center,
-                        justify_content: JustifyContent::SpaceBetween,
-                        size: Size::width(Val::Percent(100.0)),
-                        ..Default::default()
-                    },
-                    z_index: ZIndex::Global(5),
+            .spawn((NodeBundle {
+                style: Style {
+                    flex_direction: FlexDirection::Row,
+                    position_type: PositionType::Absolute,
+                    align_self: AlignSelf::Center,
+                    justify_content: JustifyContent::SpaceBetween,
+                    size: Size::all(Val::Percent(100.0)),
                     ..Default::default()
                 },
-                // Modal,
-            ))
+                focus_policy: FocusPolicy::Block,
+                z_index: ZIndex::Global(5),
+                ..Default::default()
+            },))
             .with_children(|commands| {
-                commands.spawn(NodeBundle {
-                    style: Style {
-                        flex_grow: 1.0,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                });
-                dialog_inner = Some(
-                    commands
-                        .spawn(NodeBundle {
-                            style: Style {
-                                flex_direction: FlexDirection::Column,
-                                align_content: AlignContent::Center,
-                                border: UiRect::all(Val::Px(10.0)),
-                                ..Default::default()
-                            },
-                            background_color: Color::rgb(0.8, 0.8, 0.6).into(),
-                            focus_policy: FocusPolicy::Block,
+                commands.spacer();
+                commands
+                    .spawn(NodeBundle {
+                        style: Style {
+                            flex_direction: FlexDirection::Column,
+                            justify_content: JustifyContent::SpaceBetween,
+                            // size: Size::all(Val::Percent(100.0)),
                             ..Default::default()
-                        })
-                        .id(),
-                );
-                commands.spawn(NodeBundle {
-                    style: Style {
-                        flex_grow: 1.0,
+                        },
                         ..Default::default()
-                    },
-                    ..Default::default()
-                });
+                    })
+                    .with_children(|commands| {
+                        commands.spacer();
+                        dialog_inner = Some(
+                            commands
+                                .spawn(NodeBundle {
+                                    style: Style {
+                                        flex_direction: FlexDirection::Column,
+                                        align_content: AlignContent::Center,
+                                        border: UiRect::all(Val::Px(10.0)),
+                                        ..Default::default()
+                                    },
+                                    background_color: Color::rgb(0.6, 0.6, 0.8).into(),
+                                    focus_policy: FocusPolicy::Block,
+                                    ..Default::default()
+                                })
+                                .id(),
+                        );
+                        commands.spacer();
+                    });
+                commands.spacer();
             })
             .id();
 
@@ -106,7 +107,7 @@ impl<'w, 's> SpawnDialog for Commands<'w, 's> {
                                     button_one_label,
                                     BUTTON_TEXT_STYLE.get().unwrap().clone(),
                                 ),
-                                background_color: Color::rgb(1.0, 1.0, 0.8).into(),
+                                background_color: Color::rgb(0.8, 0.8, 1.0).into(),
                                 ..Default::default()
                             },
                             Interaction::default(),
@@ -123,7 +124,7 @@ impl<'w, 's> SpawnDialog for Commands<'w, 's> {
                                     button_two_label,
                                     BUTTON_TEXT_STYLE.get().unwrap().clone(),
                                 ),
-                                background_color: Color::rgb(1.0, 1.0, 0.8).into(),
+                                background_color: Color::rgb(0.8, 0.8, 1.0).into(),
                                 ..Default::default()
                             },
                             Interaction::default(),
