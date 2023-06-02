@@ -218,12 +218,21 @@ fn run_scene_loop(world: &mut World) {
     let mut loop_schedule = world.resource_mut::<SceneLoopSchedule>();
     let mut schedule = std::mem::take(&mut loop_schedule.schedule);
     let last_end_time = loop_schedule.end_time;
-    let _start_time = Instant::now();
+    let start_time = Instant::now();
     #[cfg(debug_assertions)]
     let millis = 10000;
     #[cfg(not(debug_assertions))]
     let millis = 12;
     let end_time = last_end_time + Duration::from_millis(millis);
+
+    // allow at least 5 ms until i sort out the frame timings properly
+    // TODO:
+    // - calculate scene time from end of render-world handoff
+    // - estimate / conservatively allocate time from end-of-scene-update to renderer-handoff
+    // - get/use vsync info if enabled
+    // - get/use user-spec otherwise
+    let end_time = end_time.max(start_time + Duration::from_millis(5));
+
     world.resource_mut::<SceneUpdates>().loop_end_time = end_time;
 
     // run at least once to collect updates even if no scenes are eligible
