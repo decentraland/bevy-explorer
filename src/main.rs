@@ -43,11 +43,12 @@ use crate::{
     avatar::AvatarPlugin,
     comms::{wallet::WalletPlugin, CommsPlugin},
     console::{ConsolePlugin, DoAddConsoleCommand},
+    input_manager::InputManagerPlugin,
     ipfs::IpfsIoPlugin,
     scene_runner::SceneSets,
     system_ui::SystemUiPlugin,
     user_input::UserInputPlugin,
-    visuals::VisualsPlugin, input_manager::InputManagerPlugin,
+    visuals::VisualsPlugin,
 };
 
 // macro for assertions
@@ -185,8 +186,7 @@ fn main() {
 
     app.insert_resource(final_config);
 
-    app
-        .add_plugin(DebugLinesPlugin::with_depth_test(true))
+    app.add_plugin(DebugLinesPlugin::with_depth_test(true))
         .add_plugin(InputManagerPlugin)
         .add_plugin(SceneRunnerPlugin)
         .add_plugin(UserInputPlugin)

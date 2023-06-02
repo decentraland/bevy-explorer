@@ -267,7 +267,7 @@ fn update_scrollables(
                         content: scroll_content.0,
                         slide_amount,
                         ratio: ratio.x,
-                        bar_position: ui_position + Vec2::new(5.0, parent_size.y - 10.0),
+                        bar_position: ui_position * 0.0 + Vec2::new(5.0, parent_size.y - 10.0),
                         length: parent_size.x - 20.0,
                         start,
                         redraw,
@@ -288,7 +288,7 @@ fn update_scrollables(
                         content: scroll_content.0,
                         slide_amount,
                         ratio: ratio.y,
-                        bar_position: ui_position + Vec2::new(parent_size.x - 10.0, 5.0),
+                        bar_position: ui_position * 0.0 + Vec2::new(parent_size.x - 10.0, 5.0),
                         length: parent_size.y - 20.0,
                         start,
                         redraw,
@@ -431,28 +431,30 @@ fn update_scrollables(
             Size::new(Val::Px(info.length), Val::Px(5.0))
         };
 
-        commands.spawn((
-            NodeBundle {
-                style: Style {
-                    position_type: PositionType::Absolute,
-                    position: UiRect {
-                        left: Val::Px(info.bar_position.x),
-                        top: Val::Px(info.bar_position.y),
+        commands.entity(entity).with_children(|commands| {
+            commands.spawn((
+                NodeBundle {
+                    style: Style {
+                        position_type: PositionType::Absolute,
+                        position: UiRect {
+                            left: Val::Px(info.bar_position.x),
+                            top: Val::Px(info.bar_position.y),
+                            ..Default::default()
+                        },
+                        size: bar_size,
                         ..Default::default()
                     },
-                    size: bar_size,
+                    background_color: Color::GRAY.into(),
+                    z_index: ZIndex::Local(1),
                     ..Default::default()
                 },
-                background_color: Color::GRAY.into(),
-                z_index: ZIndex::Global(1),
-                ..Default::default()
-            },
-            ScrollBar {
-                parent: entity,
-                vertical,
-            },
-            Interaction::default(),
-        ));
+                ScrollBar {
+                    parent: entity,
+                    vertical,
+                },
+                Interaction::default(),
+            ));
+        });
 
         let position = match info.start {
             StartPosition::Start => 0.0,
@@ -483,25 +485,27 @@ fn update_scrollables(
             )
         };
 
-        commands.spawn((
-            NodeBundle {
-                style: Style {
-                    position_type: PositionType::Absolute,
-                    position: ui_position,
-                    size: slider_size,
+        commands.entity(entity).with_children(|commands| {
+            commands.spawn((
+                NodeBundle {
+                    style: Style {
+                        position_type: PositionType::Absolute,
+                        position: ui_position,
+                        size: slider_size,
+                        ..Default::default()
+                    },
+                    background_color: Color::WHITE.into(),
+                    z_index: ZIndex::Local(2),
                     ..Default::default()
                 },
-                background_color: Color::WHITE.into(),
-                z_index: ZIndex::Global(2),
-                ..Default::default()
-            },
-            Slider {
-                parent: entity,
-                vertical,
-                position,
-            },
-            Interaction::default(),
-        ));
+                Slider {
+                    parent: entity,
+                    vertical,
+                    position,
+                },
+                Interaction::default(),
+            ));
+        });
 
         let mut style = nodes.get_component_mut::<Style>(info.content).unwrap();
         let offset = info.slide_amount * -position;
