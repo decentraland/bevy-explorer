@@ -3,9 +3,13 @@ use bevy::{
     prelude::*,
 };
 
-use crate::{AppConfig, scene_runner::{initialize_scene::SceneLoading, renderer_context::RendererSceneContext}, comms::{global_crdt::ForeignPlayer, Transport}};
+use crate::{
+    comms::{global_crdt::ForeignPlayer, Transport},
+    scene_runner::{initialize_scene::SceneLoading, renderer_context::RendererSceneContext},
+    AppConfig,
+};
 
-use super::{SystemUiRoot, TITLE_TEXT_STYLE, BODY_TEXT_STYLE};
+use super::{SystemUiRoot, BODY_TEXT_STYLE, TITLE_TEXT_STYLE};
 
 pub struct SysInfoPlanelPlugin;
 
@@ -23,11 +27,7 @@ struct FpsLabel;
 #[derive(Component)]
 struct SceneLoadLabel;
 
-fn setup(
-    mut commands: Commands,
-    root: Res<SystemUiRoot>,
-    config: Res<AppConfig>,
-) {
+fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res<AppConfig>) {
     commands.entity(root.0).with_children(|commands| {
         commands
             .spawn(NodeBundle {
@@ -41,58 +41,72 @@ fn setup(
                 ..default()
             })
             .with_children(|commands| {
-                commands.spawn(TextBundle::from_section("System Info", TITLE_TEXT_STYLE.get().unwrap().clone()));
+                commands.spawn(TextBundle::from_section(
+                    "System Info",
+                    TITLE_TEXT_STYLE.get().unwrap().clone(),
+                ));
 
                 // fps counter
                 if config.graphics.log_fps {
                     commands.spawn((
-                        TextBundle::from_section(
-                            "FPS",
-                            BODY_TEXT_STYLE.get().unwrap().clone(),
-                        )
-                        .with_style(Style {
-                            margin: UiRect::all(Val::Px(5.)),
-                            ..default()
-                        }),
+                        TextBundle::from_section("FPS", BODY_TEXT_STYLE.get().unwrap().clone())
+                            .with_style(Style {
+                                margin: UiRect::all(Val::Px(5.)),
+                                ..default()
+                            }),
                         FpsLabel,
                     ));
                 }
 
-                commands.spawn((NodeBundle{
-                    style : Style {
-                        flex_direction: FlexDirection::Column,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                }, SceneLoadLabel)).with_children(|commands| {
-                    let mut info_node = |label: String| {
-                        commands.spawn(NodeBundle::default()).with_children(|commands| {
-                            commands.spawn(TextBundle{
-                                style: Style {
-                                    size: Size::width(Val::Px(100.0)),
-                                    ..Default::default()
-                                },
-                                text: Text::from_section(label, BODY_TEXT_STYLE.get().unwrap().clone(),).with_alignment(TextAlignment::Right),
+                commands
+                    .spawn((
+                        NodeBundle {
+                            style: Style {
+                                flex_direction: FlexDirection::Column,
                                 ..Default::default()
-                            });
-                            commands.spawn(TextBundle{
-                                style: Style {
-                                    size: Size::width(Val::Px(100.0)),
-                                    ..Default::default()
-                                },
-                                text: Text::from_section("", BODY_TEXT_STYLE.get().unwrap().clone(),),
-                                ..Default::default()
-                            });
-                        });
-                    };
+                            },
+                            ..Default::default()
+                        },
+                        SceneLoadLabel,
+                    ))
+                    .with_children(|commands| {
+                        let mut info_node = |label: String| {
+                            commands
+                                .spawn(NodeBundle::default())
+                                .with_children(|commands| {
+                                    commands.spawn(TextBundle {
+                                        style: Style {
+                                            size: Size::width(Val::Px(100.0)),
+                                            ..Default::default()
+                                        },
+                                        text: Text::from_section(
+                                            label,
+                                            BODY_TEXT_STYLE.get().unwrap().clone(),
+                                        )
+                                        .with_alignment(TextAlignment::Right),
+                                        ..Default::default()
+                                    });
+                                    commands.spawn(TextBundle {
+                                        style: Style {
+                                            size: Size::width(Val::Px(100.0)),
+                                            ..Default::default()
+                                        },
+                                        text: Text::from_section(
+                                            "",
+                                            BODY_TEXT_STYLE.get().unwrap().clone(),
+                                        ),
+                                        ..Default::default()
+                                    });
+                                });
+                        };
 
-                    info_node("Loading Scenes".to_owned());
-                    info_node("Running Scenes".to_owned());
-                    info_node("Blocked Scenes".to_owned());
-                    info_node("Broken Scenes".to_owned());
-                    info_node("Transports".to_owned());
-                    info_node("Players".to_owned());
-                });
+                        info_node("Loading Scenes".to_owned());
+                        info_node("Running Scenes".to_owned());
+                        info_node("Blocked Scenes".to_owned());
+                        info_node("Broken Scenes".to_owned());
+                        info_node("Transports".to_owned());
+                        info_node("Players".to_owned());
+                    });
             });
     });
 }

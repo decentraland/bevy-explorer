@@ -30,8 +30,7 @@ use bevy_prototype_debug_lines::DebugLinesPlugin;
 use common::{PrimaryCamera, PrimaryUser};
 use comms::profile::UserProfile;
 use scene_runner::{
-    initialize_scene::SceneLoadDistance,
-    update_world::mesh_collider::GroundCollider,
+    initialize_scene::SceneLoadDistance, update_world::mesh_collider::GroundCollider,
     SceneRunnerPlugin,
 };
 use serde::{Deserialize, Serialize};

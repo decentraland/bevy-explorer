@@ -292,6 +292,13 @@ impl SceneColliderData {
         }
     }
 
+    pub fn force_update(&mut self) {
+        self.query_state
+            .as_mut()
+            .unwrap()
+            .update(&self.dummy_rapier_structs.1, &self.collider_set);
+    }
+
     pub fn cast_ray_nearest(
         &mut self,
         scene_time: u32,
@@ -605,7 +612,7 @@ fn update_collider_transforms(
         .position(Isometry::from_parts(
             player_transform
                 .as_ref()
-                .map(|t| t.translation + Vec3::Y)
+                .map(|t| t.translation + PLAYER_COLLIDER_HEIGHT * 0.5 * Vec3::Y)
                 .unwrap_or_default()
                 .into(),
             Default::default(),
@@ -633,7 +640,36 @@ fn update_collider_transforms(
             if let Some(toi) = maybe_toi {
                 match toi.status {
                     TOIStatus::Penetrating => {
-                        // skip push for penetrating collider
+                        // penetrating collider - use closest point to infer fix/depen direction
+                        debug!(
+                            "don't skip pen, player: {:?}",
+                            player_transform.as_ref().unwrap().translation
+                        );
+                        let base_of_sphere = player_transform.as_ref().unwrap().translation
+                            + PLAYER_COLLIDER_RADIUS * Vec3::Y;
+                        debug!("penetrating");
+                        scene_data.force_update();
+                        let (_, closest_point) = scene_data
+                            .query_state
+                            .as_ref()
+                            .unwrap()
+                            .project_point(
+                                &scene_data.dummy_rapier_structs.1,
+                                &scene_data.collider_set,
+                                &base_of_sphere.into(),
+                                true,
+                                QueryFilter::default(),
+                            )
+                            .unwrap();
+                        let fix_dir = base_of_sphere - Vec3::from(closest_point.point);
+                        let distance = (fix_dir.length() - PLAYER_COLLIDER_RADIUS).max(0.01);
+                        debug!(
+                            "closest point: {}, dir: {fix_dir}, len: {distance}",
+                            Vec3::from(closest_point.point)
+                        );
+                        let fix_vector = fix_dir.normalize_or_zero() * distance;
+                        debug!("fix: {fix_vector}");
+                        player_transform.as_mut().unwrap().translation += fix_vector;
                     }
                     _ => {
                         // get contact point at toi
@@ -674,6 +710,10 @@ fn update_collider_transforms(
                             continue;
                         }
                         // add extra 0.01 due to character controller offset / collider size difference
+                        debug!(
+                            "old player: {:?}",
+                            player_transform.as_ref().unwrap().translation
+                        );
                         player_transform.as_mut().unwrap().translation += req_translation
                             .normalize_or_zero()
                             * (req_translation.length() + PLAYER_COLLIDER_OVERLAP);
@@ -682,6 +722,81 @@ fn update_collider_transforms(
                             collider.0, new_scale, ratio, contact_at_toi, contact_at_end
                         );
                         debug!("toi: {toi:?}");
+                        debug!(
+                            "new player: {:?}",
+                            player_transform.as_ref().unwrap().translation
+                        );
+                        let gt =
+                            GlobalTransform::from((*player_transform.as_ref().unwrap()).clone());
+                        let lt = gt.translation();
+                        debug!("new player: {:?}", lt);
+
+                        // check for intersection and move out until safe
+                        let (_, player_collider) = player_collider_set.iter_mut().next().unwrap();
+                        player_collider.set_position(Isometry::from_parts(
+                            player_transform
+                                .as_ref()
+                                .map(|t| t.translation + Vec3::Y)
+                                .unwrap_or_default()
+                                .into(),
+                            Default::default(),
+                        ));
+                        let new_toi = scene_data
+                            .update_collider_transform(
+                                &collider.0,
+                                global_transform,
+                                Some(&player_collider_set),
+                            )
+                            .1;
+
+                        if let Some(new_toi) = new_toi {
+                            debug!(
+                                "update toi - can we fix it?: {:?}, player: {}",
+                                new_toi,
+                                player_transform.as_ref().unwrap().translation
+                            );
+                            let base_of_sphere = player_transform.as_ref().unwrap().translation
+                                + PLAYER_COLLIDER_RADIUS * Vec3::Y;
+                            let fix_vector = if let TOIStatus::Penetrating = new_toi.status {
+                                debug!("penetrating");
+                                scene_data.force_update();
+                                let (_, closest_point) = scene_data
+                                    .query_state
+                                    .as_ref()
+                                    .unwrap()
+                                    .project_point(
+                                        &scene_data.dummy_rapier_structs.1,
+                                        &scene_data.collider_set,
+                                        &base_of_sphere.into(),
+                                        true,
+                                        QueryFilter::default(),
+                                    )
+                                    .unwrap();
+                                let fix_dir = base_of_sphere - Vec3::from(closest_point.point);
+                                let distance =
+                                    (fix_dir.length() - PLAYER_COLLIDER_RADIUS).max(0.01);
+                                debug!(
+                                    "closest point: {}, dir: {fix_dir}, len: {distance}",
+                                    Vec3::from(closest_point.point)
+                                );
+                                fix_dir.normalize_or_zero() * distance
+                            } else {
+                                debug!("not penetrating");
+                                let fix_dir = base_of_sphere - Vec3::from(new_toi.witness1);
+                                let distance =
+                                    (fix_dir.length() - PLAYER_COLLIDER_RADIUS).max(0.01);
+                                debug!("dir: {fix_dir}, len: {distance}");
+                                fix_dir.normalize_or_zero() * distance
+                            };
+                            debug!("fix: {fix_vector}");
+                            player_transform.as_mut().unwrap().translation += fix_vector;
+                        } else {
+                            debug!(
+                                "update toi - nothing to fix: {:?}, player: {}",
+                                new_toi,
+                                player_transform.as_ref().unwrap().translation
+                            );
+                        }
                     }
                 }
             }
@@ -700,6 +815,62 @@ fn update_collider_transforms(
                     .rotation;
                 player_transform.translation = translation;
                 player_transform.rotation = planar_rotation;
+
+                // check for intersection and move out until safe
+                let (_, player_collider) = player_collider_set.iter_mut().next().unwrap();
+                player_collider.set_position(Isometry::from_parts(
+                    (player_transform.translation + PLAYER_COLLIDER_HEIGHT * 0.5).into(),
+                    Default::default(),
+                ));
+                let new_toi = scene_data
+                    .update_collider_transform(
+                        &collider.0,
+                        global_transform,
+                        Some(&player_collider_set),
+                    )
+                    .1;
+
+                if let Some(new_toi) = new_toi {
+                    debug!(
+                        "motion toi - can we fix it?: {:?}, player: {}",
+                        new_toi, player_transform.translation
+                    );
+                    let base_of_sphere =
+                        player_transform.translation + PLAYER_COLLIDER_RADIUS * Vec3::Y;
+                    let fix_vector = if let TOIStatus::Penetrating = new_toi.status {
+                        debug!("penetrating");
+                        scene_data.force_update();
+                        let (_, closest_point) = scene_data
+                            .query_state
+                            .as_ref()
+                            .unwrap()
+                            .project_point(
+                                &scene_data.dummy_rapier_structs.1,
+                                &scene_data.collider_set,
+                                &base_of_sphere.into(),
+                                true,
+                                QueryFilter::default(),
+                            )
+                            .unwrap();
+                        let fix_dir = base_of_sphere - Vec3::from(closest_point.point);
+                        let distance = (fix_dir.length() - PLAYER_COLLIDER_RADIUS).max(0.01);
+                        debug!("dir: {fix_dir}, len: {distance}");
+                        fix_dir.normalize_or_zero() * distance
+                    } else {
+                        debug!("not penetrating");
+                        let fix_dir = base_of_sphere - Vec3::from(new_toi.witness1);
+                        let distance = (fix_dir.length() - PLAYER_COLLIDER_RADIUS).max(0.01);
+                        debug!("dir: {fix_dir}, len: {distance}");
+                        fix_dir.normalize_or_zero() * distance
+                    };
+                    debug!("fix: {fix_vector}");
+                    player_transform.translation += fix_vector;
+                } else {
+                    debug!(
+                        "motion toi - nothing to fix: {:?}, player: {}",
+                        new_toi, player_transform.translation
+                    );
+                }
             }
         }
     }
