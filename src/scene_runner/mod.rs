@@ -14,6 +14,7 @@ use bevy::{
 };
 
 use crate::{
+    common::{PrimaryCamera, PrimaryUser},
     dcl::{
         interface::CrdtType, RendererResponse, SceneId, SceneLogLevel, SceneLogMessage,
         SceneResponse,
@@ -24,7 +25,6 @@ use crate::{
         SceneEntityId,
     },
     ipfs::SceneIpfsLocation,
-    user_input::camera::PrimaryCamera,
 };
 
 use self::{
@@ -307,23 +307,6 @@ fn update_scene_priority(
 // - reduce bevy primary thread pool
 // - see if we can get v8 single threaded / no native threads working
 const MAX_CONCURRENT_SCENES: usize = 8;
-
-#[derive(Component)]
-pub struct PrimaryUser {
-    pub walk_speed: f32,
-    pub run_speed: f32,
-    pub friction: f32,
-}
-
-impl Default for PrimaryUser {
-    fn default() -> Self {
-        Self {
-            walk_speed: 10.0,
-            run_speed: 40.0,
-            friction: 500.0,
-        }
-    }
-}
 
 // helper to get the scene entity containing a given world position
 #[derive(SystemParam)]

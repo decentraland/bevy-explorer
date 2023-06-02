@@ -25,6 +25,7 @@ use crate::{
         transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
         SceneCrdtTimestamp, SceneEntityId,
     },
+    input_manager::InputMap,
     ipfs::{IpfsIoPlugin, IpfsLoaderExt, ServerAbout, ServerConfiguration},
     scene_runner::{
         process_scene_entity_lifecycle, receive_scene_updates, send_scene_updates,
@@ -34,8 +35,7 @@ use crate::{
         },
         RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
     },
-    user_input::InputMap,
-    PrimaryCamera,
+    AppConfig, PrimaryCamera,
 };
 
 #[cfg(test)]
@@ -99,6 +99,7 @@ fn init_test_app(entity_json: &str) -> App {
     let mut app = App::new();
 
     // Add our systems
+    app.init_resource::<AppConfig>();
     app.add_plugins(TestPlugins);
     app.add_asset::<Shader>();
     app.add_plugin(MaterialPlugin::<StandardMaterial>::default());

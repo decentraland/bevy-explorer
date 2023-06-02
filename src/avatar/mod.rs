@@ -7,7 +7,7 @@ use bevy::{
     scene::InstanceId,
     utils::{HashMap, HashSet},
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use urn::Urn;
 
 pub mod animate;
@@ -17,6 +17,7 @@ pub mod mask_material;
 
 use crate::{
     avatar::animate::AvatarAnimPlayer,
+    common::PrimaryUser,
     comms::{
         global_crdt::{ForeignPlayer, GlobalCrdtState},
         profile::UserProfile,
@@ -33,10 +34,7 @@ use crate::{
         SceneComponentId, SceneEntityId,
     },
     ipfs::{ActiveEntityTask, IpfsLoaderExt, IpfsModifier},
-    scene_runner::{
-        update_world::{mesh_collider::ColliderId, AddCrdtInterfaceExt},
-        ContainingScene, PrimaryUser, SceneEntity,
-    },
+    scene_runner::{update_world::AddCrdtInterfaceExt, ContainingScene, SceneEntity},
     util::TaskExt,
 };
 
@@ -78,8 +76,6 @@ impl Plugin for AvatarPlugin {
 pub struct AvatarDynamicState {
     pub velocity: Vec3,
     pub ground_height: f32,
-    // (scene entity, collider id) of collider player is standing on
-    pub ground_collider: Option<(Entity, ColliderId)>,
 }
 
 #[derive(Debug)]
@@ -88,28 +84,38 @@ pub enum WearablePointerResult {
     Missing,
 }
 
-#[derive(Resource, Default, Debug)]
-pub struct WearablePointers(HashMap<Urn, WearablePointerResult>);
+impl WearablePointerResult {
+    pub fn hash(&self) -> Option<&str> {
+        match self {
+            WearablePointerResult::Exists(h) => Some(h),
+            WearablePointerResult::Missing => None,
+        }
+    }
+}
 
 #[derive(Resource, Default, Debug)]
-pub struct WearableMetas(HashMap<String, WearableMeta>);
+pub struct WearablePointers(pub HashMap<Urn, WearablePointerResult>);
 
-#[derive(Deserialize, Debug)]
+#[derive(Resource, Default, Debug)]
+pub struct WearableMetas(pub HashMap<String, WearableMeta>);
+
+#[derive(Deserialize, Debug, Component, Clone)]
 pub struct WearableMeta {
+    pub id: String,
     pub description: String,
     pub thumbnail: String,
     pub rarity: String,
     pub data: WearableData,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct WearableData {
     pub tags: Vec<String>,
-    pub category: String,
+    pub category: WearableCategory,
     pub representations: Vec<WearableRepresentation>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct WearableRepresentation {
     pub body_shapes: Vec<String>,
@@ -451,7 +457,19 @@ pub struct WearableCategory {
     pub is_texture: bool,
 }
 
+impl<'de> serde::Deserialize<'de> for WearableCategory {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(WearableCategory::from_str(s.as_str()).unwrap_or(WearableCategory::UNKNOWN))
+    }
+}
+
 impl WearableCategory {
+    const UNKNOWN: WearableCategory = WearableCategory::texture("unknown");
+
     const EYES: WearableCategory = WearableCategory::texture("eyes");
     const EYEBROWS: WearableCategory = WearableCategory::texture("eyebrows");
     const MOUTH: WearableCategory = WearableCategory::texture("mouth");
@@ -518,13 +536,39 @@ impl FromStr for WearableCategory {
     }
 }
 
-#[derive(Debug)]
+impl WearableCategory {
+    pub fn iter() -> impl Iterator<Item = &'static WearableCategory> {
+        [
+            Self::EYES,
+            Self::EYEBROWS,
+            Self::MOUTH,
+            Self::FACIAL_HAIR,
+            Self::HAIR,
+            Self::HEAD,
+            Self::UPPER_BODY,
+            Self::LOWER_BODY,
+            Self::FEET,
+            Self::EARRING,
+            Self::EYEWEAR,
+            Self::HAT,
+            Self::HELMET,
+            Self::MASK,
+            Self::TIARA,
+            Self::TOP_HEAD,
+            Self::SKIN,
+        ]
+        .iter()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct WearableDefinition {
-    category: WearableCategory,
-    hides: HashSet<WearableCategory>,
-    model: Option<Handle<Gltf>>,
-    texture: Option<Handle<Image>>,
-    mask: Option<Handle<Image>>,
+    pub category: WearableCategory,
+    pub hides: HashSet<WearableCategory>,
+    pub model: Option<Handle<Gltf>>,
+    pub texture: Option<Handle<Image>>,
+    pub mask: Option<Handle<Image>>,
+    pub thumbnail: Option<Handle<Image>>,
 }
 
 impl WearableDefinition {
@@ -545,7 +589,11 @@ impl WearableDefinition {
             return None;
         };
 
-        let Ok(category) = WearableCategory::from_str(&meta.data.category) else { return None };
+        let category = meta.data.category;
+        if category == WearableCategory::UNKNOWN {
+            warn!("unknown wearable category");
+            return None;
+        }
 
         let hides = HashSet::from_iter(
             representation
@@ -602,12 +650,17 @@ impl WearableDefinition {
             (model, None, None)
         };
 
+        let thumbnail = asset_server
+            .load_content_file::<Image>(&meta.thumbnail, content_hash)
+            .ok();
+
         Some(Self {
             category,
             hides,
             model,
             texture,
             mask,
+            thumbnail,
         })
     }
 }
@@ -1027,7 +1080,7 @@ fn process_avatar(
 
         // hide and colour the base model
         for scene_ent in scene_spawner.iter_instance_entities(loaded_avatar.body_instance) {
-            let Ok((mut vis, parent, maybe_h_mat, _maybe_h_mesh)) = instance_ents.get_mut(scene_ent) else { continue };
+            let Ok((mut vis, parent, maybe_h_mat, maybe_h_mesh)) = instance_ents.get_mut(scene_ent) else { continue };
 
             let Ok(name) = named_ents.get(scene_ent) else { continue };
             let name = name.to_lowercase();
@@ -1047,6 +1100,12 @@ fn process_avatar(
             // record bone entities
             if name.to_lowercase().starts_with("avatar_") {
                 target_armature_entities.insert(name.to_lowercase(), scene_ent);
+            }
+
+            if maybe_h_mesh.is_some() {
+                // disable frustum culling - some strange effect causes Aabb gen to fail
+                // TODO figure out why
+                commands.entity(scene_ent).insert(NoFrustumCulling);
             }
 
             if let Some(h_mat) = maybe_h_mat {
@@ -1260,33 +1319,3 @@ fn process_avatar(
 
 #[derive(Component)]
 struct PendingAvatarTask(HashSet<Urn>);
-
-#[derive(Serialize, Deserialize, Copy, Clone)]
-struct AvatarColor {
-    pub color: Color3,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct AvatarSnapshots {
-    pub face256: String,
-    pub body: String,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct AvatarEmote {
-    pub slot: u32,
-    pub urn: String,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct AvatarWireFormat {
-    name: Option<String>,
-    #[serde(rename = "bodyShape")]
-    body_shape: Option<String>,
-    eyes: Option<AvatarColor>,
-    hair: Option<AvatarColor>,
-    skin: Option<AvatarColor>,
-    wearables: Vec<String>,
-    emotes: Option<Vec<AvatarEmote>>,
-    snapshots: Option<AvatarSnapshots>,
-}

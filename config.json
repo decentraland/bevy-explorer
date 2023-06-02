@@ -1,7 +1,0 @@
-{
-    "server":"https://sdk-test-scenes.decentraland.zone",
-    "graphics":{
-        "vsync":false,
-        "log_fps":true
-    }
-}

@@ -6,38 +6,7 @@ use bevy::{
     window::CursorGrabMode,
 };
 
-use crate::{scene_runner::PrimaryUser, system_ui::UiRoot};
-
-#[derive(Component)]
-pub struct PrimaryCamera {
-    pub mouse_key_enable_mouse: MouseButton,
-    pub keyboard_key_enable_mouse: KeyCode,
-    pub key_roll_left: KeyCode,
-    pub key_roll_right: KeyCode,
-    pub distance: f32,
-    pub sensitivity: f32,
-    initialized: bool,
-    yaw: f32,
-    pitch: f32,
-    roll: f32,
-}
-
-impl Default for PrimaryCamera {
-    fn default() -> Self {
-        Self {
-            mouse_key_enable_mouse: MouseButton::Right,
-            keyboard_key_enable_mouse: KeyCode::M,
-            sensitivity: 5.0,
-            initialized: Default::default(),
-            yaw: Default::default(),
-            pitch: Default::default(),
-            roll: Default::default(),
-            distance: 1.0,
-            key_roll_left: KeyCode::T,
-            key_roll_right: KeyCode::G,
-        }
-    }
-}
+use crate::common::{PrimaryCamera, PrimaryUser, UiRoot};
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn update_camera(

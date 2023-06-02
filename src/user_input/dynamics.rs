@@ -1,25 +1,21 @@
-use std::f32::consts::PI;
-
 use bevy::{core::FrameCount, math::Vec3Swizzles, prelude::*};
 use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 
 use crate::{
     avatar::AvatarDynamicState,
+    common::{
+        dynamics::{
+            GRAVITY, MAX_CLIMBABLE_INCLINE, MAX_FALL_SPEED, MAX_STEP_HEIGHT,
+            PLAYER_COLLIDER_OVERLAP, PLAYER_GROUND_THRESHOLD,
+        },
+        PrimaryUser,
+    },
     scene_runner::{
-        renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
-        ContainingScene, PrimaryUser,
+        renderer_context::RendererSceneContext,
+        update_world::mesh_collider::{GroundCollider, SceneColliderData},
+        ContainingScene,
     },
 };
-pub const GRAVITY: f32 = 20.0;
-pub const MAX_FALL_SPEED: f32 = 15.0;
-pub const MAX_CLIMBABLE_INCLINE: f32 = 1.5 * PI / 4.0; // radians from up - equal to 60 degree incline
-pub const MAX_STEP_HEIGHT: f32 = 0.5;
-pub const MAX_JUMP_HEIGHT: f32 = 1.25;
-pub const PLAYER_GROUND_THRESHOLD: f32 = 0.05;
-
-pub const PLAYER_COLLIDER_RADIUS: f32 = 0.35;
-pub const PLAYER_COLLIDER_HEIGHT: f32 = 2.0;
-pub const PLAYER_COLLIDER_OVERLAP: f32 = 0.01;
 
 pub fn update_user_position(
     mut player: Query<(
@@ -27,6 +23,7 @@ pub fn update_user_position(
         &PrimaryUser,
         &mut Transform,
         &mut AvatarDynamicState,
+        &mut GroundCollider,
     )>,
     mut scene_datas: Query<(
         &mut RendererSceneContext,
@@ -37,7 +34,7 @@ pub fn update_user_position(
     time: Res<Time>,
     _frame: Res<FrameCount>,
 ) {
-    let Ok((user_ent, user, mut transform, mut dynamic_state)) = player.get_single_mut() else {
+    let Ok((user_ent, user, mut transform, mut dynamic_state, mut ground_collider)) = player.get_single_mut() else {
         return;
     };
 
@@ -106,10 +103,13 @@ pub fn update_user_position(
             transform.translation.y = transform.translation.y.max(0.0);
 
             // calculate ground height
-            (dynamic_state.ground_height, dynamic_state.ground_collider) = match collider_data
+            (dynamic_state.ground_height, ground_collider.0) = match collider_data
                 .get_groundheight(context.last_update_frame, transform.translation)
             {
-                Some((height, collider)) => (height, Some((scene.unwrap(), collider))),
+                Some((height, collider)) => (
+                    height,
+                    (height < PLAYER_GROUND_THRESHOLD).then_some((scene.unwrap(), collider)),
+                ),
                 None => (transform.translation.y, None),
             };
 

@@ -1,6 +1,7 @@
 use bevy::{core::FrameCount, prelude::*};
 
 use crate::{
+    common::PrimaryCamera,
     dcl::interface::CrdtType,
     dcl_component::{
         proto_components::sdk::components::{
@@ -9,11 +10,11 @@ use crate::{
         },
         SceneComponentId, SceneEntityId,
     },
+    input_manager::InputManager,
     scene_runner::{
         update_world::{mesh_collider::SceneColliderData, pointer_events::PointerEvents},
         PrimaryUser, RendererSceneContext, SceneEntity, SceneSets,
     },
-    user_input::{camera::PrimaryCamera, InputManager},
 };
 
 pub struct PointerResultPlugin;

@@ -4,4 +4,6 @@ Cargo.lock
 !/assets/animations
 !/assets/fonts
 !/assets/shaders
+!/assets/images
 .vscode/settings.json
+config.json

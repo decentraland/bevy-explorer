@@ -34,13 +34,13 @@ fn set_interaction_style(
             Option<&mut BackgroundColor>,
             Option<&mut Style>,
             Option<&Interaction>,
-            &Active,
+            Option<&Active>,
         ),
         Or<(Changed<Active>, Changed<Interaction>)>,
     >,
 ) {
     for (styles, maybe_bg, _maybe_style, maybe_interaction, active) in q.iter_mut() {
-        let style = if active.0 {
+        let style = if active.map_or(false, |active| active.0) {
             &styles.active
         } else if maybe_interaction == Some(&Interaction::Hovered) {
             &styles.hover

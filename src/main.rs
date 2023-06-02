@@ -3,10 +3,12 @@
 // - budget -> deadline is just last end + frame time
 
 pub mod avatar;
+pub mod common;
 pub mod comms;
 pub mod console;
 pub mod dcl;
 pub mod dcl_component;
+pub mod input_manager;
 pub mod ipfs;
 pub mod scene_runner;
 pub mod system_ui;
@@ -23,23 +25,25 @@ use bevy::{
     prelude::*,
     render::view::ColorGrading,
 };
-
 use bevy_console::{ConsoleCommand, ConsoleOpen};
 use bevy_prototype_debug_lines::DebugLinesPlugin;
-use comms::Transport;
+
+use common::{PrimaryCamera, PrimaryUser};
+use comms::{profile::UserProfile, Transport};
 use ipfs::ChangeRealmEvent;
 use scene_runner::{
     initialize_scene::{SceneLoadDistance, SceneLoading},
     renderer_context::RendererSceneContext,
-    PrimaryUser, SceneRunnerPlugin,
+    update_world::mesh_collider::GroundCollider,
+    SceneRunnerPlugin,
 };
 use serde::{Deserialize, Serialize};
-use user_input::camera::PrimaryCamera;
 
 use crate::{
     avatar::AvatarPlugin,
     comms::{wallet::WalletPlugin, CommsPlugin},
     console::{ConsolePlugin, DoAddConsoleCommand},
+    input_manager::InputManagerPlugin,
     ipfs::IpfsIoPlugin,
     scene_runner::SceneSets,
     system_ui::SystemUiPlugin,
@@ -79,6 +83,7 @@ impl Default for GraphicsSettings {
 #[derive(Serialize, Deserialize, Resource)]
 pub struct AppConfig {
     server: String,
+    profile: UserProfile,
     graphics: GraphicsSettings,
 }
 
@@ -86,6 +91,11 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             server: "https://sdk-test-scenes.decentraland.zone".to_owned(),
+            profile: UserProfile {
+                version: 1,
+                content: Default::default(),
+                base_url: "https://sdk-test-scenes.decentraland.zone/content/contents/".to_owned(),
+            },
             graphics: Default::default(),
         }
     }
@@ -110,6 +120,7 @@ fn main() {
             .value_from_str("--server")
             .ok()
             .unwrap_or(base_config.server),
+        profile: base_config.profile,
         graphics: GraphicsSettings {
             vsync: args
                 .value_from_str("--vsync")
@@ -166,26 +177,30 @@ fn main() {
                 starting_realm: Some(final_config.server.clone()),
                 cache_root: Default::default(),
             }),
-    )
-    .add_plugin(DebugLinesPlugin::with_depth_test(true))
-    .add_plugin(SceneRunnerPlugin) // script engine plugin
-    .add_plugin(UserInputPlugin)
-    .add_plugin(SystemUiPlugin)
-    .add_plugin(ConsolePlugin)
-    .add_plugin(VisualsPlugin)
-    .add_plugin(WalletPlugin)
-    .add_plugin(CommsPlugin)
-    .add_plugin(AvatarPlugin)
-    .add_startup_system(setup)
-    .insert_resource(AmbientLight {
-        color: Color::rgb(0.5, 0.5, 1.0),
-        brightness: 0.25,
-    });
+    );
 
     if final_config.graphics.log_fps {
         app.add_plugin(FrameTimeDiagnosticsPlugin)
             .add_plugin(LogDiagnosticsPlugin::default());
     }
+
+    app.insert_resource(final_config);
+
+    app.add_plugin(DebugLinesPlugin::with_depth_test(true))
+        .add_plugin(InputManagerPlugin)
+        .add_plugin(SceneRunnerPlugin)
+        .add_plugin(UserInputPlugin)
+        .add_plugin(SystemUiPlugin)
+        .add_plugin(ConsolePlugin)
+        .add_plugin(VisualsPlugin)
+        .add_plugin(WalletPlugin)
+        .add_plugin(CommsPlugin)
+        .add_plugin(AvatarPlugin)
+        .add_startup_system(setup)
+        .insert_resource(AmbientLight {
+            color: Color::rgb(0.75, 0.75, 1.0),
+            brightness: 0.25,
+        });
 
     app.add_system(
         input
@@ -201,8 +216,6 @@ fn main() {
     for warning in warnings {
         warn!(warning);
     }
-
-    app.insert_resource(final_config);
 
     // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
     // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
@@ -220,6 +233,7 @@ fn setup(mut commands: Commands) {
         },
         PrimaryUser::default(),
         AvatarDynamicState::default(),
+        GroundCollider::default(),
     ));
 
     // add a camera
