@@ -726,10 +726,6 @@ fn update_collider_transforms(
                             "new player: {:?}",
                             player_transform.as_ref().unwrap().translation
                         );
-                        let gt =
-                            GlobalTransform::from((*player_transform.as_ref().unwrap()).clone());
-                        let lt = gt.translation();
-                        debug!("new player: {:?}", lt);
 
                         // check for intersection and move out until safe
                         let (_, player_collider) = player_collider_set.iter_mut().next().unwrap();
