@@ -36,7 +36,8 @@ use crate::{
     },
     ipfs::{ActiveEntityTask, IpfsLoaderExt, IpfsModifier},
     scene_runner::{update_world::AddCrdtInterfaceExt, ContainingScene, SceneEntity},
-    util::TaskExt, system_ui::TITLE_TEXT_STYLE,
+    system_ui::TITLE_TEXT_STYLE,
+    util::TaskExt,
 };
 
 use self::{
@@ -1317,17 +1318,28 @@ fn process_avatar(
             "avatar processed, 1+{} models, {} textures. hides: {:?}, skin mats: {:?}, hair mats: {:?}, used mats: {:?}",
             wearable_models, wearable_texs, def.hides, loaded_avatar.skin_materials.len(), loaded_avatar.hair_materials.len(), colored_materials.len()
         );
-        commands.entity(avatar_ent).insert(AvatarProcessed)
-        .with_children(|commands| {
-            // add a name tag
-            if let Some(label) = def.label.as_ref() {
-                commands.spawn(BillboardTextBundle{
-                    text: Text::from_section(label, TextStyle { font_size: 160.0, color: Color::WHITE, ..TITLE_TEXT_STYLE.get().unwrap().clone()}).with_alignment(TextAlignment::Center),
-                    transform: Transform::from_translation(Vec3::Y * 2.2).with_scale(Vec3::splat(0.001)),
-                    ..Default::default()
-                });
-            }
-        });
+        commands
+            .entity(avatar_ent)
+            .insert(AvatarProcessed)
+            .with_children(|commands| {
+                // add a name tag
+                if let Some(label) = def.label.as_ref() {
+                    commands.spawn(BillboardTextBundle {
+                        text: Text::from_section(
+                            label,
+                            TextStyle {
+                                font_size: 160.0,
+                                color: Color::WHITE,
+                                ..TITLE_TEXT_STYLE.get().unwrap().clone()
+                            },
+                        )
+                        .with_alignment(TextAlignment::Center),
+                        transform: Transform::from_translation(Vec3::Y * 2.2)
+                            .with_scale(Vec3::splat(0.001)),
+                        ..Default::default()
+                    });
+                }
+            });
     }
 }
 
