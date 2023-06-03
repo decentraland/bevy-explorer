@@ -378,8 +378,8 @@ fn send_scene_updates(
     )>,
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
-    player: Query<&GlobalTransform, With<PrimaryUser>>,
-    camera: Query<&GlobalTransform, With<PrimaryCamera>>,
+    player: Query<&Transform, With<PrimaryUser>>,
+    camera: Query<&Transform, With<PrimaryCamera>>,
 ) {
     let updates = &mut *updates;
 
@@ -400,8 +400,8 @@ fn send_scene_updates(
 
     let mut buf = Vec::default();
     for (mut affine, id) in [
-        (player.single().affine(), SceneEntityId::PLAYER),
-        (camera.single().affine(), SceneEntityId::CAMERA),
+        (player.single().compute_affine(), SceneEntityId::PLAYER),
+        (camera.single().compute_affine(), SceneEntityId::CAMERA),
     ] {
         buf.clear();
         affine.translation -= scene_transform.affine().translation;

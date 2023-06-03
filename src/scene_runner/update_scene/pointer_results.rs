@@ -256,7 +256,7 @@ fn send_action_events(
                             .closest_point(context.last_update_frame, player_translation, |cid| {
                                 cid.entity == scene_entity.id && &cid.name == mesh_name
                             })
-                            .unwrap()
+                            .unwrap_or_default()
                     });
                     let distance = (nearest_point - player_translation).length();
 
