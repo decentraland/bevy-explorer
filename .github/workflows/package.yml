@@ -30,7 +30,7 @@ jobs:
           - name: Create release
             id: create_release
             run: |
-                tag_name="release-${{ steps.current_time_dashes.outputs.formattedTime }}"
+                tag_name="prealpha-${{ steps.current_time_dashes.outputs.formattedTime }}"
                 release_name="Release ${{ steps.current_time_dashes.outputs.formattedTime }}"
                 gh release create "$tag_name" --title "$release_name" --generate-notes --prerelease
             env:
@@ -109,7 +109,6 @@ jobs:
             if: runner.os != 'Windows'
             continue-on-error: true
             run: |
-                ls ${{ env.CARGO_BUILD_DIR }}
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy package/decentra-bevy
                 # We must enter the package/ directory in order to create a flat tarball (i.e. without a directory in it).
                 cd package
