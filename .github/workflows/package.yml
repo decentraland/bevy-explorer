@@ -105,19 +105,23 @@ jobs:
             
           - name: Package Windows
             if: runner.os == 'Windows'
+            continue-on-error: true
             run: |
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra_bevy.exe package/decentra_bevy.exe
                 7z a ${{ env.PACKAGE_FILE }} ./package/*
 
           - name: Package Linux
             if: runner.os != 'Windows'
+            continue-on-error: true
             run: |
+                ls ${{ env.CARGO_BUILD_DIR }}
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra_bevy package/decentra_bevy
                 # We must enter the package/ directory in order to create a flat tarball (i.e. without a directory in it).
                 cd package
                 tar -czvf ../${{ env.PACKAGE_FILE }} *            
 
           - name: Upload package
+            continue-on-error: true
             run: gh release upload "${{ needs.create-release.outputs.tag_name }}" "${{ env.PACKAGE_FILE }}"
             env:
                 GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
