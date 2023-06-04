@@ -18,23 +18,19 @@ pub mod visuals;
 
 use avatar::AvatarDynamicState;
 use bevy::{
-    core::FrameCount,
     core_pipeline::tonemapping::{DebandDither, Tonemapping},
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::CascadeShadowConfigBuilder,
     prelude::*,
     render::view::ColorGrading,
 };
-use bevy_console::{ConsoleCommand, ConsoleOpen};
+use bevy_console::ConsoleCommand;
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 
 use common::{PrimaryCamera, PrimaryUser};
-use comms::{profile::UserProfile, Transport};
-use ipfs::ChangeRealmEvent;
+use comms::profile::UserProfile;
 use scene_runner::{
-    initialize_scene::{SceneLoadDistance, SceneLoading},
-    renderer_context::RendererSceneContext,
-    update_world::mesh_collider::GroundCollider,
+    initialize_scene::SceneLoadDistance, update_world::mesh_collider::GroundCollider,
     SceneRunnerPlugin,
 };
 use serde::{Deserialize, Serialize};
@@ -45,7 +41,6 @@ use crate::{
     console::{ConsolePlugin, DoAddConsoleCommand},
     input_manager::InputManagerPlugin,
     ipfs::IpfsIoPlugin,
-    scene_runner::SceneSets,
     system_ui::SystemUiPlugin,
     user_input::UserInputPlugin,
     visuals::VisualsPlugin,
@@ -187,6 +182,7 @@ fn main() {
     app.insert_resource(final_config);
 
     app.add_plugin(DebugLinesPlugin::with_depth_test(true))
+        .add_plugin(bevy_mod_billboard::prelude::BillboardPlugin)
         .add_plugin(InputManagerPlugin)
         .add_plugin(SceneRunnerPlugin)
         .add_plugin(UserInputPlugin)
@@ -201,13 +197,6 @@ fn main() {
             color: Color::rgb(0.75, 0.75, 1.0),
             brightness: 0.25,
         });
-
-    app.add_system(
-        input
-            .after(SceneSets::RunLoop)
-            .run_if(|console_open: Res<ConsoleOpen>| !console_open.open),
-    );
-    println!("up: realm1, down: realm2");
 
     app.add_console_command::<ChangeLocationCommand, _>(change_location);
     app.add_console_command::<SceneDistanceCommand, _>(scene_distance);
@@ -272,65 +261,6 @@ fn setup(mut commands: Commands) {
         .into(),
         ..Default::default()
     });
-}
-
-// TODO remove this debug code. it's just useful to quickly switch realms with up/down keys
-fn input(
-    keys: Res<Input<KeyCode>>,
-    mut load: EventWriter<ChangeRealmEvent>,
-    frame: Res<FrameCount>,
-    loading_scenes: Query<&SceneLoading>,
-    running_scenes: Query<&RendererSceneContext>,
-    adapters: Query<&Transport>,
-) {
-    let realm = if keys.just_pressed(KeyCode::Up) {
-        "https://sdk-test-scenes.decentraland.zone"
-    } else if keys.just_pressed(KeyCode::Down) {
-        "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-23c44f78405b2ee2e063a808d3b031905bc59800"
-    } else {
-        ""
-    };
-
-    if !realm.is_empty() {
-        load.send(ChangeRealmEvent {
-            new_realm: realm.to_owned(),
-        });
-    }
-
-    if frame.0 % 1000 == 0 {
-        info!(
-            "{} loading ({:?})",
-            loading_scenes.iter().count(),
-            loading_scenes.iter().fold(String::new(), |msg, loadng| {
-                format!("{msg}, {loadng:?}")
-            })
-        );
-
-        let running = running_scenes
-            .iter()
-            .filter(|context| !context.broken && context.blocked.is_empty())
-            .count();
-        let blocked = running_scenes
-            .iter()
-            .filter(|context| !context.broken && !context.blocked.is_empty())
-            .count();
-        let broken = running_scenes
-            .iter()
-            .filter(|context| context.broken)
-            .count();
-        info!("{} running", running);
-        info!(
-            "{} blocked ({:?})",
-            blocked,
-            running_scenes
-                .iter()
-                .filter(|context| !context.broken && !context.blocked.is_empty())
-                .map(|context| &context.blocked)
-                .collect::<Vec<_>>()
-        );
-        info!("{} broken", broken);
-        info!("{} transports", adapters.iter().count());
-    }
 }
 
 // hook console commands

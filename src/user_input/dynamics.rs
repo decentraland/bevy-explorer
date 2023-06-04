@@ -99,6 +99,13 @@ pub fn update_user_position(
                 &controller,
             );
 
+            if Vec3::from(eff_movement.translation).length() > 0.0 {
+                debug!(
+                    "dynamics: {} -> {}",
+                    transform.translation,
+                    transform.translation + Vec3::from(eff_movement.translation)
+                );
+            }
             transform.translation += Vec3::from(eff_movement.translation);
             transform.translation.y = transform.translation.y.max(0.0);
 

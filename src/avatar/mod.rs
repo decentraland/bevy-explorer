@@ -7,6 +7,7 @@ use bevy::{
     scene::InstanceId,
     utils::{HashMap, HashSet},
 };
+use bevy_mod_billboard::BillboardTextBundle;
 use serde::Deserialize;
 use urn::Urn;
 
@@ -35,6 +36,7 @@ use crate::{
     },
     ipfs::{ActiveEntityTask, IpfsLoaderExt, IpfsModifier},
     scene_runner::{update_world::AddCrdtInterfaceExt, ContainingScene, SceneEntity},
+    system_ui::TITLE_TEXT_STYLE,
     util::TaskExt,
 };
 
@@ -267,7 +269,8 @@ fn update_base_avatar_shape(
         if let Some(mut commands) = commands.get_entity(ent) {
             commands.insert(AvatarShape(PbAvatarShape {
                 id: format!("{:#x}", address),
-                name: Some(profile.content.name.to_owned()),
+                // add label only for foreign players
+                name: maybe_player.map(|_| profile.content.name.to_owned()),
                 body_shape: Some(
                     profile
                         .content
@@ -667,6 +670,7 @@ impl WearableDefinition {
 
 #[derive(Component)]
 pub struct AvatarDefinition {
+    label: Option<String>,
     body: WearableDefinition,
     skin_color: Color,
     hair_color: Color,
@@ -869,6 +873,7 @@ fn update_render_avatar(
                     ..Default::default()
                 },
                 AvatarDefinition {
+                    label: selection.shape.name.clone(),
                     body: body_wearable,
                     wearables,
                     hides,
@@ -1313,7 +1318,28 @@ fn process_avatar(
             "avatar processed, 1+{} models, {} textures. hides: {:?}, skin mats: {:?}, hair mats: {:?}, used mats: {:?}",
             wearable_models, wearable_texs, def.hides, loaded_avatar.skin_materials.len(), loaded_avatar.hair_materials.len(), colored_materials.len()
         );
-        commands.entity(avatar_ent).insert(AvatarProcessed);
+        commands
+            .entity(avatar_ent)
+            .insert(AvatarProcessed)
+            .with_children(|commands| {
+                // add a name tag
+                if let Some(label) = def.label.as_ref() {
+                    commands.spawn(BillboardTextBundle {
+                        text: Text::from_section(
+                            label,
+                            TextStyle {
+                                font_size: 50.0,
+                                color: Color::WHITE,
+                                ..TITLE_TEXT_STYLE.get().unwrap().clone()
+                            },
+                        )
+                        .with_alignment(TextAlignment::Center),
+                        transform: Transform::from_translation(Vec3::Y * 2.2)
+                            .with_scale(Vec3::splat(0.003)),
+                        ..Default::default()
+                    });
+                }
+            });
     }
 }
 

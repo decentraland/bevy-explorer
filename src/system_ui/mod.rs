@@ -23,7 +23,7 @@ use self::{
     ui_actions::UiActionPlugin,
 };
 
-static TITLE_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
+pub static TITLE_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
 static BODY_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
 static BUTTON_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
 
