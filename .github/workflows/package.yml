@@ -99,7 +99,7 @@ jobs:
           - name: Package common
             run: |
                 mkdir package
-                cp README.md package/README.md
+                cp readme.md package/README.md
                 cp LICENSE package/LICENSE
                 cp -r assets package
             
