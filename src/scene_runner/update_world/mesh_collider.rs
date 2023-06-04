@@ -655,7 +655,13 @@ fn update_collider_transforms(
                 "closest point: {}, dir: {fix_dir}, len: {distance}",
                 closest_point
             );
-            fix_dir.normalize_or_zero() * distance
+            (fix_dir.normalize_or_zero() * distance)
+                // constrain resulting position to above ground
+                .max(Vec3::new(
+                    f32::NEG_INFINITY,
+                    -translation.y,
+                    f32::NEG_INFINITY,
+                ))
         };
 
     for (container, collider, global_transform) in changed_colliders.iter() {
