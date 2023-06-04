@@ -20,7 +20,7 @@ jobs:
             id: current_time_underscores
             with:
                 format: YYYY-MM-DD-HH-mm-ss
-                
+
           - name: Get current time with dashes
             uses: 1466587594/get-current-time@v2.1.1
             id: current_time_dashes
@@ -78,12 +78,15 @@ jobs:
                 toolchain: stable
                 override: true
 
+          - name: add darwin target
+            if: runner.os == 'macos'
+            run: rustup target add aarch64-apple-darwin
+
           - name: Install protoc
             uses: arduino/setup-protoc@v1
             with:
                 repo-token: ${{ secrets.GITHUB_TOKEN }}
     
-
           - name: Install alsa and udev
             if: runner.os == 'linux'
             run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
