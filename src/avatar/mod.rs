@@ -1328,14 +1328,14 @@ fn process_avatar(
                         text: Text::from_section(
                             label,
                             TextStyle {
-                                font_size: 160.0,
+                                font_size: 50.0,
                                 color: Color::WHITE,
                                 ..TITLE_TEXT_STYLE.get().unwrap().clone()
                             },
                         )
                         .with_alignment(TextAlignment::Center),
                         transform: Transform::from_translation(Vec3::Y * 2.2)
-                            .with_scale(Vec3::splat(0.001)),
+                            .with_scale(Vec3::splat(0.003)),
                         ..Default::default()
                     });
                 }
