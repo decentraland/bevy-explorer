@@ -110,7 +110,7 @@ jobs:
                 7z a ${{ env.PACKAGE_FILE }} ./package/*
 
           - name: Package Linux
-            if: runner.os != 'Linux'
+            if: runner.os != 'Windows'
             run: |
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra_bevy package/decentra_bevy
                 # We must enter the package/ directory in order to create a flat tarball (i.e. without a directory in it).
