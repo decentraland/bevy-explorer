@@ -53,11 +53,6 @@ jobs:
                     os: macos-latest
                     target: aarch64-apple-darwin
 
-                  - build_name: windows-x86_32
-                    os: windows-latest
-                    target: i686-pc-windows-msvc
-                    RUSTFLAGS: -Ctarget-feature=+crt-static
-        
                   - build_name: windows-x86_64
                     os: windows-latest
                     target: x86_64-pc-windows-msvc
@@ -107,7 +102,7 @@ jobs:
             if: runner.os == 'Windows'
             continue-on-error: true
             run: |
-                cp ${{ env.CARGO_BUILD_DIR }}/decentra_bevy.exe package/decentra_bevy.exe
+                cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy.exe package/decentra-bevy.exe
                 7z a ${{ env.PACKAGE_FILE }} ./package/*
 
           - name: Package Linux
@@ -115,7 +110,7 @@ jobs:
             continue-on-error: true
             run: |
                 ls ${{ env.CARGO_BUILD_DIR }}
-                cp ${{ env.CARGO_BUILD_DIR }}/decentra_bevy package/decentra_bevy
+                cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy package/decentra-bevy
                 # We must enter the package/ directory in order to create a flat tarball (i.e. without a directory in it).
                 cd package
                 tar -czvf ../${{ env.PACKAGE_FILE }} *            
