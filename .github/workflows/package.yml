@@ -29,8 +29,8 @@ jobs:
                 tag_name="release-${{ steps.current_time_dashes.outputs.formattedTime }}"
                 release_name="Nightly ${{ steps.current_time_dashes.outputs.formattedTime }}"
                 gh release create "$tag_name" --title "$release_name" --generate-notes --prerelease
-                env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            env:
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     build:
         name: Build ${{ matrix.build_name }}
