@@ -1,0 +1,116 @@
+name: Build Release
+
+on:
+    workflow_dispatch:
+
+jobs:
+    create-release:
+        name: Create Release
+        runs-on: ubuntu-22.04
+        outputs:
+            package_prefix: bevy-explorer-${{ steps.current_time_underscores.outputs.formattedTime }}
+            tag_name: prealpha-${{ steps.current_time_dashes.outputs.formattedTime }}
+        if: github.repository == 'decentraland/bevy-explorer' || github.event_name == 'workflow_dispatch'
+        steps:
+          - name: Get current time with underscores
+            uses: 1466587594/get-current-time@v2.1.1
+            id: current_time_underscores
+            with:
+                format: YYYY-MM-DD-HH-mm-ss
+          - name: Get current time with dashes
+            uses: 1466587594/get-current-time@v2.1.1
+            id: current_time_dashes
+            with:
+                format: YYYY-MM-DD-HH-mm-ss
+    
+          - name: Create release
+            id: create_release
+            run: |
+                tag_name="release-${{ steps.current_time_dashes.outputs.formattedTime }}"
+                release_name="Nightly ${{ steps.current_time_dashes.outputs.formattedTime }}"
+                gh release create "$tag_name" --title "$release_name" --generate-notes --prerelease
+                env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    build:
+        name: Build ${{ matrix.build_name }}
+        needs: create-release
+        strategy:
+            matrix:
+                include:
+                  - build_name: linux-x86_64
+                    os: ubuntu-latest
+
+                  - build_name: macos-x86_64
+                    os: macos-latest
+                    target: x86_64-apple-darwin
+        
+                  - build_name: macos-aarch64
+                    os: macos-latest
+                    target: aarch64-apple-darwin
+
+                  - build_name: windows-x86_32
+                    os: windows-latest
+                    target: i686-pc-windows-msvc
+                    RUSTFLAGS: -Ctarget-feature=+crt-static
+        
+                  - build_name: windows-x86_64
+                    os: windows-latest
+                    target: x86_64-pc-windows-msvc
+                    RUSTFLAGS: -Ctarget-feature=+crt-static
+
+        env:
+            PACKAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.${{ startsWith(matrix.build_name, 'win') && 'zip' || 'tar.gz' }}
+            CARGO_BUILD_DIR: target/${{ matrix.target }}/release
+
+        runs-on: ${{ matrix.os }}
+        steps:
+          - name: Clone repo
+            uses: actions/checkout@v3
+
+          - uses: actions-rs/toolchain@v1
+            with:
+                profile: minimal
+                toolchain: stable
+                override: true
+
+          - name: Install protoc
+            uses: arduino/setup-protoc@v1
+            with:
+                repo-token: ${{ secrets.GITHUB_TOKEN }}
+    
+
+          - name: Install alsa and udev
+            if: runner.os == 'linux'
+            run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+            
+          - name: Cargo build
+            run: cargo build --release ${{ matrix.target && '--target' }} ${{ matrix.target }}
+            env:
+                RUSTFLAGS: ${{ matrix.RUSTFLAGS }}
+
+          - name: Package common
+            run: |
+                mkdir package
+                cp README.md package/README.md
+                cp LICENSE package/LICENSE
+                cp -r assets package
+            
+          - name: Package Windows
+            if: runner.os == 'Windows'
+            run: |
+                cp ${{ env.CARGO_BUILD_DIR }}/decentra_bevy.exe package/decentra_bevy.exe
+                7z a ${{ env.PACKAGE_FILE }} ./package/*
+
+          - name: Package Linux
+            if: runner.os != 'Linux'
+            run: |
+                cp ${{ env.CARGO_BUILD_DIR }}/decentra_bevy package/decentra_bevy
+                # We must enter the package/ directory in order to create a flat tarball (i.e. without a directory in it).
+                cd package
+                tar -czvf ../${{ env.PACKAGE_FILE }} *            
+
+          - name: Upload package
+            run: gh release upload "${{ needs.create-release.outputs.tag_name }}" "${{ env.PACKAGE_FILE }}"
+            env:
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
