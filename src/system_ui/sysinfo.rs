@@ -1,12 +1,18 @@
 use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
-    prelude::*, math::Vec3Swizzles,
+    math::Vec3Swizzles,
+    prelude::*,
 };
 
 use crate::{
+    common::PrimaryUser,
     comms::{global_crdt::ForeignPlayer, Transport},
-    scene_runner::{initialize_scene::{SceneLoading, PARCEL_SIZE}, renderer_context::RendererSceneContext, ContainingScene},
-    AppConfig, common::PrimaryUser,
+    scene_runner::{
+        initialize_scene::{SceneLoading, PARCEL_SIZE},
+        renderer_context::RendererSceneContext,
+        ContainingScene,
+    },
+    AppConfig,
 };
 
 use super::{SystemUiRoot, BODY_TEXT_STYLE, TITLE_TEXT_STYLE};
@@ -87,7 +93,7 @@ fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res<AppConfig>
                         if config.graphics.log_fps {
                             info_node("FPS :".to_owned());
                         }
-        
+
                         info_node("Current Parcel :".to_owned());
                         info_node("Current Scene :".to_owned());
                         info_node("Scene State :".to_owned());
@@ -128,11 +134,13 @@ fn update_scene_load_state(
         return;
     };
     let scene = containing_scene.get(player);
-    let parcel = (pos.translation().xz() * Vec2::new(1.0, -1.0)
-        / PARCEL_SIZE)
+    let parcel = (pos.translation().xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
         .floor()
         .as_ivec2();
-    let title = scene.and_then(|scene| running_scenes.get(scene).ok()).map(|context| context.title.clone()).unwrap_or("???".to_owned());
+    let title = scene
+        .and_then(|scene| running_scenes.get(scene).ok())
+        .map(|context| context.title.clone())
+        .unwrap_or("???".to_owned());
 
     if let Ok(sysinfo) = q.get_single() {
         let mut ix = 0;
@@ -155,7 +163,7 @@ fn update_scene_load_state(
                 } else {
                     "Running"
                 }
-            } else { 
+            } else {
                 "Unknown?!"
             }
         });

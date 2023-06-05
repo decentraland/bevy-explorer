@@ -60,7 +60,7 @@ pub fn update_camera(
             window.cursor.grab_mode = CursorGrabMode::Locked;
             window.cursor.visible = false;
 
-            #[cfg(target_os="windows")]
+            #[cfg(target_os = "windows")]
             {
                 let cursor_position = locked_cursor_position
                     .get_or_insert_with(|| window.cursor_position().unwrap_or_default());
