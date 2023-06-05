@@ -52,3 +52,6 @@ petgraph = "0.6.3"
 
 [build-dependencies]
 prost-build = "0.11.8"
+
+[patch.crates-io]
+bevy = { git="https://github.com/robtfm/bevy", branch="0.10-hotfix" }
