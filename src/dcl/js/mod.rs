@@ -1,6 +1,6 @@
-use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender, time::Duration};
+use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
 
-use bevy::prelude::{debug, error, info_span, warn};
+use bevy::prelude::{debug, error, info_span};
 use deno_core::{
     ascii_str,
     error::{generic_error, AnyError},
@@ -135,25 +135,13 @@ pub(crate) fn scene_thread(
         return;
     }
 
-    let start_time = std::time::SystemTime::now();
+    let start_time = std::time::Instant::now();
     let mut prev_time = start_time;
-    let mut elapsed = Duration::ZERO;
+    let mut elapsed;
     loop {
-        let now = std::time::SystemTime::now();
-        let dt = match now.duration_since(prev_time) {
-            Ok(dur) => dur.max(Duration::ZERO),
-            Err(e) => {
-                warn!("failed to get frame dt: {e}");
-                Duration::ZERO
-            }
-        };
-        elapsed = match now.duration_since(start_time) {
-            Ok(dur) => dur.max(Duration::ZERO),
-            Err(e) => {
-                warn!("failed to get elapsed time: {e}");
-                elapsed
-            }
-        };
+        let now = std::time::Instant::now();
+        let dt = now.saturating_duration_since(prev_time);
+        elapsed = now.saturating_duration_since(start_time);
         prev_time = now;
 
         state
