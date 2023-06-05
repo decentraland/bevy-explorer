@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender, time::Duration};
+use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
 
 use bevy::prelude::{debug, error, info_span};
 use deno_core::{
@@ -135,14 +135,14 @@ pub(crate) fn scene_thread(
         return;
     }
 
-    let start_time = std::time::SystemTime::now();
-    let mut elapsed = Duration::default();
+    let start_time = std::time::Instant::now();
+    let mut prev_time = start_time;
+    let mut elapsed;
     loop {
-        let dt = std::time::SystemTime::now()
-            .duration_since(start_time)
-            .unwrap_or(elapsed)
-            - elapsed;
-        elapsed += dt;
+        let now = std::time::Instant::now();
+        let dt = now.saturating_duration_since(prev_time);
+        elapsed = now.saturating_duration_since(start_time);
+        prev_time = now;
 
         state
             .borrow_mut()

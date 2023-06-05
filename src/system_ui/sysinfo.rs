@@ -1,11 +1,17 @@
 use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
+    math::Vec3Swizzles,
     prelude::*,
 };
 
 use crate::{
+    common::PrimaryUser,
     comms::{global_crdt::ForeignPlayer, Transport},
-    scene_runner::{initialize_scene::SceneLoading, renderer_context::RendererSceneContext},
+    scene_runner::{
+        initialize_scene::{SceneLoading, PARCEL_SIZE},
+        renderer_context::RendererSceneContext,
+        ContainingScene,
+    },
     AppConfig,
 };
 
@@ -16,16 +22,12 @@ pub struct SysInfoPlanelPlugin;
 impl Plugin for SysInfoPlanelPlugin {
     fn build(&self, app: &mut App) {
         app.add_startup_system(setup.after(super::setup));
-        app.add_system(update_fps);
         app.add_system(update_scene_load_state);
     }
 }
 
 #[derive(Component)]
-struct FpsLabel;
-
-#[derive(Component)]
-struct SceneLoadLabel;
+struct SysInfoMarker;
 
 fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res<AppConfig>) {
     commands.entity(root.0).with_children(|commands| {
@@ -46,18 +48,6 @@ fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res<AppConfig>
                     TITLE_TEXT_STYLE.get().unwrap().clone(),
                 ));
 
-                // fps counter
-                if config.graphics.log_fps {
-                    commands.spawn((
-                        TextBundle::from_section("FPS", BODY_TEXT_STYLE.get().unwrap().clone())
-                            .with_style(Style {
-                                margin: UiRect::all(Val::Px(5.)),
-                                ..default()
-                            }),
-                        FpsLabel,
-                    ));
-                }
-
                 commands
                     .spawn((
                         NodeBundle {
@@ -67,7 +57,7 @@ fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res<AppConfig>
                             },
                             ..Default::default()
                         },
-                        SceneLoadLabel,
+                        SysInfoMarker,
                     ))
                     .with_children(|commands| {
                         let mut info_node = |label: String| {
@@ -76,7 +66,7 @@ fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res<AppConfig>
                                 .with_children(|commands| {
                                     commands.spawn(TextBundle {
                                         style: Style {
-                                            size: Size::width(Val::Px(100.0)),
+                                            size: Size::width(Val::Px(140.0)),
                                             ..Default::default()
                                         },
                                         text: Text::from_section(
@@ -88,7 +78,7 @@ fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res<AppConfig>
                                     });
                                     commands.spawn(TextBundle {
                                         style: Style {
-                                            size: Size::width(Val::Px(100.0)),
+                                            size: Size::width(Val::Px(140.0)),
                                             ..Default::default()
                                         },
                                         text: Text::from_section(
@@ -100,22 +90,39 @@ fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res<AppConfig>
                                 });
                         };
 
-                        info_node("Loading Scenes".to_owned());
-                        info_node("Running Scenes".to_owned());
-                        info_node("Blocked Scenes".to_owned());
-                        info_node("Broken Scenes".to_owned());
-                        info_node("Transports".to_owned());
-                        info_node("Players".to_owned());
+                        if config.graphics.log_fps {
+                            info_node("FPS :".to_owned());
+                        }
+
+                        info_node("Current Parcel :".to_owned());
+                        info_node("Current Scene :".to_owned());
+                        info_node("Scene State :".to_owned());
+                        info_node("Loading Scenes :".to_owned());
+                        info_node("Running Scenes :".to_owned());
+                        info_node("Blocked Scenes :".to_owned());
+                        info_node("Broken Scenes :".to_owned());
+                        info_node("Transports :".to_owned());
+                        info_node("Players :".to_owned());
                     });
             });
     });
 }
 
-fn update_fps(
-    mut q: Query<&mut Text, With<FpsLabel>>,
-    diagnostics: Res<Diagnostics>,
+#[allow(clippy::too_many_arguments)]
+fn update_scene_load_state(
+    q: Query<Entity, With<SysInfoMarker>>,
+    q_children: Query<&Children>,
+    mut t: Query<&mut Text>,
+    loading_scenes: Query<&SceneLoading>,
+    running_scenes: Query<&RendererSceneContext, Without<SceneLoading>>,
+    transports: Query<&Transport>,
+    players: Query<&ForeignPlayer>,
+    config: Res<AppConfig>,
     mut last_update: Local<u32>,
     time: Res<Time>,
+    diagnostics: Res<Diagnostics>,
+    containing_scene: ContainingScene,
+    player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
 ) {
     let tick = (time.elapsed_seconds() * 10.0) as u32;
     if tick == *last_update {
@@ -123,30 +130,43 @@ fn update_fps(
     }
     *last_update = tick;
 
-    if let Ok(mut text) = q.get_single_mut() {
-        if let Some(fps) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
-            let fps = fps.smoothed().unwrap_or_default();
-            text.sections[0].value = format!("fps: {fps:.0}");
-        }
-    }
-}
+    let Ok((player, pos)) = player.get_single() else {
+        return;
+    };
+    let scene = containing_scene.get(player);
+    let parcel = (pos.translation().xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
+        .floor()
+        .as_ivec2();
+    let title = scene
+        .and_then(|scene| running_scenes.get(scene).ok())
+        .map(|context| context.title.clone())
+        .unwrap_or("???".to_owned());
 
-fn update_scene_load_state(
-    q: Query<Entity, With<SceneLoadLabel>>,
-    q_children: Query<&Children>,
-    mut t: Query<&mut Text>,
-    loading_scenes: Query<&SceneLoading>,
-    running_scenes: Query<&RendererSceneContext>,
-    transports: Query<&Transport>,
-    players: Query<&ForeignPlayer>,
-) {
     if let Ok(sysinfo) = q.get_single() {
+        let mut ix = 0;
         let children = q_children.get(sysinfo).unwrap();
-        let mut set_child = |ix: usize, value: String| {
+        let mut set_child = |value: String| {
             let container = q_children.get(children[ix]).unwrap();
             let mut text = t.get_mut(container[1]).unwrap();
             text.sections[0].value = value;
+            ix += 1;
         };
+
+        let state = scene.map_or("-", |scene| {
+            if loading_scenes.get(scene).is_ok() {
+                "Loading"
+            } else if let Ok(scene) = running_scenes.get(scene) {
+                if scene.broken {
+                    "Broken"
+                } else if !scene.blocked.is_empty() {
+                    "Blocked"
+                } else {
+                    "Running"
+                }
+            } else {
+                "Unknown?!"
+            }
+        });
 
         let loading = loading_scenes.iter().count();
         let running = running_scenes
@@ -164,12 +184,25 @@ fn update_scene_load_state(
         let transports = transports.iter().count();
         let players = players.iter().count() + 1;
 
-        set_child(0, format!("{}", loading));
-        set_child(1, format!("{}", running));
-        set_child(2, format!("{}", blocked));
-        set_child(3, format!("{}", broken));
+        if config.graphics.log_fps {
+            if let Some(fps) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
+                let fps = fps.smoothed().unwrap_or_default();
+                set_child(format!("{fps:.0}"));
+            } else {
+                set_child("-".to_owned());
+            }
+        }
 
-        set_child(4, format!("{}", transports));
-        set_child(5, format!("{}", players));
+        set_child(format!("({},{})", parcel.x, parcel.y));
+        set_child(title);
+        set_child(state.to_owned());
+
+        set_child(format!("{}", loading));
+        set_child(format!("{}", running));
+        set_child(format!("{}", blocked));
+        set_child(format!("{}", broken));
+
+        set_child(format!("{}", transports));
+        set_child(format!("{}", players));
     }
 }

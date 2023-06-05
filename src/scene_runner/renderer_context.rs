@@ -25,6 +25,7 @@ type LiveEntityTable = Vec<(u16, Option<Entity>)>;
 #[derive(Component, Debug)]
 pub struct RendererSceneContext {
     pub scene_id: SceneId,
+    pub title: String,
     pub base: IVec2,
     pub priority: f32,
 
@@ -68,9 +69,10 @@ pub struct RendererSceneContext {
 pub const SCENE_LOG_BUFFER_SIZE: usize = 100;
 
 impl RendererSceneContext {
-    pub fn new(scene_id: SceneId, base: IVec2, root: Entity, priority: f32) -> Self {
+    pub fn new(scene_id: SceneId, title: String, base: IVec2, root: Entity, priority: f32) -> Self {
         let mut new_context = Self {
             scene_id,
+            title,
             base,
             nascent: Default::default(),
             death_row: Default::default(),

@@ -183,7 +183,13 @@ pub struct SceneMetaScene {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct SceneDisplay {
+    title: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct SceneMeta {
+    pub display: Option<SceneDisplay>,
     pub main: String,
     pub scene: SceneMetaScene,
 }
@@ -289,7 +295,11 @@ pub(crate) fn load_scene_javascript(
         commands.entity(root).insert(());
 
         let scene_id = get_next_scene_id();
-        let mut renderer_context = RendererSceneContext::new(scene_id, base, root, 1.0);
+        let title = meta
+            .display
+            .and_then(|display| display.title)
+            .unwrap_or("???".to_owned());
+        let mut renderer_context = RendererSceneContext::new(scene_id, title, base, root, 1.0);
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?})");
 
         scene_updates.scene_ids.insert(scene_id, root);

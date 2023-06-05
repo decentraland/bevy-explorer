@@ -225,13 +225,13 @@ fn run_scene_loop(world: &mut World) {
     let millis = 12;
     let end_time = last_end_time + Duration::from_millis(millis);
 
-    // allow at least 5 ms until i sort out the frame timings properly
+    // allow at least 1 ms until i sort out the frame timings properly
     // TODO:
-    // - calculate scene time from end of render-world handoff
+    // - calculate scene time from end of render-world handoff (so as to capture asset extract)
     // - estimate / conservatively allocate time from end-of-scene-update to renderer-handoff
     // - get/use vsync info if enabled
     // - get/use user-spec otherwise
-    let end_time = end_time.max(start_time + Duration::from_millis(5));
+    let end_time = end_time.max(start_time + Duration::from_millis(1));
 
     world.resource_mut::<SceneUpdates>().loop_end_time = end_time;
 
