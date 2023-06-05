@@ -102,6 +102,7 @@ fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res<AppConfig>
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_scene_load_state(
     q: Query<Entity, With<SysInfoMarker>>,
     q_children: Query<&Children>,
@@ -146,18 +147,16 @@ fn update_scene_load_state(
         let state = scene.map_or("-", |scene| {
             if loading_scenes.get(scene).is_ok() {
                 "Loading"
-            } else {
-                if let Ok(scene) = running_scenes.get(scene) {
-                    if scene.broken {
-                        "Broken"
-                    } else if !scene.blocked.is_empty() {
-                        "Blocked"
-                    } else {
-                        "Running"
-                    }
-                } else { 
-                    "Unknown?!"
+            } else if let Ok(scene) = running_scenes.get(scene) {
+                if scene.broken {
+                    "Broken"
+                } else if !scene.blocked.is_empty() {
+                    "Blocked"
+                } else {
+                    "Running"
                 }
+            } else { 
+                "Unknown?!"
             }
         });
 

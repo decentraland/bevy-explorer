@@ -295,7 +295,7 @@ pub(crate) fn load_scene_javascript(
         commands.entity(root).insert(());
 
         let scene_id = get_next_scene_id();
-        let title = meta.display.and_then(|display| display.title.clone()).unwrap_or("???".to_owned());
+        let title = meta.display.and_then(|display| display.title).unwrap_or("???".to_owned());
         let mut renderer_context = RendererSceneContext::new(scene_id, title, base, root, 1.0);
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?})");
 
