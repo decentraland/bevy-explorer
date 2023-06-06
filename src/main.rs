@@ -79,9 +79,10 @@ impl Default for GraphicsSettings {
 
 #[derive(Serialize, Deserialize, Resource)]
 pub struct AppConfig {
-    server: String,
-    profile: UserProfile,
-    graphics: GraphicsSettings,
+    pub server: String,
+    pub profile: UserProfile,
+    pub graphics: GraphicsSettings,
+    pub scene_threads: usize,
 }
 
 impl Default for AppConfig {
@@ -94,6 +95,7 @@ impl Default for AppConfig {
                 base_url: "https://peer.decentraland.zone/content/contents/".to_owned(),
             },
             graphics: Default::default(),
+            scene_threads: 4,
         }
     }
 }
@@ -127,8 +129,15 @@ fn main() {
                 .value_from_str("--log_fps")
                 .ok()
                 .unwrap_or(base_config.graphics.log_fps),
-            msaa: args.value_from_str::<_, usize>("--msaa").ok().unwrap_or(4),
+            msaa: args
+                .value_from_str::<_, usize>("--msaa")
+                .ok()
+                .unwrap_or(base_config.graphics.msaa),
         },
+        scene_threads: args
+            .value_from_str("--threads")
+            .ok()
+            .unwrap_or(base_config.scene_threads),
     };
 
     let remaining = args.finish();

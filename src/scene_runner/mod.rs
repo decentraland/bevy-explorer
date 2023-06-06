@@ -25,6 +25,7 @@ use crate::{
         SceneEntityId,
     },
     ipfs::SceneIpfsLocation,
+    AppConfig,
 };
 
 use self::{
@@ -321,7 +322,7 @@ fn update_scene_priority(
 // - reduce bevy async thread pool
 // - reduce bevy primary thread pool
 // - see if we can get v8 single threaded / no native threads working
-const MAX_CONCURRENT_SCENES: usize = 8;
+// const MAX_CONCURRENT_SCENES: usize = 8;
 
 // helper to get the scene entity containing a given world position
 #[derive(SystemParam)]
@@ -386,10 +387,11 @@ fn send_scene_updates(
     time: Res<Time>,
     player: Query<&Transform, With<PrimaryUser>>,
     camera: Query<&Transform, With<PrimaryCamera>>,
+    config: Res<AppConfig>,
 ) {
     let updates = &mut *updates;
 
-    if updates.jobs_in_flight.len() == MAX_CONCURRENT_SCENES {
+    if updates.jobs_in_flight.len() == config.scene_threads {
         return;
     }
 
