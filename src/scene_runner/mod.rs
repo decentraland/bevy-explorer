@@ -274,10 +274,7 @@ fn update_scene_priority(
 
     let (player_scene, player_translation) = player
         .get_single()
-        .map(|(e, gt)| (
-            containing_scene.get(e),
-            gt.translation()
-        ))
+        .map(|(e, gt)| (containing_scene.get(e), gt.translation()))
         .unwrap_or_default();
 
     // check all in-flight scenes still exist
@@ -295,7 +292,7 @@ fn update_scene_priority(
             let distance = (transform.translation() - player_translation).length();
             context.priority = if Some(ent) == player_scene {
                 0.0
-            } else { 
+            } else {
                 distance
             };
             let not_yet_run = context.last_sent < time.elapsed_seconds();

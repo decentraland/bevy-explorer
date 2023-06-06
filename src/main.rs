@@ -64,6 +64,7 @@ macro_rules! dcl_assert {
 pub struct GraphicsSettings {
     vsync: bool,
     log_fps: bool,
+    msaa: usize,
 }
 
 impl Default for GraphicsSettings {
@@ -71,6 +72,7 @@ impl Default for GraphicsSettings {
         Self {
             vsync: false,
             log_fps: true,
+            msaa: 4,
         }
     }
 }
@@ -125,6 +127,7 @@ fn main() {
                 .value_from_str("--log_fps")
                 .ok()
                 .unwrap_or(base_config.graphics.log_fps),
+            msaa: args.value_from_str::<_, usize>("--msaa").ok().unwrap_or(4),
         },
     };
 
@@ -153,7 +156,21 @@ fn main() {
         false => bevy::window::PresentMode::AutoNoVsync,
     };
 
-    app.add_plugins(
+    let msaa = match final_config.graphics.msaa {
+        1 => Msaa::Off,
+        2 => Msaa::Sample2,
+        4 => Msaa::Sample4,
+        8 => Msaa::Sample8,
+        _ => {
+            warnings.push(
+                "Invalid msaa sample count, must be one of (1, 2, 4, 8). Defaulting to Off"
+                    .to_owned(),
+            );
+            Msaa::Off
+        }
+    };
+
+    app.insert_resource(msaa).add_plugins(
         DefaultPlugins
             .set(WindowPlugin {
                 primary_window: Some(Window {

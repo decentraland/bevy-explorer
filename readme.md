@@ -19,7 +19,7 @@ This project's goals are to:
 
 # Arguments
 
-`cargo run --release -- [--server serverpath] [--vsync true|false] [--log_fps true|false]`
+`cargo run --release -- [--server serverpath] [--vsync true|false] [--log_fps true|false] [--msaa 1|2|4|8]`
 
 `--server https://sdk-test-scenes.decentraland.zone`
 - specify the content server, defaults to the sdk test server.
