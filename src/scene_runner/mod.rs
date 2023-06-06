@@ -265,15 +265,19 @@ fn run_scene_loop(world: &mut World) {
 
 fn update_scene_priority(
     mut scenes: Query<(Entity, &GlobalTransform, &mut RendererSceneContext), Without<SceneLoading>>,
-    camera: Query<&GlobalTransform, With<PrimaryUser>>,
+    player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
+    containing_scene: ContainingScene,
 ) {
     updates.eligible_jobs = 0;
 
-    let camera_translation = camera
+    let (player_scene, player_translation) = player
         .get_single()
-        .map(|gt| gt.translation())
+        .map(|(e, gt)| (
+            containing_scene.get(e),
+            gt.translation()
+        ))
         .unwrap_or_default();
 
     // check all in-flight scenes still exist
@@ -287,8 +291,13 @@ fn update_scene_priority(
             !context.in_flight && !context.broken && context.blocked.is_empty()
         })
         .filter_map(|(ent, transform, mut context)| {
-            let distance = (transform.translation() - camera_translation).length();
-            context.priority = distance;
+            // TODO clamp to scene bounds instead of using distance to scene origin
+            let distance = (transform.translation() - player_translation).length();
+            context.priority = if Some(ent) == player_scene {
+                0.0
+            } else { 
+                distance
+            };
             let not_yet_run = context.last_sent < time.elapsed_seconds();
 
             (!context.in_flight && not_yet_run).then(|| {
