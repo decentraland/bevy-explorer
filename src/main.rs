@@ -232,6 +232,8 @@ fn main() {
 
     app.add_console_command::<ChangeLocationCommand, _>(change_location);
     app.add_console_command::<SceneDistanceCommand, _>(scene_distance);
+    app.add_console_command::<SceneThreadsCommand, _>(scene_threads);
+    app.add_console_command::<SceneMillisCommand, _>(scene_millis);
 
     // replay any warnings
     for warning in warnings {
@@ -345,6 +347,42 @@ fn scene_distance(
     if let Some(Ok(command)) = input.take() {
         let distance = command.distance.unwrap_or(100.0);
         scene_load_distance.0 = distance;
-        input.reply_failed("set scene load distance to {distance}");
+        input.reply_ok("set scene load distance to {distance}");
+    }
+}
+
+// set thread count
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/scene_threads")]
+struct SceneThreadsCommand {
+    threads: Option<usize>,
+}
+
+fn scene_threads(
+    mut input: ConsoleCommand<SceneThreadsCommand>,
+    mut config: ResMut<AppConfig>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let threads = command.threads.unwrap_or(4);
+        config.scene_threads = threads;
+        input.reply_ok("scene simultaneous thread count set to {threads}");
+    }
+}
+
+// set loop millis
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/scene_millis")]
+struct SceneMillisCommand {
+    millis: Option<u64>,
+}
+
+fn scene_millis(
+    mut input: ConsoleCommand<SceneMillisCommand>,
+    mut config: ResMut<AppConfig>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let millis = command.millis.unwrap_or(12);
+        config.scene_loop_millis = millis;
+        input.reply_ok("scene loop max ms set to {millis}");
     }
 }
