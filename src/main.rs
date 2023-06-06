@@ -64,6 +64,7 @@ macro_rules! dcl_assert {
 pub struct GraphicsSettings {
     vsync: bool,
     log_fps: bool,
+    msaa: usize,
 }
 
 impl Default for GraphicsSettings {
@@ -71,27 +72,32 @@ impl Default for GraphicsSettings {
         Self {
             vsync: false,
             log_fps: true,
+            msaa: 4,
         }
     }
 }
 
 #[derive(Serialize, Deserialize, Resource)]
 pub struct AppConfig {
-    server: String,
-    profile: UserProfile,
-    graphics: GraphicsSettings,
+    pub server: String,
+    pub profile: UserProfile,
+    pub graphics: GraphicsSettings,
+    pub scene_threads: usize,
+    pub scene_loop_millis: u64,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            server: "https://sdk-test-scenes.decentraland.zone".to_owned(),
+            server: "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-main".to_owned(),
             profile: UserProfile {
                 version: 1,
                 content: Default::default(),
-                base_url: "https://sdk-test-scenes.decentraland.zone/content/contents/".to_owned(),
+                base_url: "https://peer.decentraland.zone/content/contents/".to_owned(),
             },
             graphics: Default::default(),
+            scene_threads: 4,
+            scene_loop_millis: 12, // ~80fps
         }
     }
 }
@@ -125,7 +131,19 @@ fn main() {
                 .value_from_str("--log_fps")
                 .ok()
                 .unwrap_or(base_config.graphics.log_fps),
+            msaa: args
+                .value_from_str::<_, usize>("--msaa")
+                .ok()
+                .unwrap_or(base_config.graphics.msaa),
         },
+        scene_threads: args
+            .value_from_str("--threads")
+            .ok()
+            .unwrap_or(base_config.scene_threads),
+        scene_loop_millis: args
+            .value_from_str("--millis")
+            .ok()
+            .unwrap_or(base_config.scene_loop_millis),
     };
 
     let remaining = args.finish();
@@ -153,7 +171,21 @@ fn main() {
         false => bevy::window::PresentMode::AutoNoVsync,
     };
 
-    app.add_plugins(
+    let msaa = match final_config.graphics.msaa {
+        1 => Msaa::Off,
+        2 => Msaa::Sample2,
+        4 => Msaa::Sample4,
+        8 => Msaa::Sample8,
+        _ => {
+            warnings.push(
+                "Invalid msaa sample count, must be one of (1, 2, 4, 8). Defaulting to Off"
+                    .to_owned(),
+            );
+            Msaa::Off
+        }
+    };
+
+    app.insert_resource(msaa).add_plugins(
         DefaultPlugins
             .set(WindowPlugin {
                 primary_window: Some(Window {
@@ -200,6 +232,8 @@ fn main() {
 
     app.add_console_command::<ChangeLocationCommand, _>(change_location);
     app.add_console_command::<SceneDistanceCommand, _>(scene_distance);
+    app.add_console_command::<SceneThreadsCommand, _>(scene_threads);
+    app.add_console_command::<SceneMillisCommand, _>(scene_millis);
 
     // replay any warnings
     for warning in warnings {
@@ -313,6 +347,36 @@ fn scene_distance(
     if let Some(Ok(command)) = input.take() {
         let distance = command.distance.unwrap_or(100.0);
         scene_load_distance.0 = distance;
-        input.reply_failed("set scene load distance to {distance}");
+        input.reply_ok("set scene load distance to {distance}");
+    }
+}
+
+// set thread count
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/scene_threads")]
+struct SceneThreadsCommand {
+    threads: Option<usize>,
+}
+
+fn scene_threads(mut input: ConsoleCommand<SceneThreadsCommand>, mut config: ResMut<AppConfig>) {
+    if let Some(Ok(command)) = input.take() {
+        let threads = command.threads.unwrap_or(4);
+        config.scene_threads = threads;
+        input.reply_ok("scene simultaneous thread count set to {threads}");
+    }
+}
+
+// set loop millis
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/scene_millis")]
+struct SceneMillisCommand {
+    millis: Option<u64>,
+}
+
+fn scene_millis(mut input: ConsoleCommand<SceneMillisCommand>, mut config: ResMut<AppConfig>) {
+    if let Some(Ok(command)) = input.take() {
+        let millis = command.millis.unwrap_or(12);
+        config.scene_loop_millis = millis;
+        input.reply_ok("scene loop max ms set to {millis}");
     }
 }
