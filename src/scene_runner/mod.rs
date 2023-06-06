@@ -223,7 +223,7 @@ fn run_scene_loop(world: &mut World) {
     #[cfg(debug_assertions)]
     let millis = 10000;
     #[cfg(not(debug_assertions))]
-    let millis = 12;
+    let millis = world.resource::<AppConfig>().scene_loop_millis;
     let end_time = last_end_time + Duration::from_millis(millis);
 
     // allow at least 1 ms until i sort out the frame timings properly

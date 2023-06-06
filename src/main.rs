@@ -83,6 +83,7 @@ pub struct AppConfig {
     pub profile: UserProfile,
     pub graphics: GraphicsSettings,
     pub scene_threads: usize,
+    pub scene_loop_millis: u64,
 }
 
 impl Default for AppConfig {
@@ -96,6 +97,7 @@ impl Default for AppConfig {
             },
             graphics: Default::default(),
             scene_threads: 4,
+            scene_loop_millis: 12, // ~80fps
         }
     }
 }
@@ -138,6 +140,10 @@ fn main() {
             .value_from_str("--threads")
             .ok()
             .unwrap_or(base_config.scene_threads),
+        scene_loop_millis: args
+            .value_from_str("--millis")
+            .ok()
+            .unwrap_or(base_config.scene_loop_millis),
     };
 
     let remaining = args.finish();

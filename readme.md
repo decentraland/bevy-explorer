@@ -25,8 +25,18 @@ This project's goals are to:
 - specify the content server, defaults to the sdk test server.
 
 `--vsync [true|false]`
+- disable/enable vsync. defaults to off.
 
-`--log_fps [true|false]`
+`--msaa [1,2,4,8]`
+- set the number of multisamples. higher values make for nicer graphics but takes more gpu power. defaults to 4.
+
+`--threads n`
+- set the max simultaneous thread count for scene javascript execution. higher will allow better performance for distant scenes, but requires more cpu power. defaults to 4.
+
+`--millis n`
+- set the max time per frame which the renderer will wait for scene execution. higher values will increase distant scene performance at the possible cost of frame rate (particularly with lower thread count).
+- note: if used together with `--vsync true` the time should be at least equal to 1000/monitor sync rate (i.e. 17 for 60hz, 6 for 144hz) to avoid very jerky behaviour.
+- defaults to 12, around 80fps
 
 # Testing
 
