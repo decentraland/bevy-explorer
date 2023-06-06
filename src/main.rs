@@ -85,11 +85,11 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            server: "https://sdk-test-scenes.decentraland.zone".to_owned(),
+            server: "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-main".to_owned(),
             profile: UserProfile {
                 version: 1,
                 content: Default::default(),
-                base_url: "https://sdk-test-scenes.decentraland.zone/content/contents/".to_owned(),
+                base_url: "https://peer.decentraland.zone/content/contents/".to_owned(),
             },
             graphics: Default::default(),
         }
