@@ -358,10 +358,7 @@ struct SceneThreadsCommand {
     threads: Option<usize>,
 }
 
-fn scene_threads(
-    mut input: ConsoleCommand<SceneThreadsCommand>,
-    mut config: ResMut<AppConfig>,
-) {
+fn scene_threads(mut input: ConsoleCommand<SceneThreadsCommand>, mut config: ResMut<AppConfig>) {
     if let Some(Ok(command)) = input.take() {
         let threads = command.threads.unwrap_or(4);
         config.scene_threads = threads;
@@ -376,10 +373,7 @@ struct SceneMillisCommand {
     millis: Option<u64>,
 }
 
-fn scene_millis(
-    mut input: ConsoleCommand<SceneMillisCommand>,
-    mut config: ResMut<AppConfig>,
-) {
+fn scene_millis(mut input: ConsoleCommand<SceneMillisCommand>, mut config: ResMut<AppConfig>) {
     if let Some(Ok(command)) = input.take() {
         let millis = command.millis.unwrap_or(12);
         config.scene_loop_millis = millis;
