@@ -88,6 +88,15 @@ impl SimpleAuthChain {
             },
         ])
     }
+
+    pub fn headers(&self) -> impl Iterator<Item = (String, String)> + '_ {
+        self.0.iter().enumerate().map(|(ix, link)| {
+            (
+                format!("x-identity-auth-chain-{}", ix),
+                serde_json::to_string(&link).unwrap(),
+            )
+        })
+    }
 }
 
 #[derive(Serialize, Deserialize)]

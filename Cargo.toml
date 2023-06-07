@@ -46,6 +46,8 @@ async-tls = "0.12.0"
 hex = "0.4.3"
 bevy_egui = "0.20"
 bevy_mod_billboard = "0.3"
+livekit = { git="https://github.com/livekit/client-sdk-rust", rev = "15d125f" }
+livekit-protocol = { git="https://github.com/livekit/client-sdk-rust", rev = "15d125f" }
 
 [dev-dependencies]
 petgraph = "0.6.3"
