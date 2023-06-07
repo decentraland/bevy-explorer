@@ -29,6 +29,7 @@ use crate::{
     scene_runner::{
         renderer_context::RendererSceneContext, ContainerEntity, SceneEntity, SceneSets,
     },
+    util::TryInsertEx,
 };
 
 use super::{
@@ -214,7 +215,10 @@ fn update_gltf(
         };
 
         set_state(scene_ent, LoadingState::Loading);
-        commands.entity(ent).insert(h_gltf).remove::<GltfLoaded>();
+        commands
+            .entity(ent)
+            .try_insert(h_gltf)
+            .remove::<GltfLoaded>();
     }
 
     for (ent, scene_ent, h_gltf) in unprocessed_gltfs.iter() {
@@ -223,7 +227,7 @@ fn update_gltf(
             bevy::asset::LoadState::Failed => {
                 warn!("failed to process gltf");
                 set_state(scene_ent, LoadingState::FinishedWithError);
-                commands.entity(ent).insert(GltfLoaded(None));
+                commands.entity(ent).try_insert(GltfLoaded(None));
                 continue;
             }
             _ => continue,
@@ -235,12 +239,14 @@ fn update_gltf(
         match gltf_scene_handle {
             Some(gltf_scene_handle) => {
                 let instance_id = scene_spawner.spawn_as_child(gltf_scene_handle.clone_weak(), ent);
-                commands.entity(ent).insert(GltfLoaded(Some(instance_id)));
+                commands
+                    .entity(ent)
+                    .try_insert(GltfLoaded(Some(instance_id)));
             }
             None => {
                 warn!("no default scene found in gltf.");
                 set_state(scene_ent, LoadingState::FinishedWithError);
-                commands.entity(ent).insert(GltfLoaded(None));
+                commands.entity(ent).try_insert(GltfLoaded(None));
             }
         }
     }
@@ -250,7 +256,7 @@ fn update_gltf(
             // nothing to process
             commands
                 .entity(bevy_scene_entity)
-                .insert(GltfProcessed::default());
+                .try_insert(GltfProcessed::default());
             continue;
         }
         let instance = loaded.0.as_ref().unwrap();
@@ -282,7 +288,7 @@ fn update_gltf(
 
             for spawned_ent in scene_spawner.iter_instance_entities(*instance) {
                 // add a container node so other systems can reference the root
-                commands.entity(spawned_ent).insert(ContainerEntity {
+                commands.entity(spawned_ent).try_insert(ContainerEntity {
                     container: bevy_scene_entity,
                     root: dcl_scene_entity.root,
                     container_id: dcl_scene_entity.id,
@@ -302,7 +308,7 @@ fn update_gltf(
                         let mut rotated = *transform;
                         rotated
                             .rotate_around(Vec3::ZERO, Quat::from_rotation_y(std::f32::consts::PI));
-                        commands.entity(spawned_ent).insert(rotated);
+                        commands.entity(spawned_ent).try_insert(rotated);
                     }
 
                     // if there is an animation player, record the entity (bevy-specific hack)
@@ -426,13 +432,15 @@ fn update_gltf(
 
                         pending_colliders.insert(h_shape.clone_weak());
 
-                        commands.entity(spawned_ent).insert(PendingGltfCollider {
-                            h_shape,
-                            h_mesh: h_mesh.clone_weak(),
-                            collision_mask: collider_bits,
-                            mesh_name: collider_base_name.map(ToOwned::to_owned),
-                            index: *index,
-                        });
+                        commands
+                            .entity(spawned_ent)
+                            .try_insert(PendingGltfCollider {
+                                h_shape,
+                                h_mesh: h_mesh.clone_weak(),
+                                collision_mask: collider_bits,
+                                mesh_name: collider_base_name.map(ToOwned::to_owned),
+                                index: *index,
+                            });
                     }
 
                     if is_skinned {
@@ -449,7 +457,7 @@ fn update_gltf(
                 }
             }
 
-            commands.entity(bevy_scene_entity).insert((
+            commands.entity(bevy_scene_entity).try_insert((
                 GltfProcessed {
                     animation_roots,
                     instance_id: Some(*instance),
@@ -486,7 +494,7 @@ fn attach_ready_colliders(
         if let Some(shape) = maybe_shape {
             commands
                 .entity(entity)
-                .insert(MeshCollider {
+                .try_insert(MeshCollider {
                     shape: MeshColliderShape::Shape(shape, pending.h_mesh.clone()),
                     collision_mask: pending.collision_mask,
                     mesh_name: pending.mesh_name.clone(),

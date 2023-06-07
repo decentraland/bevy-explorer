@@ -7,6 +7,7 @@ use crate::{
         SceneComponentId,
     },
     scene_runner::SceneSets,
+    util::TryInsertEx,
 };
 
 use self::truncated_cone::TruncatedCone;
@@ -139,7 +140,7 @@ fn update_mesh(
             }
             MeshDefinition::Sphere => defaults.sphere.clone(),
         };
-        commands.entity(ent).insert(handle);
+        commands.entity(ent).try_insert(handle);
     }
 
     for ent in removed_primitives.iter() {

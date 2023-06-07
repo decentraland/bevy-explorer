@@ -9,7 +9,7 @@ use bevy_atmosphere::{
     system_param::AtmosphereMut,
 };
 
-use crate::{common::PrimaryUser, PrimaryCamera};
+use crate::{common::PrimaryUser, util::TryInsertEx, PrimaryCamera};
 
 pub struct VisualsPlugin;
 
@@ -34,8 +34,8 @@ fn setup(
     if let Ok(cam_entity) = camera.get_single() {
         commands
             .entity(cam_entity)
-            .insert(AtmosphereCamera::default())
-            .insert(FogSettings {
+            .try_insert(AtmosphereCamera::default())
+            .try_insert(FogSettings {
                 color: Color::rgb(0.3, 0.2, 0.1),
                 directional_light_color: Color::rgb(1.0, 1.0, 0.7),
                 directional_light_exponent: 10.0,

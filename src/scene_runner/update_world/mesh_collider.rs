@@ -26,6 +26,7 @@ use crate::{
         update_world::mesh_renderer::truncated_cone::TruncatedCone, ContainerEntity,
         ContainingScene, DeletedSceneEntities, PrimaryUser, RendererSceneContext, SceneSets,
     },
+    util::TryInsertEx,
 };
 
 use super::AddCrdtInterfaceExt;
@@ -491,7 +492,7 @@ fn update_scene_collider_data(
     for scene_ent in scenes.iter() {
         commands
             .entity(scene_ent)
-            .insert(SceneColliderData::default());
+            .try_insert(SceneColliderData::default());
     }
 }
 
@@ -552,7 +553,7 @@ fn update_colliders(
         };
 
         scene_data.set_collider(&collider_id, collider);
-        commands.entity(ent).insert(HasCollider(collider_id));
+        commands.entity(ent).try_insert(HasCollider(collider_id));
     }
 
     // remove colliders

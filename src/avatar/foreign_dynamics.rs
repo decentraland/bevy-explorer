@@ -8,6 +8,7 @@ use crate::{
         renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
         ContainingScene,
     },
+    util::TryInsertEx,
 };
 
 use super::AvatarDynamicState;
@@ -60,7 +61,7 @@ fn update_foreign_user_target_position(
                     }
                 }
             } else {
-                commands.entity(ev.player).insert((
+                commands.entity(ev.player).try_insert((
                     PlayerTargetPosition {
                         time: ev.time,
                         translation: bevy_trans.translation,

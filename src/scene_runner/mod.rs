@@ -25,6 +25,7 @@ use crate::{
         SceneEntityId,
     },
     ipfs::SceneIpfsLocation,
+    util::TryInsertEx,
     AppConfig,
 };
 
@@ -570,7 +571,7 @@ fn process_scene_entity_lifecycle(
                 ))
                 .id();
 
-            commands.entity(spawned).insert(ContainerEntity {
+            commands.entity(spawned).try_insert(ContainerEntity {
                 root,
                 container: spawned,
                 container_id: scene_entity_id,

@@ -22,7 +22,7 @@ use crate::{
             WsSignedChallenge, WsWelcome,
         },
     },
-    util::AsH160,
+    util::{AsH160, TryInsertEx},
 };
 
 use super::{
@@ -76,7 +76,7 @@ fn connect_websocket(
         ));
         commands
             .entity(transport_id)
-            .insert(WebSocketConnection(task));
+            .try_insert(WebSocketConnection(task));
     }
 }
 

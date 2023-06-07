@@ -8,6 +8,7 @@ use crate::{
     scene_runner::{
         ContainerEntity, DeletedSceneEntities, RendererSceneContext, SceneEntity, TargetParent,
     },
+    util::TryInsertEx,
 };
 
 use super::CrdtLWWStateComponent;
@@ -67,7 +68,7 @@ pub(crate) fn process_transform_and_parent_updates(
                                         ))
                                         .set_parent(root)
                                         .id();
-                                    commands.entity(new_entity).insert(ContainerEntity {
+                                    commands.entity(new_entity).try_insert(ContainerEntity {
                                         root,
                                         container: new_entity,
                                         container_id: dcl_tp.parent(),

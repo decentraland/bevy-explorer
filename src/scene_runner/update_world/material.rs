@@ -7,6 +7,7 @@ use crate::{
         SceneComponentId,
     },
     scene_runner::SceneSets,
+    util::TryInsertEx,
 };
 
 use super::AddCrdtInterfaceExt;
@@ -113,11 +114,11 @@ fn update_materials(
     for (ent, defn) in new_materials.iter() {
         // info!("found a mat for {ent:?}");
         let mut commands = commands.entity(ent);
-        commands.insert(materials.add(defn.material.clone()));
+        commands.try_insert(materials.add(defn.material.clone()));
         if defn.shadow_caster {
             commands.remove::<NotShadowCaster>();
         } else {
-            commands.insert(NotShadowCaster);
+            commands.try_insert(NotShadowCaster);
         }
     }
 }
