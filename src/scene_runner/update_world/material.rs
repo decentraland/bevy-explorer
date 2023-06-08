@@ -3,10 +3,14 @@ use bevy::{pbr::NotShadowCaster, prelude::*};
 use crate::{
     dcl::interface::ComponentPosition,
     dcl_component::{
-        proto_components::sdk::components::{pb_material, MaterialTransparencyMode, PbMaterial},
+        proto_components::{
+            common::{texture_union, TextureUnion},
+            sdk::components::{pb_material, MaterialTransparencyMode, PbMaterial},
+        },
         SceneComponentId,
     },
-    scene_runner::SceneSets,
+    ipfs::IpfsLoaderExt,
+    scene_runner::{renderer_context::RendererSceneContext, ContainerEntity, SceneSets},
     util::TryInsertEx,
 };
 
@@ -14,15 +18,16 @@ use super::AddCrdtInterfaceExt;
 
 pub struct MaterialDefinitionPlugin;
 
-#[derive(Component, Debug, Default)]
+#[derive(Component, Debug, Default, Clone)]
 pub struct MaterialDefinition {
     pub material: StandardMaterial,
     pub shadow_caster: bool,
+    pub base_color_texture: Option<TextureUnion>,
 }
 
 impl From<PbMaterial> for MaterialDefinition {
     fn from(value: PbMaterial) -> Self {
-        let material = match &value.material {
+        let (material, base_color_texture) = match &value.material {
             Some(pb_material::Material::Unlit(unlit)) => {
                 let base_color = unlit.diffuse_color.map(Color::from).unwrap_or(Color::WHITE);
 
@@ -32,14 +37,17 @@ impl From<PbMaterial> for MaterialDefinition {
                     AlphaMode::Opaque
                 };
 
-                StandardMaterial {
-                    base_color,
-                    double_sided: true,
-                    cull_mode: None,
-                    unlit: true,
-                    alpha_mode,
-                    ..Default::default()
-                }
+                (
+                    StandardMaterial {
+                        base_color,
+                        double_sided: true,
+                        cull_mode: None,
+                        unlit: true,
+                        alpha_mode,
+                        ..Default::default()
+                    },
+                    unlit.texture.clone(),
+                )
             }
             Some(pb_material::Material::Pbr(pbr)) => {
                 let base_color = pbr.albedo_color.map(Color::from).unwrap_or(Color::WHITE);
@@ -64,19 +72,22 @@ impl From<PbMaterial> for MaterialDefinition {
                     }
                 };
 
-                StandardMaterial {
-                    base_color,
-                    emissive: pbr.emissive_color.map(Color::from).unwrap_or(Color::BLACK),
-                    // TODO what is pbr.reflectivity_color?
-                    metallic: pbr.metallic.unwrap_or(0.5),
-                    perceptual_roughness: pbr.roughness.unwrap_or(0.5),
-                    // TODO glossiness
-                    // TODO intensities
-                    double_sided: true,
-                    cull_mode: None,
-                    alpha_mode,
-                    ..Default::default()
-                }
+                (
+                    StandardMaterial {
+                        base_color,
+                        emissive: pbr.emissive_color.map(Color::from).unwrap_or(Color::BLACK),
+                        // TODO what is pbr.reflectivity_color?
+                        metallic: pbr.metallic.unwrap_or(0.5),
+                        perceptual_roughness: pbr.roughness.unwrap_or(0.5),
+                        // TODO glossiness
+                        // TODO intensities
+                        double_sided: true,
+                        cull_mode: None,
+                        alpha_mode,
+                        ..Default::default()
+                    },
+                    pbr.texture.clone(),
+                )
             }
             None => Default::default(),
         };
@@ -91,6 +102,7 @@ impl From<PbMaterial> for MaterialDefinition {
         Self {
             material,
             shadow_caster,
+            base_color_texture,
         }
     }
 }
@@ -108,13 +120,35 @@ impl Plugin for MaterialDefinitionPlugin {
 
 fn update_materials(
     mut commands: Commands,
-    new_materials: Query<(Entity, &MaterialDefinition), Changed<MaterialDefinition>>,
+    mut new_materials: Query<
+        (Entity, &MaterialDefinition, &ContainerEntity),
+        Changed<MaterialDefinition>,
+    >,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
+    scenes: Query<&RendererSceneContext>,
 ) {
-    for (ent, defn) in new_materials.iter() {
+    for (ent, defn, container) in new_materials.iter_mut() {
+        // get texture
+        let base_color_texture = if let Some(TextureUnion {
+            tex: Some(texture_union::Tex::Texture(texture)),
+        }) = defn.base_color_texture.as_ref()
+        {
+            scenes.get(container.root).ok().and_then(|root| {
+                asset_server
+                    .load_content_file::<Image>(&texture.src, &root.hash)
+                    .ok()
+            })
+        } else {
+            None
+        };
+
         // info!("found a mat for {ent:?}");
         let mut commands = commands.entity(ent);
-        commands.try_insert(materials.add(defn.material.clone()));
+        commands.try_insert(materials.add(StandardMaterial {
+            base_color_texture,
+            ..defn.material.clone()
+        }));
         if defn.shadow_caster {
             commands.remove::<NotShadowCaster>();
         } else {

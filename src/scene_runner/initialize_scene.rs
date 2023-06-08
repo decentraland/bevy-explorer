@@ -292,14 +292,13 @@ pub(crate) fn load_scene_javascript(
         let initial_position = base.as_vec2() * Vec2::splat(PARCEL_SIZE);
 
         // setup the scene root entity
-        commands.entity(root).try_insert(());
-
         let scene_id = get_next_scene_id();
         let title = meta
             .display
             .and_then(|display| display.title)
             .unwrap_or("???".to_owned());
-        let mut renderer_context = RendererSceneContext::new(scene_id, title, base, root, 1.0);
+        let mut renderer_context =
+            RendererSceneContext::new(scene_id, definition.id.clone(), title, base, root, 1.0);
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?})");
 
         scene_updates.scene_ids.insert(scene_id, root);
