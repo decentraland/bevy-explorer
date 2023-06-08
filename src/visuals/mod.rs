@@ -77,7 +77,7 @@ fn daylight_cycle(
 
     if let Ok((mut light_trans, mut directional)) = sun.get_single_mut() {
         light_trans.rotation = rotation;
-        directional.illuminance = t.sin().max(0.0).powf(2.0) * 100000.0;
+        directional.illuminance = t.sin().max(0.0).powf(2.0) * 30000.0;
 
         if let Ok(mut fog) = fog.get_single_mut() {
             let sun_up = atmosphere.sun_position.dot(Vec3::Y);
