@@ -87,7 +87,7 @@ impl RendererSceneContext {
             crdt_store: Default::default(),
             blocked: Default::default(),
             total_runtime: 0.0,
-            tick_number: u32::MAX,
+            tick_number: 0,
             last_update_dt: 0.0,
             logs: RingBuffer::new(1000, 100),
         };

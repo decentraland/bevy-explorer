@@ -503,7 +503,7 @@ fn receive_scene_updates(
                             interface.updates_to_entity(*component_id, &mut crdt, &mut commands);
                         }
                         dcl_assert!(
-                            updates.jobs_in_flight.contains(root) || context.tick_number == 0
+                            updates.jobs_in_flight.contains(root) || context.tick_number == 1
                         );
                     } else {
                         debug!(

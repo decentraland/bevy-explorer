@@ -345,9 +345,11 @@ pub(crate) fn load_scene_javascript(
             )) {
                 error!("failed to send initial updates to renderer: {e}");
             }
+
+            debug!("main crdt found for scene ent {root:?}");
         } else {
             // explicitly set initial tick as run
-            renderer_context.tick_number = 0;
+            renderer_context.tick_number = 1;
         }
 
         // store main.crdt + initial global state to post to the scene thread on first request
@@ -397,7 +399,7 @@ pub(crate) fn initialize_scene(
     asset_server: Res<AssetServer>,
 ) {
     for (root, mut state, h_code, context) in loading_scenes.iter_mut() {
-        if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 0 {
+        if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
             continue;
         }
 
