@@ -13,6 +13,7 @@ use crate::{
     dcl_component::{
         transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
     },
+    util::TryInsertEx,
 };
 
 use self::{
@@ -95,7 +96,7 @@ impl<T: FromDclReader> CrdtInterface for CrdtLWWInterface<T> {
         type_map
             .lww
             .remove(&component_id)
-            .map(|state| commands.insert(CrdtLWWStateComponent::<T>::new(state)));
+            .map(|state| commands.try_insert(CrdtLWWStateComponent::<T>::new(state)));
     }
 }
 
@@ -214,7 +215,7 @@ pub(crate) fn process_crdt_lww_updates<
                         );
                         match C::try_from(d) {
                             Ok(c) => {
-                                commands.entity(entity).insert(c);
+                                commands.entity(entity).try_insert(c);
                             }
                             Err(e) => {
                                 warn!(

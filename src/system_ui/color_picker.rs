@@ -1,7 +1,7 @@
 use bevy::{math::Vec3Swizzles, prelude::*, window::PrimaryWindow};
 use bevy_egui::{egui, EguiContext};
 
-use crate::system_ui::ui_actions::DataChanged;
+use crate::{system_ui::ui_actions::DataChanged, util::TryInsertEx};
 
 use super::focus::Focus;
 
@@ -66,7 +66,7 @@ pub fn update_color_picker_components(
                     // pass through focus and interaction
                     if response.changed() {
                         println!("changed: {:?}", color_picker.color);
-                        commands.entity(entity).insert(DataChanged);
+                        commands.entity(entity).try_insert(DataChanged);
                     }
                 });
         }

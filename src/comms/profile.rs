@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     common::PrimaryUser,
     dcl_component::proto_components::{common::Color3, kernel::comms::rfc4},
-    util::AsH160,
+    util::{AsH160, TryInsertEx},
     AppConfig,
 };
 
@@ -59,7 +59,9 @@ pub fn setup_primary_profile(
     if let Ok((player, maybe_profile)) = player.get_single() {
         if maybe_profile.is_none() || current_profile.is_changed() {
             // update component
-            commands.entity(player).insert(current_profile.0.clone());
+            commands
+                .entity(player)
+                .try_insert(current_profile.0.clone());
 
             // send over network
             debug!(
@@ -228,7 +230,7 @@ pub fn process_profile_events(
                     if let Some(mut existing_profile) = maybe_profile {
                         *existing_profile = profile;
                     } else {
-                        commands.entity(ev.sender).insert(profile);
+                        commands.entity(ev.sender).try_insert(profile);
                     }
                 } else {
                     warn!("profile update for unknown player {:?}", ev.sender);

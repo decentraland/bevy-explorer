@@ -226,8 +226,8 @@ fn main() {
         .add_plugin(AvatarPlugin)
         .add_startup_system(setup)
         .insert_resource(AmbientLight {
-            color: Color::rgb(0.75, 0.75, 1.0),
-            brightness: 0.25,
+            color: Color::rgb(0.85, 0.85, 1.0),
+            brightness: 0.5,
         });
 
     app.add_console_command::<ChangeLocationCommand, _>(change_location);

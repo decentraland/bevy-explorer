@@ -9,7 +9,7 @@ use bevy_atmosphere::{
     system_param::AtmosphereMut,
 };
 
-use crate::{common::PrimaryUser, PrimaryCamera};
+use crate::{common::PrimaryUser, util::TryInsertEx, PrimaryCamera};
 
 pub struct VisualsPlugin;
 
@@ -34,8 +34,8 @@ fn setup(
     if let Ok(cam_entity) = camera.get_single() {
         commands
             .entity(cam_entity)
-            .insert(AtmosphereCamera::default())
-            .insert(FogSettings {
+            .try_insert(AtmosphereCamera::default())
+            .try_insert(FogSettings {
                 color: Color::rgb(0.3, 0.2, 0.1),
                 directional_light_color: Color::rgb(1.0, 1.0, 0.7),
                 directional_light_exponent: 10.0,
@@ -77,7 +77,7 @@ fn daylight_cycle(
 
     if let Ok((mut light_trans, mut directional)) = sun.get_single_mut() {
         light_trans.rotation = rotation;
-        directional.illuminance = t.sin().max(0.0).powf(2.0) * 100000.0;
+        directional.illuminance = t.sin().max(0.0).powf(2.0) * 30000.0;
 
         if let Ok(mut fog) = fog.get_single_mut() {
             let sun_up = atmosphere.sun_position.dot(Vec3::Y);

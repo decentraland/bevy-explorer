@@ -7,6 +7,7 @@ use crate::{
         SceneComponentId,
     },
     scene_runner::SceneSets,
+    util::TryInsertEx,
 };
 
 use self::truncated_cone::TruncatedCone;
@@ -129,17 +130,18 @@ fn update_mesh(
                 if uvs.is_empty() {
                     defaults.plane.clone()
                 } else {
-                    let mut mesh = Mesh::from(shape::Plane::default());
+                    let mut mesh = Mesh::from(shape::Quad::default());
                     let Some(VertexAttributeValues::Float32x2(mesh_uvs)) = mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0) else { panic!("uvs are not f32x2") };
                     for (attr, uv) in mesh_uvs.iter_mut().zip(uvs) {
-                        *attr = *uv
+                        attr[0] = uv[0];
+                        attr[1] = 1.0 - uv[1];
                     }
                     meshes.add(mesh)
                 }
             }
             MeshDefinition::Sphere => defaults.sphere.clone(),
         };
-        commands.entity(ent).insert(handle);
+        commands.entity(ent).try_insert(handle);
     }
 
     for ent in removed_primitives.iter() {

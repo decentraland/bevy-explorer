@@ -17,6 +17,7 @@ use crate::{
         ui_builder::{SpawnButton, SpawnSpacer},
         TITLE_TEXT_STYLE,
     },
+    util::TryInsertEx,
 };
 
 pub struct ProfileEditPlugin;
@@ -395,9 +396,9 @@ fn toggle_profile_ui(
                                                 window.modified = true;
                                                 for (w, p) in q.iter() {
                                                     if window.wearables.values().any(|v| v == &w.0) {
-                                                        commands.entity(p.get()).insert(BackgroundColor(Color::rgb(1.0,1.0,0.5)));
+                                                        commands.entity(p.get()).try_insert(BackgroundColor(Color::rgb(1.0,1.0,0.5)));
                                                     } else {
-                                                        commands.entity(p.get()).insert(BackgroundColor(Color::NONE));
+                                                        commands.entity(p.get()).try_insert(BackgroundColor(Color::NONE));
                                                     }
                                                 }
                                             }),

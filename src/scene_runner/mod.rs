@@ -25,6 +25,7 @@ use crate::{
         SceneEntityId,
     },
     ipfs::SceneIpfsLocation,
+    util::TryInsertEx,
     AppConfig,
 };
 
@@ -502,7 +503,7 @@ fn receive_scene_updates(
                             interface.updates_to_entity(*component_id, &mut crdt, &mut commands);
                         }
                         dcl_assert!(
-                            updates.jobs_in_flight.contains(root) || context.tick_number == 0
+                            updates.jobs_in_flight.contains(root) || context.tick_number == 1
                         );
                     } else {
                         debug!(
@@ -540,6 +541,7 @@ fn process_scene_entity_lifecycle(
     children: Query<&Children>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut handles: Local<Option<Handle<StandardMaterial>>>,
+    scene_entities: Query<(), With<SceneEntity>>,
 ) {
     let material = handles.get_or_insert_with(|| materials.add(Color::WHITE.into()));
 
@@ -570,7 +572,7 @@ fn process_scene_entity_lifecycle(
                 ))
                 .id();
 
-            commands.entity(spawned).insert(ContainerEntity {
+            commands.entity(spawned).try_insert(ContainerEntity {
                 root,
                 container: spawned,
                 container_id: scene_entity_id,
@@ -592,16 +594,23 @@ fn process_scene_entity_lifecycle(
 
         for deleted_scene_entity in &deleted_entities.0 {
             if let Some(deleted_bevy_entity) = context.bevy_entity(*deleted_scene_entity) {
-                // reparent children to the root entity
+                // reparent scene-entity children to the root entity
                 if let Ok(children) = children.get(deleted_bevy_entity) {
-                    commands.entity(root).push_children(children);
+                    let scene_children = children
+                        .iter()
+                        .filter(|child| scene_entities.get(**child).is_ok())
+                        .copied()
+                        .collect::<Vec<_>>();
+                    commands
+                        .entity(root)
+                        .push_children(scene_children.as_slice());
                 }
 
                 debug!(
                     "despawned {:?} -> {:?}",
                     deleted_scene_entity, deleted_bevy_entity
                 );
-                commands.entity(deleted_bevy_entity).despawn();
+                commands.entity(deleted_bevy_entity).despawn_recursive();
             }
             context.set_dead(*deleted_scene_entity);
         }

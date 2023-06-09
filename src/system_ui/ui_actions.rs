@@ -12,6 +12,8 @@ use bevy::{
     utils::HashSet,
 };
 
+use crate::util::TryInsertEx;
+
 use super::focus::Focus;
 
 #[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
@@ -142,7 +144,7 @@ fn gather_actions<M: ActionMarker>(
     for (ent, mut action) in new_actions.iter_mut() {
         commands
             .entity(ent)
-            .insert(ActionIndex::<M>(ui_actions.0.len(), Default::default()));
+            .try_insert(ActionIndex::<M>(ui_actions.0.len(), Default::default()));
         ui_actions.0.push(action.0.take().unwrap());
     }
 }

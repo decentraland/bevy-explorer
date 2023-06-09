@@ -1,6 +1,10 @@
 use std::collections::VecDeque;
 
-use bevy::tasks::Task;
+use bevy::{
+    ecs::system::{Command, EntityCommands},
+    prelude::{Bundle, Entity, World},
+    tasks::Task,
+};
 use ethers::types::H160;
 use futures_lite::future;
 
@@ -96,3 +100,31 @@ impl<T: Clone + std::fmt::Debug> RingBuffer<T> {
 }
 
 pub type RingBufferReceiver<T> = tokio::sync::broadcast::Receiver<T>;
+
+pub struct TryInsert<T> {
+    pub entity: Entity,
+    pub bundle: T,
+}
+
+impl<T> Command for TryInsert<T>
+where
+    T: Bundle + 'static,
+{
+    fn write(self, world: &mut World) {
+        if let Some(mut entity) = world.get_entity_mut(self.entity) {
+            entity.insert(self.bundle);
+        }
+    }
+}
+
+pub trait TryInsertEx {
+    fn try_insert(&mut self, bundle: impl Bundle) -> &mut Self;
+}
+
+impl<'w, 's> TryInsertEx for EntityCommands<'w, 's, '_> {
+    fn try_insert(&mut self, bundle: impl Bundle) -> &mut Self {
+        let entity = self.id();
+        self.commands().add(TryInsert { entity, bundle });
+        self
+    }
+}

@@ -27,7 +27,7 @@ use crate::{
         renderer_context::RendererSceneContext, ContainerEntity, DeletedSceneEntities, SceneEntity,
         SceneThreadHandle,
     },
-    util::TaskExt,
+    util::{TaskExt, TryInsertEx},
 };
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
@@ -115,14 +115,14 @@ pub(crate) fn load_scene_entity(
                     Ok(h_scene) => h_scene,
                     Err(e) => {
                         warn!("failed to parse urn: {e}");
-                        commands.insert(SceneLoading::Failed);
+                        commands.try_insert(SceneLoading::Failed);
                         continue;
                     }
                 }
             }
         };
 
-        commands.insert((SceneLoading::SceneEntity, h_scene));
+        commands.try_insert((SceneLoading::SceneEntity, h_scene));
     }
 }
 
@@ -138,7 +138,7 @@ pub(crate) fn load_scene_json(
     {
         let mut fail = |msg: &str| {
             warn!("{entity:?} failed to initialize scene: {msg}");
-            commands.entity(entity).insert(SceneLoading::Failed);
+            commands.entity(entity).try_insert(SceneLoading::Failed);
         };
 
         match asset_server.get_load_state(h_scene) {
@@ -216,7 +216,7 @@ pub(crate) fn load_scene_javascript(
     {
         let mut fail = |msg: &str| {
             warn!("{root:?} failed to initialize scene: {msg}");
-            commands.entity(root).insert(SceneLoading::Failed);
+            commands.entity(root).try_insert(SceneLoading::Failed);
         };
 
         let SceneLoading::MainCrdt(ref maybe_h_crdt) = state else { panic!("wrong load state in load_scene_javascript")};
@@ -292,14 +292,13 @@ pub(crate) fn load_scene_javascript(
         let initial_position = base.as_vec2() * Vec2::splat(PARCEL_SIZE);
 
         // setup the scene root entity
-        commands.entity(root).insert(());
-
         let scene_id = get_next_scene_id();
         let title = meta
             .display
             .and_then(|display| display.title)
             .unwrap_or("???".to_owned());
-        let mut renderer_context = RendererSceneContext::new(scene_id, title, base, root, 1.0);
+        let mut renderer_context =
+            RendererSceneContext::new(scene_id, definition.id.clone(), title, base, root, 1.0);
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?})");
 
         scene_updates.scene_ids.insert(scene_id, root);
@@ -345,15 +344,17 @@ pub(crate) fn load_scene_javascript(
             )) {
                 error!("failed to send initial updates to renderer: {e}");
             }
+
+            debug!("main crdt found for scene ent {root:?}");
         } else {
             // explicitly set initial tick as run
-            renderer_context.tick_number = 0;
+            renderer_context.tick_number = 1;
         }
 
         // store main.crdt + initial global state to post to the scene thread on first request
         renderer_context.crdt_store = initial_crdt;
 
-        commands.entity(root).insert((
+        commands.entity(root).try_insert((
             SpatialBundle {
                 transform: Transform::from_translation(Vec3::new(
                     initial_position.x,
@@ -378,7 +379,7 @@ pub(crate) fn load_scene_javascript(
 
         commands
             .entity(root)
-            .insert((h_code, SceneLoading::Javascript(Some(global_updates))));
+            .try_insert((h_code, SceneLoading::Javascript(Some(global_updates))));
     }
 }
 
@@ -397,14 +398,14 @@ pub(crate) fn initialize_scene(
     asset_server: Res<AssetServer>,
 ) {
     for (root, mut state, h_code, context) in loading_scenes.iter_mut() {
-        if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 0 {
+        if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
             continue;
         }
 
         debug!("checking for js");
         let mut fail = |msg: &str| {
             warn!("{root:?} failed to initialize scene: {msg}");
-            commands.entity(root).insert(SceneLoading::Failed);
+            commands.entity(root).try_insert(SceneLoading::Failed);
         };
 
         match asset_server.get_load_state(h_code) {
@@ -449,7 +450,7 @@ pub(crate) fn initialize_scene(
 
         commands
             .entity(root)
-            .insert((SceneThreadHandle { sender: main_sx },));
+            .try_insert((SceneThreadHandle { sender: main_sx },));
         commands.entity(root).remove::<SceneLoading>();
     }
 }

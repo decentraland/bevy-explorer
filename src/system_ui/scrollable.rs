@@ -1,5 +1,7 @@
 use bevy::{input::mouse::MouseWheel, prelude::*, utils::HashMap, window::PrimaryWindow};
 
+use crate::util::TryInsertEx;
+
 use super::ui_builder::SpawnSpacer;
 
 pub struct ScrollablePlugin;
@@ -60,7 +62,7 @@ impl SpawnScrollable for ChildBuilder<'_, '_, '_> {
                         commands.spacer();
                     });
             })
-            .insert(ScrollContent(content));
+            .try_insert(ScrollContent(content));
     }
 }
 

@@ -37,7 +37,7 @@ use crate::{
     ipfs::{ActiveEntityTask, IpfsLoaderExt, IpfsModifier},
     scene_runner::{update_world::AddCrdtInterfaceExt, ContainingScene, SceneEntity},
     system_ui::TITLE_TEXT_STYLE,
-    util::TaskExt,
+    util::{TaskExt, TryInsertEx},
 };
 
 use self::{
@@ -266,68 +266,71 @@ fn update_base_avatar_shape(
 
         debug!("updating default avatar for {id}");
 
-        if let Some(mut commands) = commands.get_entity(ent) {
-            commands.insert(AvatarShape(PbAvatarShape {
-                id: format!("{:#x}", address),
-                // add label only for foreign players
-                name: maybe_player.map(|_| profile.content.name.to_owned()),
-                body_shape: Some(
-                    profile
-                        .content
-                        .avatar
-                        .body_shape
-                        .to_owned()
-                        .unwrap_or(base_wearables::default_bodyshape()),
-                ),
-                skin_color: Some(
-                    profile
-                        .content
-                        .avatar
-                        .skin
-                        .map(|skin| skin.color)
-                        .unwrap_or(Color3 {
-                            r: 0.6,
-                            g: 0.462,
-                            b: 0.356,
-                        }),
-                ),
-                hair_color: Some(
-                    profile
-                        .content
-                        .avatar
-                        .hair
-                        .map(|hair| hair.color)
-                        .unwrap_or(Color3 {
-                            r: 0.283,
-                            g: 0.142,
-                            b: 0.0,
-                        }),
-                ),
-                eye_color: Some(profile.content.avatar.eyes.map(|eye| eye.color).unwrap_or(
-                    Color3 {
+        commands.entity(ent).try_insert(AvatarShape(PbAvatarShape {
+            id: format!("{:#x}", address),
+            // add label only for foreign players
+            name: maybe_player.map(|_| profile.content.name.to_owned()),
+            body_shape: Some(
+                profile
+                    .content
+                    .avatar
+                    .body_shape
+                    .to_owned()
+                    .unwrap_or(base_wearables::default_bodyshape()),
+            ),
+            skin_color: Some(
+                profile
+                    .content
+                    .avatar
+                    .skin
+                    .map(|skin| skin.color)
+                    .unwrap_or(Color3 {
                         r: 0.6,
                         g: 0.462,
                         b: 0.356,
-                    },
-                )),
-                expression_trigger_id: None,
-                expression_trigger_timestamp: None,
-                talking: None,
-                wearables: profile.content.avatar.wearables.to_vec(),
-                emotes: profile
+                    }),
+            ),
+            hair_color: Some(
+                profile
                     .content
                     .avatar
-                    .emotes
-                    .as_ref()
-                    .map(|emotes| {
-                        emotes
-                            .iter()
-                            .map(|emote| emote.urn.clone())
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default(),
-            }));
-        }
+                    .hair
+                    .map(|hair| hair.color)
+                    .unwrap_or(Color3 {
+                        r: 0.283,
+                        g: 0.142,
+                        b: 0.0,
+                    }),
+            ),
+            eye_color: Some(
+                profile
+                    .content
+                    .avatar
+                    .eyes
+                    .map(|eye| eye.color)
+                    .unwrap_or(Color3 {
+                        r: 0.6,
+                        g: 0.462,
+                        b: 0.356,
+                    }),
+            ),
+            expression_trigger_id: None,
+            expression_trigger_timestamp: None,
+            talking: None,
+            wearables: profile.content.avatar.wearables.to_vec(),
+            emotes: profile
+                .content
+                .avatar
+                .emotes
+                .as_ref()
+                .map(|emotes| {
+                    emotes
+                        .iter()
+                        .map(|emote| emote.urn.clone())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default(),
+        }));
     }
 }
 
@@ -388,7 +391,7 @@ fn select_avatar(
         let Some(update) = updates.get_mut(&scene_ent.id) else {
             // this is an NPC avatar, attach selection immediately
             if changed {
-                commands.entity(ent).insert(AvatarSelection {
+                commands.entity(ent).try_insert(AvatarSelection {
                     scene: Some(scene_ent.root),
                     shape: scene_avatar_shape.0.clone(),
                 });
@@ -437,8 +440,8 @@ fn select_avatar(
             if let Some(mut selection) = maybe_prev_selection {
                 selection.shape = shape;
                 selection.scene = update.current_source;
-            } else if let Some(mut commands) = commands.get_entity(entity) {
-                commands.insert(AvatarSelection {
+            } else {
+                commands.entity(entity).try_insert(AvatarSelection {
                     scene: update.current_source,
                     shape,
                 });
@@ -801,7 +804,7 @@ fn update_render_avatar(
             None => {
                 debug!("waiting for hash from body {body}");
                 missing_wearables.insert(body);
-                commands.entity(entity).insert(RetryRenderAvatar);
+                commands.entity(entity).try_insert(RetryRenderAvatar);
                 continue;
             }
         };
@@ -832,7 +835,7 @@ fn update_render_avatar(
                         None
                     }
                     None => {
-                        commands.entity(entity).insert(RetryRenderAvatar);
+                        commands.entity(entity).try_insert(RetryRenderAvatar);
                         debug!("waiting for hash from wearable {wearable}");
                         all_loaded = false;
                         missing_wearables.insert(wearable);
@@ -971,13 +974,13 @@ fn spawn_scenes(
             .and_then(|h_gltf| gltfs.get(h_gltf))
         else {
             warn!("failed to load body gltf");
-            commands.entity(ent).insert(AvatarProcessed);
+            commands.entity(ent).try_insert(AvatarProcessed);
             continue;
         };
 
         let Some(h_scene) = gltf.default_scene.as_ref() else {
             warn!("body gltf has no default scene");
-            commands.entity(ent).insert(AvatarProcessed);
+            commands.entity(ent).try_insert(AvatarProcessed);
             continue;
         };
 
@@ -1038,7 +1041,7 @@ fn spawn_scenes(
             });
 
         debug!("avatar files loaded");
-        commands.entity(ent).insert(AvatarLoaded {
+        commands.entity(ent).try_insert(AvatarLoaded {
             body_instance,
             wearable_instances: instances.collect(),
             skin_materials,
@@ -1094,11 +1097,11 @@ fn process_avatar(
             if name.to_lowercase() == "armature" && armature_node.is_none() {
                 commands
                     .entity(scene_ent)
-                    .insert(AnimationPlayer::default());
+                    .try_insert(AnimationPlayer::default());
                 // record the node with the animator
                 commands
                     .entity(root_player_entity.get())
-                    .insert(AvatarAnimPlayer(scene_ent));
+                    .try_insert(AvatarAnimPlayer(scene_ent));
                 armature_node = Some(scene_ent);
             }
 
@@ -1110,7 +1113,7 @@ fn process_avatar(
             if maybe_h_mesh.is_some() {
                 // disable frustum culling - some strange effect causes Aabb gen to fail
                 // TODO figure out why
-                commands.entity(scene_ent).insert(NoFrustumCulling);
+                commands.entity(scene_ent).try_insert(NoFrustumCulling);
             }
 
             if let Some(h_mat) = maybe_h_mat {
@@ -1123,7 +1126,7 @@ fn process_avatar(
                         let h_colored_mat = colored_materials
                             .entry(h_mat.clone_weak())
                             .or_insert_with(|| materials.add(new_mat));
-                        commands.entity(scene_ent).insert(h_colored_mat.clone());
+                        commands.entity(scene_ent).try_insert(h_colored_mat.clone());
                     }
                 }
 
@@ -1136,7 +1139,7 @@ fn process_avatar(
                         let h_colored_mat = colored_materials
                             .entry(h_mat.clone_weak())
                             .or_insert_with(|| materials.add(new_mat));
-                        commands.entity(scene_ent).insert(h_colored_mat.clone());
+                        commands.entity(scene_ent).try_insert(h_colored_mat.clone());
                     }
                 }
             }
@@ -1169,7 +1172,7 @@ fn process_avatar(
                             });
                             commands
                                 .entity(scene_ent)
-                                .insert(mask_material)
+                                .try_insert(mask_material)
                                 .remove::<Handle<StandardMaterial>>();
                         } else {
                             debug!("no mask for {suffix}");
@@ -1179,7 +1182,7 @@ fn process_avatar(
                                 alpha_mode: AlphaMode::Blend,
                                 ..Default::default()
                             });
-                            commands.entity(scene_ent).insert(material);
+                            commands.entity(scene_ent).try_insert(material);
                         };
                         *vis = Visibility::Inherited;
                     }
@@ -1259,7 +1262,7 @@ fn process_avatar(
                 if maybe_h_mesh.is_some() {
                     // disable frustum culling - some strange effect causes Aabb gen to fail
                     // TODO figure out why
-                    commands.entity(scene_ent).insert(NoFrustumCulling);
+                    commands.entity(scene_ent).try_insert(NoFrustumCulling);
                 }
 
                 if let Some(h_mat) = maybe_h_mat {
@@ -1272,7 +1275,7 @@ fn process_avatar(
                             let h_colored_mat = colored_materials
                                 .entry(h_mat.clone_weak())
                                 .or_insert_with(|| materials.add(new_mat));
-                            commands.entity(scene_ent).insert(h_colored_mat.clone());
+                            commands.entity(scene_ent).try_insert(h_colored_mat.clone());
                         }
                     }
 
@@ -1285,7 +1288,7 @@ fn process_avatar(
                             let h_colored_mat = colored_materials
                                 .entry(h_mat.clone_weak())
                                 .or_insert_with(|| materials.add(new_mat));
-                            commands.entity(scene_ent).insert(h_colored_mat.clone());
+                            commands.entity(scene_ent).try_insert(h_colored_mat.clone());
                         }
                     }
                 }
@@ -1320,7 +1323,7 @@ fn process_avatar(
         );
         commands
             .entity(avatar_ent)
-            .insert(AvatarProcessed)
+            .try_insert(AvatarProcessed)
             .with_children(|commands| {
                 // add a name tag
                 if let Some(label) = def.label.as_ref() {
