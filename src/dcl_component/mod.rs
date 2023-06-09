@@ -61,6 +61,7 @@ impl SceneComponentId {
     pub const ANIMATOR: SceneComponentId = SceneComponentId(1042);
     pub const ENGINE_INFO: SceneComponentId = SceneComponentId(1048);
     pub const GLTF_CONTAINER_LOADING_STATE: SceneComponentId = SceneComponentId(1049);
+    pub const CANVAS_INFO: SceneComponentId = SceneComponentId(1054);
     pub const POINTER_EVENTS: SceneComponentId = SceneComponentId(1062);
     pub const POINTER_RESULT: SceneComponentId = SceneComponentId(1063);
     pub const RAYCAST: SceneComponentId = SceneComponentId(1067);

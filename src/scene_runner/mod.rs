@@ -11,6 +11,7 @@ use bevy::{
     prelude::*,
     scene::scene_spawner_system,
     utils::{FloatOrd, HashMap, HashSet, Instant},
+    window::PrimaryWindow,
 };
 
 use crate::{
@@ -21,8 +22,9 @@ use crate::{
     },
     dcl_assert,
     dcl_component::{
-        transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
-        SceneEntityId,
+        proto_components::{common::BorderRect, sdk::components::PbUiCanvasInformation},
+        transform_and_parent::DclTransformAndParent,
+        DclReader, DclWriter, SceneComponentId, SceneEntityId,
     },
     ipfs::SceneIpfsLocation,
     util::TryInsertEx,
@@ -389,6 +391,7 @@ fn send_scene_updates(
     player: Query<&Transform, With<PrimaryUser>>,
     camera: Query<&Transform, With<PrimaryCamera>>,
     config: Res<AppConfig>,
+    window: Query<&Window, With<PrimaryWindow>>,
 ) {
     let updates = &mut *updates;
 
@@ -425,6 +428,28 @@ fn send_scene_updates(
             SceneComponentId::TRANSFORM,
             CrdtType::LWW_ENT,
             id,
+            Some(&mut DclReader::new(&buf)),
+        );
+    }
+
+    // add canvas info
+    if let Ok(window) = window.get_single() {
+        buf.clear();
+        DclWriter::new(&mut buf).write(&PbUiCanvasInformation {
+            device_pixel_ratio: window.resolution.scale_factor() as f32,
+            width: window.resolution.width() as i32,
+            height: window.resolution.height() as i32,
+            interactable_area: Some(BorderRect {
+                top: 0.0,
+                left: 0.0,
+                right: 0.0,
+                bottom: 0.0,
+            }),
+        });
+        crdt_store.force_update(
+            SceneComponentId::CANVAS_INFO,
+            CrdtType::LWW_ROOT,
+            SceneEntityId::ROOT,
             Some(&mut DclReader::new(&buf)),
         );
     }

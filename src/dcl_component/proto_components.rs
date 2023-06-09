@@ -72,6 +72,10 @@ impl DclProtoComponent for sdk::components::PbAvatarEmoteCommand {}
 impl DclProtoComponent for sdk::components::PbAvatarEquippedData {}
 impl DclProtoComponent for sdk::components::PbPlayerIdentityData {}
 impl DclProtoComponent for kernel::comms::rfc4::Packet {}
+impl DclProtoComponent for sdk::components::PbUiCanvasInformation {}
+impl DclProtoComponent for sdk::components::PbUiTransform {}
+impl DclProtoComponent for sdk::components::PbUiText {}
+impl DclProtoComponent for sdk::components::PbUiBackground {}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}
