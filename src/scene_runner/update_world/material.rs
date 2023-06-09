@@ -135,6 +135,7 @@ fn update_materials(
         }) = defn.base_color_texture.as_ref()
         {
             scenes.get(container.root).ok().and_then(|root| {
+                // TODO handle wrapmode and filtering once we have some asset processing pipeline in place (bevy 0.11-0.12)
                 asset_server
                     .load_content_file::<Image>(&texture.src, &root.hash)
                     .ok()

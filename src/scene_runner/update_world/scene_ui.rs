@@ -9,21 +9,57 @@ use crate::{
     common::PrimaryUser,
     dcl::interface::ComponentPosition,
     dcl_component::{
-        proto_components::sdk::components::{
-            PbUiTransform, YgAlign, YgDisplay, YgFlexDirection, YgJustify, YgOverflow,
-            YgPositionType, YgUnit, YgWrap,
+        proto_components::{
+            common::{texture_union, BorderRect, TextureUnion},
+            sdk::components::{
+                self, PbUiBackground, PbUiTransform, YgAlign, YgDisplay, YgFlexDirection,
+                YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap,
+            },
         },
         SceneComponentId, SceneEntityId,
     },
+    ipfs::IpfsLoaderExt,
     scene_runner::{
         renderer_context::RendererSceneContext, ContainingScene, SceneEntity, SceneSets,
     },
+    system_ui::ui_builder::SpawnSpacer,
     util::TryInsertEx,
 };
 
 use super::AddCrdtInterfaceExt;
 
 pub struct SceneUiPlugin;
+
+// macro helpers to convert proto format to bevy format for val, size, rect
+macro_rules! val {
+    ($pb:ident, $u:ident, $v:ident) => {
+        match $pb.$u() {
+            YgUnit::YguUndefined | YgUnit::YguAuto => Val::Auto,
+            YgUnit::YguPoint => Val::Px($pb.$v),
+            YgUnit::YguPercent => Val::Percent($pb.$v),
+        }
+    };
+}
+
+macro_rules! size {
+    ($pb:ident, $wu:ident, $w:ident, $hu:ident, $h:ident) => {
+        Size {
+            width: val!($pb, $wu, $w),
+            height: val!($pb, $hu, $h),
+        }
+    };
+}
+
+macro_rules! rect {
+    ($pb:ident, $lu:ident, $l:ident, $ru:ident, $r:ident, $tu:ident, $t:ident, $bu:ident, $b:ident) => {
+        UiRect {
+            left: val!($pb, $lu, $l),
+            right: val!($pb, $ru, $r),
+            top: val!($pb, $tu, $t),
+            bottom: val!($pb, $bu, $b),
+        }
+    };
+}
 
 #[derive(Component, Debug, Clone)]
 pub struct UiTransform {
@@ -51,36 +87,6 @@ pub struct UiTransform {
 
 impl From<PbUiTransform> for UiTransform {
     fn from(value: PbUiTransform) -> Self {
-        macro_rules! val {
-            ($pb:ident, $u:ident, $v:ident) => {
-                match $pb.$u() {
-                    YgUnit::YguUndefined | YgUnit::YguAuto => Val::Auto,
-                    YgUnit::YguPoint => Val::Px($pb.$v),
-                    YgUnit::YguPercent => Val::Percent($pb.$v),
-                }
-            };
-        }
-
-        macro_rules! size {
-            ($pb:ident, $wu:ident, $w:ident, $hu:ident, $h:ident) => {
-                Size {
-                    width: val!($pb, $wu, $w),
-                    height: val!($pb, $hu, $h),
-                }
-            };
-        }
-
-        macro_rules! rect {
-            ($pb:ident, $lu:ident, $l:ident, $ru:ident, $r:ident, $tu:ident, $t:ident, $bu:ident, $b:ident) => {
-                UiRect {
-                    left: val!($pb, $lu, $l),
-                    right: val!($pb, $ru, $r),
-                    top: val!($pb, $tu, $t),
-                    bottom: val!($pb, $bu, $b),
-                }
-            };
-        }
-
         Self {
             parent: SceneEntityId::from_proto_u32(value.parent as u32),
             right_of: SceneEntityId::from_proto_u32(value.right_of as u32),
@@ -205,10 +211,79 @@ impl From<PbUiTransform> for UiTransform {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum BackgroundTextureMode {
+    NineSlices(UiRect),
+    Stretch,
+    Center,
+}
+
+#[derive(Component, Clone)]
+pub struct BackgroundTexture {
+    source: String,
+    mode: BackgroundTextureMode,
+}
+
+#[derive(Component, Clone)]
+pub struct UiBackground {
+    color: Option<Color>,
+    texture: Option<BackgroundTexture>,
+}
+
+impl From<PbUiBackground> for UiBackground {
+    fn from(value: PbUiBackground) -> Self {
+        Self {
+            color: value.color.map(Into::into),
+            texture: value.texture.as_ref().and_then(|tex| {
+                if let TextureUnion {
+                    tex: Some(texture_union::Tex::Texture(texture)),
+                } = tex
+                {
+                    if !value.uvs.is_empty() {
+                        warn!("ui image uvs unsupported");
+                    }
+
+                    // TODO handle wrapmode and filtering once we have some asset processing pipeline in place (bevy 0.11-0.12)
+                    Some(BackgroundTexture {
+                        source: texture.src.clone(),
+                        mode: match value.texture_mode() {
+                            components::BackgroundTextureMode::NineSlices => {
+                                BackgroundTextureMode::NineSlices(
+                                    value
+                                        .texture_slices
+                                        .unwrap_or(BorderRect {
+                                            top: 1.0 / 3.0,
+                                            bottom: 1.0 / 3.0,
+                                            left: 1.0 / 3.0,
+                                            right: 1.0 / 3.0,
+                                        })
+                                        .into(),
+                                )
+                            }
+                            components::BackgroundTextureMode::Center => {
+                                BackgroundTextureMode::Center
+                            }
+                            components::BackgroundTextureMode::Stretch => {
+                                BackgroundTextureMode::Stretch
+                            }
+                        },
+                    })
+                } else {
+                    None
+                }
+            }),
+        }
+    }
+}
+
 impl Plugin for SceneUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_crdt_lww_component::<PbUiTransform, UiTransform>(
             SceneComponentId::UI_TRANSFORM,
+            ComponentPosition::EntityOnly,
+        );
+        app.add_crdt_lww_component::<PbUiBackground, UiBackground>(
+            SceneComponentId::UI_BACKGROUND,
             ComponentPosition::EntityOnly,
         );
 
@@ -256,17 +331,18 @@ fn update_scene_ui_components(
 
 fn layout_scene_ui(
     mut commands: Commands,
-    mut scene_uis: Query<(Entity, &mut SceneUiData)>,
+    mut scene_uis: Query<(Entity, &mut SceneUiData, &RendererSceneContext)>,
     player: Query<Entity, With<PrimaryUser>>,
     containing_scene: ContainingScene,
-    ui_nodes: Query<(&SceneEntity, &UiTransform)>,
+    ui_nodes: Query<(&SceneEntity, &UiTransform, Option<&UiBackground>)>,
+    asset_server: Res<AssetServer>,
 ) {
     let current_scene = player
         .get_single()
         .ok()
         .and_then(|p| containing_scene.get(p));
 
-    for (ent, mut ui_data) in scene_uis.iter_mut() {
+    for (ent, mut ui_data, scene_context) in scene_uis.iter_mut() {
         if Some(ent) == current_scene {
             if ui_data.relayout || ui_data.current_node.is_none() {
                 // remove any old instance of the ui
@@ -279,9 +355,10 @@ fn layout_scene_ui(
                 let mut unprocessed_uis =
                     HashMap::from_iter(ui_data.nodes.iter().flat_map(|node| {
                         match ui_nodes.get(*node) {
-                            Ok((scene_entity, transform)) => {
-                                Some((scene_entity.id, transform.clone()))
-                            }
+                            Ok((scene_entity, transform, maybe_background)) => Some((
+                                scene_entity.id,
+                                (transform.clone(), maybe_background),
+                            )),
                             Err(_) => {
                                 // remove this node
                                 deleted_nodes.insert(*node);
@@ -311,7 +388,7 @@ fn layout_scene_ui(
                 let mut modified = true;
                 while modified && !unprocessed_uis.is_empty() {
                     modified = false;
-                    unprocessed_uis.retain(|scene_id, ui_transform| {
+                    unprocessed_uis.retain(|scene_id, (ui_transform, maybe_background)| {
                         // if our rightof is not added, we can't process this node
                         if !processed_nodes.contains_key(&ui_transform.right_of) {
                             println!("can't place {} with ro {}", scene_id, ui_transform.right_of);
@@ -326,7 +403,7 @@ fn layout_scene_ui(
 
                         // we can process this node
                         commands.entity(*parent).with_children(|commands| {
-                            let new_entity = commands
+                            let mut ent_cmds = &mut commands
                                 .spawn(NodeBundle {
                                     style: Style {
                                         align_content: ui_transform.align_content,
@@ -349,12 +426,67 @@ fn layout_scene_ui(
                                         padding: ui_transform.padding,
                                         ..Default::default()
                                     },
-                                    background_color: Color::WHITE.into(),
                                     ..Default::default()
-                                })
-                                .id();
+                                });
 
-                            processed_nodes.insert(*scene_id, new_entity);
+                            if let Some(background) = maybe_background {
+                                if let Some(color) = background.color {
+                                    ent_cmds = ent_cmds.insert(BackgroundColor(color));
+                                }
+
+                                if let Some(texture) = background.texture.as_ref() {
+                                    if let Ok(image) = asset_server.load_content_file::<Image>(&texture.source, &scene_context.hash) {
+                                        match texture.mode {
+                                            BackgroundTextureMode::NineSlices(_) => todo!(),
+                                            BackgroundTextureMode::Stretch => {
+                                                ent_cmds = ent_cmds.insert(UiImage{ texture: image, flip_x: false, flip_y: false });
+                                            },
+                                            BackgroundTextureMode::Center => {
+                                                ent_cmds = ent_cmds.with_children(|c| {
+                                                    // make a stretchy grid
+                                                    c.spawn(NodeBundle{
+                                                        style: Style {
+                                                            justify_content: JustifyContent::Center,
+                                                            overflow: Overflow::Hidden,
+                                                            size: Size::width(Val::Percent(100.0)),
+                                                            ..Default::default()
+                                                        },
+                                                        ..Default::default()
+                                                    }).with_children(|c| {
+                                                        c.spacer();
+                                                        c.spawn(NodeBundle{
+                                                            style: Style {
+                                                                flex_direction: FlexDirection::Column,
+                                                                justify_content: JustifyContent::Center,
+                                                                overflow: Overflow::Hidden,
+                                                                size: Size::height(Val::Percent(100.0)),
+                                                                ..Default::default()
+                                                            },
+                                                            ..Default::default()
+                                                        }).with_children(|c| {
+                                                            c.spacer();
+                                                            c.spawn(ImageBundle{
+                                                                style: Style {
+                                                                    overflow: Overflow::Hidden,
+                                                                    ..Default::default()
+                                                                },
+                                                                image: UiImage{ texture: image, flip_x: false, flip_y: false },
+                                                                ..Default::default()
+                                                            });
+                                                            c.spacer();
+                                                        });
+                                                        c.spacer();
+                                                    });
+                                                });
+                                            },
+                                        }
+                                    } else {
+                                        warn!("failed to load ui image from content map: {}", texture.source);
+                                    }
+                                }
+                            }
+
+                            processed_nodes.insert(*scene_id, ent_cmds.id());
                         });
 
                         // mark to continue and remove from unprocessed
