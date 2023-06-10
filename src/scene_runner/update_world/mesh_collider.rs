@@ -228,7 +228,9 @@ impl SceneColliderData {
                 }
 
                 let mut cast_result = None;
+                let mut new_scale = *init_scale;
                 if (req_scale - *init_scale).length_squared() > SCALE_EPSILON {
+                    new_scale = req_scale;
                     // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
                     collider.set_shape(scale_shape(base_collider.shape(), req_scale));
                 } else if let Some(colliders) = cast_with {
@@ -267,7 +269,7 @@ impl SceneColliderData {
                 let state_mut = self.collider_state.get_mut(id).unwrap();
                 state_mut.translation = req_translation;
                 state_mut.rotation = req_rotation;
-                state_mut.scale = req_scale;
+                state_mut.scale = new_scale;
 
                 collider.set_position(Isometry::from_parts(
                     req_translation.into(),
@@ -651,7 +653,7 @@ fn update_collider_transforms(
                 }
             };
             let fix_dir = base_of_sphere - closest_point;
-            let distance = (fix_dir.length() - PLAYER_COLLIDER_RADIUS).clamp(0.01, 1.0);
+            let distance = (PLAYER_COLLIDER_RADIUS - fix_dir.length()).clamp(0.00, 1.0);
             debug!(
                 "closest point: {}, dir: {fix_dir}, len: {distance}",
                 closest_point
