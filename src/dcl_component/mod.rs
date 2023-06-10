@@ -66,6 +66,7 @@ impl SceneComponentId {
     pub const GLTF_CONTAINER_LOADING_STATE: SceneComponentId = SceneComponentId(1049);
 
     pub const UI_TRANSFORM: SceneComponentId = SceneComponentId(1050);
+    pub const UI_TEXT: SceneComponentId = SceneComponentId(1052);
     pub const UI_BACKGROUND: SceneComponentId = SceneComponentId(1053);
 
     pub const CANVAS_INFO: SceneComponentId = SceneComponentId(1054);

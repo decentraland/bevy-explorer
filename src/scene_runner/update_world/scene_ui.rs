@@ -13,8 +13,8 @@ use crate::{
             common::{texture_union, BorderRect, TextureUnion},
             sdk::components::{
                 self, PbUiBackground, PbUiTransform, YgAlign, YgDisplay, YgFlexDirection,
-                YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap,
-            },
+                YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap, PbUiText,
+            }, self,
         },
         SceneComponentId, SceneEntityId,
     },
@@ -22,7 +22,7 @@ use crate::{
     scene_runner::{
         renderer_context::RendererSceneContext, ContainingScene, SceneEntity, SceneSets,
     },
-    system_ui::ui_builder::SpawnSpacer,
+    system_ui::{ui_builder::SpawnSpacer, TITLE_TEXT_STYLE},
     util::TryInsertEx,
 };
 
@@ -276,6 +276,58 @@ impl From<PbUiBackground> for UiBackground {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum VAlign {
+    Top,
+    Middle,
+    Bottom,
+}
+
+#[derive(Component, Clone)]
+pub struct UiText {
+    pub text: String,
+    pub color: Color,
+    pub h_align: TextAlignment,
+    pub v_align: VAlign,
+    pub font: proto_components::sdk::components::common::Font,
+    pub font_size: f32,
+}
+
+impl From<PbUiText> for UiText {
+    fn from(value: PbUiText) -> Self {
+        let text_align = value.text_align.map(|_| value.text_align()).unwrap_or(components::common::TextAlignMode::TamMiddleCenter);
+
+        Self {
+            text: value.value.clone(),
+            color: value.color.map(Into::into).unwrap_or(Color::WHITE),
+            h_align: match text_align {
+                components::common::TextAlignMode::TamTopLeft |
+                components::common::TextAlignMode::TamMiddleLeft |
+                components::common::TextAlignMode::TamBottomLeft => TextAlignment::Left,
+                components::common::TextAlignMode::TamTopCenter |
+                components::common::TextAlignMode::TamMiddleCenter |
+                components::common::TextAlignMode::TamBottomCenter => TextAlignment::Center,
+                components::common::TextAlignMode::TamTopRight |
+                components::common::TextAlignMode::TamMiddleRight |
+                components::common::TextAlignMode::TamBottomRight => TextAlignment::Right,
+            },
+            v_align: match text_align {
+                components::common::TextAlignMode::TamTopLeft |
+                components::common::TextAlignMode::TamTopCenter |
+                components::common::TextAlignMode::TamTopRight => VAlign::Top,
+                components::common::TextAlignMode::TamMiddleLeft |
+                components::common::TextAlignMode::TamMiddleCenter |
+                components::common::TextAlignMode::TamMiddleRight => VAlign::Middle,
+                components::common::TextAlignMode::TamBottomLeft |
+                components::common::TextAlignMode::TamBottomCenter |
+                components::common::TextAlignMode::TamBottomRight => VAlign::Bottom,
+            },
+            font: value.font(),
+            font_size: value.font_size.unwrap_or(10) as f32,
+        }
+    }
+}
+
 impl Plugin for SceneUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_crdt_lww_component::<PbUiTransform, UiTransform>(
@@ -284,6 +336,10 @@ impl Plugin for SceneUiPlugin {
         );
         app.add_crdt_lww_component::<PbUiBackground, UiBackground>(
             SceneComponentId::UI_BACKGROUND,
+            ComponentPosition::EntityOnly,
+        );
+        app.add_crdt_lww_component::<PbUiText, UiText>(
+            SceneComponentId::UI_TEXT,
             ComponentPosition::EntityOnly,
         );
 
@@ -315,7 +371,7 @@ fn init_scene_ui_root(
 }
 
 fn update_scene_ui_components(
-    new_entities: Query<(Entity, &SceneEntity), Changed<UiTransform>>,
+    new_entities: Query<(Entity, &SceneEntity), Or<(Changed<UiTransform>, Changed<UiText>, Changed<UiBackground>)>>,
     mut ui_roots: Query<&mut SceneUiData>,
 ) {
     for (ent, scene_id) in new_entities.iter() {
@@ -334,7 +390,7 @@ fn layout_scene_ui(
     mut scene_uis: Query<(Entity, &mut SceneUiData, &RendererSceneContext)>,
     player: Query<Entity, With<PrimaryUser>>,
     containing_scene: ContainingScene,
-    ui_nodes: Query<(&SceneEntity, &UiTransform, Option<&UiBackground>)>,
+    ui_nodes: Query<(&SceneEntity, &UiTransform, Option<&UiBackground>, Option<&UiText>)>,
     asset_server: Res<AssetServer>,
 ) {
     let current_scene = player
@@ -355,9 +411,9 @@ fn layout_scene_ui(
                 let mut unprocessed_uis =
                     HashMap::from_iter(ui_data.nodes.iter().flat_map(|node| {
                         match ui_nodes.get(*node) {
-                            Ok((scene_entity, transform, maybe_background)) => Some((
+                            Ok((scene_entity, transform, maybe_background, maybe_text)) => Some((
                                 scene_entity.id,
-                                (transform.clone(), maybe_background),
+                                (transform.clone(), maybe_background, maybe_text),
                             )),
                             Err(_) => {
                                 // remove this node
@@ -379,7 +435,6 @@ fn layout_scene_ui(
                             position: UiRect::all(Val::Px(0.0)),
                             ..Default::default()
                         },
-                        // background_color: Color::BLUE.into(),
                         ..Default::default()
                     })
                     .id();
@@ -388,16 +443,16 @@ fn layout_scene_ui(
                 let mut modified = true;
                 while modified && !unprocessed_uis.is_empty() {
                     modified = false;
-                    unprocessed_uis.retain(|scene_id, (ui_transform, maybe_background)| {
+                    unprocessed_uis.retain(|scene_id, (ui_transform, maybe_background, maybe_text)| {
                         // if our rightof is not added, we can't process this node
                         if !processed_nodes.contains_key(&ui_transform.right_of) {
-                            println!("can't place {} with ro {}", scene_id, ui_transform.right_of);
+                            debug!("can't place {} with ro {}", scene_id, ui_transform.right_of);
                             return true;
                         }
 
                         // if our parent is not added, we can't process this node
                         let Some(parent) = processed_nodes.get(&ui_transform.parent) else {
-                            println!("can't place {} with parent {}", scene_id, ui_transform.parent);
+                            debug!("can't place {} with parent {}", scene_id, ui_transform.parent);
                             return true;
                         };
 
@@ -446,6 +501,8 @@ fn layout_scene_ui(
                                                     // make a stretchy grid
                                                     c.spawn(NodeBundle{
                                                         style: Style {
+                                                            position_type: PositionType::Absolute,
+                                                            position: UiRect::all(Val::Px(0.0)),
                                                             justify_content: JustifyContent::Center,
                                                             overflow: Overflow::Hidden,
                                                             size: Size::width(Val::Percent(100.0)),
@@ -486,6 +543,43 @@ fn layout_scene_ui(
                                 }
                             }
 
+                            if let Some(text) = maybe_text {
+                                ent_cmds = ent_cmds.with_children(|c| {
+                                    c.spawn(NodeBundle{
+                                        style: Style {
+                                            position_type: PositionType::Absolute,
+                                            position: UiRect::all(Val::Px(0.0)),
+                                            justify_content: match text.h_align {
+                                                TextAlignment::Left => JustifyContent::FlexStart,
+                                                TextAlignment::Center => JustifyContent::Center,
+                                                TextAlignment::Right => JustifyContent::FlexEnd,
+                                            },
+                                            align_items: match text.v_align {
+                                                VAlign::Top => AlignItems::FlexStart,
+                                                VAlign::Middle => AlignItems::Center,
+                                                VAlign::Bottom => AlignItems::FlexEnd,
+                                            },
+                                            ..Default::default()
+                                        },
+                                        ..Default::default()
+                                    }).with_children(|c| {
+                                        c.spawn(TextBundle{
+                                            text: Text{
+                                                sections: vec![TextSection::new(text.text.clone(), TextStyle {
+                                                    font: TITLE_TEXT_STYLE.get().unwrap().clone().font, // TODO fix this 
+                                                    font_size: text.font_size,
+                                                    color: text.color,
+                                                })],
+                                                alignment: text.h_align,
+                                                linebreak_behaviour: bevy::text::BreakLineOn::WordBoundary,
+                                            },
+                                            z_index: ZIndex::Local(1),
+                                            ..Default::default()
+                                        });
+                                    });
+                                });
+                            }
+
                             processed_nodes.insert(*scene_id, ent_cmds.id());
                         });
 
@@ -495,7 +589,7 @@ fn layout_scene_ui(
                     });
                 }
 
-                println!(
+                debug!(
                     "made ui; placed: {}, unplaced: {}",
                     processed_nodes.len(),
                     unprocessed_uis.len()
