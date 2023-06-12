@@ -77,7 +77,7 @@ pub struct HoverEnter;
 impl ActionMarker for HoverEnter {
     type Component = &'static Interaction;
     fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
-        matches!(param, Interaction::Hovered)
+        !matches!(param, Interaction::None)
     }
 }
 pub struct HoverExit;

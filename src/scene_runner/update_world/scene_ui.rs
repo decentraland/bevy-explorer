@@ -436,13 +436,6 @@ fn layout_scene_ui(
     for (ent, mut ui_data, scene_context) in scene_uis.iter_mut() {
         if Some(ent) == current_scene {
             if ui_data.relayout || ui_data.current_node.is_none() {
-                println!("new ui");
-                // record target to readd if applicable
-                let existing_target = match *ui_target {
-                    UiPointerTarget::Some(e) => Some(e),
-                    _ => None,
-                };
-
                 // clear any existing ui target
                 *ui_target = UiPointerTarget::None;
 
@@ -703,11 +696,6 @@ fn layout_scene_ui(
                                             },
                                         ),
                                     ));
-
-                                    // retain hover-state if appropriate
-                                    if existing_target == Some(node) {
-                                        *ui_target = UiPointerTarget::Some(node);
-                                    }
                                 }
 
                                 processed_nodes.insert(*scene_id, ent_cmds.id());
