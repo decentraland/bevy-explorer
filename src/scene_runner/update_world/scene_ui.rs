@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use bevy::{
     prelude::*,
-    utils::{HashMap, HashSet},
+    utils::{HashMap, HashSet}, ui::FocusPolicy,
 };
 
 use crate::{
@@ -20,13 +20,13 @@ use crate::{
     },
     ipfs::IpfsLoaderExt,
     scene_runner::{
-        renderer_context::RendererSceneContext, ContainingScene, SceneEntity, SceneSets,
+        renderer_context::RendererSceneContext, ContainingScene, SceneEntity, SceneSets, update_scene::pointer_results::UiPointerTarget,
     },
-    system_ui::{ui_builder::SpawnSpacer, TITLE_TEXT_STYLE},
+    system_ui::{ui_builder::SpawnSpacer, TITLE_TEXT_STYLE, ui_actions::{HoverEnter, On, HoverExit}},
     util::TryInsertEx,
 };
 
-use super::AddCrdtInterfaceExt;
+use super::{AddCrdtInterfaceExt, pointer_events::PointerEvents};
 
 pub struct SceneUiPlugin;
 
@@ -335,7 +335,7 @@ pub struct UiInput {
 
 impl From<PbUiInput> for UiInput {
     fn from(_value: PbUiInput) -> Self {
-        panic!()
+        todo!()
     }
 }
 
@@ -405,8 +405,9 @@ fn layout_scene_ui(
     mut scene_uis: Query<(Entity, &mut SceneUiData, &RendererSceneContext)>,
     player: Query<Entity, With<PrimaryUser>>,
     containing_scene: ContainingScene,
-    ui_nodes: Query<(&SceneEntity, &UiTransform, Option<&UiBackground>, Option<&UiText>)>,
+    ui_nodes: Query<(&SceneEntity, &UiTransform, Option<&UiBackground>, Option<&UiText>, Option<&PointerEvents>)>,
     asset_server: Res<AssetServer>,
+    mut ui_target: ResMut<UiPointerTarget>,
 ) {
     let current_scene = player
         .get_single()
@@ -416,6 +417,16 @@ fn layout_scene_ui(
     for (ent, mut ui_data, scene_context) in scene_uis.iter_mut() {
         if Some(ent) == current_scene {
             if ui_data.relayout || ui_data.current_node.is_none() {
+                println!("new ui");
+                // record target to readd if applicable
+                let existing_target = match *ui_target {
+                    UiPointerTarget::Some(e) => Some(e),
+                    _ => None
+                };
+
+                // clear any existing ui target
+                *ui_target = UiPointerTarget::None;
+
                 // remove any old instance of the ui
                 if let Some(node) = ui_data.current_node.take() {
                     commands.entity(node).despawn_recursive();
@@ -426,9 +437,9 @@ fn layout_scene_ui(
                 let mut unprocessed_uis =
                     HashMap::from_iter(ui_data.nodes.iter().flat_map(|node| {
                         match ui_nodes.get(*node) {
-                            Ok((scene_entity, transform, maybe_background, maybe_text)) => Some((
+                            Ok((scene_entity, transform, maybe_background, maybe_text, maybe_pointer_events)) => Some((
                                 scene_entity.id,
-                                (transform.clone(), maybe_background, maybe_text),
+                                (*node, transform.clone(), maybe_background, maybe_text, maybe_pointer_events),
                             )),
                             Err(_) => {
                                 // remove this node
@@ -458,7 +469,7 @@ fn layout_scene_ui(
                 let mut modified = true;
                 while modified && !unprocessed_uis.is_empty() {
                     modified = false;
-                    unprocessed_uis.retain(|scene_id, (ui_transform, maybe_background, maybe_text)| {
+                    unprocessed_uis.retain(|scene_id, (node, ui_transform, maybe_background, maybe_text, maybe_pointer_events)| {
                         // if our rightof is not added, we can't process this node
                         if !processed_nodes.contains_key(&ui_transform.right_of) {
                             debug!("can't place {} with ro {}", scene_id, ui_transform.right_of);
@@ -593,6 +604,29 @@ fn layout_scene_ui(
                                         });
                                     });
                                 });
+                            }
+
+                            if maybe_pointer_events.is_some() {
+                                let node = *node;
+
+                                ent_cmds = ent_cmds.insert((
+                                    FocusPolicy::Block,
+                                    Interaction::default(),
+                                    On::<HoverEnter>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
+                                        *ui_target = UiPointerTarget::Some(node);
+                                    }),
+                                    On::<HoverExit>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
+                                        if *ui_target == UiPointerTarget::Some(node) {
+                                            *ui_target = UiPointerTarget::None;
+                                        };
+                                    }),
+                                ));
+
+                                // retain hover-state if appropriate
+                                if existing_target == Some(node) {
+                                    *ui_target = UiPointerTarget::Some(node);
+                                }
+
                             }
 
                             processed_nodes.insert(*scene_id, ent_cmds.id());

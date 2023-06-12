@@ -55,6 +55,7 @@ pub enum SceneSets {
     Input, // systems which create EngineResponses for the current frame (though these can be created anywhere)
     RunLoop, // run the scripts
     PostLoop, // do anything after the script loop
+    UiActions,
 }
 
 #[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
@@ -146,6 +147,7 @@ impl Plugin for SceneRunnerPlugin {
 
         app.configure_sets(
             (
+                SceneSets::UiActions,
                 SceneSets::Init.after(scene_spawner_system),
                 SceneSets::PostInit,
                 SceneSets::Input,
@@ -154,6 +156,11 @@ impl Plugin for SceneRunnerPlugin {
             )
                 .in_base_set(CoreSet::Update)
                 .chain(),
+        );
+        app.add_system(
+            apply_system_buffers
+                .after(SceneSets::UiActions)
+                .before(SceneSets::Init),
         );
         app.add_system(
             apply_system_buffers

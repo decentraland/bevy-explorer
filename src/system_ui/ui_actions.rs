@@ -1,7 +1,7 @@
 // allow on_click handlers defined as systems or closures on buttons
 // commands.spawn((ButtonBundle::default(), click_actions::on_click(|| println!("clicked"))));
 pub struct UiActionPlugin;
-use std::marker::PhantomData;
+use std::{marker::PhantomData};
 
 use bevy::{
     ecs::{
@@ -12,7 +12,7 @@ use bevy::{
     utils::HashSet,
 };
 
-use crate::util::TryInsertEx;
+use crate::{util::TryInsertEx, scene_runner::SceneSets};
 
 use super::focus::Focus;
 
@@ -35,6 +35,7 @@ impl Plugin for UiActionPlugin {
                     gather_actions::<Focus>,
                     gather_actions::<Defocus>,
                     gather_actions::<DataChanged>,
+                    apply_system_buffers,
                     run_actions::<HoverEnter>,
                     run_actions::<Click>,
                     run_actions::<HoverExit>,
@@ -43,7 +44,8 @@ impl Plugin for UiActionPlugin {
                     run_actions::<DataChanged>,
                 )
                     .chain()
-                    .in_set(UiActionSet),
+                    .in_set(SceneSets::UiActions)
+                    .in_set(UiActionSet)
             );
     }
 }

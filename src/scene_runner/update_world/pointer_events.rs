@@ -21,7 +21,7 @@ impl Plugin for PointerEventsPlugin {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct PointerEvents {
     pub msg: PbPointerEvents,
 }
