@@ -1,9 +1,11 @@
 use bevy::prelude::*;
-use bevy_mod_billboard::{BillboardTextBundle, BillboardDepth};
+use bevy_mod_billboard::{BillboardDepth, BillboardTextBundle};
 
 use crate::{
     dcl::interface::ComponentPosition,
-    dcl_component::{proto_components::sdk::components::PbPointerEvents, SceneComponentId}, system_ui::TITLE_TEXT_STYLE, scene_runner::update_scene::pointer_results::PointerTarget,
+    dcl_component::{proto_components::sdk::components::PbPointerEvents, SceneComponentId},
+    scene_runner::update_scene::pointer_results::PointerTarget,
+    system_ui::TITLE_TEXT_STYLE,
 };
 
 use super::AddCrdtInterfaceExt;
@@ -38,11 +40,16 @@ impl From<PbPointerEvents> for PointerEvents {
 pub struct HoverText(Entity);
 fn hover_text(
     mut commands: Commands,
-    texts: Query<(&PointerEvents, &GlobalTransform, Changed<PointerEvents>, Changed<GlobalTransform>)>,
+    texts: Query<(
+        &PointerEvents,
+        &GlobalTransform,
+        Changed<PointerEvents>,
+        Changed<GlobalTransform>,
+    )>,
     cur_text: Query<Entity, With<HoverText>>,
     hover_target: Res<PointerTarget>,
 ) {
-    if let PointerTarget::Some{ container, .. } = *hover_target {
+    if let PointerTarget::Some { container, .. } = *hover_target {
         if let Ok((pes, gt, changed_1, changed_2)) = texts.get(container) {
             // check existing
             if cur_text.get(container).is_ok() && !changed_1 && !changed_2 {
@@ -53,22 +60,27 @@ fn hover_text(
             for pe in pes.msg.pointer_events.iter() {
                 if let Some(info) = pe.event_info.as_ref() {
                     if info.show_feedback.unwrap_or(true) {
-                        if let Some (text) = info.hover_text.as_ref() {
+                        if let Some(text) = info.hover_text.as_ref() {
                             commands.entity(container).with_children(|c| {
                                 let scale = gt.to_scale_rotation_translation().0;
 
                                 c.spawn((
-                                    BillboardTextBundle{
-                                        text: Text::from_section(text.clone(), TextStyle {
-                                            font_size: 50.0,
-                                            color: Color::WHITE,
-                                            ..TITLE_TEXT_STYLE.get().unwrap().clone()
-                                        }),
+                                    BillboardTextBundle {
+                                        text: Text::from_section(
+                                            text.clone(),
+                                            TextStyle {
+                                                font_size: 50.0,
+                                                color: Color::WHITE,
+                                                ..TITLE_TEXT_STYLE.get().unwrap().clone()
+                                            },
+                                        ),
                                         billboard_depth: BillboardDepth(false),
-                                        transform: Transform::from_scale(Vec3::splat(0.01) * 1.0 / scale),
+                                        transform: Transform::from_scale(
+                                            Vec3::splat(0.01) * 1.0 / scale,
+                                        ),
                                         ..Default::default()
                                     },
-                                    HoverText(container)
+                                    HoverText(container),
                                 ));
                             });
                         }

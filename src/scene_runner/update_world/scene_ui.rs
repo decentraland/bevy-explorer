@@ -2,7 +2,8 @@ use std::collections::BTreeSet;
 
 use bevy::{
     prelude::*,
-    utils::{HashMap, HashSet}, ui::FocusPolicy,
+    ui::FocusPolicy,
+    utils::{HashMap, HashSet},
 };
 
 use crate::{
@@ -10,23 +11,29 @@ use crate::{
     dcl::interface::ComponentPosition,
     dcl_component::{
         proto_components::{
+            self,
             common::{texture_union, BorderRect, TextureUnion},
             sdk::components::{
-                self, PbUiBackground, PbUiTransform, YgAlign, YgDisplay, YgFlexDirection,
-                YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap, PbUiText, PbUiInput,
-            }, self,
+                self, PbUiBackground, PbUiInput, PbUiText, PbUiTransform, YgAlign, YgDisplay,
+                YgFlexDirection, YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap,
+            },
         },
         SceneComponentId, SceneEntityId,
     },
     ipfs::IpfsLoaderExt,
     scene_runner::{
-        renderer_context::RendererSceneContext, ContainingScene, SceneEntity, SceneSets, update_scene::pointer_results::UiPointerTarget,
+        renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
+        ContainingScene, SceneEntity, SceneSets,
     },
-    system_ui::{ui_builder::SpawnSpacer, TITLE_TEXT_STYLE, ui_actions::{HoverEnter, On, HoverExit}},
+    system_ui::{
+        ui_actions::{HoverEnter, HoverExit, On},
+        ui_builder::SpawnSpacer,
+        TITLE_TEXT_STYLE,
+    },
     util::TryInsertEx,
 };
 
-use super::{AddCrdtInterfaceExt, pointer_events::PointerEvents};
+use super::{pointer_events::PointerEvents, AddCrdtInterfaceExt};
 
 pub struct SceneUiPlugin;
 
@@ -295,32 +302,35 @@ pub struct UiText {
 
 impl From<PbUiText> for UiText {
     fn from(value: PbUiText) -> Self {
-        let text_align = value.text_align.map(|_| value.text_align()).unwrap_or(components::common::TextAlignMode::TamMiddleCenter);
+        let text_align = value
+            .text_align
+            .map(|_| value.text_align())
+            .unwrap_or(components::common::TextAlignMode::TamMiddleCenter);
 
         Self {
             text: value.value.clone(),
             color: value.color.map(Into::into).unwrap_or(Color::WHITE),
             h_align: match text_align {
-                components::common::TextAlignMode::TamTopLeft |
-                components::common::TextAlignMode::TamMiddleLeft |
-                components::common::TextAlignMode::TamBottomLeft => TextAlignment::Left,
-                components::common::TextAlignMode::TamTopCenter |
-                components::common::TextAlignMode::TamMiddleCenter |
-                components::common::TextAlignMode::TamBottomCenter => TextAlignment::Center,
-                components::common::TextAlignMode::TamTopRight |
-                components::common::TextAlignMode::TamMiddleRight |
-                components::common::TextAlignMode::TamBottomRight => TextAlignment::Right,
+                components::common::TextAlignMode::TamTopLeft
+                | components::common::TextAlignMode::TamMiddleLeft
+                | components::common::TextAlignMode::TamBottomLeft => TextAlignment::Left,
+                components::common::TextAlignMode::TamTopCenter
+                | components::common::TextAlignMode::TamMiddleCenter
+                | components::common::TextAlignMode::TamBottomCenter => TextAlignment::Center,
+                components::common::TextAlignMode::TamTopRight
+                | components::common::TextAlignMode::TamMiddleRight
+                | components::common::TextAlignMode::TamBottomRight => TextAlignment::Right,
             },
             v_align: match text_align {
-                components::common::TextAlignMode::TamTopLeft |
-                components::common::TextAlignMode::TamTopCenter |
-                components::common::TextAlignMode::TamTopRight => VAlign::Top,
-                components::common::TextAlignMode::TamMiddleLeft |
-                components::common::TextAlignMode::TamMiddleCenter |
-                components::common::TextAlignMode::TamMiddleRight => VAlign::Middle,
-                components::common::TextAlignMode::TamBottomLeft |
-                components::common::TextAlignMode::TamBottomCenter |
-                components::common::TextAlignMode::TamBottomRight => VAlign::Bottom,
+                components::common::TextAlignMode::TamTopLeft
+                | components::common::TextAlignMode::TamTopCenter
+                | components::common::TextAlignMode::TamTopRight => VAlign::Top,
+                components::common::TextAlignMode::TamMiddleLeft
+                | components::common::TextAlignMode::TamMiddleCenter
+                | components::common::TextAlignMode::TamMiddleRight => VAlign::Middle,
+                components::common::TextAlignMode::TamBottomLeft
+                | components::common::TextAlignMode::TamBottomCenter
+                | components::common::TextAlignMode::TamBottomRight => VAlign::Bottom,
             },
             font: value.font(),
             font_size: value.font_size.unwrap_or(10) as f32,
@@ -329,9 +339,7 @@ impl From<PbUiText> for UiText {
 }
 
 #[derive(Component)]
-pub struct UiInput {
-
-}
+pub struct UiInput {}
 
 impl From<PbUiInput> for UiInput {
     fn from(_value: PbUiInput) -> Self {
@@ -385,8 +393,12 @@ fn init_scene_ui_root(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn update_scene_ui_components(
-    new_entities: Query<(Entity, &SceneEntity), Or<(Changed<UiTransform>, Changed<UiText>, Changed<UiBackground>)>>,
+    new_entities: Query<
+        (Entity, &SceneEntity),
+        Or<(Changed<UiTransform>, Changed<UiText>, Changed<UiBackground>)>,
+    >,
     mut ui_roots: Query<&mut SceneUiData>,
 ) {
     for (ent, scene_id) in new_entities.iter() {
@@ -400,12 +412,19 @@ fn update_scene_ui_components(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn layout_scene_ui(
     mut commands: Commands,
     mut scene_uis: Query<(Entity, &mut SceneUiData, &RendererSceneContext)>,
     player: Query<Entity, With<PrimaryUser>>,
     containing_scene: ContainingScene,
-    ui_nodes: Query<(&SceneEntity, &UiTransform, Option<&UiBackground>, Option<&UiText>, Option<&PointerEvents>)>,
+    ui_nodes: Query<(
+        &SceneEntity,
+        &UiTransform,
+        Option<&UiBackground>,
+        Option<&UiText>,
+        Option<&PointerEvents>,
+    )>,
     asset_server: Res<AssetServer>,
     mut ui_target: ResMut<UiPointerTarget>,
 ) {
@@ -421,7 +440,7 @@ fn layout_scene_ui(
                 // record target to readd if applicable
                 let existing_target = match *ui_target {
                     UiPointerTarget::Some(e) => Some(e),
-                    _ => None
+                    _ => None,
                 };
 
                 // clear any existing ui target
@@ -437,9 +456,21 @@ fn layout_scene_ui(
                 let mut unprocessed_uis =
                     HashMap::from_iter(ui_data.nodes.iter().flat_map(|node| {
                         match ui_nodes.get(*node) {
-                            Ok((scene_entity, transform, maybe_background, maybe_text, maybe_pointer_events)) => Some((
+                            Ok((
+                                scene_entity,
+                                transform,
+                                maybe_background,
+                                maybe_text,
+                                maybe_pointer_events,
+                            )) => Some((
                                 scene_entity.id,
-                                (*node, transform.clone(), maybe_background, maybe_text, maybe_pointer_events),
+                                (
+                                    *node,
+                                    transform.clone(),
+                                    maybe_background,
+                                    maybe_text,
+                                    maybe_pointer_events,
+                                ),
                             )),
                             Err(_) => {
                                 // remove this node
@@ -469,23 +500,33 @@ fn layout_scene_ui(
                 let mut modified = true;
                 while modified && !unprocessed_uis.is_empty() {
                     modified = false;
-                    unprocessed_uis.retain(|scene_id, (node, ui_transform, maybe_background, maybe_text, maybe_pointer_events)| {
-                        // if our rightof is not added, we can't process this node
-                        if !processed_nodes.contains_key(&ui_transform.right_of) {
-                            debug!("can't place {} with ro {}", scene_id, ui_transform.right_of);
-                            return true;
-                        }
+                    unprocessed_uis.retain(
+                        |scene_id,
+                         (
+                            node,
+                            ui_transform,
+                            maybe_background,
+                            maybe_text,
+                            maybe_pointer_events,
+                        )| {
+                            // if our rightof is not added, we can't process this node
+                            if !processed_nodes.contains_key(&ui_transform.right_of) {
+                                debug!(
+                                    "can't place {} with ro {}",
+                                    scene_id, ui_transform.right_of
+                                );
+                                return true;
+                            }
 
-                        // if our parent is not added, we can't process this node
-                        let Some(parent) = processed_nodes.get(&ui_transform.parent) else {
+                            // if our parent is not added, we can't process this node
+                            let Some(parent) = processed_nodes.get(&ui_transform.parent) else {
                             debug!("can't place {} with parent {}", scene_id, ui_transform.parent);
                             return true;
                         };
 
-                        // we can process this node
-                        commands.entity(*parent).with_children(|commands| {
-                            let mut ent_cmds = &mut commands
-                                .spawn(NodeBundle {
+                            // we can process this node
+                            commands.entity(*parent).with_children(|commands| {
+                                let mut ent_cmds = &mut commands.spawn(NodeBundle {
                                     style: Style {
                                         align_content: ui_transform.align_content,
                                         align_items: ui_transform.align_items,
@@ -510,132 +551,173 @@ fn layout_scene_ui(
                                     ..Default::default()
                                 });
 
-                            if let Some(background) = maybe_background {
-                                if let Some(color) = background.color {
-                                    ent_cmds = ent_cmds.insert(BackgroundColor(color));
-                                }
+                                if let Some(background) = maybe_background {
+                                    if let Some(color) = background.color {
+                                        ent_cmds = ent_cmds.insert(BackgroundColor(color));
+                                    }
 
-                                if let Some(texture) = background.texture.as_ref() {
-                                    if let Ok(image) = asset_server.load_content_file::<Image>(&texture.source, &scene_context.hash) {
-                                        match texture.mode {
-                                            BackgroundTextureMode::NineSlices(_) => todo!(),
-                                            BackgroundTextureMode::Stretch => {
-                                                ent_cmds = ent_cmds.insert(UiImage{ texture: image, flip_x: false, flip_y: false });
-                                            },
-                                            BackgroundTextureMode::Center => {
-                                                ent_cmds = ent_cmds.with_children(|c| {
-                                                    // make a stretchy grid
-                                                    c.spawn(NodeBundle{
-                                                        style: Style {
-                                                            position_type: PositionType::Absolute,
-                                                            position: UiRect::all(Val::Px(0.0)),
-                                                            justify_content: JustifyContent::Center,
-                                                            overflow: Overflow::Hidden,
-                                                            size: Size::width(Val::Percent(100.0)),
-                                                            ..Default::default()
-                                                        },
-                                                        ..Default::default()
-                                                    }).with_children(|c| {
-                                                        c.spacer();
-                                                        c.spawn(NodeBundle{
+                                    if let Some(texture) = background.texture.as_ref() {
+                                        if let Ok(image) = asset_server.load_content_file::<Image>(
+                                            &texture.source,
+                                            &scene_context.hash,
+                                        ) {
+                                            match texture.mode {
+                                                BackgroundTextureMode::NineSlices(_) => todo!(),
+                                                BackgroundTextureMode::Stretch => {
+                                                    ent_cmds = ent_cmds.insert(UiImage {
+                                                        texture: image,
+                                                        flip_x: false,
+                                                        flip_y: false,
+                                                    });
+                                                }
+                                                BackgroundTextureMode::Center => {
+                                                    ent_cmds = ent_cmds.with_children(|c| {
+                                                        // make a stretchy grid
+                                                        c.spawn(NodeBundle {
                                                             style: Style {
-                                                                flex_direction: FlexDirection::Column,
-                                                                justify_content: JustifyContent::Center,
+                                                                position_type:
+                                                                    PositionType::Absolute,
+                                                                position: UiRect::all(Val::Px(0.0)),
+                                                                justify_content:
+                                                                    JustifyContent::Center,
                                                                 overflow: Overflow::Hidden,
-                                                                size: Size::height(Val::Percent(100.0)),
+                                                                size: Size::width(Val::Percent(
+                                                                    100.0,
+                                                                )),
                                                                 ..Default::default()
                                                             },
                                                             ..Default::default()
-                                                        }).with_children(|c| {
+                                                        })
+                                                        .with_children(|c| {
                                                             c.spacer();
-                                                            c.spawn(ImageBundle{
+                                                            c.spawn(NodeBundle {
                                                                 style: Style {
+                                                                    flex_direction:
+                                                                        FlexDirection::Column,
+                                                                    justify_content:
+                                                                        JustifyContent::Center,
                                                                     overflow: Overflow::Hidden,
+                                                                    size: Size::height(
+                                                                        Val::Percent(100.0),
+                                                                    ),
                                                                     ..Default::default()
                                                                 },
-                                                                image: UiImage{ texture: image, flip_x: false, flip_y: false },
                                                                 ..Default::default()
+                                                            })
+                                                            .with_children(|c| {
+                                                                c.spacer();
+                                                                c.spawn(ImageBundle {
+                                                                    style: Style {
+                                                                        overflow: Overflow::Hidden,
+                                                                        ..Default::default()
+                                                                    },
+                                                                    image: UiImage {
+                                                                        texture: image,
+                                                                        flip_x: false,
+                                                                        flip_y: false,
+                                                                    },
+                                                                    ..Default::default()
+                                                                });
+                                                                c.spacer();
                                                             });
                                                             c.spacer();
                                                         });
-                                                        c.spacer();
                                                     });
-                                                });
-                                            },
+                                                }
+                                            }
+                                        } else {
+                                            warn!(
+                                                "failed to load ui image from content map: {}",
+                                                texture.source
+                                            );
                                         }
-                                    } else {
-                                        warn!("failed to load ui image from content map: {}", texture.source);
                                     }
                                 }
-                            }
 
-                            if let Some(text) = maybe_text {
-                                ent_cmds = ent_cmds.with_children(|c| {
-                                    c.spawn(NodeBundle{
-                                        style: Style {
-                                            position_type: PositionType::Absolute,
-                                            position: UiRect::all(Val::Px(0.0)),
-                                            justify_content: match text.h_align {
-                                                TextAlignment::Left => JustifyContent::FlexStart,
-                                                TextAlignment::Center => JustifyContent::Center,
-                                                TextAlignment::Right => JustifyContent::FlexEnd,
-                                            },
-                                            align_items: match text.v_align {
-                                                VAlign::Top => AlignItems::FlexStart,
-                                                VAlign::Middle => AlignItems::Center,
-                                                VAlign::Bottom => AlignItems::FlexEnd,
+                                if let Some(text) = maybe_text {
+                                    ent_cmds = ent_cmds.with_children(|c| {
+                                        c.spawn(NodeBundle {
+                                            style: Style {
+                                                position_type: PositionType::Absolute,
+                                                position: UiRect::all(Val::Px(0.0)),
+                                                justify_content: match text.h_align {
+                                                    TextAlignment::Left => {
+                                                        JustifyContent::FlexStart
+                                                    }
+                                                    TextAlignment::Center => JustifyContent::Center,
+                                                    TextAlignment::Right => JustifyContent::FlexEnd,
+                                                },
+                                                align_items: match text.v_align {
+                                                    VAlign::Top => AlignItems::FlexStart,
+                                                    VAlign::Middle => AlignItems::Center,
+                                                    VAlign::Bottom => AlignItems::FlexEnd,
+                                                },
+                                                ..Default::default()
                                             },
                                             ..Default::default()
-                                        },
-                                        ..Default::default()
-                                    }).with_children(|c| {
-                                        c.spawn(TextBundle{
-                                            text: Text{
-                                                sections: vec![TextSection::new(text.text.clone(), TextStyle {
-                                                    font: TITLE_TEXT_STYLE.get().unwrap().clone().font, // TODO fix this 
-                                                    font_size: text.font_size,
-                                                    color: text.color,
-                                                })],
-                                                alignment: text.h_align,
-                                                linebreak_behaviour: bevy::text::BreakLineOn::WordBoundary,
+                                        })
+                                        .with_children(
+                                            |c| {
+                                                c.spawn(TextBundle {
+                                                    text: Text {
+                                                        sections: vec![TextSection::new(
+                                                            text.text.clone(),
+                                                            TextStyle {
+                                                                font: TITLE_TEXT_STYLE
+                                                                    .get()
+                                                                    .unwrap()
+                                                                    .clone()
+                                                                    .font, // TODO fix this
+                                                                font_size: text.font_size,
+                                                                color: text.color,
+                                                            },
+                                                        )],
+                                                        alignment: text.h_align,
+                                                        linebreak_behaviour:
+                                                            bevy::text::BreakLineOn::WordBoundary,
+                                                    },
+                                                    z_index: ZIndex::Local(1),
+                                                    ..Default::default()
+                                                });
                                             },
-                                            z_index: ZIndex::Local(1),
-                                            ..Default::default()
-                                        });
+                                        );
                                     });
-                                });
-                            }
-
-                            if maybe_pointer_events.is_some() {
-                                let node = *node;
-
-                                ent_cmds = ent_cmds.insert((
-                                    FocusPolicy::Block,
-                                    Interaction::default(),
-                                    On::<HoverEnter>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
-                                        *ui_target = UiPointerTarget::Some(node);
-                                    }),
-                                    On::<HoverExit>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
-                                        if *ui_target == UiPointerTarget::Some(node) {
-                                            *ui_target = UiPointerTarget::None;
-                                        };
-                                    }),
-                                ));
-
-                                // retain hover-state if appropriate
-                                if existing_target == Some(node) {
-                                    *ui_target = UiPointerTarget::Some(node);
                                 }
 
-                            }
+                                if maybe_pointer_events.is_some() {
+                                    let node = *node;
 
-                            processed_nodes.insert(*scene_id, ent_cmds.id());
-                        });
+                                    ent_cmds = ent_cmds.insert((
+                                        FocusPolicy::Block,
+                                        Interaction::default(),
+                                        On::<HoverEnter>::new(
+                                            move |mut ui_target: ResMut<UiPointerTarget>| {
+                                                *ui_target = UiPointerTarget::Some(node);
+                                            },
+                                        ),
+                                        On::<HoverExit>::new(
+                                            move |mut ui_target: ResMut<UiPointerTarget>| {
+                                                if *ui_target == UiPointerTarget::Some(node) {
+                                                    *ui_target = UiPointerTarget::None;
+                                                };
+                                            },
+                                        ),
+                                    ));
 
-                        // mark to continue and remove from unprocessed
-                        modified = true;
-                        false
-                    });
+                                    // retain hover-state if appropriate
+                                    if existing_target == Some(node) {
+                                        *ui_target = UiPointerTarget::Some(node);
+                                    }
+                                }
+
+                                processed_nodes.insert(*scene_id, ent_cmds.id());
+                            });
+
+                            // mark to continue and remove from unprocessed
+                            modified = true;
+                            false
+                        },
+                    );
                 }
 
                 debug!(

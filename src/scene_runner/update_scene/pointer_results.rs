@@ -62,7 +62,10 @@ fn update_pointer_target(
 
     // first check for ui target
     if let UiPointerTarget::Some(t) = *ui_target {
-        *hover_target = PointerTarget::Some{ container: t, mesh_name: None };
+        *hover_target = PointerTarget::Some {
+            container: t,
+            mesh_name: None,
+        };
         return;
     }
 

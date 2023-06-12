@@ -18,7 +18,7 @@ impl Plugin for FocusPlugin {
             (apply_system_buffers, defocus, focus)
                 .chain()
                 .in_set(SceneSets::UiActions)
-                .after(UiActionSet)
+                .after(UiActionSet),
         );
     }
 }
