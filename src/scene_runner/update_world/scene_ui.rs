@@ -13,7 +13,7 @@ use crate::{
             common::{texture_union, BorderRect, TextureUnion},
             sdk::components::{
                 self, PbUiBackground, PbUiTransform, YgAlign, YgDisplay, YgFlexDirection,
-                YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap, PbUiText,
+                YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap, PbUiText, PbUiInput,
             }, self,
         },
         SceneComponentId, SceneEntityId,
@@ -328,6 +328,17 @@ impl From<PbUiText> for UiText {
     }
 }
 
+#[derive(Component)]
+pub struct UiInput {
+
+}
+
+impl From<PbUiInput> for UiInput {
+    fn from(_value: PbUiInput) -> Self {
+        panic!()
+    }
+}
+
 impl Plugin for SceneUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_crdt_lww_component::<PbUiTransform, UiTransform>(
@@ -340,6 +351,10 @@ impl Plugin for SceneUiPlugin {
         );
         app.add_crdt_lww_component::<PbUiText, UiText>(
             SceneComponentId::UI_TEXT,
+            ComponentPosition::EntityOnly,
+        );
+        app.add_crdt_lww_component::<PbUiInput, UiInput>(
+            SceneComponentId::UI_INPUT,
             ComponentPosition::EntityOnly,
         );
 
