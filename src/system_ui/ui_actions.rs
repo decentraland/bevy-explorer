@@ -9,7 +9,7 @@ use bevy::{
         system::BoxedSystem,
     },
     prelude::*,
-    utils::HashSet,
+    utils::{HashMap, HashSet},
 };
 
 use crate::{scene_runner::SceneSets, util::TryInsertEx};
@@ -104,9 +104,9 @@ impl ActionMarker for Defocus {
 #[derive(Component)]
 pub struct DataChanged;
 impl ActionMarker for DataChanged {
-    type Component = Changed<DataChanged>;
+    type Component = Option<Changed<DataChanged>>;
     fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
-        param
+        param.unwrap_or(false)
     }
 }
 
@@ -152,16 +152,24 @@ fn gather_actions<M: ActionMarker>(
 }
 
 pub fn run_actions<M: ActionMarker>(world: &mut World) {
-    let action_list: HashSet<usize> = world
+    let active_list: HashMap<usize, bool> = world
         .query::<(&ActionIndex<M>, M::Component)>()
         .iter(world)
-        .filter_map(|(action, param)| M::activate(param).then_some(action.0))
+        .map(|(action, param)| (action.0, M::activate(param)))
         .collect();
 
+    let mut removed: HashSet<usize> = HashSet::default();
     world.resource_scope(|world: &mut World, mut ui_actions: Mut<UiActions<M>>| {
-        for (ix, action) in ui_actions.0.iter_mut().enumerate() {
-            let active = action_list.contains(&ix);
-            if active && !action.run_already {
+        let mut index = 0;
+
+        ui_actions.0.retain_mut(|mut action| {
+            let Some(active) = active_list.get(&index) else {
+                removed.insert(index);
+                index += 1;
+                return false;
+            };
+
+            if *active && !action.run_already {
                 if !action.initialized {
                     action.system.initialize(world);
                     action.initialized = true;
@@ -169,12 +177,19 @@ pub fn run_actions<M: ActionMarker>(world: &mut World) {
                 action.system.run((), world);
                 action.system.apply_buffers(world);
             }
-            action.run_already = active;
-        }
+            action.run_already = *active;
+
+            index += 1;
+            true
+        })
     });
 
-    // TODO: cleanup removed actions
-    // - add arc and sender to each action, notify on drop
-    // - receiver in actions struct, record dropped
-    // - allocate new from dropped list first
+    if !removed.is_empty() {
+        world
+            .query::<&mut ActionIndex<M>>()
+            .iter_mut(world)
+            .for_each(|mut action_index| {
+                action_index.0 -= removed.iter().filter(|&r| *r < action_index.0).count();
+            });
+    }
 }
