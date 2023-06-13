@@ -413,7 +413,10 @@ fn update_scene_ui_components(
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[derive(Component)]
+pub struct SceneUiRoot(Entity);
+
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn layout_scene_ui(
     mut commands: Commands,
     mut scene_uis: Query<(Entity, &mut SceneUiData, &RendererSceneContext)>,
@@ -429,11 +432,19 @@ fn layout_scene_ui(
     )>,
     asset_server: Res<AssetServer>,
     mut ui_target: ResMut<UiPointerTarget>,
+    current_uis: Query<(Entity, &SceneUiRoot)>,
 ) {
     let current_scene = player
         .get_single()
         .ok()
         .and_then(|p| containing_scene.get(p));
+
+    // remove any non-current uis
+    for (ent, ui_root) in &current_uis {
+        if Some(ui_root.0) != current_scene {
+            commands.entity(ent).despawn_recursive();
+        }
+    }
 
     for (ent, mut ui_data, scene_context) in scene_uis.iter_mut() {
         if Some(ent) == current_scene {
@@ -483,14 +494,17 @@ fn layout_scene_ui(
                 let mut processed_nodes = HashMap::new();
 
                 let root = commands
-                    .spawn(NodeBundle {
-                        style: Style {
-                            position_type: PositionType::Absolute,
-                            position: UiRect::all(Val::Px(0.0)),
+                    .spawn((
+                        NodeBundle {
+                            style: Style {
+                                position_type: PositionType::Absolute,
+                                position: UiRect::all(Val::Px(0.0)),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
-                        ..Default::default()
-                    })
+                        SceneUiRoot(ent),
+                    ))
                     .id();
                 processed_nodes.insert(SceneEntityId::ROOT, root);
 
@@ -518,9 +532,9 @@ fn layout_scene_ui(
 
                             // if our parent is not added, we can't process this node
                             let Some(parent) = processed_nodes.get(&ui_transform.parent) else {
-                            debug!("can't place {} with parent {}", scene_id, ui_transform.parent);
-                            return true;
-                        };
+                                debug!("can't place {} with parent {}", scene_id, ui_transform.parent);
+                                return true;
+                            };
 
                             // we can process this node
                             commands.entity(*parent).with_children(|commands| {
@@ -751,10 +765,7 @@ fn layout_scene_ui(
                 ui_data.current_node = Some(root);
             }
         } else {
-            // destroy other uis
-            if let Some(current_ui) = ui_data.current_node.take() {
-                commands.entity(current_ui).despawn_recursive();
-            }
+            ui_data.current_node = None;
         }
     }
 }
