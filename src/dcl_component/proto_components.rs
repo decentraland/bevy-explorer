@@ -77,6 +77,7 @@ impl DclProtoComponent for sdk::components::PbUiTransform {}
 impl DclProtoComponent for sdk::components::PbUiText {}
 impl DclProtoComponent for sdk::components::PbUiBackground {}
 impl DclProtoComponent for sdk::components::PbUiInput {}
+impl DclProtoComponent for sdk::components::PbUiInputResult {}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}

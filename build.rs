@@ -23,6 +23,7 @@ fn main() -> Result<()> {
         "ui_text",
         "ui_background",
         "ui_input",
+        "ui_input_result",
         "ui_canvas_information",
     ];
 

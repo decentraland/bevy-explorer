@@ -8,14 +8,14 @@ use bevy::{
 
 use crate::{
     common::PrimaryUser,
-    dcl::interface::ComponentPosition,
+    dcl::interface::{ComponentPosition, CrdtType},
     dcl_component::{
         proto_components::{
             self,
             common::{texture_union, BorderRect, TextureUnion},
             sdk::components::{
-                self, PbUiBackground, PbUiInput, PbUiText, PbUiTransform, YgAlign, YgDisplay,
-                YgFlexDirection, YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap,
+                self, PbUiBackground, PbUiInput, PbUiInputResult, PbUiText, PbUiTransform, YgAlign,
+                YgDisplay, YgFlexDirection, YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap,
             },
         },
         SceneComponentId, SceneEntityId,
@@ -26,7 +26,8 @@ use crate::{
         ContainingScene, SceneEntity, SceneSets,
     },
     system_ui::{
-        ui_actions::{HoverEnter, HoverExit, On},
+        textentry::TextEntry,
+        ui_actions::{Defocus, HoverEnter, HoverExit, On},
         ui_builder::SpawnSpacer,
         TITLE_TEXT_STYLE,
     },
@@ -339,11 +340,11 @@ impl From<PbUiText> for UiText {
 }
 
 #[derive(Component)]
-pub struct UiInput {}
+pub struct UiInput(PbUiInput);
 
 impl From<PbUiInput> for UiInput {
-    fn from(_value: PbUiInput) -> Self {
-        todo!()
+    fn from(value: PbUiInput) -> Self {
+        Self(value)
     }
 }
 
@@ -424,6 +425,7 @@ fn layout_scene_ui(
         Option<&UiBackground>,
         Option<&UiText>,
         Option<&PointerEvents>,
+        Option<&UiInput>,
     )>,
     asset_server: Res<AssetServer>,
     mut ui_target: ResMut<UiPointerTarget>,
@@ -455,6 +457,7 @@ fn layout_scene_ui(
                                 maybe_background,
                                 maybe_text,
                                 maybe_pointer_events,
+                                maybe_ui_input,
                             )) => Some((
                                 scene_entity.id,
                                 (
@@ -463,6 +466,7 @@ fn layout_scene_ui(
                                     maybe_background,
                                     maybe_text,
                                     maybe_pointer_events,
+                                    maybe_ui_input,
                                 ),
                             )),
                             Err(_) => {
@@ -501,6 +505,7 @@ fn layout_scene_ui(
                             maybe_background,
                             maybe_text,
                             maybe_pointer_events,
+                            maybe_ui_input,
                         )| {
                             // if our rightof is not added, we can't process this node
                             if !processed_nodes.contains_key(&ui_transform.right_of) {
@@ -683,19 +688,48 @@ fn layout_scene_ui(
                                     ent_cmds = ent_cmds.insert((
                                         FocusPolicy::Block,
                                         Interaction::default(),
-                                        On::<HoverEnter>::new(
-                                            move |mut ui_target: ResMut<UiPointerTarget>| {
-                                                *ui_target = UiPointerTarget::Some(node);
-                                            },
-                                        ),
-                                        On::<HoverExit>::new(
-                                            move |mut ui_target: ResMut<UiPointerTarget>| {
-                                                if *ui_target == UiPointerTarget::Some(node) {
-                                                    *ui_target = UiPointerTarget::None;
-                                                };
-                                            },
-                                        ),
+                                        On::<HoverEnter>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
+                                            *ui_target = UiPointerTarget::Some(node);
+                                        }),
+                                        On::<HoverExit>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
+                                            if *ui_target == UiPointerTarget::Some(node) {
+                                                *ui_target = UiPointerTarget::None;
+                                            };
+                                        }),
                                     ));
+                                }
+
+                                if let Some(input) = maybe_ui_input {
+                                    let node = *node;
+                                    let scene_id = *scene_id;
+
+                                    ent_cmds = ent_cmds.insert((
+                                        FocusPolicy::Block,
+                                        Interaction::default(),
+                                        TextEntry {
+                                            hint_text: input.0.placeholder.to_owned(),
+                                            enabled: !input.0.disabled,
+                                            accept_line: true,
+                                            ..Default::default()
+                                        },
+                                        On::<Defocus>::new(move |
+                                            entry: Query<&TextEntry>,
+                                            mut context: Query<&mut RendererSceneContext>,
+                                        | {
+                                            let Ok(entry) = entry.get(node) else {
+                                                warn!("failed to get text node on UiInput update");
+                                                return;
+                                            };
+                                            let Ok(mut context) = context.get_mut(ent) else {
+                                                warn!("failed to get context on UiInput update");
+                                                return;
+                                            };
+
+                                            context.update_crdt(SceneComponentId::UI_INPUT_RESULT, CrdtType::LWW_ENT, scene_id, &PbUiInputResult {
+                                                value: entry.content.clone(),
+                                            });
+                                        }),
+                                    ))
                                 }
 
                                 processed_nodes.insert(*scene_id, ent_cmds.id());
