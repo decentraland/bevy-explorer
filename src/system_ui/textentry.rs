@@ -8,6 +8,7 @@ use super::focus::Focus;
 
 #[derive(Component, Default)]
 pub struct TextEntry {
+    pub hint_text: String,
     pub content: String,
     pub enabled: bool,
     pub messages: Vec<String>,
@@ -45,12 +46,21 @@ pub fn update_text_entry_components(
                 .frame(egui::Frame::none())
                 .title_bar(false)
                 .show(ctx, |ui| {
+                    // destructure to split borrow
+                    let TextEntry {
+                        ref hint_text,
+                        ref mut content,
+                        ref enabled,
+                        ..
+                    } = &mut *textbox;
+
                     let response = ui.add_enabled(
-                        textbox.enabled,
-                        TextEdit::singleline(&mut textbox.content)
+                        *enabled,
+                        TextEdit::singleline(content)
                             .frame(false)
                             .desired_width(f32::INFINITY)
-                            .text_color(egui::Color32::WHITE),
+                            .text_color(egui::Color32::WHITE)
+                            .hint_text(hint_text),
                     );
 
                     // pass through focus and interaction

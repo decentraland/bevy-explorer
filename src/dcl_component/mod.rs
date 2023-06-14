@@ -54,24 +54,40 @@ pub struct SceneComponentId(pub u32);
 
 impl SceneComponentId {
     pub const TRANSFORM: SceneComponentId = SceneComponentId(1);
+
     pub const MATERIAL: SceneComponentId = SceneComponentId(1017);
     pub const MESH_RENDERER: SceneComponentId = SceneComponentId(1018);
     pub const MESH_COLLIDER: SceneComponentId = SceneComponentId(1019);
+
     pub const GLTF_CONTAINER: SceneComponentId = SceneComponentId(1041);
     pub const ANIMATOR: SceneComponentId = SceneComponentId(1042);
+
     pub const ENGINE_INFO: SceneComponentId = SceneComponentId(1048);
     pub const GLTF_CONTAINER_LOADING_STATE: SceneComponentId = SceneComponentId(1049);
+
+    pub const UI_TRANSFORM: SceneComponentId = SceneComponentId(1050);
+    pub const UI_TEXT: SceneComponentId = SceneComponentId(1052);
+    pub const UI_BACKGROUND: SceneComponentId = SceneComponentId(1053);
+
+    pub const CANVAS_INFO: SceneComponentId = SceneComponentId(1054);
+
     pub const POINTER_EVENTS: SceneComponentId = SceneComponentId(1062);
     pub const POINTER_RESULT: SceneComponentId = SceneComponentId(1063);
+
     pub const RAYCAST: SceneComponentId = SceneComponentId(1067);
     pub const RAYCAST_RESULT: SceneComponentId = SceneComponentId(1068);
-    pub const AVATAR_SHAPE: SceneComponentId = SceneComponentId(1080);
+
     pub const AVATAR_ATTACHMENT: SceneComponentId = SceneComponentId(1073);
+    pub const AVATAR_SHAPE: SceneComponentId = SceneComponentId(1080);
     pub const AVATAR_CUSTOMIZATION: SceneComponentId = SceneComponentId(1087);
     pub const AVATAR_EMOTE_COMMAND: SceneComponentId = SceneComponentId(1088);
     pub const AVATAR_EQUIPPED_DATA: SceneComponentId = SceneComponentId(1089);
+
     pub const BILLBOARD: SceneComponentId = SceneComponentId(1090);
     pub const PLAYER_IDENTITY_DATA: SceneComponentId = SceneComponentId(1091);
+
+    pub const UI_INPUT: SceneComponentId = SceneComponentId(1093);
+    pub const UI_INPUT_RESULT: SceneComponentId = SceneComponentId(1095);
 }
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy)]

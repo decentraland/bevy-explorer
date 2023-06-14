@@ -66,7 +66,7 @@ fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res<AppConfig>
                                 .with_children(|commands| {
                                     commands.spawn(TextBundle {
                                         style: Style {
-                                            size: Size::width(Val::Px(140.0)),
+                                            size: Size::width(Val::Px(120.0)),
                                             ..Default::default()
                                         },
                                         text: Text::from_section(
@@ -78,7 +78,7 @@ fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res<AppConfig>
                                     });
                                     commands.spawn(TextBundle {
                                         style: Style {
-                                            size: Size::width(Val::Px(140.0)),
+                                            size: Size::width(Val::Px(120.0)),
                                             ..Default::default()
                                         },
                                         text: Text::from_section(

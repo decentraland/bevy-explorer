@@ -5,14 +5,6 @@ use crate::{system_ui::ui_actions::DataChanged, util::TryInsertEx};
 
 use super::focus::Focus;
 
-#[derive(Component, Default)]
-pub struct TextEntry {
-    pub content: String,
-    pub enabled: bool,
-    pub messages: Vec<String>,
-    pub accept_line: bool,
-}
-
 #[derive(Component)]
 pub struct ColorPicker {
     pub color: [f32; 3],

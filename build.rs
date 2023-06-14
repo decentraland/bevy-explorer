@@ -19,6 +19,12 @@ fn main() -> Result<()> {
         "player_identity_data",
         "avatar_shape",
         "avatar_attach",
+        "ui_transform",
+        "ui_text",
+        "ui_background",
+        "ui_input",
+        "ui_input_result",
+        "ui_canvas_information",
     ];
 
     let mut sources = components

@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+use crate::scene_runner::SceneSets;
+
 use super::ui_actions::UiActionSet;
 
 #[derive(Component)]
@@ -15,6 +17,7 @@ impl Plugin for FocusPlugin {
         app.add_systems(
             (apply_system_buffers, defocus, focus)
                 .chain()
+                .in_set(SceneSets::UiActions)
                 .after(UiActionSet),
         );
     }

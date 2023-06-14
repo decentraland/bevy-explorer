@@ -72,6 +72,12 @@ impl DclProtoComponent for sdk::components::PbAvatarEmoteCommand {}
 impl DclProtoComponent for sdk::components::PbAvatarEquippedData {}
 impl DclProtoComponent for sdk::components::PbPlayerIdentityData {}
 impl DclProtoComponent for kernel::comms::rfc4::Packet {}
+impl DclProtoComponent for sdk::components::PbUiCanvasInformation {}
+impl DclProtoComponent for sdk::components::PbUiTransform {}
+impl DclProtoComponent for sdk::components::PbUiText {}
+impl DclProtoComponent for sdk::components::PbUiBackground {}
+impl DclProtoComponent for sdk::components::PbUiInput {}
+impl DclProtoComponent for sdk::components::PbUiInputResult {}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}
@@ -150,3 +156,16 @@ impl From<bevy::prelude::Color> for common::Color3 {
         }
     }
 }
+
+impl From<common::BorderRect> for bevy::prelude::UiRect {
+    fn from(value: common::BorderRect) -> Self {
+        bevy::prelude::UiRect {
+            left: bevy::ui::Val::Percent(value.left * 100.0),
+            right: bevy::ui::Val::Percent(value.right * 100.0),
+            top: bevy::ui::Val::Percent(value.top * 100.0),
+            bottom: bevy::ui::Val::Percent(value.bottom * 100.0),
+        }
+    }
+}
+
+impl Copy for common::BorderRect {}

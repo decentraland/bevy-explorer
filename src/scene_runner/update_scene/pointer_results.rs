@@ -21,7 +21,8 @@ pub struct PointerResultPlugin;
 
 impl Plugin for PointerResultPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<PointerTarget>();
+        app.init_resource::<PointerTarget>()
+            .init_resource::<UiPointerTarget>();
         app.add_systems(
             (update_pointer_target, send_hover_events, send_action_events)
                 .chain()
@@ -40,18 +41,35 @@ pub enum PointerTarget {
     },
 }
 
+#[derive(Default, Debug, Resource, Clone, PartialEq, Eq)]
+pub enum UiPointerTarget {
+    #[default]
+    None,
+    Some(Entity),
+}
+
 fn update_pointer_target(
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
     windows: Query<&Window>,
     mut scenes: Query<(Entity, &mut RendererSceneContext, &mut SceneColliderData)>,
     mut hover_target: ResMut<PointerTarget>,
+    ui_target: Res<UiPointerTarget>,
 ) {
     let Ok((camera, camera_position)) = camera.get_single() else {
         // can't do much without a camera
         return
     };
 
-    // get new hover target
+    // first check for ui target
+    if let UiPointerTarget::Some(t) = *ui_target {
+        *hover_target = PointerTarget::Some {
+            container: t,
+            mesh_name: None,
+        };
+        return;
+    }
+
+    // get new 3d hover target
     let Ok(window) = windows.get_single() else {
         return;
     };
@@ -150,7 +168,7 @@ fn send_hover_events(
                         .closest_point(context.last_update_frame, player_translation, |cid| {
                             cid.entity == scene_entity.id && &cid.name == mesh_name
                         })
-                        .unwrap();
+                        .unwrap_or(player_translation);
                     let distance = (nearest_point - player_translation).length();
 
                     for ev in potential_entries {
@@ -228,8 +246,7 @@ fn send_action_events(
     let mut send_event = |entity: &Entity,
                           mesh_name: &Option<String>,
                           ev_type: PointerEventType,
-                          action: InputAction,
-                          target_point: Option<Vec3>| {
+                          action: InputAction| {
         if let Ok((scene_entity, maybe_pe)) = pointer_requests.get(*entity) {
             if let Some(pe) = maybe_pe {
                 let mut potential_entries = pe
@@ -251,13 +268,11 @@ fn send_action_events(
                 if potential_entries.peek().is_some() {
                     let Ok((mut context, mut collider_data)) = scenes.get_mut(scene_entity.root) else { panic!() };
                     // get distance
-                    let nearest_point = target_point.unwrap_or_else(|| {
-                        collider_data
-                            .closest_point(context.last_update_frame, player_translation, |cid| {
-                                cid.entity == scene_entity.id && &cid.name == mesh_name
-                            })
-                            .unwrap_or_default()
-                    });
+                    let nearest_point = collider_data
+                        .closest_point(context.last_update_frame, player_translation, |cid| {
+                            cid.entity == scene_entity.id && &cid.name == mesh_name
+                        })
+                        .unwrap_or(player_translation);
                     let distance = (nearest_point - player_translation).length();
 
                     for ev in potential_entries {
@@ -305,12 +320,11 @@ fn send_action_events(
     } = &*target
     {
         for down in input_mgr.iter_just_down() {
-            debug!("checking {down:?} vs {container:?}");
-            send_event(container, mesh_name, PointerEventType::PetDown, *down, None);
+            send_event(container, mesh_name, PointerEventType::PetDown, *down);
         }
 
         for up in input_mgr.iter_just_up() {
-            send_event(container, mesh_name, PointerEventType::PetUp, *up, None);
+            send_event(container, mesh_name, PointerEventType::PetUp, *up);
         }
     }
 
