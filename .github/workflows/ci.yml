@@ -6,6 +6,9 @@ jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
     steps:
       - name: Install protoc
         uses: arduino/setup-protoc@v1
