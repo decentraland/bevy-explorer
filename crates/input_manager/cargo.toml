@@ -6,7 +6,7 @@ edition = "2021"
 [lib]
 
 [dependencies]
-dcl_component = "0.1"
+dcl_component = { path="../dcl_component" }
 
 bevy = "0.10"
 bevy_console = "0.7.0"

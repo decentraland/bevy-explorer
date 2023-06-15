@@ -30,7 +30,12 @@ impl Plugin for ChatPanelPlugin {
         app.add_system(display_chat);
         app.add_system(append_chat_messages);
         app.add_system(emit_user_chat);
-        app.add_startup_system(setup.in_set(SetupSets::Main).after(SetupSets::Init).after(crate::sysinfo::setup));
+        app.add_startup_system(
+            setup
+                .in_set(SetupSets::Main)
+                .after(SetupSets::Init)
+                .after(crate::sysinfo::setup),
+        );
     }
 }
 

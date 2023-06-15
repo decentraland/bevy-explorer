@@ -6,7 +6,7 @@ edition = "2021"
 [lib]
 
 [dependencies]
-common = "0.1"
+common = { path="../common" }
 
 bevy = "0.10"
 bevy_atmosphere = "0.6.0"

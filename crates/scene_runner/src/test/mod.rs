@@ -33,7 +33,7 @@ use dcl_component::{
     transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
     SceneCrdtTimestamp, SceneEntityId,
 };
-use input_manager::{InputMap, AcceptInput};
+use input_manager::{AcceptInput, InputMap};
 use ipfs::{IpfsIoPlugin, IpfsLoaderExt, ServerAbout, ServerConfiguration};
 
 use super::{initialize_scene::SceneLoading, PrimaryUser};

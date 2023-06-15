@@ -6,14 +6,14 @@ edition = "2021"
 [lib]
 
 [dependencies]
-common = "0.1"
-dcl_component = "0.1"
-dcl = "0.1"
-ipfs = "0.1"
-comms = "0.1"
-ui_core = "0.1"
-console = "0.1"
-input_manager = "0.1"
+common = { path="../common" }
+dcl_component = { path="../dcl_component" }
+dcl = { path="../dcl" }
+ipfs = { path="../ipfs" }
+comms = { path="../comms" }
+ui_core = { path="../ui_core" }
+console = { path="../console" }
+input_manager = { path="../input_manager" }
 
 bevy = { version = "0.10", features=["jpeg"] }
 tokio = { version = "1.26.0", features = ["sync"] }

@@ -6,10 +6,10 @@ edition = "2021"
 [lib]
 
 [dependencies]
-common = "0.1"
-dcl = "0.1"
-dcl_component = "0.1"
-ipfs = "0.1"
+common = { path="../common" }
+dcl = { path="../dcl" }
+dcl_component = { path="../dcl_component" }
+ipfs = { path="../ipfs" }
 
 bevy = "0.10"
 bimap = "0.6.3"

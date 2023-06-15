@@ -6,8 +6,8 @@ edition = "2021"
 [lib]
 
 [dependencies]
-common = "0.1"
-console = "0.1"
+common = { path="../common" }
+console = { path="../console" }
 
 bevy = "0.10"
 anyhow = "1.0.70"

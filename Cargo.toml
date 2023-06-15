@@ -12,17 +12,17 @@ tracy = ["bevy/trace_tracy"]
 members = ["crates/*"]
 
 [dependencies]
-common = "0.1"
-avatar = "0.1"
-comms = "0.1"
-input_manager = "0.1"
-ipfs = "0.1"
-system_ui = "0.1"
-user_input = "0.1"
-visuals = "0.1"
-ui_core = "0.1"
-scene_runner = "0.1"
-console = "0.1"
+common = { path="crates/common" }
+avatar = { path="crates/avatar" }
+comms = { path="crates/comms" }
+input_manager = { path="crates/input_manager" }
+ipfs = { path="crates/ipfs" }
+system_ui = { path="crates/system_ui" }
+user_input = { path="crates/user_input" }
+visuals = { path="crates/visuals" }
+ui_core = { path="crates/ui_core" }
+scene_runner = { path="crates/scene_runner" }
+console = { path="crates/console" }
 
 bevy = "0.10"
 bevy_console = "0.7.0"
@@ -39,17 +39,3 @@ prost-build = "0.11.8"
 
 [patch.crates-io]
 bevy = { git="https://github.com/robtfm/bevy", branch="0.10-hotfix" }
-
-common = { path="./crates/common" }
-avatar = { path="./crates/avatar" }
-comms = { path="./crates/comms" }
-console = { path="./crates/console" }
-dcl = { path="./crates/dcl" }
-dcl_component = { path="./crates/dcl_component" }
-input_manager = { path="./crates/input_manager" }
-ipfs = { path="./crates/ipfs" }
-scene_runner = { path="./crates/scene_runner" }
-system_ui = { path="./crates/system_ui" }
-user_input = { path="./crates/user_input" }
-visuals = { path="./crates/visuals" }
-ui_core = { path="./crates/ui_core" }

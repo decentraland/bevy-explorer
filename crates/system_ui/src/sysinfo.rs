@@ -4,7 +4,10 @@ use bevy::{
     prelude::*,
 };
 
-use common::{structs::{AppConfig, PrimaryUser}, sets::SetupSets};
+use common::{
+    sets::SetupSets,
+    structs::{AppConfig, PrimaryUser},
+};
 use comms::{global_crdt::ForeignPlayer, Transport};
 use scene_runner::{
     initialize_scene::{SceneLoading, PARCEL_SIZE},

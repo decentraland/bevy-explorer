@@ -4,7 +4,7 @@ pub mod sysinfo;
 
 use bevy::prelude::*;
 
-use common::{structs::UiRoot, sets::SetupSets};
+use common::{sets::SetupSets, structs::UiRoot};
 
 use self::{chat::ChatPanelPlugin, profile::ProfileEditPlugin, sysinfo::SysInfoPlanelPlugin};
 

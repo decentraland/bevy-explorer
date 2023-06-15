@@ -6,13 +6,13 @@ edition = "2021"
 [lib]
 
 [dependencies]
-common = "0.1"
-comms = "0.1"
-dcl = "0.1"
-dcl_component = "0.1"
-ipfs = "0.1"
-scene_runner = "0.1"
-ui_core = "0.1"
+common = { path = "../common" }
+comms = { path="../comms" }
+dcl = { path="../dcl" }
+dcl_component = { path="../dcl_component" }
+ipfs = { path="../ipfs" }
+scene_runner = { path="../scene_runner" }
+ui_core = { path="../ui_core" }
 
 bevy = "0.10"
 bevy_mod_billboard = "0.3"
