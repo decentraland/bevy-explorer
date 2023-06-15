@@ -40,16 +40,16 @@ prost-build = "0.11.8"
 [patch.crates-io]
 bevy = { git="https://github.com/robtfm/bevy", branch="0.10-hotfix" }
 
-common = { path="crates/common" }
-avatar = { path="crates/avatar" }
-comms = { path="crates/comms" }
-console = { path="crates/console" }
-dcl = { path="crates/dcl" }
-dcl_component = { path="crates/dcl_component" }
-input_manager = { path="crates/input_manager" }
-ipfs = { path="crates/ipfs" }
-scene_runner = { path="crates/scene_runner" }
-system_ui = { path="crates/system_ui" }
-user_input = { path="crates/user_input" }
-visuals = { path="crates/visuals" }
-ui_core = { path="crates/ui_core" }
+common = { path="./crates/common" }
+avatar = { path="./crates/avatar" }
+comms = { path="./crates/comms" }
+console = { path="./crates/console" }
+dcl = { path="./crates/dcl" }
+dcl_component = { path="./crates/dcl_component" }
+input_manager = { path="./crates/input_manager" }
+ipfs = { path="./crates/ipfs" }
+scene_runner = { path="./crates/scene_runner" }
+system_ui = { path="./crates/system_ui" }
+user_input = { path="./crates/user_input" }
+visuals = { path="./crates/visuals" }
+ui_core = { path="./crates/ui_core" }
