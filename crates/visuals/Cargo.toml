@@ -1,0 +1,12 @@
+[package]
+name = "visuals"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { path="../common" }
+
+bevy = "0.10"
+bevy_atmosphere = "0.6.0"

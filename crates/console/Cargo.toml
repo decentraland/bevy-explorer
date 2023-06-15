@@ -1,0 +1,13 @@
+[package]
+name = "console"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { path="../common" }
+
+bevy = "0.10"
+bevy_console = "0.7.0"
+clap = "4.1.10"

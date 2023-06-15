@@ -1,0 +1,20 @@
+[package]
+name = "system_ui"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { path="../common" }
+comms = { path="../comms" }
+dcl = { path="../dcl" }
+dcl_component = { path="../dcl_component" }
+scene_runner = { path="../scene_runner" }
+ipfs = { path="../ipfs" }
+ui_core = { path="../ui_core" }
+avatar = { path="../avatar" }
+
+bevy = "0.10"
+bevy_egui = "0.20"
+urn = "0.7.0"
