@@ -1,0 +1,13 @@
+[package]
+name = "input_manager"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+dcl_component = "0.1"
+
+bevy = "0.10"
+bevy_console = "0.7.0"
+bevy_egui = "0.20"

@@ -1,0 +1,13 @@
+[package]
+name = "ui_core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = "0.1"
+
+bevy = "0.10"
+bevy_egui = "0.20"
+once_cell = "1.16.0"

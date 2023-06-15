@@ -2,20 +2,6 @@
 // - separate js crate
 // - budget -> deadline is just last end + frame time
 
-pub mod avatar;
-pub mod common;
-pub mod comms;
-pub mod console;
-pub mod dcl;
-pub mod dcl_component;
-pub mod input_manager;
-pub mod ipfs;
-pub mod scene_runner;
-pub mod system_ui;
-pub mod user_input;
-pub mod util;
-pub mod visuals;
-
 use avatar::AvatarDynamicState;
 use bevy::{
     core_pipeline::tonemapping::{DebandDither, Tonemapping},
@@ -27,80 +13,24 @@ use bevy::{
 use bevy_console::ConsoleCommand;
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 
-use common::{PrimaryCamera, PrimaryUser};
-use comms::profile::UserProfile;
+use common::{
+    sets::SetupSets,
+    structs::{AppConfig, GraphicsSettings, PrimaryCamera, PrimaryCameraRes, PrimaryUser},
+};
 use scene_runner::{
     initialize_scene::SceneLoadDistance, update_world::mesh_collider::GroundCollider,
     SceneRunnerPlugin,
 };
-use serde::{Deserialize, Serialize};
 
-use crate::{
-    avatar::AvatarPlugin,
-    comms::{wallet::WalletPlugin, CommsPlugin},
-    console::{ConsolePlugin, DoAddConsoleCommand},
-    input_manager::InputManagerPlugin,
-    ipfs::IpfsIoPlugin,
-    system_ui::SystemUiPlugin,
-    user_input::UserInputPlugin,
-    visuals::VisualsPlugin,
-};
-
-// macro for assertions
-// by default, enabled in debug builds and disabled in release builds
-// can be enabled for release with `cargo run --release --features="dcl-assert"`
-#[cfg(any(debug_assertions, feature = "dcl-assert"))]
-#[macro_export]
-macro_rules! dcl_assert {
-    ($($arg:tt)*) => ( assert!($($arg)*); )
-}
-#[cfg(not(any(debug_assertions, feature = "dcl-assert")))]
-#[macro_export]
-macro_rules! dcl_assert {
-    ($($arg:tt)*) => {};
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct GraphicsSettings {
-    vsync: bool,
-    log_fps: bool,
-    msaa: usize,
-}
-
-impl Default for GraphicsSettings {
-    fn default() -> Self {
-        Self {
-            vsync: false,
-            log_fps: true,
-            msaa: 4,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Resource)]
-pub struct AppConfig {
-    pub server: String,
-    pub profile: UserProfile,
-    pub graphics: GraphicsSettings,
-    pub scene_threads: usize,
-    pub scene_loop_millis: u64,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            server: "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-main".to_owned(),
-            profile: UserProfile {
-                version: 1,
-                content: Default::default(),
-                base_url: "https://peer.decentraland.zone/content/contents/".to_owned(),
-            },
-            graphics: Default::default(),
-            scene_threads: 4,
-            scene_loop_millis: 12, // ~80fps
-        }
-    }
-}
+use avatar::AvatarPlugin;
+use comms::{wallet::WalletPlugin, CommsPlugin};
+use console::{ConsolePlugin, DoAddConsoleCommand};
+use input_manager::InputManagerPlugin;
+use ipfs::IpfsIoPlugin;
+use system_ui::SystemUiPlugin;
+use ui_core::UiCorePlugin;
+use user_input::UserInputPlugin;
+use visuals::VisualsPlugin;
 
 fn main() {
     // warnings before log init must be stored and replayed later
@@ -121,7 +51,9 @@ fn main() {
             .value_from_str("--server")
             .ok()
             .unwrap_or(base_config.server),
-        profile: base_config.profile,
+        profile_version: base_config.profile_version,
+        profile_content: base_config.profile_content,
+        profile_base_url: base_config.profile_base_url,
         graphics: GraphicsSettings {
             vsync: args
                 .value_from_str("--vsync")
@@ -213,18 +145,22 @@ fn main() {
 
     app.insert_resource(final_config);
 
+    app.configure_set(SetupSets::Init.before(SetupSets::Main));
+
     app.add_plugin(DebugLinesPlugin::with_depth_test(true))
         .add_plugin(bevy_mod_billboard::prelude::BillboardPlugin)
         .add_plugin(InputManagerPlugin)
         .add_plugin(SceneRunnerPlugin)
         .add_plugin(UserInputPlugin)
+        .add_plugin(UiCorePlugin)
         .add_plugin(SystemUiPlugin)
-        .add_plugin(ConsolePlugin)
+        .add_plugin(ConsolePlugin { add_egui: true })
         .add_plugin(VisualsPlugin)
         .add_plugin(WalletPlugin)
         .add_plugin(CommsPlugin)
         .add_plugin(AvatarPlugin)
-        .add_startup_system(setup)
+        .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
+        .add_startup_system(setup.in_set(SetupSets::Init))
         .insert_resource(AmbientLight {
             color: Color::rgb(0.85, 0.85, 1.0),
             brightness: 0.5,
@@ -247,7 +183,8 @@ fn main() {
     app.run()
 }
 
-fn setup(mut commands: Commands) {
+fn setup(mut commands: Commands, mut cam_resource: ResMut<PrimaryCameraRes>) {
+    info!("main::setup");
     // create the main player
     commands.spawn((
         SpatialBundle {
@@ -260,25 +197,29 @@ fn setup(mut commands: Commands) {
     ));
 
     // add a camera
-    commands.spawn((
-        Camera3dBundle {
-            camera: Camera {
-                // TODO enable when we can use gizmos instead of debuglines in bevy 0.11
-                // hdr: true,
+    let camera_id = commands
+        .spawn((
+            Camera3dBundle {
+                camera: Camera {
+                    // TODO enable when we can use gizmos instead of debuglines in bevy 0.11
+                    // hdr: true,
+                    ..Default::default()
+                },
+                tonemapping: Tonemapping::TonyMcMapface,
+                dither: DebandDither::Enabled,
+                color_grading: ColorGrading {
+                    exposure: -0.5,
+                    gamma: 1.5,
+                    pre_saturation: 1.0,
+                    post_saturation: 1.0,
+                },
                 ..Default::default()
             },
-            tonemapping: Tonemapping::TonyMcMapface,
-            dither: DebandDither::Enabled,
-            color_grading: ColorGrading {
-                exposure: -0.5,
-                gamma: 1.5,
-                pre_saturation: 1.0,
-                post_saturation: 1.0,
-            },
-            ..Default::default()
-        },
-        PrimaryCamera::default(),
-    ));
+            PrimaryCamera::default(),
+        ))
+        .id();
+
+    cam_resource.0 = camera_id;
 
     // add a directional light so it looks nicer
     commands.spawn(DirectionalLightBundle {
@@ -295,17 +236,6 @@ fn setup(mut commands: Commands) {
         .into(),
         ..Default::default()
     });
-}
-
-// hook console commands
-#[cfg(not(test))]
-impl console::DoAddConsoleCommand for App {
-    fn add_console_command<T: bevy_console::Command, U>(
-        &mut self,
-        system: impl IntoSystemConfig<U>,
-    ) -> &mut Self {
-        bevy_console::AddConsoleCommand::add_console_command::<T, U>(self, system)
-    }
 }
 
 // TODO move these somewhere better

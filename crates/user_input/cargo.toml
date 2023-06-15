@@ -1,0 +1,16 @@
+[package]
+name = "user_input"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = "0.1"
+input_manager = "0.1"
+scene_runner = "0.1"
+dcl_component = "0.1"
+avatar = "0.1"
+
+bevy = "0.10"
+rapier3d = "0.17.2"

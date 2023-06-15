@@ -1,0 +1,22 @@
+[package]
+name = "avatar"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = "0.1"
+comms = "0.1"
+dcl = "0.1"
+dcl_component = "0.1"
+ipfs = "0.1"
+scene_runner = "0.1"
+ui_core = "0.1"
+
+bevy = "0.10"
+bevy_mod_billboard = "0.3"
+serde = "1.0.152"
+serde_json = { version = "1.0.92", features = ["raw_value"] }
+urn = "0.7.0"
+anyhow = "1.0.70"
