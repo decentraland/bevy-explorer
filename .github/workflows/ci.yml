@@ -19,10 +19,9 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - name: pwd
-        run: pwd && ls
-      - name: check
-        run: cargo check --all
+      - uses: actions-rs/cargo@v1
+        with:
+          command: check
 
   test:
     name: Test Suite
@@ -44,8 +43,10 @@ jobs:
       - name: Install alsa and udev
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
         if: runner.os == 'linux'
-      - name: test
-        run: cargo test --all
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all
 
   fmt:
     name: Rustfmt
@@ -64,8 +65,10 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
-      - name: fmt
-        run: cargo fmt --all
+      - uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
 
   clippy:
     name: Clippy
@@ -84,5 +87,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
-      - name: clippy
-        run: cargo clippy -- -D warnings
+      - uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -- -D warnings
