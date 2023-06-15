@@ -20,9 +20,9 @@ jobs:
           toolchain: stable
           override: true
       - name: pwd
-        run: pwd
+        run: pwd && ls
       - name: check
-        run: cd .. && cargo check --all
+        run: cargo check --all
 
   test:
     name: Test Suite
