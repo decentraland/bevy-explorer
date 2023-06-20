@@ -39,5 +39,5 @@ clap = "4.1.10"
 prost-build = "0.11.8"
 
 [patch.crates-io]
-# bevy = { git="https://github.com/robtfm/bevy", branch="0.10-hotfix" }
-bevy = { path="../bevy" }
+bevy = { git="https://github.com/robtfm/bevy", branch="0.10-hotfix" }
+# bevy = { path="../bevy" }
