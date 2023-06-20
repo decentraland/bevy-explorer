@@ -62,30 +62,16 @@ pub fn update_comboboxen(
                             .unwrap_or(&combo.empty_text)
                     };
 
-                    // there's no way to make comboboxes transparent ..?
-                    // let mut style = ui.style_mut();
-                    // style.visuals.widgets.active.bg_fill = egui::Color32::TRANSPARENT;
-                    // style.visuals.widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
-                    // style.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-                    // style.visuals.widgets.open.bg_fill = egui::Color32::TRANSPARENT;
-                    // style.visuals.faint_bg_color = egui::Color32::TRANSPARENT;
-                    // style.visuals.extreme_bg_color = egui::Color32::TRANSPARENT;
-                    // style.visuals.code_bg_color = egui::Color32::TRANSPARENT;
+                    let mut style = ui.style_mut();
+                    style.visuals.widgets.active.weak_bg_fill = egui::Color32::TRANSPARENT;
+                    style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::TRANSPARENT;
+                    style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
 
                     egui::ComboBox::from_id_source(entity)
                         .selected_text(selected_text)
                         .wrap(false)
                         .width(size.x)
                         .show_ui(ui, |ui| {
-                            // let mut style = ui.style_mut();
-                            // style.visuals.widgets.active.bg_fill = egui::Color32::TRANSPARENT;
-                            // style.visuals.widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
-                            // style.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-                            // style.visuals.widgets.open.bg_fill = egui::Color32::TRANSPARENT;
-                            // style.visuals.faint_bg_color = egui::Color32::TRANSPARENT;
-                            // style.visuals.extreme_bg_color = egui::Color32::TRANSPARENT;
-                            // style.visuals.code_bg_color = egui::Color32::TRANSPARENT;
-
                             // split borrow
                             let ComboBox {
                                 ref options,
