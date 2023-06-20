@@ -5,7 +5,7 @@ use bevy::{
     ui::FocusPolicy,
     utils::{HashMap, HashSet},
 };
-use bevy_ninepatch::{NinePatchBuilder, NinePatchData, NinePatchBundle};
+use bevy_ninepatch::{NinePatchBuilder, NinePatchBundle, NinePatchData};
 
 use crate::{
     renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
@@ -620,7 +620,7 @@ fn layout_scene_ui(
                                                             },
                                                             ..Default::default()
                                                         });
-    
+
                                                     });
                                                 }
                                                 BackgroundTextureMode::Center => {

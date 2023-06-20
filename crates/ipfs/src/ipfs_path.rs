@@ -430,9 +430,13 @@ impl IpfsPath {
     }
 
     pub fn should_cache(&self, hash: &str) -> bool {
-        println!("does {} start with 'b64-'? {}", hash, hash.starts_with("b64-"));
+        println!(
+            "does {} start with 'b64-'? {}",
+            hash,
+            hash.starts_with("b64-")
+        );
         !hash.starts_with("b64-")
-//        true // TODO only if hash is some and is not b64-
+        //        true // TODO only if hash is some and is not b64-
     }
 
     pub fn base_url(&self) -> Option<&str> {
