@@ -5,6 +5,7 @@ use bevy::{
     ui::FocusPolicy,
     utils::{HashMap, HashSet},
 };
+use bevy_ninepatch::{NinePatchBuilder, NinePatchData, NinePatchBundle};
 
 use crate::{
     renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
@@ -39,7 +40,8 @@ pub struct SceneUiPlugin;
 macro_rules! val {
     ($pb:ident, $u:ident, $v:ident) => {
         match $pb.$u() {
-            YgUnit::YguUndefined | YgUnit::YguAuto => Val::Auto,
+            YgUnit::YguUndefined => Val::Undefined,
+            YgUnit::YguAuto => Val::Auto,
             YgUnit::YguPoint => Val::Px($pb.$v),
             YgUnit::YguPercent => Val::Percent($pb.$v),
         }
@@ -47,12 +49,12 @@ macro_rules! val {
 }
 
 macro_rules! size {
-    ($pb:ident, $wu:ident, $w:ident, $hu:ident, $h:ident) => {
+    ($pb:ident, $wu:ident, $w:ident, $hu:ident, $h:ident) => {{
         Size {
             width: val!($pb, $wu, $w),
             height: val!($pb, $hu, $h),
         }
-    };
+    }};
 }
 
 macro_rules! rect {
@@ -142,7 +144,7 @@ impl From<PbUiTransform> for UiTransform {
                 YgFlexDirection::YgfdRowReverse => FlexDirection::RowReverse,
             },
             justify_content: match value.justify_content() {
-                YgJustify::YgjFlexStart => JustifyContent::Start,
+                YgJustify::YgjFlexStart => JustifyContent::FlexStart,
                 YgJustify::YgjCenter => JustifyContent::Center,
                 YgJustify::YgjFlexEnd => JustifyContent::FlexEnd,
                 YgJustify::YgjSpaceBetween => JustifyContent::SpaceBetween,
@@ -218,7 +220,7 @@ impl From<PbUiTransform> for UiTransform {
 
 #[derive(Clone, Debug)]
 pub enum BackgroundTextureMode {
-    NineSlices(UiRect),
+    NineSlices(BorderRect),
     Stretch,
     Center,
 }
@@ -253,17 +255,14 @@ impl From<PbUiBackground> for UiBackground {
                         source: texture.src.clone(),
                         mode: match value.texture_mode() {
                             components::BackgroundTextureMode::NineSlices => {
-                                BackgroundTextureMode::NineSlices(
-                                    value
-                                        .texture_slices
-                                        .unwrap_or(BorderRect {
-                                            top: 1.0 / 3.0,
-                                            bottom: 1.0 / 3.0,
-                                            left: 1.0 / 3.0,
-                                            right: 1.0 / 3.0,
-                                        })
-                                        .into(),
-                                )
+                                BackgroundTextureMode::NineSlices(value.texture_slices.unwrap_or(
+                                    BorderRect {
+                                        top: 1.0 / 3.0,
+                                        bottom: 1.0 / 3.0,
+                                        left: 1.0 / 3.0,
+                                        right: 1.0 / 3.0,
+                                    },
+                                ))
                             }
                             components::BackgroundTextureMode::Center => {
                                 BackgroundTextureMode::Center
@@ -428,6 +427,8 @@ fn layout_scene_ui(
         Option<&UiInput>,
     )>,
     asset_server: Res<AssetServer>,
+    mut nine_patches: ResMut<Assets<NinePatchBuilder<()>>>,
+    images: Res<Assets<Image>>,
     mut ui_target: ResMut<UiPointerTarget>,
     current_uis: Query<(Entity, &SceneUiRoot)>,
 ) {
@@ -446,6 +447,9 @@ fn layout_scene_ui(
     for (ent, mut ui_data, scene_context) in scene_uis.iter_mut() {
         if Some(ent) == current_scene {
             if ui_data.relayout || ui_data.current_node.is_none() {
+                // check if we need to rerun
+                let mut relayout = false;
+
                 // clear any existing ui target
                 *ui_target = UiPointerTarget::None;
 
@@ -534,29 +538,31 @@ fn layout_scene_ui(
                             };
 
                             // we can process this node
+                            let style = Style {
+                                align_content: ui_transform.align_content,
+                                align_items: ui_transform.align_items,
+                                flex_wrap: ui_transform.wrap,
+                                position_type: ui_transform.position_type,
+                                flex_shrink: ui_transform.shrink,
+                                align_self: ui_transform.align_self,
+                                flex_direction: ui_transform.flex_direction,
+                                justify_content: ui_transform.justify_content,
+                                overflow: ui_transform.overflow,
+                                display: ui_transform.display,
+                                flex_basis: ui_transform.basis,
+                                flex_grow: ui_transform.grow,
+                                size: ui_transform.size,
+                                min_size: ui_transform.min_size,
+                                max_size: ui_transform.max_size,
+                                position: ui_transform.position,
+                                margin: ui_transform.margin,
+                                padding: ui_transform.padding,
+                                ..Default::default()
+                            };
+                            debug!("{:?} style: {:?}", scene_id, style);
                             commands.entity(*parent).with_children(|commands| {
                                 let mut ent_cmds = &mut commands.spawn(NodeBundle {
-                                    style: Style {
-                                        align_content: ui_transform.align_content,
-                                        align_items: ui_transform.align_items,
-                                        flex_wrap: ui_transform.wrap,
-                                        position_type: ui_transform.position_type,
-                                        flex_shrink: ui_transform.shrink,
-                                        align_self: ui_transform.align_self,
-                                        flex_direction: ui_transform.flex_direction,
-                                        justify_content: ui_transform.justify_content,
-                                        overflow: ui_transform.overflow,
-                                        display: ui_transform.display,
-                                        flex_basis: ui_transform.basis,
-                                        flex_grow: ui_transform.grow,
-                                        size: ui_transform.size,
-                                        min_size: ui_transform.min_size,
-                                        max_size: ui_transform.max_size,
-                                        position: ui_transform.position,
-                                        margin: ui_transform.margin,
-                                        padding: ui_transform.padding,
-                                        ..Default::default()
-                                    },
+                                    style,
                                     ..Default::default()
                                 });
 
@@ -571,12 +577,50 @@ fn layout_scene_ui(
                                             &scene_context.hash,
                                         ) {
                                             match texture.mode {
-                                                BackgroundTextureMode::NineSlices(_) => todo!(),
+                                                BackgroundTextureMode::NineSlices(rect) => {
+                                                    // we need the image size to use absolute margins
+                                                    if let Some(image_data) = images.get(&image) {
+                                                        let size = image_data.size();
+                                                        let npd = nine_patches.add(NinePatchBuilder::by_margins((rect.top * size.y).round() as u32, (rect.bottom * size.y).round() as u32, (rect.left * size.x).round() as u32, (rect.right * size.x).round() as u32));
+
+                                                        ent_cmds.with_children(|c| {
+                                                            // let spacer = c.spawn(NodeBundle{
+                                                            //     style: Style {
+                                                            //         size: Size::all(Val::Percent(100.0)),
+                                                            //         ..Default::default()
+                                                            //     },
+                                                            //     ..Default::default()
+                                                            // }).id();
+                                                            println!("patch max size: {:?}", ui_transform.size);
+                                                            c.spawn(NinePatchBundle {
+                                                                style: Style {
+                                                                    max_size: ui_transform.size,
+                                                                    ..Default::default()
+                                                                },
+                                                                nine_patch_data: NinePatchData//::with_single_content(image, npd, spacer),
+                                                                {
+                                                                    texture: image,
+                                                                    nine_patch: npd,
+                                                                    ..default()
+                                                                },
+                                                                ..Default::default()
+                                                            });
+                                                        });
+                                                    } else {
+                                                        relayout = true;
+                                                    }
+                                                },
                                                 BackgroundTextureMode::Stretch => {
-                                                    ent_cmds = ent_cmds.insert(UiImage {
-                                                        texture: image,
-                                                        flip_x: false,
-                                                        flip_y: false,
+                                                    ent_cmds.with_children(|c| {
+                                                        c.spawn(ImageBundle {
+                                                            image: UiImage {
+                                                                texture: image,
+                                                                flip_x: false,
+                                                                flip_y: false,
+                                                            },
+                                                            ..Default::default()
+                                                        });
+    
                                                     });
                                                 }
                                                 BackgroundTextureMode::Center => {
@@ -758,7 +802,7 @@ fn layout_scene_ui(
                     processed_nodes.len(),
                     unprocessed_uis.len()
                 );
-                ui_data.relayout = false;
+                ui_data.relayout = relayout;
                 ui_data.current_node = Some(root);
             }
         } else {

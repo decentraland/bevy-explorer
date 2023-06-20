@@ -149,6 +149,7 @@ fn main() {
 
     app.add_plugin(DebugLinesPlugin::with_depth_test(true))
         .add_plugin(bevy_mod_billboard::prelude::BillboardPlugin)
+        .add_plugin(bevy_ninepatch::NinePatchPlugin::<()>::default())
         .add_plugin(InputManagerPlugin)
         .add_plugin(SceneRunnerPlugin)
         .add_plugin(UserInputPlugin)

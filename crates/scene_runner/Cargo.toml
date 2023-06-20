@@ -31,3 +31,4 @@ futures-lite = "1.12.0"
 petgraph = "0.6.3"
 bevy_prototype_debug_lines = { version = "0.10.1", features = ["3d"] }
 once_cell = "1.16.0"
+bevy_ninepatch = "0.10"
