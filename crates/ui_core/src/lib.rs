@@ -1,4 +1,5 @@
 pub mod color_picker;
+pub mod combo_box;
 pub mod dialog;
 pub mod focus;
 pub mod interact_style;
@@ -9,6 +10,7 @@ pub mod ui_builder;
 
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
+use combo_box::update_comboboxen;
 use once_cell::sync::OnceCell;
 
 use common::sets::SetupSets;
@@ -34,6 +36,7 @@ impl Plugin for UiCorePlugin {
         app.add_plugin(ScrollablePlugin);
         app.add_system(update_text_entry_components);
         app.add_system(update_color_picker_components);
+        app.add_system(update_comboboxen);
 
         app.add_startup_system(setup.in_set(SetupSets::Init));
     }

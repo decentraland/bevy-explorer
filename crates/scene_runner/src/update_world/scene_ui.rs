@@ -18,16 +18,18 @@ use dcl_component::{
         self,
         common::{texture_union, BorderRect, TextureUnion},
         sdk::components::{
-            self, PbUiBackground, PbUiInput, PbUiInputResult, PbUiText, PbUiTransform, YgAlign,
-            YgDisplay, YgFlexDirection, YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap,
+            self, PbUiBackground, PbUiDropdown, PbUiDropdownResult, PbUiInput, PbUiInputResult,
+            PbUiText, PbUiTransform, YgAlign, YgDisplay, YgFlexDirection, YgJustify, YgOverflow,
+            YgPositionType, YgUnit, YgWrap,
         },
     },
     SceneComponentId, SceneEntityId,
 };
 use ipfs::IpfsLoaderExt;
 use ui_core::{
+    combo_box::ComboBox,
     textentry::TextEntry,
-    ui_actions::{Defocus, HoverEnter, HoverExit, On},
+    ui_actions::{DataChanged, Defocus, HoverEnter, HoverExit, On},
     ui_builder::SpawnSpacer,
     TITLE_TEXT_STYLE,
 };
@@ -344,6 +346,21 @@ impl From<PbUiInput> for UiInput {
     }
 }
 
+#[derive(Component)]
+pub struct UiInputPersistentState(String);
+
+#[derive(Component)]
+pub struct UiDropdown(PbUiDropdown);
+
+impl From<PbUiDropdown> for UiDropdown {
+    fn from(value: PbUiDropdown) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Component)]
+pub struct UiDropdownPersistentState(isize);
+
 impl Plugin for SceneUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_crdt_lww_component::<PbUiTransform, UiTransform>(
@@ -360,6 +377,10 @@ impl Plugin for SceneUiPlugin {
         );
         app.add_crdt_lww_component::<PbUiInput, UiInput>(
             SceneComponentId::UI_INPUT,
+            ComponentPosition::EntityOnly,
+        );
+        app.add_crdt_lww_component::<PbUiDropdown, UiDropdown>(
+            SceneComponentId::UI_DROPDOWN,
             ComponentPosition::EntityOnly,
         );
 
@@ -425,12 +446,15 @@ fn layout_scene_ui(
         Option<&UiText>,
         Option<&PointerEvents>,
         Option<&UiInput>,
+        Option<&UiDropdown>,
     )>,
     asset_server: Res<AssetServer>,
     mut nine_patches: ResMut<Assets<NinePatchBuilder<()>>>,
     images: Res<Assets<Image>>,
     mut ui_target: ResMut<UiPointerTarget>,
     current_uis: Query<(Entity, &SceneUiRoot)>,
+    ui_input_state: Query<&UiInputPersistentState>,
+    ui_dropdown_state: Query<&UiDropdownPersistentState>,
 ) {
     let current_scene = player
         .get_single()
@@ -470,6 +494,7 @@ fn layout_scene_ui(
                                 maybe_text,
                                 maybe_pointer_events,
                                 maybe_ui_input,
+                                maybe_dropdown,
                             )) => Some((
                                 scene_entity.id,
                                 (
@@ -479,6 +504,7 @@ fn layout_scene_ui(
                                     maybe_text,
                                     maybe_pointer_events,
                                     maybe_ui_input,
+                                    maybe_dropdown,
                                 ),
                             )),
                             Err(_) => {
@@ -521,6 +547,7 @@ fn layout_scene_ui(
                             maybe_text,
                             maybe_pointer_events,
                             maybe_ui_input,
+                            maybe_dropdown,
                         )| {
                             // if our rightof is not added, we can't process this node
                             if !processed_nodes.contains_key(&ui_transform.right_of) {
@@ -584,21 +611,12 @@ fn layout_scene_ui(
                                                         let npd = nine_patches.add(NinePatchBuilder::by_margins((rect.top * size.y).round() as u32, (rect.bottom * size.y).round() as u32, (rect.left * size.x).round() as u32, (rect.right * size.x).round() as u32));
 
                                                         ent_cmds.with_children(|c| {
-                                                            // let spacer = c.spawn(NodeBundle{
-                                                            //     style: Style {
-                                                            //         size: Size::all(Val::Percent(100.0)),
-                                                            //         ..Default::default()
-                                                            //     },
-                                                            //     ..Default::default()
-                                                            // }).id();
-                                                            println!("patch max size: {:?}", ui_transform.size);
                                                             c.spawn(NinePatchBundle {
                                                                 style: Style {
                                                                     max_size: ui_transform.size,
                                                                     ..Default::default()
                                                                 },
-                                                                nine_patch_data: NinePatchData//::with_single_content(image, npd, spacer),
-                                                                {
+                                                                nine_patch_data: NinePatchData {
                                                                     texture: image,
                                                                     nine_patch: npd,
                                                                     ..default()
@@ -756,7 +774,13 @@ fn layout_scene_ui(
 
                                 if let Some(input) = maybe_ui_input {
                                     let node = *node;
+                                    let ui_node = ent_cmds.id();
                                     let scene_id = *scene_id;
+
+                                    let initial_text = match ui_input_state.get(node) {
+                                        Ok(state) => Some(state.0.clone()),
+                                        Err(_) => None,
+                                    };
 
                                     ent_cmds = ent_cmds.insert((
                                         FocusPolicy::Block,
@@ -765,13 +789,15 @@ fn layout_scene_ui(
                                             hint_text: input.0.placeholder.to_owned(),
                                             enabled: !input.0.disabled,
                                             accept_line: true,
+                                            content: initial_text.unwrap_or_default(),
                                             ..Default::default()
                                         },
                                         On::<Defocus>::new(move |
+                                            mut commands: Commands,
                                             entry: Query<&TextEntry>,
                                             mut context: Query<&mut RendererSceneContext>,
                                         | {
-                                            let Ok(entry) = entry.get(node) else {
+                                            let Ok(entry) = entry.get(ui_node) else {
                                                 warn!("failed to get text node on UiInput update");
                                                 return;
                                             };
@@ -783,8 +809,46 @@ fn layout_scene_ui(
                                             context.update_crdt(SceneComponentId::UI_INPUT_RESULT, CrdtType::LWW_ENT, scene_id, &PbUiInputResult {
                                                 value: entry.content.clone(),
                                             });
+                                            // store persistent state to the scene entity
+                                            commands.entity(node).try_insert(UiInputPersistentState(entry.content.clone()));
                                         }),
                                     ))
+                                }
+
+                                if let Some(dropdown) = maybe_dropdown {
+                                    let node = *node;
+                                    let ui_node = ent_cmds.id();
+                                    let scene_id = *scene_id;
+
+                                    let initial_selection = match (ui_dropdown_state.get(node), dropdown.0.accept_empty) {
+                                        (Ok(state), _) => Some(state.0),
+                                        (_, false) => Some(0),
+                                        (_, true) => None,
+                                    };
+
+                                    ent_cmds.insert((
+                                        ComboBox::new(dropdown.0.empty_label.clone().unwrap_or_default(), &dropdown.0.options, dropdown.0.accept_empty, dropdown.0.disabled, initial_selection),
+                                        On::<DataChanged>::new(move |
+                                            mut commands: Commands,
+                                            combo: Query<(Entity, &ComboBox)>,
+                                            mut context: Query<&mut RendererSceneContext>,
+                                        | {
+                                            let Ok((_, combo)) = combo.get(ui_node) else {
+                                                warn!("failed to get combo node on UiDropdown update");
+                                                return;
+                                            };
+                                            let Ok(mut context) = context.get_mut(ent) else {
+                                                warn!("failed to get context on UiInput update");
+                                                return;
+                                            };
+
+                                            context.update_crdt(SceneComponentId::UI_DROPDOWN_RESULT, CrdtType::LWW_ENT, scene_id, &PbUiDropdownResult {
+                                                value: combo.selected as i32,
+                                            });
+                                            // store persistent state to the scene entity
+                                            commands.entity(node).try_insert(UiDropdownPersistentState(combo.selected));
+                                        }),
+                                    ));
                                 }
 
                                 processed_nodes.insert(*scene_id, ent_cmds.id());

@@ -87,7 +87,9 @@ impl SceneComponentId {
     pub const PLAYER_IDENTITY_DATA: SceneComponentId = SceneComponentId(1091);
 
     pub const UI_INPUT: SceneComponentId = SceneComponentId(1093);
+    pub const UI_DROPDOWN: SceneComponentId = SceneComponentId(1094);
     pub const UI_INPUT_RESULT: SceneComponentId = SceneComponentId(1095);
+    pub const UI_DROPDOWN_RESULT: SceneComponentId = SceneComponentId(1096);
 }
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy)]

@@ -58,7 +58,6 @@ pub fn update_color_picker_components(
 
                     // pass through focus and interaction
                     if response.changed() {
-                        println!("changed: {:?}", color_picker.color);
                         commands.entity(entity).try_insert(DataChanged);
                     }
                 });

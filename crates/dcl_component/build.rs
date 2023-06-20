@@ -25,6 +25,8 @@ fn main() -> Result<()> {
         "ui_input",
         "ui_input_result",
         "ui_canvas_information",
+        "ui_dropdown",
+        "ui_dropdown_result",
     ];
 
     let mut sources = components
