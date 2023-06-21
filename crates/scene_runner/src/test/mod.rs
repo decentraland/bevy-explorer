@@ -14,6 +14,7 @@ use bevy::{
     time::TimePlugin,
     utils::{HashMap, Instant},
 };
+use bevy_ninepatch::NinePatchBuilder;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
@@ -90,6 +91,8 @@ fn init_test_app(entity_json: &str) -> App {
     app.init_resource::<AppConfig>();
     app.add_plugins(TestPlugins);
     app.add_asset::<Shader>();
+    app.add_asset::<NinePatchBuilder>();
+    app.add_asset::<Image>();
     app.add_plugin(MaterialPlugin::<StandardMaterial>::default());
     app.add_plugin(SceneRunnerPlugin);
     app.init_resource::<InputMap>();
