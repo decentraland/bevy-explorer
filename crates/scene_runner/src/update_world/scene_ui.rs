@@ -612,7 +612,8 @@ fn layout_scene_ui(
                                                         ent_cmds.with_children(|c| {
                                                             c.spawn(NinePatchBundle {
                                                                 style: Style {
-                                                                    max_size: ui_transform.size,
+                                                                    position_type: PositionType::Absolute,
+                                                                    position: UiRect::all(Val::Px(0.0)),
                                                                     ..Default::default()
                                                                 },
                                                                 nine_patch_data: NinePatchData {
@@ -708,6 +709,7 @@ fn layout_scene_ui(
                                     ent_cmds = ent_cmds.with_children(|c| {
                                         c.spawn(NodeBundle {
                                             style: Style {
+                                                position_type: PositionType::Absolute,
                                                 position: UiRect::all(Val::Px(0.0)),
                                                 justify_content: match text.h_align {
                                                     TextAlignment::Left => {
