@@ -29,7 +29,7 @@ use ipfs::IpfsLoaderExt;
 use ui_core::{
     combo_box::ComboBox,
     textentry::TextEntry,
-    ui_actions::{DataChanged, Defocus, HoverEnter, HoverExit, On},
+    ui_actions::{DataChanged, HoverEnter, HoverExit, On},
     ui_builder::SpawnSpacer,
     TITLE_TEXT_STYLE,
 };
@@ -347,7 +347,9 @@ impl From<PbUiInput> for UiInput {
 }
 
 #[derive(Component)]
-pub struct UiInputPersistentState(String);
+pub struct UiInputPersistentState {
+    content: String,
+}
 
 #[derive(Component)]
 pub struct UiDropdown(PbUiDropdown);
@@ -565,7 +567,7 @@ fn layout_scene_ui(
                             };
 
                             // we can process this node
-                            let style = Style {
+                            let mut style = Style {
                                 align_content: ui_transform.align_content,
                                 align_items: ui_transform.align_items,
                                 flex_wrap: ui_transform.wrap,
@@ -588,10 +590,7 @@ fn layout_scene_ui(
                             };
                             debug!("{:?} style: {:?}", scene_id, style);
                             commands.entity(*parent).with_children(|commands| {
-                                let mut ent_cmds = &mut commands.spawn(NodeBundle {
-                                    style,
-                                    ..Default::default()
-                                });
+                                let mut ent_cmds = &mut commands.spawn(NodeBundle::default());
 
                                 if let Some(background) = maybe_background {
                                     if let Some(color) = background.color {
@@ -709,7 +708,6 @@ fn layout_scene_ui(
                                     ent_cmds = ent_cmds.with_children(|c| {
                                         c.spawn(NodeBundle {
                                             style: Style {
-                                                position_type: PositionType::Absolute,
                                                 position: UiRect::all(Val::Px(0.0)),
                                                 justify_content: match text.h_align {
                                                     TextAlignment::Left => {
@@ -773,14 +771,26 @@ fn layout_scene_ui(
                                 }
 
                                 if let Some(input) = maybe_ui_input {
+                                    debug!("input: {:?}", input.0);
+
                                     let node = *node;
                                     let ui_node = ent_cmds.id();
                                     let scene_id = *scene_id;
 
-                                    let initial_text = match ui_input_state.get(node) {
-                                        Ok(state) => Some(state.0.clone()),
-                                        Err(_) => None,
+                                    let content = match ui_input_state.get(node) {
+                                        Ok(state) => state.content.clone(),
+                                        Err(_) => input.0.value.clone().unwrap_or_default(),
                                     };
+                                    let font_size = input.0.font_size.unwrap_or(12);
+
+                                    //ensure we use max width if not given
+                                    if style.size.width == Val::Undefined {
+                                        style.size.width = Val::Percent(100.0);
+                                    }
+                                    //and some size if not given
+                                    if style.size.height == Val::Undefined {
+                                        style.size.height = Val::Px(font_size as f32 * 1.3);
+                                    }
 
                                     ent_cmds = ent_cmds.insert((
                                         FocusPolicy::Block,
@@ -788,11 +798,13 @@ fn layout_scene_ui(
                                         TextEntry {
                                             hint_text: input.0.placeholder.to_owned(),
                                             enabled: !input.0.disabled,
-                                            accept_line: true,
-                                            content: initial_text.unwrap_or_default(),
+                                            content,
+                                            accept_line: false,
+                                            font_size,
+                                            id_entity: Some(node),
                                             ..Default::default()
                                         },
-                                        On::<Defocus>::new(move |
+                                        On::<DataChanged>::new(move |
                                             mut commands: Commands,
                                             entry: Query<&TextEntry>,
                                             mut context: Query<&mut RendererSceneContext>,
@@ -810,7 +822,7 @@ fn layout_scene_ui(
                                                 value: entry.content.clone(),
                                             });
                                             // store persistent state to the scene entity
-                                            commands.entity(node).try_insert(UiInputPersistentState(entry.content.clone()));
+                                            commands.entity(node).try_insert(UiInputPersistentState{content: entry.content.clone()});
                                         }),
                                     ))
                                 }
@@ -851,6 +863,7 @@ fn layout_scene_ui(
                                     ));
                                 }
 
+                                ent_cmds.insert(style);
                                 processed_nodes.insert(*scene_id, ent_cmds.id());
                             });
 
