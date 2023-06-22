@@ -13,7 +13,7 @@ use ui_core::{
     interact_style::Active,
     scrollable::{ScrollDirection, Scrollable, SpawnScrollable, StartPosition},
     textentry::TextEntry,
-    ui_actions::{Click, DataChanged, Defocus, On},
+    ui_actions::{Click, DataChanged, On},
     ui_builder::{SpawnButton, SpawnSpacer},
     TITLE_TEXT_STYLE,
 };
@@ -232,11 +232,12 @@ fn toggle_profile_ui(
                                     TextEntry{
                                         content: build_copy.name.clone(),
                                         enabled: true,
+                                        accept_line: false,
                                         ..Default::default()
                                     },
                                     Interaction::default(),
                                     NameEntry,
-                                    On::<Defocus>::new(
+                                    On::<DataChanged>::new(
                                         |
                                             mut window: Query<&mut EditWindow>,
                                             name: Query<&TextEntry, With<NameEntry>>,

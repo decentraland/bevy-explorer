@@ -660,7 +660,7 @@ impl AssetIo for IpfsIo {
                 None => None,
                 Some(hash) => {
                     debug!("hash: {}", hash);
-                    match ipfs_path.should_cache() {
+                    match ipfs_path.should_cache(hash) {
                         true => self.default_io.load_path(Path::new(hash)).await.ok(),
                         false => None,
                     }
@@ -746,8 +746,8 @@ impl AssetIo for IpfsIo {
                     }
                 };
 
-                if ipfs_path.should_cache() {
-                    if let Some(hash) = hash {
+                if let Some(hash) = hash {
+                    if ipfs_path.should_cache(&hash) {
                         let mut cache_path = PathBuf::from(self.cache_path());
                         cache_path.push(hash);
                         let cache_path_str = cache_path.to_string_lossy().into_owned();

@@ -17,16 +17,19 @@ use dcl_component::{
         self,
         common::{texture_union, BorderRect, TextureUnion},
         sdk::components::{
-            self, PbUiBackground, PbUiInput, PbUiInputResult, PbUiText, PbUiTransform, YgAlign,
-            YgDisplay, YgFlexDirection, YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap,
+            self, PbUiBackground, PbUiDropdown, PbUiDropdownResult, PbUiInput, PbUiInputResult,
+            PbUiText, PbUiTransform, YgAlign, YgDisplay, YgFlexDirection, YgJustify, YgOverflow,
+            YgPositionType, YgUnit, YgWrap,
         },
     },
     SceneComponentId, SceneEntityId,
 };
 use ipfs::IpfsLoaderExt;
 use ui_core::{
+    combo_box::ComboBox,
+    nine_slice::{Ui9Slice, Ui9SliceSet},
     textentry::TextEntry,
-    ui_actions::{Defocus, HoverEnter, HoverExit, On},
+    ui_actions::{DataChanged, HoverEnter, HoverExit, On},
     ui_builder::SpawnSpacer,
     TITLE_TEXT_STYLE,
 };
@@ -39,7 +42,8 @@ pub struct SceneUiPlugin;
 macro_rules! val {
     ($pb:ident, $u:ident, $v:ident) => {
         match $pb.$u() {
-            YgUnit::YguUndefined | YgUnit::YguAuto => Val::Auto,
+            YgUnit::YguUndefined => Val::Undefined,
+            YgUnit::YguAuto => Val::Auto,
             YgUnit::YguPoint => Val::Px($pb.$v),
             YgUnit::YguPercent => Val::Percent($pb.$v),
         }
@@ -47,12 +51,12 @@ macro_rules! val {
 }
 
 macro_rules! size {
-    ($pb:ident, $wu:ident, $w:ident, $hu:ident, $h:ident) => {
+    ($pb:ident, $wu:ident, $w:ident, $hu:ident, $h:ident) => {{
         Size {
             width: val!($pb, $wu, $w),
             height: val!($pb, $hu, $h),
         }
-    };
+    }};
 }
 
 macro_rules! rect {
@@ -142,7 +146,7 @@ impl From<PbUiTransform> for UiTransform {
                 YgFlexDirection::YgfdRowReverse => FlexDirection::RowReverse,
             },
             justify_content: match value.justify_content() {
-                YgJustify::YgjFlexStart => JustifyContent::Start,
+                YgJustify::YgjFlexStart => JustifyContent::FlexStart,
                 YgJustify::YgjCenter => JustifyContent::Center,
                 YgJustify::YgjFlexEnd => JustifyContent::FlexEnd,
                 YgJustify::YgjSpaceBetween => JustifyContent::SpaceBetween,
@@ -218,7 +222,7 @@ impl From<PbUiTransform> for UiTransform {
 
 #[derive(Clone, Debug)]
 pub enum BackgroundTextureMode {
-    NineSlices(UiRect),
+    NineSlices(BorderRect),
     Stretch,
     Center,
 }
@@ -253,17 +257,14 @@ impl From<PbUiBackground> for UiBackground {
                         source: texture.src.clone(),
                         mode: match value.texture_mode() {
                             components::BackgroundTextureMode::NineSlices => {
-                                BackgroundTextureMode::NineSlices(
-                                    value
-                                        .texture_slices
-                                        .unwrap_or(BorderRect {
-                                            top: 1.0 / 3.0,
-                                            bottom: 1.0 / 3.0,
-                                            left: 1.0 / 3.0,
-                                            right: 1.0 / 3.0,
-                                        })
-                                        .into(),
-                                )
+                                BackgroundTextureMode::NineSlices(value.texture_slices.unwrap_or(
+                                    BorderRect {
+                                        top: 1.0 / 3.0,
+                                        bottom: 1.0 / 3.0,
+                                        left: 1.0 / 3.0,
+                                        right: 1.0 / 3.0,
+                                    },
+                                ))
                             }
                             components::BackgroundTextureMode::Center => {
                                 BackgroundTextureMode::Center
@@ -345,6 +346,23 @@ impl From<PbUiInput> for UiInput {
     }
 }
 
+#[derive(Component)]
+pub struct UiInputPersistentState {
+    content: String,
+}
+
+#[derive(Component)]
+pub struct UiDropdown(PbUiDropdown);
+
+impl From<PbUiDropdown> for UiDropdown {
+    fn from(value: PbUiDropdown) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Component)]
+pub struct UiDropdownPersistentState(isize);
+
 impl Plugin for SceneUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_crdt_lww_component::<PbUiTransform, UiTransform>(
@@ -363,12 +381,23 @@ impl Plugin for SceneUiPlugin {
             SceneComponentId::UI_INPUT,
             ComponentPosition::EntityOnly,
         );
+        app.add_crdt_lww_component::<PbUiDropdown, UiDropdown>(
+            SceneComponentId::UI_DROPDOWN,
+            ComponentPosition::EntityOnly,
+        );
 
         app.add_system(init_scene_ui_root.in_set(SceneSets::PostInit));
         app.add_systems(
             (update_scene_ui_components, layout_scene_ui)
                 .chain()
                 .in_set(SceneSets::PostLoop),
+        );
+
+        // we need to make sure commands are run before 9slice layouting
+        app.add_system(
+            apply_system_buffers
+                .after(SceneSets::PostLoop)
+                .before(Ui9SliceSet),
         );
     }
 }
@@ -426,10 +455,13 @@ fn layout_scene_ui(
         Option<&UiText>,
         Option<&PointerEvents>,
         Option<&UiInput>,
+        Option<&UiDropdown>,
     )>,
     asset_server: Res<AssetServer>,
     mut ui_target: ResMut<UiPointerTarget>,
     current_uis: Query<(Entity, &SceneUiRoot)>,
+    ui_input_state: Query<&UiInputPersistentState>,
+    ui_dropdown_state: Query<&UiDropdownPersistentState>,
 ) {
     let current_scene = player
         .get_single()
@@ -466,6 +498,7 @@ fn layout_scene_ui(
                                 maybe_text,
                                 maybe_pointer_events,
                                 maybe_ui_input,
+                                maybe_dropdown,
                             )) => Some((
                                 scene_entity.id,
                                 (
@@ -475,6 +508,7 @@ fn layout_scene_ui(
                                     maybe_text,
                                     maybe_pointer_events,
                                     maybe_ui_input,
+                                    maybe_dropdown,
                                 ),
                             )),
                             Err(_) => {
@@ -517,6 +551,7 @@ fn layout_scene_ui(
                             maybe_text,
                             maybe_pointer_events,
                             maybe_ui_input,
+                            maybe_dropdown,
                         )| {
                             // if our rightof is not added, we can't process this node
                             if !processed_nodes.contains_key(&ui_transform.right_of) {
@@ -534,31 +569,30 @@ fn layout_scene_ui(
                             };
 
                             // we can process this node
+                            let mut style = Style {
+                                align_content: ui_transform.align_content,
+                                align_items: ui_transform.align_items,
+                                flex_wrap: ui_transform.wrap,
+                                position_type: ui_transform.position_type,
+                                flex_shrink: ui_transform.shrink,
+                                align_self: ui_transform.align_self,
+                                flex_direction: ui_transform.flex_direction,
+                                justify_content: ui_transform.justify_content,
+                                overflow: ui_transform.overflow,
+                                display: ui_transform.display,
+                                flex_basis: ui_transform.basis,
+                                flex_grow: ui_transform.grow,
+                                size: ui_transform.size,
+                                min_size: ui_transform.min_size,
+                                max_size: ui_transform.max_size,
+                                position: ui_transform.position,
+                                margin: ui_transform.margin,
+                                padding: ui_transform.padding,
+                                ..Default::default()
+                            };
+                            debug!("{:?} style: {:?}", scene_id, style);
                             commands.entity(*parent).with_children(|commands| {
-                                let mut ent_cmds = &mut commands.spawn(NodeBundle {
-                                    style: Style {
-                                        align_content: ui_transform.align_content,
-                                        align_items: ui_transform.align_items,
-                                        flex_wrap: ui_transform.wrap,
-                                        position_type: ui_transform.position_type,
-                                        flex_shrink: ui_transform.shrink,
-                                        align_self: ui_transform.align_self,
-                                        flex_direction: ui_transform.flex_direction,
-                                        justify_content: ui_transform.justify_content,
-                                        overflow: ui_transform.overflow,
-                                        display: ui_transform.display,
-                                        flex_basis: ui_transform.basis,
-                                        flex_grow: ui_transform.grow,
-                                        size: ui_transform.size,
-                                        min_size: ui_transform.min_size,
-                                        max_size: ui_transform.max_size,
-                                        position: ui_transform.position,
-                                        margin: ui_transform.margin,
-                                        padding: ui_transform.padding,
-                                        ..Default::default()
-                                    },
-                                    ..Default::default()
-                                });
+                                let mut ent_cmds = &mut commands.spawn(NodeBundle::default());
 
                                 if let Some(background) = maybe_background {
                                     if let Some(color) = background.color {
@@ -571,12 +605,23 @@ fn layout_scene_ui(
                                             &scene_context.hash,
                                         ) {
                                             match texture.mode {
-                                                BackgroundTextureMode::NineSlices(_) => todo!(),
+                                                BackgroundTextureMode::NineSlices(rect) => {
+                                                    ent_cmds.insert(Ui9Slice{
+                                                        image,
+                                                        center_region: rect.into(),
+                                                    });
+                                                },
                                                 BackgroundTextureMode::Stretch => {
-                                                    ent_cmds = ent_cmds.insert(UiImage {
-                                                        texture: image,
-                                                        flip_x: false,
-                                                        flip_y: false,
+                                                    ent_cmds.with_children(|c| {
+                                                        c.spawn(ImageBundle {
+                                                            image: UiImage {
+                                                                texture: image,
+                                                                flip_x: false,
+                                                                flip_y: false,
+                                                            },
+                                                            ..Default::default()
+                                                        });
+
                                                     });
                                                 }
                                                 BackgroundTextureMode::Center => {
@@ -711,8 +756,26 @@ fn layout_scene_ui(
                                 }
 
                                 if let Some(input) = maybe_ui_input {
+                                    debug!("input: {:?}", input.0);
+
                                     let node = *node;
+                                    let ui_node = ent_cmds.id();
                                     let scene_id = *scene_id;
+
+                                    let content = match ui_input_state.get(node) {
+                                        Ok(state) => state.content.clone(),
+                                        Err(_) => input.0.value.clone().unwrap_or_default(),
+                                    };
+                                    let font_size = input.0.font_size.unwrap_or(12);
+
+                                    //ensure we use max width if not given
+                                    if style.size.width == Val::Undefined {
+                                        style.size.width = Val::Percent(100.0);
+                                    }
+                                    //and some size if not given
+                                    if style.size.height == Val::Undefined {
+                                        style.size.height = Val::Px(font_size as f32 * 1.3);
+                                    }
 
                                     ent_cmds = ent_cmds.insert((
                                         FocusPolicy::Block,
@@ -720,14 +783,18 @@ fn layout_scene_ui(
                                         TextEntry {
                                             hint_text: input.0.placeholder.to_owned(),
                                             enabled: !input.0.disabled,
-                                            accept_line: true,
+                                            content,
+                                            accept_line: false,
+                                            font_size,
+                                            id_entity: Some(node),
                                             ..Default::default()
                                         },
-                                        On::<Defocus>::new(move |
+                                        On::<DataChanged>::new(move |
+                                            mut commands: Commands,
                                             entry: Query<&TextEntry>,
                                             mut context: Query<&mut RendererSceneContext>,
                                         | {
-                                            let Ok(entry) = entry.get(node) else {
+                                            let Ok(entry) = entry.get(ui_node) else {
                                                 warn!("failed to get text node on UiInput update");
                                                 return;
                                             };
@@ -739,10 +806,49 @@ fn layout_scene_ui(
                                             context.update_crdt(SceneComponentId::UI_INPUT_RESULT, CrdtType::LWW_ENT, scene_id, &PbUiInputResult {
                                                 value: entry.content.clone(),
                                             });
+                                            // store persistent state to the scene entity
+                                            commands.entity(node).try_insert(UiInputPersistentState{content: entry.content.clone()});
                                         }),
                                     ))
                                 }
 
+                                if let Some(dropdown) = maybe_dropdown {
+                                    let node = *node;
+                                    let ui_node = ent_cmds.id();
+                                    let scene_id = *scene_id;
+
+                                    let initial_selection = match (ui_dropdown_state.get(node), dropdown.0.accept_empty) {
+                                        (Ok(state), _) => Some(state.0),
+                                        (_, false) => Some(0),
+                                        (_, true) => None,
+                                    };
+
+                                    ent_cmds.insert((
+                                        ComboBox::new(dropdown.0.empty_label.clone().unwrap_or_default(), &dropdown.0.options, dropdown.0.accept_empty, dropdown.0.disabled, initial_selection),
+                                        On::<DataChanged>::new(move |
+                                            mut commands: Commands,
+                                            combo: Query<(Entity, &ComboBox)>,
+                                            mut context: Query<&mut RendererSceneContext>,
+                                        | {
+                                            let Ok((_, combo)) = combo.get(ui_node) else {
+                                                warn!("failed to get combo node on UiDropdown update");
+                                                return;
+                                            };
+                                            let Ok(mut context) = context.get_mut(ent) else {
+                                                warn!("failed to get context on UiInput update");
+                                                return;
+                                            };
+
+                                            context.update_crdt(SceneComponentId::UI_DROPDOWN_RESULT, CrdtType::LWW_ENT, scene_id, &PbUiDropdownResult {
+                                                value: combo.selected as i32,
+                                            });
+                                            // store persistent state to the scene entity
+                                            commands.entity(node).try_insert(UiDropdownPersistentState(combo.selected));
+                                        }),
+                                    ));
+                                }
+
+                                ent_cmds.insert(style);
                                 processed_nodes.insert(*scene_id, ent_cmds.id());
                             });
 

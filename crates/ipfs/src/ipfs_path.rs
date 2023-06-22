@@ -429,8 +429,9 @@ impl IpfsPath {
         Ok(self.ipfs_type.context_free_hash()?.map(ToOwned::to_owned))
     }
 
-    pub fn should_cache(&self) -> bool {
-        true // TODO only if hash is some and is not b64-
+    pub fn should_cache(&self, hash: &str) -> bool {
+        !hash.starts_with("b64-")
+        //        true // TODO only if hash is some and is not b64-
     }
 
     pub fn base_url(&self) -> Option<&str> {

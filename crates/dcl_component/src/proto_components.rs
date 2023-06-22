@@ -78,6 +78,8 @@ impl DclProtoComponent for sdk::components::PbUiText {}
 impl DclProtoComponent for sdk::components::PbUiBackground {}
 impl DclProtoComponent for sdk::components::PbUiInput {}
 impl DclProtoComponent for sdk::components::PbUiInputResult {}
+impl DclProtoComponent for sdk::components::PbUiDropdown {}
+impl DclProtoComponent for sdk::components::PbUiDropdownResult {}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}
@@ -157,15 +159,14 @@ impl From<bevy::prelude::Color> for common::Color3 {
     }
 }
 
+impl Copy for common::BorderRect {}
 impl From<common::BorderRect> for bevy::prelude::UiRect {
     fn from(value: common::BorderRect) -> Self {
-        bevy::prelude::UiRect {
-            left: bevy::ui::Val::Percent(value.left * 100.0),
-            right: bevy::ui::Val::Percent(value.right * 100.0),
-            top: bevy::ui::Val::Percent(value.top * 100.0),
-            bottom: bevy::ui::Val::Percent(value.bottom * 100.0),
+        Self {
+            left: bevy::prelude::Val::Percent(value.left * 100.0),
+            right: bevy::prelude::Val::Percent(value.right * 100.0),
+            top: bevy::prelude::Val::Percent(value.top * 100.0),
+            bottom: bevy::prelude::Val::Percent(value.bottom * 100.0),
         }
     }
 }
-
-impl Copy for common::BorderRect {}
