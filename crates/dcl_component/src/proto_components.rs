@@ -160,3 +160,13 @@ impl From<bevy::prelude::Color> for common::Color3 {
 }
 
 impl Copy for common::BorderRect {}
+impl From<common::BorderRect> for bevy::prelude::UiRect {
+    fn from(value: common::BorderRect) -> Self {
+        Self {
+            left: bevy::prelude::Val::Percent(value.left * 100.0),
+            right: bevy::prelude::Val::Percent(value.right * 100.0),
+            top: bevy::prelude::Val::Percent(value.top * 100.0),
+            bottom: bevy::prelude::Val::Percent(value.bottom * 100.0),
+        }
+    }
+}

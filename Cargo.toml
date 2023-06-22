@@ -28,7 +28,6 @@ bevy = "0.10"
 bevy_console = "0.7.0"
 bevy_prototype_debug_lines = { version = "0.10.1", features = ["3d"] }
 bevy_mod_billboard = "0.3"
-bevy_ninepatch = "0.10"
 
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
@@ -40,4 +39,3 @@ prost-build = "0.11.8"
 
 [patch.crates-io]
 bevy = { git="https://github.com/robtfm/bevy", branch="0.10-hotfix" }
-# bevy = { path="../bevy" }

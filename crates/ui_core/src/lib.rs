@@ -3,6 +3,7 @@ pub mod combo_box;
 pub mod dialog;
 pub mod focus;
 pub mod interact_style;
+pub mod nine_slice;
 pub mod scrollable;
 pub mod textentry;
 pub mod ui_actions;
@@ -11,6 +12,7 @@ pub mod ui_builder;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use combo_box::update_comboboxen;
+use nine_slice::Ui9SlicePlugin;
 use once_cell::sync::OnceCell;
 
 use common::sets::SetupSets;
@@ -34,6 +36,7 @@ impl Plugin for UiCorePlugin {
         app.add_plugin(FocusPlugin);
         app.add_plugin(InteractStylePlugin);
         app.add_plugin(ScrollablePlugin);
+        app.add_plugin(Ui9SlicePlugin);
         app.add_system(update_text_entry_components);
         app.add_system(update_color_picker_components);
         app.add_system(update_comboboxen);

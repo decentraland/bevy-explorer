@@ -5,7 +5,6 @@ use bevy::{
     ui::FocusPolicy,
     utils::{HashMap, HashSet},
 };
-use bevy_ninepatch::{NinePatchBuilder, NinePatchBundle, NinePatchData};
 
 use crate::{
     renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
@@ -28,6 +27,7 @@ use dcl_component::{
 use ipfs::IpfsLoaderExt;
 use ui_core::{
     combo_box::ComboBox,
+    nine_slice::{Ui9Slice, Ui9SliceSet},
     textentry::TextEntry,
     ui_actions::{DataChanged, HoverEnter, HoverExit, On},
     ui_builder::SpawnSpacer,
@@ -392,6 +392,13 @@ impl Plugin for SceneUiPlugin {
                 .chain()
                 .in_set(SceneSets::PostLoop),
         );
+
+        // we need to make sure commands are run before 9slice layouting
+        app.add_system(
+            apply_system_buffers
+                .after(SceneSets::PostLoop)
+                .before(Ui9SliceSet),
+        );
     }
 }
 
@@ -451,8 +458,6 @@ fn layout_scene_ui(
         Option<&UiDropdown>,
     )>,
     asset_server: Res<AssetServer>,
-    mut nine_patches: ResMut<Assets<NinePatchBuilder<()>>>,
-    images: Res<Assets<Image>>,
     mut ui_target: ResMut<UiPointerTarget>,
     current_uis: Query<(Entity, &SceneUiRoot)>,
     ui_input_state: Query<&UiInputPersistentState>,
@@ -473,9 +478,6 @@ fn layout_scene_ui(
     for (ent, mut ui_data, scene_context) in scene_uis.iter_mut() {
         if Some(ent) == current_scene {
             if ui_data.relayout || ui_data.current_node.is_none() {
-                // check if we need to rerun
-                let mut relayout = false;
-
                 // clear any existing ui target
                 *ui_target = UiPointerTarget::None;
 
@@ -604,29 +606,10 @@ fn layout_scene_ui(
                                         ) {
                                             match texture.mode {
                                                 BackgroundTextureMode::NineSlices(rect) => {
-                                                    // we need the image size to use absolute margins
-                                                    if let Some(image_data) = images.get(&image) {
-                                                        let size = image_data.size();
-                                                        let npd = nine_patches.add(NinePatchBuilder::by_margins((rect.top * size.y).round() as u32, (rect.bottom * size.y).round() as u32, (rect.left * size.x).round() as u32, (rect.right * size.x).round() as u32));
-
-                                                        ent_cmds.with_children(|c| {
-                                                            c.spawn(NinePatchBundle {
-                                                                style: Style {
-                                                                    position_type: PositionType::Absolute,
-                                                                    position: UiRect::all(Val::Px(0.0)),
-                                                                    ..Default::default()
-                                                                },
-                                                                nine_patch_data: NinePatchData {
-                                                                    texture: image,
-                                                                    nine_patch: npd,
-                                                                    ..default()
-                                                                },
-                                                                ..Default::default()
-                                                            });
-                                                        });
-                                                    } else {
-                                                        relayout = true;
-                                                    }
+                                                    ent_cmds.insert(Ui9Slice{
+                                                        image,
+                                                        center_region: rect.into(),
+                                                    });
                                                 },
                                                 BackgroundTextureMode::Stretch => {
                                                     ent_cmds.with_children(|c| {
@@ -881,7 +864,7 @@ fn layout_scene_ui(
                     processed_nodes.len(),
                     unprocessed_uis.len()
                 );
-                ui_data.relayout = relayout;
+                ui_data.relayout = false;
                 ui_data.current_node = Some(root);
             }
         } else {
