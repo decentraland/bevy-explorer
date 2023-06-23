@@ -12,7 +12,7 @@ use comms::{global_crdt::ForeignPlayer, Transport};
 use scene_runner::{
     initialize_scene::{SceneLoading, PARCEL_SIZE},
     renderer_context::RendererSceneContext,
-    ContainingScene,
+    ContainingScene, DebugInfo,
 };
 use ui_core::{BODY_TEXT_STYLE, TITLE_TEXT_STYLE};
 
@@ -104,6 +104,7 @@ pub(crate) fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res
                         info_node("Broken Scenes :".to_owned());
                         info_node("Transports :".to_owned());
                         info_node("Players :".to_owned());
+                        info_node("Debug info :".to_owned());
                     });
             });
     });
@@ -113,7 +114,8 @@ pub(crate) fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res
 fn update_scene_load_state(
     q: Query<Entity, With<SysInfoMarker>>,
     q_children: Query<&Children>,
-    mut t: Query<&mut Text>,
+    mut text: Query<&mut Text>,
+    mut style: Query<&mut Style>,
     loading_scenes: Query<&SceneLoading>,
     running_scenes: Query<&RendererSceneContext, Without<SceneLoading>>,
     transports: Query<&Transport>,
@@ -124,6 +126,7 @@ fn update_scene_load_state(
     diagnostics: Res<Diagnostics>,
     containing_scene: ContainingScene,
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
+    debug_info: Res<DebugInfo>,
 ) {
     let tick = (time.elapsed_seconds() * 10.0) as u32;
     if tick == *last_update {
@@ -147,8 +150,13 @@ fn update_scene_load_state(
         let mut ix = 0;
         let children = q_children.get(sysinfo).unwrap();
         let mut set_child = |value: String| {
+            if value.is_empty() {
+                style.get_mut(children[ix]).unwrap().display = Display::None;
+            } else {
+                style.get_mut(children[ix]).unwrap().display = Display::Flex;
+            }
             let container = q_children.get(children[ix]).unwrap();
-            let mut text = t.get_mut(container[1]).unwrap();
+            let mut text = text.get_mut(container[1]).unwrap();
             text.sections[0].value = value;
             ix += 1;
         };
@@ -205,5 +213,10 @@ fn update_scene_load_state(
 
         set_child(format!("{}", transports));
         set_child(format!("{}", players));
+
+        let debug_info = debug_info.info.iter().fold(String::default(), |msg, (key, info)| {
+            format!("{msg}\n{key}: {info}")
+        });
+        set_child(debug_info);
     }
 }

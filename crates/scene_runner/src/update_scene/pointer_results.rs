@@ -1,8 +1,10 @@
 use bevy::{core::FrameCount, prelude::*, utils::HashSet};
+use bevy_console::ConsoleCommand;
+use console::DoAddConsoleCommand;
 
 use crate::{
     update_world::{mesh_collider::SceneColliderData, pointer_events::PointerEvents},
-    ContainingScene, PrimaryUser, RendererSceneContext, SceneEntity, SceneSets,
+    ContainingScene, PrimaryUser, RendererSceneContext, SceneEntity, SceneSets, ContainerEntity, DebugInfo,
 };
 use common::{dynamics::PLAYER_COLLIDER_RADIUS, structs::PrimaryCamera};
 use dcl::interface::CrdtType;
@@ -20,12 +22,14 @@ pub struct PointerResultPlugin;
 impl Plugin for PointerResultPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PointerTarget>()
-            .init_resource::<UiPointerTarget>();
+            .init_resource::<UiPointerTarget>()
+            .init_resource::<DebugPointers>();
         app.add_systems(
-            (update_pointer_target, send_hover_events, send_action_events)
+            (update_pointer_target, send_hover_events, send_action_events, debug_pointer)
                 .chain()
                 .in_set(SceneSets::Input),
         );
+        app.add_console_command::<DebugPointerCommand,_>(debug_pointer_command);
     }
 }
 
@@ -132,7 +136,68 @@ fn update_pointer_target(
                 container,
                 mesh_name,
             };
+        } else {
+            warn!("hit some dead entity?");
         }
+    }
+}
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/debug_pointer")]
+struct DebugPointerCommand {
+    show: Option<bool>,
+}
+
+#[derive(Resource, Default)]
+struct DebugPointers(bool);
+
+fn debug_pointer_command(
+    mut input: ConsoleCommand<DebugPointerCommand>,
+    mut debug: ResMut<DebugPointers>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let new_state = command
+            .show
+            .unwrap_or(!debug.0);
+        debug.0 = new_state;
+    }
+}
+
+fn debug_pointer(
+    debug: Res<DebugPointers>,
+    mut debug_info: ResMut<DebugInfo>,
+    ui_target: Res<UiPointerTarget>,
+    pointer_target: Res<PointerTarget>,
+    target: Query<&ContainerEntity>,
+    scene: Query<&RendererSceneContext>,
+) {
+    if debug.0 {
+        let info = if let UiPointerTarget::Some(ui_ent) = *ui_target {
+            if let Ok(target) = target.get(ui_ent) {
+                if let Ok(scene) = scene.get(target.root) {
+                    format!("ui element {} from scene {}", target.container_id, scene.title)
+                } else {
+                    format!("ui element {} unknown scene", target.container_id)
+                }
+            } else {
+                format!("ui element (not found - bevy entity {ui_ent:?})")
+            }
+        } else if let PointerTarget::Some { container, ref mesh_name } = *pointer_target {
+            if let Ok(target) = target.get(container) {
+                if let Ok(scene) = scene.get(target.root) {
+                    format!("world entity {}-{:?} from scene {}", target.container_id, mesh_name, scene.title)
+                } else {
+                    format!("world entity {}-{:?} unknown scene", target.container_id, mesh_name)
+                }
+            } else {
+                format!("world entity (not found - bevy entity {container:?})")
+            }
+        } else {
+            "none".to_owned()
+        };
+        debug_info.info.insert("pointer", info);
+    } else {
+        debug_info.info.remove(&"pointer");
     }
 }
 
