@@ -223,7 +223,7 @@ impl From<PbUiTransform> for UiTransform {
 #[derive(Clone, Debug)]
 pub enum BackgroundTextureMode {
     NineSlices(BorderRect),
-    Stretch,
+    Stretch(BorderRect),
     Center,
 }
 
@@ -248,8 +248,8 @@ impl From<PbUiBackground> for UiBackground {
                     tex: Some(texture_union::Tex::Texture(texture)),
                 } = tex
                 {
-                    if !value.uvs.is_empty() {
-                        warn!("ui image uvs unsupported");
+                    if texture.src.is_empty() {
+                        return None;
                     }
 
                     // TODO handle wrapmode and filtering once we have some asset processing pipeline in place (bevy 0.11-0.12)
@@ -270,11 +270,29 @@ impl From<PbUiBackground> for UiBackground {
                                 BackgroundTextureMode::Center
                             }
                             components::BackgroundTextureMode::Stretch => {
-                                BackgroundTextureMode::Stretch
+                                // the uvs array seems to contain [x-, y-, x-, y+, x+, y+, x+, y-]
+                                // let's pick ... [1 - 4]              ^^^^^^^^^^^^^^
+                                let mut uvs = BorderRect::default();
+                                let mut iter = value.uvs.iter().skip(1);
+                                if let Some(ymin) = iter.next() {
+                                    uvs.bottom = ymin.clamp(0.0, 1.0);
+                                }
+                                if let Some(xmin) = iter.next() {
+                                    uvs.left = xmin.clamp(0.0, 1.0);
+                                }
+                                if let Some(ymax) = iter.next() {
+                                    uvs.top = 1.0 - ymax.clamp(uvs.bottom, 1.0);
+                                }
+                                if let Some(xmax) = iter.next() {
+                                    uvs.right = 1.0 - xmax.clamp(uvs.left, 1.0);
+                                }
+
+                                BackgroundTextureMode::Stretch(uvs)
                             }
                         },
                     })
                 } else {
+                    warn!("{:?} unsupported", tex);
                     None
                 }
             }),
@@ -611,17 +629,38 @@ fn layout_scene_ui(
                                                         center_region: rect.into(),
                                                     });
                                                 },
-                                                BackgroundTextureMode::Stretch => {
+                                                BackgroundTextureMode::Stretch(ref uvs) => {
+                                                    let mid_width = 1.0 - uvs.right - uvs.left;
+                                                    let mid_height = 1.0 - uvs.top - uvs.bottom;
+
                                                     ent_cmds.with_children(|c| {
-                                                        c.spawn(ImageBundle {
-                                                            image: UiImage {
-                                                                texture: image,
-                                                                flip_x: false,
-                                                                flip_y: false,
+                                                        c.spawn(NodeBundle {
+                                                            style: Style {
+                                                                size: Size::all(Val::Percent(100.0)),
+                                                                overflow: Overflow::Hidden,
+                                                                ..Default::default()
                                                             },
                                                             ..Default::default()
+                                                        }).with_children(|c| {
+                                                            c.spawn(ImageBundle{
+                                                                style: Style {
+                                                                    position_type: PositionType::Absolute,
+                                                                    position: UiRect {
+                                                                        left: Val::Percent(-100.0 * uvs.left / mid_width),
+                                                                        right: Val::Percent(-100.0 * uvs.right / mid_width),
+                                                                        top: Val::Percent(-100.0 * uvs.top / mid_height),
+                                                                        bottom: Val::Percent(-100.0 * uvs.bottom / mid_height),
+                                                                    },
+                                                                    ..Default::default()
+                                                                },
+                                                                image: UiImage {
+                                                                    texture: image,
+                                                                    flip_x: false,
+                                                                    flip_y: false,
+                                                                },
+                                                                ..Default::default()
+                                                            });
                                                         });
-
                                                     });
                                                 }
                                                 BackgroundTextureMode::Center => {
