@@ -84,12 +84,10 @@ impl AssetLoader for EntityDefinitionLoader {
                 load_context.set_default_asset(LoadedAsset::new(EntityDefinition::default()));
                 return Ok(());
             };
-            let content = ContentMap(BiMap::from_iter(
-                definition_json
-                    .content
-                    .into_iter()
-                    .map(|ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash)),
-            ));
+            let content =
+                ContentMap(BiMap::from_iter(definition_json.content.into_iter().map(
+                    |ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash),
+                )));
             let id = definition_json.id.unwrap_or_else(|| {
                 // we must have been loaded as an entity with the format "$ipfs/$entity/{hash}.entity_type" - use the ipfs path to resolve the id
                 load_context
@@ -151,7 +149,9 @@ impl ContentMap {
     }
 
     pub fn hash(&self, file: &str) -> Option<&str> {
-        self.0.get_by_left(file.to_lowercase().as_str()).map(String::as_str)
+        self.0
+            .get_by_left(file.to_lowercase().as_str())
+            .map(String::as_str)
     }
 }
 
@@ -235,7 +235,7 @@ impl IpfsLoaderExt for AssetServer {
 
     fn load_hash<T: Asset>(&self, hash: &str, ty: EntityType) -> Handle<T> {
         let ext = ty.ext();
-        let path = format!("$ipfs//$entity//{hash}.{ext}");
+        let path = format!("$ipfs/$entity/{hash}.{ext}");
         self.load(path)
     }
 

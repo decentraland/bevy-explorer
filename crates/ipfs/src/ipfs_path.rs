@@ -32,9 +32,10 @@ macro_rules! urlpath {
 
 use std::{
     collections::BTreeMap,
+    ffi::OsStr,
     iter::Peekable,
     path::{Path, PathBuf},
-    str::FromStr, ffi::OsStr,
+    str::FromStr,
 };
 
 use urn::Urn;
@@ -129,7 +130,9 @@ impl IpfsType {
                 .map(|hash| format!("{base_url}{hash}"))
                 .or_else(|| {
                     // try as a url directly
-                    url::Url::try_from(file_path.as_str()).is_ok().then_some(file_path.to_owned())
+                    url::Url::try_from(file_path.as_str())
+                        .is_ok()
+                        .then_some(file_path.to_owned())
                 })
                 .ok_or_else(|| {
                     anyhow::anyhow!("file not found in content map: {file_path:?} in {scene_hash}")
@@ -138,9 +141,9 @@ impl IpfsType {
                 entity_type: pointer_type,
                 address,
             } => match pointer_type {
-                EntityType::Scene => Ok(format!("pointer={}", address)),
+                EntityType::Scene => Ok(format!("{base_url}pointer={}", address)),
             },
-            IpfsType::Entity { hash, .. } => Ok(hash.to_owned()),
+            IpfsType::Entity { hash, .. } => Ok(format!("{base_url}{}", hash)),
         }
     }
 
@@ -185,7 +188,13 @@ impl From<&IpfsType> for PathBuf {
             } => {
                 // add leading `.` to the file_path's filename when converting to path format
                 let mut file_path = PathBuf::from(file_path);
-                let file_name = format!(".{}", file_path.file_name().and_then(OsStr::to_str).unwrap_or_default());
+                let file_name = format!(
+                    ".{}",
+                    file_path
+                        .file_name()
+                        .and_then(OsStr::to_str)
+                        .unwrap_or_default()
+                );
                 file_path.pop();
                 file_path.push(file_name);
 
@@ -206,9 +215,9 @@ impl From<&IpfsType> for PathBuf {
     }
 }
 
-impl<'a, I> TryFrom<Peekable<I>> for IpfsType 
-where 
-    I: Iterator<Item=&'a str> + std::fmt::Debug,
+impl<'a, I> TryFrom<Peekable<I>> for IpfsType
+where
+    I: Iterator<Item = &'a str> + std::fmt::Debug,
 {
     type Error = anyhow::Error;
 
@@ -231,7 +240,7 @@ where
                 // pass through folders
                 while components.peek().is_some() {
                     file_path.push_str(file_component);
-                    file_path.push_str("/");
+                    file_path.push('/');
                     file_component = components.next().unwrap();
                 }
                 // remove the leading '.' from the last component (the file name)
@@ -248,7 +257,7 @@ where
             }
             "$pointer" => {
                 let address = urlencoding::decode(
-                    &components
+                    components
                         .next()
                         .ok_or(anyhow::anyhow!("pointer specifier missing address"))?,
                 )?
@@ -263,7 +272,7 @@ where
                 })
             }
             "$entity" => {
-                let hash_ext: &str = &components
+                let hash_ext: &str = components
                     .next()
                     .ok_or(anyhow::anyhow!("entity specifier missing"))?;
                 let (hash, ext) = hash_ext
