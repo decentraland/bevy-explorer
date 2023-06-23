@@ -636,6 +636,7 @@ fn layout_scene_ui(
                                                     ent_cmds.with_children(|c| {
                                                         c.spawn(NodeBundle {
                                                             style: Style {
+                                                                position_type: PositionType::Absolute,
                                                                 size: Size::all(Val::Percent(100.0)),
                                                                 overflow: Overflow::Hidden,
                                                                 ..Default::default()
