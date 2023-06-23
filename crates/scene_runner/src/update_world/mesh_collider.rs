@@ -527,7 +527,7 @@ fn update_colliders(
             MeshColliderShape::Box => ColliderBuilder::cuboid(0.5, 0.5, 0.5),
             MeshColliderShape::Cylinder { radius_top, radius_bottom } => {
                 // TODO we could use explicit support points to make queries faster
-                let mesh: Mesh = TruncatedCone{ base_radius: *radius_top, tip_radius: *radius_bottom, ..Default::default() }.into();
+                let mesh: Mesh = TruncatedCone{ base_radius: *radius_bottom, tip_radius: *radius_top, ..Default::default() }.into();
                 let VertexAttributeValues::Float32x3(positions) = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else { panic!() };
                 ColliderBuilder::convex_hull(&positions.iter().map(|p| Point::from(*p)).collect::<Vec<_>>()).unwrap()
             }
