@@ -88,7 +88,7 @@ impl AssetLoader for EntityDefinitionLoader {
                 definition_json
                     .content
                     .into_iter()
-                    .map(|ipfs| (normalize_path(&ipfs.file), ipfs.hash)),
+                    .map(|ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash)),
             ));
             let id = definition_json.id.unwrap_or_else(|| {
                 // we must have been loaded as an entity with the format "$ipfs/$entity/{hash}.entity_type" - use the ipfs path to resolve the id
@@ -151,7 +151,7 @@ impl ContentMap {
     }
 
     pub fn hash(&self, file: &str) -> Option<&str> {
-        self.0.get_by_left(file).map(String::as_str)
+        self.0.get_by_left(file.to_lowercase().as_str()).map(String::as_str)
     }
 }
 
@@ -217,7 +217,7 @@ impl IpfsLoaderExt for AssetServer {
             .context_free_hash()?
             .ok_or(anyhow::anyhow!("urn did not resolve to a hash"))?;
         let ext = ty.ext();
-        let path = format!("$ipfs//$entity//{hash}.{ext}");
+        let path = format!("$ipfs/$entity/{hash}.{ext}");
 
         if let Some(base_url) = ipfs_path.base_url() {
             // update the context
@@ -603,7 +603,7 @@ impl IpfsIo {
                         entity
                             .content
                             .into_iter()
-                            .map(|ipfs| (normalize_path(&ipfs.file), ipfs.hash)),
+                            .map(|ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash)),
                     )),
                 });
             }
