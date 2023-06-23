@@ -660,10 +660,7 @@ impl AssetIo for IpfsIo {
                 None => None,
                 Some(hash) => {
                     debug!("hash: {}", hash);
-                    match ipfs_path.should_cache(hash) {
-                        true => self.default_io.load_path(Path::new(hash)).await.ok(),
-                        false => None,
-                    }
+                    self.default_io.load_path(Path::new(hash)).await.ok()
                 }
             };
 
@@ -707,7 +704,7 @@ impl AssetIo for IpfsIo {
 
                     let response = request.send_async().await;
 
-                    debug!("[{token:?}]: attempt {attempt}: response: {response:?}");
+                    debug!("[{token:?}]: attempt {attempt}: request: {remote}, response: {response:?}");
 
                     let mut response = match response {
                         Err(e) if e.is_timeout() && attempt <= 3 => continue,
