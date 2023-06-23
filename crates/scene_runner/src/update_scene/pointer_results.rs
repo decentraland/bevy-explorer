@@ -4,7 +4,8 @@ use console::DoAddConsoleCommand;
 
 use crate::{
     update_world::{mesh_collider::SceneColliderData, pointer_events::PointerEvents},
-    ContainingScene, PrimaryUser, RendererSceneContext, SceneEntity, SceneSets, ContainerEntity, DebugInfo,
+    ContainerEntity, ContainingScene, DebugInfo, PrimaryUser, RendererSceneContext, SceneEntity,
+    SceneSets,
 };
 use common::{dynamics::PLAYER_COLLIDER_RADIUS, structs::PrimaryCamera};
 use dcl::interface::CrdtType;
@@ -25,11 +26,16 @@ impl Plugin for PointerResultPlugin {
             .init_resource::<UiPointerTarget>()
             .init_resource::<DebugPointers>();
         app.add_systems(
-            (update_pointer_target, send_hover_events, send_action_events, debug_pointer)
+            (
+                update_pointer_target,
+                send_hover_events,
+                send_action_events,
+                debug_pointer,
+            )
                 .chain()
                 .in_set(SceneSets::Input),
         );
-        app.add_console_command::<DebugPointerCommand,_>(debug_pointer_command);
+        app.add_console_command::<DebugPointerCommand, _>(debug_pointer_command);
     }
 }
 
@@ -156,9 +162,7 @@ fn debug_pointer_command(
     mut debug: ResMut<DebugPointers>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        let new_state = command
-            .show
-            .unwrap_or(!debug.0);
+        let new_state = command.show.unwrap_or(!debug.0);
         debug.0 = new_state;
     }
 }
@@ -175,19 +179,32 @@ fn debug_pointer(
         let info = if let UiPointerTarget::Some(ui_ent) = *ui_target {
             if let Ok(target) = target.get(ui_ent) {
                 if let Ok(scene) = scene.get(target.root) {
-                    format!("ui element {} from scene {}", target.container_id, scene.title)
+                    format!(
+                        "ui element {} from scene {}",
+                        target.container_id, scene.title
+                    )
                 } else {
                     format!("ui element {} unknown scene", target.container_id)
                 }
             } else {
                 format!("ui element (not found - bevy entity {ui_ent:?})")
             }
-        } else if let PointerTarget::Some { container, ref mesh_name } = *pointer_target {
+        } else if let PointerTarget::Some {
+            container,
+            ref mesh_name,
+        } = *pointer_target
+        {
             if let Ok(target) = target.get(container) {
                 if let Ok(scene) = scene.get(target.root) {
-                    format!("world entity {}-{:?} from scene {}", target.container_id, mesh_name, scene.title)
+                    format!(
+                        "world entity {}-{:?} from scene {}",
+                        target.container_id, mesh_name, scene.title
+                    )
                 } else {
-                    format!("world entity {}-{:?} unknown scene", target.container_id, mesh_name)
+                    format!(
+                        "world entity {}-{:?} unknown scene",
+                        target.container_id, mesh_name
+                    )
                 }
             } else {
                 format!("world entity (not found - bevy entity {container:?})")

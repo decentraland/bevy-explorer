@@ -214,9 +214,12 @@ fn update_scene_load_state(
         set_child(format!("{}", transports));
         set_child(format!("{}", players));
 
-        let debug_info = debug_info.info.iter().fold(String::default(), |msg, (key, info)| {
-            format!("{msg}\n{key}: {info}")
-        });
+        let debug_info = debug_info
+            .info
+            .iter()
+            .fold(String::default(), |msg, (key, info)| {
+                format!("{msg}\n{key}: {info}")
+            });
         set_child(debug_info);
     }
 }

@@ -16,11 +16,12 @@ use rapier3d::{
 
 use crate::{
     update_world::mesh_renderer::truncated_cone::TruncatedCone, ContainerEntity, ContainingScene,
-    DeletedSceneEntities, PrimaryUser, RendererSceneContext, SceneSets, SceneLoopSchedule,
+    DeletedSceneEntities, PrimaryUser, RendererSceneContext, SceneLoopSchedule, SceneSets,
 };
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
-    util::TryInsertEx, sets::SceneLoopSets,
+    sets::SceneLoopSets,
+    util::TryInsertEx,
 };
 use console::DoAddConsoleCommand;
 use dcl::interface::ComponentPosition;
