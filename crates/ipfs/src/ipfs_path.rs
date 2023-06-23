@@ -130,6 +130,7 @@ impl IpfsType {
                 .map(|hash| format!("{base_url}{hash}"))
                 .or_else(|| {
                     // try as a url directly
+                    // TODO: check scene.json for allowed domains (include these in context like baseUrls)
                     url::Url::try_from(file_path.as_str())
                         .is_ok()
                         .then_some(file_path.to_owned())
