@@ -704,7 +704,9 @@ impl AssetIo for IpfsIo {
 
                     let response = request.send_async().await;
 
-                    debug!("[{token:?}]: attempt {attempt}: request: {remote}, response: {response:?}");
+                    debug!(
+                        "[{token:?}]: attempt {attempt}: request: {remote}, response: {response:?}"
+                    );
 
                     let mut response = match response {
                         Err(e) if e.is_timeout() && attempt <= 3 => continue,
