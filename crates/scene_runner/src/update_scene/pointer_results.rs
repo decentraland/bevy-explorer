@@ -1,10 +1,10 @@
-use bevy::{core::FrameCount, prelude::*};
+use bevy::{core::FrameCount, prelude::*, utils::HashSet};
 
 use crate::{
     update_world::{mesh_collider::SceneColliderData, pointer_events::PointerEvents},
-    PrimaryUser, RendererSceneContext, SceneEntity, SceneSets,
+    ContainingScene, PrimaryUser, RendererSceneContext, SceneEntity, SceneSets,
 };
-use common::structs::PrimaryCamera;
+use common::{dynamics::PLAYER_COLLIDER_RADIUS, structs::PrimaryCamera};
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::sdk::components::{
@@ -48,7 +48,9 @@ pub enum UiPointerTarget {
 
 fn update_pointer_target(
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
+    player: Query<Entity, With<PrimaryUser>>,
     windows: Query<&Window>,
+    containing_scenes: ContainingScene,
     mut scenes: Query<(Entity, &mut RendererSceneContext, &mut SceneColliderData)>,
     mut hover_target: ResMut<PointerTarget>,
     ui_target: Res<UiPointerTarget>,
@@ -56,6 +58,9 @@ fn update_pointer_target(
     let Ok((camera, camera_position)) = camera.get_single() else {
         // can't do much without a camera
         return
+    };
+    let Ok(player) = player.get_single() else {
+        return;
     };
 
     // first check for ui target
@@ -87,29 +92,34 @@ fn update_pointer_target(
         return;
     };
 
-    let maybe_nearest_hit = scenes.iter_mut().fold(
-        None,
-        |maybe_prior_nearest, (scene_entity, context, mut collider_data)| {
-            let maybe_nearest = collider_data.cast_ray_nearest(
-                context.last_update_frame,
-                ray.origin,
-                ray.direction,
-                f32::MAX,
-                ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32,
-            );
+    let containing_scenes =
+        HashSet::from_iter(containing_scenes.get_area(player, PLAYER_COLLIDER_RADIUS));
+    let maybe_nearest_hit = scenes
+        .iter_mut()
+        .filter(|(scene_entity, ..)| containing_scenes.contains(scene_entity))
+        .fold(
+            None,
+            |maybe_prior_nearest, (scene_entity, context, mut collider_data)| {
+                let maybe_nearest = collider_data.cast_ray_nearest(
+                    context.last_update_frame,
+                    ray.origin,
+                    ray.direction,
+                    f32::MAX,
+                    ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32,
+                );
 
-            match (maybe_nearest, maybe_prior_nearest) {
-                // no prior result? this'll do
-                (Some(hit), None) => Some((scene_entity, hit)),
-                // new result is better
-                (Some(hit), Some((_, prior_hit))) if hit.toi < prior_hit.toi => {
-                    Some((scene_entity, hit))
+                match (maybe_nearest, maybe_prior_nearest) {
+                    // no prior result? this'll do
+                    (Some(hit), None) => Some((scene_entity, hit)),
+                    // new result is better
+                    (Some(hit), Some((_, prior_hit))) if hit.toi < prior_hit.toi => {
+                        Some((scene_entity, hit))
+                    }
+                    // prior result was at least as good
+                    (_, otherwise) => otherwise,
                 }
-                // prior result was at least as good
-                (_, otherwise) => otherwise,
-            }
-        },
-    );
+            },
+        );
 
     *hover_target = PointerTarget::None;
     if let Some((scene_entity, hit)) = maybe_nearest_hit {
