@@ -34,7 +34,7 @@ use std::{
     collections::BTreeMap,
     ffi::OsStr,
     iter::Peekable,
-    path::{Component, Components, Path, PathBuf},
+    path::{Path, PathBuf},
     str::FromStr,
 };
 
@@ -71,12 +71,12 @@ impl AsRef<Path> for EntityType {
     }
 }
 
-impl<'a> TryFrom<Component<'a>> for EntityType {
+impl TryFrom<&str> for EntityType {
     type Error = anyhow::Error;
 
-    fn try_from(value: Component<'a>) -> Result<Self, Self::Error> {
-        match value.as_os_str().to_str() {
-            Some("type.scene_entity") => Ok(EntityType::Scene),
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "type.scene_entity" => Ok(EntityType::Scene),
             other => anyhow::bail!("invalid pointer type: {:?}", other),
         }
     }
@@ -102,7 +102,7 @@ impl IpfsType {
     pub fn new_content_file(content_hash: String, file_path: String) -> Self {
         Self::ContentFile {
             content_hash,
-            file_path: normalize_path(&file_path.to_lowercase()),
+            file_path: normalize_path(&file_path),
         }
     }
 
@@ -116,7 +116,7 @@ impl IpfsType {
         }
     }
 
-    fn url_target(&self, context: &IpfsContext) -> Result<String, anyhow::Error> {
+    fn url_target(&self, context: &IpfsContext, base_url: &str) -> Result<String, anyhow::Error> {
         match self {
             IpfsType::ContentFile {
                 content_hash: scene_hash,
@@ -127,17 +127,24 @@ impl IpfsType {
                 .get(scene_hash)
                 .ok_or_else(|| anyhow::anyhow!("required collection hash not found: {scene_hash}"))?
                 .hash(file_path)
+                .map(|hash| format!("{base_url}{hash}"))
+                .or_else(|| {
+                    // try as a url directly
+                    // TODO: check scene.json for allowed domains (include these in context like baseUrls)
+                    url::Url::try_from(file_path.as_str())
+                        .is_ok()
+                        .then_some(file_path.to_owned())
+                })
                 .ok_or_else(|| {
                     anyhow::anyhow!("file not found in content map: {file_path:?} in {scene_hash}")
-                })
-                .map(ToOwned::to_owned),
+                }),
             IpfsType::Pointer {
                 entity_type: pointer_type,
                 address,
             } => match pointer_type {
-                EntityType::Scene => Ok(format!("pointer={}", address)),
+                EntityType::Scene => Ok(format!("{base_url}pointer={}", address)),
             },
-            IpfsType::Entity { hash, .. } => Ok(hash.to_owned()),
+            IpfsType::Entity { hash, .. } => Ok(format!("{base_url}{}", hash)),
         }
     }
 
@@ -182,7 +189,13 @@ impl From<&IpfsType> for PathBuf {
             } => {
                 // add leading `.` to the file_path's filename when converting to path format
                 let mut file_path = PathBuf::from(file_path);
-                let file_name = format!(".{}", file_path.file_name().unwrap().to_str().unwrap());
+                let file_name = format!(
+                    ".{}",
+                    file_path
+                        .file_name()
+                        .and_then(OsStr::to_str)
+                        .unwrap_or_default()
+                );
                 file_path.pop();
                 file_path.push(file_name);
 
@@ -203,54 +216,51 @@ impl From<&IpfsType> for PathBuf {
     }
 }
 
-impl<'a> TryFrom<Peekable<Components<'a>>> for IpfsType {
+impl<'a, I> TryFrom<Peekable<I>> for IpfsType
+where
+    I: Iterator<Item = &'a str> + std::fmt::Debug,
+{
     type Error = anyhow::Error;
 
-    fn try_from(mut components: Peekable<Components>) -> Result<Self, Self::Error> {
+    fn try_from(mut components: Peekable<I>) -> Result<Self, Self::Error> {
         let ty = &components
             .next()
-            .ok_or(anyhow::anyhow!("missing ipfs type"))?
-            .as_os_str()
-            .to_str();
+            .ok_or(anyhow::anyhow!("missing ipfs type"))?;
 
-        match ty {
-            Some("$content_file") => {
+        match *ty {
+            "$content_file" => {
                 let content_hash = components
                     .next()
                     .ok_or(anyhow::anyhow!("content file specifier missing scene hash"))?
-                    .as_os_str()
-                    .to_string_lossy()
-                    .into_owned();
+                    .to_owned();
 
-                let mut file_path = PathBuf::default();
+                let mut file_path = String::default();
                 let mut file_component = components
                     .next()
                     .ok_or(anyhow::anyhow!("content file specifier missing file path"))?;
                 // pass through folders
                 while components.peek().is_some() {
-                    file_path.push(file_component);
+                    file_path.push_str(file_component);
+                    file_path.push('/');
                     file_component = components.next().unwrap();
                 }
                 // remove the leading '.' from the last component (the file name)
-                let file_name = file_component.as_os_str().to_str().unwrap();
-                let stripped_file_name = if let Some(stripped) = file_name.strip_prefix('.') {
+                let stripped_file_name = if let Some(stripped) = file_component.strip_prefix('.') {
                     stripped
                 } else {
-                    file_name
+                    file_component
                 };
-                file_path.push(stripped_file_name);
+                file_path.push_str(stripped_file_name);
                 Ok(IpfsType::ContentFile {
                     content_hash,
-                    file_path: normalize_path(file_path.to_str().unwrap()),
+                    file_path: file_path.to_lowercase(),
                 })
             }
-            Some("$pointer") => {
+            "$pointer" => {
                 let address = urlencoding::decode(
-                    &components
+                    components
                         .next()
-                        .ok_or(anyhow::anyhow!("pointer specifier missing address"))?
-                        .as_os_str()
-                        .to_string_lossy(),
+                        .ok_or(anyhow::anyhow!("pointer specifier missing address"))?,
                 )?
                 .into_owned();
                 let pointer_type = components
@@ -262,12 +272,10 @@ impl<'a> TryFrom<Peekable<Components<'a>>> for IpfsType {
                     address,
                 })
             }
-            Some("$entity") => {
-                let hash_ext: &str = &components
+            "$entity" => {
+                let hash_ext: &str = components
                     .next()
-                    .ok_or(anyhow::anyhow!("entity specifier missing"))?
-                    .as_os_str()
-                    .to_string_lossy();
+                    .ok_or(anyhow::anyhow!("entity specifier missing"))?;
                 let (hash, ext) = hash_ext
                     .split_once('.')
                     .ok_or(anyhow::anyhow!("entity specified malformed (no '.')"))?;
@@ -294,11 +302,10 @@ impl AsRef<Path> for IpfsKey {
     }
 }
 
-impl<'a> TryFrom<Component<'a>> for IpfsKey {
+impl TryFrom<&str> for IpfsKey {
     type Error = anyhow::Error;
 
-    fn try_from(value: Component) -> Result<Self, Self::Error> {
-        let key: &str = &value.as_os_str().to_string_lossy();
+    fn try_from(key: &str) -> Result<Self, Self::Error> {
         match key {
             "&baseUrl" => Ok(Self::BaseUrl),
             other => anyhow::bail!("unrecognised ipfs key `{other}`"),
@@ -359,9 +366,14 @@ impl IpfsPath {
     }
 
     pub fn new_from_path(path: &Path) -> Result<Option<Self>, anyhow::Error> {
-        let mut components = path.components().peekable();
+        let Some(path_str) = path.as_os_str().to_str() else {
+            return Ok(None);
+        };
 
-        if components.peek() != Some(&Component::Normal(OsStr::new("$ipfs"))) {
+        let normalized_path = path_str.replace('\\', "/");
+        let mut components = normalized_path.split('/').peekable();
+
+        if components.peek() != Some(&"$ipfs") {
             // not an ipfs path
             return Ok(None);
         }
@@ -370,14 +382,14 @@ impl IpfsPath {
         let mut key_values = BTreeMap::default();
         while components
             .peek()
-            .map(|c| c.as_os_str().to_string_lossy().starts_with('&'))
+            .map(|c| c.starts_with('&'))
             .unwrap_or_default()
         {
             let key: IpfsKey = components.next().unwrap().try_into()?;
             let value = components
                 .next()
                 .ok_or(anyhow::anyhow!("missing value for {key:?}"))?;
-            key_values.insert(key, value.as_os_str().to_string_lossy().into_owned());
+            key_values.insert(key, value.to_owned());
         }
 
         let ipfs_type = components.try_into()?;
@@ -416,9 +428,7 @@ impl IpfsPath {
             })
             .ok_or_else(|| anyhow::anyhow!("base url not specified in asset path or context"))?;
 
-        let target = self.ipfs_type.url_target(context)?;
-
-        Ok(format!("{base_url}{target}"))
+        self.ipfs_type.url_target(context, &base_url)
     }
 
     pub fn hash(&self, context: &IpfsContext) -> Option<String> {
@@ -453,5 +463,5 @@ impl From<&IpfsPath> for PathBuf {
 
 // must be a better way to do this
 pub fn normalize_path(path: &str) -> String {
-    path.to_lowercase().replace('\\', "/")
+    path.replace('\\', "/")
 }

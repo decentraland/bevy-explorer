@@ -97,6 +97,12 @@ pub struct ContainerEntity {
     pub container_id: SceneEntityId,
 }
 
+// resource into which systems can add debug info
+#[derive(Resource, Default)]
+pub struct DebugInfo {
+    pub info: HashMap<&'static str, String>,
+}
+
 // plugin which creates and runs scripts
 pub struct SceneRunnerPlugin;
 
@@ -109,6 +115,7 @@ pub struct SceneLoopSchedule {
 impl Plugin for SceneRunnerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CrdtExtractors>();
+        app.init_resource::<DebugInfo>();
 
         let (sender, receiver) = sync_channel(1000);
         app.insert_resource(SceneUpdates {
@@ -540,6 +547,8 @@ fn receive_scene_updates(
     }
 }
 
+// entities deleted this loop
+// note this is only valid within the scene loop, as it is overwritten in each lifecycle update (within the loop)
 #[derive(Component, Default)]
 pub struct DeletedSceneEntities(pub HashSet<SceneEntityId>);
 

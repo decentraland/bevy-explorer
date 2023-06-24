@@ -16,10 +16,11 @@ use rapier3d::{
 
 use crate::{
     update_world::mesh_renderer::truncated_cone::TruncatedCone, ContainerEntity, ContainingScene,
-    DeletedSceneEntities, PrimaryUser, RendererSceneContext, SceneSets,
+    DeletedSceneEntities, PrimaryUser, RendererSceneContext, SceneLoopSchedule, SceneSets,
 };
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
+    sets::SceneLoopSets,
     util::TryInsertEx,
 };
 use console::DoAddConsoleCommand;
@@ -103,6 +104,13 @@ impl Plugin for MeshColliderPlugin {
         // so we use SceneSets::Init for adding colliders to the scene collider data (qbvh).
         app.add_system(update_colliders.in_set(SceneSets::Init));
         app.add_system(update_scene_collider_data.in_set(SceneSets::PostInit));
+
+        // collider deletion has to occur within the scene loop, as the DeletedSceneEntities resource is only
+        // valid within the loop
+        app.world
+            .resource_mut::<SceneLoopSchedule>()
+            .schedule
+            .add_system(remove_deleted_colliders.in_set(SceneLoopSets::UpdateWorld));
 
         // update collider transforms before queries and scenes are run, but after global transforms are updated (at end of prior frame)
         app.add_system(update_collider_transforms.in_set(SceneSets::PostInit));
@@ -517,8 +525,7 @@ fn update_colliders(
         (Entity, &ContainerEntity, &HasCollider),
         Without<MeshCollider>,
     >,
-    // remove colliders for deleted entities
-    mut scene_data: Query<(&mut SceneColliderData, Option<&DeletedSceneEntities>)>,
+    mut scene_data: Query<&mut SceneColliderData>,
 ) {
     // add colliders
     // any entity with a mesh collider that we're not using, or where the mesh collider has changed
@@ -527,7 +534,7 @@ fn update_colliders(
             MeshColliderShape::Box => ColliderBuilder::cuboid(0.5, 0.5, 0.5),
             MeshColliderShape::Cylinder { radius_top, radius_bottom } => {
                 // TODO we could use explicit support points to make queries faster
-                let mesh: Mesh = TruncatedCone{ base_radius: *radius_top, tip_radius: *radius_bottom, ..Default::default() }.into();
+                let mesh: Mesh = TruncatedCone{ base_radius: *radius_bottom, tip_radius: *radius_top, ..Default::default() }.into();
                 let VertexAttributeValues::Float32x3(positions) = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else { panic!() };
                 ColliderBuilder::convex_hull(&positions.iter().map(|p| Point::from(*p)).collect::<Vec<_>>()).unwrap()
             }
@@ -549,7 +556,7 @@ fn update_colliders(
             collider_def.index,
         );
         debug!("{:?} adding collider", collider_id);
-        let Ok((mut scene_data, _)) = scene_data.get_mut(container.root) else {
+        let Ok(mut scene_data) = scene_data.get_mut(container.root) else {
             warn!("missing scene root for {collider_id:?}");
             continue;
         };
@@ -561,7 +568,7 @@ fn update_colliders(
     // remove colliders
     // any entities with a live collider handle that don't have a mesh collider or a mesh definition
     for (ent, container, collider) in colliders_without_source.iter() {
-        let Ok((mut scene_data, _)) = scene_data.get_mut(container.root) else {
+        let Ok(mut scene_data) = scene_data.get_mut(container.root) else {
             warn!("missing scene root for {container:?}");
             continue;
         };
@@ -569,13 +576,14 @@ fn update_colliders(
         scene_data.remove_collider(&collider.0);
         commands.entity(ent).remove::<HasCollider>();
     }
+}
 
-    // remove colliders for deleted entities
-    for (mut scene_data, maybe_deleted_entities) in &mut scene_data {
-        if let Some(deleted_entities) = maybe_deleted_entities {
-            for deleted_entity in &deleted_entities.0 {
-                scene_data.remove_colliders(*deleted_entity);
-            }
+fn remove_deleted_colliders(
+    mut scene_data: Query<(&mut SceneColliderData, &DeletedSceneEntities)>,
+) {
+    for (mut scene_data, deleted_entities) in &mut scene_data {
+        for deleted_entity in &deleted_entities.0 {
+            scene_data.remove_colliders(*deleted_entity);
         }
     }
 }
