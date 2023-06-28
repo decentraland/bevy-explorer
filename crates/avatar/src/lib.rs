@@ -37,7 +37,7 @@ use dcl_component::{
 };
 use ipfs::{ActiveEntityTask, IpfsLoaderExt, IpfsModifier};
 use scene_runner::{update_world::AddCrdtInterfaceExt, ContainingScene, SceneEntity};
-use ui_core::{TEXT_SHAPE_FONT};
+use ui_core::TEXT_SHAPE_FONT;
 
 use crate::animate::AvatarAnimPlayer;
 
