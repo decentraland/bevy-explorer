@@ -1,5 +1,5 @@
 use bevy::{prelude::*, utils::HashSet};
-use bevy_mod_billboard::{text::BillboardTextBounds, BillboardTextBundle, BillboardLockAxis};
+use bevy_mod_billboard::{text::BillboardTextBounds, BillboardLockAxis, BillboardTextBundle};
 use common::sets::SceneSets;
 use dcl::interface::ComponentPosition;
 use dcl_component::{proto_components::sdk::components::PbTextShape, SceneComponentId};
@@ -76,7 +76,7 @@ fn update_text_shapes(
                 BillboardLockAxis {
                     y_axis: false,
                     rotation: true,
-                }
+                },
             ));
         });
     }
