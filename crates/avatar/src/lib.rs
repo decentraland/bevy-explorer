@@ -360,6 +360,7 @@ fn select_avatar(
     containing_scene: ContainingScene,
 ) {
     struct AvatarUpdate {
+        base_name: String,
         update_shape: Option<PbAvatarShape>,
         active_scene: Option<Entity>,
         prev_source: Option<Entity>,
@@ -377,6 +378,7 @@ fn select_avatar(
         updates.insert(
             id,
             AvatarUpdate {
+                base_name: base_shape.0.name.clone().unwrap(),
                 update_shape: changed.then_some(base_shape.0.clone()),
                 active_scene: containing_scene.get(entity),
                 prev_source: maybe_prev_selection
@@ -394,7 +396,10 @@ fn select_avatar(
             if changed {
                 commands.entity(ent).try_insert(AvatarSelection {
                     scene: Some(scene_ent.root),
-                    shape: scene_avatar_shape.0.clone(),
+                    shape: PbAvatarShape {
+                        name: Some(scene_avatar_shape.0.name.clone().unwrap_or_else(|| "NPC".into())),
+                        ..scene_avatar_shape.0.clone()
+                    }
                 });
 
                 debug!("npc avatar {:?}", scene_ent);
@@ -412,9 +417,19 @@ fn select_avatar(
 
         if changed || update.prev_source != update.current_source {
             // and it needs to be updated
-            update.update_shape = Some(scene_avatar_shape.0.clone());
+            update.update_shape = Some(PbAvatarShape {
+                name: Some(
+                    scene_avatar_shape
+                        .0
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| update.base_name.clone()),
+                ),
+                ..scene_avatar_shape.0.clone()
+            });
         } else {
             // doesn't need to be updated, even if the base shape changed
+            // TODO this probably won't pick up name changes though ?
             update.update_shape = None;
         }
     }
@@ -793,7 +808,12 @@ fn update_render_avatar(
         }
 
         // get body shape
-        let body = selection.shape.body_shape.as_ref().unwrap().to_lowercase();
+        let body = selection
+            .shape
+            .body_shape
+            .as_ref()
+            .unwrap_or(&base_wearables::default_bodyshape())
+            .to_lowercase();
         let body = Urn::from_str(&body).unwrap();
         let hash = match wearable_pointers.0.get(&body) {
             Some(WearablePointerResult::Exists(hash)) => hash,
@@ -866,8 +886,31 @@ fn update_render_avatar(
                 WearableDefinition::new(meta, &asset_server, body_shape, hash)
             })
             .collect::<Vec<_>>();
+        let mut wearables = HashMap::from_iter(
+            wearables
+                .into_iter()
+                .map(|wearable| (wearable.category, wearable)),
+        );
 
-        let hides = HashSet::from_iter(wearables.iter().flat_map(|w| w.hides.iter()).copied());
+        // add defaults
+        let defaults: Vec<_> = base_wearables::default_wearables().flat_map(|default| {
+            let Some(WearablePointerResult::Exists(hash)) = wearable_pointers.0.get(&Urn::from_str(default).unwrap()) else {
+                warn!("failed to load default renderable {}", default);
+                return None;
+            };
+            let meta = wearable_metas.0.get(hash).unwrap();
+            WearableDefinition::new(meta, &asset_server, body_shape, hash)
+        }).collect();
+
+        for default in defaults {
+            if !wearables.contains_key(&default.category) {
+                wearables.insert(default.category, default);
+            }
+        }
+
+        // remove hidden
+        let hides = HashSet::from_iter(wearables.values().flat_map(|w| w.hides.iter()).copied());
+        wearables.retain(|cat, _| !hides.contains(cat));
 
         debug!("avatar definition loaded: {wearables:?}");
         commands.entity(entity).with_children(|commands| {
@@ -879,7 +922,7 @@ fn update_render_avatar(
                 AvatarDefinition {
                     label: selection.shape.name.clone(),
                     body: body_wearable,
-                    wearables,
+                    wearables: wearables.into_values().collect(),
                     hides,
                     skin_color: selection
                         .shape
@@ -1067,6 +1110,7 @@ fn process_avatar(
     mut skins: Query<&mut SkinnedMesh>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut mask_materials: ResMut<Assets<MaskMaterial>>,
+    meshes: Res<Assets<Mesh>>,
 ) {
     for (avatar_ent, def, loaded_avatar, root_player_entity) in query.iter() {
         let not_loaded = !scene_spawner.instance_is_ready(loaded_avatar.body_instance)
@@ -1111,10 +1155,16 @@ fn process_avatar(
                 target_armature_entities.insert(name.to_lowercase(), scene_ent);
             }
 
-            if maybe_h_mesh.is_some() {
-                // disable frustum culling - some strange effect causes Aabb gen to fail
-                // TODO figure out why
-                commands.entity(scene_ent).try_insert(NoFrustumCulling);
+            if let Some(h_mesh) = maybe_h_mesh {
+                if let Some(mesh_data) = meshes.get(h_mesh) {
+                    let is_skinned = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
+                    if is_skinned {
+                        commands.entity(scene_ent).try_insert(NoFrustumCulling);
+                    }
+                } else {
+                    warn!("missing mesh for wearable, removing frustum culling just in case");
+                    commands.entity(scene_ent).try_insert(NoFrustumCulling);
+                }
             }
 
             if let Some(h_mat) = maybe_h_mat {
@@ -1260,10 +1310,17 @@ fn process_avatar(
                     commands.entity(scene_ent).set_parent(armature_node);
                 }
 
-                if maybe_h_mesh.is_some() {
-                    // disable frustum culling - some strange effect causes Aabb gen to fail
-                    // TODO figure out why
-                    commands.entity(scene_ent).try_insert(NoFrustumCulling);
+                if let Some(h_mesh) = maybe_h_mesh {
+                    if let Some(mesh_data) = meshes.get(h_mesh) {
+                        let is_skinned =
+                            mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
+                        if is_skinned {
+                            commands.entity(scene_ent).try_insert(NoFrustumCulling);
+                        }
+                    } else {
+                        warn!("missing mesh for wearable, removing frustum culling just in case");
+                        commands.entity(scene_ent).try_insert(NoFrustumCulling);
+                    }
                 }
 
                 if let Some(h_mat) = maybe_h_mat {
