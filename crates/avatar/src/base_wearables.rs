@@ -300,14 +300,15 @@ pub fn default_bodyshape() -> String {
 pub const CONTENT_URL: &str = "https://peer.decentraland.org/content/contents/";
 pub const BASE_URL: &str = "https://peer.decentraland.org/content";
 
-pub fn default_wearables() -> impl Iterator<Item=&'static str> {
+pub fn default_wearables() -> impl Iterator<Item = &'static str> {
     [
-        "urn:decentraland:off-chain:base-avatars:f_eyes_00", 
+        "urn:decentraland:off-chain:base-avatars:f_eyes_00",
         "urn:decentraland:off-chain:base-avatars:f_eyebrows_00",
         "urn:decentraland:off-chain:base-avatars:f_mouth_00",
-        "urn:decentraland:off-chain:base-avatars:standard_hair", 
-        "urn:decentraland:off-chain:base-avatars:f_simple_yellow_tshirt", 
-        "urn:decentraland:off-chain:base-avatars:f_brown_trousers", 
-        "urn:decentraland:off-chain:base-avatars:bun_shoes"
-    ].into_iter()
+        "urn:decentraland:off-chain:base-avatars:standard_hair",
+        "urn:decentraland:off-chain:base-avatars:f_simple_yellow_tshirt",
+        "urn:decentraland:off-chain:base-avatars:f_brown_trousers",
+        "urn:decentraland:off-chain:base-avatars:bun_shoes",
+    ]
+    .into_iter()
 }

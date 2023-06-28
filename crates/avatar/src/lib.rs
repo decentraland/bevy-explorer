@@ -418,7 +418,13 @@ fn select_avatar(
         if changed || update.prev_source != update.current_source {
             // and it needs to be updated
             update.update_shape = Some(PbAvatarShape {
-                name: Some(scene_avatar_shape.0.name.clone().unwrap_or_else(|| update.base_name.clone())),
+                name: Some(
+                    scene_avatar_shape
+                        .0
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| update.base_name.clone()),
+                ),
                 ..scene_avatar_shape.0.clone()
             });
         } else {
@@ -802,7 +808,12 @@ fn update_render_avatar(
         }
 
         // get body shape
-        let body = selection.shape.body_shape.as_ref().unwrap_or(&base_wearables::default_bodyshape()).to_lowercase();
+        let body = selection
+            .shape
+            .body_shape
+            .as_ref()
+            .unwrap_or(&base_wearables::default_bodyshape())
+            .to_lowercase();
         let body = Urn::from_str(&body).unwrap();
         let hash = match wearable_pointers.0.get(&body) {
             Some(WearablePointerResult::Exists(hash)) => hash,
@@ -875,9 +886,11 @@ fn update_render_avatar(
                 WearableDefinition::new(meta, &asset_server, body_shape, hash)
             })
             .collect::<Vec<_>>();
-        let mut wearables = HashMap::from_iter(wearables.into_iter().map(|wearable| {
-            (wearable.category, wearable)
-        }));
+        let mut wearables = HashMap::from_iter(
+            wearables
+                .into_iter()
+                .map(|wearable| (wearable.category, wearable)),
+        );
 
         // add defaults
         let defaults: Vec<_> = base_wearables::default_wearables().flat_map(|default| {
@@ -1299,7 +1312,8 @@ fn process_avatar(
 
                 if let Some(h_mesh) = maybe_h_mesh {
                     if let Some(mesh_data) = meshes.get(h_mesh) {
-                        let is_skinned = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
+                        let is_skinned =
+                            mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
                         if is_skinned {
                             commands.entity(scene_ent).try_insert(NoFrustumCulling);
                         }
