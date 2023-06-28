@@ -23,6 +23,7 @@ use self::{
     textentry::update_text_entry_components, ui_actions::UiActionPlugin,
 };
 
+pub static TEXT_SHAPE_FONT: OnceCell<Handle<Font>> = OnceCell::new();
 pub static TITLE_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
 pub static BODY_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
 pub static BUTTON_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
@@ -47,6 +48,9 @@ impl Plugin for UiCorePlugin {
 
 #[allow(clippy::type_complexity)]
 fn setup(asset_server: Res<AssetServer>) {
+    TEXT_SHAPE_FONT
+        .set(asset_server.load("fonts/FiraSans-Bold_shapecopy.ttf"))
+        .unwrap();
     TITLE_TEXT_STYLE
         .set(TextStyle {
             font: asset_server.load("fonts/FiraSans-Bold.ttf"),

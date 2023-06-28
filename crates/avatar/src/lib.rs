@@ -37,7 +37,7 @@ use dcl_component::{
 };
 use ipfs::{ActiveEntityTask, IpfsLoaderExt, IpfsModifier};
 use scene_runner::{update_world::AddCrdtInterfaceExt, ContainingScene, SceneEntity};
-use ui_core::TITLE_TEXT_STYLE;
+use ui_core::{TEXT_SHAPE_FONT};
 
 use crate::animate::AvatarAnimPlayer;
 
@@ -378,7 +378,7 @@ fn select_avatar(
         updates.insert(
             id,
             AvatarUpdate {
-                base_name: base_shape.0.name.clone().unwrap(),
+                base_name: base_shape.0.name.clone().unwrap_or_else(|| "Guest".into()),
                 update_shape: changed.then_some(base_shape.0.clone()),
                 active_scene: containing_scene.get(entity),
                 prev_source: maybe_prev_selection
@@ -1396,7 +1396,7 @@ fn process_avatar(
                             TextStyle {
                                 font_size: 50.0,
                                 color: Color::WHITE,
-                                ..TITLE_TEXT_STYLE.get().unwrap().clone()
+                                font: TEXT_SHAPE_FONT.get().unwrap().clone(),
                             },
                         )
                         .with_alignment(TextAlignment::Center),

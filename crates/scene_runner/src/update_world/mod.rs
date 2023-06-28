@@ -19,7 +19,7 @@ use self::{
     material::MaterialDefinitionPlugin, mesh_collider::MeshColliderPlugin,
     mesh_renderer::MeshDefinitionPlugin, pointer_events::PointerEventsPlugin,
     raycast::RaycastPlugin, scene_ui::SceneUiPlugin,
-    transform_and_parent::process_transform_and_parent_updates,
+    transform_and_parent::process_transform_and_parent_updates, text_shape::TextShapePlugin,
 };
 
 use super::{DeletedSceneEntities, RendererSceneContext, SceneLoopSchedule, SceneLoopSets};
@@ -34,6 +34,7 @@ pub mod pointer_events;
 pub mod raycast;
 pub mod scene_ui;
 pub mod transform_and_parent;
+pub mod text_shape;
 
 #[derive(Component, Default)]
 pub struct CrdtLWWStateComponent<T> {
@@ -128,6 +129,7 @@ impl Plugin for SceneOutputPlugin {
         app.add_plugin(RaycastPlugin);
         app.add_plugin(PointerEventsPlugin);
         app.add_plugin(SceneUiPlugin);
+        app.add_plugin(TextShapePlugin);
     }
 }
 
