@@ -7,7 +7,7 @@ use bevy::{
     gltf::{Gltf, GltfExtras},
     prelude::*,
     reflect::TypeUuid,
-    render::mesh::{Indices, VertexAttributeValues},
+    render::{mesh::{Indices, VertexAttributeValues}, view::NoFrustumCulling},
     scene::InstanceId,
     tasks::{AsyncComputeTaskPool, Task},
     utils::{HashMap, HashSet},
@@ -131,15 +131,13 @@ fn update_gltf(
         Option<&GltfExtras>,
     )>,
     scene_def_handles: Query<&Handle<EntityDefinition>>,
-    scene_defs: Res<Assets<EntityDefinition>>,
-    asset_server: Res<AssetServer>,
-    gltfs: Res<Assets<Gltf>>,
+    (scene_defs, asset_server, gltfs): (Res<Assets<EntityDefinition>>, Res<AssetServer>, Res<Assets<Gltf>>),
     mut scene_spawner: ResMut<SceneSpawner>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut cached_shapes: ResMut<Assets<GltfCachedShape>>,
     mut shape_lookup: ResMut<MeshToShape>,
     mut contexts: Query<&mut RendererSceneContext>,
-    _debug_name_query: Query<(Entity, Option<&Name>, Option<&Children>)>,
+    _debug_query: Query<(Entity, Option<&Name>, Option<&Children>, &Transform)>,
     mut instances_to_despawn_when_ready: Local<Vec<InstanceId>>,
 ) {
     // clean up old instances
@@ -322,6 +320,10 @@ fn update_gltf(
                     };
 
                     let is_skinned = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
+                    if is_skinned {
+                        // bevy doesn't calculate culling correctly for skinned entities
+                        commands.entity(spawned_ent).insert(NoFrustumCulling);
+                    }
 
                     let mut collider_base_name =
                         maybe_name.and_then(|name| name.as_str().strip_suffix("_collider"));
@@ -563,7 +565,7 @@ fn update_container_finished(
 
 // debug show the gltf graph
 fn _node_graph(
-    scene_entity_query: &Query<(Entity, Option<&Name>, Option<&Children>)>,
+    scene_entity_query: &Query<(Entity, Option<&Name>, Option<&Children>, &Transform)>,
     root: Entity,
 ) -> String {
     let mut graph_nodes = HashMap::default();
@@ -572,13 +574,13 @@ fn _node_graph(
 
     while let Some(ent) = to_check.pop() {
         debug!("current: {ent:?}, to_check: {to_check:?}");
-        let Ok((ent, name, maybe_children)) = scene_entity_query.get(ent) else {
+        let Ok((ent, name, maybe_children, transform)) = scene_entity_query.get(ent) else {
             return "?".to_owned();
         };
 
         let graph_node = *graph_nodes
             .entry(ent)
-            .or_insert_with(|| graph.add_node(format!("{ent:?}:{:?}", name)));
+            .or_insert_with(|| graph.add_node(format!("{ent:?}:{:?} [{:?}]", name, transform.scale)));
 
         if let Some(children) = maybe_children {
             let sorted_children_with_name: BTreeMap<_, _> = children
@@ -589,16 +591,17 @@ fn _node_graph(
                             .get(*c)
                             .map(|q| q.1.map(|name| name.as_str().to_owned()))
                             .unwrap_or(Some(String::from("?"))),
-                        c,
+                        (c, scene_entity_query
+                            .get_component::<Transform>(*c).map(|t| t.scale).unwrap_or(Vec3::ZERO)),
                     )
                 })
                 .collect();
 
-            to_check.extend(sorted_children_with_name.values().copied());
-            for (child_id, child_ent) in sorted_children_with_name.into_iter() {
+            to_check.extend(sorted_children_with_name.values().map(|(ent,_)| *ent));
+            for (child_id, (child_ent, child_scale)) in sorted_children_with_name.into_iter() {
                 let child_graph_node = *graph_nodes
                     .entry(*child_ent)
-                    .or_insert_with(|| graph.add_node(format!("{child_ent:?}:{:?}", child_id)));
+                    .or_insert_with(|| graph.add_node(format!("{child_ent:?}:{:?} [{:?}]", child_id, child_scale)));
                 graph.add_edge(graph_node, child_graph_node, ());
             }
         }
