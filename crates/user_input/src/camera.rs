@@ -87,7 +87,7 @@ pub fn update_camera(
             if event.y > 0.0 {
                 options.distance = 0f32.max((options.distance - 0.05) * 0.9);
             } else if event.y < 0.0 {
-                options.distance = 1f32.min((options.distance / 0.9) + 0.05);
+                options.distance = 100f32.min((options.distance / 0.9) + 0.05);
             }
         }
     }
