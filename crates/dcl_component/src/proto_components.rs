@@ -82,6 +82,7 @@ impl DclProtoComponent for sdk::components::PbUiDropdown {}
 impl DclProtoComponent for sdk::components::PbUiDropdownResult {}
 impl DclProtoComponent for sdk::components::PbTextShape {}
 impl DclProtoComponent for sdk::components::PbPointerLock {}
+impl DclProtoComponent for sdk::components::PbCameraMode {}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}

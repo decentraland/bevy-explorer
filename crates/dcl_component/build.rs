@@ -29,6 +29,7 @@ fn main() -> Result<()> {
         "ui_dropdown_result",
         "text_shape",
         "pointer_lock",
+        "camera_mode",
     ];
 
     let mut sources = components
