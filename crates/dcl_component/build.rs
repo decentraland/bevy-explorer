@@ -30,6 +30,7 @@ fn main() -> Result<()> {
         "text_shape",
         "pointer_lock",
         "camera_mode",
+        "camera_mode_area",
     ];
 
     let mut sources = components
