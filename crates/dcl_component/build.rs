@@ -28,6 +28,7 @@ fn main() -> Result<()> {
         "ui_dropdown",
         "ui_dropdown_result",
         "text_shape",
+        "pointer_lock",
     ];
 
     let mut sources = components
