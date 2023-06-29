@@ -80,6 +80,7 @@ impl DclProtoComponent for sdk::components::PbUiInput {}
 impl DclProtoComponent for sdk::components::PbUiInputResult {}
 impl DclProtoComponent for sdk::components::PbUiDropdown {}
 impl DclProtoComponent for sdk::components::PbUiDropdownResult {}
+impl DclProtoComponent for sdk::components::PbTextShape {}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}

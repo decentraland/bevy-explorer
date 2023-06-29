@@ -18,7 +18,7 @@ use self::{
     animation::AnimatorPlugin, billboard::BillboardPlugin, gltf_container::GltfDefinitionPlugin,
     material::MaterialDefinitionPlugin, mesh_collider::MeshColliderPlugin,
     mesh_renderer::MeshDefinitionPlugin, pointer_events::PointerEventsPlugin,
-    raycast::RaycastPlugin, scene_ui::SceneUiPlugin,
+    raycast::RaycastPlugin, scene_ui::SceneUiPlugin, text_shape::TextShapePlugin,
     transform_and_parent::process_transform_and_parent_updates,
 };
 
@@ -33,6 +33,7 @@ pub mod mesh_renderer;
 pub mod pointer_events;
 pub mod raycast;
 pub mod scene_ui;
+pub mod text_shape;
 pub mod transform_and_parent;
 
 #[derive(Component, Default)]
@@ -128,6 +129,7 @@ impl Plugin for SceneOutputPlugin {
         app.add_plugin(RaycastPlugin);
         app.add_plugin(PointerEventsPlugin);
         app.add_plugin(SceneUiPlugin);
+        app.add_plugin(TextShapePlugin);
     }
 }
 

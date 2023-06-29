@@ -59,6 +59,8 @@ impl SceneComponentId {
     pub const MESH_RENDERER: SceneComponentId = SceneComponentId(1018);
     pub const MESH_COLLIDER: SceneComponentId = SceneComponentId(1019);
 
+    pub const TEXT_SHAPE: SceneComponentId = SceneComponentId(1030);
+
     pub const GLTF_CONTAINER: SceneComponentId = SceneComponentId(1041);
     pub const ANIMATOR: SceneComponentId = SceneComponentId(1042);
 
