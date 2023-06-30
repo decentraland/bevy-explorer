@@ -81,6 +81,9 @@ impl DclProtoComponent for sdk::components::PbUiInputResult {}
 impl DclProtoComponent for sdk::components::PbUiDropdown {}
 impl DclProtoComponent for sdk::components::PbUiDropdownResult {}
 impl DclProtoComponent for sdk::components::PbTextShape {}
+impl DclProtoComponent for sdk::components::PbPointerLock {}
+impl DclProtoComponent for sdk::components::PbCameraMode {}
+impl DclProtoComponent for sdk::components::PbCameraModeArea {}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}
@@ -119,6 +122,9 @@ impl common::Vector3 {
             y: vec3.y,
             z: -vec3.z,
         }
+    }
+    pub fn abs_vec_to_vec3(&self) -> bevy::prelude::Vec3 {
+        bevy::prelude::Vec3::new(self.x, self.y, self.z)
     }
 }
 

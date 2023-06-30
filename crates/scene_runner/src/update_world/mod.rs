@@ -15,17 +15,18 @@ use dcl_component::{
 };
 
 use self::{
-    animation::AnimatorPlugin, billboard::BillboardPlugin, gltf_container::GltfDefinitionPlugin,
-    material::MaterialDefinitionPlugin, mesh_collider::MeshColliderPlugin,
-    mesh_renderer::MeshDefinitionPlugin, pointer_events::PointerEventsPlugin,
-    raycast::RaycastPlugin, scene_ui::SceneUiPlugin, text_shape::TextShapePlugin,
-    transform_and_parent::process_transform_and_parent_updates,
+    animation::AnimatorPlugin, billboard::BillboardPlugin, camera_mode_area::CameraModeAreaPlugin,
+    gltf_container::GltfDefinitionPlugin, material::MaterialDefinitionPlugin,
+    mesh_collider::MeshColliderPlugin, mesh_renderer::MeshDefinitionPlugin,
+    pointer_events::PointerEventsPlugin, raycast::RaycastPlugin, scene_ui::SceneUiPlugin,
+    text_shape::TextShapePlugin, transform_and_parent::process_transform_and_parent_updates,
 };
 
 use super::{DeletedSceneEntities, RendererSceneContext, SceneLoopSchedule, SceneLoopSets};
 
 pub mod animation;
 pub mod billboard;
+pub mod camera_mode_area;
 pub mod gltf_container;
 pub mod material;
 pub mod mesh_collider;
@@ -130,6 +131,7 @@ impl Plugin for SceneOutputPlugin {
         app.add_plugin(PointerEventsPlugin);
         app.add_plugin(SceneUiPlugin);
         app.add_plugin(TextShapePlugin);
+        app.add_plugin(CameraModeAreaPlugin);
     }
 }
 

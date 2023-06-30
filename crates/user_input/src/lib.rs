@@ -6,7 +6,7 @@ use bevy::prelude::*;
 
 use common::{
     sets::SceneSets,
-    structs::{PrimaryCamera, PrimaryUser},
+    structs::{CameraOverride, PrimaryCamera, PrimaryUser},
 };
 use input_manager::AcceptInput;
 
@@ -44,9 +44,13 @@ fn hide_player_in_first_person(
     mut player: Query<&mut Visibility, With<PrimaryUser>>,
 ) {
     if let (Ok(cam), Ok(mut vis)) = (camera.get_single(), player.get_single_mut()) {
-        if cam.distance < 0.1 && *vis != Visibility::Hidden {
+        let distance = match cam.scene_override {
+            Some(CameraOverride::Distance(d)) => d,
+            _ => cam.distance,
+        };
+        if distance < 0.1 && *vis != Visibility::Hidden {
             *vis = Visibility::Hidden;
-        } else if cam.distance > 0.1 && *vis != Visibility::Inherited {
+        } else if distance > 0.1 && *vis != Visibility::Inherited {
             *vis = Visibility::Inherited;
         }
     }

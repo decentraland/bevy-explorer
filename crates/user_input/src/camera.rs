@@ -6,7 +6,7 @@ use bevy::{
     window::CursorGrabMode,
 };
 
-use common::structs::{PrimaryCamera, PrimaryUser, UiRoot};
+use common::structs::{CameraOverride, PrimaryCamera, PrimaryUser, UiRoot};
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn update_camera(
@@ -111,9 +111,16 @@ pub fn update_camera_position(
         return;
     };
 
-    camera_transform.translation = player_transform.translation
-        + Vec3::Y * (1.81 + 0.2 * options.distance)
-        + camera_transform
-            .rotation
-            .mul_vec3(Vec3::Z * 5.0 * options.distance);
+    if let Some(CameraOverride::Cinematic(transform)) = options.scene_override {
+        *camera_transform = transform;
+    } else {
+        let distance = match options.scene_override {
+            Some(CameraOverride::Distance(d)) => d,
+            _ => options.distance,
+        };
+
+        camera_transform.translation = player_transform.translation
+            + Vec3::Y * (1.81 + 0.2 * distance)
+            + camera_transform.rotation.mul_vec3(Vec3::Z * 5.0 * distance);
+    }
 }

@@ -1,5 +1,6 @@
 use std::{
     collections::VecDeque,
+    marker::PhantomData,
     sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError},
     time::{Duration, SystemTime},
 };
@@ -98,9 +99,50 @@ pub struct ContainerEntity {
 }
 
 // resource into which systems can add debug info
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Debug)]
 pub struct DebugInfo {
     pub info: HashMap<&'static str, String>,
+}
+
+// resource for adding toasts
+#[derive(Resource, Default, Debug)]
+pub struct Toasts(pub HashMap<&'static str, Toast>);
+
+#[derive(SystemParam)]
+pub struct Toaster<'w, 's> {
+    toasts: ResMut<'w, Toasts>,
+    time: Res<'w, Time>,
+    #[system_param(ignore)]
+    _p: PhantomData<&'s ()>,
+}
+
+impl<'w, 's> Toaster<'w, 's> {
+    pub fn add_toast(&mut self, key: &'static str, message: impl Into<String>) {
+        let message = message.into();
+        if let Some(existing) = self.toasts.0.get(key) {
+            if existing.message == message {
+                return;
+            }
+        }
+
+        self.toasts.0.insert(
+            key,
+            Toast {
+                message,
+                time: self.time.elapsed_seconds(),
+            },
+        );
+    }
+
+    pub fn clear_toast(&mut self, key: &'static str) {
+        self.toasts.0.remove(key);
+    }
+}
+
+#[derive(Debug)]
+pub struct Toast {
+    pub message: String,
+    pub time: f32,
 }
 
 // plugin which creates and runs scripts
@@ -116,6 +158,7 @@ impl Plugin for SceneRunnerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CrdtExtractors>();
         app.init_resource::<DebugInfo>();
+        app.init_resource::<Toasts>();
 
         let (sender, receiver) = sync_channel(1000);
         app.insert_resource(SceneUpdates {

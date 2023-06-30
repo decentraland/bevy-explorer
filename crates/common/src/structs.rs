@@ -34,6 +34,13 @@ pub struct PrimaryCamera {
     pub yaw: f32,
     pub pitch: f32,
     pub roll: f32,
+    // override
+    pub scene_override: Option<CameraOverride>,
+}
+
+pub enum CameraOverride {
+    Distance(f32),
+    Cinematic(Transform),
 }
 
 impl Default for PrimaryCamera {
@@ -49,6 +56,7 @@ impl Default for PrimaryCamera {
             distance: 1.0,
             key_roll_left: KeyCode::T,
             key_roll_right: KeyCode::G,
+            scene_override: None,
         }
     }
 }
