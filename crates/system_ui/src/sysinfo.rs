@@ -18,9 +18,9 @@ use ui_core::{BODY_TEXT_STYLE, TITLE_TEXT_STYLE};
 
 use super::SystemUiRoot;
 
-pub struct SysInfoPlanelPlugin;
+pub struct SysInfoPanelPlugin;
 
-impl Plugin for SysInfoPlanelPlugin {
+impl Plugin for SysInfoPanelPlugin {
     fn build(&self, app: &mut App) {
         app.add_startup_system(setup.in_set(SetupSets::Main).after(SetupSets::Init));
         app.add_system(update_scene_load_state);

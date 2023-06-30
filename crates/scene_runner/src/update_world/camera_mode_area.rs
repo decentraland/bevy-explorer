@@ -11,7 +11,7 @@ use dcl_component::{
     SceneComponentId,
 };
 
-use crate::{ContainingScene, SceneEntity};
+use crate::{ContainingScene, SceneEntity, Toaster};
 
 use super::AddCrdtInterfaceExt;
 
@@ -43,6 +43,7 @@ fn update_camera_mode_area(
     areas: Query<(Entity, &SceneEntity, &CameraModeArea, &GlobalTransform)>,
     mut current_areas: Local<Vec<Entity>>,
     mut camera: Query<&mut PrimaryCamera>,
+    mut toaster: Toaster,
 ) {
     let Ok(mut camera) = camera.get_single_mut() else {
         return;
@@ -104,6 +105,7 @@ fn update_camera_mode_area(
                         camera.scene_override = None;
                     }
                 }
+                toaster.add_toast("camera_mode_area", "The scene has enforced the camera view");
                 current_areas.push(area_ent);
                 return;
             }
@@ -112,4 +114,5 @@ fn update_camera_mode_area(
 
     // no camera areas
     camera.scene_override = None;
+    toaster.clear_toast("camera_mode_area");
 }
