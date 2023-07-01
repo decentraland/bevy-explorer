@@ -257,11 +257,11 @@ impl Plugin for SceneRunnerPlugin {
 
 fn run_scene_loop(world: &mut World) {
     let mut window_query = world.query_filtered::<Entity, With<PrimaryWindow>>();
-    let winit_windows = world.non_send_resource::<WinitWindows>();
+    let winit_windows = world.get_non_send_resource::<WinitWindows>();
     let refresh_rate = window_query
         .get_single(&world)
         .ok()
-        .and_then(|window_ent| winit_windows.get_window(window_ent))
+        .and_then(|window_ent| winit_windows.and_then(|ww| ww.get_window(window_ent)))
         .and_then(|window| window.current_monitor())
         .and_then(|monitor| monitor.refresh_rate_millihertz());
     let config = world.resource::<AppConfig>();
