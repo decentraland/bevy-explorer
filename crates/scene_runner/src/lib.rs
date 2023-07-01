@@ -275,8 +275,7 @@ fn run_scene_loop(world: &mut World) {
     };
     let mut loop_schedule = world.resource_mut::<SceneLoopSchedule>();
     let mut schedule = std::mem::take(&mut loop_schedule.schedule);
-    let target_end_time =
-        loop_schedule.end_time + Duration::from_nanos((1e9 / fps as f32) as u64);
+    let target_end_time = loop_schedule.end_time + Duration::from_nanos((1e9 / fps as f32) as u64);
     let target_end_time = target_end_time.max(Instant::now() + Duration::from_millis(1));
 
     world.resource_mut::<SceneUpdates>().loop_end_time = target_end_time;
