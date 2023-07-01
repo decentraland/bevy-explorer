@@ -259,7 +259,7 @@ fn run_scene_loop(world: &mut World) {
     let mut window_query = world.query_filtered::<Entity, With<PrimaryWindow>>();
     let winit_windows = world.get_non_send_resource::<WinitWindows>();
     let refresh_rate = window_query
-        .get_single(&world)
+        .get_single(world)
         .ok()
         .and_then(|window_ent| winit_windows.and_then(|ww| ww.get_window(window_ent)))
         .and_then(|window| window.current_monitor())
@@ -276,7 +276,7 @@ fn run_scene_loop(world: &mut World) {
     let mut loop_schedule = world.resource_mut::<SceneLoopSchedule>();
     let mut schedule = std::mem::take(&mut loop_schedule.schedule);
     let target_end_time =
-        loop_schedule.end_time + Duration::from_nanos((1000_000_000.0 / fps as f32) as u64);
+        loop_schedule.end_time + Duration::from_nanos((1e9 / fps as f32) as u64);
     let target_end_time = target_end_time.max(Instant::now() + Duration::from_millis(1));
 
     world.resource_mut::<SceneUpdates>().loop_end_time = target_end_time;
