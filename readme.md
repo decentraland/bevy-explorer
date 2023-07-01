@@ -28,7 +28,7 @@ This project's goals are to:
 - disable/enable vsync. defaults to off.
 
 `--fps (number)`
-- set target fps. defaults to 60. if vsync is true this will be overridden by the vsync refresh rate.
+- set target fps. defaults to 60. if vsync is true this will be overridden by the vsync refresh rate. also accessible via console `/fps` command.
 
 `--msaa [1,2,4,8]`
 - set the number of multisamples. higher values make for nicer graphics but takes more gpu power. defaults to 4.
@@ -36,12 +36,6 @@ This project's goals are to:
 `--threads n`
 - set the max simultaneous thread count for scene javascript execution. higher will allow better performance for distant scenes, but requires more cpu power. defaults to 4.
 - also accessible via console command `/scene_threads`
-
-`--millis n`
-- set the max time per frame which the renderer will wait for scene execution. higher values will increase distant scene performance at the possible cost of frame rate (particularly with lower thread count).
-- note: if used together with `--vsync true` the time should be at least equal to 1000/monitor sync rate (i.e. 17 for 60hz, 6 for 144hz) to avoid very jerky behaviour.
-- also accessible via console command `/scene_millis`
-- defaults to 12, around 80fps
 
 # Testing
 

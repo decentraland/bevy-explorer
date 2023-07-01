@@ -77,7 +77,6 @@ pub struct AppConfig {
     pub profile_base_url: String,
     pub graphics: GraphicsSettings,
     pub scene_threads: usize,
-    pub scene_loop_millis: u64,
 }
 
 impl Default for AppConfig {
@@ -89,7 +88,6 @@ impl Default for AppConfig {
             profile_base_url: "https://peer.decentraland.zone/content/contents/".to_owned(),
             graphics: Default::default(),
             scene_threads: 4,
-            scene_loop_millis: 12, // ~80fps
         }
     }
 }

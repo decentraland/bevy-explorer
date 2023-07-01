@@ -76,10 +76,6 @@ fn main() {
             .value_from_str("--threads")
             .ok()
             .unwrap_or(base_config.scene_threads),
-        scene_loop_millis: args
-            .value_from_str("--millis")
-            .ok()
-            .unwrap_or(base_config.scene_loop_millis),
     };
 
     let remaining = args.finish();
@@ -173,7 +169,7 @@ fn main() {
     app.add_console_command::<ChangeLocationCommand, _>(change_location);
     app.add_console_command::<SceneDistanceCommand, _>(scene_distance);
     app.add_console_command::<SceneThreadsCommand, _>(scene_threads);
-    app.add_console_command::<SceneMillisCommand, _>(scene_millis);
+    app.add_console_command::<FpsCommand, _>(set_fps);
 
     // replay any warnings
     for warning in warnings {
@@ -302,17 +298,17 @@ fn scene_threads(mut input: ConsoleCommand<SceneThreadsCommand>, mut config: Res
     }
 }
 
-// set loop millis
+// set fps
 #[derive(clap::Parser, ConsoleCommand)]
-#[command(name = "/scene_millis")]
-struct SceneMillisCommand {
-    millis: Option<u64>,
+#[command(name = "/fps")]
+struct FpsCommand {
+    fps: usize,
 }
 
-fn scene_millis(mut input: ConsoleCommand<SceneMillisCommand>, mut config: ResMut<AppConfig>) {
+fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>) {
     if let Some(Ok(command)) = input.take() {
-        let millis = command.millis.unwrap_or(12);
-        config.scene_loop_millis = millis;
-        input.reply_ok("scene loop max ms set to {millis}");
+        let fps = command.fps;
+        config.graphics.fps_target = fps;
+        input.reply_ok("target frame rate set to {fps}");
     }
 }
