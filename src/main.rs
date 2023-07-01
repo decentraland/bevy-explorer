@@ -67,6 +67,10 @@ fn main() {
                 .value_from_str::<_, usize>("--msaa")
                 .ok()
                 .unwrap_or(base_config.graphics.msaa),
+            fps_target: args
+                .value_from_str::<_, usize>("--fps")
+                .ok()
+                .unwrap_or(base_config.graphics.fps_target),
         },
         scene_threads: args
             .value_from_str("--threads")
@@ -243,7 +247,9 @@ fn setup(mut commands: Commands, mut cam_resource: ResMut<PrimaryCameraRes>) {
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/teleport")]
 struct ChangeLocationCommand {
+    #[arg(allow_hyphen_values(true))]
     x: i32,
+    #[arg(allow_hyphen_values(true))]
     y: i32,
 }
 
@@ -254,7 +260,7 @@ fn change_location(
     if let Some(Ok(command)) = input.take() {
         if let Ok(mut transform) = player.get_single_mut() {
             transform.translation.x = command.x as f32 * 16.0;
-            transform.translation.z = command.y as f32 * 16.0;
+            transform.translation.z = -command.y as f32 * 16.0;
             input.reply_ok(format!("new location: {:?}", (command.x, command.y)));
             return;
         }
