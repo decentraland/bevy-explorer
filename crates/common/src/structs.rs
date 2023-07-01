@@ -99,6 +99,7 @@ pub struct GraphicsSettings {
     pub vsync: bool,
     pub log_fps: bool,
     pub msaa: usize,
+    pub fps_target: usize,
 }
 
 impl Default for GraphicsSettings {
@@ -107,6 +108,7 @@ impl Default for GraphicsSettings {
             vsync: false,
             log_fps: true,
             msaa: 4,
+            fps_target: 60,
         }
     }
 }

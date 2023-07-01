@@ -13,6 +13,7 @@ use bevy::{
     scene::scene_spawner_system,
     utils::{FloatOrd, HashMap, HashSet, Instant},
     window::PrimaryWindow,
+    winit::WinitWindows,
 };
 
 use common::{
@@ -255,32 +256,37 @@ impl Plugin for SceneRunnerPlugin {
 }
 
 fn run_scene_loop(world: &mut World) {
+    let mut window_query = world.query_filtered::<Entity, With<PrimaryWindow>>();
+    let winit_windows = world.non_send_resource::<WinitWindows>();
+    let refresh_rate = window_query
+        .get_single(&world)
+        .ok()
+        .and_then(|window_ent| winit_windows.get_window(window_ent))
+        .and_then(|window| window.current_monitor())
+        .and_then(|monitor| monitor.refresh_rate_millihertz());
+    let config = world.resource::<AppConfig>();
+    let fps = if config.graphics.vsync {
+        // TODO this should use video mode if we add fullscreen video modes
+        refresh_rate
+            .map(|rr| (rr / 1000) as usize)
+            .unwrap_or(config.graphics.fps_target)
+    } else {
+        config.graphics.fps_target
+    };
     let mut loop_schedule = world.resource_mut::<SceneLoopSchedule>();
     let mut schedule = std::mem::take(&mut loop_schedule.schedule);
-    let last_end_time = loop_schedule.end_time;
-    let start_time = Instant::now();
-    #[cfg(debug_assertions)]
-    let millis = 10000;
-    #[cfg(not(debug_assertions))]
-    let millis = world.resource::<AppConfig>().scene_loop_millis;
-    let end_time = last_end_time + Duration::from_millis(millis);
+    let target_end_time =
+        loop_schedule.end_time + Duration::from_nanos((1000_000_000.0 / fps as f32) as u64);
+    let target_end_time = target_end_time.max(Instant::now() + Duration::from_millis(1));
 
-    // allow at least 1 ms until i sort out the frame timings properly
-    // TODO:
-    // - calculate scene time from end of render-world handoff (so as to capture asset extract)
-    // - estimate / conservatively allocate time from end-of-scene-update to renderer-handoff
-    // - get/use vsync info if enabled
-    // - get/use user-spec otherwise
-    let end_time = end_time.max(start_time + Duration::from_millis(1));
-
-    world.resource_mut::<SceneUpdates>().loop_end_time = end_time;
+    world.resource_mut::<SceneUpdates>().loop_end_time = target_end_time;
 
     // run at least once to collect updates even if no scenes are eligible
     let mut run_once = false;
 
     // run until time elapsed or all scenes are updated
     while !run_once
-        || (Instant::now() < end_time
+        || (Instant::now() < target_end_time
             && (world.resource::<SceneUpdates>().eligible_jobs > 0
                 || !world.resource::<SceneUpdates>().jobs_in_flight.is_empty()))
     {
@@ -288,19 +294,15 @@ fn run_scene_loop(world: &mut World) {
         run_once = true;
     }
 
-    // if !run_once {
-    //     warn!("skip");
-    // } else {
-    //     info!(
-    //         "frame: {}, loop: {}",
-    //         (Instant::now().duration_since(last_end_time).as_secs_f64() * 1000.0) as u32,
-    //         (Instant::now().duration_since(start_time).as_secs_f64() * 1000.0) as u32,
-    //     );
-    // }
-
     let mut loop_schedule = world.resource_mut::<SceneLoopSchedule>();
     loop_schedule.schedule = schedule;
-    loop_schedule.end_time = Instant::now();
+
+    let actual_end_time = Instant::now();
+    loop_schedule.end_time = target_end_time.max(actual_end_time);
+
+    if let Some(sleep_time) = target_end_time.checked_duration_since(actual_end_time) {
+        spin_sleep::sleep(sleep_time)
+    }
 }
 
 fn update_scene_priority(
