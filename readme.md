@@ -24,8 +24,11 @@ This project's goals are to:
 `--server https://sdk-test-scenes.decentraland.zone`
 - specify the content server, defaults to the sdk test server.
 
-`--vsync [true|false]`
+`--vsync (true|false)`
 - disable/enable vsync. defaults to off.
+
+`--fps (number)`
+- set target fps. defaults to 60. if vsync is true this will be overridden by the vsync refresh rate.
 
 `--msaa [1,2,4,8]`
 - set the number of multisamples. higher values make for nicer graphics but takes more gpu power. defaults to 4.
