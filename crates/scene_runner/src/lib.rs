@@ -281,7 +281,11 @@ fn run_scene_loop(world: &mut World) {
     let mut loop_schedule = world.resource_mut::<SceneLoopSchedule>();
     let mut schedule = std::mem::take(&mut loop_schedule.schedule);
 
-    let frame_target_duration = Duration::from_nanos((1e9 / fps) as u64);
+    let frame_target_duration = if fps == 0.0 {
+        Duration::from_secs(100)
+    } else {
+        Duration::from_nanos((1e9 / fps) as u64)
+    };
     let start_loop_time = Instant::now();
     let frame_actual_duration = start_loop_time
         .checked_duration_since(loop_schedule.prev_time)
@@ -318,7 +322,9 @@ fn run_scene_loop(world: &mut World) {
     loop_schedule.schedule = schedule;
 
     if let Some(sleep_time) = target_end_time.checked_duration_since(start_loop_time) {
-        loop_schedule.sleeper.sleep(sleep_time)
+        if fps != 0.0 {
+            loop_schedule.sleeper.sleep(sleep_time)
+        }
     }
 }
 

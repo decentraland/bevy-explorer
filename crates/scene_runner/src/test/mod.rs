@@ -16,6 +16,7 @@ use bevy::{
 };
 use itertools::Itertools;
 use once_cell::sync::Lazy;
+use spin_sleep::SpinSleeper;
 
 use crate::{
     process_scene_entity_lifecycle, receive_scene_updates, send_scene_updates,
@@ -25,7 +26,7 @@ use crate::{
     },
     RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
 };
-use common::structs::{AppConfig, PrimaryCamera};
+use common::structs::{AppConfig, GraphicsSettings, PrimaryCamera};
 use comms::{wallet::WalletPlugin, CommsPlugin};
 use console::{self, ConsolePlugin};
 use dcl::interface::{CrdtStore, CrdtType};
@@ -87,7 +88,13 @@ fn init_test_app(entity_json: &str) -> App {
     let mut app = App::new();
 
     // Add our systems
-    app.init_resource::<AppConfig>();
+    app.insert_resource(AppConfig {
+        graphics: GraphicsSettings {
+            fps_target: 0,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
     app.add_plugins(TestPlugins);
     app.add_asset::<Shader>();
     app.add_asset::<Image>();
@@ -126,7 +133,9 @@ fn init_test_app(entity_json: &str) -> App {
     skip_loop_schedule.add_system(|mut updates: ResMut<SceneUpdates>| updates.eligible_jobs = 0);
     app.world.insert_resource(SceneLoopSchedule {
         schedule: skip_loop_schedule,
-        end_time: Instant::now(),
+        prev_time: Instant::now(),
+        run_time: 100.0,
+        sleeper: SpinSleeper::default(),
     });
 
     // run app once to get the scene initialized
@@ -145,7 +154,9 @@ fn init_test_app(entity_json: &str) -> App {
 
     app.world.insert_resource(SceneLoopSchedule {
         schedule: Schedule::new(),
-        end_time: Instant::now(),
+        prev_time: Instant::now(),
+        run_time: 100.0,
+        sleeper: SpinSleeper::default(),
     });
 
     app
