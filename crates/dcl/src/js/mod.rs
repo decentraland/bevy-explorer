@@ -103,6 +103,9 @@ pub(crate) fn scene_thread(
     state.borrow_mut().put(Vec::<SceneLogMessage>::default());
     state.borrow_mut().put(SceneElapsedTime(0.0));
 
+    let span = info_span!("js startup").entered();
+    state.borrow_mut().put(span);
+
     // store kill handle
     state
         .borrow_mut()
@@ -175,8 +178,6 @@ fn run_script(
     messages_in: (),
     arg_fn: impl for<'a> Fn(&mut v8::HandleScope<'a>) -> Vec<v8::Local<'a, v8::Value>>,
 ) -> Result<(), AnyError> {
-    let script_span = info_span!("js_run_script");
-    let _guard = script_span.enter();
     // set up scene i/o
     let op_state = runtime.op_state();
     op_state.borrow_mut().put(messages_in);
