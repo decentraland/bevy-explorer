@@ -1,6 +1,9 @@
 // Engine module
 
-use bevy::{prelude::{debug, info, warn, info_span}, utils::tracing::span::EnteredSpan};
+use bevy::{
+    prelude::{debug, info, info_span, warn},
+    utils::tracing::span::EnteredSpan,
+};
 use deno_core::{op, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
 use tokio::sync::{broadcast::error::TryRecvError, mpsc::Receiver};

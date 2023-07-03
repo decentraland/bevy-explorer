@@ -283,9 +283,16 @@ fn run_scene_loop(world: &mut World) {
 
     let frame_target_duration = Duration::from_nanos((1e9 / fps) as u64);
     let start_loop_time = Instant::now();
-    let frame_actual_duration = start_loop_time.checked_duration_since(loop_schedule.prev_time).unwrap_or_default();
-    let non_loop_duration = frame_actual_duration.checked_sub(Duration::from_secs_f64(loop_schedule.run_time)).unwrap_or_default();
-    let ideal_loop_time_prev_frame = frame_target_duration.checked_sub(non_loop_duration).unwrap_or_default().max(Duration::from_millis(1));
+    let frame_actual_duration = start_loop_time
+        .checked_duration_since(loop_schedule.prev_time)
+        .unwrap_or_default();
+    let non_loop_duration = frame_actual_duration
+        .checked_sub(Duration::from_secs_f64(loop_schedule.run_time))
+        .unwrap_or_default();
+    let ideal_loop_time_prev_frame = frame_target_duration
+        .checked_sub(non_loop_duration)
+        .unwrap_or_default()
+        .max(Duration::from_millis(1));
     let ideal_loop_time_prev_frame = ideal_loop_time_prev_frame.as_secs_f64();
     loop_schedule.run_time = loop_schedule.run_time * 0.5 + 0.5 * ideal_loop_time_prev_frame;
 
