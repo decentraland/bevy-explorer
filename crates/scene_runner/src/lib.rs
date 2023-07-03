@@ -30,6 +30,7 @@ use dcl_component::{
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
 use ipfs::SceneIpfsLocation;
+use spin_sleep::SpinSleeper;
 
 use self::{
     initialize_scene::{
@@ -152,7 +153,9 @@ pub struct SceneRunnerPlugin;
 #[derive(Resource)]
 pub struct SceneLoopSchedule {
     schedule: Schedule,
-    end_time: Instant,
+    run_time: f64,
+    prev_time: Instant,
+    sleeper: SpinSleeper,
 }
 
 impl Plugin for SceneRunnerPlugin {
@@ -247,7 +250,9 @@ impl Plugin for SceneRunnerPlugin {
 
         app.insert_resource(SceneLoopSchedule {
             schedule: scene_schedule,
-            end_time: Instant::now(),
+            prev_time: Instant::now(),
+            run_time: 0.01,
+            sleeper: SpinSleeper::default(),
         });
 
         app.add_plugin(SceneInputPlugin);
@@ -268,15 +273,24 @@ fn run_scene_loop(world: &mut World) {
     let fps = if config.graphics.vsync {
         // TODO this should use video mode if we add fullscreen video modes
         refresh_rate
-            .map(|rr| (rr / 1000) as usize)
-            .unwrap_or(config.graphics.fps_target)
+            .map(|rr| (((rr as f64 + 1.0) / 1000.0).ceil()))
+            .unwrap_or(config.graphics.fps_target as f64)
     } else {
-        config.graphics.fps_target
+        config.graphics.fps_target as f64
     };
     let mut loop_schedule = world.resource_mut::<SceneLoopSchedule>();
     let mut schedule = std::mem::take(&mut loop_schedule.schedule);
-    let target_end_time = loop_schedule.end_time + Duration::from_nanos((1e9 / fps as f32) as u64);
-    let target_end_time = target_end_time.max(Instant::now() + Duration::from_millis(1));
+
+    let frame_target_duration = Duration::from_nanos((1e9 / fps) as u64);
+    let start_loop_time = Instant::now();
+    let frame_actual_duration = start_loop_time.checked_duration_since(loop_schedule.prev_time).unwrap_or_default();
+    let non_loop_duration = frame_actual_duration.checked_sub(Duration::from_secs_f64(loop_schedule.run_time)).unwrap_or_default();
+    let ideal_loop_time_prev_frame = frame_target_duration.checked_sub(non_loop_duration).unwrap_or_default().max(Duration::from_millis(1));
+    let ideal_loop_time_prev_frame = ideal_loop_time_prev_frame.as_secs_f64();
+    loop_schedule.run_time = loop_schedule.run_time * 0.5 + 0.5 * ideal_loop_time_prev_frame;
+
+    let target_end_time = start_loop_time + Duration::from_secs_f64(loop_schedule.run_time);
+    loop_schedule.prev_time = start_loop_time;
 
     world.resource_mut::<SceneUpdates>().loop_end_time = target_end_time;
 
@@ -296,11 +310,8 @@ fn run_scene_loop(world: &mut World) {
     let mut loop_schedule = world.resource_mut::<SceneLoopSchedule>();
     loop_schedule.schedule = schedule;
 
-    let actual_end_time = Instant::now();
-    loop_schedule.end_time = target_end_time.max(actual_end_time);
-
-    if let Some(sleep_time) = target_end_time.checked_duration_since(actual_end_time) {
-        spin_sleep::sleep(sleep_time)
+    if let Some(sleep_time) = target_end_time.checked_duration_since(start_loop_time) {
+        loop_schedule.sleeper.sleep(sleep_time)
     }
 }
 

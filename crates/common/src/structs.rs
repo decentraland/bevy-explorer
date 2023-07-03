@@ -103,7 +103,7 @@ pub struct GraphicsSettings {
 impl Default for GraphicsSettings {
     fn default() -> Self {
         Self {
-            vsync: false,
+            vsync: true,
             log_fps: true,
             msaa: 4,
             fps_target: 60,
