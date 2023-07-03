@@ -30,7 +30,7 @@ impl Plugin for CameraModeAreaPlugin {
     fn build(&self, app: &mut App) {
         app.add_crdt_lww_component::<PbCameraModeArea, CameraModeArea>(
             SceneComponentId::CAMERA_MODE_AREA,
-            ComponentPosition::EntityOnly,
+            ComponentPosition::Any,
         );
 
         app.add_system(update_camera_mode_area.in_set(SceneSets::PostLoop));
