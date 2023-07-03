@@ -23,6 +23,7 @@ visuals = { path="crates/visuals" }
 ui_core = { path="crates/ui_core" }
 scene_runner = { path="crates/scene_runner" }
 console = { path="crates/console" }
+audio = { path="crates/audio" }
 
 bevy = "0.10"
 bevy_console = "0.7.0"

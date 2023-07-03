@@ -22,6 +22,7 @@ use scene_runner::{
     SceneRunnerPlugin,
 };
 
+use audio::AudioPlugin;
 use avatar::AvatarPlugin;
 use comms::{wallet::WalletPlugin, CommsPlugin};
 use console::{ConsolePlugin, DoAddConsoleCommand};
@@ -159,6 +160,7 @@ fn main() {
         .add_plugin(WalletPlugin)
         .add_plugin(CommsPlugin)
         .add_plugin(AvatarPlugin)
+        .add_plugin(AudioPlugin)
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
         .add_startup_system(setup.in_set(SetupSets::Init))
         .insert_resource(AmbientLight {

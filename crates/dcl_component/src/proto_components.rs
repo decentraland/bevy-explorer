@@ -84,6 +84,7 @@ impl DclProtoComponent for sdk::components::PbTextShape {}
 impl DclProtoComponent for sdk::components::PbPointerLock {}
 impl DclProtoComponent for sdk::components::PbCameraMode {}
 impl DclProtoComponent for sdk::components::PbCameraModeArea {}
+impl DclProtoComponent for sdk::components::PbAudioSource {}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}
