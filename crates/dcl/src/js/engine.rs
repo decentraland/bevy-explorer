@@ -1,6 +1,9 @@
 // Engine module
 
-use bevy::prelude::{debug, info, warn};
+use bevy::{
+    prelude::{debug, info, info_span, warn},
+    utils::tracing::span::EnteredSpan,
+};
 use deno_core::{op, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
 use tokio::sync::{broadcast::error::TryRecvError, mpsc::Receiver};
@@ -62,7 +65,11 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
 #[op(v8)]
 async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<OpState>>) -> Vec<Vec<u8>> {
     let mut receiver = op_state.borrow_mut().take::<Receiver<RendererResponse>>();
+    let span = op_state.borrow_mut().take::<EnteredSpan>();
+    drop(span); // don't hold it over the await point so we get a clearer view of when js is running
     let response = receiver.recv().await;
+    let span = info_span!("js update").entered();
+    op_state.borrow_mut().put(span);
     op_state.borrow_mut().put(receiver);
 
     let mut results = match response {

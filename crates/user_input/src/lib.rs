@@ -27,10 +27,10 @@ impl Plugin for UserInputPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             (
-                update_camera.run_if(should_accept_input),
-                update_camera_position,
                 update_user_velocity.run_if(should_accept_input),
                 update_user_position,
+                update_camera.run_if(should_accept_input),
+                update_camera_position,
             )
                 .chain()
                 .in_set(SceneSets::Input),

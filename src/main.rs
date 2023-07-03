@@ -67,15 +67,15 @@ fn main() {
                 .value_from_str::<_, usize>("--msaa")
                 .ok()
                 .unwrap_or(base_config.graphics.msaa),
+            fps_target: args
+                .value_from_str::<_, usize>("--fps")
+                .ok()
+                .unwrap_or(base_config.graphics.fps_target),
         },
         scene_threads: args
             .value_from_str("--threads")
             .ok()
             .unwrap_or(base_config.scene_threads),
-        scene_loop_millis: args
-            .value_from_str("--millis")
-            .ok()
-            .unwrap_or(base_config.scene_loop_millis),
     };
 
     let remaining = args.finish();
@@ -169,7 +169,7 @@ fn main() {
     app.add_console_command::<ChangeLocationCommand, _>(change_location);
     app.add_console_command::<SceneDistanceCommand, _>(scene_distance);
     app.add_console_command::<SceneThreadsCommand, _>(scene_threads);
-    app.add_console_command::<SceneMillisCommand, _>(scene_millis);
+    app.add_console_command::<FpsCommand, _>(set_fps);
 
     // replay any warnings
     for warning in warnings {
@@ -243,7 +243,9 @@ fn setup(mut commands: Commands, mut cam_resource: ResMut<PrimaryCameraRes>) {
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/teleport")]
 struct ChangeLocationCommand {
+    #[arg(allow_hyphen_values(true))]
     x: i32,
+    #[arg(allow_hyphen_values(true))]
     y: i32,
 }
 
@@ -254,7 +256,7 @@ fn change_location(
     if let Some(Ok(command)) = input.take() {
         if let Ok(mut transform) = player.get_single_mut() {
             transform.translation.x = command.x as f32 * 16.0;
-            transform.translation.z = command.y as f32 * 16.0;
+            transform.translation.z = -command.y as f32 * 16.0;
             input.reply_ok(format!("new location: {:?}", (command.x, command.y)));
             return;
         }
@@ -296,17 +298,17 @@ fn scene_threads(mut input: ConsoleCommand<SceneThreadsCommand>, mut config: Res
     }
 }
 
-// set loop millis
+// set fps
 #[derive(clap::Parser, ConsoleCommand)]
-#[command(name = "/scene_millis")]
-struct SceneMillisCommand {
-    millis: Option<u64>,
+#[command(name = "/fps")]
+struct FpsCommand {
+    fps: usize,
 }
 
-fn scene_millis(mut input: ConsoleCommand<SceneMillisCommand>, mut config: ResMut<AppConfig>) {
+fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>) {
     if let Some(Ok(command)) = input.take() {
-        let millis = command.millis.unwrap_or(12);
-        config.scene_loop_millis = millis;
-        input.reply_ok("scene loop max ms set to {millis}");
+        let fps = command.fps;
+        config.graphics.fps_target = fps;
+        input.reply_ok("target frame rate set to {fps}");
     }
 }
