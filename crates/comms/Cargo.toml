@@ -14,7 +14,7 @@ ipfs = { path="../ipfs" }
 bevy = "0.10"
 bimap = "0.6.3"
 ethers = "2.0.3"
-tokio = { version = "1.26.0", features = ["sync"] }
+tokio = { version = "1.29.1", features = ["sync"] }
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
 async-trait = "0.1.68"

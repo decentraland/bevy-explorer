@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use super::ui_actions::UiActionSet;
-use common::sets::SceneSets;
+use common::{sets::SceneSets, util::TryInsertEx};
 
 #[derive(Component)]
 pub struct Focus;
@@ -48,6 +48,6 @@ fn focus(
         .iter()
         .filter(|(_, interaction)| matches!(interaction, Interaction::Clicked))
     {
-        commands.entity(entity).insert(Focus);
+        commands.entity(entity).try_insert(Focus);
     }
 }

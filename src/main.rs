@@ -22,7 +22,7 @@ use scene_runner::{
     SceneRunnerPlugin,
 };
 
-use audio::AudioPlugin;
+use av::AudioPlugin;
 use avatar::AvatarPlugin;
 use comms::{wallet::WalletPlugin, CommsPlugin};
 use console::{ConsolePlugin, DoAddConsoleCommand};

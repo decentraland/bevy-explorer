@@ -16,7 +16,7 @@ bimap = "0.6.3"
 isahc = { version = "1.7.2", features = ["json"] }
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
-tokio = { version = "1.26.0", features = ["sync"] }
+tokio = { version = "1.29.1", features = ["sync"] }
 clap = "4.1.10"
 urlencoding = "2.1.2"
 urn = "0.7.0"

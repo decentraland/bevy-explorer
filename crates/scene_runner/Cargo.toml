@@ -16,7 +16,7 @@ console = { path="../console" }
 input_manager = { path="../input_manager" }
 
 bevy = { version = "0.10", features=["jpeg"] }
-tokio = { version = "1.26.0", features = ["sync"] }
+tokio = { version = "1.29.1", features = ["sync"] }
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
 anyhow = "1.0.70"

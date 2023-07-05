@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use common::util::TryInsertEx;
 
 /// specify a background image using 9-slice scaling
 /// https://en.wikipedia.org/wiki/9-slice_scaling
@@ -154,7 +155,7 @@ fn update_slices(
         // get or build tree
         let Some(container) = maybe_children.and_then(|children| children.iter().find(|child| existing_slices.get(**child).is_ok())) else {
             // build
-            commands.entity(ent).insert(SliceInitMarker).with_children(|c| {
+            commands.entity(ent).try_insert(SliceInitMarker).with_children(|c| {
                 // container
                 c.spawn((
                     NodeBundle{

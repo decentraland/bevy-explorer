@@ -2,35 +2,13 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_kira_audio::{
-    prelude::{AudioEmitter, AudioReceiver, SpacialAudio},
+    prelude::{AudioEmitter, AudioReceiver},
     AudioControl, AudioInstance, AudioTween,
 };
-use common::{
-    sets::{SceneSets, SetupSets},
-    structs::PrimaryCameraRes,
-    util::TryInsertEx,
-};
-use dcl::interface::ComponentPosition;
-use dcl_component::{proto_components::sdk::components::PbAudioSource, SceneComponentId};
+use common::{structs::PrimaryCameraRes, util::TryInsertEx};
+use dcl_component::proto_components::sdk::components::PbAudioSource;
 use ipfs::IpfsLoaderExt;
-use scene_runner::{
-    renderer_context::RendererSceneContext, update_world::AddCrdtInterfaceExt, SceneEntity,
-};
-
-pub struct AudioPlugin;
-
-impl Plugin for AudioPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugin(bevy_kira_audio::AudioPlugin);
-        app.add_crdt_lww_component::<PbAudioSource, AudioSource>(
-            SceneComponentId::AUDIO_SOURCE,
-            ComponentPosition::EntityOnly,
-        );
-        app.add_system(update_audio.in_set(SceneSets::PostLoop));
-        app.insert_resource(SpacialAudio { max_distance: 25. });
-        app.add_startup_system(setup.in_set(SetupSets::Main));
-    }
-}
+use scene_runner::{renderer_context::RendererSceneContext, SceneEntity};
 
 #[derive(Component, Debug)]
 pub struct AudioSource(PbAudioSource);
@@ -41,12 +19,12 @@ impl From<PbAudioSource> for AudioSource {
     }
 }
 
-fn setup(mut commands: Commands, camera: Res<PrimaryCameraRes>) {
+pub(crate) fn setup_audio(mut commands: Commands, camera: Res<PrimaryCameraRes>) {
     commands.entity(camera.0).try_insert(AudioReceiver);
 }
 
 #[allow(clippy::type_complexity)]
-fn update_audio(
+pub(crate) fn update_audio(
     mut commands: Commands,
     mut query: Query<
         (

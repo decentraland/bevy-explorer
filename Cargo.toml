@@ -23,7 +23,7 @@ visuals = { path="crates/visuals" }
 ui_core = { path="crates/ui_core" }
 scene_runner = { path="crates/scene_runner" }
 console = { path="crates/console" }
-audio = { path="crates/audio" }
+av = { path="crates/av" }
 
 bevy = "0.10"
 bevy_console = "0.7.0"
@@ -39,5 +39,6 @@ clap = "4.1.10"
 prost-build = "0.11.8"
 
 [patch.crates-io]
-bevy = { git="https://github.com/robtfm/bevy", branch="0.10-hotfix" }
+# bevy = { git="https://github.com/robtfm/bevy", branch="0.10-hotfix" }
+bevy = { path = "../bevy" }
 bevy_mod_billboard = { git="https://github.com/robtfm/bevy_mod_billboard", branch="lock_all" }
