@@ -1,3 +1,5 @@
+// TODO: rate, audio channels, update position(?)
+
 use bevy::{
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
@@ -5,7 +7,7 @@ use bevy::{
 use common::{sets::SceneSets, util::TryInsertEx};
 use dcl::interface::ComponentPosition;
 use dcl_component::{proto_components::sdk::components::PbVideoPlayer, SceneComponentId};
-use scene_runner::update_world::{AddCrdtInterfaceExt, material::VideoTextureOutput};
+use scene_runner::update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt};
 
 use crate::video_thread::{VideoCommand, VideoData, VideoInfo, VideoSink};
 
@@ -34,6 +36,7 @@ impl From<PbVideoPlayer> for VideoPlayer {
 
 fn init_ffmpeg() {
     ffmpeg_next::init().unwrap();
+    ffmpeg_next::log::set_level(ffmpeg_next::log::Level::Error);
 }
 
 fn play_videos(mut images: ResMut<Assets<Image>>, mut q: Query<&mut VideoSink>) {
@@ -45,7 +48,7 @@ fn play_videos(mut images: ResMut<Assets<Image>>, mut q: Query<&mut VideoSink>) 
                 rate,
                 length,
             })) => {
-                println!("resize");
+                debug!("resize");
                 images.get_mut(&sink.image).unwrap().resize(Extent3d {
                     width,
                     height,
@@ -55,7 +58,7 @@ fn play_videos(mut images: ResMut<Assets<Image>>, mut q: Query<&mut VideoSink>) 
                 sink.rate = Some(rate);
             }
             Ok(VideoData::Frame(frame, time)) => {
-                println!("set frame on {:?}", sink.image);
+                debug!("set frame on {:?}", sink.image);
                 images
                     .get_mut(&sink.image)
                     .unwrap()
@@ -95,7 +98,7 @@ pub fn update_video_players(
                 player.0.r#loop.unwrap_or(false),
             );
             let video_output = VideoTextureOutput(video_sink.image.clone());
-            commands.entity(ent).try_insert((video_sink,video_output));
+            commands.entity(ent).try_insert((video_sink, video_output));
         } else {
             let sink = maybe_sink.as_ref().unwrap();
             if player.0.playing.unwrap_or(true) {

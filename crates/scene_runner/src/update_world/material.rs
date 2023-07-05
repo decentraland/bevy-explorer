@@ -125,6 +125,7 @@ pub struct TouchMaterial;
 #[derive(Component)]
 pub struct VideoTextureOutput(pub Handle<Image>);
 
+#[allow(clippy::type_complexity)]
 fn update_materials(
     mut commands: Commands,
     mut new_materials: Query<
@@ -150,7 +151,11 @@ fn update_materials(
                     .ok()
             })
         } else if let Some(TextureUnion {
-            tex: Some(texture_union::Tex::VideoTexture(VideoTexture{ video_player_entity, .. })),
+            tex:
+                Some(texture_union::Tex::VideoTexture(VideoTexture {
+                    video_player_entity,
+                    ..
+                })),
         }) = defn.base_color_texture.as_ref()
         {
             let Some(video_entity) = scenes.get(container.root).ok().and_then(|root| {
@@ -159,9 +164,9 @@ fn update_materials(
                 warn!("failed to look up video source entity");
                 continue;
             };
-            
+
             if let Ok(vt) = videos.get(video_entity) {
-                println!("adding video texture {:?}", vt.0);
+                debug!("adding video texture {:?}", vt.0);
                 commands.entity(ent).insert(TouchMaterial);
                 Some(vt.0.clone())
             } else {
@@ -175,10 +180,12 @@ fn update_materials(
 
         // info!("found a mat for {ent:?}");
         let mut commands = commands.entity(ent);
-        commands.remove::<RetryMaterial>().try_insert(materials.add(StandardMaterial {
-            base_color_texture,
-            ..defn.material.clone()
-        }));
+        commands
+            .remove::<RetryMaterial>()
+            .try_insert(materials.add(StandardMaterial {
+                base_color_texture,
+                ..defn.material.clone()
+            }));
         if defn.shadow_caster {
             commands.remove::<NotShadowCaster>();
         } else {

@@ -83,7 +83,7 @@ fn video_thread(
     if let Err(e) = video_thread_inner(commands, frames, path) {
         warn!("video error: {e}");
     } else {
-        warn!("video closed");
+        debug!("video closed");
     }
 }
 
@@ -125,14 +125,15 @@ pub fn video_thread_inner(
 
     let rate = f64::from(input_stream.rate());
     let length = (input_stream.frames() as f64) / rate;
-    println!("frames: {}, length: {}", input_stream.frames(), length);
+    debug!("frames: {}, length: {}", input_stream.frames(), length);
 
-    if let Err(_) = sink.blocking_send(VideoData::Info(VideoInfo {
+    if sink.blocking_send(VideoData::Info(VideoInfo {
         width: roundup(decoder.width()),
         height: roundup(decoder.height()),
         rate,
         length,
-    })) {
+    })).is_err() {
+        // channel closed
         return Ok(());
     }
 
@@ -163,7 +164,7 @@ pub fn video_thread_inner(
         if next_frame.is_none() {
             // eof
             if repeat {
-                if let Err(_) = input_context.seek(0, ..) {
+                if input_context.seek(0, ..).is_err() {
                     // reload
                     input_context = input(&path)?;
                 }
@@ -193,7 +194,7 @@ pub fn video_thread_inner(
             Ok(VideoCommand::Pause) => start_instant = None,
             Ok(VideoCommand::Repeat(r)) => repeat = r,
             Ok(VideoCommand::Seek(time)) => {
-                println!("seek -> {time}");
+                debug!("seek -> {time}");
                 let time = time.clamp(0.0, length);
                 let av_time = (time * i64::from(AV_TIME_BASE) as f64) as i64;
                 input_context.seek(av_time, 0..)?;
@@ -221,7 +222,7 @@ pub fn video_thread_inner(
             }
 
             current_frame += 1;
-            println!("send frame {current_frame}");
+            debug!("send frame {current_frame}");
             let _ = sink.blocking_send(VideoData::Frame(
                 next_frame.take().unwrap(),
                 current_frame as f64 / rate,
