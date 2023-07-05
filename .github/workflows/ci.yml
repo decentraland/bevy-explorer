@@ -13,6 +13,8 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+      - name: install ffmpeg deps
+        run: apt install -y --no-install-recommends clang curl pkg-config
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -43,6 +45,9 @@ jobs:
       - name: Install alsa and udev
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
         if: runner.os == 'linux'
+      - name: install ffmpeg deps (linux)
+        run: apt install -y --no-install-recommends clang curl pkg-config
+        if: runner.os == 'linux'
       - uses: actions-rs/cargo@v1
         with:
           command: test
@@ -65,6 +70,8 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+      - name: install ffmpeg deps (linux)
+        run: apt install -y --no-install-recommends clang curl pkg-config
       - uses: actions-rs/cargo@v1
         with:
           command: fmt
@@ -87,6 +94,8 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+      - name: install ffmpeg deps (linux)
+        run: apt install -y --no-install-recommends clang curl pkg-config
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
