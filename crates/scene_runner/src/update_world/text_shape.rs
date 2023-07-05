@@ -31,7 +31,7 @@ impl From<PbTextShape> for TextShape {
 fn update_text_shapes(
     mut commands: Commands,
     query: Query<(Entity, &TextShape), Changed<TextShape>>,
-    existing: Query<&Parent, With<BillboardTextBounds>>,
+    existing: Query<(Entity, &Parent), With<BillboardTextBounds>>,
     mut removed: RemovedComponents<TextShape>,
 ) {
     // remove changed and deleted nodes
@@ -40,9 +40,9 @@ fn update_text_shapes(
         .map(|(e, ..)| e)
         .chain(removed.iter())
         .collect::<HashSet<_>>();
-    for par in existing.iter() {
+    for (ent, par) in existing.iter() {
         if old_parents.contains(&par.get()) {
-            commands.entity(par.get()).despawn_recursive();
+            commands.entity(ent).despawn_recursive();
         }
     }
 
