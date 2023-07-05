@@ -127,12 +127,15 @@ pub fn video_thread_inner(
     let length = (input_stream.frames() as f64) / rate;
     debug!("frames: {}, length: {}", input_stream.frames(), length);
 
-    if sink.blocking_send(VideoData::Info(VideoInfo {
-        width: roundup(decoder.width()),
-        height: roundup(decoder.height()),
-        rate,
-        length,
-    })).is_err() {
+    if sink
+        .blocking_send(VideoData::Info(VideoInfo {
+            width: roundup(decoder.width()),
+            height: roundup(decoder.height()),
+            rate,
+            length,
+        }))
+        .is_err()
+    {
         // channel closed
         return Ok(());
     }
