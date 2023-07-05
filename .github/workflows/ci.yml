@@ -6,7 +6,6 @@ jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
-    container: jrottenberg/ffmpeg:6.0-ubuntu
     steps:
       - name: Install protoc
         uses: arduino/setup-protoc@v1
@@ -17,6 +16,8 @@ jobs:
       - name: install ffmpeg deps
         run: sudo apt install -y --no-install-recommends clang curl pkg-config
       - uses: actions/checkout@v2
+      - uses: FedericoCarboni/setup-ffmpeg@v2
+        id: setup-ffmpeg
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
