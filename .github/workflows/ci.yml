@@ -30,6 +30,9 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - ffmpeg_version: latest
+            ffmpeg_download_url: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full-shared.7z
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
