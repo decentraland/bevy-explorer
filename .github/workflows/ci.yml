@@ -48,6 +48,20 @@ jobs:
       - name: install ffmpeg deps (linux)
         run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
         if: runner.os == 'linux'
+      - name: install ffmpeg deps (macOs)
+        if: runner.os == 'macos'
+        run: brew install ffmpeg pkg-config          
+      - name: install ffmpeg deps (windows)
+        if: runner.os == 'windows'
+        run: |
+          $VCINSTALLDIR = $(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
+          Add-Content $env:GITHUB_ENV "LIBCLANG_PATH=${VCINSTALLDIR}\VC\Tools\LLVM\x64\bin`n"
+          Invoke-WebRequest "${env:FFMPEG_DOWNLOAD_URL}" -OutFile ffmpeg-release-full-shared.7z
+          7z x ffmpeg-release-full-shared.7z
+          mkdir ffmpeg
+          mv ffmpeg-*/* ffmpeg/
+          Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
+          Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"          
       - uses: actions-rs/cargo@v1
         with:
           command: test
@@ -72,8 +86,6 @@ jobs:
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
       - name: install ffmpeg deps (linux)
         run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
-      - uses: FedericoCarboni/setup-ffmpeg@v2
-        id: setup-ffmpeg
       - uses: actions-rs/cargo@v1
         with:
           command: fmt
@@ -82,7 +94,6 @@ jobs:
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
-    container: jrottenberg/ffmpeg:6.0-ubuntu
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
