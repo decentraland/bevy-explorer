@@ -47,10 +47,8 @@ jobs:
             if: runner.os == 'macos'
             run: |
                 brew install ffmpeg pkg-config          
-                echo "Tests=$tests" >> $GITHUB_ENV
-
-          - name: install cross
-            run: cargo install cross --git https://github.com/cross-rs/cross
+#                echo "Tests=$tests" >> $GITHUB_ENV
 
           - name: Cargo build
-            run: cross build --release ${{ matrix.target && '--target' }} ${{ matrix.target }}
+            run: |
+              SDKROOT=$(xcrun -sdk macosx --show-sdk-path) MACOSX_DEPLOYMENT_TARGET=$(xcrun -sdk macosx --show-sdk-platform-version) cargo build --target=aarch64-apple-darwin --release
