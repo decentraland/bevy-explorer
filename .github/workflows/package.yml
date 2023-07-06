@@ -5,50 +5,18 @@ on:
 
 jobs:
     build:
-        name: Build ${{ matrix.build_name }}
-        strategy:
-            matrix:
-                include:
-                  - build_name: macos-aarch64
-                    os: macos-latest
-                    target: aarch64-apple-darwin
-
-        env:
-            CARGO_BUILD_DIR: target/${{ matrix.target }}/release
-
-        runs-on: ${{ matrix.os }}
+        name: Build macos aarch64
+        runs-on: ubuntu-18.04
         steps:
           - name: Clone repo
             uses: actions/checkout@v3
 
-          - uses: actions-rs/toolchain@v1
+          - name: qemu  
+            uses: uraimo/run-on-arch-action@v2
+            id: build
             with:
-                profile: minimal
-                toolchain: stable
-                override: true
-
-          - name: add darwin target
-            if: runner.os == 'macos'
-            run: rustup target add aarch64-apple-darwin
-
-          - name: Install protoc
-            uses: arduino/setup-protoc@v1
-            with:
-                repo-token: ${{ secrets.GITHUB_TOKEN }}
-    
-#          - name: Install alsa and udev
-#            if: runner.os == 'linux'
-#            run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
-
-#          - name: install ffmpeg deps (linux)
-#            run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
-#            if: runner.os == 'linux'
-          - name: install ffmpeg deps (macOs)
-            if: runner.os == 'macos'
-            run: |
-                brew install ffmpeg pkg-config          
-#                echo "Tests=$tests" >> $GITHUB_ENV
-
-          - name: Cargo build
-            run: |
-              SDKROOT=$(xcrun -sdk macosx --show-sdk-path) MACOSX_DEPLOYMENT_TARGET=$(xcrun -sdk macosx --show-sdk-platform-version) cargo build --target=aarch64-apple-darwin --release
+              arch: aarch64
+              distro: ubuntu18.04
+              run: |
+                brew install pkg-config ffmpeg rust
+                cargo build --release
