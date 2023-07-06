@@ -4,16 +4,62 @@ on:
     workflow_dispatch:
 
 jobs:
+    create-release:
+        name: Create Release
+        runs-on: ubuntu-22.04
+        outputs:
+            package_prefix: bevy-explorer-${{ steps.current_time_underscores.outputs.formattedTime }}
+            tag_name: prealpha-${{ steps.current_time_dashes.outputs.formattedTime }}
+        if: github.repository == 'decentraland/bevy-explorer' || github.event_name == 'workflow_dispatch'
+        steps:
+          - name: Clone repo
+            uses: actions/checkout@v3
+
+          - name: Get current time with underscores
+            uses: 1466587594/get-current-time@v2.1.1
+            id: current_time_underscores
+            with:
+                format: YYYY-MM-DD-HH-mm-ss
+
+          - name: Get current time with dashes
+            uses: 1466587594/get-current-time@v2.1.1
+            id: current_time_dashes
+            with:
+                format: YYYY-MM-DD-HH-mm-ss
+    
+          - name: Create release
+            id: create_release
+            run: |
+                tag_name="prealpha-${{ steps.current_time_dashes.outputs.formattedTime }}"
+                release_name="Release ${{ steps.current_time_dashes.outputs.formattedTime }}"
+                gh release create "$tag_name" --title "$release_name" --generate-notes --prerelease
+            env:
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     build:
         name: Build ${{ matrix.build_name }}
+        needs: create-release
         strategy:
             matrix:
                 include:
-                  - build_name: macos-aarch64
+                  - build_name: linux-x86_64
+                    os: ubuntu-latest
+
+                  - build_name: macos-x86_64
                     os: macos-latest
-                    target: aarch64-apple-darwin
+                    target: x86_64-apple-darwin
+        
+#                  - build_name: macos-aarch64
+#                    os: macos-latest
+#                    target: aarch64-apple-darwin
+
+                  - build_name: windows-x86_64
+                    os: windows-latest
+                    target: x86_64-pc-windows-msvc
+                    RUSTFLAGS: -Ctarget-feature=+crt-static
 
         env:
+            PACKAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.${{ startsWith(matrix.build_name, 'win') && 'zip' || 'tar.gz' }}
             CARGO_BUILD_DIR: target/${{ matrix.target }}/release
 
         runs-on: ${{ matrix.os }}
@@ -36,21 +82,58 @@ jobs:
             with:
                 repo-token: ${{ secrets.GITHUB_TOKEN }}
     
-#          - name: Install alsa and udev
-#            if: runner.os == 'linux'
-#            run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+          - name: Install alsa and udev
+            if: runner.os == 'linux'
+            run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
 
-#          - name: install ffmpeg deps (linux)
-#            run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
-#            if: runner.os == 'linux'
+          - name: install ffmpeg deps (linux)
+            run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
+            if: runner.os == 'linux'
           - name: install ffmpeg deps (macOs)
             if: runner.os == 'macos'
+            run: brew install ffmpeg pkg-config          
+          - name: install ffmpeg deps (windows)
+            if: runner.os == 'windows'
             run: |
-                brew install ffmpeg pkg-config          
-                echo "Tests=$tests" >> $GITHUB_ENV
-
-          - name: install cross
-            run: cargo install cross --git https://github.com/cross-rs/cross
+              $VCINSTALLDIR = $(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
+              Add-Content $env:GITHUB_ENV "LIBCLANG_PATH=${VCINSTALLDIR}\VC\Tools\LLVM\x64\bin`n"
+              Invoke-WebRequest "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full-shared.7z" -OutFile ffmpeg-release-full-shared.7z
+              7z x ffmpeg-release-full-shared.7z
+              mkdir ffmpeg
+              mv ffmpeg-*/* ffmpeg/
+              Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
+              Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"  
 
           - name: Cargo build
-            run: cross build --release ${{ matrix.target && '--target' }} ${{ matrix.target }}
+            run: cargo build --release ${{ matrix.target && '--target' }} ${{ matrix.target }}
+            env:
+                RUSTFLAGS: ${{ matrix.RUSTFLAGS }}
+
+          - name: Package common
+            run: |
+                mkdir package
+                cp readme.md package/README.md
+                cp LICENSE package/LICENSE
+                cp -r assets package
+            
+          - name: Package Windows
+            if: runner.os == 'Windows'
+            continue-on-error: true
+            run: |
+                cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy.exe package/decentra-bevy.exe
+                7z a ${{ env.PACKAGE_FILE }} ./package/*
+
+          - name: Package Linux
+            if: runner.os != 'Windows'
+            continue-on-error: true
+            run: |
+                cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy package/decentra-bevy
+                # We must enter the package/ directory in order to create a flat tarball (i.e. without a directory in it).
+                cd package
+                tar -czvf ../${{ env.PACKAGE_FILE }} *            
+
+          - name: Upload package
+            continue-on-error: true
+            run: gh release upload "${{ needs.create-release.outputs.tag_name }}" "${{ env.PACKAGE_FILE }}"
+            env:
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
