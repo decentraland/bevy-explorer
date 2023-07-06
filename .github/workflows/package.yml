@@ -6,7 +6,7 @@ on:
 jobs:
     build:
         name: Build macos aarch64
-        runs-on: ubuntu-18.04
+        runs-on: ubuntu-22.04
         steps:
           - name: Clone repo
             uses: actions/checkout@v3
@@ -16,7 +16,7 @@ jobs:
             id: build
             with:
               arch: aarch64
-              distro: ubuntu18.04
+              distro: ubuntu-22.04
               run: |
                 brew install pkg-config ffmpeg rust
                 cargo build --release
