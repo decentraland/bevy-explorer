@@ -7,7 +7,7 @@ use common::{
     dcl_assert,
     sets::SetupSets,
     structs::PrimaryUser,
-    util::{RingBuffer, RingBufferReceiver},
+    util::{RingBuffer, RingBufferReceiver, TryInsertEx},
 };
 use comms::{global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport};
 use dcl::{SceneLogLevel, SceneLogMessage};
@@ -114,7 +114,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, root: Res<Syste
                 On::<HoverExit>::new(update_chatbox_focus),
                 On::<Click>::new(
                     |mut commands: Commands, q: Query<Entity, With<ChatInput>>| {
-                        commands.entity(q.single()).insert(Focus);
+                        commands.entity(q.single()).try_insert(Focus);
                     },
                 ),
             ))

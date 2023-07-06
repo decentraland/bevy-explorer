@@ -329,7 +329,7 @@ fn update_gltf(
                     let is_skinned = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
                     if is_skinned {
                         // bevy doesn't calculate culling correctly for skinned entities
-                        commands.entity(spawned_ent).insert(NoFrustumCulling);
+                        commands.entity(spawned_ent).try_insert(NoFrustumCulling);
                     }
 
                     let mut collider_base_name =

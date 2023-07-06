@@ -31,6 +31,8 @@ fn main() -> Result<()> {
         "pointer_lock",
         "camera_mode",
         "camera_mode_area",
+        "audio_source",
+        "video_player",
     ];
 
     let mut sources = components

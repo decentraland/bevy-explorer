@@ -3,6 +3,7 @@ use bevy_egui::{
     egui::{self, TextEdit},
     EguiContext,
 };
+use common::util::TryInsertEx;
 
 use crate::ui_actions::DataChanged;
 
@@ -90,7 +91,7 @@ pub fn update_text_entry_components(
                     );
 
                     if response.changed() && !textbox.accept_line {
-                        commands.entity(entity).insert(DataChanged);
+                        commands.entity(entity).try_insert(DataChanged);
                     }
 
                     // pass through focus and interaction
@@ -100,7 +101,7 @@ pub fn update_text_entry_components(
                             let message = std::mem::take(&mut textbox.content);
                             response.request_focus();
                             textbox.messages.push(message);
-                            commands.entity(entity).insert(DataChanged);
+                            commands.entity(entity).try_insert(DataChanged);
                         } else {
                             commands.entity(entity).remove::<Focus>();
                             defocus = true;
@@ -125,7 +126,7 @@ pub fn update_text_entry_components(
                             response.surrender_focus()
                         } else if response.has_focus() {
                             debug!("tb focus -> Focus");
-                            commands.entity(entity).insert(Focus);
+                            commands.entity(entity).try_insert(Focus);
                         }
                     }
                 });

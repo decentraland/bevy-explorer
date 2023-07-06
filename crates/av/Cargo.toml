@@ -1,0 +1,19 @@
+[package]
+name = "av"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { path = "../common" }
+dcl = { path="../dcl" }
+dcl_component = { path="../dcl_component" }
+ipfs = { path="../ipfs" }
+scene_runner = { path="../scene_runner" }
+
+bevy = "0.10"
+bevy_kira_audio = { version= "0.15", features=["flac", "mp3", "ogg", "wav"] }
+ffmpeg-next = "6.0.0"
+tokio = { version = "1.29.1", features = ["sync"] }
+anyhow = "1.0.70"

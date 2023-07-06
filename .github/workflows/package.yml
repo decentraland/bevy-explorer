@@ -49,9 +49,10 @@ jobs:
                     os: macos-latest
                     target: x86_64-apple-darwin
         
-                  - build_name: macos-aarch64
-                    os: macos-latest
-                    target: aarch64-apple-darwin
+#                 ffmpeg does not cross-build to aarch64 in CI, so aarch64 releases must be manually added
+#                  - build_name: macos-aarch64
+#                    os: macos-latest
+#                    target: aarch64-apple-darwin
 
                   - build_name: windows-x86_64
                     os: windows-latest
@@ -85,7 +86,25 @@ jobs:
           - name: Install alsa and udev
             if: runner.os == 'linux'
             run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
-            
+
+          - name: install ffmpeg deps (linux)
+            run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
+            if: runner.os == 'linux'
+          - name: install ffmpeg deps (macOs)
+            if: runner.os == 'macos'
+            run: brew install ffmpeg pkg-config          
+          - name: install ffmpeg deps (windows)
+            if: runner.os == 'windows'
+            run: |
+              $VCINSTALLDIR = $(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
+              Add-Content $env:GITHUB_ENV "LIBCLANG_PATH=${VCINSTALLDIR}\VC\Tools\LLVM\x64\bin`n"
+              Invoke-WebRequest "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full-shared.7z" -OutFile ffmpeg-release-full-shared.7z
+              7z x ffmpeg-release-full-shared.7z
+              mkdir ffmpeg
+              mv ffmpeg-*/* ffmpeg/
+              Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
+              Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"  
+
           - name: Cargo build
             run: cargo build --release ${{ matrix.target && '--target' }} ${{ matrix.target }}
             env:

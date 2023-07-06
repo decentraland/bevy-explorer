@@ -1018,9 +1018,10 @@ fn spawn_scenes(
             .and_then(|h_gltf| gltfs.get(h_gltf))
         else {
             match def.body.model.as_ref().map(|h_gtlf| asset_server.get_load_state(h_gtlf)) {
-                Some(bevy::asset::LoadState::Loading) => (),
-                _ => {
-                    warn!("failed to load body gltf");
+                Some(bevy::asset::LoadState::Loading) |
+                Some(bevy::asset::LoadState::NotLoaded) => (),
+                otherwise => {
+                    warn!("failed to load body gltf: {otherwise:?}");
                     commands.entity(ent).try_insert(AvatarProcessed);
                 }
             }

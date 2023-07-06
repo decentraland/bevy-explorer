@@ -58,11 +58,14 @@ impl SceneComponentId {
     pub const MATERIAL: SceneComponentId = SceneComponentId(1017);
     pub const MESH_RENDERER: SceneComponentId = SceneComponentId(1018);
     pub const MESH_COLLIDER: SceneComponentId = SceneComponentId(1019);
+    pub const AUDIO_SOURCE: SceneComponentId = SceneComponentId(1020);
 
     pub const TEXT_SHAPE: SceneComponentId = SceneComponentId(1030);
 
     pub const GLTF_CONTAINER: SceneComponentId = SceneComponentId(1041);
     pub const ANIMATOR: SceneComponentId = SceneComponentId(1042);
+
+    pub const VIDEO_PLAYER: SceneComponentId = SceneComponentId(1043);
 
     pub const ENGINE_INFO: SceneComponentId = SceneComponentId(1048);
     pub const GLTF_CONTAINER_LOADING_STATE: SceneComponentId = SceneComponentId(1049);
