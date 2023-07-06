@@ -16,7 +16,7 @@ jobs:
             id: build
             with:
               arch: aarch64
-              distro: ubuntu-22.04
+              distro: ubuntu22.04
               run: |
                 brew install pkg-config ffmpeg rust
                 cargo build --release
