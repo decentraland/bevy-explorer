@@ -19,7 +19,7 @@ jobs:
               distro: ubuntu22.04
               run: |
                 apt-get update -q -y
-                apt-get install -q -y git brew pkg-config curl
+                apt-get install -q -y git pkg-config curl
                 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
                 brew install pkg-config ffmpeg rust
                 cargo build --release
