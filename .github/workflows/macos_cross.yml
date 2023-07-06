@@ -1,0 +1,56 @@
+name: Build Release
+
+on:
+    workflow_dispatch:
+
+jobs:
+    build:
+        name: Build ${{ matrix.build_name }}
+        strategy:
+            matrix:
+                include:
+                  - build_name: macos-aarch64
+                    os: macos-latest
+                    target: aarch64-apple-darwin
+
+        env:
+            CARGO_BUILD_DIR: target/${{ matrix.target }}/release
+
+        runs-on: ${{ matrix.os }}
+        steps:
+          - name: Clone repo
+            uses: actions/checkout@v3
+
+          - uses: actions-rs/toolchain@v1
+            with:
+                profile: minimal
+                toolchain: stable
+                override: true
+
+          - name: add darwin target
+            if: runner.os == 'macos'
+            run: rustup target add aarch64-apple-darwin
+
+          - name: Install protoc
+            uses: arduino/setup-protoc@v1
+            with:
+                repo-token: ${{ secrets.GITHUB_TOKEN }}
+    
+#          - name: Install alsa and udev
+#            if: runner.os == 'linux'
+#            run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+
+#          - name: install ffmpeg deps (linux)
+#            run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
+#            if: runner.os == 'linux'
+          - name: install ffmpeg deps (macOs)
+            if: runner.os == 'macos'
+            run: |
+                brew install ffmpeg pkg-config          
+                echo "Tests=$tests" >> $GITHUB_ENV
+
+          - name: install cross
+            run: cargo install cross --git https://github.com/cross-rs/cross
+
+          - name: Cargo build
+            run: cross build --release ${{ matrix.target && '--target' }} ${{ matrix.target }}
