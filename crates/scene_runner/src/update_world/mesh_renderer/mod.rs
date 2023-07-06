@@ -74,7 +74,13 @@ impl Plugin for MeshDefinitionPlugin {
         let boxx = assets.add(shape::Cube::default().into());
         let cylinder = assets.add(shape::Cylinder::default().into());
         let plane = assets.add(shape::Quad::default().into());
-        let sphere = assets.add(shape::UVSphere { radius: 0.5, ..Default::default() }.into());
+        let sphere = assets.add(
+            shape::UVSphere {
+                radius: 0.5,
+                ..Default::default()
+            }
+            .into(),
+        );
         app.insert_resource(MeshPrimitiveDefaults {
             boxx,
             plane,
