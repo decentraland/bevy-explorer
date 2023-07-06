@@ -18,5 +18,6 @@ jobs:
               arch: aarch64
               distro: ubuntu22.04
               run: |
+                /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
                 brew install pkg-config ffmpeg rust
                 cargo build --release
