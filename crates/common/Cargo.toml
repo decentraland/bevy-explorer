@@ -6,9 +6,10 @@ edition = "2021"
 [lib]
 
 [dependencies]
-bevy = "0.10"
-ethers = "2.0.3"
-futures-lite = "1.12.0"
+bevy = { workspace = true }
+ethers = { workspace = true }
+futures-lite = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+
 hex = "0.4.3"
-tokio = { version = "1.29.1", features = ["sync"] }
-serde = "1.0.152"

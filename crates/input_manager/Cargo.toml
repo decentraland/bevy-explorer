@@ -6,8 +6,8 @@ edition = "2021"
 [lib]
 
 [dependencies]
-dcl_component = { path="../dcl_component" }
+dcl_component = { workspace = true }
 
-bevy = "0.10"
-bevy_console = "0.7.0"
-bevy_egui = "0.20"
+bevy = { workspace = true }
+bevy_console = { workspace = true }
+bevy_egui = { workspace = true }
