@@ -162,7 +162,7 @@ pub fn run_actions<M: ActionMarker>(world: &mut World) {
     world.resource_scope(|world: &mut World, mut ui_actions: Mut<UiActions<M>>| {
         let mut index = 0;
 
-        ui_actions.0.retain_mut(|mut action| {
+        ui_actions.0.retain_mut(|action| {
             let Some(active) = active_list.get(&index) else {
                 removed.insert(index);
                 index += 1;
