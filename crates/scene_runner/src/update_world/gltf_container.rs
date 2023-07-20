@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use bevy::{
     gltf::{Gltf, GltfExtras},
     prelude::*,
-    reflect::{TypeUuid, TypePath},
+    reflect::{TypePath, TypeUuid},
     render::{
         mesh::{Indices, VertexAttributeValues},
         view::NoFrustumCulling,
@@ -56,7 +56,7 @@ impl Plugin for GltfDefinitionPlugin {
 
         app.add_systems(Update, update_gltf.in_set(SceneSets::PostLoop));
         app.add_systems(
-            Update, 
+            Update,
             attach_ready_colliders
                 .after(update_gltf)
                 .in_set(SceneSets::PostLoop),

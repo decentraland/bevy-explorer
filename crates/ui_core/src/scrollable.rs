@@ -469,7 +469,7 @@ fn update_scrollables(
             (
                 Val::Px(info.bar_position.x),
                 Val::Px(slider_start),
-                Val::Px(5.0), 
+                Val::Px(5.0),
                 Val::Px(slider_len),
             )
         } else {
@@ -477,7 +477,7 @@ fn update_scrollables(
             (
                 Val::Px(slider_start),
                 Val::Px(info.bar_position.y),
-                Val::Px(slider_len), 
+                Val::Px(slider_len),
                 Val::Px(5.0),
             )
         };

@@ -14,7 +14,7 @@ use anyhow::anyhow;
 use bevy::{
     asset::{Asset, AssetIo, AssetIoError, AssetLoader, FileAssetIo, LoadedAsset},
     prelude::*,
-    reflect::{TypeUuid, TypePath},
+    reflect::{TypePath, TypeUuid},
     tasks::{IoTaskPool, Task},
     utils::HashMap,
 };
@@ -789,7 +789,10 @@ impl AssetIo for IpfsIo {
         Ok(())
     }
 
-    fn watch_for_changes(&self, _: &bevy::asset::ChangeWatcher) -> Result<(), bevy::asset::AssetIoError> {
+    fn watch_for_changes(
+        &self,
+        _: &bevy::asset::ChangeWatcher,
+    ) -> Result<(), bevy::asset::AssetIoError> {
         // do nothing
         Ok(())
     }

@@ -183,7 +183,7 @@ fn update_slices(
                             for col in &col_data {
                                 r.spawn(NodeBundle {
                                     style: Style {
-                                        width: col.outer_size, 
+                                        width: col.outer_size,
                                         height: row.outer_size,
                                         flex_grow: col.grow,
                                         overflow: Overflow::clip(),
@@ -195,11 +195,11 @@ fn update_slices(
                                     // image
                                     i.spawn(ImageBundle{
                                         style: Style {
-                                            width: col.inner_size, 
+                                            width: col.inner_size,
                                             height: row.inner_size,
-                                            left: col.start, 
-                                            top: row.start, 
-                                            right: col.end, 
+                                            left: col.start,
+                                            top: row.start,
+                                            right: col.end,
                                             bottom: row.end,
                                             position_type: PositionType::Absolute,
                                             ..Default::default()

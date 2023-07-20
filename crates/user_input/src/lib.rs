@@ -26,7 +26,7 @@ pub fn should_accept_input(should_accept: Res<AcceptInput>) -> bool {
 impl Plugin for UserInputPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
-            Update, 
+            Update,
             (
                 update_user_velocity.run_if(should_accept_input),
                 update_user_position,

@@ -119,16 +119,13 @@ fn init_test_app(entity_json: &str) -> App {
     });
 
     // startup system to create camera and fire load event
-    app.add_systems(
-        Startup,
-        move |mut commands: Commands| {
-            commands.spawn((
-                SpatialBundle::default(),
-                PrimaryUser::default(),
-                PrimaryCamera::default(),
-            ));
-        }
-    );
+    app.add_systems(Startup, move |mut commands: Commands| {
+        commands.spawn((
+            SpatialBundle::default(),
+            PrimaryUser::default(),
+            PrimaryCamera::default(),
+        ));
+    });
 
     // replace the scene loop schedule with a dummy so we can better control it
     app.world.remove_resource::<SceneLoopSchedule>().unwrap();

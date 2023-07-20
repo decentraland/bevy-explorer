@@ -103,7 +103,10 @@ impl Plugin for MeshColliderPlugin {
         // we want to avoid using CoreSet::PostUpdate as that's where we create/destroy scenes,
         // so we use SceneSets::Init for adding colliders to the scene collider data (qbvh).
         app.add_systems(Update, update_colliders.in_set(SceneSets::Init));
-        app.add_systems(Update, update_scene_collider_data.in_set(SceneSets::PostInit));
+        app.add_systems(
+            Update,
+            update_scene_collider_data.in_set(SceneSets::PostInit),
+        );
 
         // collider deletion has to occur within the scene loop, as the DeletedSceneEntities resource is only
         // valid within the loop
@@ -113,7 +116,10 @@ impl Plugin for MeshColliderPlugin {
             .add_systems(remove_deleted_colliders.in_set(SceneLoopSets::UpdateWorld));
 
         // update collider transforms before queries and scenes are run, but after global transforms are updated (at end of prior frame)
-        app.add_systems(Update, update_collider_transforms.in_set(SceneSets::PostInit));
+        app.add_systems(
+            Update,
+            update_collider_transforms.in_set(SceneSets::PostInit),
+        );
 
         app.init_resource::<DebugColliders>();
         app.add_console_command::<DebugColliderCommand, _>(debug_colliders);

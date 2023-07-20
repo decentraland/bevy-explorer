@@ -1,6 +1,6 @@
 use bevy::{
     prelude::*,
-    reflect::{TypeUuid, TypePath},
+    reflect::{TypePath, TypeUuid},
     render::render_resource::{AsBindGroup, ShaderRef},
 };
 

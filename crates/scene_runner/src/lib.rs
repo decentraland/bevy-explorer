@@ -180,7 +180,7 @@ impl Plugin for SceneRunnerPlugin {
         app.add_event::<LoadSceneEvent>();
 
         app.configure_sets(
-            Update, 
+            Update,
             (
                 SceneSets::UiActions,
                 SceneSets::Init.after(scene_spawner_system),

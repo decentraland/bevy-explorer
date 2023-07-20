@@ -132,8 +132,10 @@ impl<'w, 's> TryInsertEx for EntityCommands<'w, 's, '_> {
 
 // add a console command. trait is here as we want to mock it when testing
 pub trait DoAddConsoleCommand {
-    fn add_console_command<T: Command, U>(&mut self, system: impl IntoSystemConfigs<U>)
-        -> &mut Self;
+    fn add_console_command<T: Command, U>(
+        &mut self,
+        system: impl IntoSystemConfigs<U>,
+    ) -> &mut Self;
 }
 
 // macro for assertions

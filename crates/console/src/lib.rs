@@ -8,8 +8,10 @@ use clap::Parser;
 use common::sets::SceneSets;
 
 pub trait DoAddConsoleCommand {
-    fn add_console_command<T: Command, U>(&mut self, system: impl IntoSystemConfigs<U>)
-        -> &mut Self;
+    fn add_console_command<T: Command, U>(
+        &mut self,
+        system: impl IntoSystemConfigs<U>,
+    ) -> &mut Self;
 }
 
 // hook console commands
@@ -59,11 +61,14 @@ impl Plugin for ConsolePlugin {
             app.add_event::<PrintConsoleLine>();
         }
 
-        app.add_systems(Update, remove_default_commands.run_if(|mut once: Local<bool>| {
-            let run = !*once;
-            *once = true;
-            run
-        }))
+        app.add_systems(
+            Update,
+            remove_default_commands.run_if(|mut once: Local<bool>| {
+                let run = !*once;
+                *once = true;
+                run
+            }),
+        )
         .add_console_command::<ClearCommand, _>(clear_command)
         .add_console_command::<HelpCommand, _>(help_command)
         .add_console_command::<ExitCommand, _>(exit_command)

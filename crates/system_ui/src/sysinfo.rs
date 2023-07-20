@@ -1,5 +1,5 @@
 use bevy::{
-    diagnostic::{FrameTimeDiagnosticsPlugin, DiagnosticsStore},
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     math::Vec3Swizzles,
     prelude::*,
 };
@@ -22,7 +22,10 @@ pub struct SysInfoPanelPlugin;
 
 impl Plugin for SysInfoPanelPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup.in_set(SetupSets::Main).after(SetupSets::Init));
+        app.add_systems(
+            Startup,
+            setup.in_set(SetupSets::Main).after(SetupSets::Init),
+        );
         app.add_systems(Update, update_scene_load_state);
     }
 }

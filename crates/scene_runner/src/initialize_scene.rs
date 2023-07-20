@@ -2,7 +2,7 @@ use bevy::{
     asset::{AssetLoader, LoadedAsset},
     math::Vec3Swizzles,
     prelude::*,
-    reflect::{TypeUuid, TypePath},
+    reflect::{TypePath, TypeUuid},
     utils::{HashMap, HashSet},
 };
 use serde::Deserialize;
