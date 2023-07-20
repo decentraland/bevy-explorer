@@ -32,17 +32,17 @@ pub struct UiCorePlugin;
 
 impl Plugin for UiCorePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(EguiPlugin);
-        app.add_plugin(UiActionPlugin);
-        app.add_plugin(FocusPlugin);
-        app.add_plugin(InteractStylePlugin);
-        app.add_plugin(ScrollablePlugin);
-        app.add_plugin(Ui9SlicePlugin);
-        app.add_system(update_text_entry_components);
-        app.add_system(update_color_picker_components);
-        app.add_system(update_comboboxen);
+        app.add_plugins(EguiPlugin);
+        app.add_plugins(UiActionPlugin);
+        app.add_plugins(FocusPlugin);
+        app.add_plugins(InteractStylePlugin);
+        app.add_plugins(ScrollablePlugin);
+        app.add_plugins(Ui9SlicePlugin);
+        app.add_systems(Update, update_text_entry_components);
+        app.add_systems(Update, update_color_picker_components);
+        app.add_systems(Update, update_comboboxen);
 
-        app.add_startup_system(setup.in_set(SetupSets::Init));
+        app.add_systems(Startup, setup.in_set(SetupSets::Init));
     }
 }
 

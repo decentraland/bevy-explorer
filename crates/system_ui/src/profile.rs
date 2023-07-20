@@ -22,7 +22,7 @@ pub struct ProfileEditPlugin;
 
 impl Plugin for ProfileEditPlugin {
     fn build(&self, app: &mut App) {
-        app.add_startup_system(setup);
+        app.add_systems(Startup, setup);
     }
 }
 
@@ -33,11 +33,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             image: asset_server.load("images/profile_button.png").into(),
             style: Style {
                 position_type: PositionType::Absolute,
-                position: UiRect {
-                    top: Val::Px(10.0),
-                    right: Val::Px(10.0),
-                    ..Default::default()
-                },
+                top: Val::Px(10.0),
+                right: Val::Px(10.0),
                 ..Default::default()
             },
             focus_policy: bevy::ui::FocusPolicy::Block,
@@ -157,7 +154,10 @@ fn toggle_profile_ui(
                 NodeBundle {
                     style: Style {
                         position_type: PositionType::Absolute,
-                        position: UiRect::all(Val::Px(20.0)),
+                        top: Val::Px(20.0),
+                        bottom: Val::Px(20.0),
+                        left: Val::Px(20.0),
+                        right: Val::Px(20.0),
                         flex_direction: FlexDirection::Column,
                         align_items: AlignItems::Center,
                         flex_grow: 1.0,
@@ -186,13 +186,11 @@ fn toggle_profile_ui(
                 (
                     NodeBundle {
                         style: Style {
-                            max_size: Size {
-                                width: Val::Percent(100.0),
-                                height: Val::Percent(80.0),
-                            },
+                            width: Val::Percent(100.0),
+                            height: Val::Percent(80.0),
                             flex_direction: FlexDirection::Column,
                             flex_grow: 1.0,
-                            overflow: Overflow::Hidden,
+                            overflow: Overflow::clip(),
                             ..Default::default()
                         },
                         focus_policy: FocusPolicy::Block,
@@ -223,7 +221,8 @@ fn toggle_profile_ui(
                                 commands.spawn((
                                     NodeBundle {
                                         style: Style {
-                                            size: Size{ width: Val::Px(100.0), height: Val::Px(20.0) },
+                                            width: Val::Px(100.0),
+                                            height: Val::Px(20.0),
                                             ..Default::default()
                                         },
                                         background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.2, 0.8)),
@@ -295,7 +294,8 @@ fn toggle_profile_ui(
                                 commands.spawn((
                                     NodeBundle{
                                         style: Style {
-                                            size: Size::all(Val::Px(40.0)),
+                                            width: Val::Px(40.0),
+                                            height: Val::Px(40.0),
                                             ..Default::default()
                                         },
                                         ..Default::default()
@@ -376,8 +376,10 @@ fn toggle_profile_ui(
                                             ImageBundle {
                                                 image: thumb.clone().into(),
                                                 style: Style {
-                                                    size: Size::all(Val::Px(100.0)),
-                                                    max_size: Size::all(Val::Px(100.0)),
+                                                    width: Val::Px(100.0),
+                                                    height: Val::Px(100.0),
+                                                    max_width: Val::Px(100.0),
+                                                    max_height: Val::Px(100.0),
                                                     ..Default::default()
                                                 },
                                                 focus_policy: FocusPolicy::Block,
@@ -414,7 +416,7 @@ fn toggle_profile_ui(
                 .spawn(NodeBundle {
                     style: Style {
                         justify_content: JustifyContent::FlexEnd,
-                        size: Size::width(Val::Percent(100.0)),
+                        width: Val::Percent(100.0),
                         ..Default::default()
                     },
                     ..Default::default()

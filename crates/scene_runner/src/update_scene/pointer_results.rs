@@ -26,6 +26,7 @@ impl Plugin for PointerResultPlugin {
             .init_resource::<UiPointerTarget>()
             .init_resource::<DebugPointers>();
         app.add_systems(
+            Update,
             (
                 update_pointer_target,
                 send_hover_events,

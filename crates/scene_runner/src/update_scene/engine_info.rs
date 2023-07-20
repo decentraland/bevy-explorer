@@ -10,7 +10,7 @@ pub struct EngineInfoPlugin;
 
 impl Plugin for EngineInfoPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(update_engine_info.in_set(SceneSets::Input));
+        app.add_systems(Update, update_engine_info.in_set(SceneSets::Input));
     }
 }
 

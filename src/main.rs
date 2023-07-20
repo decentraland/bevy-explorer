@@ -11,7 +11,6 @@ use bevy::{
     render::view::ColorGrading,
 };
 use bevy_console::ConsoleCommand;
-use bevy_prototype_debug_lines::DebugLinesPlugin;
 
 use common::{
     sets::SetupSets,
@@ -140,29 +139,28 @@ fn main() {
     );
 
     if final_config.graphics.log_fps {
-        app.add_plugin(FrameTimeDiagnosticsPlugin)
-            .add_plugin(LogDiagnosticsPlugin::default());
+        app.add_plugins(FrameTimeDiagnosticsPlugin)
+            .add_plugins(LogDiagnosticsPlugin::default());
     }
 
     app.insert_resource(final_config);
 
-    app.configure_set(SetupSets::Init.before(SetupSets::Main));
+    app.configure_set(Startup, SetupSets::Init.before(SetupSets::Main));
 
-    app.add_plugin(DebugLinesPlugin::with_depth_test(true))
-        .add_plugin(bevy_mod_billboard::prelude::BillboardPlugin)
-        .add_plugin(InputManagerPlugin)
-        .add_plugin(SceneRunnerPlugin)
-        .add_plugin(UserInputPlugin)
-        .add_plugin(UiCorePlugin)
-        .add_plugin(SystemUiPlugin)
-        .add_plugin(ConsolePlugin { add_egui: true })
-        .add_plugin(VisualsPlugin)
-        .add_plugin(WalletPlugin)
-        .add_plugin(CommsPlugin)
-        .add_plugin(AvatarPlugin)
-        .add_plugin(AudioPlugin)
+    app.add_plugins(bevy_mod_billboard::prelude::BillboardPlugin)
+        .add_plugins(InputManagerPlugin)
+        .add_plugins(SceneRunnerPlugin)
+        .add_plugins(UserInputPlugin)
+        .add_plugins(UiCorePlugin)
+        .add_plugins(SystemUiPlugin)
+        .add_plugins(ConsolePlugin { add_egui: true })
+        .add_plugins(VisualsPlugin)
+        .add_plugins(WalletPlugin)
+        .add_plugins(CommsPlugin)
+        .add_plugins(AvatarPlugin)
+        .add_plugins(AudioPlugin)
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
-        .add_startup_system(setup.in_set(SetupSets::Init))
+        .add_systems(Startup, setup.in_set(SetupSets::Init))
         .insert_resource(AmbientLight {
             color: Color::rgb(0.85, 0.85, 1.0),
             brightness: 0.5,

@@ -15,10 +15,10 @@ pub struct SceneInputPlugin;
 
 impl Plugin for SceneInputPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
-        app.add_plugin(EngineInfoPlugin);
-        app.add_plugin(RaycastResultPlugin);
-        app.add_plugin(PointerResultPlugin);
-        app.add_plugin(PointerLockPlugin);
-        app.add_plugin(CameraModePlugin);
+        app.add_plugins(EngineInfoPlugin);
+        app.add_plugins(RaycastResultPlugin);
+        app.add_plugins(PointerResultPlugin);
+        app.add_plugins(PointerLockPlugin);
+        app.add_plugins(CameraModePlugin);
     }
 }

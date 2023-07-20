@@ -16,5 +16,5 @@ bevy = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 
-bevy_kira_audio = { version= "0.15", features=["flac", "mp3", "ogg", "wav"] }
+bevy_kira_audio = { version= "0.16", features=["flac", "mp3", "ogg", "wav"] }
 ffmpeg-next = "6.0.0"

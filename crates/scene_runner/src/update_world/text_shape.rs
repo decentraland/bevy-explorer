@@ -15,7 +15,7 @@ impl Plugin for TextShapePlugin {
             SceneComponentId::TEXT_SHAPE,
             ComponentPosition::EntityOnly,
         );
-        app.add_system(update_text_shapes.in_set(SceneSets::PostLoop));
+        app.add_systems(Update, update_text_shapes.in_set(SceneSets::PostLoop));
     }
 }
 

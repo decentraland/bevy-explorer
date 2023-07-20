@@ -17,7 +17,7 @@ impl Plugin for PointerEventsPlugin {
             ComponentPosition::EntityOnly,
         );
 
-        app.add_system(hover_text);
+        app.add_systems(Update, hover_text);
     }
 }
 

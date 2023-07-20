@@ -13,7 +13,7 @@ pub struct PointerLockPlugin;
 
 impl Plugin for PointerLockPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(update_pointer_lock.in_set(SceneSets::Input));
+        app.add_systems(Update, update_pointer_lock.in_set(SceneSets::Input));
     }
 }
 

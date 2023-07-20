@@ -14,7 +14,7 @@ use anyhow::anyhow;
 use bevy::{
     asset::{Asset, AssetIo, AssetIoError, AssetLoader, FileAssetIo, LoadedAsset},
     prelude::*,
-    reflect::TypeUuid,
+    reflect::{TypeUuid, TypePath},
     tasks::{IoTaskPool, Task},
     utils::HashMap,
 };
@@ -44,7 +44,7 @@ pub struct EntityDefinitionJson {
     metadata: Option<serde_json::Value>,
 }
 
-#[derive(TypeUuid, Debug, Default)]
+#[derive(TypeUuid, Debug, Default, TypePath)]
 #[uuid = "d373738a-208e-4560-9e2e-020e5c64a852"]
 pub struct EntityDefinition {
     pub id: String,
@@ -53,7 +53,7 @@ pub struct EntityDefinition {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(TypeUuid, Debug, Clone)]
+#[derive(TypeUuid, Debug, Clone, TypePath)]
 #[uuid = "f9f54e97-439f-4768-9ea0-f3e894049492"]
 pub struct SceneJsFile(pub Arc<String>);
 
@@ -334,7 +334,7 @@ impl Plugin for IpfsIoPlugin {
 
         app.add_event::<ChangeRealmEvent>();
         app.init_resource::<CurrentRealm>();
-        app.add_system(change_realm.in_base_set(CoreSet::PostUpdate));
+        app.add_systems(PostUpdate, change_realm);
 
         if let Some(realm) = &self.starting_realm {
             let asset_server = app.world.resource::<AssetServer>().clone();
@@ -370,6 +370,7 @@ fn change_realm_command(
     }
 }
 
+#[derive(Event)]
 pub struct ChangeRealmEvent {
     pub new_realm: String,
 }
@@ -788,7 +789,7 @@ impl AssetIo for IpfsIo {
         Ok(())
     }
 
-    fn watch_for_changes(&self) -> Result<(), bevy::asset::AssetIoError> {
+    fn watch_for_changes(&self, _: &bevy::asset::ChangeWatcher) -> Result<(), bevy::asset::AssetIoError> {
         // do nothing
         Ok(())
     }

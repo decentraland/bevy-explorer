@@ -119,19 +119,19 @@ impl Plugin for SceneOutputPlugin {
         app.world
             .resource_mut::<SceneLoopSchedule>()
             .schedule
-            .add_system(process_transform_and_parent_updates.in_set(SceneLoopSets::UpdateWorld));
+            .add_systems(process_transform_and_parent_updates.in_set(SceneLoopSets::UpdateWorld));
 
-        app.add_plugin(MeshDefinitionPlugin);
-        app.add_plugin(MaterialDefinitionPlugin);
-        app.add_plugin(MeshColliderPlugin);
-        app.add_plugin(GltfDefinitionPlugin);
-        app.add_plugin(AnimatorPlugin);
-        app.add_plugin(BillboardPlugin);
-        app.add_plugin(RaycastPlugin);
-        app.add_plugin(PointerEventsPlugin);
-        app.add_plugin(SceneUiPlugin);
-        app.add_plugin(TextShapePlugin);
-        app.add_plugin(CameraModeAreaPlugin);
+        app.add_plugins(MeshDefinitionPlugin);
+        app.add_plugins(MaterialDefinitionPlugin);
+        app.add_plugins(MeshColliderPlugin);
+        app.add_plugins(GltfDefinitionPlugin);
+        app.add_plugins(AnimatorPlugin);
+        app.add_plugins(BillboardPlugin);
+        app.add_plugins(RaycastPlugin);
+        app.add_plugins(PointerEventsPlugin);
+        app.add_plugins(SceneUiPlugin);
+        app.add_plugins(TextShapePlugin);
+        app.add_plugins(CameraModeAreaPlugin);
     }
 }
 
@@ -179,7 +179,7 @@ impl AddCrdtInterfaceExt for App {
         self.world
             .resource_mut::<SceneLoopSchedule>()
             .schedule
-            .add_system(process_crdt_lww_updates::<D, C>.in_set(SceneLoopSets::UpdateWorld));
+            .add_systems(process_crdt_lww_updates::<D, C>.in_set(SceneLoopSets::UpdateWorld));
     }
 }
 

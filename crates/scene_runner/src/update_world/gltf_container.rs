@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use bevy::{
     gltf::{Gltf, GltfExtras},
     prelude::*,
-    reflect::TypeUuid,
+    reflect::{TypeUuid, TypePath},
     render::{
         mesh::{Indices, VertexAttributeValues},
         view::NoFrustumCulling,
@@ -54,20 +54,21 @@ impl Plugin for GltfDefinitionPlugin {
             ComponentPosition::EntityOnly,
         );
 
-        app.add_system(update_gltf.in_set(SceneSets::PostLoop));
-        app.add_system(
+        app.add_systems(Update, update_gltf.in_set(SceneSets::PostLoop));
+        app.add_systems(
+            Update, 
             attach_ready_colliders
                 .after(update_gltf)
                 .in_set(SceneSets::PostLoop),
         );
         app.add_asset::<GltfCachedShape>();
         app.init_resource::<MeshToShape>();
-        app.add_system(check_gltfs_ready.in_set(SceneSets::PostInit));
-        app.add_system(update_container_finished.in_set(SceneSets::Input));
+        app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
+        app.add_systems(Update, update_container_finished.in_set(SceneSets::Input));
     }
 }
 
-#[derive(TypeUuid)]
+#[derive(TypeUuid, TypePath)]
 #[uuid = "09e7812e-ea71-4046-a9be-65565257d459"]
 pub enum GltfCachedShape {
     Shape(SharedShape),

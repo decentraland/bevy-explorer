@@ -15,12 +15,12 @@ pub struct SystemUiPlugin;
 impl Plugin for SystemUiPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SystemUiRoot(Entity::PLACEHOLDER));
-        app.add_startup_system(setup.in_set(SetupSets::Init).before(SetupSets::Main));
+        app.add_systems(Startup, setup.in_set(SetupSets::Init).before(SetupSets::Main));
 
-        app.add_plugin(SysInfoPanelPlugin);
-        app.add_plugin(ChatPanelPlugin);
-        app.add_plugin(ProfileEditPlugin);
-        app.add_plugin(ToastsPlugin);
+        app.add_plugins(SysInfoPanelPlugin);
+        app.add_plugins(ChatPanelPlugin);
+        app.add_plugins(ProfileEditPlugin);
+        app.add_plugins(ToastsPlugin);
     }
 }
 
@@ -35,10 +35,8 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
                 style: Style {
                     flex_direction: FlexDirection::Column,
                     justify_content: JustifyContent::SpaceBetween,
-                    size: Size {
-                        width: Val::Percent(100.0),
-                        height: Val::Percent(100.0),
-                    },
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
                     ..Default::default()
                 },
                 ..Default::default()

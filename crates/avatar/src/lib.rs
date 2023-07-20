@@ -51,18 +51,18 @@ pub struct AvatarPlugin;
 
 impl Plugin for AvatarPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(MaskMaterialPlugin);
-        app.add_plugin(PlayerMovementPlugin);
-        app.add_plugin(AvatarAnimationPlugin);
+        app.add_plugins(MaskMaterialPlugin);
+        app.add_plugins(PlayerMovementPlugin);
+        app.add_plugins(AvatarAnimationPlugin);
         app.init_resource::<WearablePointers>();
         app.init_resource::<WearableMetas>();
-        app.add_system(load_base_wearables);
-        app.add_system(update_avatar_info);
-        app.add_system(update_base_avatar_shape);
-        app.add_system(select_avatar);
-        app.add_system(update_render_avatar);
-        app.add_system(spawn_scenes);
-        app.add_system(process_avatar.in_base_set(CoreSet::PostUpdate));
+        app.add_systems(Update, load_base_wearables);
+        app.add_systems(Update, update_avatar_info);
+        app.add_systems(Update, update_base_avatar_shape);
+        app.add_systems(Update, select_avatar);
+        app.add_systems(Update, update_render_avatar);
+        app.add_systems(Update, spawn_scenes);
+        app.add_systems(PostUpdate, process_avatar);
 
         app.add_crdt_lww_component::<PbAvatarShape, AvatarShape>(
             SceneComponentId::AVATAR_SHAPE,

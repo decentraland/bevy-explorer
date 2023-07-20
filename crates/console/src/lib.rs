@@ -8,7 +8,7 @@ use clap::Parser;
 use common::sets::SceneSets;
 
 pub trait DoAddConsoleCommand {
-    fn add_console_command<T: Command, U>(&mut self, system: impl IntoSystemConfig<U>)
+    fn add_console_command<T: Command, U>(&mut self, system: impl IntoSystemConfigs<U>)
         -> &mut Self;
 }
 
@@ -17,7 +17,7 @@ pub trait DoAddConsoleCommand {
 impl DoAddConsoleCommand for App {
     fn add_console_command<T: bevy_console::Command, U>(
         &mut self,
-        system: impl IntoSystemConfig<U>,
+        system: impl IntoSystemConfigs<U>,
     ) -> &mut Self {
         bevy_console::AddConsoleCommand::add_console_command::<T, U>(self, system)
     }
@@ -27,7 +27,7 @@ impl DoAddConsoleCommand for App {
 impl DoAddConsoleCommand for App {
     fn add_console_command<T: bevy_console::Command, U>(
         &mut self,
-        _: impl IntoSystemConfig<U>,
+        _: impl IntoSystemConfigs<U>,
     ) -> &mut Self {
         // do nothing
         self
@@ -53,13 +53,13 @@ impl Plugin for ConsolePlugin {
         });
 
         if self.add_egui {
-            app.add_plugin(bevy_console::ConsolePlugin);
+            app.add_plugins(bevy_console::ConsolePlugin);
         } else {
             app.add_event::<ConsoleCommandEntered>();
             app.add_event::<PrintConsoleLine>();
         }
 
-        app.add_system(remove_default_commands.run_if(|mut once: Local<bool>| {
+        app.add_systems(Update, remove_default_commands.run_if(|mut once: Local<bool>| {
             let run = !*once;
             *once = true;
             run
@@ -68,15 +68,15 @@ impl Plugin for ConsolePlugin {
         .add_console_command::<HelpCommand, _>(help_command)
         .add_console_command::<ExitCommand, _>(exit_command)
         .init_resource::<PendingCommands>()
-        .add_system(send_pending);
+        .add_systems(Update, send_pending);
 
         app.configure_sets(
+            Update,
             (
                 ConsoleSet::ConsoleUI,
                 ConsoleSet::Commands,
                 ConsoleSet::PostCommands.before(SceneSets::Init),
             )
-                .in_base_set(CoreSet::Update)
                 .after(scene_spawner_system),
         );
     }

@@ -21,7 +21,7 @@ impl Plugin for BillboardPlugin {
             ComponentPosition::EntityOnly,
         );
 
-        app.add_system(update_billboards.in_set(SceneSets::PostLoop));
+        app.add_systems(Update, update_billboards.in_set(SceneSets::PostLoop));
     }
 }
 

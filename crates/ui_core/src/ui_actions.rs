@@ -28,6 +28,7 @@ impl Plugin for UiActionPlugin {
             .init_resource::<UiActions<Defocus>>()
             .init_resource::<UiActions<DataChanged>>()
             .add_systems(
+                Update,
                 (
                     gather_actions::<HoverEnter>,
                     gather_actions::<Click>,
@@ -35,7 +36,7 @@ impl Plugin for UiActionPlugin {
                     gather_actions::<Focus>,
                     gather_actions::<Defocus>,
                     gather_actions::<DataChanged>,
-                    apply_system_buffers,
+                    apply_deferred,
                     run_actions::<HoverEnter>,
                     run_actions::<Click>,
                     run_actions::<HoverExit>,
@@ -69,7 +70,7 @@ pub struct Click;
 impl ActionMarker for Click {
     type Component = &'static Interaction;
     fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
-        matches!(param, Interaction::Clicked)
+        matches!(param, Interaction::Pressed)
     }
 }
 
@@ -175,7 +176,7 @@ pub fn run_actions<M: ActionMarker>(world: &mut World) {
                     action.initialized = true;
                 }
                 action.system.run((), world);
-                action.system.apply_buffers(world);
+                action.system.apply_deferred(world);
             }
             action.run_already = *active;
 

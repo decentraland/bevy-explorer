@@ -23,11 +23,11 @@ pub struct CommsPlugin;
 
 impl Plugin for CommsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(WebsocketRoomPlugin);
-        app.add_plugin(BroadcastPositionPlugin);
-        app.add_plugin(GlobalCrdtPlugin);
-        app.add_plugin(UserProfilePlugin);
-        app.add_system(process_realm_change);
+        app.add_plugins(WebsocketRoomPlugin);
+        app.add_plugins(BroadcastPositionPlugin);
+        app.add_plugins(GlobalCrdtPlugin);
+        app.add_plugins(UserProfilePlugin);
+        app.add_systems(Update, process_realm_change);
     }
 }
 

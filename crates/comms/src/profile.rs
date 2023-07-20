@@ -17,6 +17,7 @@ pub struct UserProfilePlugin;
 impl Plugin for UserProfilePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
+            Update,
             (
                 request_missing_profiles,
                 process_profile_events,

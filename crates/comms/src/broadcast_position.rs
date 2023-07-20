@@ -12,7 +12,7 @@ pub struct BroadcastPositionPlugin;
 
 impl Plugin for BroadcastPositionPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(broadcast_position);
+        app.add_systems(Update, broadcast_position);
     }
 }
 

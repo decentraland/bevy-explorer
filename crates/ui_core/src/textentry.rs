@@ -109,7 +109,7 @@ pub fn update_text_entry_components(
                     }
                     if let Some(mut interaction) = maybe_interaction {
                         if response.has_focus() {
-                            *interaction = Interaction::Clicked;
+                            *interaction = Interaction::Pressed;
                         } else if response.hovered() {
                             *interaction = Interaction::Hovered;
                         } else {

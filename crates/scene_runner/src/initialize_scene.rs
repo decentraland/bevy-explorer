@@ -2,7 +2,7 @@ use bevy::{
     asset::{AssetLoader, LoadedAsset},
     math::Vec3Swizzles,
     prelude::*,
-    reflect::TypeUuid,
+    reflect::{TypeUuid, TypePath},
     utils::{HashMap, HashSet},
 };
 use serde::Deserialize;
@@ -60,6 +60,7 @@ impl Plugin for SceneLifecyclePlugin {
         app.add_asset_loader(CrdtLoader);
 
         app.add_systems(
+            Update,
             (
                 load_scene_entity,
                 load_scene_json,
@@ -70,13 +71,13 @@ impl Plugin for SceneLifecyclePlugin {
         );
 
         app.add_systems(
+            PostUpdate,
             (
                 process_realm_change,
                 load_active_entities,
                 process_scene_lifecycle,
             )
-                .chain()
-                .in_base_set(CoreSet::PostUpdate),
+                .chain(),
         );
     }
 }
@@ -192,7 +193,7 @@ pub struct SceneMeta {
     pub scene: SceneMetaScene,
 }
 
-#[derive(TypeUuid, Default, Clone)]
+#[derive(TypeUuid, Default, Clone, TypePath)]
 #[uuid = "e5f49bd0-15b0-43c1-8609-00bf8e1d23d4"]
 pub struct SerializedCrdtStore(pub Vec<u8>);
 

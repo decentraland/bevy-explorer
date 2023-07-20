@@ -88,7 +88,7 @@ impl Plugin for MeshDefinitionPlugin {
             sphere,
         });
 
-        app.add_system(update_mesh.in_set(SceneSets::PostLoop));
+        app.add_systems(Update, update_mesh.in_set(SceneSets::PostLoop));
     }
 }
 

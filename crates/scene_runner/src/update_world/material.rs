@@ -112,7 +112,7 @@ impl Plugin for MaterialDefinitionPlugin {
             ComponentPosition::EntityOnly,
         );
 
-        app.add_system(update_materials.in_set(SceneSets::PostLoop));
+        app.add_systems(Update, update_materials.in_set(SceneSets::PostLoop));
     }
 }
 

@@ -8,8 +8,6 @@
 
 use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
-#[cfg(not(test))]
-use bevy_prototype_debug_lines::DebugLines;
 
 use crate::{
     update_world::{
@@ -36,7 +34,7 @@ pub struct RaycastResultPlugin;
 
 impl Plugin for RaycastResultPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(run_raycasts.in_set(SceneSets::Input));
+        app.add_systems(Update, run_raycasts.in_set(SceneSets::Input));
         app.init_resource::<DebugRaycast>();
         app.add_console_command::<DebugRaycastCommand, _>(debug_raycast);
     }
@@ -68,7 +66,6 @@ fn run_raycasts(
         &mut SceneColliderData,
         &GlobalTransform,
     )>,
-    #[cfg(not(test))] mut lines: ResMut<DebugLines>,
     debug: Res<DebugRaycast>,
 ) {
     for (e, scene_ent, mut raycast, transform) in raycast_requests.iter_mut() {
@@ -153,13 +150,12 @@ fn run_raycasts(
 
             // debug line showing raycast
             if debug.0 {
-                #[cfg(not(test))]
-                lines.line_colored(
-                    origin,
-                    origin + direction * raycast.max_distance,
-                    if continuous { 0.0 } else { 1.0 },
-                    Color::BLUE,
-                );
+                // lines.line_colored(
+                //     origin,
+                //     origin + direction * raycast.max_distance,
+                //     if continuous { 0.0 } else { 1.0 },
+                //     Color::BLUE,
+                // );
             }
 
             // output

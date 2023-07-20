@@ -38,11 +38,17 @@ use super::{pointer_events::PointerEvents, AddCrdtInterfaceExt};
 
 pub struct SceneUiPlugin;
 
+#[derive(Debug, Copy, Clone)]
+struct Size {
+    width: Val,
+    height: Val,
+}
+
 // macro helpers to convert proto format to bevy format for val, size, rect
 macro_rules! val {
-    ($pb:ident, $u:ident, $v:ident) => {
+    ($pb:ident, $u:ident, $v:ident, $d:expr) => {
         match $pb.$u() {
-            YgUnit::YguUndefined => Val::Undefined,
+            YgUnit::YguUndefined => $d,
             YgUnit::YguAuto => Val::Auto,
             YgUnit::YguPoint => Val::Px($pb.$v),
             YgUnit::YguPercent => Val::Percent($pb.$v),
@@ -51,21 +57,21 @@ macro_rules! val {
 }
 
 macro_rules! size {
-    ($pb:ident, $wu:ident, $w:ident, $hu:ident, $h:ident) => {{
+    ($pb:ident, $wu:ident, $w:ident, $hu:ident, $h:ident, $d:expr) => {{
         Size {
-            width: val!($pb, $wu, $w),
-            height: val!($pb, $hu, $h),
+            width: val!($pb, $wu, $w, $d),
+            height: val!($pb, $hu, $h, $d),
         }
     }};
 }
 
 macro_rules! rect {
-    ($pb:ident, $lu:ident, $l:ident, $ru:ident, $r:ident, $tu:ident, $t:ident, $bu:ident, $b:ident) => {
+    ($pb:ident, $lu:ident, $l:ident, $ru:ident, $r:ident, $tu:ident, $t:ident, $bu:ident, $b:ident, $d:expr) => {
         UiRect {
-            left: val!($pb, $lu, $l),
-            right: val!($pb, $ru, $r),
-            top: val!($pb, $tu, $t),
-            bottom: val!($pb, $bu, $b),
+            left: val!($pb, $lu, $l, $d),
+            right: val!($pb, $ru, $r, $d),
+            top: val!($pb, $tu, $t, $d),
+            bottom: val!($pb, $bu, $b, $d),
         }
     };
 }
@@ -154,34 +160,36 @@ impl From<PbUiTransform> for UiTransform {
                 YgJustify::YgjSpaceEvenly => JustifyContent::SpaceEvenly,
             },
             overflow: match value.overflow() {
-                YgOverflow::YgoVisible => Overflow::Visible,
-                YgOverflow::YgoHidden => Overflow::Hidden,
+                YgOverflow::YgoVisible => Overflow::DEFAULT,
+                YgOverflow::YgoHidden => Overflow::clip(),
                 YgOverflow::YgoScroll => {
                     // TODO: map to scroll area
                     warn!("ui overflow scroll not implemented");
-                    Overflow::Hidden
+                    Overflow::clip()
                 }
             },
             display: match value.display() {
                 YgDisplay::YgdFlex => Display::Flex,
                 YgDisplay::YgdNone => Display::None,
             },
-            basis: val!(value, flex_basis_unit, flex_basis),
+            basis: val!(value, flex_basis_unit, flex_basis, Val::Auto),
             grow: value.flex_grow,
-            size: size!(value, width_unit, width, height_unit, height),
+            size: size!(value, width_unit, width, height_unit, height, Val::Px(0.0)),
             min_size: size!(
                 value,
                 min_width_unit,
                 min_width,
                 min_height_unit,
-                min_height
+                min_height,
+                Val::Auto
             ),
             max_size: size!(
                 value,
                 max_width_unit,
                 max_width,
                 max_height_unit,
-                max_height
+                max_height,
+                Val::Auto
             ),
             position: rect!(
                 value,
@@ -192,7 +200,8 @@ impl From<PbUiTransform> for UiTransform {
                 position_top_unit,
                 position_top,
                 position_bottom_unit,
-                position_bottom
+                position_bottom,
+                Val::Auto
             ),
             margin: rect!(
                 value,
@@ -203,7 +212,8 @@ impl From<PbUiTransform> for UiTransform {
                 margin_top_unit,
                 margin_top,
                 margin_bottom_unit,
-                margin_bottom
+                margin_bottom,
+                Val::Px(0.0)
             ),
             padding: rect!(
                 value,
@@ -214,7 +224,8 @@ impl From<PbUiTransform> for UiTransform {
                 padding_top_unit,
                 padding_top,
                 padding_bottom_unit,
-                padding_bottom
+                padding_bottom,
+                Val::Px(0.0)
             ),
         }
     }
@@ -404,16 +415,18 @@ impl Plugin for SceneUiPlugin {
             ComponentPosition::EntityOnly,
         );
 
-        app.add_system(init_scene_ui_root.in_set(SceneSets::PostInit));
+        app.add_systems(Update, init_scene_ui_root.in_set(SceneSets::PostInit));
         app.add_systems(
+            Update,
             (update_scene_ui_components, layout_scene_ui)
                 .chain()
                 .in_set(SceneSets::PostLoop),
         );
 
         // we need to make sure commands are run before 9slice layouting
-        app.add_system(
-            apply_system_buffers
+        app.add_systems(
+            Update,
+            apply_deferred
                 .after(SceneSets::PostLoop)
                 .before(Ui9SliceSet),
         );
@@ -547,7 +560,10 @@ fn layout_scene_ui(
                         NodeBundle {
                             style: Style {
                                 position_type: PositionType::Absolute,
-                                position: UiRect::all(Val::Px(0.0)),
+                                left: Val::Px(0.0),
+                                right: Val::Px(0.0),
+                                top: Val::Px(0.0),
+                                bottom: Val::Px(0.0),
                                 ..Default::default()
                             },
                             ..Default::default()
@@ -600,10 +616,16 @@ fn layout_scene_ui(
                                 display: ui_transform.display,
                                 flex_basis: ui_transform.basis,
                                 flex_grow: ui_transform.grow,
-                                size: ui_transform.size,
-                                min_size: ui_transform.min_size,
-                                max_size: ui_transform.max_size,
-                                position: ui_transform.position,
+                                width: ui_transform.size.width,
+                                height: ui_transform.size.height,
+                                min_width: ui_transform.min_size.width,
+                                min_height: ui_transform.min_size.height,
+                                max_width: ui_transform.max_size.width,
+                                max_height: ui_transform.max_size.height,
+                                left: ui_transform.position.left,
+                                right: ui_transform.position.right,
+                                top: ui_transform.position.top,
+                                bottom: ui_transform.position.bottom,
                                 margin: ui_transform.margin,
                                 padding: ui_transform.padding,
                                 ..Default::default()
@@ -637,8 +659,9 @@ fn layout_scene_ui(
                                                         c.spawn(NodeBundle {
                                                             style: Style {
                                                                 position_type: PositionType::Absolute,
-                                                                size: Size::all(Val::Percent(100.0)),
-                                                                overflow: Overflow::Hidden,
+                                                                width: Val::Percent(100.0),
+                                                                height: Val::Percent(100.0),
+                                                                overflow: Overflow::clip(),
                                                                 ..Default::default()
                                                             },
                                                             ..Default::default()
@@ -646,12 +669,10 @@ fn layout_scene_ui(
                                                             c.spawn(ImageBundle{
                                                                 style: Style {
                                                                     position_type: PositionType::Absolute,
-                                                                    position: UiRect {
-                                                                        left: Val::Percent(-100.0 * uvs.left / mid_width),
-                                                                        right: Val::Percent(-100.0 * uvs.right / mid_width),
-                                                                        top: Val::Percent(-100.0 * uvs.top / mid_height),
-                                                                        bottom: Val::Percent(-100.0 * uvs.bottom / mid_height),
-                                                                    },
+                                                                    left: Val::Percent(-100.0 * uvs.left / mid_width),
+                                                                    right: Val::Percent(-100.0 * uvs.right / mid_width),
+                                                                    top: Val::Percent(-100.0 * uvs.top / mid_height),
+                                                                    bottom: Val::Percent(-100.0 * uvs.bottom / mid_height),
                                                                     ..Default::default()
                                                                 },
                                                                 image: UiImage {
@@ -669,15 +690,14 @@ fn layout_scene_ui(
                                                         // make a stretchy grid
                                                         c.spawn(NodeBundle {
                                                             style: Style {
-                                                                position_type:
-                                                                    PositionType::Absolute,
-                                                                position: UiRect::all(Val::Px(0.0)),
-                                                                justify_content:
-                                                                    JustifyContent::Center,
-                                                                overflow: Overflow::Hidden,
-                                                                size: Size::width(Val::Percent(
-                                                                    100.0,
-                                                                )),
+                                                                position_type: PositionType::Absolute,
+                                                                left: Val::Px(0.0),
+                                                                right: Val::Px(0.0),
+                                                                top: Val::Px(0.0),
+                                                                bottom: Val::Px(0.0),
+                                                                justify_content: JustifyContent::Center,
+                                                                overflow: Overflow::clip(),
+                                                                width: Val::Percent(100.0),
                                                                 ..Default::default()
                                                             },
                                                             ..Default::default()
@@ -690,10 +710,8 @@ fn layout_scene_ui(
                                                                         FlexDirection::Column,
                                                                     justify_content:
                                                                         JustifyContent::Center,
-                                                                    overflow: Overflow::Hidden,
-                                                                    size: Size::height(
-                                                                        Val::Percent(100.0),
-                                                                    ),
+                                                                    overflow: Overflow::clip(),
+                                                                    height: Val::Percent(100.0),
                                                                     ..Default::default()
                                                                 },
                                                                 ..Default::default()
@@ -702,7 +720,7 @@ fn layout_scene_ui(
                                                                 c.spacer();
                                                                 c.spawn(ImageBundle {
                                                                     style: Style {
-                                                                        overflow: Overflow::Hidden,
+                                                                        overflow: Overflow::clip(),
                                                                         ..Default::default()
                                                                     },
                                                                     image: UiImage {
@@ -733,7 +751,10 @@ fn layout_scene_ui(
                                         c.spawn(NodeBundle {
                                             style: Style {
                                                 position_type: PositionType::Absolute,
-                                                position: UiRect::all(Val::Px(0.0)),
+                                                left: Val::Px(0.0),
+                                                right: Val::Px(0.0),
+                                                top: Val::Px(0.0),
+                                                bottom: Val::Px(0.0),
                                                 justify_content: match text.h_align {
                                                     TextAlignment::Left => {
                                                         JustifyContent::FlexStart
@@ -767,7 +788,7 @@ fn layout_scene_ui(
                                                             },
                                                         )],
                                                         alignment: text.h_align,
-                                                        linebreak_behaviour:
+                                                        linebreak_behavior:
                                                             bevy::text::BreakLineOn::WordBoundary,
                                                     },
                                                     z_index: ZIndex::Local(1),
@@ -809,12 +830,12 @@ fn layout_scene_ui(
                                     let font_size = input.0.font_size.unwrap_or(12);
 
                                     //ensure we use max width if not given
-                                    if style.size.width == Val::Undefined {
-                                        style.size.width = Val::Percent(100.0);
+                                    if style.width == Val::Px(0.0) {
+                                        style.width = Val::Percent(100.0);
                                     }
                                     //and some size if not given
-                                    if style.size.height == Val::Undefined {
-                                        style.size.height = Val::Px(font_size as f32 * 1.3);
+                                    if style.height == Val::Px(0.0) {
+                                        style.height = Val::Px(font_size as f32 * 1.3);
                                     }
 
                                     ent_cmds = ent_cmds.insert((

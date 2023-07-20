@@ -8,7 +8,7 @@ pub struct ScrollablePlugin;
 
 impl Plugin for ScrollablePlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(update_scrollables);
+        app.add_systems(Update, update_scrollables);
     }
 }
 
@@ -29,9 +29,9 @@ impl SpawnScrollable for ChildBuilder<'_, '_, '_> {
         spawn_children: impl FnOnce(&mut ChildBuilder),
     ) {
         let panel_size = match scrollable.direction {
-            ScrollDirection::Vertical(_) => Size::height(Val::Px(100000.0)),
-            ScrollDirection::Horizontal(_) => Size::width(Val::Px(100000.0)),
-            ScrollDirection::Both(_, _) => Size::all(Val::Px(100000.0)),
+            ScrollDirection::Vertical(_) => (Val::Auto, Val::Px(100000.0)),
+            ScrollDirection::Horizontal(_) => (Val::Px(100000.0), Val::Auto),
+            ScrollDirection::Both(_, _) => (Val::Px(100000.0), Val::Px(100000.0)),
         };
 
         let mut content = Entity::PLACEHOLDER;
@@ -41,7 +41,8 @@ impl SpawnScrollable for ChildBuilder<'_, '_, '_> {
                 commands
                     .spawn(NodeBundle {
                         style: Style {
-                            size: panel_size,
+                            width: panel_size.0,
+                            height: panel_size.1,
                             // TODO this should be set based on direction
                             flex_direction: FlexDirection::Column,
                             ..Default::default()
@@ -229,7 +230,7 @@ fn update_scrollables(
 
         // calculate deltas based on drag or mouse wheel in the parent container
         let mut new_slider_deltas = None;
-        if scrollable.drag && interaction == &Interaction::Clicked {
+        if scrollable.drag && interaction == &Interaction::Pressed {
             if let Some((prev_entity, prev_pos)) = previously_clicked.as_ref() {
                 if prev_entity == &entity {
                     let delta = cursor_position - *prev_pos;
@@ -284,7 +285,7 @@ fn update_scrollables(
             }
         } else {
             // or if we don't need a scrollbar, make sure the content position is at zero
-            style.position.left = Val::Px(0.0);
+            style.left = Val::Px(0.0);
         }
 
         if ratio.y < 1.0 {
@@ -304,7 +305,7 @@ fn update_scrollables(
                 );
             }
         } else {
-            style.position.top = Val::Px(0.0);
+            style.top = Val::Px(0.0);
         }
 
         scrollable.content_size = child_size;
@@ -325,19 +326,18 @@ fn update_scrollables(
 
         if info.redraw {
             // parent either moved, was resized or the content size changed. in any case, reposition/resize the bars
-            style.position = UiRect {
-                left: Val::Px(info.bar_position.x),
-                top: Val::Px(info.bar_position.y),
-                ..Default::default()
-            };
+            style.left = Val::Px(info.bar_position.x);
+            style.top = Val::Px(info.bar_position.y);
             if bar.vertical {
-                style.size = Size::new(Val::Px(5.0), Val::Px(info.length));
+                style.width = Val::Px(5.0);
+                style.height = Val::Px(info.length);
             } else {
-                style.size = Size::new(Val::Px(info.length), Val::Px(5.0));
+                style.width = Val::Px(info.length);
+                style.height = Val::Px(5.0);
             }
-        } else if interaction == &Interaction::Clicked {
+        } else if interaction == &Interaction::Pressed {
             // jump the slider to the clicked position
-            let (Val::Px(left), Val::Px(top)) = (style.position.left, style.position.top) else { continue; };
+            let (Val::Px(left), Val::Px(top)) = (style.left, style.top) else { continue; };
             let relative_position = cursor_position - Vec2::new(left, top);
             let slider_len = info.length * info.ratio;
             let position = if bar.vertical {
@@ -367,7 +367,7 @@ fn update_scrollables(
         if info.redraw {
             // parent moved/resized or content moved/resized
             update_position = true;
-        } else if interaction == &Interaction::Clicked {
+        } else if interaction == &Interaction::Pressed {
             // use slider click in priority over bar or container
             if let Some((prev_entity, prev_pos)) = previously_clicked.as_ref() {
                 if prev_entity == &entity {
@@ -398,32 +398,28 @@ fn update_scrollables(
             // redraw slider
             let slider_len = info.length * info.ratio;
             if slider.vertical {
-                style.size = Size::new(Val::Px(5.0), Val::Px(slider_len));
+                style.width = Val::Px(5.0);
+                style.height = Val::Px(slider_len);
                 let slider_start =
                     info.bar_position.y + (info.length - slider_len) * slider.position;
-                style.position = UiRect {
-                    left: Val::Px(info.bar_position.x),
-                    top: Val::Px(slider_start),
-                    ..Default::default()
-                };
+                style.left = Val::Px(info.bar_position.x);
+                style.top = Val::Px(slider_start);
             } else {
-                style.size = Size::new(Val::Px(slider_len), Val::Px(5.0));
+                style.width = Val::Px(slider_len);
+                style.height = Val::Px(5.0);
                 let slider_start =
                     info.bar_position.x + (info.length - slider_len) * slider.position;
-                style.position = UiRect {
-                    left: Val::Px(slider_start),
-                    top: Val::Px(info.bar_position.y),
-                    ..Default::default()
-                };
+                style.left = Val::Px(slider_start);
+                style.top = Val::Px(info.bar_position.y);
             }
 
             // re-paginate content
             let mut style = nodes.get_component_mut::<Style>(info.content).unwrap();
             let offset = info.slide_amount * -slider.position;
             if slider.vertical {
-                style.position.top = Val::Px(offset.y);
+                style.top = Val::Px(offset.y);
             } else {
-                style.position.left = Val::Px(offset.x);
+                style.left = Val::Px(offset.x);
             }
         }
 
@@ -433,9 +429,9 @@ fn update_scrollables(
     // create any required bars/sliders that we didn't find existing above
     let mut init_bar = |entity: Entity, info: ScrollInfo, vertical: bool| {
         let bar_size = if vertical {
-            Size::new(Val::Px(5.0), Val::Px(info.length))
+            (Val::Px(5.0), Val::Px(info.length))
         } else {
-            Size::new(Val::Px(info.length), Val::Px(5.0))
+            (Val::Px(info.length), Val::Px(5.0))
         };
 
         commands.entity(entity).with_children(|commands| {
@@ -443,12 +439,10 @@ fn update_scrollables(
                 NodeBundle {
                     style: Style {
                         position_type: PositionType::Absolute,
-                        position: UiRect {
-                            left: Val::Px(info.bar_position.x),
-                            top: Val::Px(info.bar_position.y),
-                            ..Default::default()
-                        },
-                        size: bar_size,
+                        left: Val::Px(info.bar_position.x),
+                        top: Val::Px(info.bar_position.y),
+                        width: bar_size.0,
+                        height: bar_size.1,
                         ..Default::default()
                     },
                     background_color: Color::GRAY.into(),
@@ -470,25 +464,21 @@ fn update_scrollables(
         };
         let slider_len = info.length * info.ratio;
 
-        let (ui_position, slider_size) = if vertical {
+        let (left, top, width, height) = if vertical {
             let slider_start = info.bar_position.y + (info.length - slider_len) * position;
             (
-                UiRect {
-                    left: Val::Px(info.bar_position.x),
-                    top: Val::Px(slider_start),
-                    ..Default::default()
-                },
-                Size::new(Val::Px(5.0), Val::Px(slider_len)),
+                Val::Px(info.bar_position.x),
+                Val::Px(slider_start),
+                Val::Px(5.0), 
+                Val::Px(slider_len),
             )
         } else {
             let slider_start = info.bar_position.x + (info.length - slider_len) * position;
             (
-                UiRect {
-                    left: Val::Px(slider_start),
-                    top: Val::Px(info.bar_position.y),
-                    ..Default::default()
-                },
-                Size::new(Val::Px(slider_len), Val::Px(5.0)),
+                Val::Px(slider_start),
+                Val::Px(info.bar_position.y),
+                Val::Px(slider_len), 
+                Val::Px(5.0),
             )
         };
 
@@ -497,8 +487,10 @@ fn update_scrollables(
                 NodeBundle {
                     style: Style {
                         position_type: PositionType::Absolute,
-                        position: ui_position,
-                        size: slider_size,
+                        left,
+                        top,
+                        width,
+                        height,
                         ..Default::default()
                     },
                     background_color: Color::WHITE.into(),
@@ -517,9 +509,9 @@ fn update_scrollables(
         let mut style = nodes.get_component_mut::<Style>(info.content).unwrap();
         let offset = info.slide_amount * -position;
         if vertical {
-            style.position.top = Val::Px(offset.y);
+            style.top = Val::Px(offset.y);
         } else {
-            style.position.left = Val::Px(offset.x);
+            style.left = Val::Px(offset.x);
         }
     };
 

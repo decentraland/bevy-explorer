@@ -22,7 +22,7 @@ pub struct InteractStylePlugin;
 
 impl Plugin for InteractStylePlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(set_interaction_style);
+        app.add_systems(Update, set_interaction_style);
     }
 }
 

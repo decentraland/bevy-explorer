@@ -14,7 +14,7 @@ pub struct AvatarAnimationPlugin;
 
 impl Plugin for AvatarAnimationPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems((load_animations, animate));
+        app.add_systems(Update, (load_animations, animate));
         app.init_resource::<AvatarAnimations>();
     }
 }
