@@ -4,7 +4,7 @@
 
 use avatar::AvatarDynamicState;
 use bevy::{
-    core_pipeline::tonemapping::{DebandDither, Tonemapping},
+    core_pipeline::{tonemapping::{DebandDither, Tonemapping}, bloom::BloomSettings},
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::CascadeShadowConfigBuilder,
     prelude::*,
@@ -202,7 +202,7 @@ fn setup(mut commands: Commands, mut cam_resource: ResMut<PrimaryCameraRes>) {
             Camera3dBundle {
                 camera: Camera {
                     // TODO enable when we can use gizmos instead of debuglines in bevy 0.11
-                    // hdr: true,
+                    hdr: true,
                     ..Default::default()
                 },
                 tonemapping: Tonemapping::TonyMcMapface,
@@ -215,6 +215,7 @@ fn setup(mut commands: Commands, mut cam_resource: ResMut<PrimaryCameraRes>) {
                 },
                 ..Default::default()
             },
+            BloomSettings { intensity: 0.15, ..BloomSettings::OLD_SCHOOL },
             PrimaryCamera::default(),
         ))
         .id();
