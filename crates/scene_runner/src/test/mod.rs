@@ -5,6 +5,7 @@ use std::{collections::BTreeMap, fs::File, io::Write};
 use bevy::{
     app::{PluginGroupBuilder, ScheduleRunnerPlugin},
     diagnostic::DiagnosticsPlugin,
+    gizmos::GizmoPlugin,
     gltf::GltfPlugin,
     input::InputPlugin,
     log::LogPlugin,
@@ -12,7 +13,7 @@ use bevy::{
     render::mesh::MeshPlugin,
     scene::ScenePlugin,
     time::TimePlugin,
-    utils::{HashMap, Instant}, gizmos::GizmoPlugin,
+    utils::{HashMap, Instant},
 };
 use itertools::Itertools;
 use once_cell::sync::Lazy;
