@@ -4,7 +4,10 @@
 
 use avatar::AvatarDynamicState;
 use bevy::{
-    core_pipeline::{tonemapping::{DebandDither, Tonemapping}, bloom::BloomSettings},
+    core_pipeline::{
+        bloom::BloomSettings,
+        tonemapping::{DebandDither, Tonemapping},
+    },
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::CascadeShadowConfigBuilder,
     prelude::*,
@@ -215,7 +218,10 @@ fn setup(mut commands: Commands, mut cam_resource: ResMut<PrimaryCameraRes>) {
                 },
                 ..Default::default()
             },
-            BloomSettings { intensity: 0.15, ..BloomSettings::OLD_SCHOOL },
+            BloomSettings {
+                intensity: 0.15,
+                ..BloomSettings::OLD_SCHOOL
+            },
             PrimaryCamera::default(),
         ))
         .id();
