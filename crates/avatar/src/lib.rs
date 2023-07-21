@@ -107,7 +107,7 @@ pub struct WearableMeta {
     pub id: String,
     pub description: String,
     pub thumbnail: String,
-    pub rarity: String,
+    pub rarity: Option<String>,
     pub data: WearableData,
 }
 
