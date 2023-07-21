@@ -174,7 +174,7 @@ impl From<PbUiTransform> for UiTransform {
             },
             basis: val!(value, flex_basis_unit, flex_basis, Val::Auto),
             grow: value.flex_grow,
-            size: size!(value, width_unit, width, height_unit, height, Val::Px(0.0)),
+            size: size!(value, width_unit, width, height_unit, height, Val::Auto),
             min_size: size!(
                 value,
                 min_width_unit,
@@ -789,7 +789,7 @@ fn layout_scene_ui(
                                                         )],
                                                         alignment: text.h_align,
                                                         linebreak_behavior:
-                                                            bevy::text::BreakLineOn::WordBoundary,
+                                                            bevy::text::BreakLineOn::NoWrap,
                                                     },
                                                     z_index: ZIndex::Local(1),
                                                     ..Default::default()
