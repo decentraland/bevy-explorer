@@ -1,13 +1,17 @@
-use std::time::{Duration, Instant};
+use std::{
+    path::{Path, PathBuf},
+    time::{Duration, Instant},
+};
 
 use bevy::prelude::*;
-use ffmpeg_next::frame::Video;
 use ffmpeg_next::media::Type;
 use ffmpeg_next::software::scaling::{context::Context, flag::Flags};
+use ffmpeg_next::{ffi::AVPixelFormat, frame::Video};
 use ffmpeg_next::{
     ffi::AV_TIME_BASE,
     format::{input, Pixel},
 };
+use isahc::ReadResponseExt;
 use tokio::sync::mpsc::error::TryRecvError;
 
 pub enum VideoCommand {
@@ -95,10 +99,29 @@ pub fn video_thread_inner(
     let mut input_context = input(&path)?;
 
     // initialize decoder
-    let input_stream = input_context
+    let mut input_stream = input_context
         .streams()
         .best(Type::Video)
         .ok_or(ffmpeg_next::Error::StreamNotFound)?;
+
+    let pixel_format: AVPixelFormat =
+        unsafe { std::mem::transmute((*input_stream.parameters().as_ptr()).format) };
+
+    if pixel_format == AVPixelFormat::AV_PIX_FMT_NONE {
+        // try to workaround ffmpeg remote streaming issue by downloading the file
+        debug!("failed to determine pixel format - downloading ...");
+        let mut resp = isahc::get(&path)?;
+        let data = resp.bytes()?;
+        let local_folder = PathBuf::from("assets/video_downloads");
+        std::fs::create_dir_all(&local_folder)?;
+        let local_path = local_folder.join(Path::new(urlencoding::encode(&path).as_ref()));
+        std::fs::write(&local_path, data)?;
+        input_context = input(&local_path)?;
+        input_stream = input_context
+            .streams()
+            .best(Type::Video)
+            .ok_or(ffmpeg_next::Error::StreamNotFound)?;
+    }
 
     let video_stream_index = input_stream.index();
 
@@ -178,6 +201,7 @@ pub fn video_thread_inner(
                 }
                 continue;
             } else {
+                info!("eof");
                 start_instant = None;
             }
         }
@@ -190,7 +214,7 @@ pub fn video_thread_inner(
 
         match cmd {
             Ok(VideoCommand::Play) => {
-                if start_instant.is_none() {
+                if start_instant.is_none() && next_frame.is_some() {
                     start_instant = Some(Instant::now())
                 }
             }

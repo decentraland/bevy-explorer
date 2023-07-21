@@ -20,5 +20,5 @@ tokio = { workspace = true }
 clap = { workspace = true }
 urn = { workspace = true }
 
-urlencoding = "2.1.2"
+urlencoding = { workspace = true }
 url = "2.4.0"
