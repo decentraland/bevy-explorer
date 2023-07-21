@@ -12,7 +12,7 @@ use bevy::{
     render::mesh::MeshPlugin,
     scene::ScenePlugin,
     time::TimePlugin,
-    utils::{HashMap, Instant},
+    utils::{HashMap, Instant}, gizmos::GizmoPlugin,
 };
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -99,6 +99,7 @@ fn init_test_app(entity_json: &str) -> App {
     app.add_asset::<Shader>();
     app.add_asset::<Image>();
     app.add_plugins(MaterialPlugin::<StandardMaterial>::default());
+    app.add_plugins(GizmoPlugin);
     app.add_plugins(SceneRunnerPlugin);
     app.init_resource::<InputMap>();
     app.init_resource::<AcceptInput>();
