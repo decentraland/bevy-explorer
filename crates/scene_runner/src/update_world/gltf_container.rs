@@ -181,7 +181,8 @@ fn update_gltf(
 
         if let Some(GltfLoaded(Some(instance))) = maybe_loaded {
             // clean up from loaded state
-            instances_to_despawn_when_ready.push(*instance);
+            // instances_to_despawn_when_ready.push(*instance);
+            scene_spawner.despawn_instance(*instance);
         }
         if let Some(GltfProcessed {
             instance_id: Some(instance),
