@@ -448,18 +448,6 @@ fn update_gltf(
                                 index: *index,
                             });
                     }
-
-                    if is_skinned {
-                        // fix zero joint weights, same way as unity and three.js
-                        // TODO: remove when bevy 0.11 is released
-                        let Some(VertexAttributeValues::Float32x4(joint_weights)) = mesh_data.attribute_mut(Mesh::ATTRIBUTE_JOINT_WEIGHT) else { panic!("is_skinned but no bone weights") };
-                        for weights in joint_weights
-                            .iter_mut()
-                            .filter(|weights| *weights == &[0.0, 0.0, 0.0, 0.0])
-                        {
-                            weights[0] = 1.0;
-                        }
-                    }
                 }
             }
 

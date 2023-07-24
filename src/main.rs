@@ -204,7 +204,6 @@ fn setup(mut commands: Commands, mut cam_resource: ResMut<PrimaryCameraRes>) {
         .spawn((
             Camera3dBundle {
                 camera: Camera {
-                    // TODO enable when we can use gizmos instead of debuglines in bevy 0.11
                     hdr: true,
                     ..Default::default()
                 },
