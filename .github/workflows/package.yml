@@ -122,6 +122,7 @@ jobs:
             continue-on-error: true
             run: |
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy.exe package/decentra-bevy.exe
+                cp ${{ env.GITHUB_PATH}}/*.dll package
                 7z a ${{ env.PACKAGE_FILE }} ./package/*
 
           - name: Package Linux
