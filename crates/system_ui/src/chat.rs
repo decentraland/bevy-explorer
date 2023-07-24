@@ -89,13 +89,10 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, root: Res<Syste
                 NodeBundle {
                     style: ui::Style {
                         // TODO: use a percent size here
-                        // unfortunately text wrapping fails with percent sizes in bevy 0.10
-                        width: Val::Px(640.0),
-                        height: Val::Px(300.0),
-                        min_width: Val::Px(640.0),
-                        min_height: Val::Px(300.0),
-                        max_width: Val::Px(640.0),
-                        max_height: Val::Px(300.0),
+                        width: Val::Percent(30.0),
+                        height: Val::Percent(20.0),
+                        min_width: Val::Px(300.0),
+                        min_height: Val::Px(200.0),
                         flex_direction: FlexDirection::Column,
                         justify_content: JustifyContent::FlexEnd,
                         ..Default::default()
