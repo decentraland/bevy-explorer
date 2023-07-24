@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use bevy::{
     ecs::system::{Command, EntityCommands},
-    prelude::{Bundle, Entity, IntoSystemConfig, World},
+    prelude::{Bundle, Entity, IntoSystemConfigs, World},
     tasks::Task,
 };
 use ethers::types::H160;
@@ -111,7 +111,7 @@ impl<T> Command for TryInsert<T>
 where
     T: Bundle + 'static,
 {
-    fn write(self, world: &mut World) {
+    fn apply(self, world: &mut World) {
         if let Some(mut entity) = world.get_entity_mut(self.entity) {
             entity.insert(self.bundle);
         }
@@ -132,8 +132,10 @@ impl<'w, 's> TryInsertEx for EntityCommands<'w, 's, '_> {
 
 // add a console command. trait is here as we want to mock it when testing
 pub trait DoAddConsoleCommand {
-    fn add_console_command<T: Command, U>(&mut self, system: impl IntoSystemConfig<U>)
-        -> &mut Self;
+    fn add_console_command<T: Command, U>(
+        &mut self,
+        system: impl IntoSystemConfigs<U>,
+    ) -> &mut Self;
 }
 
 // macro for assertions

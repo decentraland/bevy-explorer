@@ -1,3 +1,5 @@
+#import bevy_pbr::mesh_vertex_output MeshVertexOutput
+
 struct MaskMaterial {
     color: vec4<f32>,
 };
@@ -15,10 +17,10 @@ var mask_sampler: sampler;
 
 @fragment
 fn fragment(
-    #import bevy_pbr::mesh_vertex_output
+    in: MeshVertexOutput
 ) -> @location(0) vec4<f32> {
-    let mask = textureSample(mask_texture, mask_sampler, uv);
-    let base = textureSample(base_texture, base_sampler, uv);
+    let mask = textureSample(mask_texture, mask_sampler, in.uv);
+    let base = textureSample(base_texture, base_sampler, in.uv);
     let color_amt = mask.r * mask.a;
     // TODO: proper lighting - easy after https://github.com/bevyengine/bevy/pull/7820 lands
     return vec4<f32>(mix(material.color, vec4<f32>(1.0), color_amt) * base);

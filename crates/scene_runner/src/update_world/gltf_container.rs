@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use bevy::{
     gltf::{Gltf, GltfExtras},
     prelude::*,
-    reflect::TypeUuid,
+    reflect::{TypePath, TypeUuid},
     render::{
         mesh::{Indices, VertexAttributeValues},
         view::NoFrustumCulling,
@@ -54,20 +54,21 @@ impl Plugin for GltfDefinitionPlugin {
             ComponentPosition::EntityOnly,
         );
 
-        app.add_system(update_gltf.in_set(SceneSets::PostLoop));
-        app.add_system(
+        app.add_systems(Update, update_gltf.in_set(SceneSets::PostLoop));
+        app.add_systems(
+            Update,
             attach_ready_colliders
                 .after(update_gltf)
                 .in_set(SceneSets::PostLoop),
         );
         app.add_asset::<GltfCachedShape>();
         app.init_resource::<MeshToShape>();
-        app.add_system(check_gltfs_ready.in_set(SceneSets::PostInit));
-        app.add_system(update_container_finished.in_set(SceneSets::Input));
+        app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
+        app.add_systems(Update, update_container_finished.in_set(SceneSets::Input));
     }
 }
 
-#[derive(TypeUuid)]
+#[derive(TypeUuid, TypePath)]
 #[uuid = "09e7812e-ea71-4046-a9be-65565257d459"]
 pub enum GltfCachedShape {
     Shape(SharedShape),
@@ -180,7 +181,8 @@ fn update_gltf(
 
         if let Some(GltfLoaded(Some(instance))) = maybe_loaded {
             // clean up from loaded state
-            instances_to_despawn_when_ready.push(*instance);
+            // instances_to_despawn_when_ready.push(*instance);
+            scene_spawner.despawn_instance(*instance);
         }
         if let Some(GltfProcessed {
             instance_id: Some(instance),
@@ -446,18 +448,6 @@ fn update_gltf(
                                 mesh_name: collider_base_name.map(ToOwned::to_owned),
                                 index: *index,
                             });
-                    }
-
-                    if is_skinned {
-                        // fix zero joint weights, same way as unity and three.js
-                        // TODO: remove when bevy 0.11 is released
-                        let Some(VertexAttributeValues::Float32x4(joint_weights)) = mesh_data.attribute_mut(Mesh::ATTRIBUTE_JOINT_WEIGHT) else { panic!("is_skinned but no bone weights") };
-                        for weights in joint_weights
-                            .iter_mut()
-                            .filter(|weights| *weights == &[0.0, 0.0, 0.0, 0.0])
-                        {
-                            weights[0] = 1.0;
-                        }
                     }
                 }
             }

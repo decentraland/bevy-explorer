@@ -11,7 +11,7 @@ tracy = ["bevy/trace_tracy"]
 [workspace]
 members = ["crates/*"]
 
-[dependencies]
+[workspace.dependencies]
 common = { path="crates/common" }
 avatar = { path="crates/avatar" }
 comms = { path="crates/comms" }
@@ -24,21 +24,57 @@ ui_core = { path="crates/ui_core" }
 scene_runner = { path="crates/scene_runner" }
 console = { path="crates/console" }
 av = { path="crates/av" }
+dcl = { path="crates/dcl" }
+dcl_component = { path="crates/dcl_component" }
 
-bevy = "0.10"
-bevy_console = "0.7.0"
-bevy_prototype_debug_lines = { version = "0.10.1", features = ["3d"] }
-bevy_mod_billboard = "0.3"
+bevy = { version = "0.11", features=["jpeg"] }
+bevy_console = "0.8.0"
+bevy_mod_billboard = "0.4"
+bevy_egui = "0.21"
 
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
-pico-args = "0.5.0"
+
+tokio = { version = "1.29.1", features = ["sync"] }
+anyhow = "1.0.70"
+urn = "0.7.0"
+ethers = "2.0.3"
+futures-lite = "1.12.0"
+bimap = "0.6.3"
+isahc = { version = "1.7.2", features = ["json"] }
+prost = "0.11.8"
 clap = "4.1.10"
+once_cell = "1.16.0"
+rapier3d = "0.17.2"
+urlencoding = "2.1.2"
+
+
+[dependencies]
+common = { workspace = true }
+avatar = { workspace = true }
+comms = { workspace = true }
+input_manager = { workspace = true }
+ipfs = { workspace = true }
+system_ui = { workspace = true }
+user_input = { workspace = true }
+visuals = { workspace = true }
+ui_core = { workspace = true }
+scene_runner = { workspace = true }
+console = { workspace = true }
+av = { workspace = true }
+
+bevy = { workspace = true }
+bevy_console = { workspace = true }
+bevy_mod_billboard = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { workspace = true }
+
+pico-args = "0.5.0"
 
 [build-dependencies]
 prost-build = "0.11.8"
 
 [patch.crates-io]
-bevy = { git="https://github.com/robtfm/bevy", branch="0.10-hotfix" }
-# bevy = { path = "../bevy" }
-bevy_mod_billboard = { git="https://github.com/robtfm/bevy_mod_billboard", branch="lock_all" }
+bevy = { git = "https://github.com/robtfm/bevy", branch = "0.11-hotfix" }

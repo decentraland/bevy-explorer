@@ -14,7 +14,8 @@ pub struct FocusPlugin;
 impl Plugin for FocusPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
-            (apply_system_buffers, defocus, focus)
+            Update,
+            (apply_deferred, defocus, focus)
                 .chain()
                 .in_set(SceneSets::UiActions)
                 .after(UiActionSet),
@@ -46,7 +47,7 @@ fn focus(
 ) {
     for (entity, _) in focused_elements
         .iter()
-        .filter(|(_, interaction)| matches!(interaction, Interaction::Clicked))
+        .filter(|(_, interaction)| matches!(interaction, Interaction::Pressed))
     {
         commands.entity(entity).try_insert(Focus);
     }

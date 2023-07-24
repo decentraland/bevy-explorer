@@ -6,29 +6,29 @@ edition = "2021"
 [lib]
 
 [dependencies]
-common = { path="../common" }
-dcl_component = { path="../dcl_component" }
-dcl = { path="../dcl" }
-ipfs = { path="../ipfs" }
-comms = { path="../comms" }
-ui_core = { path="../ui_core" }
-console = { path="../console" }
-input_manager = { path="../input_manager" }
+common = { workspace = true }
+dcl_component = { workspace = true }
+dcl = { workspace = true }
+ipfs = { workspace = true }
+comms = { workspace = true }
+ui_core = { workspace = true }
+console = { workspace = true }
+input_manager = { workspace = true }
 
-bevy = { version = "0.10", features=["jpeg"] }
-tokio = { version = "1.29.1", features = ["sync"] }
-serde = "1.0.152"
-serde_json = { version = "1.0.92", features = ["raw_value"] }
-anyhow = "1.0.70"
-bevy_mod_billboard = "0.3"
-rapier3d = "0.17.2"
-nalgebra = { version = "0.32.2", features = [ "convert-glam023" ] }
-bevy_console = "0.7.0"
-clap = "4.1.10"
-bimap = "0.6.3"
+bevy = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+bevy_mod_billboard = { workspace = true }
+bevy_console = { workspace = true }
+clap = { workspace = true }
+bimap = { workspace = true }
+nalgebra = { version = "0.32.3", features = [ "convert-glam024" ] }
+futures-lite = { workspace = true }
+once_cell = { workspace = true }
+rapier3d = { workspace = true }
+
 itertools = "0.10.5"
-futures-lite = "1.12.0"
 petgraph = "0.6.3"
-bevy_prototype_debug_lines = { version = "0.10.1", features = ["3d"] }
-once_cell = "1.16.0"
 spin_sleep = "1.1.1"

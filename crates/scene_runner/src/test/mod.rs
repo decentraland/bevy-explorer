@@ -5,6 +5,7 @@ use std::{collections::BTreeMap, fs::File, io::Write};
 use bevy::{
     app::{PluginGroupBuilder, ScheduleRunnerPlugin},
     diagnostic::DiagnosticsPlugin,
+    gizmos::GizmoPlugin,
     gltf::GltfPlugin,
     input::InputPlugin,
     log::LogPlugin,
@@ -75,7 +76,7 @@ impl PluginGroup for TestPlugins {
             })
             .add(AssetPlugin::default())
             .add(MeshPlugin)
-            .add(GltfPlugin)
+            .add(GltfPlugin::default())
             .add(InputPlugin)
             .add(ScenePlugin)
             .add(ConsolePlugin { add_egui: false })
@@ -98,8 +99,9 @@ fn init_test_app(entity_json: &str) -> App {
     app.add_plugins(TestPlugins);
     app.add_asset::<Shader>();
     app.add_asset::<Image>();
-    app.add_plugin(MaterialPlugin::<StandardMaterial>::default());
-    app.add_plugin(SceneRunnerPlugin);
+    app.add_plugins(MaterialPlugin::<StandardMaterial>::default());
+    app.add_plugins(GizmoPlugin);
+    app.add_plugins(SceneRunnerPlugin);
     app.init_resource::<InputMap>();
     app.init_resource::<AcceptInput>();
 
@@ -119,7 +121,7 @@ fn init_test_app(entity_json: &str) -> App {
     });
 
     // startup system to create camera and fire load event
-    app.add_startup_system(move |mut commands: Commands| {
+    app.add_systems(Startup, move |mut commands: Commands| {
         commands.spawn((
             SpatialBundle::default(),
             PrimaryUser::default(),
@@ -130,7 +132,7 @@ fn init_test_app(entity_json: &str) -> App {
     // replace the scene loop schedule with a dummy so we can better control it
     app.world.remove_resource::<SceneLoopSchedule>().unwrap();
     let mut skip_loop_schedule = Schedule::new();
-    skip_loop_schedule.add_system(|mut updates: ResMut<SceneUpdates>| updates.eligible_jobs = 0);
+    skip_loop_schedule.add_systems(|mut updates: ResMut<SceneUpdates>| updates.eligible_jobs = 0);
     app.world.insert_resource(SceneLoopSchedule {
         schedule: skip_loop_schedule,
         prev_time: Instant::now(),
@@ -290,7 +292,7 @@ fn run_single_update(app: &mut App) {
                 (
                     receive_scene_updates,
                     process_scene_entity_lifecycle,
-                    apply_system_buffers,
+                    apply_deferred,
                     process_transform_and_parent_updates,
                 )
                     .chain(),
@@ -434,7 +436,7 @@ fn cyclic_recovery() {
                 .add_systems(
                     (
                         process_scene_entity_lifecycle,
-                        apply_system_buffers,
+                        apply_deferred,
                         process_transform_and_parent_updates,
                     )
                         .chain(),

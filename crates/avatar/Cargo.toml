@@ -6,17 +6,17 @@ edition = "2021"
 [lib]
 
 [dependencies]
-common = { path = "../common" }
-comms = { path="../comms" }
-dcl = { path="../dcl" }
-dcl_component = { path="../dcl_component" }
-ipfs = { path="../ipfs" }
-scene_runner = { path="../scene_runner" }
-ui_core = { path="../ui_core" }
+common = { workspace = true }
+comms = { workspace = true }
+dcl = { workspace = true }
+dcl_component = { workspace = true }
+ipfs = { workspace = true }
+scene_runner = { workspace = true }
+ui_core = { workspace = true }
 
-bevy = "0.10"
-bevy_mod_billboard = "0.3"
-serde = "1.0.152"
-serde_json = { version = "1.0.92", features = ["raw_value"] }
-urn = "0.7.0"
-anyhow = "1.0.70"
+bevy = { workspace = true }
+bevy_mod_billboard = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+urn = { workspace = true }
+anyhow = { workspace = true }

@@ -62,7 +62,7 @@ pub fn update_comboboxen(
                             .unwrap_or(&combo.empty_text)
                     };
 
-                    let mut style = ui.style_mut();
+                    let style = ui.style_mut();
                     style.visuals.widgets.active.weak_bg_fill = egui::Color32::TRANSPARENT;
                     style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::TRANSPARENT;
                     style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;

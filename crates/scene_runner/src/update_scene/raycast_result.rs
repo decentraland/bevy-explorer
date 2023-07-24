@@ -8,8 +8,6 @@
 
 use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
-#[cfg(not(test))]
-use bevy_prototype_debug_lines::DebugLines;
 
 use crate::{
     update_world::{
@@ -36,7 +34,7 @@ pub struct RaycastResultPlugin;
 
 impl Plugin for RaycastResultPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(run_raycasts.in_set(SceneSets::Input));
+        app.add_systems(Update, run_raycasts.in_set(SceneSets::Input));
         app.init_resource::<DebugRaycast>();
         app.add_console_command::<DebugRaycastCommand, _>(debug_raycast);
     }
@@ -68,9 +66,17 @@ fn run_raycasts(
         &mut SceneColliderData,
         &GlobalTransform,
     )>,
-    #[cfg(not(test))] mut lines: ResMut<DebugLines>,
     debug: Res<DebugRaycast>,
+    mut gizmos: Gizmos,
+    time: Res<Time>,
+    mut gizmo_cache: Local<Vec<(f32, Vec3, Vec3)>>,
 ) {
+    // redraw non-continuous gizmos for 1 sec
+    gizmo_cache.retain(|(until, origin, end)| {
+        gizmos.line(*origin, *end, Color::BLUE);
+        time.elapsed_seconds() > *until
+    });
+
     for (e, scene_ent, mut raycast, transform) in raycast_requests.iter_mut() {
         debug!("{e:?} has raycast request: {raycast:?}");
         if let Ok((mut context, mut scene_data, scene_transform)) =
@@ -153,13 +159,11 @@ fn run_raycasts(
 
             // debug line showing raycast
             if debug.0 {
-                #[cfg(not(test))]
-                lines.line_colored(
-                    origin,
-                    origin + direction * raycast.max_distance,
-                    if continuous { 0.0 } else { 1.0 },
-                    Color::BLUE,
-                );
+                let end = origin + direction * raycast.max_distance;
+                gizmos.line(origin, end, Color::BLUE);
+                if !continuous {
+                    gizmo_cache.push((time.elapsed_seconds() + 1.0, origin, end));
+                }
             }
 
             // output

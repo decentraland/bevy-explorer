@@ -32,8 +32,8 @@ pub struct WebsocketRoomPlugin;
 
 impl Plugin for WebsocketRoomPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(connect_websocket);
-        app.add_system(reconnect_websocket);
+        app.add_systems(Update, connect_websocket);
+        app.add_systems(Update, reconnect_websocket);
     }
 }
 

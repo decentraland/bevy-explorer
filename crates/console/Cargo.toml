@@ -6,8 +6,8 @@ edition = "2021"
 [lib]
 
 [dependencies]
-common = { path="../common" }
+common = { workspace = true }
 
-bevy = "0.10"
-bevy_console = "0.7.0"
-clap = "4.1.10"
+bevy = { workspace = true }
+bevy_console = { workspace = true }
+clap = { workspace = true }

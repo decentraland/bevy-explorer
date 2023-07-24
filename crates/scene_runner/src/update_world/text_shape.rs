@@ -15,7 +15,7 @@ impl Plugin for TextShapePlugin {
             SceneComponentId::TEXT_SHAPE,
             ComponentPosition::EntityOnly,
         );
-        app.add_system(update_text_shapes.in_set(SceneSets::PostLoop));
+        app.add_systems(Update, update_text_shapes.in_set(SceneSets::PostLoop));
     }
 }
 
@@ -70,7 +70,8 @@ fn update_text_shapes(
                         ),
                     },
                     text_anchor: bevy::sprite::Anchor::BottomCenter,
-                    transform: Transform::from_scale(Vec3::splat(0.01)),
+                    transform: Transform::from_scale(Vec3::splat(0.01))
+                        .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
                     ..Default::default()
                 },
                 BillboardLockAxis {

@@ -27,10 +27,11 @@ pub struct ChatPanelPlugin;
 
 impl Plugin for ChatPanelPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(display_chat);
-        app.add_system(append_chat_messages);
-        app.add_system(emit_user_chat);
-        app.add_startup_system(
+        app.add_systems(Update, display_chat);
+        app.add_systems(Update, append_chat_messages);
+        app.add_systems(Update, emit_user_chat);
+        app.add_systems(
+            Startup,
             setup
                 .in_set(SetupSets::Main)
                 .after(SetupSets::Init)
@@ -87,20 +88,11 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, root: Res<Syste
             .spawn((
                 NodeBundle {
                     style: ui::Style {
-                        size: Size {
-                            // TODO: use a percent size here
-                            // unfortunately text wrapping fails with percent sizes in bevy 0.10
-                            width: Val::Px(640.0),
-                            height: Val::Px(300.0),
-                        },
-                        min_size: Size {
-                            width: Val::Px(640.0),
-                            height: Val::Px(300.0),
-                        },
-                        max_size: Size {
-                            width: Val::Px(640.0),
-                            height: Val::Px(300.0),
-                        },
+                        // TODO: use a percent size here
+                        width: Val::Percent(30.0),
+                        height: Val::Percent(20.0),
+                        min_width: Val::Px(300.0),
+                        min_height: Val::Px(200.0),
                         flex_direction: FlexDirection::Column,
                         justify_content: JustifyContent::FlexEnd,
                         ..Default::default()
@@ -128,7 +120,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, root: Res<Syste
                                 justify_content: JustifyContent::FlexStart,
                                 align_items: AlignItems::FlexEnd,
                                 flex_wrap: FlexWrap::Wrap,
-                                size: Size::width(Val::Percent(100.0)),
+                                width: Val::Percent(100.0),
                                 ..Default::default()
                             },
                             ..Default::default()
@@ -185,20 +177,14 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, root: Res<Syste
                     (
                         NodeBundle {
                             style: ui::Style {
-                                size: Size {
-                                    width: Val::Percent(100.0),
-                                    height: Val::Percent(30.0),
-                                },
-                                max_size: Size {
-                                    width: Val::Percent(100.0),
-                                    height: Val::Percent(80.0),
-                                },
-                                min_size: Size {
-                                    width: Val::Percent(100.0),
-                                    height: Val::Percent(30.0),
-                                },
+                                width: Val::Percent(100.0),
+                                height: Val::Percent(30.0),
+                                max_width: Val::Percent(100.0),
+                                max_height: Val::Percent(80.0),
+                                min_width: Val::Percent(100.0),
+                                min_height: Val::Percent(30.0),
                                 flex_grow: 1.0,
-                                overflow: Overflow::Hidden,
+                                overflow: Overflow::clip(),
                                 ..Default::default()
                             },
                             background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.25, 0.2)),
@@ -218,10 +204,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, root: Res<Syste
                                 style: ui::Style {
                                     flex_direction: FlexDirection::Column,
                                     justify_content: JustifyContent::FlexEnd,
-                                    size: Size {
-                                        width: Val::Percent(100.0),
-                                        height: Val::Auto,
-                                    },
+                                    width: Val::Percent(100.0),
+                                    height: Val::Auto,
                                     ..Default::default()
                                 },
                                 ..Default::default()
@@ -244,10 +228,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, root: Res<Syste
                             border: UiRect::all(Val::Px(5.0)),
                             flex_direction: FlexDirection::Column,
                             justify_content: JustifyContent::FlexEnd,
-                            size: Size {
-                                width: Val::Percent(100.0),
-                                height: Val::Px(20.0),
-                            },
+                            width: Val::Percent(100.0),
+                            height: Val::Px(20.0),
                             ..Default::default()
                         },
                         background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.2, 0.8)),
@@ -301,7 +283,7 @@ fn make_chat(
             TextBundle {
                 style: Style {
                     flex_wrap: FlexWrap::Wrap,
-                    max_size: Size::width(Val::Px(640.0)),
+                    max_width: Val::Px(640.0),
                     ..Default::default()
                 },
                 text: Text::from_sections(
@@ -342,7 +324,7 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
             DisplayChatMessage { timestamp },
             TextBundle {
                 style: Style {
-                    max_size: Size::width(Val::Px(640.0)),
+                    max_width: Val::Px(640.0),
                     ..Default::default()
                 },
                 text: Text::from_sections(

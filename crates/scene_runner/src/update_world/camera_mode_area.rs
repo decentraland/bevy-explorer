@@ -33,7 +33,7 @@ impl Plugin for CameraModeAreaPlugin {
             ComponentPosition::Any,
         );
 
-        app.add_system(update_camera_mode_area.in_set(SceneSets::PostLoop));
+        app.add_systems(Update, update_camera_mode_area.in_set(SceneSets::PostLoop));
     }
 }
 

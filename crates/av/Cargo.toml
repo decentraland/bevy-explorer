@@ -6,14 +6,17 @@ edition = "2021"
 [lib]
 
 [dependencies]
-common = { path = "../common" }
-dcl = { path="../dcl" }
-dcl_component = { path="../dcl_component" }
-ipfs = { path="../ipfs" }
-scene_runner = { path="../scene_runner" }
+common = { workspace = true }
+dcl = { workspace = true }
+dcl_component = { workspace = true }
+ipfs = { workspace = true }
+scene_runner = { workspace = true }
 
-bevy = "0.10"
-bevy_kira_audio = { version= "0.15", features=["flac", "mp3", "ogg", "wav"] }
+bevy = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+isahc = { workspace = true }
+urlencoding = { workspace = true }
+
+bevy_kira_audio = { version= "0.16", features=["flac", "mp3", "ogg", "wav"] }
 ffmpeg-next = "6.0.0"
-tokio = { version = "1.29.1", features = ["sync"] }
-anyhow = "1.0.70"

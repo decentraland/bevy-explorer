@@ -6,18 +6,19 @@ edition = "2021"
 [lib]
 
 [dependencies]
-common = { path="../common" }
-console = { path="../console" }
+common = { workspace = true }
+console = { workspace = true }
 
-bevy = "0.10"
-anyhow = "1.0.70"
-bevy_console = "0.7.0"
-bimap = "0.6.3"
-isahc = { version = "1.7.2", features = ["json"] }
-serde = "1.0.152"
-serde_json = { version = "1.0.92", features = ["raw_value"] }
-tokio = { version = "1.29.1", features = ["sync"] }
-clap = "4.1.10"
-urlencoding = "2.1.2"
-urn = "0.7.0"
+bevy = { workspace = true }
+anyhow = { workspace = true }
+bevy_console = { workspace = true }
+bimap = { workspace = true }
+isahc = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+urn = { workspace = true }
+
+urlencoding = { workspace = true }
 url = "2.4.0"

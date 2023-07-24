@@ -19,9 +19,9 @@ impl Plugin for VideoPlayerPlugin {
             SceneComponentId::VIDEO_PLAYER,
             ComponentPosition::EntityOnly,
         );
-        app.add_startup_system(init_ffmpeg);
-        app.add_system(play_videos);
-        app.add_system(update_video_players.in_set(SceneSets::PostLoop));
+        app.add_systems(Startup, init_ffmpeg);
+        app.add_systems(Update, play_videos);
+        app.add_systems(Update, update_video_players.in_set(SceneSets::PostLoop));
     }
 }
 

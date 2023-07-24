@@ -77,6 +77,7 @@ pub struct SceneThreadHandle {
 }
 
 // event which can be sent from anywhere to trigger replacing the current scene with the one specified
+#[derive(Event)]
 pub struct LoadSceneEvent {
     pub entity: Option<Entity>,
     pub location: SceneIpfsLocation,
@@ -179,6 +180,7 @@ impl Plugin for SceneRunnerPlugin {
         app.add_event::<LoadSceneEvent>();
 
         app.configure_sets(
+            Update,
             (
                 SceneSets::UiActions,
                 SceneSets::Init.after(scene_spawner_system),
@@ -187,38 +189,43 @@ impl Plugin for SceneRunnerPlugin {
                 SceneSets::RunLoop,
                 SceneSets::PostLoop,
             )
-                .in_base_set(CoreSet::Update)
                 .chain(),
         );
-        app.add_system(
-            apply_system_buffers
+        app.add_systems(
+            Update,
+            apply_deferred
                 .after(SceneSets::UiActions)
                 .before(SceneSets::Init),
         );
-        app.add_system(
-            apply_system_buffers
+        app.add_systems(
+            Update,
+            apply_deferred
                 .after(SceneSets::Init)
                 .before(SceneSets::PostInit),
         );
-        app.add_system(
-            apply_system_buffers
+        app.add_systems(
+            Update,
+            apply_deferred
                 .after(SceneSets::PostInit)
                 .before(SceneSets::Input),
         );
-        app.add_system(
-            apply_system_buffers
+        app.add_systems(
+            Update,
+            apply_deferred
                 .after(SceneSets::Input)
                 .before(SceneSets::RunLoop),
         );
-        app.add_system(
-            apply_system_buffers
+        app.add_systems(
+            Update,
+            apply_deferred
                 .after(SceneSets::RunLoop)
                 .before(SceneSets::PostLoop),
         );
 
-        app.add_plugin(SceneLifecyclePlugin);
+        app.add_plugins(SceneLifecyclePlugin);
 
         app.add_systems(
+            Update,
             (update_scene_priority, run_scene_loop)
                 .chain()
                 .in_set(SceneSets::RunLoop),
@@ -236,14 +243,14 @@ impl Plugin for SceneRunnerPlugin {
                 .chain(),
         );
 
-        scene_schedule.add_system(send_scene_updates.in_set(SceneLoopSets::SendToScene));
-        scene_schedule.add_system(receive_scene_updates.in_set(SceneLoopSets::ReceiveFromScene));
-        scene_schedule.add_system(process_scene_entity_lifecycle.in_set(SceneLoopSets::Lifecycle));
+        scene_schedule.add_systems(send_scene_updates.in_set(SceneLoopSets::SendToScene));
+        scene_schedule.add_systems(receive_scene_updates.in_set(SceneLoopSets::ReceiveFromScene));
+        scene_schedule.add_systems(process_scene_entity_lifecycle.in_set(SceneLoopSets::Lifecycle));
 
         // add a command flush between CreateDestroy and HandleOutput so that
         // commands can be applied to entities in the same frame they are created
-        scene_schedule.add_system(
-            apply_system_buffers
+        scene_schedule.add_systems(
+            apply_deferred
                 .after(SceneLoopSets::Lifecycle)
                 .before(SceneLoopSets::UpdateWorld),
         );
@@ -255,8 +262,8 @@ impl Plugin for SceneRunnerPlugin {
             sleeper: SpinSleeper::default(),
         });
 
-        app.add_plugin(SceneInputPlugin);
-        app.add_plugin(SceneOutputPlugin);
+        app.add_plugins(SceneInputPlugin);
+        app.add_plugins(SceneOutputPlugin);
     }
 }
 

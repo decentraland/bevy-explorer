@@ -37,8 +37,8 @@ impl Plugin for GlobalCrdtPlugin {
             store: Default::default(),
             lookup: Default::default(),
         });
-        app.add_system(process_transport_updates);
-        app.add_system(despawn_players);
+        app.add_systems(Update, process_transport_updates);
+        app.add_systems(Update, despawn_players);
         app.add_event::<PlayerPositionEvent>();
         app.add_event::<ProfileEvent>();
         app.add_event::<ChatEvent>();
@@ -108,6 +108,7 @@ pub struct ForeignPlayer {
     pub profile_version: u32,
 }
 
+#[derive(Event)]
 pub struct PlayerPositionEvent {
     pub index: u32,
     pub player: Entity,
@@ -122,11 +123,13 @@ pub enum ProfileEventType {
     Response(rfc4::ProfileResponse),
 }
 
+#[derive(Event)]
 pub struct ProfileEvent {
     pub sender: Entity,
     pub event: ProfileEventType,
 }
 
+#[derive(Event)]
 pub struct ChatEvent {
     pub timestamp: f64,
     pub sender: Entity,

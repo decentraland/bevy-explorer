@@ -7,8 +7,8 @@ pub struct ToastsPlugin;
 
 impl Plugin for ToastsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_startup_system(setup.in_set(SetupSets::Main));
-        app.add_system(update_toasts);
+        app.add_systems(Startup, setup.in_set(SetupSets::Main));
+        app.add_systems(Update, update_toasts);
     }
 }
 
@@ -19,13 +19,10 @@ fn setup(mut commands: Commands) {
         .spawn(NodeBundle {
             style: Style {
                 position_type: PositionType::Absolute,
-                position: UiRect {
-                    left: Val::Percent(30.0),
-                    right: Val::Percent(30.0),
-                    top: Val::Percent(10.0),
-                    bottom: Val::Undefined,
-                },
-                max_size: Size::width(Val::Percent(40.0)),
+                left: Val::Percent(30.0),
+                right: Val::Percent(30.0),
+                top: Val::Percent(10.0),
+                max_width: Val::Percent(40.0),
                 ..Default::default()
             },
             z_index: ZIndex::Global(1),

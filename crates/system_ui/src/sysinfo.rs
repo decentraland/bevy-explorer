@@ -1,5 +1,5 @@
 use bevy::{
-    diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     math::Vec3Swizzles,
     prelude::*,
 };
@@ -22,8 +22,11 @@ pub struct SysInfoPanelPlugin;
 
 impl Plugin for SysInfoPanelPlugin {
     fn build(&self, app: &mut App) {
-        app.add_startup_system(setup.in_set(SetupSets::Main).after(SetupSets::Init));
-        app.add_system(update_scene_load_state);
+        app.add_systems(
+            Startup,
+            setup.in_set(SetupSets::Main).after(SetupSets::Init),
+        );
+        app.add_systems(Update, update_scene_load_state);
     }
 }
 
@@ -67,7 +70,7 @@ pub(crate) fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res
                                 .with_children(|commands| {
                                     commands.spawn(TextBundle {
                                         style: Style {
-                                            size: Size::width(Val::Px(120.0)),
+                                            width: Val::Px(120.0),
                                             ..Default::default()
                                         },
                                         text: Text::from_section(
@@ -79,7 +82,7 @@ pub(crate) fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res
                                     });
                                     commands.spawn(TextBundle {
                                         style: Style {
-                                            size: Size::width(Val::Px(120.0)),
+                                            width: Val::Px(120.0),
                                             ..Default::default()
                                         },
                                         text: Text::from_section(
@@ -123,7 +126,7 @@ fn update_scene_load_state(
     config: Res<AppConfig>,
     mut last_update: Local<u32>,
     time: Res<Time>,
-    diagnostics: Res<Diagnostics>,
+    diagnostics: Res<DiagnosticsStore>,
     containing_scene: ContainingScene,
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     debug_info: Res<DebugInfo>,

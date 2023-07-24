@@ -1,6 +1,6 @@
 use bevy::{
     prelude::*,
-    reflect::TypeUuid,
+    reflect::{TypePath, TypeUuid},
     render::render_resource::{AsBindGroup, ShaderRef},
 };
 
@@ -8,7 +8,7 @@ pub struct MaskMaterialPlugin;
 
 impl Plugin for MaskMaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(MaterialPlugin::<MaskMaterial>::default());
+        app.add_plugins(MaterialPlugin::<MaskMaterial>::default());
     }
 }
 
@@ -23,7 +23,7 @@ impl Material for MaskMaterial {
 }
 
 // This is the struct that will be passed to your shader
-#[derive(AsBindGroup, TypeUuid, Debug, Clone)]
+#[derive(AsBindGroup, TypeUuid, Debug, Clone, TypePath)]
 #[uuid = "10112ed8-3563-4886-91b8-53a4c95e3337"]
 pub struct MaskMaterial {
     #[uniform(0)]

@@ -21,11 +21,11 @@ impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DirectionalLightShadowMap { size: 4096 })
             .insert_resource(AtmosphereModel::default())
-            .add_plugin(AtmospherePlugin)
-            .add_plugin(WireframePlugin)
-            .add_system(daylight_cycle)
-            .add_system(move_ground)
-            .add_startup_system(setup.in_set(SetupSets::Main));
+            .add_plugins(AtmospherePlugin)
+            .add_plugins(WireframePlugin)
+            .add_systems(Update, daylight_cycle)
+            .add_systems(Update, move_ground)
+            .add_systems(Startup, setup.in_set(SetupSets::Main));
     }
 }
 

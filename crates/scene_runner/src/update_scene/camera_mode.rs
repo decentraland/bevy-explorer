@@ -12,7 +12,7 @@ pub struct CameraModePlugin;
 
 impl Plugin for CameraModePlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(update_camera_mode.in_set(SceneSets::Input));
+        app.add_systems(Update, update_camera_mode.in_set(SceneSets::Input));
     }
 }
 

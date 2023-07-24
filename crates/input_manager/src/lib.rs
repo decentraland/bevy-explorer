@@ -12,7 +12,7 @@ impl Plugin for InputManagerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<InputMap>();
         app.init_resource::<AcceptInput>();
-        app.add_system(check_accept_input.in_base_set(CoreSet::PreUpdate));
+        app.add_systems(PreUpdate, check_accept_input);
     }
 }
 
@@ -34,7 +34,7 @@ impl Default for InputMap {
                     (InputAction::IaRight, InputItem::Key(KeyCode::D)),
                     (InputAction::IaLeft, InputItem::Key(KeyCode::A)),
                     (InputAction::IaJump, InputItem::Key(KeyCode::Space)),
-                    (InputAction::IaWalk, InputItem::Key(KeyCode::LShift)),
+                    (InputAction::IaWalk, InputItem::Key(KeyCode::ShiftLeft)),
                     (InputAction::IaAction3, InputItem::Key(KeyCode::Key1)),
                     (InputAction::IaAction4, InputItem::Key(KeyCode::Key2)),
                     (InputAction::IaAction5, InputItem::Key(KeyCode::Key3)),

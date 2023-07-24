@@ -19,7 +19,7 @@ impl Plugin for AnimatorPlugin {
             ComponentPosition::EntityOnly,
         );
 
-        app.add_system(update_animations.in_set(SceneSets::PostLoop));
+        app.add_systems(Update, update_animations.in_set(SceneSets::PostLoop));
     }
 }
 

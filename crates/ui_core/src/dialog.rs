@@ -36,7 +36,8 @@ impl<'w, 's> SpawnDialog for Commands<'w, 's> {
                     position_type: PositionType::Absolute,
                     align_self: AlignSelf::Center,
                     justify_content: JustifyContent::SpaceBetween,
-                    size: Size::all(Val::Percent(100.0)),
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
                     ..Default::default()
                 },
                 focus_policy: FocusPolicy::Block,
