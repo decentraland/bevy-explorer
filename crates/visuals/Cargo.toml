@@ -10,4 +10,4 @@ common = { workspace = true }
 
 bevy = { workspace = true }
 
-bevy_atmosphere = { git="https://github.com/robtfm/bevy_atmosphere", branch="migration-fixes" }
+bevy_atmosphere = "0.7"
