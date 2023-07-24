@@ -195,8 +195,7 @@ fn update_scrollables(
     }
 
     let Ok(window) = window.get_single() else { return; };
-    let cursor_position = window.cursor_position().unwrap_or_default() * Vec2::new(1.0, -1.0)
-        + Vec2::new(0.0, window.height());
+    let cursor_position = window.cursor_position().unwrap_or_default();
 
     let previously_clicked = std::mem::take(&mut *clicked_slider);
 
