@@ -9,7 +9,7 @@ use dcl::interface::ComponentPosition;
 use dcl_component::{proto_components::sdk::components::PbVideoPlayer, SceneComponentId};
 use scene_runner::update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt};
 
-use crate::video_thread::{VideoCommand, VideoData, VideoInfo, VideoSink};
+use crate::video_thread::{AVCommand, VideoData, VideoInfo, VideoSink};
 
 pub struct VideoPlayerPlugin;
 
@@ -102,13 +102,13 @@ pub fn update_video_players(
         } else {
             let sink = maybe_sink.as_ref().unwrap();
             if player.0.playing.unwrap_or(true) {
-                let _ = sink.command_sender.blocking_send(VideoCommand::Play);
+                let _ = sink.command_sender.blocking_send(AVCommand::Play);
             } else {
-                let _ = sink.command_sender.blocking_send(VideoCommand::Pause);
+                let _ = sink.command_sender.blocking_send(AVCommand::Pause);
             }
             let _ = sink
                 .command_sender
-                .blocking_send(VideoCommand::Repeat(player.0.r#loop.unwrap_or(false)));
+                .blocking_send(AVCommand::Repeat(player.0.r#loop.unwrap_or(false)));
         }
     }
 }
