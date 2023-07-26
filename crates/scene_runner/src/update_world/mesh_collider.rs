@@ -544,7 +544,7 @@ fn update_colliders(
                 let VertexAttributeValues::Float32x3(positions) = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else { panic!() };
                 ColliderBuilder::convex_hull(&positions.iter().map(|p| Point::from(*p)).collect::<Vec<_>>()).unwrap()
             }
-            MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.05, 0.5),
+            MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.5, 0.05),
             MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),
             MeshColliderShape::Shape(shape, _) => {
                 ColliderBuilder::new(shape.clone())
