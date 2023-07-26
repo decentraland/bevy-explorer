@@ -43,6 +43,7 @@ fn init_ffmpeg() {
 
 fn play_videos(mut images: ResMut<Assets<Image>>, mut q: Query<&mut VideoSink>) {
     for mut sink in q.iter_mut() {
+        let mut last_frame_received = None;
         match sink.video_receiver.try_recv() {
             Ok(VideoData::Info(VideoInfo {
                 width,
@@ -60,15 +61,19 @@ fn play_videos(mut images: ResMut<Assets<Image>>, mut q: Query<&mut VideoSink>) 
                 sink.rate = Some(rate);
             }
             Ok(VideoData::Frame(frame, time)) => {
-                debug!("set frame on {:?}", sink.image);
-                images
-                    .get_mut(&sink.image)
-                    .unwrap()
-                    .data
-                    .copy_from_slice(frame.data(0));
+                last_frame_received = Some(frame);
                 sink.current_time = time;
             }
             Err(_) => (),
+        }
+
+        if let Some(frame) = last_frame_received {
+            debug!("set frame on {:?}", sink.image);
+            images
+                .get_mut(&sink.image)
+                .unwrap()
+                .data
+                .copy_from_slice(frame.data(0));
         }
     }
 }
