@@ -19,5 +19,6 @@ isahc = { workspace = true }
 urlencoding = { workspace = true }
 
 bevy_kira_audio = { version= "0.16", features=["flac", "mp3", "ogg", "wav"] }
+kira = "*"
 ffmpeg-next = "6.0.0"
 thiserror = "1.0"

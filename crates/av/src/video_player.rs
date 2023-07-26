@@ -1,5 +1,3 @@
-// TODO: rate, audio channels, update position(?)
-
 use bevy::{
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
@@ -9,7 +7,11 @@ use dcl::interface::ComponentPosition;
 use dcl_component::{proto_components::sdk::components::PbVideoPlayer, SceneComponentId};
 use scene_runner::update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt};
 
-use crate::video_thread::{AVCommand, VideoData, VideoInfo, VideoSink};
+use crate::{
+    stream_processor::AVCommand,
+    video_context::{VideoData, VideoInfo},
+    video_stream::{av_sinks, VideoSink},
+};
 
 pub struct VideoPlayerPlugin;
 
@@ -41,7 +43,7 @@ fn init_ffmpeg() {
 
 fn play_videos(mut images: ResMut<Assets<Image>>, mut q: Query<&mut VideoSink>) {
     for mut sink in q.iter_mut() {
-        match sink.data_receiver.try_recv() {
+        match sink.video_receiver.try_recv() {
             Ok(VideoData::Info(VideoInfo {
                 width,
                 height,
@@ -91,14 +93,16 @@ pub fn update_video_players(
             image.texture_descriptor.usage =
                 TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
             let image_handle = images.add(image);
-            let video_sink = VideoSink::new(
+            let (video_sink, audio_sink) = av_sinks(
                 player.0.src.clone(),
                 image_handle,
                 player.0.playing.unwrap_or(true),
                 player.0.r#loop.unwrap_or(false),
             );
             let video_output = VideoTextureOutput(video_sink.image.clone());
-            commands.entity(ent).try_insert((video_sink, video_output));
+            commands
+                .entity(ent)
+                .try_insert((video_sink, video_output, audio_sink));
         } else {
             let sink = maybe_sink.as_ref().unwrap();
             if player.0.playing.unwrap_or(true) {
