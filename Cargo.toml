@@ -78,5 +78,5 @@ prost-build = "0.11.8"
 
 [patch.crates-io]
 bevy = { git = "https://github.com/robtfm/bevy", branch = "0.11-hotfix" }
-bevy_kira_audio = { git="https://github.com/robtfm/bevy_kira_audio", branch="pub-manager" }
-ffmpeg-next = { path="../rust-ffmpeg" }
+bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "pub-manager" }
+ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", btanch = "audio-linesize-0" }
