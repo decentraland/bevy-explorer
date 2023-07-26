@@ -96,6 +96,7 @@ pub fn update_video_players(
             let (video_sink, audio_sink) = av_sinks(
                 player.0.src.clone(),
                 image_handle,
+                player.0.volume.unwrap_or(1.0),
                 player.0.playing.unwrap_or(true),
                 player.0.r#loop.unwrap_or(false),
             );

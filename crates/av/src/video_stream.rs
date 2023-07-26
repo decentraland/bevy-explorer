@@ -27,6 +27,7 @@ pub struct VideoSink {
 pub fn av_sinks(
     source: String,
     image: Handle<Image>,
+    volume: f32,
     playing: bool,
     repeat: bool,
 ) -> (VideoSink, AudioSink) {
@@ -53,7 +54,7 @@ pub fn av_sinks(
             length: None,
             rate: None,
         },
-        AudioSink::new(command_sender, audio_receiver),
+        AudioSink::new(volume, command_sender, audio_receiver),
     )
 }
 
