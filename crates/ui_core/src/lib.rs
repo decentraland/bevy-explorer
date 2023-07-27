@@ -27,6 +27,7 @@ pub static TEXT_SHAPE_FONT: OnceCell<Handle<Font>> = OnceCell::new();
 pub static TITLE_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
 pub static BODY_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
 pub static BUTTON_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
+pub static HOVER_TEXT_STYLE: OnceCell<[TextStyle; 10]> = OnceCell::new();
 
 pub struct UiCorePlugin;
 
@@ -71,5 +72,18 @@ fn setup(asset_server: Res<AssetServer>) {
             font_size: 20.0,
             color: Color::BLACK,
         })
+        .unwrap();
+    HOVER_TEXT_STYLE
+        .set(
+            (0..10)
+                .map(|i| TextStyle {
+                    font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                    font_size: 25.0,
+                    color: Color::rgba(1.0, 1.0, 1.0, i as f32 / 9.0),
+                })
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        )
         .unwrap();
 }
