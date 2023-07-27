@@ -1,15 +1,47 @@
 use bevy::{
     prelude::*,
+    transform::systems::{propagate_transforms, sync_simple_transforms},
     utils::{Entry, HashMap, HashSet},
 };
+use dcl::interface::ComponentPosition;
 
 use crate::{
-    ContainerEntity, DeletedSceneEntities, RendererSceneContext, SceneEntity, TargetParent,
+    ContainerEntity, DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneLoopSchedule,
+    TargetParent,
 };
-use common::util::TryInsertEx;
-use dcl_component::{transform_and_parent::DclTransformAndParent, DclReader, FromDclReader};
+use common::{
+    sets::SceneLoopSets,
+    structs::{PrimaryCamera, PrimaryUser},
+    util::TryInsertEx,
+};
+use dcl_component::{
+    transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
+    SceneEntityId,
+};
 
-use super::CrdtLWWStateComponent;
+use super::{AddCrdtInterfaceExt, CrdtLWWStateComponent};
+
+pub struct TransformAndParentPlugin;
+
+impl Plugin for TransformAndParentPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_crdt_lww_interface::<DclTransformAndParent>(
+            SceneComponentId::TRANSFORM,
+            ComponentPosition::EntityOnly,
+        );
+        app.world
+            .resource_mut::<SceneLoopSchedule>()
+            .schedule
+            .add_systems(process_transform_and_parent_updates.in_set(SceneLoopSets::UpdateWorld));
+        app.add_systems(
+            PostUpdate,
+            parent_position_sync
+                .in_set(bevy::transform::TransformSystem::TransformPropagate)
+                .before(sync_simple_transforms)
+                .before(propagate_transforms),
+        );
+    }
+}
 
 pub(crate) fn process_transform_and_parent_updates(
     mut commands: Commands,
@@ -20,6 +52,8 @@ pub(crate) fn process_transform_and_parent_updates(
         &DeletedSceneEntities,
     )>,
     mut entities: Query<(&mut Transform, &mut TargetParent), With<SceneEntity>>,
+    player: Query<Entity, With<PrimaryUser>>,
+    camera: Query<Entity, With<PrimaryCamera>>,
 ) {
     for (root, mut scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
         // remove crdt state for dead entities
@@ -48,8 +82,10 @@ pub(crate) fn process_transform_and_parent_updates(
                             None => {
                                 if scene_context.is_dead(dcl_tp.parent()) {
                                     // parented to an already dead entity -> parent to root
+                                    println!("set child of dead id {}", dcl_tp.parent());
                                     root
                                 } else {
+                                    println!("set child of missing id {}", dcl_tp.parent());
                                     // we are parented to something that doesn't yet exist, create it here
                                     // TODO abstract out the new entity code (duplicated from process_lifecycle)
                                     // TODO alternatively make new target an option and leave this unparented,
@@ -73,6 +109,25 @@ pub(crate) fn process_transform_and_parent_updates(
                                     });
                                     scene_context
                                         .associate_bevy_entity(dcl_tp.parent(), new_entity);
+
+                                    // special case for camera and player
+                                    if dcl_tp.parent() == SceneEntityId::PLAYER {
+                                        println!("set child of player");
+                                        if let Ok(player) = player.get_single() {
+                                            commands
+                                                .entity(new_entity)
+                                                .try_insert(ParentPositionSync(player));
+                                        }
+                                    }
+                                    if dcl_tp.parent() == SceneEntityId::CAMERA {
+                                        println!("set child of camera");
+                                        if let Ok(camera) = camera.get_single() {
+                                            commands
+                                                .entity(new_entity)
+                                                .try_insert(ParentPositionSync(camera));
+                                        }
+                                    }
+
                                     new_entity
                                 }
                             }
@@ -168,5 +223,21 @@ pub(crate) fn process_transform_and_parent_updates(
                 }
             });
         }
+    }
+}
+
+#[derive(Component)]
+struct ParentPositionSync(Entity);
+
+fn parent_position_sync(
+    mut syncees: Query<(&mut Transform, &ParentPositionSync, &Parent)>,
+    globals: Query<&GlobalTransform>,
+) {
+    for (mut transform, sync, parent) in syncees.iter_mut() {
+        let Ok(parent_transform) = globals.get(parent.get()) else { continue };
+        let Ok(sync_transform) = globals.get(sync.0) else { continue };
+        let (_, sync_rotation, sync_translation) = sync_transform.to_scale_rotation_translation();
+        *transform = Transform::from_translation(sync_translation - parent_transform.translation())
+            .with_rotation(sync_rotation);
     }
 }
