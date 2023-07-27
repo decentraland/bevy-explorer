@@ -2,11 +2,15 @@ use std::collections::VecDeque;
 
 use bevy::{
     ecs::system::{Command, EntityCommands},
-    prelude::{Bundle, Entity, IntoSystemConfigs, World},
+    prelude::{
+        despawn_with_children_recursive, BuildWorldChildren, Bundle, Entity, IntoSystemConfigs,
+        World,
+    },
     tasks::Task,
 };
 use ethers::types::H160;
 use futures_lite::future;
+use smallvec::SmallVec;
 
 // get results from a task
 pub trait TaskExt {
@@ -101,7 +105,7 @@ impl<T: Clone + std::fmt::Debug> RingBuffer<T> {
 
 pub type RingBufferReceiver<T> = tokio::sync::broadcast::Receiver<T>;
 
-// TryInsertnsert command helper - insert a component but don't crash if the component is already deleted
+// TryInsert command helper - insert a component but don't crash if the entity is already deleted
 pub struct TryInsert<T> {
     pub entity: Entity,
     pub bundle: T,
@@ -126,6 +130,47 @@ impl<'w, 's> TryInsertEx for EntityCommands<'w, 's, '_> {
     fn try_insert(&mut self, bundle: impl Bundle) -> &mut Self {
         let entity = self.id();
         self.commands().add(TryInsert { entity, bundle });
+        self
+    }
+}
+
+// TryPushChildren command helper - add children but don't crash if any entities are already deleted
+// if parent is deleted, despawn live children
+// else add all live children to the parent
+pub struct TryPushChildren {
+    parent: Entity,
+    children: SmallVec<[Entity; 8]>,
+}
+
+impl Command for TryPushChildren {
+    fn apply(self, world: &mut World) {
+        let live_children: SmallVec<[Entity; 8]> = self
+            .children
+            .into_iter()
+            .filter(|c| world.entities().contains(*c))
+            .collect();
+
+        if let Some(mut entity) = world.get_entity_mut(self.parent) {
+            entity.push_children(&live_children);
+        } else {
+            for child in live_children {
+                despawn_with_children_recursive(world, child);
+            }
+        }
+    }
+}
+
+pub trait TryPushChildrenEx {
+    fn try_push_children(&mut self, children: &[Entity]) -> &mut Self;
+}
+
+impl<'w, 's> TryPushChildrenEx for EntityCommands<'w, 's, '_> {
+    fn try_push_children(&mut self, children: &[Entity]) -> &mut Self {
+        let parent = self.id();
+        self.commands().add(TryPushChildren {
+            children: SmallVec::from(children),
+            parent,
+        });
         self
     }
 }
