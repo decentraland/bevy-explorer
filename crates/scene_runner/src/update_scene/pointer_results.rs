@@ -1,4 +1,8 @@
-use bevy::{core::FrameCount, prelude::*, utils::HashSet};
+use bevy::{
+    core::FrameCount,
+    prelude::*,
+    utils::{FloatOrd, HashSet},
+};
 use bevy_console::ConsoleCommand;
 use console::DoAddConsoleCommand;
 
@@ -47,6 +51,7 @@ pub enum PointerTarget {
     Some {
         container: Entity,
         mesh_name: Option<String>,
+        distance: FloatOrd,
     },
 }
 
@@ -59,7 +64,7 @@ pub enum UiPointerTarget {
 
 fn update_pointer_target(
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
-    player: Query<Entity, With<PrimaryUser>>,
+    player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     windows: Query<&Window>,
     containing_scenes: ContainingScene,
     mut scenes: Query<(Entity, &mut RendererSceneContext, &mut SceneColliderData)>,
@@ -70,15 +75,17 @@ fn update_pointer_target(
         // can't do much without a camera
         return
     };
-    let Ok(player) = player.get_single() else {
+    let Ok((player, player_transform)) = player.get_single() else {
         return;
     };
+    let player_translation = player_transform.translation();
 
     // first check for ui target
     if let UiPointerTarget::Some(t) = *ui_target {
         *hover_target = PointerTarget::Some {
             container: t,
             mesh_name: None,
+            distance: FloatOrd(0.0),
         };
         return;
     }
@@ -134,14 +141,22 @@ fn update_pointer_target(
 
     *hover_target = PointerTarget::None;
     if let Some((scene_entity, hit)) = maybe_nearest_hit {
-        let context = scenes
-            .get_component::<RendererSceneContext>(scene_entity)
-            .unwrap();
+        let (_, context, mut collider_data) = scenes.get_mut(scene_entity).unwrap();
+
+        // get player distance
+        let nearest_point = collider_data
+            .closest_point(context.last_update_frame, player_translation, |cid| {
+                cid == &hit.id
+            })
+            .unwrap_or(player_translation);
+        let distance = (nearest_point - player_translation).length();
+
         if let Some(container) = context.bevy_entity(hit.id.entity) {
             let mesh_name = hit.id.name;
             *hover_target = PointerTarget::Some {
                 container,
                 mesh_name,
+                distance: FloatOrd(distance),
             };
         } else {
             warn!("hit some dead entity?");
@@ -193,18 +208,19 @@ fn debug_pointer(
         } else if let PointerTarget::Some {
             container,
             ref mesh_name,
+            distance,
         } = *pointer_target
         {
             if let Ok(target) = target.get(container) {
                 if let Ok(scene) = scene.get(target.root) {
                     format!(
-                        "world entity {}-{:?} from scene {}",
-                        target.container_id, mesh_name, scene.title
+                        "world entity {}-{:?} from scene {}, [{}]",
+                        target.container_id, mesh_name, scene.title, distance.0
                     )
                 } else {
                     format!(
-                        "world entity {}-{:?} unknown scene",
-                        target.container_id, mesh_name
+                        "world entity {}-{:?} unknown scene [{}]",
+                        target.container_id, mesh_name, distance.0
                     )
                 }
             } else {
@@ -220,11 +236,10 @@ fn debug_pointer(
 }
 
 fn send_hover_events(
-    player: Query<&GlobalTransform, With<PrimaryUser>>,
     new_target: Res<PointerTarget>,
     mut prior_target: Local<PointerTarget>,
     pointer_requests: Query<(&SceneEntity, Option<&PointerEvents>)>,
-    mut scenes: Query<(&mut RendererSceneContext, &mut SceneColliderData)>,
+    mut scenes: Query<&mut RendererSceneContext>,
     frame: Res<FrameCount>,
 ) {
     if *new_target == *prior_target {
@@ -233,111 +248,101 @@ fn send_hover_events(
 
     debug!("hover target : {:?}", new_target);
 
-    let Ok(player_position) = player.get_single() else {
-        // can't do much without a camera
-        return
-    };
+    let mut send_event =
+        |entity: &Entity, mesh_name: &Option<String>, ev_type: PointerEventType, distance: f32| {
+            if let Ok((scene_entity, maybe_pe)) = pointer_requests.get(*entity) {
+                if let Some(pe) = maybe_pe {
+                    let mut potential_entries = pe
+                        .msg
+                        .pointer_events
+                        .iter()
+                        .filter(|f| f.event_type == ev_type as i32)
+                        .peekable();
+                    // check there's at least one potential request before doing any work
+                    if potential_entries.peek().is_some() {
+                        let Ok(mut context) = scenes.get_mut(scene_entity.root) else { panic!() };
 
-    let player_translation = player_position.translation();
-
-    let mut send_event = |entity: &Entity,
-                          mesh_name: &Option<String>,
-                          ev_type: PointerEventType| {
-        if let Ok((scene_entity, maybe_pe)) = pointer_requests.get(*entity) {
-            if let Some(pe) = maybe_pe {
-                let mut potential_entries = pe
-                    .msg
-                    .pointer_events
-                    .iter()
-                    .filter(|f| f.event_type == ev_type as i32)
-                    .peekable();
-                // check there's at least one potential request before doing any work
-                if potential_entries.peek().is_some() {
-                    let Ok((mut context, mut collider_data)) = scenes.get_mut(scene_entity.root) else { panic!() };
-                    // get distance
-                    let nearest_point = collider_data
-                        .closest_point(context.last_update_frame, player_translation, |cid| {
-                            cid.entity == scene_entity.id && &cid.name == mesh_name
-                        })
-                        .unwrap_or(player_translation);
-                    let distance = (nearest_point - player_translation).length();
-
-                    for ev in potential_entries {
-                        let max_distance = ev
-                            .event_info
-                            .as_ref()
-                            .and_then(|info| info.max_distance)
-                            .unwrap_or(10.0);
-                        if distance <= max_distance {
-                            let tick_number = context.tick_number;
-                            context.update_crdt(
-                                SceneComponentId::POINTER_RESULT,
-                                CrdtType::GO_ENT,
-                                scene_entity.id,
-                                &PbPointerEventsResult {
-                                    button: InputAction::IaPointer as i32,
-                                    hit: Some(RaycastHit {
-                                        position: None,
-                                        global_origin: None,
-                                        direction: None,
-                                        normal_hit: None,
-                                        length: distance,
-                                        mesh_name: mesh_name.clone(),
-                                        entity_id: scene_entity.id.as_proto_u32(),
-                                    }),
-                                    state: ev_type as i32,
-                                    timestamp: frame.0,
-                                    analog: None,
-                                    tick_number,
-                                },
-                            );
+                        for ev in potential_entries {
+                            let max_distance = ev
+                                .event_info
+                                .as_ref()
+                                .and_then(|info| info.max_distance)
+                                .unwrap_or(10.0);
+                            if distance <= max_distance {
+                                let tick_number = context.tick_number;
+                                context.update_crdt(
+                                    SceneComponentId::POINTER_RESULT,
+                                    CrdtType::GO_ENT,
+                                    scene_entity.id,
+                                    &PbPointerEventsResult {
+                                        button: InputAction::IaPointer as i32,
+                                        hit: Some(RaycastHit {
+                                            position: None,
+                                            global_origin: None,
+                                            direction: None,
+                                            normal_hit: None,
+                                            length: distance,
+                                            mesh_name: mesh_name.clone(),
+                                            entity_id: scene_entity.id.as_proto_u32(),
+                                        }),
+                                        state: ev_type as i32,
+                                        timestamp: frame.0,
+                                        analog: None,
+                                        tick_number,
+                                    },
+                                );
+                            }
                         }
                     }
                 }
+            } else {
+                warn!("failed to query entity for hover event {ev_type:?}: {entity:?}");
             }
-        } else {
-            warn!("failed to query entity for hover event {ev_type:?}: {entity:?}");
-        }
-    };
+        };
 
     if let PointerTarget::Some {
         container,
         mesh_name,
+        distance,
     } = &*prior_target
     {
-        send_event(container, mesh_name, PointerEventType::PetHoverLeave);
+        send_event(
+            container,
+            mesh_name,
+            PointerEventType::PetHoverLeave,
+            distance.0,
+        );
     }
 
     if let PointerTarget::Some {
         container,
         mesh_name,
+        distance,
     } = &*new_target
     {
-        send_event(container, mesh_name, PointerEventType::PetHoverEnter);
+        send_event(
+            container,
+            mesh_name,
+            PointerEventType::PetHoverEnter,
+            distance.0,
+        );
     }
 
     *prior_target = new_target.clone();
 }
 
 fn send_action_events(
-    player: Query<&GlobalTransform, With<PrimaryUser>>,
     target: Res<PointerTarget>,
     pointer_requests: Query<(&SceneEntity, Option<&PointerEvents>)>,
-    mut scenes: Query<(&mut RendererSceneContext, &mut SceneColliderData)>,
+    mut scenes: Query<&mut RendererSceneContext>,
     input_mgr: InputManager,
     frame: Res<FrameCount>,
 ) {
-    let Ok(player_position) = player.get_single() else {
-        // can't do much without a camera
-        return
-    };
-
-    let player_translation = player_position.translation();
-
     let mut send_event = |entity: &Entity,
                           mesh_name: &Option<String>,
                           ev_type: PointerEventType,
-                          action: InputAction| {
+                          action: InputAction,
+                          distance: f32| {
         if let Ok((scene_entity, maybe_pe)) = pointer_requests.get(*entity) {
             if let Some(pe) = maybe_pe {
                 let mut potential_entries = pe
@@ -357,15 +362,7 @@ fn send_action_events(
                     .peekable();
                 // check there's at least one potential request before doing any work
                 if potential_entries.peek().is_some() {
-                    let Ok((mut context, mut collider_data)) = scenes.get_mut(scene_entity.root) else { panic!() };
-                    // get distance
-                    let nearest_point = collider_data
-                        .closest_point(context.last_update_frame, player_translation, |cid| {
-                            cid.entity == scene_entity.id && &cid.name == mesh_name
-                        })
-                        .unwrap_or(player_translation);
-                    let distance = (nearest_point - player_translation).length();
-
+                    let Ok(mut context) = scenes.get_mut(scene_entity.root) else { panic!() };
                     for ev in potential_entries {
                         let max_distance = ev
                             .event_info
@@ -408,19 +405,32 @@ fn send_action_events(
     if let PointerTarget::Some {
         container,
         mesh_name,
+        distance,
     } = &*target
     {
         for down in input_mgr.iter_just_down() {
-            send_event(container, mesh_name, PointerEventType::PetDown, *down);
+            send_event(
+                container,
+                mesh_name,
+                PointerEventType::PetDown,
+                *down,
+                distance.0,
+            );
         }
 
         for up in input_mgr.iter_just_up() {
-            send_event(container, mesh_name, PointerEventType::PetUp, *up);
+            send_event(
+                container,
+                mesh_name,
+                PointerEventType::PetUp,
+                *up,
+                distance.0,
+            );
         }
     }
 
     // send events to scene roots
-    for (mut context, _) in scenes.iter_mut() {
+    for mut context in scenes.iter_mut() {
         let tick_number = context.tick_number;
         for down in input_mgr.iter_just_down() {
             context.update_crdt(

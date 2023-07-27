@@ -48,7 +48,7 @@ fn hover_text(
     hover_target: Res<PointerTarget>,
     windows: Query<&Window>,
     input_map: Res<InputMap>,
-    mut prev_texts: Local<Vec<(InputAction, String)>>,
+    mut prev_texts: Local<Vec<(InputAction, String, bool)>>,
     mut vis: Local<f32>,
     time: Res<Time>,
 ) {
@@ -68,7 +68,12 @@ fn hover_text(
 
     let mut texts = Vec::default();
 
-    if let PointerTarget::Some { container, .. } = *hover_target {
+    if let PointerTarget::Some {
+        container,
+        distance,
+        ..
+    } = *hover_target
+    {
         if let Ok(pes) = pointer_events.get(container) {
             texts = pes
                 .msg
@@ -78,7 +83,11 @@ fn hover_text(
                     if let Some(info) = pe.event_info.as_ref() {
                         if info.show_feedback.unwrap_or(true) {
                             if let Some(text) = info.hover_text.as_ref() {
-                                return Some((info.button(), text.to_owned()));
+                                return Some((
+                                    info.button(),
+                                    text.to_owned(),
+                                    info.max_distance.unwrap_or(10.0) > distance.0,
+                                ));
                             }
                         }
                     }
@@ -104,7 +113,6 @@ fn hover_text(
         commands.entity(existing).despawn_recursive();
     }
     if *vis > 0.0 {
-        let hover_index = (*vis * 9.0) as usize;
         commands
             .spawn((
                 NodeBundle {
@@ -131,7 +139,8 @@ fn hover_text(
                     ..Default::default()
                 })
                 .with_children(|c| {
-                    for (button, _) in &texts {
+                    for (button, _, in_range) in &texts {
+                        let hover_index = (*vis * 9.0 * if *in_range { 1.0 } else { 0.3 }) as usize;
                         c.spawn(TextBundle::from_section(
                             format!("{}", input_map.get_input(*button)),
                             HOVER_TEXT_STYLE.get().unwrap()[hover_index].clone(),
@@ -149,7 +158,8 @@ fn hover_text(
                     ..Default::default()
                 })
                 .with_children(|c| {
-                    for _ in &texts {
+                    for (_, _, in_range) in &texts {
+                        let hover_index = (*vis * 9.0 * if *in_range { 1.0 } else { 0.3 }) as usize;
                         c.spawn(TextBundle::from_section(
                             " : ",
                             HOVER_TEXT_STYLE.get().unwrap()[hover_index].clone(),
@@ -167,7 +177,8 @@ fn hover_text(
                     ..Default::default()
                 })
                 .with_children(|c| {
-                    for (_, text) in &texts {
+                    for (_, text, in_range) in &texts {
+                        let hover_index = (*vis * 9.0 * if *in_range { 1.0 } else { 0.3 }) as usize;
                         c.spawn(TextBundle::from_section(
                             text.as_str(),
                             HOVER_TEXT_STYLE.get().unwrap()[hover_index].clone(),
