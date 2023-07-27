@@ -67,7 +67,7 @@ pub(crate) fn update_audio(
             if let Some(emitter) = maybe_emitter {
                 for h_instance in emitter.instances.iter() {
                     if let Some(instance) = audio_instances.get_mut(h_instance) {
-                        instance.stop(AudioTween::linear(Duration::ZERO));
+                        instance.stop(AudioTween::default());
                     }
                 }
             }
