@@ -76,7 +76,10 @@ pub fn process_streams(
         match cmd {
             Ok(AVCommand::Play) => {
                 if start_instant.is_none() && !stream_ended {
-                    start_instant = Some(Instant::now())
+                    start_instant = Some(Instant::now());
+                    for stream in streams.iter_mut() {
+                        stream.set_start_frame();
+                    }
                 }
             }
             Ok(AVCommand::Pause) => start_instant = None,
