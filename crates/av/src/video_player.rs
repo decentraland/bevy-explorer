@@ -27,7 +27,7 @@ impl Plugin for VideoPlayerPlugin {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct VideoPlayer(pub PbVideoPlayer);
 
 impl From<PbVideoPlayer> for VideoPlayer {

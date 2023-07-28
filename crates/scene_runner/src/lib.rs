@@ -19,7 +19,7 @@ use bevy::{
 use common::{
     sets::{SceneLoopSets, SceneSets},
     structs::{AppConfig, PrimaryCamera, PrimaryUser},
-    util::{dcl_assert, TryInsertEx},
+    util::{dcl_assert, TryInsertEx, TryPushChildrenEx},
 };
 use dcl::{
     interface::CrdtType, RendererResponse, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse,
@@ -698,7 +698,7 @@ fn process_scene_entity_lifecycle(
                         .collect::<Vec<_>>();
                     commands
                         .entity(root)
-                        .push_children(scene_children.as_slice());
+                        .try_push_children(scene_children.as_slice());
                 }
 
                 debug!(

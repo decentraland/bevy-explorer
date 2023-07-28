@@ -1,6 +1,8 @@
 // input settings
 
-use bevy::{ecs::system::SystemParam, prelude::*, utils::HashMap, window::PrimaryWindow};
+use bimap::BiMap;
+
+use bevy::{ecs::system::SystemParam, prelude::*, window::PrimaryWindow};
 use bevy_console::ConsoleOpen;
 use bevy_egui::EguiContext;
 
@@ -18,13 +20,13 @@ impl Plugin for InputManagerPlugin {
 
 #[derive(Resource)]
 pub struct InputMap {
-    inputs: HashMap<InputAction, InputItem>,
+    inputs: BiMap<InputAction, InputItem>,
 }
 
 impl Default for InputMap {
     fn default() -> Self {
         Self {
-            inputs: HashMap::from_iter(
+            inputs: BiMap::from_iter(
                 [
                     (InputAction::IaPointer, InputItem::Mouse(MouseButton::Left)),
                     (InputAction::IaPrimary, InputItem::Key(KeyCode::E)),
@@ -46,6 +48,12 @@ impl Default for InputMap {
     }
 }
 
+impl InputMap {
+    pub fn get_input(&self, action: InputAction) -> InputItem {
+        *self.inputs.get_by_left(&action).unwrap()
+    }
+}
+
 #[derive(SystemParam)]
 pub struct InputManager<'w> {
     map: Res<'w, InputMap>,
@@ -61,7 +69,7 @@ impl<'w> InputManager<'w> {
         }
         self.map
             .inputs
-            .get(&action)
+            .get_by_left(&action)
             .map_or(false, |item| match item {
                 InputItem::Key(k) => self.key_input.just_pressed(*k),
                 InputItem::Mouse(mb) => self.mouse_input.just_pressed(*mb),
@@ -74,7 +82,7 @@ impl<'w> InputManager<'w> {
         }
         self.map
             .inputs
-            .get(&action)
+            .get_by_left(&action)
             .map_or(false, |item| match item {
                 InputItem::Key(k) => self.key_input.just_released(*k),
                 InputItem::Mouse(mb) => self.mouse_input.just_released(*mb),
@@ -87,7 +95,7 @@ impl<'w> InputManager<'w> {
         }
         self.map
             .inputs
-            .get(&action)
+            .get_by_left(&action)
             .map_or(false, |item| match item {
                 InputItem::Key(k) => self.key_input.pressed(*k),
                 InputItem::Mouse(mb) => self.mouse_input.pressed(*mb),
@@ -119,9 +127,34 @@ impl<'w> InputManager<'w> {
     }
 }
 
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub enum InputItem {
     Key(KeyCode),
     Mouse(MouseButton),
+}
+
+impl std::fmt::Display for InputItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InputItem::Key(k) => f.write_str(key_to_str(k).as_str()),
+            InputItem::Mouse(m) => f.write_fmt(format_args!("{:?}", m)),
+        }
+    }
+}
+
+// todo extend this when we make rebindable keys
+fn key_to_str(key: &KeyCode) -> String {
+    use KeyCode::*;
+    let str = match key {
+        Key1 => "1",
+        Key2 => "2",
+        Key3 => "3",
+        Key4 => "4",
+        Space => "Space",
+        ShiftLeft => "Left Shift",
+        _ => return format!("{:?}", key),
+    };
+    str.to_owned()
 }
 
 #[derive(Resource, Default)]

@@ -10,16 +10,14 @@ use dcl::{
     crdt::lww::CrdtLWWState,
     interface::{ComponentPosition, CrdtStore, CrdtType},
 };
-use dcl_component::{
-    transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
-};
+use dcl_component::{DclReader, FromDclReader, SceneComponentId};
 
 use self::{
     animation::AnimatorPlugin, billboard::BillboardPlugin, camera_mode_area::CameraModeAreaPlugin,
     gltf_container::GltfDefinitionPlugin, material::MaterialDefinitionPlugin,
     mesh_collider::MeshColliderPlugin, mesh_renderer::MeshDefinitionPlugin,
     pointer_events::PointerEventsPlugin, raycast::RaycastPlugin, scene_ui::SceneUiPlugin,
-    text_shape::TextShapePlugin, transform_and_parent::process_transform_and_parent_updates,
+    text_shape::TextShapePlugin, transform_and_parent::TransformAndParentPlugin,
 };
 
 use super::{DeletedSceneEntities, RendererSceneContext, SceneLoopSchedule, SceneLoopSets};
@@ -112,15 +110,7 @@ pub struct SceneOutputPlugin;
 
 impl Plugin for SceneOutputPlugin {
     fn build(&self, app: &mut App) {
-        app.add_crdt_lww_interface::<DclTransformAndParent>(
-            SceneComponentId::TRANSFORM,
-            ComponentPosition::EntityOnly,
-        );
-        app.world
-            .resource_mut::<SceneLoopSchedule>()
-            .schedule
-            .add_systems(process_transform_and_parent_updates.in_set(SceneLoopSets::UpdateWorld));
-
+        app.add_plugins(TransformAndParentPlugin);
         app.add_plugins(MeshDefinitionPlugin);
         app.add_plugins(MaterialDefinitionPlugin);
         app.add_plugins(MeshColliderPlugin);

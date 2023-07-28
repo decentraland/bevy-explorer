@@ -13,3 +13,4 @@ tokio = { workspace = true }
 serde = { workspace = true }
 
 hex = "0.4.3"
+smallvec = "1.11"
