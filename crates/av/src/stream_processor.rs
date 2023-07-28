@@ -32,11 +32,10 @@ pub fn process_streams(
 ) -> Result<(), anyhow::Error> {
     let mut start_instant: Option<Instant> = None;
     let mut repeat = false;
-    let mut stream_ended = false;
 
     loop {
         // ensure frame available
-        while !stream_ended && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
+        while !input_context.is_eof() && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
             if let Some((stream_index, packet)) = input_context.blocking_next() {
                 for stream in streams.iter_mut() {
                     if Some(stream_index) == stream.stream_index() {
@@ -44,12 +43,10 @@ pub fn process_streams(
                         break; // for
                     }
                 }
-            } else {
-                stream_ended = true;
             }
         }
 
-        if stream_ended {
+        if input_context.is_eof() {
             // eof
             if repeat {
                 input_context.reset();
@@ -59,9 +56,8 @@ pub fn process_streams(
                 if start_instant.is_some() {
                     start_instant = Some(Instant::now());
                 }
-                stream_ended = false;
                 continue;
-            } else {
+            } else if streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
                 info!("eof");
                 start_instant = None;
             }
@@ -75,7 +71,7 @@ pub fn process_streams(
 
         match cmd {
             Ok(AVCommand::Play) => {
-                if start_instant.is_none() && !stream_ended {
+                if start_instant.is_none() && !input_context.is_eof() {
                     start_instant = Some(Instant::now());
                     for stream in streams.iter_mut() {
                         stream.set_start_frame();

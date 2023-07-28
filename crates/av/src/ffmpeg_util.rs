@@ -6,6 +6,7 @@ use ffmpeg_next::{
 pub const BUFFER_TIME: f64 = 10.0;
 
 pub trait PacketIter {
+    fn is_eof(&self) -> bool;
     fn try_next(&mut self) -> Option<(usize, Packet)>;
     fn blocking_next(&mut self) -> Option<(usize, Packet)>;
     fn reset(&mut self);
@@ -15,20 +16,29 @@ pub trait PacketIter {
 pub struct InputWrapper {
     input: Input,
     path: String,
+    is_eof: bool,
 }
 
 impl InputWrapper {
     pub fn new(input: Input, path: String) -> Self {
-        Self { input, path }
+        Self { input, path, is_eof: false }
     }
 }
 
 impl PacketIter for InputWrapper {
+    fn is_eof(&self) -> bool {
+        self.is_eof
+    }
+
     fn try_next(&mut self) -> Option<(usize, Packet)> {
         let mut packet = Packet::empty();
 
         match packet.read(&mut self.input) {
             Ok(..) => Some((packet.stream(), packet)),
+            Err(ffmpeg_next::util::error::Error::Eof) => {
+                self.is_eof = true;
+                return None;
+            },
             _ => None,
         }
     }
@@ -39,7 +49,10 @@ impl PacketIter for InputWrapper {
         loop {
             match packet.read(&mut self.input) {
                 Ok(..) => return Some((packet.stream(), packet)),
-                Err(ffmpeg_next::util::error::Error::Eof) => return None,
+                Err(ffmpeg_next::util::error::Error::Eof) => {
+                    self.is_eof = true;
+                    return None
+                },
                 Err(..) => (),
             }
         }
@@ -52,5 +65,7 @@ impl PacketIter for InputWrapper {
                 self.input = reloaded_input;
             }
         }
+
+        self.is_eof = false;
     }
 }
