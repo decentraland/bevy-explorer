@@ -72,6 +72,7 @@ pub struct UiRoot;
 #[derive(Serialize, Deserialize, Resource)]
 pub struct AppConfig {
     pub server: String,
+    pub location: IVec2,
     pub profile_version: u32,
     pub profile_content: String,
     pub profile_base_url: String,
@@ -83,6 +84,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             server: "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-main".to_owned(),
+            location: IVec2::new(78, -7),
             profile_version: 1,
             profile_content: Default::default(),
             profile_base_url: "https://peer.decentraland.zone/content/contents/".to_owned(),

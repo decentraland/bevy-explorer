@@ -2,6 +2,8 @@
 // - separate js crate
 // - budget -> deadline is just last end + frame time
 
+use std::{num::ParseIntError, str::FromStr};
+
 use avatar::AvatarDynamicState;
 use bevy::{
     core_pipeline::{
@@ -35,6 +37,39 @@ use ui_core::UiCorePlugin;
 use user_input::UserInputPlugin;
 use visuals::VisualsPlugin;
 
+#[derive(Debug)]
+struct IVec2Arg(IVec2);
+
+impl FromStr for IVec2Arg {
+    type Err = ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut chars = s.chars().peekable();
+
+        let skip = |chars: &mut std::iter::Peekable<std::str::Chars>, numeric: bool| {
+            while numeric == chars.peek().map_or(true, |c| c.is_numeric() || *c == '-') {
+                chars.next();
+            }
+        };
+
+        let parse = |chars: &std::iter::Peekable<std::str::Chars>| {
+            chars
+                .clone()
+                .take_while(|c| c.is_numeric() || *c == '-')
+                .collect::<String>()
+                .parse::<i32>()
+        };
+
+        skip(&mut chars, false);
+        let x = parse(&chars)?;
+        skip(&mut chars, true);
+        skip(&mut chars, false);
+        let y = parse(&chars)?;
+
+        Ok(IVec2Arg(IVec2::new(x, y)))
+    }
+}
+
 fn main() {
     // warnings before log init must be stored and replayed later
     let mut warnings = Vec::default();
@@ -54,6 +89,11 @@ fn main() {
             .value_from_str("--server")
             .ok()
             .unwrap_or(base_config.server),
+        location: args
+            .value_from_str::<_, IVec2Arg>("--location")
+            .ok()
+            .map(|va| va.0)
+            .unwrap_or(base_config.location),
         profile_version: base_config.profile_version,
         profile_content: base_config.profile_content,
         profile_base_url: base_config.profile_base_url,
@@ -186,12 +226,20 @@ fn main() {
     app.run()
 }
 
-fn setup(mut commands: Commands, mut cam_resource: ResMut<PrimaryCameraRes>) {
+fn setup(
+    mut commands: Commands,
+    mut cam_resource: ResMut<PrimaryCameraRes>,
+    config: Res<AppConfig>,
+) {
     info!("main::setup");
     // create the main player
     commands.spawn((
         SpatialBundle {
-            transform: Transform::from_translation(Vec3::new(16.0 * 78.5, 0.0, 16.0 * 6.5)),
+            transform: Transform::from_translation(Vec3::new(
+                16.0 * config.location.x as f32,
+                0.0,
+                -16.0 * config.location.y as f32,
+            )),
             ..Default::default()
         },
         PrimaryUser::default(),
