@@ -21,7 +21,11 @@ pub struct InputWrapper {
 
 impl InputWrapper {
     pub fn new(input: Input, path: String) -> Self {
-        Self { input, path, is_eof: false }
+        Self {
+            input,
+            path,
+            is_eof: false,
+        }
     }
 }
 
@@ -37,8 +41,8 @@ impl PacketIter for InputWrapper {
             Ok(..) => Some((packet.stream(), packet)),
             Err(ffmpeg_next::util::error::Error::Eof) => {
                 self.is_eof = true;
-                return None;
-            },
+                None
+            }
             _ => None,
         }
     }
@@ -51,8 +55,8 @@ impl PacketIter for InputWrapper {
                 Ok(..) => return Some((packet.stream(), packet)),
                 Err(ffmpeg_next::util::error::Error::Eof) => {
                     self.is_eof = true;
-                    return None
-                },
+                    return None;
+                }
                 Err(..) => (),
             }
         }
