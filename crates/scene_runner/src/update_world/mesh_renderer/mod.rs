@@ -70,7 +70,10 @@ impl Plugin for MeshDefinitionPlugin {
             ComponentPosition::EntityOnly,
         );
 
-        let generate_tangents = |mut mesh: Mesh| { mesh.generate_tangents().unwrap(); mesh };
+        let generate_tangents = |mut mesh: Mesh| {
+            mesh.generate_tangents().unwrap();
+            mesh
+        };
         let flip_uv = |mut mesh: Mesh| {
             let Some(VertexAttributeValues::Float32x3(ref mut positions)) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) else {panic!()};
             for pos in positions.iter_mut() {

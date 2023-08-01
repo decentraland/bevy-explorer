@@ -216,16 +216,23 @@ fn update_materials(
     resolver: TextureResolver,
 ) {
     for (ent, defn, container) in new_materials.iter_mut() {
-        let textures: Result<Vec<_>, _> = [&defn.base_color_texture, &defn.emmissive_texture, &defn.normal_map].into_iter().map(|texture| {
-            match texture.as_ref().and_then(|t| t.tex.as_ref()) {
+        let textures: Result<Vec<_>, _> = [
+            &defn.base_color_texture,
+            &defn.emmissive_texture,
+            &defn.normal_map,
+        ]
+        .into_iter()
+        .map(
+            |texture| match texture.as_ref().and_then(|t| t.tex.as_ref()) {
                 Some(texture) => match resolver.resolve_texture(container.root, texture) {
                     Ok(resolved) => Ok(Some(resolved)),
                     Err(TextureResolveError::SourceNotReady) => Err(()),
                     Err(_) => Ok(None),
                 },
                 None => Ok(None),
-            }
-        }).collect();
+            },
+        )
+        .collect();
 
         let textures = match textures {
             Ok(textures) => textures,
@@ -235,11 +242,15 @@ fn update_materials(
             }
         };
 
-        if textures.iter().any(|t| t.as_ref().map_or(false, |t| t.touch)) {
+        if textures
+            .iter()
+            .any(|t| t.as_ref().map_or(false, |t| t.touch))
+        {
             commands.entity(ent).insert(TouchMaterial);
         }
 
-        let [base_color_texture, emissive_texture, normal_map_texture]: [Option<ResolvedTexture>;3] = textures.try_into().unwrap();
+        let [base_color_texture, emissive_texture, normal_map_texture]: [Option<ResolvedTexture>;
+            3] = textures.try_into().unwrap();
 
         let mut commands = commands.entity(ent);
         commands
