@@ -7,7 +7,8 @@ use isahc::http::Uri;
 use prost::Message;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use crate::{dcl_component::proto_components::kernel::comms::rfc4, util::AsH160};
+use dcl_component::proto_components::kernel::comms::rfc4;
+use common::util::AsH160;
 
 use super::{
     global_crdt::{GlobalCrdtState, PlayerUpdate},
@@ -18,7 +19,7 @@ pub struct LivekitPlugin;
 
 impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(connect_livekit);
+        app.add_systems(Update, connect_livekit);
     }
 }
 

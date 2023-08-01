@@ -70,8 +70,6 @@ bevy_mod_billboard = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }
-livekit = { git="https://github.com/livekit/client-sdk-rust", rev = "15d125f" }
-livekit-protocol = { git="https://github.com/livekit/client-sdk-rust", rev = "15d125f" }
 
 pico-args = "0.5.0"
 

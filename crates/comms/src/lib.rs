@@ -18,22 +18,16 @@ use ethers::types::Address;
 use isahc::http::Uri;
 use tokio::sync::mpsc::Sender;
 
-use crate::{
-    comms::{
-        livekit_room::LivekitTransport,
-        signed_login::{signed_login, SignedLoginMeta},
-    },
-    dcl_component::{proto_components::kernel::comms::rfc4, DclWriter, ToDclWriter},
-    ipfs::CurrentRealm,
-    util::TaskExt,
-};
+use dcl_component::{proto_components::kernel::comms::rfc4, DclWriter, ToDclWriter};
+use ipfs::CurrentRealm;
+use common::util::TaskExt;
 
 use self::{
     broadcast_position::BroadcastPositionPlugin,
     global_crdt::GlobalCrdtPlugin,
-    livekit_room::LivekitPlugin,
+    livekit_room::{LivekitPlugin, LivekitTransport},
     profile::{CurrentUserProfile, UserProfilePlugin},
-    signed_login::SignedLoginResponse,
+    signed_login::{signed_login, SignedLoginMeta, SignedLoginResponse},
     wallet::Wallet,
     websocket_room::{WebsocketRoomPlugin, WebsocketRoomTransport},
 };
@@ -42,12 +36,13 @@ pub struct CommsPlugin;
 
 impl Plugin for CommsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(WebsocketRoomPlugin);
-        app.add_plugin(LivekitPlugin);
-        app.add_plugin(BroadcastPositionPlugin);
-        app.add_plugin(GlobalCrdtPlugin);
-        app.add_plugin(UserProfilePlugin);
-        app.add_systems((
+        app.add_plugins(WebsocketRoomPlugin);
+        app.add_plugins(LivekitPlugin);
+        app.add_plugins(BroadcastPositionPlugin);
+        app.add_plugins(GlobalCrdtPlugin);
+        app.add_plugins(UserProfilePlugin);
+        app.add_systems(
+            Update, (
             process_realm_change,
             start_ws_room,
             start_signed_login,
@@ -123,6 +118,7 @@ fn process_realm_change(
     }
 }
 
+#[derive(Event)]
 pub struct StartWsRoom {
     address: String,
 }
@@ -161,6 +157,7 @@ pub fn start_ws_room(
     }
 }
 
+#[derive(Event)]
 pub struct StartSignedLogin {
     address: String,
 }
@@ -210,6 +207,7 @@ pub fn start_signed_login(
     }
 }
 
+#[derive(Event)]
 pub struct StartLivekit {
     address: String,
 }

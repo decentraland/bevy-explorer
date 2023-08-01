@@ -6,9 +6,7 @@ use isahc::{
     AsyncReadResponseExt, RequestExt,
 };
 
-use crate::comms::wallet::SimpleAuthChain;
-
-use super::wallet::Wallet;
+use crate::wallet::{SimpleAuthChain, Wallet};
 
 #[derive(Debug, serde::Deserialize)]
 pub struct SignedLoginResponse {
