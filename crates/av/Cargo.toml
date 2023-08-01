@@ -1,0 +1,24 @@
+[package]
+name = "av"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { workspace = true }
+dcl = { workspace = true }
+dcl_component = { workspace = true }
+ipfs = { workspace = true }
+scene_runner = { workspace = true }
+
+bevy = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+isahc = { workspace = true }
+urlencoding = { workspace = true }
+
+bevy_kira_audio = { version= "0.16", features=["flac", "mp3", "ogg", "wav"] }
+kira = "*"
+ffmpeg-next = "6.0.0"
+thiserror = "1.0"

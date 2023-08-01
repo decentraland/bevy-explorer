@@ -1,0 +1,13 @@
+[package]
+name = "ui_core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { workspace = true }
+
+bevy = { workspace = true }
+bevy_egui = { workspace = true }
+once_cell = { workspace = true }

@@ -1,0 +1,24 @@
+[package]
+name = "ipfs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { workspace = true }
+console = { workspace = true }
+
+bevy = { workspace = true }
+anyhow = { workspace = true }
+bevy_console = { workspace = true }
+bimap = { workspace = true }
+isahc = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+urn = { workspace = true }
+
+urlencoding = { workspace = true }
+url = "2.4.0"

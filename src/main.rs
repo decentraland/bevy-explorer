@@ -2,103 +2,71 @@
 // - separate js crate
 // - budget -> deadline is just last end + frame time
 
-pub mod avatar;
-pub mod common;
-pub mod comms;
-pub mod console;
-pub mod dcl;
-pub mod dcl_component;
-pub mod input_manager;
-pub mod ipfs;
-pub mod scene_runner;
-pub mod system_ui;
-pub mod user_input;
-pub mod util;
-pub mod visuals;
+use std::{num::ParseIntError, str::FromStr};
 
 use avatar::AvatarDynamicState;
 use bevy::{
-    core_pipeline::tonemapping::{DebandDither, Tonemapping},
+    core_pipeline::{
+        bloom::BloomSettings,
+        tonemapping::{DebandDither, Tonemapping},
+    },
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::CascadeShadowConfigBuilder,
     prelude::*,
     render::view::ColorGrading,
 };
 use bevy_console::ConsoleCommand;
-use bevy_prototype_debug_lines::DebugLinesPlugin;
 
-use common::{PrimaryCamera, PrimaryUser};
-use comms::profile::UserProfile;
+use common::{
+    sets::SetupSets,
+    structs::{AppConfig, GraphicsSettings, PrimaryCamera, PrimaryCameraRes, PrimaryUser},
+};
 use scene_runner::{
     initialize_scene::SceneLoadDistance, update_world::mesh_collider::GroundCollider,
     SceneRunnerPlugin,
 };
-use serde::{Deserialize, Serialize};
 
-use crate::{
-    avatar::AvatarPlugin,
-    comms::{wallet::WalletPlugin, CommsPlugin},
-    console::{ConsolePlugin, DoAddConsoleCommand},
-    input_manager::InputManagerPlugin,
-    ipfs::IpfsIoPlugin,
-    system_ui::SystemUiPlugin,
-    user_input::UserInputPlugin,
-    visuals::VisualsPlugin,
-};
+use av::AudioPlugin;
+use avatar::AvatarPlugin;
+use comms::{wallet::WalletPlugin, CommsPlugin};
+use console::{ConsolePlugin, DoAddConsoleCommand};
+use input_manager::InputManagerPlugin;
+use ipfs::IpfsIoPlugin;
+use system_ui::SystemUiPlugin;
+use ui_core::UiCorePlugin;
+use user_input::UserInputPlugin;
+use visuals::VisualsPlugin;
 
-// macro for assertions
-// by default, enabled in debug builds and disabled in release builds
-// can be enabled for release with `cargo run --release --features="dcl-assert"`
-#[cfg(any(debug_assertions, feature = "dcl-assert"))]
-#[macro_export]
-macro_rules! dcl_assert {
-    ($($arg:tt)*) => ( assert!($($arg)*); )
-}
-#[cfg(not(any(debug_assertions, feature = "dcl-assert")))]
-#[macro_export]
-macro_rules! dcl_assert {
-    ($($arg:tt)*) => {};
-}
+#[derive(Debug)]
+struct IVec2Arg(IVec2);
 
-#[derive(Serialize, Deserialize)]
-pub struct GraphicsSettings {
-    vsync: bool,
-    log_fps: bool,
-    msaa: usize,
-}
+impl FromStr for IVec2Arg {
+    type Err = ParseIntError;
 
-impl Default for GraphicsSettings {
-    fn default() -> Self {
-        Self {
-            vsync: false,
-            log_fps: true,
-            msaa: 4,
-        }
-    }
-}
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut chars = s.chars().peekable();
 
-#[derive(Serialize, Deserialize, Resource)]
-pub struct AppConfig {
-    pub server: String,
-    pub profile: UserProfile,
-    pub graphics: GraphicsSettings,
-    pub scene_threads: usize,
-    pub scene_loop_millis: u64,
-}
+        let skip = |chars: &mut std::iter::Peekable<std::str::Chars>, numeric: bool| {
+            while numeric == chars.peek().map_or(true, |c| c.is_numeric() || *c == '-') {
+                chars.next();
+            }
+        };
 
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            server: "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-main".to_owned(),
-            profile: UserProfile {
-                version: 1,
-                content: Default::default(),
-                base_url: "https://peer.decentraland.zone/content/contents/".to_owned(),
-            },
-            graphics: Default::default(),
-            scene_threads: 4,
-            scene_loop_millis: 12, // ~80fps
-        }
+        let parse = |chars: &std::iter::Peekable<std::str::Chars>| {
+            chars
+                .clone()
+                .take_while(|c| c.is_numeric() || *c == '-')
+                .collect::<String>()
+                .parse::<i32>()
+        };
+
+        skip(&mut chars, false);
+        let x = parse(&chars)?;
+        skip(&mut chars, true);
+        skip(&mut chars, false);
+        let y = parse(&chars)?;
+
+        Ok(IVec2Arg(IVec2::new(x, y)))
     }
 }
 
@@ -121,7 +89,14 @@ fn main() {
             .value_from_str("--server")
             .ok()
             .unwrap_or(base_config.server),
-        profile: base_config.profile,
+        location: args
+            .value_from_str::<_, IVec2Arg>("--location")
+            .ok()
+            .map(|va| va.0)
+            .unwrap_or(base_config.location),
+        profile_version: base_config.profile_version,
+        profile_content: base_config.profile_content,
+        profile_base_url: base_config.profile_base_url,
         graphics: GraphicsSettings {
             vsync: args
                 .value_from_str("--vsync")
@@ -135,15 +110,15 @@ fn main() {
                 .value_from_str::<_, usize>("--msaa")
                 .ok()
                 .unwrap_or(base_config.graphics.msaa),
+            fps_target: args
+                .value_from_str::<_, usize>("--fps")
+                .ok()
+                .unwrap_or(base_config.graphics.fps_target),
         },
         scene_threads: args
             .value_from_str("--threads")
             .ok()
             .unwrap_or(base_config.scene_threads),
-        scene_loop_millis: args
-            .value_from_str("--millis")
-            .ok()
-            .unwrap_or(base_config.scene_loop_millis),
     };
 
     let remaining = args.finish();
@@ -196,7 +171,7 @@ fn main() {
                 ..Default::default()
             })
             .set(bevy::log::LogPlugin {
-                filter: "wgpu=error,bevy_animation=error".to_string(),
+                filter: "wgpu=error,bevy_animation=error,naga=error".to_string(),
                 ..default()
             })
             .build()
@@ -207,33 +182,37 @@ fn main() {
     );
 
     if final_config.graphics.log_fps {
-        app.add_plugin(FrameTimeDiagnosticsPlugin)
-            .add_plugin(LogDiagnosticsPlugin::default());
+        app.add_plugins(FrameTimeDiagnosticsPlugin)
+            .add_plugins(LogDiagnosticsPlugin::default());
     }
 
     app.insert_resource(final_config);
 
-    app.add_plugin(DebugLinesPlugin::with_depth_test(true))
-        .add_plugin(bevy_mod_billboard::prelude::BillboardPlugin)
-        .add_plugin(InputManagerPlugin)
-        .add_plugin(SceneRunnerPlugin)
-        .add_plugin(UserInputPlugin)
-        .add_plugin(SystemUiPlugin)
-        .add_plugin(ConsolePlugin)
-        .add_plugin(VisualsPlugin)
-        .add_plugin(WalletPlugin)
-        .add_plugin(CommsPlugin)
-        .add_plugin(AvatarPlugin)
-        .add_startup_system(setup)
+    app.configure_set(Startup, SetupSets::Init.before(SetupSets::Main));
+
+    app.add_plugins(bevy_mod_billboard::prelude::BillboardPlugin)
+        .add_plugins(InputManagerPlugin)
+        .add_plugins(SceneRunnerPlugin)
+        .add_plugins(UserInputPlugin)
+        .add_plugins(UiCorePlugin)
+        .add_plugins(SystemUiPlugin)
+        .add_plugins(ConsolePlugin { add_egui: true })
+        .add_plugins(VisualsPlugin)
+        .add_plugins(WalletPlugin)
+        .add_plugins(CommsPlugin)
+        .add_plugins(AvatarPlugin)
+        .add_plugins(AudioPlugin)
+        .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
+        .add_systems(Startup, setup.in_set(SetupSets::Init))
         .insert_resource(AmbientLight {
-            color: Color::rgb(0.75, 0.75, 1.0),
-            brightness: 0.25,
+            color: Color::rgb(0.85, 0.85, 1.0),
+            brightness: 0.5,
         });
 
     app.add_console_command::<ChangeLocationCommand, _>(change_location);
     app.add_console_command::<SceneDistanceCommand, _>(scene_distance);
     app.add_console_command::<SceneThreadsCommand, _>(scene_threads);
-    app.add_console_command::<SceneMillisCommand, _>(scene_millis);
+    app.add_console_command::<FpsCommand, _>(set_fps);
 
     // replay any warnings
     for warning in warnings {
@@ -247,11 +226,20 @@ fn main() {
     app.run()
 }
 
-fn setup(mut commands: Commands) {
+fn setup(
+    mut commands: Commands,
+    mut cam_resource: ResMut<PrimaryCameraRes>,
+    config: Res<AppConfig>,
+) {
+    info!("main::setup");
     // create the main player
     commands.spawn((
         SpatialBundle {
-            transform: Transform::from_translation(Vec3::new(16.0 * 78.5, 0.0, 16.0 * 6.5)),
+            transform: Transform::from_translation(Vec3::new(
+                16.0 * config.location.x as f32,
+                0.0,
+                -16.0 * config.location.y as f32,
+            )),
             ..Default::default()
         },
         PrimaryUser::default(),
@@ -260,25 +248,32 @@ fn setup(mut commands: Commands) {
     ));
 
     // add a camera
-    commands.spawn((
-        Camera3dBundle {
-            camera: Camera {
-                // TODO enable when we can use gizmos instead of debuglines in bevy 0.11
-                // hdr: true,
+    let camera_id = commands
+        .spawn((
+            Camera3dBundle {
+                camera: Camera {
+                    hdr: true,
+                    ..Default::default()
+                },
+                tonemapping: Tonemapping::TonyMcMapface,
+                dither: DebandDither::Enabled,
+                color_grading: ColorGrading {
+                    exposure: -0.5,
+                    gamma: 1.5,
+                    pre_saturation: 1.0,
+                    post_saturation: 1.0,
+                },
                 ..Default::default()
             },
-            tonemapping: Tonemapping::TonyMcMapface,
-            dither: DebandDither::Enabled,
-            color_grading: ColorGrading {
-                exposure: -0.5,
-                gamma: 1.5,
-                pre_saturation: 1.0,
-                post_saturation: 1.0,
+            BloomSettings {
+                intensity: 0.15,
+                ..BloomSettings::OLD_SCHOOL
             },
-            ..Default::default()
-        },
-        PrimaryCamera::default(),
-    ));
+            PrimaryCamera::default(),
+        ))
+        .id();
+
+    cam_resource.0 = camera_id;
 
     // add a directional light so it looks nicer
     commands.spawn(DirectionalLightBundle {
@@ -297,23 +292,14 @@ fn setup(mut commands: Commands) {
     });
 }
 
-// hook console commands
-#[cfg(not(test))]
-impl console::DoAddConsoleCommand for App {
-    fn add_console_command<T: bevy_console::Command, U>(
-        &mut self,
-        system: impl IntoSystemConfig<U>,
-    ) -> &mut Self {
-        bevy_console::AddConsoleCommand::add_console_command::<T, U>(self, system)
-    }
-}
-
 // TODO move these somewhere better
 /// set location
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/teleport")]
 struct ChangeLocationCommand {
+    #[arg(allow_hyphen_values(true))]
     x: i32,
+    #[arg(allow_hyphen_values(true))]
     y: i32,
 }
 
@@ -324,7 +310,7 @@ fn change_location(
     if let Some(Ok(command)) = input.take() {
         if let Ok(mut transform) = player.get_single_mut() {
             transform.translation.x = command.x as f32 * 16.0;
-            transform.translation.z = command.y as f32 * 16.0;
+            transform.translation.z = -command.y as f32 * 16.0;
             input.reply_ok(format!("new location: {:?}", (command.x, command.y)));
             return;
         }
@@ -366,17 +352,17 @@ fn scene_threads(mut input: ConsoleCommand<SceneThreadsCommand>, mut config: Res
     }
 }
 
-// set loop millis
+// set fps
 #[derive(clap::Parser, ConsoleCommand)]
-#[command(name = "/scene_millis")]
-struct SceneMillisCommand {
-    millis: Option<u64>,
+#[command(name = "/fps")]
+struct FpsCommand {
+    fps: usize,
 }
 
-fn scene_millis(mut input: ConsoleCommand<SceneMillisCommand>, mut config: ResMut<AppConfig>) {
+fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>) {
     if let Some(Ok(command)) = input.take() {
-        let millis = command.millis.unwrap_or(12);
-        config.scene_loop_millis = millis;
-        input.reply_ok("scene loop max ms set to {millis}");
+        let fps = command.fps;
+        config.graphics.fps_target = fps;
+        input.reply_ok("target frame rate set to {fps}");
     }
 }

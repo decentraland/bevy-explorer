@@ -1,0 +1,16 @@
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+bevy = { workspace = true }
+ethers = { workspace = true }
+futures-lite = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+
+hex = "0.4.3"
+smallvec = "1.11"

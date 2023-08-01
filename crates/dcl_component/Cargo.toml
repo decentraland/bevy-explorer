@@ -1,0 +1,15 @@
+[package]
+name = "dcl_component"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+bevy = { workspace = true }
+prost = { workspace = true }
+serde = { workspace = true }
+
+
+[build-dependencies]
+prost-build = "0.11.8"

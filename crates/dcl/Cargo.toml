@@ -1,0 +1,21 @@
+[package]
+name = "dcl"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { workspace = true }
+dcl_component = { workspace = true }
+ipfs = { workspace = true }
+
+bevy = { workspace = true }
+tokio = { workspace = true }
+once_cell = { workspace = true }
+futures-lite = { workspace = true }
+
+deno_core = "0.183.*"
+num-derive = "0.3"
+num = "0.4"
+num-traits = "0.2"

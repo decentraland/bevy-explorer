@@ -1,0 +1,34 @@
+[package]
+name = "scene_runner"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { workspace = true }
+dcl_component = { workspace = true }
+dcl = { workspace = true }
+ipfs = { workspace = true }
+comms = { workspace = true }
+ui_core = { workspace = true }
+console = { workspace = true }
+input_manager = { workspace = true }
+
+bevy = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+bevy_mod_billboard = { workspace = true }
+bevy_console = { workspace = true }
+clap = { workspace = true }
+bimap = { workspace = true }
+nalgebra = { version = "0.32.3", features = [ "convert-glam024" ] }
+futures-lite = { workspace = true }
+once_cell = { workspace = true }
+rapier3d = { workspace = true }
+
+itertools = "0.10.5"
+petgraph = "0.6.3"
+spin_sleep = "1.1.1"

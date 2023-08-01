@@ -1,0 +1,29 @@
+[package]
+name = "comms"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { workspace = true }
+dcl = { workspace = true }
+dcl_component = { workspace = true }
+ipfs = { workspace = true }
+
+bevy = { workspace = true }
+bimap = { workspace = true }
+ethers = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+futures-lite = { workspace = true }
+isahc = { workspace = true}
+prost = { workspace = true}
+
+async-trait = "0.1.68"
+async-tungstenite = { version = "0.22.0", features = ["async-std-runtime", "async-tls"] }
+async-std = "1.12.0"
+async-tls = "0.12.0"
+futures-util = "0.3.28"
