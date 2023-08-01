@@ -14,18 +14,29 @@ This project's goals are to:
 
 1. Clone the repo using `git clone https://github.com/decentraland/bevy-explorer`
 2. Install [rust](https://www.rust-lang.org/tools/install)
-3. Install [protoc](https://github.com/protocolbuffers/protobuf/releases)
-4. `cargo run --release`
+3. download and install ffmpeg shared binaries
+    - on linux: `sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev`
+    - on macos: `brew install ffmpeg pkg-config`
+    - on windows: 
+      - download and unzip `https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full-shared.7z`
+      - set `LIBCLANG_PATH` = `path to LLVM\x64\bin` (this is packaged with visual studio, or can be downloaded separately)
+      - set `FFMPEG_DIR` = `root folder where ffmpeg has been unzipped`
+      - add `ffmpeg\bin` to your `PATH`
+4. Install [protoc](https://github.com/protocolbuffers/protobuf/releases)
+5. `cargo run --release`
 
 # Arguments
 
-`cargo run --release -- [--server serverpath] [--vsync true|false] [--log_fps true|false] [--msaa 1|2|4|8]`
+`cargo run --release -- [--server serverpath] [--location location] [--vsync true|false] [--log_fps true|false] [--msaa 1|2|4|8]`
 
 `--server https://sdk-test-scenes.decentraland.zone`
 - specify the content server, defaults to the sdk test server.
 
+`--location 52,-52`
+- specify the parcel at which to spawn.
+
 `--vsync (true|false)`
-- disable/enable vsync. defaults to off.
+- disable/enable vsync. defaults to on.
 
 `--fps (number)`
 - set target fps. defaults to 60. if vsync is true this will be overridden by the vsync refresh rate. also accessible via console `/fps` command.

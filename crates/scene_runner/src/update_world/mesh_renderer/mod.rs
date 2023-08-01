@@ -70,17 +70,33 @@ impl Plugin for MeshDefinitionPlugin {
             ComponentPosition::EntityOnly,
         );
 
+        let generate_tangents = |mut mesh: Mesh| {
+            mesh.generate_tangents().unwrap();
+            mesh
+        };
+        let flip_uv = |mut mesh: Mesh| {
+            let Some(VertexAttributeValues::Float32x3(ref mut positions)) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) else {panic!()};
+            for pos in positions.iter_mut() {
+                *pos = [pos[0], -pos[2], pos[1]];
+            }
+            let Some(VertexAttributeValues::Float32x3(ref mut normals)) = mesh.attribute_mut(Mesh::ATTRIBUTE_NORMAL) else {panic!()};
+            for pos in normals.iter_mut() {
+                *pos = [pos[0], -pos[2], pos[1]];
+            }
+            mesh
+        };
+
         let mut assets = app.world.resource_mut::<Assets<Mesh>>();
-        let boxx = assets.add(shape::Cube::default().into());
-        let cylinder = assets.add(shape::Cylinder::default().into());
-        let plane = assets.add(shape::Quad::default().into());
-        let sphere = assets.add(
+        let boxx = assets.add(generate_tangents(shape::Cube::default().into()));
+        let cylinder = assets.add(generate_tangents(shape::Cylinder::default().into()));
+        let plane = assets.add(generate_tangents(shape::Quad::default().into()));
+        let sphere = assets.add(generate_tangents(flip_uv(
             shape::UVSphere {
                 radius: 0.5,
                 ..Default::default()
             }
             .into(),
-        );
+        )));
         app.insert_resource(MeshPrimitiveDefaults {
             boxx,
             plane,
