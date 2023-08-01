@@ -22,11 +22,12 @@ pub struct MaterialDefinition {
     pub shadow_caster: bool,
     pub base_color_texture: Option<TextureUnion>,
     pub emmissive_texture: Option<TextureUnion>,
+    pub normal_map: Option<TextureUnion>,
 }
 
 impl From<PbMaterial> for MaterialDefinition {
     fn from(value: PbMaterial) -> Self {
-        let (material, base_color_texture, emmissive_texture) = match &value.material {
+        let (material, base_color_texture, emmissive_texture, normal_map) = match &value.material {
             Some(pb_material::Material::Unlit(unlit)) => {
                 let base_color = unlit.diffuse_color.map(Color::from).unwrap_or(Color::WHITE);
 
@@ -46,6 +47,7 @@ impl From<PbMaterial> for MaterialDefinition {
                         ..Default::default()
                     },
                     unlit.texture.clone(),
+                    None,
                     None,
                 )
             }
@@ -88,8 +90,7 @@ impl From<PbMaterial> for MaterialDefinition {
                         // TODO what is pbr.reflectivity_color?
                         metallic: pbr.metallic.unwrap_or(0.5),
                         perceptual_roughness: pbr.roughness.unwrap_or(0.5),
-                        // TODO glossiness
-                        // TODO intensities
+                        // TODO specular intensity
                         double_sided: true,
                         cull_mode: None,
                         alpha_mode,
@@ -97,6 +98,7 @@ impl From<PbMaterial> for MaterialDefinition {
                     },
                     pbr.texture.clone(),
                     pbr.emissive_texture.clone(),
+                    pbr.bump_texture.clone(),
                 )
             }
             None => Default::default(),
@@ -114,6 +116,7 @@ impl From<PbMaterial> for MaterialDefinition {
             shadow_caster,
             base_color_texture,
             emmissive_texture,
+            normal_map,
         }
     }
 }
@@ -152,6 +155,7 @@ pub struct TextureResolver<'w, 's> {
     videos: Query<'w, 's, &'static VideoTextureOutput>,
 }
 
+#[derive(Debug)]
 pub struct ResolvedTexture {
     pub image: Handle<Image>,
     pub touch: bool,
@@ -212,39 +216,30 @@ fn update_materials(
     resolver: TextureResolver,
 ) {
     for (ent, defn, container) in new_materials.iter_mut() {
-        let base_color_texture = match defn
-            .base_color_texture
-            .as_ref()
-            .and_then(|t| t.tex.as_ref())
-        {
-            Some(texture) => match resolver.resolve_texture(container.root, texture) {
-                Ok(resolved) => Some(resolved),
-                Err(TextureResolveError::SourceNotReady) => {
-                    commands.entity(ent).insert(RetryMaterial);
-                    continue;
-                }
-                Err(_) => None,
-            },
-            None => None,
+        let textures: Result<Vec<_>, _> = [&defn.base_color_texture, &defn.emmissive_texture, &defn.normal_map].into_iter().map(|texture| {
+            match texture.as_ref().and_then(|t| t.tex.as_ref()) {
+                Some(texture) => match resolver.resolve_texture(container.root, texture) {
+                    Ok(resolved) => Ok(Some(resolved)),
+                    Err(TextureResolveError::SourceNotReady) => Err(()),
+                    Err(_) => Ok(None),
+                },
+                None => Ok(None),
+            }
+        }).collect();
+
+        let textures = match textures {
+            Ok(textures) => textures,
+            _ => {
+                commands.entity(ent).insert(RetryMaterial);
+                continue;
+            }
         };
 
-        let emissive_texture = match defn.emmissive_texture.as_ref().and_then(|t| t.tex.as_ref()) {
-            Some(texture) => match resolver.resolve_texture(container.root, texture) {
-                Ok(resolved) => Some(resolved),
-                Err(TextureResolveError::SourceNotReady) => {
-                    commands.entity(ent).insert(RetryMaterial);
-                    continue;
-                }
-                Err(_) => None,
-            },
-            None => None,
-        };
-
-        if base_color_texture.as_ref().map_or(false, |t| t.touch)
-            || emissive_texture.as_ref().map_or(false, |t| t.touch)
-        {
+        if textures.iter().any(|t| t.as_ref().map_or(false, |t| t.touch)) {
             commands.entity(ent).insert(TouchMaterial);
         }
+
+        let [base_color_texture, emissive_texture, normal_map_texture]: [Option<ResolvedTexture>;3] = textures.try_into().unwrap();
 
         let mut commands = commands.entity(ent);
         commands
@@ -252,6 +247,7 @@ fn update_materials(
             .try_insert(materials.add(StandardMaterial {
                 base_color_texture: base_color_texture.map(|t| t.image),
                 emissive_texture: emissive_texture.map(|t| t.image),
+                normal_map_texture: normal_map_texture.map(|t| t.image),
                 ..defn.material.clone()
             }));
         if defn.shadow_caster {
