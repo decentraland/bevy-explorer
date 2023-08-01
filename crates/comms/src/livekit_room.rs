@@ -4,6 +4,7 @@ use bevy::{
     utils::HashMap,
 };
 use isahc::http::Uri;
+use livekit::{RoomOptions, DataPacketKind};
 use prost::Message;
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -97,7 +98,7 @@ async fn livekit_handler_inner(
         .unwrap();
 
     let task = rt.spawn(async move {
-        let (room, mut network_rx) = livekit::prelude::Room::connect(&address, &token).await.unwrap();
+        let (room, mut network_rx) = livekit::prelude::Room::connect(&address, &token, RoomOptions{ auto_subscribe: false, adaptive_stream: false, dynacast: false }).await.unwrap();
 
         'stream: loop {
             tokio::select!(
@@ -110,7 +111,7 @@ async fn livekit_handler_inner(
 
                     match incoming {
                         livekit::RoomEvent::DataReceived { payload, participant, .. } => {
-                            if let Some(address) = participant.identity().as_str().as_h160() {
+                            if let Some(address) = participant.identity().0.as_str().as_h160() {
                                 let packet = match rfc4::Packet::decode(payload.as_slice()) {
                                     Ok(packet) => packet,
                                     Err(e) => {
@@ -143,11 +144,11 @@ async fn livekit_handler_inner(
                     };
 
                     let kind = if outgoing.unreliable {
-                        livekit_protocol::livekit::data_packet::Kind::Lossy
+                        DataPacketKind::Lossy
                     } else {
-                        livekit_protocol::livekit::data_packet::Kind::Reliable
+                        DataPacketKind::Reliable
                     };
-                    if let Err(e) = room.local_participant().publish_data(&outgoing.data, kind).await {
+                    if let Err(e) = room.local_participant().publish_data(outgoing.data, kind, Default::default()).await {
                         println!("outgoing failed: {e}; not exiting loop though since it often fails at least once or twice at the start...");
                         // break 'stream;
                     };
