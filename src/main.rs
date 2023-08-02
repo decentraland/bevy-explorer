@@ -47,7 +47,7 @@ impl FromStr for IVec2Arg {
         let mut chars = s.chars().peekable();
 
         let skip = |chars: &mut std::iter::Peekable<std::str::Chars>, numeric: bool| {
-            while numeric == chars.peek().map_or(true, |c| c.is_numeric() || *c == '-') {
+            while numeric == chars.peek().map_or(!numeric, |c| c.is_numeric() || *c == '-') {
                 chars.next();
             }
         };
