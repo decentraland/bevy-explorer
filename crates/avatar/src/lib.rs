@@ -1202,9 +1202,9 @@ fn process_avatar(
             }
 
             let masks = [
-                ("mask_eyes", def.eyes_color, WearableCategory::EYES),
-                ("mask_eyebrows", def.hair_color, WearableCategory::EYEBROWS),
-                ("mask_mouth", def.skin_color, WearableCategory::MOUTH),
+                ("mask_eyes", def.eyes_color, WearableCategory::EYES, true),
+                ("mask_eyebrows", def.hair_color, WearableCategory::EYEBROWS, false),
+                ("mask_mouth", def.skin_color, WearableCategory::MOUTH, false),
             ];
 
             let Ok(parent_name) = named_ents.get(parent.get()) else { continue };
@@ -1212,7 +1212,7 @@ fn process_avatar(
 
             debug!("parent: {parent_name}");
 
-            for (suffix, color, category) in masks.into_iter() {
+            for (suffix, color, category, no_mask_means_ignore_color) in masks.into_iter() {
                 if parent_name.ends_with(suffix) {
                     *vis = Visibility::Hidden;
 
@@ -1234,7 +1234,7 @@ fn process_avatar(
                         } else {
                             debug!("no mask for {suffix}");
                             let material = materials.add(StandardMaterial {
-                                base_color: color,
+                                base_color: if no_mask_means_ignore_color { Color::WHITE } else { color },
                                 base_color_texture: texture.clone(),
                                 alpha_mode: AlphaMode::Blend,
                                 ..Default::default()
