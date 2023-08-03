@@ -2,7 +2,9 @@ use std::ops::RangeInclusive;
 
 use bevy::{prelude::*, utils::HashMap};
 use bimap::BiMap;
+use common::structs::AudioDecoderError;
 use ethers::types::Address;
+use kira::sound::streaming::StreamingSoundData;
 use tokio::sync::{broadcast, mpsc};
 
 use dcl::{
@@ -45,10 +47,24 @@ impl Plugin for GlobalCrdtPlugin {
     }
 }
 
+pub enum PlayerMessage {
+    PlayerData(rfc4::packet::Message),
+    AudioStream(StreamingSoundData<AudioDecoderError>),
+}
+
+impl std::fmt::Debug for PlayerMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PlayerData(arg0) => f.debug_tuple("PlayerData").field(arg0).finish(),
+            Self::AudioStream(_) => f.debug_tuple("AudioStream").finish(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct PlayerUpdate {
     pub transport_id: Entity,
-    pub message: rfc4::packet::Message,
+    pub message: PlayerMessage,
     pub address: Address,
 }
 
@@ -201,7 +217,8 @@ pub fn process_transport_updates(
 
         // process update
         match update.message {
-            Message::Position(pos) => {
+            PlayerMessage::AudioStream(audio) => {}
+            PlayerMessage::PlayerData(Message::Position(pos)) => {
                 let dcl_transform = DclTransformAndParent {
                     translation: DclTranslation([pos.position_x, pos.position_y, pos.position_z]),
                     rotation: DclQuat([
@@ -240,25 +257,25 @@ pub fn process_transport_updates(
                     ]),
                 })
             }
-            Message::ProfileVersion(version) => {
+            PlayerMessage::PlayerData(Message::ProfileVersion(version)) => {
                 profile_events.send(ProfileEvent {
                     sender: entity,
                     event: ProfileEventType::Version(version),
                 });
             }
-            Message::ProfileRequest(request) => {
+            PlayerMessage::PlayerData(Message::ProfileRequest(request)) => {
                 profile_events.send(ProfileEvent {
                     sender: entity,
                     event: ProfileEventType::Request(request),
                 });
             }
-            Message::ProfileResponse(response) => {
+            PlayerMessage::PlayerData(Message::ProfileResponse(response)) => {
                 profile_events.send(ProfileEvent {
                     sender: entity,
                     event: ProfileEventType::Response(response),
                 });
             }
-            Message::Chat(chat) => {
+            PlayerMessage::PlayerData(Message::Chat(chat)) => {
                 chat_events.send(ChatEvent {
                     sender: entity,
                     timestamp: chat.timestamp,
@@ -266,8 +283,8 @@ pub fn process_transport_updates(
                     message: chat.message,
                 });
             }
-            Message::Scene(_) => (),
-            Message::Voice(_) => (),
+            PlayerMessage::PlayerData(Message::Scene(_)) => (),
+            PlayerMessage::PlayerData(Message::Voice(_)) => (),
         }
     }
 }

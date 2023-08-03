@@ -1,10 +1,10 @@
 use bevy::prelude::*;
-use common::{structs::PrimaryUser, util::TryInsertEx};
+use common::{structs::{PrimaryUser, AudioDecoderError}, util::TryInsertEx};
 use kira::{manager::backend::DefaultBackend, sound::streaming::StreamingSoundData, tween::Tween};
 use scene_runner::{ContainingScene, SceneEntity};
 use tokio::sync::mpsc::error::TryRecvError;
 
-use crate::{audio_context::AudioDecoderError, stream_processor::AVCommand};
+use crate::stream_processor::AVCommand;
 
 #[derive(Component)]
 pub struct AudioSink {

@@ -1,15 +1,22 @@
+// --server https://worlds-content-server.decentraland.org/world/shibu.dcl.eth --location 1 1
+
+use std::sync::Arc;
+
 use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
     utils::HashMap,
 };
 use isahc::http::Uri;
-use livekit::{RoomOptions, DataPacketKind};
+use livekit::{RoomOptions, DataPacketKind, webrtc::prelude::AudioFrame};
 use prost::Message;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::{Receiver, Sender, error::TryRecvError};
+use futures_lite::StreamExt;
 
 use dcl_component::proto_components::kernel::comms::rfc4;
-use common::util::AsH160;
+use common::{util::AsH160, structs::AudioDecoderError};
+
+use crate::global_crdt::PlayerMessage;
 
 use super::{
     global_crdt::{GlobalCrdtState, PlayerUpdate},
@@ -92,13 +99,15 @@ async fn livekit_handler_inner(
     println!("{params:?}");
     let token = params.get("access_token").cloned().unwrap_or_default();
 
-    let rt = tokio::runtime::Builder::new_current_thread()
+    let rt = Arc::new(tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .unwrap();
+        .unwrap());
+
+    let rt2 = rt.clone();
 
     let task = rt.spawn(async move {
-        let (room, mut network_rx) = livekit::prelude::Room::connect(&address, &token, RoomOptions{ auto_subscribe: false, adaptive_stream: false, dynacast: false }).await.unwrap();
+        let (room, mut network_rx) = livekit::prelude::Room::connect(&address, &token, RoomOptions{ auto_subscribe: true, adaptive_stream: false, dynacast: false }).await.unwrap();
 
         'stream: loop {
             tokio::select!(
@@ -126,7 +135,7 @@ async fn livekit_handler_inner(
                                 warn!("received packet {message:?} from {address}");
                                 if let Err(e) = sender.send(PlayerUpdate {
                                     transport_id,
-                                    message,
+                                    message: PlayerMessage::PlayerData(message),
                                     address,
                                 }).await {
                                     warn!("app pipe broken ({e}), existing loop");
@@ -134,6 +143,57 @@ async fn livekit_handler_inner(
                                 }
                             }
                         },
+                        livekit::RoomEvent::TrackSubscribed { track, publication: _, participant } => {
+                            if let Some(address) = participant.identity().0.as_str().as_h160() {
+                                match track {
+                                    livekit::track::RemoteTrack::Audio(audio) => {
+                                        rt2.spawn(async move {
+                                            let mut x = livekit::webrtc::audio_stream::native::NativeAudioStream::new(audio.rtc_track());
+
+                                            // get first frame to set sample rate
+                                            let Some(frame) = x.next().await else {
+                                                warn!("dropped audio track without samples");
+                                                return;
+                                            };
+
+                                            let (frame_sender, frame_receiver) = tokio::sync::mpsc::channel(10);
+
+                                            let bridge = LivekitKiraBridge {
+                                                sample_rate: frame.sample_rate,
+                                                receiver: frame_receiver,
+                                            };
+
+                                            let sound_data = kira::sound::streaming::StreamingSoundData::from_decoder(
+                                                bridge,
+                                                kira::sound::streaming::StreamingSoundSettings::new(),
+                                            );
+                                    
+                                            let _ = sender.send(PlayerUpdate {
+                                                transport_id,
+                                                message: PlayerMessage::AudioStream(sound_data),
+                                                address,
+                                            }).await;
+
+                                            while let Some(frame) = x.next().await {
+                                                match frame_sender.try_send(frame) {
+                                                    Ok(()) => (),
+                                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => (),
+                                                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                                        warn!("livekit audio receiver dropped, exiting task");
+                                                        return;
+                                                    },
+                                                }
+                                            }
+
+                                            warn!("track ended, exiting task");
+                                        });
+                                    },
+                                    _ => warn!("not processing video tracks"),
+                                }
+                            }
+
+                            todo!();
+                        }
                         _ => { println!("Event: {:?}", incoming); }
                     };
                 }
@@ -165,4 +225,51 @@ async fn livekit_handler_inner(
     rt.block_on(task).unwrap();
     println!("ok out");
     Ok(())
+}
+
+
+struct LivekitKiraBridge {
+    sample_rate: u32,
+    receiver: tokio::sync::mpsc::Receiver<AudioFrame>,
+}
+
+impl kira::sound::streaming::Decoder for LivekitKiraBridge {
+    type Error = AudioDecoderError;
+
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    fn num_frames(&self) -> usize {
+        u32::MAX as usize
+    }
+
+    fn decode(&mut self) -> Result<Vec<kira::dsp::Frame>, Self::Error> {
+        let mut frames = Vec::default();
+
+        loop {
+            match self.receiver.try_recv() {
+                Ok(frame) => {
+                    if frame.sample_rate != self.sample_rate {
+                        warn!("sample rate changed?! was {}, now {}", self.sample_rate, frame.sample_rate);
+                    }
+
+                    if frame.num_channels != 1 {
+                        warn!("frame has {} channels", frame.num_channels);
+                    }
+
+                    for i in 0..frame.samples_per_channel as usize {
+                        let sample = frame.data[i] as f32 / i16::MAX as f32;
+                        frames.push(kira::dsp::Frame::new(sample, sample));
+                    }
+                }
+                Err(TryRecvError::Disconnected) => return Err(AudioDecoderError::StreamClosed),
+                Err(TryRecvError::Empty) => return Ok(frames),
+            }
+        }
+    }                                       
+
+    fn seek(&mut self, _: usize) -> Result<usize, Self::Error> {
+        Err(AudioDecoderError::Other("Can't seek".to_owned()))
+    }
 }

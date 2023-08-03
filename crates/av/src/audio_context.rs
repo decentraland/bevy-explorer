@@ -1,6 +1,7 @@
 use std::{collections::VecDeque, time::Duration};
 
 use bevy::prelude::*;
+use common::structs::AudioDecoderError;
 use ffmpeg_next::ffi::AVSampleFormat;
 use ffmpeg_next::{decoder, format::context::Input, media::Type, util::frame, Packet};
 use kira::sound::streaming::StreamingSoundData;
@@ -83,12 +84,6 @@ impl SampleFormatHelper for AVSampleFormat {
             AVSampleFormat::AV_SAMPLE_FMT_NONE | AVSampleFormat::AV_SAMPLE_FMT_NB => panic!(),
         }
     }
-}
-
-#[derive(Debug)]
-pub enum AudioDecoderError {
-    StreamClosed,
-    CantSeek,
 }
 
 pub struct FfmpegKiraBridge {
@@ -193,7 +188,7 @@ impl kira::sound::streaming::Decoder for FfmpegKiraBridge {
     }
 
     fn seek(&mut self, _: usize) -> Result<usize, Self::Error> {
-        Err(AudioDecoderError::CantSeek)
+        Err(AudioDecoderError::Other("Can't seek".to_owned()))
     }
 }
 

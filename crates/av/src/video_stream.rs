@@ -1,12 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;
+use common::structs::AudioDecoderError;
 use ffmpeg_next::format::input;
 use isahc::ReadResponseExt;
 use kira::sound::streaming::StreamingSoundData;
 
 use crate::{
-    audio_context::{AudioContext, AudioDecoderError, AudioError},
+    audio_context::{AudioContext, AudioError},
     audio_sink::AudioSink,
     ffmpeg_util::InputWrapper,
     stream_processor::{process_streams, AVCommand},

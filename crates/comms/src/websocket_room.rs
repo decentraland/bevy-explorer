@@ -22,6 +22,8 @@ use dcl_component::proto_components::kernel::comms::{
     },
 };
 
+use crate::global_crdt::PlayerMessage;
+
 use super::{
     global_crdt::{GlobalCrdtState, PlayerUpdate},
     wallet::{SimpleAuthChain, Wallet},
@@ -279,9 +281,11 @@ async fn websocket_room_handler_inner(
                     debug!("[tid: {:?}] received message {:?} from {:?}", transport_id, message, address);
                     sender.send(PlayerUpdate {
                         transport_id,
-                        message,
+                        message: PlayerMessage::PlayerData(message),
                         address,
-                    }).await?;
+                    })
+                    .await
+                    .map_err(|_| anyhow!("Send error"))?;
                 },
                 ws_packet::Message::PeerKicked(reason) => {
                     warn!("kicked: {}", reason.reason);
