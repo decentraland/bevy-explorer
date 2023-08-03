@@ -15,6 +15,8 @@ jobs:
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
       - name: install ffmpeg deps
         run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
+      - name: install livekit deps
+        run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -28,6 +30,7 @@ jobs:
   test:
     name: Test Suite
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -47,6 +50,9 @@ jobs:
         if: runner.os == 'linux'
       - name: install ffmpeg deps (linux)
         run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
+        if: runner.os == 'linux'
+      - name: install livekit deps (linux)
+        run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev
         if: runner.os == 'linux'
       - name: install ffmpeg deps (macOs)
         if: runner.os == 'macos'
