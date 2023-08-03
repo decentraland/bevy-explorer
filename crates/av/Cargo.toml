@@ -21,5 +21,6 @@ urlencoding = { workspace = true }
 
 bevy_kira_audio = { version= "0.16", features=["flac", "mp3", "ogg", "wav"] }
 kira = "*"
+cpal = "*"
 ffmpeg-next = "6.0.0"
 thiserror = "1.0"

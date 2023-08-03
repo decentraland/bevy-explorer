@@ -39,6 +39,12 @@ impl Plugin for GlobalCrdtPlugin {
             store: Default::default(),
             lookup: Default::default(),
         });
+
+        let (sender, receiver) = tokio::sync::broadcast::channel(1_000);
+        // leak the receiver so it never gets dropped
+        Box::leak(Box::new(receiver));
+        app.insert_resource(LocalAudioSource { sender });
+
         app.add_systems(Update, process_transport_updates);
         app.add_systems(Update, despawn_players);
         app.add_event::<PlayerPositionEvent>();
@@ -127,6 +133,26 @@ pub struct ForeignPlayer {
 
 #[derive(Component)]
 pub struct ForeignAudioSource(pub mpsc::Receiver<StreamingSoundData<AudioDecoderError>>);
+
+// TODO: I should avoid the clone on recv somehow
+#[derive(Clone)]
+pub struct LocalAudioFrame {
+    pub data: Vec<f32>,
+    pub sample_rate: u32,
+    pub num_channels: u32,
+    pub samples_per_channel: u32,
+}
+
+#[derive(Resource)]
+pub struct LocalAudioSource {
+    pub sender: tokio::sync::broadcast::Sender<LocalAudioFrame>,
+}
+
+impl LocalAudioSource {
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<LocalAudioFrame> {
+        self.sender.subscribe()
+    }
+}
 
 #[derive(Event)]
 pub struct PlayerPositionEvent {

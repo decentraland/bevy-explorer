@@ -9,14 +9,22 @@ use bevy::{
 };
 use futures_lite::StreamExt;
 use isahc::http::Uri;
-use livekit::{webrtc::prelude::AudioFrame, DataPacketKind, RoomOptions};
+use livekit::{
+    options::TrackPublishOptions,
+    track::{LocalAudioTrack, LocalTrack, TrackSource},
+    webrtc::{
+        audio_source::native::NativeAudioSource,
+        prelude::{AudioFrame, AudioSourceOptions, RtcAudioSource},
+    },
+    DataPacketKind, RoomOptions,
+};
 use prost::Message;
 use tokio::sync::mpsc::{error::TryRecvError, Receiver, Sender};
 
 use common::{structs::AudioDecoderError, util::AsH160};
 use dcl_component::proto_components::kernel::comms::rfc4;
 
-use crate::global_crdt::PlayerMessage;
+use crate::global_crdt::{LocalAudioFrame, LocalAudioSource, PlayerMessage};
 
 use super::{
     global_crdt::{GlobalCrdtState, PlayerUpdate},
@@ -46,6 +54,7 @@ fn connect_livekit(
     mut commands: Commands,
     mut new_livekits: Query<(Entity, &mut LivekitTransport), Without<LivekitConnection>>,
     player_state: Res<GlobalCrdtState>,
+    mic: Res<LocalAudioSource>,
 ) {
     for (transport_id, mut new_transport) in new_livekits.iter_mut() {
         println!("spawn lk connect");
@@ -58,6 +67,7 @@ fn connect_livekit(
             remote_address,
             receiver,
             sender,
+            mic.subscribe(),
         ));
         commands
             .entity(transport_id)
@@ -70,8 +80,10 @@ async fn livekit_handler(
     remote_address: String,
     receiver: Receiver<NetworkMessage>,
     sender: Sender<PlayerUpdate>,
+    mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
 ) {
-    if let Err(e) = livekit_handler_inner(transport_id, remote_address, receiver, sender).await {
+    if let Err(e) = livekit_handler_inner(transport_id, remote_address, receiver, sender, mic).await
+    {
         warn!("livekit error: {e}");
     }
     warn!("thread exit")
@@ -82,6 +94,7 @@ async fn livekit_handler_inner(
     remote_address: String,
     mut app_rx: Receiver<NetworkMessage>,
     sender: Sender<PlayerUpdate>,
+    mut mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
 ) -> Result<(), anyhow::Error> {
     println!(">> lk connect async : {remote_address}");
 
@@ -110,6 +123,25 @@ async fn livekit_handler_inner(
 
     let task = rt.spawn(async move {
         let (room, mut network_rx) = livekit::prelude::Room::connect(&address, &token, RoomOptions{ auto_subscribe: true, adaptive_stream: false, dynacast: false }).await.unwrap();
+        let native_source = NativeAudioSource::new(AudioSourceOptions{
+            echo_cancellation: true,
+            noise_suppression: true,
+            auto_gain_control: true,
+        });
+        let mic_track = LocalTrack::Audio(LocalAudioTrack::create_audio_track("mic", RtcAudioSource::Native(native_source.clone())));
+        room.local_participant().publish_track(mic_track, TrackPublishOptions{ source: TrackSource::Microphone, ..Default::default() }).await.unwrap();
+
+        rt2.spawn(async move {
+            while let Ok(frame) = mic.recv().await {
+                let data = frame.data.iter().map(|f| (f * i16::MAX as f32) as i16).collect();
+                native_source.capture_frame(&AudioFrame {
+                    data,
+                    sample_rate: frame.sample_rate,
+                    num_channels: frame.num_channels,
+                    samples_per_channel: frame.data.len() as u32,
+                })
+            }
+        });
 
         'stream: loop {
             tokio::select!(
