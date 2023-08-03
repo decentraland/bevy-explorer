@@ -7,7 +7,7 @@ pub mod video_context;
 pub mod video_player;
 pub mod video_stream;
 
-use audio_sink::spawn_audio_streams;
+use audio_sink::{spawn_and_locate_foreign_streams, spawn_audio_streams};
 use audio_source::{setup_audio, update_audio};
 use bevy::prelude::*;
 use bevy_kira_audio::prelude::SpacialAudio;
@@ -30,6 +30,9 @@ impl Plugin for AudioPlugin {
         app.add_systems(Update, update_audio.in_set(SceneSets::PostLoop));
         app.insert_resource(SpacialAudio { max_distance: 25. });
         app.add_systems(Startup, setup_audio.in_set(SetupSets::Main));
-        app.add_systems(PostUpdate, spawn_audio_streams);
+        app.add_systems(
+            PostUpdate,
+            (spawn_audio_streams, spawn_and_locate_foreign_streams),
+        );
     }
 }

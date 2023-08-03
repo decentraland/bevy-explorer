@@ -18,9 +18,9 @@ use ethers::types::Address;
 use isahc::http::Uri;
 use tokio::sync::mpsc::Sender;
 
+use common::util::TaskExt;
 use dcl_component::{proto_components::kernel::comms::rfc4, DclWriter, ToDclWriter};
 use ipfs::CurrentRealm;
-use common::util::TaskExt;
 
 use self::{
     broadcast_position::BroadcastPositionPlugin,
@@ -42,12 +42,14 @@ impl Plugin for CommsPlugin {
         app.add_plugins(GlobalCrdtPlugin);
         app.add_plugins(UserProfilePlugin);
         app.add_systems(
-            Update, (
-            process_realm_change,
-            start_ws_room,
-            start_signed_login,
-            start_livekit,
-        ));
+            Update,
+            (
+                process_realm_change,
+                start_ws_room,
+                start_signed_login,
+                start_livekit,
+            ),
+        );
         app.add_event::<StartWsRoom>();
         app.add_event::<StartLivekit>();
         app.add_event::<StartSignedLogin>();

@@ -7,14 +7,14 @@ use bevy::{
     tasks::{IoTaskPool, Task},
     utils::HashMap,
 };
-use isahc::http::Uri;
-use livekit::{RoomOptions, DataPacketKind, webrtc::prelude::AudioFrame};
-use prost::Message;
-use tokio::sync::mpsc::{Receiver, Sender, error::TryRecvError};
 use futures_lite::StreamExt;
+use isahc::http::Uri;
+use livekit::{webrtc::prelude::AudioFrame, DataPacketKind, RoomOptions};
+use prost::Message;
+use tokio::sync::mpsc::{error::TryRecvError, Receiver, Sender};
 
+use common::{structs::AudioDecoderError, util::AsH160};
 use dcl_component::proto_components::kernel::comms::rfc4;
-use common::{util::AsH160, structs::AudioDecoderError};
 
 use crate::global_crdt::PlayerMessage;
 
@@ -99,10 +99,12 @@ async fn livekit_handler_inner(
     println!("{params:?}");
     let token = params.get("access_token").cloned().unwrap_or_default();
 
-    let rt = Arc::new(tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap());
+    let rt = Arc::new(
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap(),
+    );
 
     let rt2 = rt.clone();
 
@@ -147,6 +149,7 @@ async fn livekit_handler_inner(
                             if let Some(address) = participant.identity().0.as_str().as_h160() {
                                 match track {
                                     livekit::track::RemoteTrack::Audio(audio) => {
+                                        let sender = sender.clone();
                                         rt2.spawn(async move {
                                             let mut x = livekit::webrtc::audio_stream::native::NativeAudioStream::new(audio.rtc_track());
 
@@ -167,10 +170,10 @@ async fn livekit_handler_inner(
                                                 bridge,
                                                 kira::sound::streaming::StreamingSoundSettings::new(),
                                             );
-                                    
+
                                             let _ = sender.send(PlayerUpdate {
                                                 transport_id,
-                                                message: PlayerMessage::AudioStream(sound_data),
+                                                message: PlayerMessage::AudioStream(Box::new(sound_data)),
                                                 address,
                                             }).await;
 
@@ -191,8 +194,6 @@ async fn livekit_handler_inner(
                                     _ => warn!("not processing video tracks"),
                                 }
                             }
-
-                            todo!();
                         }
                         _ => { println!("Event: {:?}", incoming); }
                     };
@@ -227,7 +228,6 @@ async fn livekit_handler_inner(
     Ok(())
 }
 
-
 struct LivekitKiraBridge {
     sample_rate: u32,
     receiver: tokio::sync::mpsc::Receiver<AudioFrame>,
@@ -251,7 +251,10 @@ impl kira::sound::streaming::Decoder for LivekitKiraBridge {
             match self.receiver.try_recv() {
                 Ok(frame) => {
                     if frame.sample_rate != self.sample_rate {
-                        warn!("sample rate changed?! was {}, now {}", self.sample_rate, frame.sample_rate);
+                        warn!(
+                            "sample rate changed?! was {}, now {}",
+                            self.sample_rate, frame.sample_rate
+                        );
                     }
 
                     if frame.num_channels != 1 {
@@ -267,7 +270,7 @@ impl kira::sound::streaming::Decoder for LivekitKiraBridge {
                 Err(TryRecvError::Empty) => return Ok(frames),
             }
         }
-    }                                       
+    }
 
     fn seek(&mut self, _: usize) -> Result<usize, Self::Error> {
         Err(AudioDecoderError::Other("Can't seek".to_owned()))

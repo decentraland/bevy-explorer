@@ -49,7 +49,7 @@ impl Plugin for GlobalCrdtPlugin {
 
 pub enum PlayerMessage {
     PlayerData(rfc4::packet::Message),
-    AudioStream(StreamingSoundData<AudioDecoderError>),
+    AudioStream(Box<StreamingSoundData<AudioDecoderError>>),
 }
 
 impl std::fmt::Debug for PlayerMessage {
@@ -122,7 +122,11 @@ pub struct ForeignPlayer {
     pub last_update: f32,
     pub scene_id: SceneEntityId,
     pub profile_version: u32,
+    audio_sender: mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
 }
+
+#[derive(Component)]
+pub struct ForeignAudioSource(pub mpsc::Receiver<StreamingSoundData<AudioDecoderError>>);
 
 #[derive(Event)]
 pub struct PlayerPositionEvent {
@@ -165,18 +169,29 @@ pub fn process_transport_updates(
     mut position_events: EventWriter<PlayerPositionEvent>,
     mut chat_events: EventWriter<ChatEvent>,
 ) {
-    let mut created_this_frame = HashMap::default();
+    let mut created_this_frame: HashMap<
+        Address,
+        (
+            Entity,
+            SceneEntityId,
+            mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
+        ),
+    > = HashMap::default();
 
     while let Ok(update) = state.ext_receiver.try_recv() {
         // create/update timestamp/transport_id on the foreign player
-        let (entity, scene_id) =
-            if let Some((entity, scene_id)) = created_this_frame.get(&update.address) {
-                (*entity, *scene_id)
+        let (entity, scene_id, audio_channel) =
+            if let Some((entity, scene_id, channel)) = created_this_frame.get(&update.address) {
+                (*entity, *scene_id, channel.clone())
             } else if let Some(existing) = state.lookup.get_by_left(&update.address) {
                 let mut foreign_player = players.get_mut(*existing).unwrap();
                 foreign_player.last_update = time.elapsed_seconds();
                 foreign_player.transport_id = update.transport_id;
-                (*existing, foreign_player.scene_id)
+                (
+                    *existing,
+                    foreign_player.scene_id,
+                    foreign_player.audio_sender.clone(),
+                )
             } else {
                 let Some(next_free) = state.context.new_in_range(&FOREIGN_PLAYER_RANGE) else {
                     warn!("no space for any more players!");
@@ -192,6 +207,8 @@ pub fn process_transport_updates(
                     },
                 );
 
+                let (audio_sender, audio_receiver) = mpsc::channel(1);
+
                 let new_entity = commands
                     .spawn((
                         SpatialBundle::default(),
@@ -201,7 +218,9 @@ pub fn process_transport_updates(
                             last_update: time.elapsed_seconds(),
                             scene_id: next_free,
                             profile_version: 0,
+                            audio_sender: audio_sender.clone(),
                         },
+                        ForeignAudioSource(audio_receiver),
                     ))
                     .id();
 
@@ -211,13 +230,19 @@ pub fn process_transport_updates(
                     "creating new player: {} -> {:?} / {}",
                     update.address, new_entity, next_free
                 );
-                created_this_frame.insert(update.address, (new_entity, next_free));
-                (new_entity, next_free)
+                created_this_frame.insert(
+                    update.address,
+                    (new_entity, next_free, audio_sender.clone()),
+                );
+                (new_entity, next_free, audio_sender)
             };
 
         // process update
         match update.message {
-            PlayerMessage::AudioStream(audio) => {}
+            PlayerMessage::AudioStream(audio) => {
+                // pass through
+                let _ = audio_channel.blocking_send(*audio);
+            }
             PlayerMessage::PlayerData(Message::Position(pos)) => {
                 let dcl_transform = DclTransformAndParent {
                     translation: DclTranslation([pos.position_x, pos.position_y, pos.position_z]),

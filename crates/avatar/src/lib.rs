@@ -1203,7 +1203,12 @@ fn process_avatar(
 
             let masks = [
                 ("mask_eyes", def.eyes_color, WearableCategory::EYES, true),
-                ("mask_eyebrows", def.hair_color, WearableCategory::EYEBROWS, false),
+                (
+                    "mask_eyebrows",
+                    def.hair_color,
+                    WearableCategory::EYEBROWS,
+                    false,
+                ),
                 ("mask_mouth", def.skin_color, WearableCategory::MOUTH, false),
             ];
 
@@ -1234,7 +1239,11 @@ fn process_avatar(
                         } else {
                             debug!("no mask for {suffix}");
                             let material = materials.add(StandardMaterial {
-                                base_color: if no_mask_means_ignore_color { Color::WHITE } else { color },
+                                base_color: if no_mask_means_ignore_color {
+                                    Color::WHITE
+                                } else {
+                                    color
+                                },
                                 base_color_texture: texture.clone(),
                                 alpha_mode: AlphaMode::Blend,
                                 ..Default::default()
