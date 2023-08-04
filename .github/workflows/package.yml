@@ -60,7 +60,7 @@ jobs:
 
         env:
             PACKAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.${{ startsWith(matrix.build_name, 'win') && 'zip' || 'tar.gz' }}
-            CARGO_BUILD_DIR: target/${{ matrix.target }}/release
+            CARGO_BUILD_DIR: target/release
 
         runs-on: ${{ matrix.os }}
         steps:
