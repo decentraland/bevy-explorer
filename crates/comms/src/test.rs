@@ -2,8 +2,8 @@ use async_tungstenite::tungstenite::client::IntoClientRequest;
 use isahc::http::HeaderValue;
 
 #[test]
-fn test_isahc_tls() {
-    let _ = isahc::get("https://www.google.com/").unwrap();
+fn test_reqwest_tls() {
+    let _ = reqwest::blocking::get("https://www.google.com/").unwrap();
 }
 
 #[test]

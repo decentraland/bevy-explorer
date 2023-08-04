@@ -32,3 +32,4 @@ livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch="h264-fals
 # TODO move to workspace
 bevy_kira_audio = { version= "0.16", features=["flac", "mp3", "ogg", "wav"] }
 kira = "*"
+reqwest = { version = "0.11", features = ["json", "rustls-tls", "blocking"] }
