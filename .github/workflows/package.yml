@@ -108,8 +108,6 @@ jobs:
 
           - name: Cargo build
             run: cargo build --release ${{ matrix.target && '--target' }} ${{ matrix.target }}
-            env:
-                RUSTFLAGS: ${{ matrix.RUSTFLAGS }}
 
           - name: Package common
             run: |
