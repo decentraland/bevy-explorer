@@ -5,6 +5,8 @@ pub mod profile;
 pub mod signed_login;
 pub mod wallet;
 pub mod websocket_room;
+#[cfg(test)]
+mod test;
 
 use std::marker::PhantomData;
 
