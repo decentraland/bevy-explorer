@@ -41,7 +41,7 @@ urn = "0.7.0"
 ethers = "2.0.3"
 futures-lite = "1.12.0"
 bimap = "0.6.3"
-isahc = { version = "1.7.2", features = ["json", "static-ssl"] }
+isahc = { version = "1.7.2", features = ["json", "static-curl"] }
 prost = "0.11.8"
 clap = "4.1.10"
 once_cell = "1.16.0"
