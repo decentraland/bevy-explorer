@@ -3,10 +3,10 @@ pub mod global_crdt;
 pub mod livekit_room;
 pub mod profile;
 pub mod signed_login;
-pub mod wallet;
-pub mod websocket_room;
 #[cfg(test)]
 mod test;
+pub mod wallet;
+pub mod websocket_room;
 
 use std::marker::PhantomData;
 

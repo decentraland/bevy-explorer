@@ -15,5 +15,6 @@ fn test_async_tls() {
             .headers_mut()
             .append("Sec-WebSocket-Protocol", HeaderValue::from_static("rfc5"));
         async_tungstenite::async_std::connect_async(request).await
-    }).unwrap();
+    })
+    .unwrap();
 }
