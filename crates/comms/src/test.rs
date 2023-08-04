@@ -1,5 +1,5 @@
-use async_tungstenite::tungstenite::client::IntoClientRequest;
-use isahc::http::HeaderValue;
+// use async_tungstenite::tungstenite::client::IntoClientRequest;
+// use isahc::http::HeaderValue;
 
 #[test]
 fn test_reqwest_tls() {
