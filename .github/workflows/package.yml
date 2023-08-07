@@ -72,7 +72,7 @@ jobs:
                 profile: minimal
                 toolchain: stable
                 override: true
-
+          - uses: Swatinem/rust-cache@v2
           - name: add darwin target
             if: runner.os == 'macos'
             run: rustup target add aarch64-apple-darwin
