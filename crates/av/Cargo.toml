@@ -19,9 +19,9 @@ anyhow = { workspace = true }
 surf = { workspace = true }
 urlencoding = { workspace = true }
 futures-lite = { workspace = true }
+bevy_kira_audio = { workspace = true }
+kira = { workspace = true }
 
-bevy_kira_audio = { version= "0.16", features=["flac", "mp3", "ogg", "wav"] }
-kira = "*"
-cpal = "*"
+cpal = "0.15.2"
 ffmpeg-next = "6.0.0"
 thiserror = "1.0"

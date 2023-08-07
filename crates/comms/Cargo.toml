@@ -22,6 +22,8 @@ futures-lite = { workspace = true }
 surf = { workspace = true }
 prost = { workspace = true }
 async-std = { workspace = true }
+bevy_kira_audio = { workspace = true }
+kira = { workspace = true }
 
 async-trait = "0.1.68"
 async-tungstenite = { version = "0.22.0", features = ["async-std-runtime", "async-tls"] }
@@ -29,6 +31,3 @@ async-tls = "0.12.0"
 futures-util = "0.3.28"
 livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch="h264-false", features=["rustls-tls-webpki-roots"] }
 
-# TODO move to workspace
-bevy_kira_audio = { version= "0.16", features=["flac", "mp3", "ogg", "wav"] }
-kira = "*"
