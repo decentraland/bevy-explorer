@@ -21,7 +21,7 @@ impl Plugin for WalletPlugin {
 
 #[derive(Resource, Clone)]
 pub struct Wallet {
-    inner: Arc<Box<dyn ObjSafeWalletSigner + 'static + Send + Sync>>,
+    pub(crate) inner: Arc<Box<dyn ObjSafeWalletSigner + 'static + Send + Sync>>,
 }
 
 impl Wallet {
@@ -38,7 +38,7 @@ impl Wallet {
 }
 
 #[async_trait]
-trait ObjSafeWalletSigner {
+pub(crate) trait ObjSafeWalletSigner {
     async fn sign_message(&self, message: &[u8]) -> Result<Signature, WalletError>;
 
     /// Signs the transaction
