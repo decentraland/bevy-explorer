@@ -95,8 +95,10 @@ pub fn av_thread_inner(
             Err(VideoError::BadPixelFormat) => {
                 // try to workaround ffmpeg remote streaming issue by downloading the file
                 debug!("failed to determine pixel format - downloading ...");
-                let mut resp = futures_lite::future::block_on(surf::get(&path)).map_err(|e| anyhow::anyhow!(e))?;
-                let data = futures_lite::future::block_on(resp.body_bytes()).map_err(|e| anyhow::anyhow!(e))?;
+                let mut resp = futures_lite::future::block_on(surf::get(&path))
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                let data = futures_lite::future::block_on(resp.body_bytes())
+                    .map_err(|e| anyhow::anyhow!(e))?;
                 let local_folder = PathBuf::from("assets/video_downloads");
                 std::fs::create_dir_all(&local_folder)?;
                 let local_path = local_folder.join(Path::new(urlencoding::encode(&path).as_ref()));

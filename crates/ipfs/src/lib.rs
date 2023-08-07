@@ -500,7 +500,10 @@ impl IpfsIo {
             return Err(anyhow!("status: {}", about.status()));
         }
 
-        let about = about.body_json::<ServerAbout>().await.map_err(|e| anyhow!(e))?;
+        let about = about
+            .body_json::<ServerAbout>()
+            .await
+            .map_err(|e| anyhow!(e))?;
 
         self.context.write().await.base_url = about
             .content
@@ -573,9 +576,8 @@ impl IpfsIo {
             let mut response = surf::post(active_url)
                 .header("content-type", "application/json")
                 .body(body)
-                .await.map_err(|e| {
-                    anyhow!(e)
-                })?;
+                .await
+                .map_err(|e| anyhow!(e))?;
 
             if response.status() != StatusCode::Ok {
                 return Err(anyhow::anyhow!("status: {}", response.status()));
@@ -693,7 +695,11 @@ impl AssetIo for IpfsIo {
                 let data = loop {
                     attempt += 1;
 
-                    let request = async_std::future::timeout(Duration::from_secs(5 * attempt), surf::get(&remote)).await;
+                    let request = async_std::future::timeout(
+                        Duration::from_secs(5 * attempt),
+                        surf::get(&remote),
+                    )
+                    .await;
 
                     let Ok(response) = request else {
                         if attempt <= 3 {
@@ -729,7 +735,11 @@ impl AssetIo for IpfsIo {
                         Ok(response) => response,
                     };
 
-                    let data = async_std::future::timeout(Duration::from_secs(5 * attempt), response.body_bytes()).await;
+                    let data = async_std::future::timeout(
+                        Duration::from_secs(5 * attempt),
+                        response.body_bytes(),
+                    )
+                    .await;
                     let Ok(data) = data else {
                         if attempt <= 3 {
                             continue;
@@ -746,7 +756,7 @@ impl AssetIo for IpfsIo {
                             return Err(AssetIoError::Io(std::io::Error::new(
                                 ErrorKind::Other,
                                 format!("[{token:?}] {e}"),
-                            )));                                
+                            )));
                         }
                     }
                 };

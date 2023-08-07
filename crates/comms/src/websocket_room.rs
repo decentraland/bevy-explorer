@@ -1,7 +1,11 @@
 use anyhow::{anyhow, bail};
 use async_std::net::TcpStream;
 use async_tls::client::TlsStream;
-use async_tungstenite::{stream::Stream, tungstenite::{client::IntoClientRequest, http::HeaderValue}, WebSocketStream};
+use async_tungstenite::{
+    stream::Stream,
+    tungstenite::{client::IntoClientRequest, http::HeaderValue},
+    WebSocketStream,
+};
 use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
