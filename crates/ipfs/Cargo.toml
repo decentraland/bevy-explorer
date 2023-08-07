@@ -13,12 +13,13 @@ bevy = { workspace = true }
 anyhow = { workspace = true }
 bevy_console = { workspace = true }
 bimap = { workspace = true }
-isahc = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }
 urn = { workspace = true }
+async-std = { workspace = true }
+surf = { workspace = true }
 
 urlencoding = { workspace = true }
 url = "2.4.0"

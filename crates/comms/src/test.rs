@@ -2,8 +2,8 @@
 // use isahc::http::HeaderValue;
 
 #[test]
-fn test_reqwest_tls() {
-    let _ = reqwest::blocking::get("https://www.google.com/").unwrap();
+fn test_tls() {
+    let _ = futures_lite::future::block_on(surf::get("https://www.google.com/")).unwrap();
 }
 
 // #[test]

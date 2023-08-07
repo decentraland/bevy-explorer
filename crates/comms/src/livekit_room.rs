@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
+use async_tungstenite::tungstenite::http::Uri;
 use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
     utils::HashMap,
 };
 use futures_lite::StreamExt;
-use isahc::http::Uri;
 use livekit::{
     options::TrackPublishOptions,
     track::{LocalAudioTrack, LocalTrack, TrackSource},

@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail};
 use async_std::net::TcpStream;
 use async_tls::client::TlsStream;
-use async_tungstenite::{stream::Stream, tungstenite::client::IntoClientRequest, WebSocketStream};
+use async_tungstenite::{stream::Stream, tungstenite::{client::IntoClientRequest, http::HeaderValue}, WebSocketStream};
 use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
@@ -9,7 +9,6 @@ use bevy::{
 use bimap::BiMap;
 use futures_lite::future;
 use futures_util::{pin_mut, select, stream::StreamExt, FutureExt, SinkExt};
-use isahc::http::HeaderValue;
 use prost::Message;
 use tokio::sync::mpsc::{Receiver, Sender};
 

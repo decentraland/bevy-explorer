@@ -10,6 +10,7 @@ pub mod websocket_room;
 
 use std::marker::PhantomData;
 
+use async_tungstenite::tungstenite::http::Uri;
 use bevy::{
     ecs::{event::ManualEventReader, system::SystemParam},
     prelude::*,
@@ -17,7 +18,6 @@ use bevy::{
 };
 use bimap::BiMap;
 use ethers::types::Address;
-use isahc::http::Uri;
 use tokio::sync::mpsc::Sender;
 
 use common::util::TaskExt;

@@ -1,10 +1,8 @@
 // https://github.com/decentraland/hammurabi/pull/33/files#diff-18afcd5f94e3688aad1ba36fa1db3e09b472b271d1e0cf5aeb59ebd32f43a328
 
+use async_tungstenite::tungstenite::http::Uri;
 use bevy::prelude::warn;
-use isahc::{
-    http::{Method, StatusCode, Uri},
-    AsyncReadResponseExt, RequestExt,
-};
+use surf::StatusCode;
 
 use crate::wallet::{SimpleAuthChain, Wallet};
 
@@ -53,23 +51,22 @@ pub async fn signed_login(
     let signature = wallet.sign_message(&payload).await.unwrap();
     let auth_chain = SimpleAuthChain::new(wallet.address(), payload, signature);
 
-    let mut builder = isahc::Request::builder().method(Method::POST).uri(uri);
+    let mut builder = surf::post(uri.to_string());
 
     for (key, value) in auth_chain.headers() {
-        builder = builder.header(key, value)
+        builder = builder.header(key.as_str(), value)
     }
 
     let req = builder
         .header("x-identity-timestamp", format!("{unix_time}"))
-        .header("x-identity-metadata", meta)
-        .body(())?;
+        .header("x-identity-metadata", meta);
 
-    let mut res = req.send_async().await?;
+    let mut res = req.await.map_err(|e| anyhow::anyhow!(e))?;
 
-    if res.status() != StatusCode::OK {
+    if res.status() != StatusCode::Ok {
         warn!("signed fetch failed: {res:#?}");
         return Err(anyhow::anyhow!("status: {}", res.status()));
     }
 
-    res.json().await.map_err(|e| anyhow::anyhow!(e))
+    res.body_json().await.map_err(|e| anyhow::anyhow!(e))
 }
