@@ -7,6 +7,8 @@ pub mod stream_processor;
 pub mod video_context;
 pub mod video_player;
 pub mod video_stream;
+#[cfg(test)]
+pub mod test;
 
 use audio_sink::{spawn_and_locate_foreign_streams, spawn_audio_streams};
 use audio_source::{setup_audio, update_audio};
