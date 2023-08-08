@@ -73,7 +73,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all --release
+          args: --all
 
   fmt:
     name: Rustfmt
