@@ -19,7 +19,7 @@ tokio = { workspace = true }
 clap = { workspace = true }
 urn = { workspace = true }
 async-std = { workspace = true }
-surf = { workspace = true }
+isahc = { workspace = true }
 
 urlencoding = { workspace = true }
 url = "2.4.0"

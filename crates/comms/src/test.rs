@@ -25,7 +25,7 @@ use crate::{
 
 #[test]
 fn test_tls() {
-    let _ = futures_lite::future::block_on(surf::get("https://www.google.com/")).unwrap();
+    let _ = isahc::get("https://www.google.com/").unwrap();
 }
 
 #[test]

@@ -47,7 +47,8 @@ once_cell = "1.16.0"
 rapier3d = "0.17.2"
 urlencoding = "2.1.2"
 async-std = "1.12.0"
-surf = { version = "2.3", default-features = false, features = ["h1-client-rustls"] }
+# todo: use isahc 2.0 when it's released
+isahc = { git = "https://github.com/sagebind/isahc", rev="096aff7b13f4ff5bb474fdc27bc30b297a2968f6", default-features = false, features = ["json", "text-decoding", "http2", "rustls-tls-native-certs"] }
 kira = "0.8.4"
 bevy_kira_audio = { version= "0.16", features=["flac", "mp3", "ogg", "wav"] }
 

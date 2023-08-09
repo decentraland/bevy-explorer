@@ -1,10 +1,11 @@
 // https://github.com/decentraland/hammurabi/pull/33/files#diff-18afcd5f94e3688aad1ba36fa1db3e09b472b271d1e0cf5aeb59ebd32f43a328
 
-use async_tungstenite::tungstenite::http::Uri;
-use bevy::prelude::warn;
-use surf::StatusCode;
-
 use crate::wallet::{SimpleAuthChain, Wallet};
+use bevy::prelude::warn;
+use isahc::{
+    http::{Method, StatusCode, Uri},
+    AsyncReadResponseExt, RequestExt,
+};
 
 #[derive(Debug, serde::Deserialize)]
 pub struct SignedLoginResponse {
@@ -51,22 +52,23 @@ pub async fn signed_login(
     let signature = wallet.sign_message(&payload).await.unwrap();
     let auth_chain = SimpleAuthChain::new(wallet.address(), payload, signature);
 
-    let mut builder = surf::post(uri.to_string());
+    let mut builder = isahc::Request::builder().method(Method::POST).uri(uri);
 
     for (key, value) in auth_chain.headers() {
-        builder = builder.header(key.as_str(), value)
+        builder = builder.header(key, value)
     }
 
     let req = builder
         .header("x-identity-timestamp", format!("{unix_time}"))
-        .header("x-identity-metadata", meta);
+        .header("x-identity-metadata", meta)
+        .body(())?;
 
-    let mut res = req.await.map_err(|e| anyhow::anyhow!(e))?;
+    let mut res = req.send_async().await?;
 
-    if res.status() != StatusCode::Ok {
+    if res.status() != StatusCode::OK {
         warn!("signed fetch failed: {res:#?}");
         return Err(anyhow::anyhow!("status: {}", res.status()));
     }
 
-    res.body_json().await.map_err(|e| anyhow::anyhow!(e))
+    res.json().await.map_err(|e| anyhow::anyhow!(e))
 }

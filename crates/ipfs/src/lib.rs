@@ -20,8 +20,8 @@ use bevy::{
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use bimap::BiMap;
+use isahc::{http::StatusCode, prelude::Configurable, AsyncReadResponseExt, RequestExt};
 use serde::{Deserialize, Serialize};
-use surf::StatusCode;
 use tokio::sync::RwLock;
 
 use console::DoAddConsoleCommand;
@@ -493,17 +493,14 @@ impl IpfsIo {
         self.realm_config_sender.send(None).expect("channel closed");
         self.context.write().await.base_url = None;
 
-        let mut about = surf::get(format!("{new_realm}/about"))
+        let mut about = isahc::get_async(format!("{new_realm}/about"))
             .await
             .map_err(|e| anyhow!(e))?;
-        if about.status() != StatusCode::Ok {
+        if about.status() != StatusCode::OK {
             return Err(anyhow!("status: {}", about.status()));
         }
 
-        let about = about
-            .body_json::<ServerAbout>()
-            .await
-            .map_err(|e| anyhow!(e))?;
+        let about = about.json::<ServerAbout>().await.map_err(|e| anyhow!(e))?;
 
         self.context.write().await.base_url = about
             .content
@@ -573,18 +570,18 @@ impl IpfsIo {
             let active_url = active_url.ok_or(anyhow!("not connected"))?;
 
             let body = body?;
-            let mut response = surf::post(active_url)
+            let mut response = isahc::Request::post(active_url)
                 .header("content-type", "application/json")
-                .body(body)
-                .await
-                .map_err(|e| anyhow!(e))?;
+                .body(body)?
+                .send_async()
+                .await?;
 
-            if response.status() != StatusCode::Ok {
+            if response.status() != StatusCode::OK {
                 return Err(anyhow::anyhow!("status: {}", response.status()));
             }
 
             let active_entities = response
-                .body_json::<ActiveEntitiesResponse>()
+                .json::<ActiveEntitiesResponse>()
                 .await
                 .map_err(|e| anyhow::anyhow!(e))?;
             let mut res = Vec::default();
@@ -695,34 +692,32 @@ impl AssetIo for IpfsIo {
                 let data = loop {
                     attempt += 1;
 
-                    let request = async_std::future::timeout(
-                        Duration::from_secs(5 * attempt),
-                        surf::get(&remote),
-                    )
-                    .await;
+                    let request = isahc::Request::get(&remote)
+                        .connect_timeout(Duration::from_secs(5 * attempt))
+                        .timeout(Duration::from_secs(30 * attempt))
+                        .body(())
+                        .map_err(|e| {
+                            AssetIoError::Io(std::io::Error::new(
+                                ErrorKind::Other,
+                                format!("[{token:?}]: {e}"),
+                            ))
+                        })?;
 
-                    let Ok(response) = request else {
-                        if attempt <= 3 {
-                            continue;
-                        }
-                        return Err(AssetIoError::Io(std::io::Error::new(
-                            ErrorKind::TimedOut,
-                            format!("[{token:?}]"),
-                        )));
-                    };
+                    let response = request.send_async().await;
 
                     debug!(
                         "[{token:?}]: attempt {attempt}: request: {remote}, response: {response:?}"
                     );
 
                     let mut response = match response {
+                        Err(e) if e.is_timeout() && attempt <= 3 => continue,
                         Err(e) => {
                             return Err(AssetIoError::Io(std::io::Error::new(
                                 ErrorKind::Other,
                                 format!("[{token:?}]: {e}"),
                             )))
                         }
-                        Ok(response) if !matches!(response.status(), StatusCode::Ok) => {
+                        Ok(response) if !matches!(response.status(), StatusCode::OK) => {
                             return Err(AssetIoError::Io(std::io::Error::new(
                                 ErrorKind::Other,
                                 format!(
@@ -735,24 +730,14 @@ impl AssetIo for IpfsIo {
                         Ok(response) => response,
                     };
 
-                    let data = async_std::future::timeout(
-                        Duration::from_secs(5 * attempt),
-                        response.body_bytes(),
-                    )
-                    .await;
-                    let Ok(data) = data else {
-                        if attempt <= 3 {
-                            continue;
-                        }
-                        return Err(AssetIoError::Io(std::io::Error::new(
-                            ErrorKind::TimedOut,
-                            format!("[{token:?}]"),
-                        )));
-                    };
+                    let data = response.bytes().await;
 
                     match data {
                         Ok(data) => break data,
                         Err(e) => {
+                            if matches!(e.kind(), std::io::ErrorKind::TimedOut) && attempt <= 3 {
+                                continue;
+                            }
                             return Err(AssetIoError::Io(std::io::Error::new(
                                 ErrorKind::Other,
                                 format!("[{token:?}] {e}"),
