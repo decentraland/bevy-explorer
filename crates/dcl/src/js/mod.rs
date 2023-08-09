@@ -244,17 +244,13 @@ fn op_require(
         "~system/PortableExperiences" => {
             Ok(include_str!("modules/PortableExperiences.js").to_owned())
         }
-        "~system/RestrictedActions" => {
-            Ok(include_str!("modules/RestrictedActions.js").to_owned())
-        }
+        "~system/RestrictedActions" => Ok(include_str!("modules/RestrictedActions.js").to_owned()),
         "~system/Runtime" => Ok(include_str!("modules/Runtime.js").to_owned()),
         "~system/Scene" => Ok(include_str!("modules/Scene.js").to_owned()),
         "~system/SignedFetch" => Ok(include_str!("modules/SignedFetch.js").to_owned()),
         "~system/Testing" => Ok(include_str!("modules/Testing.js").to_owned()),
-        "~system/UserActionModule" => {
-            Ok(include_str!("modules/UserActionModule.js").to_owned())
-        }
-        "~system/UserIdentity" => Ok(include_str!("modules/UserIdentity.js").to_owned()),        
+        "~system/UserActionModule" => Ok(include_str!("modules/UserActionModule.js").to_owned()),
+        "~system/UserIdentity" => Ok(include_str!("modules/UserIdentity.js").to_owned()),
         _ => Err(generic_error(format!(
             "invalid module request `{module_spec}`"
         ))),

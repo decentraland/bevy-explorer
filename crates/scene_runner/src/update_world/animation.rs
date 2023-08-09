@@ -94,7 +94,11 @@ fn update_animations(
             // we can't track which root node corresponds to which animation.
             // in gltfs, the animation nodes must be uniquely named so we
             // can just add the animation to every player with the right name.
-            for (player_ent, _) in gltf_processed.animation_roots.iter().filter(|(_, name)| clip.compatible_with(name)) {
+            for (player_ent, _) in gltf_processed
+                .animation_roots
+                .iter()
+                .filter(|(_, name)| clip.compatible_with(name))
+            {
                 let mut player = players.get_mut(*player_ent).unwrap();
 
                 player.play(h_clip.clone_weak());
