@@ -8,7 +8,7 @@ use bevy::{
     prelude::*,
     reflect::{TypePath, TypeUuid},
     render::{
-        mesh::{Indices, VertexAttributeValues},
+        mesh::{Indices, VertexAttributeValues, skinning::SkinnedMesh},
         view::NoFrustumCulling,
     },
     scene::InstanceId,
@@ -94,7 +94,7 @@ struct GltfLoaded(Option<InstanceId>);
 #[derive(Component, Default)]
 pub struct GltfProcessed {
     pub instance_id: Option<InstanceId>,
-    pub animation_roots: HashSet<Entity>,
+    pub animation_roots: HashSet<(Entity, Name)>,
 }
 
 #[derive(Resource, Default)]
@@ -145,7 +145,7 @@ fn update_gltf(
     mut cached_shapes: ResMut<Assets<GltfCachedShape>>,
     mut shape_lookup: ResMut<MeshToShape>,
     mut contexts: Query<&mut RendererSceneContext>,
-    _debug_query: Query<(Entity, Option<&Name>, Option<&Children>, &Transform)>,
+    _debug_query: Query<(Entity, Option<&Name>, Option<&Children>, Option<&SkinnedMesh>, &Transform)>,
     mut instances_to_despawn_when_ready: Local<Vec<InstanceId>>,
 ) {
     // clean up old instances
@@ -267,7 +267,7 @@ fn update_gltf(
             let mut animation_roots = HashSet::default();
             let mut pending_colliders = HashSet::default();
 
-            // let graph = _node_graph(&_debug_name_query, bevy_scene_entity);
+            // let graph = _node_graph(&_debug_query, bevy_scene_entity);
             // println!("{bevy_scene_entity:?}");
             // println!("{graph}");
 
@@ -316,7 +316,9 @@ fn update_gltf(
 
                     // if there is an animation player, record the entity (bevy-specific hack)
                     if maybe_player.is_some() {
-                        animation_roots.insert(spawned_ent);
+                        if let Some(name) = maybe_name {
+                            animation_roots.insert((spawned_ent, name.clone()));
+                        }
                     }
 
                     // if there is no mesh, there's nothing further to do
@@ -562,7 +564,7 @@ fn update_container_finished(
 
 // debug show the gltf graph
 fn _node_graph(
-    scene_entity_query: &Query<(Entity, Option<&Name>, Option<&Children>, &Transform)>,
+    scene_entity_query: &Query<(Entity, Option<&Name>, Option<&Children>, Option<&SkinnedMesh>, &Transform)>,
     root: Entity,
 ) -> String {
     let mut graph_nodes = HashMap::default();
@@ -571,12 +573,12 @@ fn _node_graph(
 
     while let Some(ent) = to_check.pop() {
         debug!("current: {ent:?}, to_check: {to_check:?}");
-        let Ok((ent, name, maybe_children, transform)) = scene_entity_query.get(ent) else {
+        let Ok((ent, name, maybe_children, maybe_skinned, transform)) = scene_entity_query.get(ent) else {
             return "?".to_owned();
         };
 
         let graph_node = *graph_nodes.entry(ent).or_insert_with(|| {
-            graph.add_node(format!("{ent:?}:{:?} [{:?}]", name, transform.scale))
+            graph.add_node(format!("{ent:?}:{:?} {} [{:?}] ", name, if maybe_skinned.is_some() { "(*)" } else { "" }, transform.scale))
         });
 
         if let Some(children) = maybe_children {
@@ -591,6 +593,9 @@ fn _node_graph(
                         (
                             c,
                             scene_entity_query
+                                .get_component::<SkinnedMesh>(*c)
+                                .is_ok(),
+                            scene_entity_query
                                 .get_component::<Transform>(*c)
                                 .map(|t| t.scale)
                                 .unwrap_or(Vec3::ZERO),
@@ -599,10 +604,10 @@ fn _node_graph(
                 })
                 .collect();
 
-            to_check.extend(sorted_children_with_name.values().map(|(ent, _)| *ent));
-            for (child_id, (child_ent, child_scale)) in sorted_children_with_name.into_iter() {
+            to_check.extend(sorted_children_with_name.values().map(|(ent, ..)| *ent));
+            for (child_id, (child_ent, is_skinned, child_scale)) in sorted_children_with_name.into_iter() {
                 let child_graph_node = *graph_nodes.entry(*child_ent).or_insert_with(|| {
-                    graph.add_node(format!("{child_ent:?}:{:?} [{:?}]", child_id, child_scale))
+                    graph.add_node(format!("{child_ent:?}:{:?} {} [{:?}]", child_id, if is_skinned { "(*)" } else { "" }, child_scale))
                 });
                 graph.add_edge(graph_node, child_graph_node, ());
             }

@@ -45,6 +45,7 @@ fn update_animations(
         Or<(Changed<Animator>, Changed<GltfProcessed>)>,
     >,
     mut players: Query<&mut AnimationPlayer, &Name>,
+    clips: Res<Assets<AnimationClip>>,
     gltfs: Res<Assets<Gltf>>,
 ) {
     for (mut animator, h_gltf, gltf_processed) in animators.iter_mut() {
@@ -78,22 +79,25 @@ fn update_animations(
                 continue;
             };
 
-            let Some(clip) = gltf.named_animations.get(&state.clip) else {
+            let Some(h_clip) = gltf.named_animations.get(&state.clip) else {
                 warn!("requested clip {} doesn't exist", state.clip);
+                continue;
+            };
+            let Some(clip) = clips.get(h_clip) else {
+                // set change tick on the animator so that we recheck next frame
+                // TODO this will recheck forever if the gltf fails to load
+                animator.set_changed();
                 continue;
             };
 
             // bevy adds a player to each animated root node.
             // we can't track which root node corresponds to which animation.
             // in gltfs, the animation nodes must be uniquely named so we
-            // can just add the animation to every player.
-            // this isn't great since only 1 distinct anim can play at a time
-            // over the whole gltf structure.
-            // TODO fix it
-            for player_ent in gltf_processed.animation_roots.iter() {
+            // can just add the animation to every player with the right name.
+            for (player_ent, _) in gltf_processed.animation_roots.iter().filter(|(_, name)| clip.compatible_with(name)) {
                 let mut player = players.get_mut(*player_ent).unwrap();
 
-                player.play(clip.clone_weak());
+                player.play(h_clip.clone_weak());
                 player.set_speed(state.speed.unwrap_or(1.0));
                 if state.r#loop.unwrap_or(true) {
                     player.repeat();
@@ -105,7 +109,7 @@ fn update_animations(
             animator.bypass_change_detection().playing = true;
         } else if animator.playing {
             animator.bypass_change_detection().playing = false;
-            for player_ent in gltf_processed.animation_roots.iter() {
+            for (player_ent, _) in gltf_processed.animation_roots.iter() {
                 let mut player = players.get_mut(*player_ent).unwrap();
 
                 player.pause();
