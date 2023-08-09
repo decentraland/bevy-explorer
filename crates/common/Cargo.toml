@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 bevy = { workspace = true }
-ethers = { workspace = true }
+ethers-core = { workspace = true }
 futures-lite = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

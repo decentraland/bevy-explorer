@@ -2,7 +2,9 @@ use std::ops::RangeInclusive;
 
 use bevy::{prelude::*, utils::HashMap};
 use bimap::BiMap;
-use ethers::types::Address;
+use common::structs::AudioDecoderError;
+use ethers_core::types::Address;
+use kira::sound::streaming::StreamingSoundData;
 use tokio::sync::{broadcast, mpsc};
 
 use dcl::{
@@ -37,6 +39,12 @@ impl Plugin for GlobalCrdtPlugin {
             store: Default::default(),
             lookup: Default::default(),
         });
+
+        let (sender, receiver) = tokio::sync::broadcast::channel(1_000);
+        // leak the receiver so it never gets dropped
+        Box::leak(Box::new(receiver));
+        app.insert_resource(LocalAudioSource { sender });
+
         app.add_systems(Update, process_transport_updates);
         app.add_systems(Update, despawn_players);
         app.add_event::<PlayerPositionEvent>();
@@ -45,10 +53,24 @@ impl Plugin for GlobalCrdtPlugin {
     }
 }
 
+pub enum PlayerMessage {
+    PlayerData(rfc4::packet::Message),
+    AudioStream(Box<StreamingSoundData<AudioDecoderError>>),
+}
+
+impl std::fmt::Debug for PlayerMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PlayerData(arg0) => f.debug_tuple("PlayerData").field(arg0).finish(),
+            Self::AudioStream(_) => f.debug_tuple("AudioStream").finish(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct PlayerUpdate {
     pub transport_id: Entity,
-    pub message: rfc4::packet::Message,
+    pub message: PlayerMessage,
     pub address: Address,
 }
 
@@ -106,6 +128,30 @@ pub struct ForeignPlayer {
     pub last_update: f32,
     pub scene_id: SceneEntityId,
     pub profile_version: u32,
+    audio_sender: mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
+}
+
+#[derive(Component)]
+pub struct ForeignAudioSource(pub mpsc::Receiver<StreamingSoundData<AudioDecoderError>>);
+
+// TODO: I should avoid the clone on recv somehow
+#[derive(Clone)]
+pub struct LocalAudioFrame {
+    pub data: Vec<f32>,
+    pub sample_rate: u32,
+    pub num_channels: u32,
+    pub samples_per_channel: u32,
+}
+
+#[derive(Resource)]
+pub struct LocalAudioSource {
+    pub sender: tokio::sync::broadcast::Sender<LocalAudioFrame>,
+}
+
+impl LocalAudioSource {
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<LocalAudioFrame> {
+        self.sender.subscribe()
+    }
 }
 
 #[derive(Event)]
@@ -149,18 +195,29 @@ pub fn process_transport_updates(
     mut position_events: EventWriter<PlayerPositionEvent>,
     mut chat_events: EventWriter<ChatEvent>,
 ) {
-    let mut created_this_frame = HashMap::default();
+    let mut created_this_frame: HashMap<
+        Address,
+        (
+            Entity,
+            SceneEntityId,
+            mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
+        ),
+    > = HashMap::default();
 
     while let Ok(update) = state.ext_receiver.try_recv() {
         // create/update timestamp/transport_id on the foreign player
-        let (entity, scene_id) =
-            if let Some((entity, scene_id)) = created_this_frame.get(&update.address) {
-                (*entity, *scene_id)
+        let (entity, scene_id, audio_channel) =
+            if let Some((entity, scene_id, channel)) = created_this_frame.get(&update.address) {
+                (*entity, *scene_id, channel.clone())
             } else if let Some(existing) = state.lookup.get_by_left(&update.address) {
                 let mut foreign_player = players.get_mut(*existing).unwrap();
                 foreign_player.last_update = time.elapsed_seconds();
                 foreign_player.transport_id = update.transport_id;
-                (*existing, foreign_player.scene_id)
+                (
+                    *existing,
+                    foreign_player.scene_id,
+                    foreign_player.audio_sender.clone(),
+                )
             } else {
                 let Some(next_free) = state.context.new_in_range(&FOREIGN_PLAYER_RANGE) else {
                     warn!("no space for any more players!");
@@ -176,6 +233,8 @@ pub fn process_transport_updates(
                     },
                 );
 
+                let (audio_sender, audio_receiver) = mpsc::channel(1);
+
                 let new_entity = commands
                     .spawn((
                         SpatialBundle::default(),
@@ -185,7 +244,9 @@ pub fn process_transport_updates(
                             last_update: time.elapsed_seconds(),
                             scene_id: next_free,
                             profile_version: 0,
+                            audio_sender: audio_sender.clone(),
                         },
+                        ForeignAudioSource(audio_receiver),
                     ))
                     .id();
 
@@ -195,13 +256,20 @@ pub fn process_transport_updates(
                     "creating new player: {} -> {:?} / {}",
                     update.address, new_entity, next_free
                 );
-                created_this_frame.insert(update.address, (new_entity, next_free));
-                (new_entity, next_free)
+                created_this_frame.insert(
+                    update.address,
+                    (new_entity, next_free, audio_sender.clone()),
+                );
+                (new_entity, next_free, audio_sender)
             };
 
         // process update
         match update.message {
-            Message::Position(pos) => {
+            PlayerMessage::AudioStream(audio) => {
+                // pass through
+                let _ = audio_channel.blocking_send(*audio);
+            }
+            PlayerMessage::PlayerData(Message::Position(pos)) => {
                 let dcl_transform = DclTransformAndParent {
                     translation: DclTranslation([pos.position_x, pos.position_y, pos.position_z]),
                     rotation: DclQuat([
@@ -240,25 +308,25 @@ pub fn process_transport_updates(
                     ]),
                 })
             }
-            Message::ProfileVersion(version) => {
+            PlayerMessage::PlayerData(Message::ProfileVersion(version)) => {
                 profile_events.send(ProfileEvent {
                     sender: entity,
                     event: ProfileEventType::Version(version),
                 });
             }
-            Message::ProfileRequest(request) => {
+            PlayerMessage::PlayerData(Message::ProfileRequest(request)) => {
                 profile_events.send(ProfileEvent {
                     sender: entity,
                     event: ProfileEventType::Request(request),
                 });
             }
-            Message::ProfileResponse(response) => {
+            PlayerMessage::PlayerData(Message::ProfileResponse(response)) => {
                 profile_events.send(ProfileEvent {
                     sender: entity,
                     event: ProfileEventType::Response(response),
                 });
             }
-            Message::Chat(chat) => {
+            PlayerMessage::PlayerData(Message::Chat(chat)) => {
                 chat_events.send(ChatEvent {
                     sender: entity,
                     timestamp: chat.timestamp,
@@ -266,8 +334,8 @@ pub fn process_transport_updates(
                     message: chat.message,
                 });
             }
-            Message::Scene(_) => (),
-            Message::Voice(_) => (),
+            PlayerMessage::PlayerData(Message::Scene(_)) => (),
+            PlayerMessage::PlayerData(Message::Voice(_)) => (),
         }
     }
 }

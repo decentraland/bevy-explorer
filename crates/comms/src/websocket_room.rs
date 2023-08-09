@@ -1,7 +1,11 @@
 use anyhow::{anyhow, bail};
 use async_std::net::TcpStream;
 use async_tls::client::TlsStream;
-use async_tungstenite::{stream::Stream, tungstenite::client::IntoClientRequest, WebSocketStream};
+use async_tungstenite::{
+    stream::Stream,
+    tungstenite::{client::IntoClientRequest, http::HeaderValue},
+    WebSocketStream,
+};
 use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
@@ -9,7 +13,6 @@ use bevy::{
 use bimap::BiMap;
 use futures_lite::future;
 use futures_util::{pin_mut, select, stream::StreamExt, FutureExt, SinkExt};
-use isahc::http::HeaderValue;
 use prost::Message;
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -21,6 +24,8 @@ use dcl_component::proto_components::kernel::comms::{
         WsSignedChallenge, WsWelcome,
     },
 };
+
+use crate::global_crdt::PlayerMessage;
 
 use super::{
     global_crdt::{GlobalCrdtState, PlayerUpdate},
@@ -279,9 +284,11 @@ async fn websocket_room_handler_inner(
                     debug!("[tid: {:?}] received message {:?} from {:?}", transport_id, message, address);
                     sender.send(PlayerUpdate {
                         transport_id,
-                        message,
+                        message: PlayerMessage::PlayerData(message),
                         address,
-                    }).await?;
+                    })
+                    .await
+                    .map_err(|_| anyhow!("Send error"))?;
                 },
                 ws_packet::Message::PeerKicked(reason) => {
                     warn!("kicked: {}", reason.reason);

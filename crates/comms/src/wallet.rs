@@ -2,11 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bevy::prelude::*;
-use ethers::{
-    prelude::rand::thread_rng,
-    signers::{LocalWallet, Signer, WalletError},
-    types::{transaction::eip2718::TypedTransaction, Address, Signature},
-};
+use ethers_core::types::{transaction::eip2718::TypedTransaction, Address, Signature};
+use ethers_signers::{LocalWallet, Signer, WalletError};
 use serde::{Deserialize, Serialize};
 
 pub struct WalletPlugin;
@@ -14,14 +11,14 @@ pub struct WalletPlugin;
 impl Plugin for WalletPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(Wallet {
-            inner: Arc::new(Box::new(LocalWallet::new(&mut thread_rng()))),
+            inner: Arc::new(Box::new(LocalWallet::new(&mut rand::thread_rng()))),
         });
     }
 }
 
 #[derive(Resource, Clone)]
 pub struct Wallet {
-    inner: Arc<Box<dyn ObjSafeWalletSigner + 'static + Send + Sync>>,
+    pub(crate) inner: Arc<Box<dyn ObjSafeWalletSigner + 'static + Send + Sync>>,
 }
 
 impl Wallet {
@@ -38,7 +35,7 @@ impl Wallet {
 }
 
 #[async_trait]
-trait ObjSafeWalletSigner {
+pub(crate) trait ObjSafeWalletSigner {
     async fn sign_message(&self, message: &[u8]) -> Result<Signature, WalletError>;
 
     /// Signs the transaction
@@ -87,6 +84,15 @@ impl SimpleAuthChain {
                 signature: format!("0x{signature}"),
             },
         ])
+    }
+
+    pub fn headers(&self) -> impl Iterator<Item = (String, String)> + '_ {
+        self.0.iter().enumerate().map(|(ix, link)| {
+            (
+                format!("x-identity-auth-chain-{}", ix),
+                serde_json::to_string(&link).unwrap(),
+            )
+        })
     }
 }
 

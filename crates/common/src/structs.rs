@@ -112,3 +112,9 @@ impl Default for GraphicsSettings {
         }
     }
 }
+
+#[derive(Debug)]
+pub enum AudioDecoderError {
+    StreamClosed,
+    Other(String),
+}
