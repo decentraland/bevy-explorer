@@ -175,7 +175,7 @@ fn main() {
                 ..Default::default()
             })
             .set(bevy::log::LogPlugin {
-                filter: "wgpu=error,bevy_animation=error,naga=error".to_string(),
+                filter: "wgpu=error,naga=error".to_string(),
                 ..default()
             })
             .build()
