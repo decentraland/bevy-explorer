@@ -17,7 +17,7 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bimap::BiMap;
-use ethers::types::Address;
+use ethers_core::types::Address;
 use tokio::sync::mpsc::Sender;
 
 use common::util::TaskExt;

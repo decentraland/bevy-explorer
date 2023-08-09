@@ -7,7 +7,7 @@ use async_tungstenite::tungstenite::{
     client::IntoClientRequest,
     http::{HeaderValue, Uri},
 };
-use ethers::{prelude::rand::thread_rng, signers::LocalWallet};
+use ethers_signers::LocalWallet;
 use livekit::{
     options::TrackPublishOptions,
     track::{LocalAudioTrack, LocalTrack, TrackSource},
@@ -31,7 +31,7 @@ fn test_tls() {
 #[test]
 fn test_livekit() {
     let wallet = Wallet {
-        inner: Arc::new(Box::new(LocalWallet::new(&mut thread_rng()))),
+        inner: Arc::new(Box::new(LocalWallet::new(&mut rand::thread_rng()))),
     };
     let meta = SignedLoginMeta::new(
         true,

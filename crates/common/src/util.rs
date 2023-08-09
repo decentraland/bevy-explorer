@@ -8,7 +8,7 @@ use bevy::{
     },
     tasks::Task,
 };
-use ethers::types::H160;
+use ethers_core::types::H160;
 use futures_lite::future;
 use smallvec::SmallVec;
 

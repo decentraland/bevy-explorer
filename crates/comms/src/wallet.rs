@@ -2,11 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bevy::prelude::*;
-use ethers::{
-    prelude::rand::thread_rng,
-    signers::{LocalWallet, Signer, WalletError},
-    types::{transaction::eip2718::TypedTransaction, Address, Signature},
-};
+use ethers_core::types::{transaction::eip2718::TypedTransaction, Address, Signature};
+use ethers_signers::{LocalWallet, Signer, WalletError};
 use serde::{Deserialize, Serialize};
 
 pub struct WalletPlugin;
@@ -14,7 +11,7 @@ pub struct WalletPlugin;
 impl Plugin for WalletPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(Wallet {
-            inner: Arc::new(Box::new(LocalWallet::new(&mut thread_rng()))),
+            inner: Arc::new(Box::new(LocalWallet::new(&mut rand::thread_rng()))),
         });
     }
 }

@@ -1,5 +1,5 @@
 use bevy::{prelude::*, utils::HashMap};
-use ethers::types::Address;
+use ethers_core::types::Address;
 use serde::{Deserialize, Serialize};
 
 use common::structs::{AppConfig, PrimaryUser};

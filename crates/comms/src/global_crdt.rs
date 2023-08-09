@@ -3,7 +3,7 @@ use std::ops::RangeInclusive;
 use bevy::{prelude::*, utils::HashMap};
 use bimap::BiMap;
 use common::structs::AudioDecoderError;
-use ethers::types::Address;
+use ethers_core::types::Address;
 use kira::sound::streaming::StreamingSoundData;
 use tokio::sync::{broadcast, mpsc};
 
