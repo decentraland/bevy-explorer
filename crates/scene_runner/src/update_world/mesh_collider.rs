@@ -310,6 +310,10 @@ impl SceneColliderData {
     }
 
     pub fn force_update(&mut self) {
+        if self.query_state.is_none() {
+            self.query_state = Some(Default::default());
+        }
+        
         self.query_state
             .as_mut()
             .unwrap()
