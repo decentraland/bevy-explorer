@@ -14,9 +14,12 @@ use crate::{
 use common::{dynamics::PLAYER_COLLIDER_RADIUS, structs::PrimaryCamera};
 use dcl::interface::CrdtType;
 use dcl_component::{
-    proto_components::sdk::components::{
-        common::{InputAction, PointerEventType, RaycastHit},
-        ColliderLayer, PbPointerEventsResult,
+    proto_components::{
+        common::Vector3,
+        sdk::components::{
+            common::{InputAction, PointerEventType, RaycastHit},
+            ColliderLayer, PbPointerEventsResult,
+        },
     },
     SceneComponentId, SceneEntityId,
 };
@@ -44,16 +47,17 @@ impl Plugin for PointerResultPlugin {
     }
 }
 
-#[derive(Default, Debug, Resource, Clone, PartialEq, Eq)]
-pub enum PointerTarget {
-    #[default]
-    None,
-    Some {
-        container: Entity,
-        mesh_name: Option<String>,
-        distance: FloatOrd,
-    },
+#[derive(Debug, Resource, Clone, PartialEq)]
+pub struct PointerTargetInfo {
+    pub container: Entity,
+    pub mesh_name: Option<String>,
+    pub distance: FloatOrd,
+    pub position: Option<Vec3>,
+    pub normal: Option<Vec3>,
 }
+
+#[derive(Default, Debug, Resource, Clone, PartialEq)]
+pub struct PointerTarget(pub Option<PointerTargetInfo>);
 
 #[derive(Default, Debug, Resource, Clone, PartialEq, Eq)]
 pub enum UiPointerTarget {
@@ -82,11 +86,13 @@ fn update_pointer_target(
 
     // first check for ui target
     if let UiPointerTarget::Some(t) = *ui_target {
-        *hover_target = PointerTarget::Some {
+        hover_target.0 = Some(PointerTargetInfo {
             container: t,
             mesh_name: None,
             distance: FloatOrd(0.0),
-        };
+            position: None,
+            normal: None,
+        });
         return;
     }
 
@@ -139,7 +145,7 @@ fn update_pointer_target(
             },
         );
 
-    *hover_target = PointerTarget::None;
+    hover_target.0 = None;
     if let Some((scene_entity, hit)) = maybe_nearest_hit {
         let (_, context, mut collider_data) = scenes.get_mut(scene_entity).unwrap();
 
@@ -153,11 +159,13 @@ fn update_pointer_target(
 
         if let Some(container) = context.bevy_entity(hit.id.entity) {
             let mesh_name = hit.id.name;
-            *hover_target = PointerTarget::Some {
+            hover_target.0 = Some(PointerTargetInfo {
                 container,
                 mesh_name,
                 distance: FloatOrd(distance),
-            };
+                position: Some(ray.origin + ray.direction * hit.toi),
+                normal: Some(hit.normal.normalize_or_zero()),
+            });
         } else {
             warn!("hit some dead entity?");
         }
@@ -205,11 +213,12 @@ fn debug_pointer(
             } else {
                 format!("ui element (not found - bevy entity {ui_ent:?})")
             }
-        } else if let PointerTarget::Some {
+        } else if let Some(PointerTargetInfo {
             container,
             ref mesh_name,
             distance,
-        } = *pointer_target
+            ..
+        }) = pointer_target.0
         {
             if let Ok(target) = target.get(container) {
                 if let Ok(scene) = scene.get(target.root) {
@@ -248,84 +257,69 @@ fn send_hover_events(
 
     debug!("hover target : {:?}", new_target);
 
-    let mut send_event =
-        |entity: &Entity, mesh_name: &Option<String>, ev_type: PointerEventType, distance: f32| {
-            if let Ok((scene_entity, maybe_pe)) = pointer_requests.get(*entity) {
-                if let Some(pe) = maybe_pe {
-                    let mut potential_entries = pe
-                        .msg
-                        .pointer_events
-                        .iter()
-                        .filter(|f| f.event_type == ev_type as i32)
-                        .peekable();
-                    // check there's at least one potential request before doing any work
-                    if potential_entries.peek().is_some() {
-                        let Ok(mut context) = scenes.get_mut(scene_entity.root) else { panic!() };
+    let mut send_event = |info: &PointerTargetInfo, ev_type: PointerEventType| {
+        if let Ok((scene_entity, maybe_pe)) = pointer_requests.get(info.container) {
+            if let Some(pe) = maybe_pe {
+                let mut potential_entries = pe
+                    .msg
+                    .pointer_events
+                    .iter()
+                    .filter(|f| f.event_type == ev_type as i32)
+                    .peekable();
+                // check there's at least one potential request before doing any work
+                if potential_entries.peek().is_some() {
+                    let Ok(mut context) = scenes.get_mut(scene_entity.root) else { panic!() };
 
-                        for ev in potential_entries {
-                            let max_distance = ev
-                                .event_info
-                                .as_ref()
-                                .and_then(|info| info.max_distance)
-                                .unwrap_or(10.0);
-                            if distance <= max_distance {
-                                let tick_number = context.tick_number;
-                                context.update_crdt(
-                                    SceneComponentId::POINTER_RESULT,
-                                    CrdtType::GO_ENT,
-                                    scene_entity.id,
-                                    &PbPointerEventsResult {
-                                        button: InputAction::IaPointer as i32,
-                                        hit: Some(RaycastHit {
-                                            position: None,
-                                            global_origin: None,
-                                            direction: None,
-                                            normal_hit: None,
-                                            length: distance,
-                                            mesh_name: mesh_name.clone(),
-                                            entity_id: scene_entity.id.as_proto_u32(),
-                                        }),
-                                        state: ev_type as i32,
-                                        timestamp: frame.0,
-                                        analog: None,
-                                        tick_number,
-                                    },
-                                );
-                            }
+                    for ev in potential_entries {
+                        let max_distance = ev
+                            .event_info
+                            .as_ref()
+                            .and_then(|info| info.max_distance)
+                            .unwrap_or(10.0);
+                        if info.distance <= FloatOrd(max_distance) {
+                            let tick_number = context.tick_number;
+                            context.update_crdt(
+                                SceneComponentId::POINTER_RESULT,
+                                CrdtType::GO_ENT,
+                                scene_entity.id,
+                                &PbPointerEventsResult {
+                                    button: InputAction::IaPointer as i32,
+                                    hit: Some(RaycastHit {
+                                        position: None,
+                                        global_origin: None,
+                                        direction: None,
+                                        normal_hit: info
+                                            .normal
+                                            .as_ref()
+                                            .map(Vector3::world_vec_from_vec3),
+                                        length: info.distance.0,
+                                        mesh_name: info.mesh_name.clone(),
+                                        entity_id: scene_entity.id.as_proto_u32(),
+                                    }),
+                                    state: ev_type as i32,
+                                    timestamp: frame.0,
+                                    analog: None,
+                                    tick_number,
+                                },
+                            );
                         }
                     }
                 }
-            } else {
-                warn!("failed to query entity for hover event {ev_type:?}: {entity:?}");
             }
-        };
+        } else {
+            warn!(
+                "failed to query entity for hover event {ev_type:?}: {:?}",
+                info.container
+            );
+        }
+    };
 
-    if let PointerTarget::Some {
-        container,
-        mesh_name,
-        distance,
-    } = &*prior_target
-    {
-        send_event(
-            container,
-            mesh_name,
-            PointerEventType::PetHoverLeave,
-            distance.0,
-        );
+    if let Some(info) = prior_target.0.as_ref() {
+        send_event(info, PointerEventType::PetHoverLeave);
     }
 
-    if let PointerTarget::Some {
-        container,
-        mesh_name,
-        distance,
-    } = &*new_target
-    {
-        send_event(
-            container,
-            mesh_name,
-            PointerEventType::PetHoverEnter,
-            distance.0,
-        );
+    if let Some(info) = new_target.0.as_ref() {
+        send_event(info, PointerEventType::PetHoverEnter);
     }
 
     *prior_target = new_target.clone();
@@ -334,16 +328,14 @@ fn send_hover_events(
 fn send_action_events(
     target: Res<PointerTarget>,
     pointer_requests: Query<(&SceneEntity, Option<&PointerEvents>)>,
-    mut scenes: Query<&mut RendererSceneContext>,
+    mut scenes: Query<(Entity, &mut RendererSceneContext, &GlobalTransform)>,
     input_mgr: InputManager,
     frame: Res<FrameCount>,
 ) {
-    let mut send_event = |entity: &Entity,
-                          mesh_name: &Option<String>,
+    let mut send_event = |info: &PointerTargetInfo,
                           ev_type: PointerEventType,
-                          action: InputAction,
-                          distance: f32| {
-        if let Ok((scene_entity, maybe_pe)) = pointer_requests.get(*entity) {
+                          action: InputAction| {
+        if let Ok((scene_entity, maybe_pe)) = pointer_requests.get(info.container) {
             if let Some(pe) = maybe_pe {
                 let mut potential_entries = pe
                     .msg
@@ -362,15 +354,16 @@ fn send_action_events(
                     .peekable();
                 // check there's at least one potential request before doing any work
                 if potential_entries.peek().is_some() {
-                    let Ok(mut context) = scenes.get_mut(scene_entity.root) else { panic!() };
+                    let Ok(mut context) = scenes.get_component_mut::<RendererSceneContext>(scene_entity.root) else { panic!() };
                     for ev in potential_entries {
                         let max_distance = ev
                             .event_info
                             .as_ref()
                             .and_then(|info| info.max_distance)
                             .unwrap_or(10.0);
-                        if distance <= max_distance {
+                        if info.distance.0 <= max_distance {
                             let tick_number = context.tick_number;
+                            // send to target entity
                             context.update_crdt(
                                 SceneComponentId::POINTER_RESULT,
                                 CrdtType::GO_ENT,
@@ -381,9 +374,12 @@ fn send_action_events(
                                         position: None,
                                         global_origin: None,
                                         direction: None,
-                                        normal_hit: None,
-                                        length: distance,
-                                        mesh_name: mesh_name.clone(),
+                                        normal_hit: info
+                                            .normal
+                                            .as_ref()
+                                            .map(Vector3::world_vec_from_vec3),
+                                        length: info.distance.0,
+                                        mesh_name: info.mesh_name.clone(),
                                         entity_id: scene_entity.id.as_proto_u32(),
                                     }),
                                     state: ev_type as i32,
@@ -397,41 +393,63 @@ fn send_action_events(
                 }
             }
         } else {
-            warn!("failed to query entity for button event [{action:?} {ev_type:?}]: {entity:?}");
+            warn!(
+                "failed to query entity for button event [{action:?} {ev_type:?}]: {:?}",
+                info.container
+            );
         }
     };
 
     // send event to hover target
-    if let PointerTarget::Some {
-        container,
-        mesh_name,
-        distance,
-    } = &*target
-    {
+    if let Some(info) = target.0.as_ref() {
         for down in input_mgr.iter_just_down() {
-            send_event(
-                container,
-                mesh_name,
-                PointerEventType::PetDown,
-                *down,
-                distance.0,
-            );
+            send_event(info, PointerEventType::PetDown, *down);
         }
 
         for up in input_mgr.iter_just_up() {
-            send_event(
-                container,
-                mesh_name,
-                PointerEventType::PetUp,
-                *up,
-                distance.0,
-            );
+            send_event(info, PointerEventType::PetUp, *up);
         }
     }
 
+    let container_entity = target.0.as_ref().and_then(|info| {
+        pointer_requests
+            .get_component::<ContainerEntity>(info.container)
+            .ok()
+    });
+    let scene_root = container_entity.map(|container| container.root);
+
     // send events to scene roots
-    for mut context in scenes.iter_mut() {
+    for (scene_ent, mut context, scene_transform) in scenes.iter_mut() {
         let tick_number = context.tick_number;
+        // we send the entity id to the containing scene, otherwise we send ROOT
+        // as the entity id is only valid within the containing scene context
+        let entity_id = if scene_root == Some(scene_ent) {
+            container_entity
+                .as_ref()
+                .unwrap()
+                .container_id
+                .as_proto_u32()
+        } else {
+            SceneEntityId::ROOT.as_proto_u32()
+        };
+
+        let hit = RaycastHit {
+            position: target.0.as_ref().and_then(|info| {
+                info.position
+                    .as_ref()
+                    .map(|p| Vector3::world_vec_from_vec3(&(*p - scene_transform.translation())))
+            }),
+            global_origin: None,
+            direction: None,
+            normal_hit: target
+                .0
+                .as_ref()
+                .and_then(|info| info.normal.as_ref().map(Vector3::world_vec_from_vec3)),
+            length: target.0.as_ref().map_or(0.0, |info| info.distance.0),
+            mesh_name: target.0.as_ref().and_then(|info| info.mesh_name.clone()),
+            entity_id,
+        };
+
         for down in input_mgr.iter_just_down() {
             context.update_crdt(
                 SceneComponentId::POINTER_RESULT,
@@ -439,15 +457,7 @@ fn send_action_events(
                 SceneEntityId::ROOT,
                 &PbPointerEventsResult {
                     button: *down as i32,
-                    hit: Some(RaycastHit {
-                        position: None,
-                        global_origin: None,
-                        direction: None,
-                        normal_hit: None,
-                        length: 0.0,
-                        mesh_name: None,
-                        entity_id: SceneEntityId::ROOT.as_proto_u32(),
-                    }),
+                    hit: Some(hit.clone()),
                     state: PointerEventType::PetDown as i32,
                     timestamp: frame.0,
                     analog: None,
@@ -463,15 +473,7 @@ fn send_action_events(
                 SceneEntityId::ROOT,
                 &PbPointerEventsResult {
                     button: *up as i32,
-                    hit: Some(RaycastHit {
-                        position: None,
-                        global_origin: None,
-                        direction: None,
-                        normal_hit: None,
-                        length: 0.0,
-                        mesh_name: None,
-                        entity_id: SceneEntityId::ROOT.as_proto_u32(),
-                    }),
+                    hit: Some(hit.clone()),
                     state: PointerEventType::PetUp as i32,
                     timestamp: frame.0,
                     analog: None,
