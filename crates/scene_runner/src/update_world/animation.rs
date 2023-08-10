@@ -94,11 +94,17 @@ fn update_animations(
             // we can't track which root node corresponds to which animation.
             // in gltfs, the animation nodes must be uniquely named so we
             // can just add the animation to every player with the right name.
-            for (player_ent, _) in gltf_processed
+            let (target, others) = gltf_processed
                 .animation_roots
                 .iter()
-                .filter(|(_, name)| clip.compatible_with(name))
-            {
+                .partition::<Vec::<_>, _>(|(_, name)| clip.compatible_with(name));
+
+            if target.is_empty() {
+                warn!("invalid root node for animation: {:?}", state.name);
+                warn!("available root nodes: {:?}", gltf_processed.animation_roots.iter().map(|(_, name)| name.as_str()).collect::<Vec<_>>());
+            }
+
+            for (player_ent, _) in target {
                 let mut player = players.get_mut(*player_ent).unwrap();
 
                 player.play(h_clip.clone_weak());
@@ -108,6 +114,11 @@ fn update_animations(
                 } else {
                     player.stop_repeating();
                 }
+            }
+
+            for (player_ent, _) in others {
+                let mut player = players.get_mut(*player_ent).unwrap();
+                player.pause();
             }
 
             animator.bypass_change_detection().playing = true;
