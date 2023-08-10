@@ -12,8 +12,8 @@ pub struct PrimaryUser {
 impl Default for PrimaryUser {
     fn default() -> Self {
         Self {
-            walk_speed: 10.0,
-            run_speed: 40.0,
+            walk_speed: 12.0,
+            run_speed: 50.0,
             friction: 500.0,
         }
     }
