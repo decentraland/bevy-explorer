@@ -98,6 +98,7 @@ fn init_test_app(entity_json: &str) -> App {
     });
     app.add_plugins(TestPlugins);
     app.add_asset::<Shader>();
+    app.add_asset::<AnimationClip>();
     app.add_asset::<Image>();
     app.add_plugins(MaterialPlugin::<StandardMaterial>::default());
     app.add_plugins(GizmoPlugin);
