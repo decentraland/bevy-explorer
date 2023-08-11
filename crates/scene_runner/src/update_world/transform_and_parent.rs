@@ -82,10 +82,10 @@ pub(crate) fn process_transform_and_parent_updates(
                             None => {
                                 if scene_context.is_dead(dcl_tp.parent()) {
                                     // parented to an already dead entity -> parent to root
-                                    println!("set child of dead id {}", dcl_tp.parent());
+                                    debug!("set child of dead id {}", dcl_tp.parent());
                                     root
                                 } else {
-                                    println!("set child of missing id {}", dcl_tp.parent());
+                                    debug!("set child of missing id {}", dcl_tp.parent());
                                     // we are parented to something that doesn't yet exist, create it here
                                     // TODO abstract out the new entity code (duplicated from process_lifecycle)
                                     // TODO alternatively make new target an option and leave this unparented,
@@ -112,7 +112,6 @@ pub(crate) fn process_transform_and_parent_updates(
 
                                     // special case for camera and player
                                     if dcl_tp.parent() == SceneEntityId::PLAYER {
-                                        println!("set child of player");
                                         if let Ok(player) = player.get_single() {
                                             commands
                                                 .entity(new_entity)
@@ -120,7 +119,6 @@ pub(crate) fn process_transform_and_parent_updates(
                                         }
                                     }
                                     if dcl_tp.parent() == SceneEntityId::CAMERA {
-                                        println!("set child of camera");
                                         if let Ok(camera) = camera.get_single() {
                                             commands
                                                 .entity(new_entity)
