@@ -627,6 +627,7 @@ fn remove_deleted_colliders(
 #[derive(Component, Default)]
 pub struct GroundCollider(pub Option<(Entity, ColliderId)>);
 
+#[allow(clippy::type_complexity)]
 fn propagate_disabled(
     mut scene_datas: Query<(Entity, &mut SceneColliderData)>,
     q: Query<(&ContainerEntity, Option<&HasCollider>, Option<&Children>), With<DisableCollisions>>,
