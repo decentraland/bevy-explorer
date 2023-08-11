@@ -19,7 +19,9 @@ use bevy_console::ConsoleCommand;
 
 use common::{
     sets::SetupSets,
-    structs::{AppConfig, GraphicsSettings, PrimaryCamera, PrimaryCameraRes, PrimaryUser},
+    structs::{
+        AppConfig, AttachPoints, GraphicsSettings, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
+    },
 };
 use scene_runner::{
     initialize_scene::SceneLoadDistance, update_world::mesh_collider::GroundCollider,
@@ -237,19 +239,23 @@ fn setup(
 ) {
     info!("main::setup");
     // create the main player
-    commands.spawn((
-        SpatialBundle {
-            transform: Transform::from_translation(Vec3::new(
-                16.0 * config.location.x as f32,
-                0.0,
-                -16.0 * config.location.y as f32,
-            )),
-            ..Default::default()
-        },
-        PrimaryUser::default(),
-        AvatarDynamicState::default(),
-        GroundCollider::default(),
-    ));
+    let attach_points = AttachPoints::new(&mut commands);
+    commands
+        .spawn((
+            SpatialBundle {
+                transform: Transform::from_translation(Vec3::new(
+                    16.0 * config.location.x as f32,
+                    0.0,
+                    -16.0 * config.location.y as f32,
+                )),
+                ..Default::default()
+            },
+            PrimaryUser::default(),
+            AvatarDynamicState::default(),
+            GroundCollider::default(),
+        ))
+        .push_children(&attach_points.entities())
+        .insert(attach_points);
 
     // add a camera
     let camera_id = commands

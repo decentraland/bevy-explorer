@@ -19,6 +19,33 @@ impl Default for PrimaryUser {
     }
 }
 
+// attachment points for local or foreign players
+#[derive(Component)]
+pub struct AttachPoints {
+    pub nametag: Entity,
+    pub left_hand: Entity,
+    pub right_hand: Entity,
+}
+
+impl AttachPoints {
+    pub fn new(commands: &mut Commands) -> Self {
+        Self {
+            nametag: commands
+                .spawn(SpatialBundle {
+                    transform: Transform::from_translation(Vec3::Y * 2.2),
+                    ..default()
+                })
+                .id(),
+            left_hand: commands.spawn(SpatialBundle::default()).id(),
+            right_hand: commands.spawn(SpatialBundle::default()).id(),
+        }
+    }
+
+    pub fn entities(&self) -> [Entity; 3] {
+        [self.nametag, self.left_hand, self.right_hand]
+    }
+}
+
 // main camera entity
 #[derive(Component)]
 pub struct PrimaryCamera {

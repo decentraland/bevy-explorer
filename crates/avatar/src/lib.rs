@@ -1,5 +1,6 @@
 use std::{f32::consts::PI, str::FromStr};
 
+use attach::AttachPlugin;
 use bevy::{
     gltf::Gltf,
     prelude::*,
@@ -12,13 +13,14 @@ use serde::Deserialize;
 use urn::Urn;
 
 pub mod animate;
+pub mod attach;
 pub mod base_wearables;
 pub mod foreign_dynamics;
 pub mod mask_material;
 
 use common::{
-    structs::PrimaryUser,
-    util::{TaskExt, TryInsertEx},
+    structs::{AttachPoints, PrimaryUser},
+    util::{TaskExt, TryInsertEx, TryPushChildrenEx},
 };
 use comms::{
     global_crdt::{ForeignPlayer, GlobalCrdtState},
@@ -54,6 +56,7 @@ impl Plugin for AvatarPlugin {
         app.add_plugins(MaskMaterialPlugin);
         app.add_plugins(PlayerMovementPlugin);
         app.add_plugins(AvatarAnimationPlugin);
+        app.add_plugins(AttachPlugin);
         app.init_resource::<WearablePointers>();
         app.init_resource::<WearableMetas>();
         app.add_systems(Update, load_base_wearables);
@@ -706,11 +709,11 @@ pub struct RetryRenderAvatar;
 fn update_render_avatar(
     mut commands: Commands,
     query: Query<
-        (Entity, &AvatarSelection, Option<&Children>),
+        (Entity, &AvatarSelection, Option<&Children>, &AttachPoints),
         Or<(Changed<AvatarSelection>, With<RetryRenderAvatar>)>,
     >,
     mut removed_selections: RemovedComponents<AvatarSelection>,
-    children: Query<&Children>,
+    children: Query<(&Children, &AttachPoints)>,
     avatar_render_entities: Query<(), With<AvatarDefinition>>,
     mut wearable_pointers: ResMut<WearablePointers>,
     mut wearable_metas: ResMut<WearableMetas>,
@@ -783,7 +786,11 @@ fn update_render_avatar(
 
     // remove renderable entities when avatar selection is removed
     for entity in removed_selections.iter() {
-        if let Ok(children) = children.get(entity) {
+        if let Ok((children, attach_points)) = children.get(entity) {
+            // reparent attach points
+            commands
+                .entity(entity)
+                .try_push_children(&attach_points.entities());
             for render_child in children
                 .iter()
                 .filter(|child| avatar_render_entities.get(**child).is_ok())
@@ -793,10 +800,15 @@ fn update_render_avatar(
         }
     }
 
-    for (entity, selection, maybe_children) in &query {
+    for (entity, selection, maybe_children, attach_points) in &query {
         commands.entity(entity).remove::<RetryRenderAvatar>();
 
         debug!("updating render avatar");
+        // reparent attach points
+        commands
+            .entity(entity)
+            .try_push_children(&attach_points.entities());
+
         // remove existing children
         if let Some(children) = maybe_children {
             for render_child in children
@@ -1117,6 +1129,7 @@ fn process_avatar(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut mask_materials: ResMut<Assets<MaskMaterial>>,
     meshes: Res<Assets<Mesh>>,
+    attach_points: Query<&AttachPoints>,
 ) {
     for (avatar_ent, def, loaded_avatar, root_player_entity) in query.iter() {
         let not_loaded = !scene_spawner.instance_is_ready(loaded_avatar.body_instance)
@@ -1289,6 +1302,31 @@ fn process_avatar(
         if target_armature_entities.is_empty() {
             warn!("boneless body!");
             continue;
+        } else {
+            // reparent hands
+            if let Ok(attach_points) = attach_points.get(root_player_entity.get()) {
+                if let Some(left_hand) =
+                    target_armature_entities.get(&String::from("avatar_lefthand"))
+                {
+                    commands
+                        .entity(*left_hand)
+                        .push_children(&[attach_points.left_hand]);
+                } else {
+                    warn!("no left hand");
+                    warn!("available: {:#?}", target_armature_entities.keys());
+                }
+                if let Some(right_hand) =
+                    target_armature_entities.get(&String::from("avatar_righthand"))
+                {
+                    commands
+                        .entity(*right_hand)
+                        .push_children(&[attach_points.right_hand]);
+                } else {
+                    warn!("no right hand");
+                }
+            } else {
+                warn!("no attach points");
+            }
         }
 
         // color the components of wearables
