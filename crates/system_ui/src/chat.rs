@@ -411,6 +411,12 @@ fn display_chat(
                     }
                 }
             }
+        } else if let Some((_, sink)) = chatbox.active_log_sink.as_mut() {
+            let mut msgs = Vec::default();
+            while let Ok(message) = sink.try_recv() {
+                msgs.push(make_log(&mut commands, &asset_server, message));
+            }
+            commands.entity(entity).push_children(&msgs);
         }
     }
 }
