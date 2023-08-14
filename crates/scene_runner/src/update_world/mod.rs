@@ -151,13 +151,15 @@ impl AddCrdtInterfaceExt for App {
         position: ComponentPosition,
     ) {
         // store a writer
-        self.world.resource_mut::<CrdtExtractors>().0.insert(
+        let existing = self.world.resource_mut::<CrdtExtractors>().0.insert(
             id,
             Box::new(CrdtLWWInterface::<D> {
                 position,
                 _marker: PhantomData,
             }),
         );
+
+        assert!(existing.is_none(), "duplicate registration for {id:?}");
     }
 
     fn add_crdt_lww_component<D: FromDclReader + std::fmt::Debug, C: Component + TryFrom<D>>(

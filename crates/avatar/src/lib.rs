@@ -31,9 +31,7 @@ use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
         common::Color3,
-        sdk::components::{
-            PbAvatarAttach, PbAvatarCustomization, PbAvatarEquippedData, PbAvatarShape,
-        },
+        sdk::components::{PbAvatarCustomization, PbAvatarEquippedData, PbAvatarShape},
     },
     SceneComponentId, SceneEntityId,
 };
@@ -69,10 +67,6 @@ impl Plugin for AvatarPlugin {
 
         app.add_crdt_lww_component::<PbAvatarShape, AvatarShape>(
             SceneComponentId::AVATAR_SHAPE,
-            ComponentPosition::Any,
-        );
-        app.add_crdt_lww_component::<PbAvatarAttach, AvatarAttachment>(
-            SceneComponentId::AVATAR_ATTACHMENT,
             ComponentPosition::Any,
         );
     }
@@ -243,15 +237,6 @@ pub struct AvatarShape(pub PbAvatarShape);
 
 impl From<PbAvatarShape> for AvatarShape {
     fn from(value: PbAvatarShape) -> Self {
-        Self(value)
-    }
-}
-
-#[derive(Component)]
-pub struct AvatarAttachment(pub PbAvatarAttach);
-
-impl From<PbAvatarAttach> for AvatarAttachment {
-    fn from(value: PbAvatarAttach) -> Self {
         Self(value)
     }
 }
