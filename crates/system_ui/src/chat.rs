@@ -281,11 +281,6 @@ fn make_chat(
         .spawn((
             DisplayChatMessage { timestamp },
             TextBundle {
-                style: Style {
-                    flex_wrap: FlexWrap::Wrap,
-                    max_width: Val::Px(640.0),
-                    ..Default::default()
-                },
                 text: Text::from_sections(
                     [
                         TextSection::new(
@@ -323,10 +318,6 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
         .spawn((
             DisplayChatMessage { timestamp },
             TextBundle {
-                style: Style {
-                    max_width: Val::Px(640.0),
-                    ..Default::default()
-                },
                 text: Text::from_sections(
                     [TextSection::new(
                         message,
