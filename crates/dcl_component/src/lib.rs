@@ -90,6 +90,9 @@ impl SceneComponentId {
     pub const POINTER_LOCK: SceneComponentId = SceneComponentId(1074);
 
     pub const AVATAR_SHAPE: SceneComponentId = SceneComponentId(1080);
+
+    pub const VISIBILITY: SceneComponentId = SceneComponentId(1081);
+
     pub const AVATAR_CUSTOMIZATION: SceneComponentId = SceneComponentId(1087);
     pub const AVATAR_EMOTE_COMMAND: SceneComponentId = SceneComponentId(1088);
     pub const AVATAR_EQUIPPED_DATA: SceneComponentId = SceneComponentId(1089);

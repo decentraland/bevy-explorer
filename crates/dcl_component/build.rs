@@ -33,6 +33,7 @@ fn main() -> Result<()> {
         "camera_mode_area",
         "audio_source",
         "video_player",
+        "visibility_component",
     ];
 
     let mut sources = components

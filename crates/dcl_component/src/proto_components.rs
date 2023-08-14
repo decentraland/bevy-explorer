@@ -86,6 +86,7 @@ impl DclProtoComponent for sdk::components::PbCameraMode {}
 impl DclProtoComponent for sdk::components::PbCameraModeArea {}
 impl DclProtoComponent for sdk::components::PbAudioSource {}
 impl DclProtoComponent for sdk::components::PbVideoPlayer {}
+impl DclProtoComponent for sdk::components::PbVisibilityComponent {}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}
