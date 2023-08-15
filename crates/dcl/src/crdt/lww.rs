@@ -17,6 +17,12 @@ pub struct CrdtLWWState {
     pub updates: HashSet<SceneEntityId>,
 }
 
+enum UpdateMode {
+    Force,
+    ForceIfDifferent,
+    Normal,
+}
+
 impl CrdtLWWState {
     fn check_update(
         entry: &LWWEntry,
@@ -67,16 +73,28 @@ impl CrdtLWWState {
         entity: SceneEntityId,
         new_timestamp: SceneCrdtTimestamp,
         maybe_new_data: Option<&mut DclReader>,
-        force: bool,
+        mode: UpdateMode,
     ) -> Option<SceneCrdtTimestamp> {
         match self.last_write.entry(entity) {
             Entry::Occupied(o) => {
                 let entry = o.into_mut();
-                let update =
-                    force || Self::check_update(entry, new_timestamp, maybe_new_data.as_deref());
+                let update = match mode {
+                    UpdateMode::Force => true,
+                    UpdateMode::ForceIfDifferent => {
+                        entry.is_some != maybe_new_data.is_some()
+                            || entry.data.as_slice()
+                                != maybe_new_data
+                                    .as_ref()
+                                    .map(|r| r.as_slice())
+                                    .unwrap_or_default()
+                    }
+                    UpdateMode::Normal => {
+                        Self::check_update(entry, new_timestamp, maybe_new_data.as_deref())
+                    }
+                };
 
                 if update {
-                    entry.timestamp = if force {
+                    entry.timestamp = if !matches!(mode, UpdateMode::Normal) {
                         SceneCrdtTimestamp(entry.timestamp.0 + 1)
                     } else {
                         new_timestamp
@@ -116,7 +134,7 @@ impl CrdtLWWState {
         new_timestamp: SceneCrdtTimestamp,
         maybe_new_data: Option<&mut DclReader>,
     ) -> bool {
-        self.perform_update(entity, new_timestamp, maybe_new_data, false)
+        self.perform_update(entity, new_timestamp, maybe_new_data, UpdateMode::Normal)
             .is_some()
     }
 
@@ -125,8 +143,26 @@ impl CrdtLWWState {
         entity: SceneEntityId,
         maybe_new_data: Option<&mut DclReader>,
     ) -> SceneCrdtTimestamp {
-        self.perform_update(entity, SceneCrdtTimestamp(0), maybe_new_data, true)
-            .unwrap()
+        self.perform_update(
+            entity,
+            SceneCrdtTimestamp(0),
+            maybe_new_data,
+            UpdateMode::Force,
+        )
+        .unwrap()
+    }
+
+    pub fn update_if_different(
+        &mut self,
+        entity: SceneEntityId,
+        maybe_new_data: Option<&mut DclReader>,
+    ) -> Option<SceneCrdtTimestamp> {
+        self.perform_update(
+            entity,
+            SceneCrdtTimestamp(0),
+            maybe_new_data,
+            UpdateMode::ForceIfDifferent,
+        )
     }
 }
 

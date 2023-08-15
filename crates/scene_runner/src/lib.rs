@@ -492,7 +492,7 @@ fn send_scene_updates(
             SceneEntityId::ROOT,
         ));
 
-        crdt_store.force_update(
+        crdt_store.update_if_different(
             SceneComponentId::TRANSFORM,
             CrdtType::LWW_ENT,
             id,
