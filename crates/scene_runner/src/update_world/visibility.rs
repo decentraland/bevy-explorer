@@ -39,6 +39,8 @@ fn update_visibility(
     }
 
     for ent in removed.iter() {
-        commands.entity(ent).insert(Visibility::Inherited);
+        if let Some(mut commands) = commands.get_entity(ent) {
+            commands.insert(Visibility::Inherited);
+        }
     }
 }

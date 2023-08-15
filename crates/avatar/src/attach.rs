@@ -42,9 +42,9 @@ pub fn update_attached(
     primary_user: Query<(Entity, &AttachPoints), With<PrimaryUser>>,
 ) {
     for removed in removed_attachments.iter() {
-        commands
-            .entity(removed)
-            .remove::<(ParentPositionSync, DisableCollisions)>();
+        if let Some(mut commands) = commands.get_entity(removed) {
+            commands.remove::<(ParentPositionSync, DisableCollisions)>();
+        }
     }
 
     for (ent, attach) in attachments.iter() {
