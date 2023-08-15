@@ -3,19 +3,14 @@ package decentraland.kernel.apis;
 
 import "decentraland/common/vectors.proto";
 
-message MovePlayerToResponse { }
-
 message MovePlayerToRequest {
   decentraland.common.Vector3 new_relative_position = 1;
   optional decentraland.common.Vector3 camera_target = 2;
 }
 
 message TeleportToRequest {
-  decentraland.common.Vector3 world_position = 1;
-  optional decentraland.common.Vector3 camera_target = 2;
+  decentraland.common.Vector2 world_coordinates = 1;
 }
-
-message TriggerEmoteResponse { }
 
 message TriggerEmoteRequest {
   string predefined_emote = 1;
@@ -40,16 +35,27 @@ message CommsAdapterRequest {
   string connection_string = 1;
 }
 
+message TriggerSceneEmoteRequest {
+  string src = 1;
+  optional bool loop = 2;
+}
+
 message SuccessResponse {
   bool success = 1;
 }
+
+message TriggerEmoteResponse { }
+
+message MovePlayerToResponse { }
+
+message TeleportToResponse { }
 
 service RestrictedActionsService {
   // MovePlayerTo will move the player in a position relative to the current scene
   rpc MovePlayerTo(MovePlayerToRequest) returns (MovePlayerToResponse) {}
 
-  // TeleportTo will move the user into an absolute world position
-  rpc TeleportTo(TeleportToRequest) returns (MovePlayerToResponse) {}
+  // TeleportTo will move the user to the specified world LAND parcel coordinates
+  rpc TeleportTo(TeleportToRequest) returns (TeleportToResponse) {}
 
   // TriggerEmote will trigger an emote in this current user
   rpc TriggerEmote(TriggerEmoteRequest) returns (TriggerEmoteResponse) {}
@@ -66,4 +72,7 @@ service RestrictedActionsService {
   // Asks the explorer to connect to other communications adapter, this feature
   // can be used to join private game servers
   rpc SetCommunicationsAdapter(CommsAdapterRequest) returns (SuccessResponse) {}
+
+  // TriggerSceneEmote will trigger an scene emote file in this current user
+  rpc TriggerSceneEmote(TriggerSceneEmoteRequest) returns (SuccessResponse) {}
 }

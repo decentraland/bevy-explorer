@@ -42,7 +42,7 @@ message PBMaterial {
   
     optional float metallic = 11; // default = 0.5
     optional float roughness = 12; // default = 0.5
-    optional float glossiness = 13; // default = 1
+    reserved 13;
   
     optional float specular_intensity = 14; // default = 1
     optional float emissive_intensity = 15; // default = 2

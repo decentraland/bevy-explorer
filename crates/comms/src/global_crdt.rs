@@ -230,6 +230,7 @@ pub fn process_transport_updates(
                     next_free,
                     &PbPlayerIdentityData {
                         address: format!("{:#x}", update.address),
+                        is_guest: true,
                     },
                 );
 

@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+package decentraland.sdk.ecs6;
+
+import "decentraland/common/vectors.proto";
+import "decentraland/sdk/ecs6/components_ecs6.proto";
+
+message OpenExternalUrlBody {
+  string url = 1;
+}
+
+message OpenNFTDialogBody {
+  string asset_contract_address = 1;
+  string token_id = 2;
+  optional string comment = 3;
+}
+
+message ComponentBodyPayload {
+  oneof payload {
+    decentraland.sdk.ecs6.ECS6ComponentAvatarModifierArea avatar_modifier_area = 1;
+    decentraland.sdk.ecs6.ECS6ComponentTransform transform = 2;
+    decentraland.sdk.ecs6.ECS6ComponentAttachToAvatar attach_to_avatar = 3;
+    decentraland.sdk.ecs6.ECS6ComponentBillboard billboard = 4;
+    decentraland.sdk.ecs6.ECS6ComponentBoxShape box_shape = 5;
+    decentraland.sdk.ecs6.ECS6ComponentSphereShape sphere_shape = 6;
+    decentraland.sdk.ecs6.ECS6ComponentCircleShape circle_shape = 7;
+    decentraland.sdk.ecs6.ECS6ComponentPlaneShape plane_shape = 8;
+    decentraland.sdk.ecs6.ECS6ComponentConeShape cone_shape = 9;
+    decentraland.sdk.ecs6.ECS6ComponentCylinderShape cylinder_shape = 10;
+    decentraland.sdk.ecs6.ECS6ComponentGltfShape gltf_shape = 11;
+    decentraland.sdk.ecs6.ECS6ComponentNftShape nft_shape = 12;
+    decentraland.sdk.ecs6.ECS6ComponentTexture texture = 13;
+    decentraland.sdk.ecs6.ECS6ComponentAnimator animator = 14;
+    decentraland.sdk.ecs6.ECS6ComponentObjShape obj_shape = 15;
+    decentraland.sdk.ecs6.ECS6ComponentFont font = 16;
+    decentraland.sdk.ecs6.ECS6ComponentTextShape text_shape = 17;
+    decentraland.sdk.ecs6.ECS6ComponentMaterial material = 18;
+    decentraland.sdk.ecs6.ECS6ComponentBasicMaterial basic_material = 19;
+    decentraland.sdk.ecs6.ECS6ComponentUuidCallback uuid_callback = 20;
+    decentraland.sdk.ecs6.ECS6ComponentSmartItem smart_item = 21;
+    decentraland.sdk.ecs6.ECS6ComponentVideoClip video_clip = 22;
+    decentraland.sdk.ecs6.ECS6ComponentVideoTexture video_texture = 23;
+    decentraland.sdk.ecs6.ECS6ComponentCameraModeArea camera_mode_area = 24;
+    decentraland.sdk.ecs6.ECS6ComponentAvatarTexture avatar_texture = 25;
+    decentraland.sdk.ecs6.ECS6ComponentAudioClip audio_clip = 26;
+    decentraland.sdk.ecs6.ECS6ComponentAudioSource audio_source = 27;
+    decentraland.sdk.ecs6.ECS6ComponentAudioStream audio_stream = 28;
+    decentraland.sdk.ecs6.ECS6ComponentAvatarShape avatar_shape = 29;
+    decentraland.sdk.ecs6.ECS6ComponentGizmos gizmos = 30;
+    decentraland.sdk.ecs6.ECS6ComponentUiShape ui_shape = 31;
+    decentraland.sdk.ecs6.ECS6ComponentUiContainerRect ui_container_rect = 32;
+    decentraland.sdk.ecs6.ECS6ComponentUiContainerStack ui_container_stack = 33;
+    decentraland.sdk.ecs6.ECS6ComponentUiButton ui_button = 34;
+    decentraland.sdk.ecs6.ECS6ComponentUiText ui_text = 35;
+    decentraland.sdk.ecs6.ECS6ComponentUiInputText ui_input_text = 36;
+    decentraland.sdk.ecs6.ECS6ComponentUiImage ui_image = 37;
+    decentraland.sdk.ecs6.ECS6ComponentUiScrollRect ui_scroll_rect = 38;
+    decentraland.sdk.ecs6.ECS6ComponentUiWorldSpaceShape ui_world_space_shape = 39;
+    decentraland.sdk.ecs6.ECS6ComponentUiScreenSpaceShape ui_screen_space_shape = 40;
+    decentraland.sdk.ecs6.ECS6ComponentUiFullScreenShape ui_full_screen_shape = 41;
+  }
+}
+
+message CreateEntityBody {
+  string id = 1;
+}
+
+message RemoveEntityBody {
+  string id = 1;
+}
+
+message UpdateEntityComponentBody {
+  string entity_id = 1;
+  int32 class_id = 2;
+  string name = 3;
+  ComponentBodyPayload component_data = 4;
+}
+
+message AttachEntityComponentBody {
+  string entity_id = 1;
+  string name = 2;
+  string id = 3;
+}
+
+message ComponentRemovedBody {
+  string entity_id = 1;
+  string name = 2;
+}
+
+message SetEntityParentBody {
+  string entity_id = 1;
+  string parent_id = 2;
+}
+
+message QueryBody {
+  string query_id = 1;
+
+  message Ray {
+    decentraland.common.Vector3 origin = 1;
+    decentraland.common.Vector3 direction = 2;
+    float distance = 3;
+  }
+
+  message RayQuery {
+    string query_id = 1;
+    string query_type = 2;
+    Ray ray = 3;
+  }
+
+  RayQuery payload = 2;
+}
+
+message ComponentCreatedBody {
+  string id = 1;
+  int32 class_id = 2;
+  string name = 3;
+}
+
+message ComponentDisposedBody {
+  string id = 1;
+}
+
+message ComponentUpdatedBody {
+  string id = 1;
+  ComponentBodyPayload component_data = 2;
+}
+
+message InitMessagesFinishedBody {}
+
+message EntityActionPayload {
+  oneof payload {
+    OpenExternalUrlBody open_external_url = 1;
+    OpenNFTDialogBody open_nft_dialog = 2;
+    CreateEntityBody create_entity = 3;
+    RemoveEntityBody remove_entity = 4;
+    UpdateEntityComponentBody update_entity_component = 5;
+    AttachEntityComponentBody attach_entity_component = 6;
+    ComponentRemovedBody component_removed = 7;
+    SetEntityParentBody set_entity_parent = 8;
+    QueryBody query = 9;
+    ComponentCreatedBody component_created = 10;
+    ComponentDisposedBody component_disposed = 11;
+    ComponentUpdatedBody component_updated = 12;
+    InitMessagesFinishedBody init_messages_finished = 13;
+  }
+}
+
+message EntityAction {
+  optional string tag = 2;
+  EntityActionPayload payload = 3;
+}

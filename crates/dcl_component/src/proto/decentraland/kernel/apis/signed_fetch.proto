@@ -20,8 +20,14 @@ message SignedFetchRequest {
     optional FlatFetchInit init = 2;
 }
 
+message GetHeadersResponse {
+    map<string, string> headers = 1;
+}
+
 service SignedFetchService {
     // SignedFetch is used to authenticate JSON requests in name of the users,
     // a special scoped signature is generated following the https://adr.decentraland.org/adr/ADR-44
     rpc SignedFetch(SignedFetchRequest) returns (FlatFetchResponse) {}
+
+    rpc GetHeaders(SignedFetchRequest) returns (GetHeadersResponse) {}
 }

@@ -31,7 +31,7 @@ use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
         common::Color3,
-        sdk::components::{PbAvatarCustomization, PbAvatarEquippedData, PbAvatarShape},
+        sdk::components::{PbAvatarBase, PbAvatarEquippedData, PbAvatarShape},
     },
     SceneComponentId, SceneEntityId,
 };
@@ -200,10 +200,11 @@ fn update_avatar_info(
     for (player, profile) in &updated_players {
         let avatar = &profile.content.avatar;
         global_state.update_crdt(
-            SceneComponentId::AVATAR_CUSTOMIZATION,
+            SceneComponentId::AVATAR_BASE,
             CrdtType::LWW_ANY,
             player.scene_id,
-            &PbAvatarCustomization {
+            &PbAvatarBase {
+                name: avatar.name.as_ref().map(String::as_str).unwrap_or("???").to_owned(),
                 skin_color: avatar.skin.map(|c| c.color),
                 eyes_color: avatar.eyes.map(|c| c.color),
                 hair_color: avatar.hair.map(|c| c.color),
@@ -219,8 +220,8 @@ fn update_avatar_info(
             CrdtType::LWW_ANY,
             player.scene_id,
             &PbAvatarEquippedData {
-                urns: avatar.wearables.to_vec(),
-                emotes: avatar
+                wearable_urns: avatar.wearables.to_vec(),
+                emotes_urns: avatar
                     .emotes
                     .as_ref()
                     .unwrap_or(&Vec::default())

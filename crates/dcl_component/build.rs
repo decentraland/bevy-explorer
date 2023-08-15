@@ -13,7 +13,7 @@ fn main() -> Result<()> {
         "animator",
         "pointer_events",
         "pointer_events_result",
-        "avatar_customization",
+        "avatar_base",
         "avatar_emote_command",
         "avatar_equipped_data",
         "player_identity_data",

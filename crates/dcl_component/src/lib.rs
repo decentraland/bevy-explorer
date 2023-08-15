@@ -93,12 +93,12 @@ impl SceneComponentId {
 
     pub const VISIBILITY: SceneComponentId = SceneComponentId(1081);
 
-    pub const AVATAR_CUSTOMIZATION: SceneComponentId = SceneComponentId(1087);
+    pub const AVATAR_BASE: SceneComponentId = SceneComponentId(1087);
     pub const AVATAR_EMOTE_COMMAND: SceneComponentId = SceneComponentId(1088);
-    pub const AVATAR_EQUIPPED_DATA: SceneComponentId = SceneComponentId(1089);
+    pub const AVATAR_EQUIPPED_DATA: SceneComponentId = SceneComponentId(1091);
 
     pub const BILLBOARD: SceneComponentId = SceneComponentId(1090);
-    pub const PLAYER_IDENTITY_DATA: SceneComponentId = SceneComponentId(1091);
+    pub const PLAYER_IDENTITY_DATA: SceneComponentId = SceneComponentId(1089);
 
     pub const UI_INPUT: SceneComponentId = SceneComponentId(1093);
     pub const UI_DROPDOWN: SceneComponentId = SceneComponentId(1094);

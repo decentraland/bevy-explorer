@@ -10,12 +10,15 @@ message KillResponse {
 }
 
 message SpawnRequest {
-    string pid = 1;
+    optional string pid = 1;
+    optional string ens = 2;
 }
 
 message SpawnResponse {
     string pid = 1;
     string parent_cid = 2;
+    string name = 3;
+    optional string ens = 4;
 }
 
 message PxRequest {

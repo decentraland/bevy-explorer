@@ -8,6 +8,6 @@ option (common.ecs_component_id) = 1091;
 // this component is written by the engine using the communications transports'
 // data.
 message PBAvatarEquippedData {
-  repeated string urns = 1;
-  repeated string emotes = 2;
+  repeated string wearable_urns = 1;
+  repeated string emotes_urns = 2;
 }
