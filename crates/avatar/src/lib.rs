@@ -204,7 +204,7 @@ fn update_avatar_info(
             CrdtType::LWW_ANY,
             player.scene_id,
             &PbAvatarBase {
-                name: avatar.name.as_ref().map(String::as_str).unwrap_or("???").to_owned(),
+                name: avatar.name.as_deref().unwrap_or("???").to_owned(),
                 skin_color: avatar.skin.map(|c| c.color),
                 eyes_color: avatar.eyes.map(|c| c.color),
                 hair_color: avatar.hair.map(|c| c.color),
