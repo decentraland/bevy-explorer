@@ -22,6 +22,7 @@ impl Default for PrimaryUser {
 // attachment points for local or foreign players
 #[derive(Component)]
 pub struct AttachPoints {
+    pub position: Entity,
     pub nametag: Entity,
     pub left_hand: Entity,
     pub right_hand: Entity,
@@ -30,6 +31,13 @@ pub struct AttachPoints {
 impl AttachPoints {
     pub fn new(commands: &mut Commands) -> Self {
         Self {
+            position: commands
+                .spawn(SpatialBundle {
+                    // TODO this is weird and must be wrong
+                    transform: Transform::from_translation(Vec3::Y * -0.7),
+                    ..default()
+                })
+                .id(),
             nametag: commands
                 .spawn(SpatialBundle {
                     transform: Transform::from_translation(Vec3::Y * 2.2),
@@ -41,8 +49,8 @@ impl AttachPoints {
         }
     }
 
-    pub fn entities(&self) -> [Entity; 3] {
-        [self.nametag, self.left_hand, self.right_hand]
+    pub fn entities(&self) -> [Entity; 4] {
+        [self.position, self.nametag, self.left_hand, self.right_hand]
     }
 }
 

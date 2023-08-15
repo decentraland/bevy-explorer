@@ -39,7 +39,7 @@ pub fn update_attached(
     mut commands: Commands,
     attachments: Query<(Entity, &AvatarAttachment), Changed<AvatarAttachment>>,
     mut removed_attachments: RemovedComponents<AvatarAttachment>,
-    primary_user: Query<(Entity, &AttachPoints), With<PrimaryUser>>,
+    primary_user: Query<&AttachPoints, With<PrimaryUser>>,
 ) {
     for removed in removed_attachments.iter() {
         if let Some(mut commands) = commands.get_entity(removed) {
@@ -48,19 +48,19 @@ pub fn update_attached(
     }
 
     for (ent, attach) in attachments.iter() {
-        let (user_ent, attach_points) = if attach.0.avatar_id.is_none() {
-            let Ok((user_ent, attach_points)) = primary_user.get_single() else {
+        let attach_points = if attach.0.avatar_id.is_none() {
+            let Ok(data) = primary_user.get_single() else {
                 warn!("no primary user");
                 continue;
             };
-            (user_ent, attach_points)
+            data
         } else {
             warn!("nope");
             continue;
         };
 
         let sync_entity = match attach.0.anchor_point_id() {
-            AvatarAnchorPointType::AaptPosition => user_ent,
+            AvatarAnchorPointType::AaptPosition => attach_points.position,
             AvatarAnchorPointType::AaptNameTag => attach_points.nametag,
             AvatarAnchorPointType::AaptLeftHand => attach_points.left_hand,
             AvatarAnchorPointType::AaptRightHand => attach_points.right_hand,
@@ -69,6 +69,6 @@ pub fn update_attached(
         commands
             .entity(ent)
             .try_insert((ParentPositionSync(sync_entity), DisableCollisions));
-        warn!("syncing {ent:?} to {sync_entity:?}");
+        debug!("syncing {ent:?} to {sync_entity:?}");
     }
 }
