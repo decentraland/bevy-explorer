@@ -614,13 +614,14 @@ impl WearableDefinition {
         );
 
         let (model, texture, mask) = if category.is_texture {
-            if !representation.main_file.ends_with(".png") {
-                warn!(
-                    "expected .png main file for category {}, found {}",
-                    category.slot, representation.main_file
-                );
-                return None;
-            }
+            // don't validate the main file, as some base wearables have no extension on the main_file member (Eyebrows_09 e.g)
+            // if !representation.main_file.ends_with(".png") {
+            //     warn!(
+            //         "expected .png main file for category {}, found {}",
+            //         category.slot, representation.main_file
+            //     );
+            //     return None;
+            // }
 
             let texture = representation
                 .contents
