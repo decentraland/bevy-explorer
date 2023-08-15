@@ -71,10 +71,16 @@ jobs:
           Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
           Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"          
       - uses: actions-rs/cargo@v1
+        if: runner.os == 'windows'
+        with:
+          command: test
+          args: --all --release
+      - uses: actions-rs/cargo@v1
+        if: runner.os == 'windows'
         with:
           command: test
           args: --all
-
+      
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
