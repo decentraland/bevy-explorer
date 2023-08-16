@@ -76,7 +76,7 @@ jobs:
           command: test
           args: --all --release
       - uses: actions-rs/cargo@v1
-        if: runner.os == 'windows'
+        if: runner.os != 'windows'
         with:
           command: test
           args: --all
