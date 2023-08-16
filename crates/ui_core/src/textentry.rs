@@ -76,9 +76,10 @@ pub fn update_text_entry_components(
                         ref font_size,
                         ..
                     } = &mut *textbox;
+                    let enabled = *enabled;
 
                     let response = ui.add_enabled(
-                        *enabled,
+                        enabled,
                         TextEdit::singleline(content)
                             .frame(false)
                             .desired_width(f32::INFINITY)
@@ -116,7 +117,7 @@ pub fn update_text_entry_components(
                             *interaction = Interaction::None;
                         }
                     }
-                    if maybe_focus.is_some() && !response.has_focus() && !defocus {
+                    if maybe_focus.is_some() && !response.has_focus() && !defocus && enabled {
                         debug!("Focus -> tb focus");
                         response.request_focus();
                     }
