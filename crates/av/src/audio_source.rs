@@ -1,14 +1,20 @@
-use std::time::Duration;
-
 use bevy::prelude::*;
 use bevy_kira_audio::{
     prelude::{AudioEmitter, AudioReceiver},
     AudioControl, AudioInstance, AudioTween,
 };
-use common::{structs::PrimaryCameraRes, util::TryInsertEx};
-use dcl_component::proto_components::sdk::components::PbAudioSource;
+use common::{
+    sets::{SceneSets, SetupSets},
+    structs::{PrimaryCameraRes, PrimaryUser},
+    util::TryInsertEx,
+};
+use dcl::interface::ComponentPosition;
+use dcl_component::{proto_components::sdk::components::PbAudioSource, SceneComponentId};
 use ipfs::IpfsLoaderExt;
-use scene_runner::{renderer_context::RendererSceneContext, SceneEntity};
+use scene_runner::{
+    renderer_context::RendererSceneContext, update_world::AddCrdtInterfaceExt, ContainingScene,
+    SceneEntity,
+};
 
 #[derive(Component, Debug)]
 pub struct AudioSource(PbAudioSource);
@@ -19,12 +25,28 @@ impl From<PbAudioSource> for AudioSource {
     }
 }
 
-pub(crate) fn setup_audio(mut commands: Commands, camera: Res<PrimaryCameraRes>) {
+pub struct AudioSourcePlugin;
+
+impl Plugin for AudioSourcePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_crdt_lww_component::<PbAudioSource, AudioSource>(
+            SceneComponentId::AUDIO_SOURCE,
+            ComponentPosition::EntityOnly,
+        );
+        app.add_systems(
+            Update,
+            (update_audio, update_source_volume).in_set(SceneSets::PostLoop),
+        );
+        app.add_systems(Startup, setup_audio.in_set(SetupSets::Main));
+    }
+}
+
+fn setup_audio(mut commands: Commands, camera: Res<PrimaryCameraRes>) {
     commands.entity(camera.0).try_insert(AudioReceiver);
 }
 
-#[allow(clippy::type_complexity)]
-pub(crate) fn update_audio(
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn update_audio(
     mut commands: Commands,
     mut query: Query<
         (
@@ -40,7 +62,14 @@ pub(crate) fn update_audio(
     audio: Res<bevy_kira_audio::Audio>,
     asset_server: Res<AssetServer>,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
+    containing_scene: ContainingScene,
+    player: Query<Entity, With<PrimaryUser>>,
 ) {
+    let current_scene = player
+        .get_single()
+        .ok()
+        .and_then(|p| containing_scene.get(p));
+
     for (ent, scene_ent, audio_source, maybe_source, maybe_emitter) in query.iter_mut() {
         // preload clips
         let h_audio = match maybe_source {
@@ -77,10 +106,13 @@ pub(crate) fn update_audio(
                 instance = instance.looped();
             }
 
-            if let Some(volume) = audio_source.0.volume {
-                instance = instance
-                    .with_volume(bevy_kira_audio::prelude::Volume::Amplitude(volume as f64));
-            }
+            let volume = if Some(scene_ent.root) == current_scene {
+                audio_source.0.volume.unwrap_or(1.0)
+            } else {
+                0.0
+            };
+            instance =
+                instance.with_volume(bevy_kira_audio::prelude::Volume::Amplitude(volume as f64));
 
             let instance = instance.handle();
             commands.entity(ent).try_insert(AudioEmitter {
@@ -90,10 +122,54 @@ pub(crate) fn update_audio(
             // stop running
             for h_instance in emitter.instances.iter() {
                 if let Some(instance) = audio_instances.get_mut(h_instance) {
-                    instance.stop(AudioTween::linear(Duration::ZERO));
+                    instance.stop(AudioTween::default());
                 }
             }
             emitter.instances.clear();
         }
     }
+}
+
+fn update_source_volume(
+    query: Query<(&SceneEntity, &AudioSource, &AudioEmitter, &GlobalTransform)>,
+    mut audio_instances: ResMut<Assets<AudioInstance>>,
+    containing_scene: ContainingScene,
+    player: Query<Entity, With<PrimaryUser>>,
+    mut prev_scene: Local<Option<Entity>>,
+    receiver: Query<&GlobalTransform, With<AudioReceiver>>,
+) {
+    let current_scene = player
+        .get_single()
+        .ok()
+        .and_then(|p| containing_scene.get(p));
+
+    let Ok(receiver) = receiver.get_single() else {
+        return;
+    };
+
+    for (scene, source, emitter, transform) in query.iter() {
+        if current_scene == Some(scene.root) {
+            let sound_path = transform.translation() - receiver.translation();
+            let volume = (1. - sound_path.length() / 25.0).clamp(0., 1.).powi(2)
+                * source.0.volume.unwrap_or(1.0);
+
+            let right_ear_angle = receiver.right().angle_between(sound_path);
+            let panning = (right_ear_angle.cos() + 1.) / 2.;
+
+            for h_instance in &emitter.instances {
+                if let Some(instance) = audio_instances.get_mut(h_instance) {
+                    instance.set_volume(volume as f64, AudioTween::default());
+                    instance.set_panning(panning as f64, AudioTween::default());
+                }
+            }
+        } else if *prev_scene == Some(scene.root) {
+            for h_instance in &emitter.instances {
+                if let Some(instance) = audio_instances.get_mut(h_instance) {
+                    instance.set_volume(0.0, AudioTween::default());
+                }
+            }
+        }
+    }
+
+    *prev_scene = current_scene;
 }
