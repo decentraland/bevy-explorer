@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -44,8 +46,14 @@ impl AttachPoints {
                     ..default()
                 })
                 .id(),
-            left_hand: commands.spawn(SpatialBundle::default()).id(),
-            right_hand: commands.spawn(SpatialBundle::default()).id(),
+            left_hand: commands.spawn(SpatialBundle{
+                transform: Transform::from_rotation(Quat::from_rotation_y(PI)),
+                ..Default::default()
+            }).id(),
+            right_hand: commands.spawn(SpatialBundle{
+                transform: Transform::from_rotation(Quat::from_rotation_y(PI)),
+                ..Default::default()
+            }).id(),
         }
     }
 
