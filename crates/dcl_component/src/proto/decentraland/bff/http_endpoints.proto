@@ -21,6 +21,7 @@ message AboutResponse {
   message SkyboxConfiguration {
     // only one value at a time
     optional float fixed_hour = 1;
+    repeated string textures = 2;
   }
 
   message AboutConfiguration {

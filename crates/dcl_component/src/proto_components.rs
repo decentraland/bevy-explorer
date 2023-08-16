@@ -67,7 +67,7 @@ impl DclProtoComponent for sdk::components::PbEngineInfo {}
 impl DclProtoComponent for sdk::components::PbGltfContainerLoadingState {}
 impl DclProtoComponent for sdk::components::PbAvatarShape {}
 impl DclProtoComponent for sdk::components::PbAvatarAttach {}
-impl DclProtoComponent for sdk::components::PbAvatarCustomization {}
+impl DclProtoComponent for sdk::components::PbAvatarBase {}
 impl DclProtoComponent for sdk::components::PbAvatarEmoteCommand {}
 impl DclProtoComponent for sdk::components::PbAvatarEquippedData {}
 impl DclProtoComponent for sdk::components::PbPlayerIdentityData {}
@@ -86,6 +86,7 @@ impl DclProtoComponent for sdk::components::PbCameraMode {}
 impl DclProtoComponent for sdk::components::PbCameraModeArea {}
 impl DclProtoComponent for sdk::components::PbAudioSource {}
 impl DclProtoComponent for sdk::components::PbVideoPlayer {}
+impl DclProtoComponent for sdk::components::PbVisibilityComponent {}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}

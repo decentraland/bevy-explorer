@@ -82,10 +82,10 @@ pub(crate) fn process_transform_and_parent_updates(
                             None => {
                                 if scene_context.is_dead(dcl_tp.parent()) {
                                     // parented to an already dead entity -> parent to root
-                                    println!("set child of dead id {}", dcl_tp.parent());
+                                    debug!("set child of dead id {}", dcl_tp.parent());
                                     root
                                 } else {
-                                    println!("set child of missing id {}", dcl_tp.parent());
+                                    debug!("set child of missing id {}", dcl_tp.parent());
                                     // we are parented to something that doesn't yet exist, create it here
                                     // TODO abstract out the new entity code (duplicated from process_lifecycle)
                                     // TODO alternatively make new target an option and leave this unparented,
@@ -112,7 +112,6 @@ pub(crate) fn process_transform_and_parent_updates(
 
                                     // special case for camera and player
                                     if dcl_tp.parent() == SceneEntityId::PLAYER {
-                                        println!("set child of player");
                                         if let Ok(player) = player.get_single() {
                                             commands
                                                 .entity(new_entity)
@@ -120,7 +119,6 @@ pub(crate) fn process_transform_and_parent_updates(
                                         }
                                     }
                                     if dcl_tp.parent() == SceneEntityId::CAMERA {
-                                        println!("set child of camera");
                                         if let Ok(camera) = camera.get_single() {
                                             commands
                                                 .entity(new_entity)
@@ -226,18 +224,45 @@ pub(crate) fn process_transform_and_parent_updates(
     }
 }
 
+// sync an entity's transform with a given target, without blowing the native
+// hierarchy so we still catch it when we despawn_recursive the scene, etc.
+// since this runs before global hierarchy update we calculate the full target
+// transform by walking up the tree of local transforms. this will be slow so
+// should only be used with shallow entities ... hands are not very shallow
+// so TODO we might want to fully replace the hierarchy propagation at some point.
+// also this will lag if the parent of the syncee is moving so they should
+// be parented to the scene root generally.
 #[derive(Component)]
-struct ParentPositionSync(Entity);
+pub struct ParentPositionSync(pub Entity);
 
 fn parent_position_sync(
     mut syncees: Query<(&mut Transform, &ParentPositionSync, &Parent)>,
     globals: Query<&GlobalTransform>,
+    locals: Query<(&Transform, Option<&Parent>), Without<ParentPositionSync>>,
 ) {
     for (mut transform, sync, parent) in syncees.iter_mut() {
         let Ok(parent_transform) = globals.get(parent.get()) else { continue };
-        let Ok(sync_transform) = globals.get(sync.0) else { continue };
-        let (_, sync_rotation, sync_translation) = sync_transform.to_scale_rotation_translation();
-        *transform = Transform::from_translation(sync_translation - parent_transform.translation())
-            .with_rotation(sync_rotation);
+        let Ok((sync_transform, maybe_parent)) = locals.get(sync.0) else { continue };
+
+        let mut transforms = vec![sync_transform];
+        let mut pointer = maybe_parent;
+        while let Some(next_parent) = pointer {
+            let Ok((next_transform, next_parent)) = locals.get(next_parent.get()) else {
+                break;
+            };
+
+            transforms.push(next_transform);
+            pointer = next_parent;
+        }
+
+        let mut final_target = GlobalTransform::default();
+        while let Some(next_transform) = transforms.pop() {
+            final_target = final_target.mul_transform(*next_transform);
+        }
+
+        let (_, final_rotation, final_translation) = final_target.to_scale_rotation_translation();
+        *transform =
+            Transform::from_translation(final_translation - parent_transform.translation())
+                .with_rotation(final_rotation);
     }
 }

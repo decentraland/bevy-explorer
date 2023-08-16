@@ -6,17 +6,6 @@
 syntax = "proto3";
 package decentraland.social.friendships;
 
-enum ServiceErrors {
-  // proto3 requires that first value in enum have numeric value of 0
-  UNKNOWN = 0;
-  BAD_REQUEST = 400;
-  UNAUTHORIZED = 401;
-  FORBIDDEN = 403;
-  NOT_FOUND = 404;
-  TOO_MANY_REQUESTS = 429;
-  INTERNAL_SERVER_ERROR = 500;
-}
-
 // This message is a response that is sent from the server to the client
 message FriendshipEventResponse {
   oneof body {
@@ -26,6 +15,10 @@ message FriendshipEventResponse {
     DeleteResponse delete = 5;
     CancelResponse cancel = 6;
   }
+}
+
+message FriendshipEventResponses {
+  repeated FriendshipEventResponse responses = 1;
 }
 
 message FriendshipEventPayload {
@@ -85,10 +78,10 @@ message UpdateFriendshipPayload {
   optional Payload auth_token = 2;
 }
 
-message UpdateFriendshipResponse { FriendshipEventResponse event = 1; }
-
-message SubscribeFriendshipEventsUpdatesResponse {
-  repeated FriendshipEventResponse events = 1;
+message MutualFriendsPayload {
+  User user = 1;
+  // For internal use only, subject to change.
+  optional Payload auth_token = 2;
 }
 
 message Payload {
@@ -96,19 +89,79 @@ message Payload {
   optional string synapse_token = 1;
 }
 
+message BadRequestError {
+  string message = 1;
+}
+message UnauthorizedError {
+  string message = 1;
+}
+message ForbiddenError {
+  string message = 1;
+}
+message TooManyRequestsError {
+  string message = 1;
+}
+message InternalServerError {
+  string message = 1;
+}
+
+message UsersResponse {
+  oneof response {
+    Users users = 1;
+    InternalServerError internal_server_error = 2;
+    UnauthorizedError unauthorized_error = 3;
+    ForbiddenError forbidden_error = 4;
+    TooManyRequestsError too_many_requests_error = 5;
+    BadRequestError bad_request_error = 6;
+  }
+}
+
+message RequestEventsResponse {
+  oneof response {
+    RequestEvents events = 1;
+    InternalServerError internal_server_error = 2;
+    UnauthorizedError unauthorized_error = 3;
+    ForbiddenError forbidden_error = 4;
+    TooManyRequestsError too_many_requests_error = 5;
+  }
+}
+
+message UpdateFriendshipResponse {
+  oneof response {
+    FriendshipEventResponse event = 1;
+    InternalServerError internal_server_error = 2;
+    UnauthorizedError unauthorized_error = 3;
+    ForbiddenError forbidden_error = 4;
+    TooManyRequestsError too_many_requests_error = 5;
+    BadRequestError bad_request_error = 6;
+  }
+}
+
+message SubscribeFriendshipEventsUpdatesResponse {
+  oneof response {
+    FriendshipEventResponses events = 1;
+    InternalServerError internal_server_error = 2;
+    UnauthorizedError unauthorized_error = 3;
+    ForbiddenError forbidden_error = 4;
+    TooManyRequestsError too_many_requests_error = 5;
+  }
+}
+
 service FriendshipsService {
   // Get the list of friends for the authenticated user
-  rpc GetFriends(Payload) returns (stream Users) {}
+  rpc GetFriends(Payload) returns (stream UsersResponse) {}
+
+  // Get the list of mutual friends between the authenticated user and the one in the parameter
+  rpc GetMutualFriends(MutualFriendsPayload) returns (stream UsersResponse) {}
 
   // Get the list of request events for the authenticated user
-  rpc GetRequestEvents(Payload) returns (RequestEvents) {}
+  rpc GetRequestEvents(Payload) returns (RequestEventsResponse) {}
 
   // Update friendship status: REQUEST, ACCEPT, REJECT, CANCEL, DELETE
   rpc UpdateFriendshipEvent(UpdateFriendshipPayload)
       returns (UpdateFriendshipResponse) {}
 
-  // Subscribe to updates of friendship status: REQUEST, ACCEPT, REJECT, CANCEL,
-  // DELETE
+  // Subscribe to updates of friendship status: REQUEST, ACCEPT, REJECT, CANCEL, DELETE
   rpc SubscribeFriendshipEventsUpdates(Payload)
       returns (stream SubscribeFriendshipEventsUpdatesResponse) {}
 }

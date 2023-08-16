@@ -57,7 +57,7 @@ fn connect_livekit(
     mic: Res<LocalAudioSource>,
 ) {
     for (transport_id, mut new_transport) in new_livekits.iter_mut() {
-        println!("spawn lk connect");
+        debug!("spawn lk connect");
         let remote_address = new_transport.address.to_owned();
         let receiver = new_transport.receiver.take().unwrap();
         let sender = player_state.get_sender();
@@ -96,7 +96,7 @@ async fn livekit_handler_inner(
     sender: Sender<PlayerUpdate>,
     mut mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
 ) -> Result<(), anyhow::Error> {
-    println!(">> lk connect async : {remote_address}");
+    debug!(">> lk connect async : {remote_address}");
 
     let url = Uri::try_from(remote_address).unwrap();
     let address = format!(
@@ -109,7 +109,7 @@ async fn livekit_handler_inner(
         par.split_once('=')
             .map(|(a, b)| (a.to_owned(), b.to_owned()))
     }));
-    println!("{params:?}");
+    debug!("{params:?}");
     let token = params.get("access_token").cloned().unwrap_or_default();
 
     let rt = Arc::new(
@@ -146,9 +146,9 @@ async fn livekit_handler_inner(
         'stream: loop {
             tokio::select!(
                 incoming = network_rx.recv() => {
-                    println!("in: {:?}", incoming);
+                    debug!("in: {:?}", incoming);
                     let Some(incoming) = incoming else {
-                        println!("network pipe broken, exiting loop");
+                        debug!("network pipe broken, exiting loop");
                         break 'stream;
                     };
 
@@ -227,12 +227,12 @@ async fn livekit_handler_inner(
                                 }
                             }
                         }
-                        _ => { println!("Event: {:?}", incoming); }
+                        _ => { debug!("Event: {:?}", incoming); }
                     };
                 }
                 outgoing = app_rx.recv() => {
                     let Some(outgoing) = outgoing else {
-                        println!("app pipe broken, exiting loop");
+                        debug!("app pipe broken, exiting loop");
                         break 'stream;
                     };
 
@@ -242,21 +242,17 @@ async fn livekit_handler_inner(
                         DataPacketKind::Reliable
                     };
                     if let Err(e) = room.local_participant().publish_data(outgoing.data, kind, Default::default()).await {
-                        println!("outgoing failed: {e}; not exiting loop though since it often fails at least once or twice at the start...");
+                        debug!("outgoing failed: {e}; not exiting loop though since it often fails at least once or twice at the start...");
                         // break 'stream;
                     };
                 }
             );
         }
 
-        println!("closing room");
         room.close().await.unwrap();
-        println!("leaving");
     });
 
-    println!("blocking");
     rt.block_on(task).unwrap();
-    println!("ok out");
     Ok(())
 }
 

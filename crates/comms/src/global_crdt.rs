@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 
 use bevy::{prelude::*, utils::HashMap};
 use bimap::BiMap;
-use common::structs::AudioDecoderError;
+use common::structs::{AttachPoints, AudioDecoderError};
 use ethers_core::types::Address;
 use kira::sound::streaming::StreamingSoundData;
 use tokio::sync::{broadcast, mpsc};
@@ -230,10 +230,13 @@ pub fn process_transport_updates(
                     next_free,
                     &PbPlayerIdentityData {
                         address: format!("{:#x}", update.address),
+                        is_guest: true,
                     },
                 );
 
                 let (audio_sender, audio_receiver) = mpsc::channel(1);
+
+                let attach_points = AttachPoints::new(&mut commands);
 
                 let new_entity = commands
                     .spawn((
@@ -248,6 +251,8 @@ pub fn process_transport_updates(
                         },
                         ForeignAudioSource(audio_receiver),
                     ))
+                    .push_children(&attach_points.entities())
+                    .insert(attach_points)
                     .id();
 
                 state.lookup.insert(update.address, new_entity);

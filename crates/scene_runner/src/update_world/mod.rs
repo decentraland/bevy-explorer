@@ -18,6 +18,7 @@ use self::{
     mesh_collider::MeshColliderPlugin, mesh_renderer::MeshDefinitionPlugin,
     pointer_events::PointerEventsPlugin, raycast::RaycastPlugin, scene_ui::SceneUiPlugin,
     text_shape::TextShapePlugin, transform_and_parent::TransformAndParentPlugin,
+    visibility::VisibilityComponentPlugin,
 };
 
 use super::{DeletedSceneEntities, RendererSceneContext, SceneLoopSchedule, SceneLoopSets};
@@ -34,6 +35,7 @@ pub mod raycast;
 pub mod scene_ui;
 pub mod text_shape;
 pub mod transform_and_parent;
+pub mod visibility;
 
 #[derive(Component, Default)]
 pub struct CrdtLWWStateComponent<T> {
@@ -122,6 +124,7 @@ impl Plugin for SceneOutputPlugin {
         app.add_plugins(SceneUiPlugin);
         app.add_plugins(TextShapePlugin);
         app.add_plugins(CameraModeAreaPlugin);
+        app.add_plugins(VisibilityComponentPlugin);
     }
 }
 
@@ -148,13 +151,15 @@ impl AddCrdtInterfaceExt for App {
         position: ComponentPosition,
     ) {
         // store a writer
-        self.world.resource_mut::<CrdtExtractors>().0.insert(
+        let existing = self.world.resource_mut::<CrdtExtractors>().0.insert(
             id,
             Box::new(CrdtLWWInterface::<D> {
                 position,
                 _marker: PhantomData,
             }),
         );
+
+        assert!(existing.is_none(), "duplicate registration for {id:?}");
     }
 
     fn add_crdt_lww_component<D: FromDclReader + std::fmt::Debug, C: Component + TryFrom<D>>(

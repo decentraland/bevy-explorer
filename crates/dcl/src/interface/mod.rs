@@ -119,6 +119,29 @@ impl CrdtStore {
         }
     }
 
+    pub fn update_if_different(
+        &mut self,
+        component_id: SceneComponentId,
+        crdt_type: CrdtType,
+        entity: SceneEntityId,
+        maybe_new_data: Option<&mut DclReader>,
+    ) -> Option<SceneCrdtTimestamp> {
+        match crdt_type {
+            CrdtType::LWW(_) => self
+                .lww
+                .entry(component_id)
+                .or_insert_with(CrdtLWWState::default)
+                .update_if_different(entity, maybe_new_data),
+            CrdtType::GO(_) => {
+                self.go
+                    .entry(component_id)
+                    .or_default()
+                    .append(entity, maybe_new_data.unwrap());
+                Some(SceneCrdtTimestamp(0))
+            }
+        }
+    }
+
     pub fn clean_up(&mut self, dead: &HashSet<SceneEntityId>) {
         for state in self.lww.values_mut() {
             for id in dead {

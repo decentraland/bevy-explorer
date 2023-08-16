@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use input_manager::InputMap;
 
-use crate::update_scene::pointer_results::PointerTarget;
+use crate::update_scene::pointer_results::{PointerTarget, PointerTargetInfo};
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::sdk::components::{common::InputAction, PbPointerEvents},
@@ -68,11 +68,11 @@ fn hover_text(
 
     let mut texts = Vec::default();
 
-    if let PointerTarget::Some {
+    if let Some(PointerTargetInfo {
         container,
         distance,
         ..
-    } = *hover_target
+    }) = hover_target.0
     {
         if let Ok(pes) = pointer_events.get(container) {
             texts = pes

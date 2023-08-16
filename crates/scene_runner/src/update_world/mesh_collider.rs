@@ -53,6 +53,9 @@ impl Default for MeshCollider {
     }
 }
 
+#[derive(Component)]
+pub struct DisableCollisions;
+
 // #[derive(Debug)]
 pub enum MeshColliderShape {
     Box,
@@ -102,7 +105,12 @@ impl Plugin for MeshColliderPlugin {
         // they are used in SceneSets::Input (for raycasts).
         // we want to avoid using CoreSet::PostUpdate as that's where we create/destroy scenes,
         // so we use SceneSets::Init for adding colliders to the scene collider data (qbvh).
-        app.add_systems(Update, update_colliders.in_set(SceneSets::Init));
+        app.add_systems(
+            Update,
+            (update_colliders, propagate_disabled)
+                .chain()
+                .in_set(SceneSets::Init),
+        );
         app.add_systems(
             Update,
             update_scene_collider_data.in_set(SceneSets::PostInit),
@@ -166,6 +174,7 @@ pub struct SceneColliderData {
     query_state_valid_at: Option<u32>,
     query_state: Option<rapier3d::pipeline::QueryPipeline>,
     dummy_rapier_structs: (IslandManager, RigidBodySet),
+    disabled: HashSet<ColliderHandle>,
 }
 
 const SCALE_EPSILON: f32 = 0.001;
@@ -247,6 +256,8 @@ impl SceneColliderData {
                     new_scale = req_scale;
                     // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
                     collider.set_shape(scale_shape(base_collider.shape(), req_scale));
+                } else if self.disabled.contains(&handle) {
+                    // don't shapecast
                 } else if let Some(colliders) = cast_with {
                     // if scale doesn't change then just shapecast to hit colliders
                     let mut pipeline = QueryPipeline::new();
@@ -310,6 +321,10 @@ impl SceneColliderData {
     }
 
     pub fn force_update(&mut self) {
+        if self.query_state.is_none() {
+            self.query_state = Some(Default::default());
+        }
+
         self.query_state
             .as_mut()
             .unwrap()
@@ -361,10 +376,14 @@ impl SceneColliderData {
             &Ball::new(PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP),
             10.0,
             true,
-            QueryFilter::default(),
+            QueryFilter::default().predicate(&|h, _| self.collider_enabled(h)),
         );
 
         contact.map(|(handle, toi)| (toi.toi, self.get_id(handle).unwrap().clone()))
+    }
+
+    pub fn collider_enabled(&self, handle: ColliderHandle) -> bool {
+        !self.disabled.contains(&handle)
     }
 
     pub fn move_character(
@@ -389,7 +408,7 @@ impl SceneColliderData {
                 translation: (origin + Vec3::Y * 1.0).into(),
             },
             direction.into(),
-            QueryFilter::default(),
+            QueryFilter::default().predicate(&|h, _| !self.disabled.contains(&h)),
             |_| {},
         )
     }
@@ -499,6 +518,16 @@ impl SceneColliderData {
     pub fn get_id(&self, handle: ColliderHandle) -> Option<&ColliderId> {
         self.scaled_collider.get_by_right(&handle)
     }
+
+    pub fn disable_player_collisions(&mut self, id: &ColliderId) {
+        if let Some(h) = self.get_collider_handle(id) {
+            self.disabled.insert(h);
+        }
+    }
+
+    pub fn clear_disabled(&mut self) {
+        self.disabled.clear();
+    }
 }
 
 fn update_scene_collider_data(
@@ -599,6 +628,48 @@ fn remove_deleted_colliders(
 pub struct GroundCollider(pub Option<(Entity, ColliderId)>);
 
 #[allow(clippy::type_complexity)]
+fn propagate_disabled(
+    mut scene_datas: Query<(Entity, &mut SceneColliderData)>,
+    q: Query<(&ContainerEntity, Option<&HasCollider>, Option<&Children>), With<DisableCollisions>>,
+    r: Query<(Option<&HasCollider>, Option<&Children>), Or<(With<Children>, With<HasCollider>)>>,
+) {
+    let mut disable: HashMap<Entity, HashSet<&ColliderId>> = HashMap::default();
+    for (container, maybe_collider, maybe_children) in q.iter() {
+        let set = disable.entry(container.root).or_default();
+        if let Some(collider) = maybe_collider {
+            set.insert(&collider.0);
+        }
+
+        if let Some(children) = maybe_children {
+            let mut list = children.iter().collect::<Vec<_>>();
+
+            while let Some(child) = list.pop() {
+                let Ok((maybe_id, maybe_children)) = r.get(*child) else {
+                    continue;
+                };
+
+                if let Some(id) = maybe_id {
+                    set.insert(&id.0);
+                }
+
+                if let Some(children) = maybe_children {
+                    list.extend(children.iter());
+                }
+            }
+        }
+    }
+
+    for (ent, mut scene_data) in scene_datas.iter_mut() {
+        scene_data.clear_disabled();
+        if let Some(disabled) = disable.get(&ent) {
+            disabled.iter().for_each(|id| {
+                scene_data.disable_player_collisions(id);
+            });
+        }
+    }
+}
+
+#[allow(clippy::type_complexity)]
 fn update_collider_transforms(
     changed_colliders: Query<
         (&ContainerEntity, &HasCollider, &GlobalTransform),
@@ -658,7 +729,8 @@ fn update_collider_transforms(
                             &scene_data.collider_set,
                             &base_of_sphere.into(),
                             true,
-                            QueryFilter::default(),
+                            QueryFilter::default()
+                                .predicate(&|h, _| scene_data.collider_enabled(h)),
                         )
                         .unwrap()
                         .1

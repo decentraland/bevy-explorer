@@ -1,4 +1,4 @@
-use bevy::{ecs::system::SystemParam, pbr::NotShadowCaster, prelude::*};
+use bevy::{ecs::system::SystemParam, pbr::NotShadowCaster, prelude::*, render::primitives::Aabb};
 
 use crate::{renderer_context::RendererSceneContext, ContainerEntity, SceneSets};
 use common::util::TryInsertEx;
@@ -128,7 +128,10 @@ impl Plugin for MaterialDefinitionPlugin {
             ComponentPosition::EntityOnly,
         );
 
-        app.add_systems(Update, update_materials.in_set(SceneSets::PostLoop));
+        app.add_systems(
+            Update,
+            (update_materials, update_bias).in_set(SceneSets::PostLoop),
+        );
     }
 }
 
@@ -270,5 +273,24 @@ fn update_materials(
 
     for touch in touch.iter() {
         materials.get_mut(touch);
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn update_bias(
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    query: Query<
+        (&Aabb, &Handle<StandardMaterial>),
+        Or<(Changed<Handle<StandardMaterial>>, Changed<Aabb>)>,
+    >,
+) {
+    for (aabb, h_material) in query.iter() {
+        if let Some(material) = materials.get_mut(h_material) {
+            if material.alpha_mode == AlphaMode::Blend {
+                // add a bias based on the aabb size, to force an explicit transparent order which is
+                // hopefully correct, but should be better than nothing even if not always perfect
+                material.depth_bias = aabb.half_extents.length() * 1e-5;
+            }
+        }
     }
 }

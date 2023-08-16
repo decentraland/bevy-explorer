@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -12,10 +14,55 @@ pub struct PrimaryUser {
 impl Default for PrimaryUser {
     fn default() -> Self {
         Self {
-            walk_speed: 10.0,
-            run_speed: 40.0,
+            walk_speed: 12.0,
+            run_speed: 50.0,
             friction: 500.0,
         }
+    }
+}
+
+// attachment points for local or foreign players
+#[derive(Component)]
+pub struct AttachPoints {
+    pub position: Entity,
+    pub nametag: Entity,
+    pub left_hand: Entity,
+    pub right_hand: Entity,
+}
+
+impl AttachPoints {
+    pub fn new(commands: &mut Commands) -> Self {
+        Self {
+            position: commands
+                .spawn(SpatialBundle {
+                    // TODO this is weird and must be wrong
+                    transform: Transform::from_translation(Vec3::Y * -0.7),
+                    ..default()
+                })
+                .id(),
+            nametag: commands
+                .spawn(SpatialBundle {
+                    transform: Transform::from_translation(Vec3::Y * 2.2),
+                    ..default()
+                })
+                .id(),
+            left_hand: commands
+                .spawn(SpatialBundle {
+                    transform: Transform::from_rotation(Quat::from_rotation_y(PI)),
+                    ..Default::default()
+                })
+                .id(),
+            right_hand: commands
+                .spawn(SpatialBundle {
+                    transform: Transform::from_rotation(Quat::from_rotation_y(PI)),
+                    ..Default::default()
+                })
+                .id(),
+        }
+    }
+
+    pub fn entities(&self) -> [Entity; 4] {
+        [self.position, self.nametag, self.left_hand, self.right_hand]
     }
 }
 
@@ -105,7 +152,7 @@ pub struct GraphicsSettings {
 impl Default for GraphicsSettings {
     fn default() -> Self {
         Self {
-            vsync: true,
+            vsync: false,
             log_fps: true,
             msaa: 4,
             fps_target: 60,

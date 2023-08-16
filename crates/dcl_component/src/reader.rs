@@ -58,6 +58,7 @@ impl<'a> DclReader<'a> {
     }
 
     pub fn take_slice(&mut self, len: usize) -> &[u8] {
+        let len = len.min(self.buffer.len());
         let result = &self.buffer[0..len];
         self.buffer = &self.buffer[len..];
         self.pos += len;

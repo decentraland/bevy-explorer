@@ -36,7 +36,7 @@ This project's goals are to:
 - specify the parcel at which to spawn.
 
 `--vsync (true|false)`
-- disable/enable vsync. defaults to on.
+- disable/enable vsync. defaults to off.
 
 `--fps (number)`
 - set target fps. defaults to 60. if vsync is true this will be overridden by the vsync refresh rate. also accessible via console `/fps` command.
