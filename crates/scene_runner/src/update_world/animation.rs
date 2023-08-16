@@ -143,15 +143,12 @@ fn update_animations(
 
                 player.play(h_clip.clone_weak());
 
-                // restart if finished
-                if player.elapsed() > clip.duration() {
-                    player.set_elapsed(0.0);
-                }
-
                 player.set_speed(state.speed.unwrap_or(1.0));
                 if state.r#loop.unwrap_or(true) {
                     player.repeat();
                 } else {
+                    // force restart if loop is false
+                    player.set_elapsed(0.0);
                     player.stop_repeating();
                 }
             }
