@@ -411,24 +411,24 @@ fn send_action_events(
         }
     }
 
-    let container_entity = target.0.as_ref().and_then(|info| {
+    // send events to scene roots
+    if !input_mgr.any_just_acted() {
+        return;
+    }
+
+    let scene_entity = target.0.as_ref().and_then(|info| {
         pointer_requests
-            .get_component::<ContainerEntity>(info.container)
+            .get_component::<SceneEntity>(info.container)
             .ok()
     });
-    let scene_root = container_entity.map(|container| container.root);
+    let scene_root = scene_entity.map(|e| e.root);
 
-    // send events to scene roots
-    for (scene_ent, mut context, scene_transform) in scenes.iter_mut() {
+    for (root_ent, mut context, scene_transform) in scenes.iter_mut() {
         let tick_number = context.tick_number;
         // we send the entity id to the containing scene, otherwise we send ROOT
         // as the entity id is only valid within the containing scene context
-        let entity_id = if scene_root == Some(scene_ent) {
-            container_entity
-                .as_ref()
-                .unwrap()
-                .container_id
-                .as_proto_u32()
+        let entity_id = if scene_root == Some(root_ent) {
+            scene_entity.as_ref().unwrap().id.as_proto_u32()
         } else {
             SceneEntityId::ROOT.as_proto_u32()
         };

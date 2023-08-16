@@ -63,6 +63,13 @@ pub struct InputManager<'w> {
 }
 
 impl<'w> InputManager<'w> {
+    pub fn any_just_acted(&self) -> bool {
+        self.mouse_input.get_just_pressed().len() != 0
+            || self.mouse_input.get_just_released().len() != 0
+            || self.key_input.get_just_pressed().len() != 0
+            || self.key_input.get_just_released().len() != 0
+    }
+
     pub fn just_down(&self, action: InputAction) -> bool {
         if !self.should_accept.0 {
             return false;
