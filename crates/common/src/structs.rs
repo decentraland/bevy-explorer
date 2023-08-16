@@ -46,14 +46,18 @@ impl AttachPoints {
                     ..default()
                 })
                 .id(),
-            left_hand: commands.spawn(SpatialBundle{
-                transform: Transform::from_rotation(Quat::from_rotation_y(PI)),
-                ..Default::default()
-            }).id(),
-            right_hand: commands.spawn(SpatialBundle{
-                transform: Transform::from_rotation(Quat::from_rotation_y(PI)),
-                ..Default::default()
-            }).id(),
+            left_hand: commands
+                .spawn(SpatialBundle {
+                    transform: Transform::from_rotation(Quat::from_rotation_y(PI)),
+                    ..Default::default()
+                })
+                .id(),
+            right_hand: commands
+                .spawn(SpatialBundle {
+                    transform: Transform::from_rotation(Quat::from_rotation_y(PI)),
+                    ..Default::default()
+                })
+                .id(),
         }
     }
 
