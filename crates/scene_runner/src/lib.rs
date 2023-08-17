@@ -29,8 +29,8 @@ use dcl_component::{
     transform_and_parent::DclTransformAndParent,
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
-use primary_entities::PrimaryEntities;
 use ipfs::SceneIpfsLocation;
+use primary_entities::PrimaryEntities;
 use spin_sleep::SpinSleeper;
 
 use self::{
@@ -42,8 +42,8 @@ use self::{
     update_world::{CrdtExtractors, SceneOutputPlugin},
 };
 
-pub mod primary_entities;
 pub mod initialize_scene;
+pub mod primary_entities;
 pub mod renderer_context;
 #[cfg(test)]
 pub mod test;
