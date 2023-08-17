@@ -6,17 +6,12 @@ use bevy::{
 use dcl::interface::ComponentPosition;
 
 use crate::{
-    ContainerEntity, DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneLoopSchedule,
-    TargetParent,
+    primary_entities::PrimaryEntities, DeletedSceneEntities, RendererSceneContext, SceneEntity,
+    SceneLoopSchedule, TargetParent,
 };
-use common::{
-    sets::SceneLoopSets,
-    structs::{PrimaryCamera, PrimaryUser},
-    util::TryInsertEx,
-};
+use common::sets::SceneLoopSets;
 use dcl_component::{
     transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
-    SceneEntityId,
 };
 
 use super::{AddCrdtInterfaceExt, CrdtLWWStateComponent};
@@ -52,8 +47,7 @@ pub(crate) fn process_transform_and_parent_updates(
         &DeletedSceneEntities,
     )>,
     mut entities: Query<(&mut Transform, &mut TargetParent), With<SceneEntity>>,
-    player: Query<Entity, With<PrimaryUser>>,
-    camera: Query<Entity, With<PrimaryCamera>>,
+    primaries: PrimaryEntities,
 ) {
     for (root, mut scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
         // remove crdt state for dead entities
@@ -87,46 +81,12 @@ pub(crate) fn process_transform_and_parent_updates(
                                 } else {
                                     debug!("set child of missing id {}", dcl_tp.parent());
                                     // we are parented to something that doesn't yet exist, create it here
-                                    // TODO abstract out the new entity code (duplicated from process_lifecycle)
-                                    // TODO alternatively make new target an option and leave this unparented,
-                                    // then try to look up the entity in the tree walk
-                                    let new_entity = commands
-                                        .spawn((
-                                            SpatialBundle::default(),
-                                            SceneEntity {
-                                                scene_id: scene_context.scene_id,
-                                                root,
-                                                id: dcl_tp.parent(),
-                                            },
-                                            TargetParent(root),
-                                        ))
-                                        .set_parent(root)
-                                        .id();
-                                    commands.entity(new_entity).try_insert(ContainerEntity {
+                                    scene_context.spawn_bevy_entity(
+                                        &mut commands,
                                         root,
-                                        container: new_entity,
-                                        container_id: dcl_tp.parent(),
-                                    });
-                                    scene_context
-                                        .associate_bevy_entity(dcl_tp.parent(), new_entity);
-
-                                    // special case for camera and player
-                                    if dcl_tp.parent() == SceneEntityId::PLAYER {
-                                        if let Ok(player) = player.get_single() {
-                                            commands
-                                                .entity(new_entity)
-                                                .try_insert(ParentPositionSync(player));
-                                        }
-                                    }
-                                    if dcl_tp.parent() == SceneEntityId::CAMERA {
-                                        if let Ok(camera) = camera.get_single() {
-                                            commands
-                                                .entity(new_entity)
-                                                .try_insert(ParentPositionSync(camera));
-                                        }
-                                    }
-
-                                    new_entity
+                                        dcl_tp.parent(),
+                                        &primaries,
+                                    )
                                 }
                             }
                         };
