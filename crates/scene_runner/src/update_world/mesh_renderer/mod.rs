@@ -108,14 +108,20 @@ impl Plugin for MeshDefinitionPlugin {
     }
 }
 
-fn update_mesh(
+pub fn update_mesh(
     mut commands: Commands,
-    new_primitives: Query<(Entity, &MeshDefinition), Changed<MeshDefinition>>,
+    new_primitives: Query<(Entity, &MeshDefinition, Option<&Handle<StandardMaterial>>), Changed<MeshDefinition>>,
     mut removed_primitives: RemovedComponents<MeshDefinition>,
     mut meshes: ResMut<Assets<Mesh>>,
     defaults: Res<MeshPrimitiveDefaults>,
+    mut default_material: Local<Handle<StandardMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for (ent, prim) in new_primitives.iter() {
+    if default_material.is_weak() {
+        *default_material = materials.add(StandardMaterial::default());
+    }
+
+    for (ent, prim, maybe_material) in new_primitives.iter() {
         let handle = match prim {
             MeshDefinition::Box { uvs } => {
                 if uvs.is_empty() {
@@ -162,6 +168,10 @@ fn update_mesh(
             MeshDefinition::Sphere => defaults.sphere.clone(),
         };
         commands.entity(ent).try_insert(handle);
+
+        if maybe_material.is_none() {
+            commands.entity(ent).try_insert(default_material.clone());
+        }
     }
 
     for ent in removed_primitives.iter() {
