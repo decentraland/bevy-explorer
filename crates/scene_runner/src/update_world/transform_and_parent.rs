@@ -11,7 +11,7 @@ use crate::{
 };
 use common::{
     sets::SceneLoopSets,
-    structs::{PrimaryUser, RestrictedAction},
+    structs::RestrictedAction,
 };
 use dcl_component::{
     transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
