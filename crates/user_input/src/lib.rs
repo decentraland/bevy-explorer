@@ -47,10 +47,11 @@ fn hide_player_in_first_person(
     if let (Ok(cam_transform), Ok((player_transform, mut vis))) =
         (camera.get_single(), player.get_single_mut())
     {
-        let distance = (cam_transform.translation() - player_transform.translation()).length();
-        if distance < 0.1 && *vis != Visibility::Hidden {
+        let distance = (cam_transform.translation() - player_transform.translation() - Vec3::Y * 1.81).length();
+        println!("{distance}");
+        if distance < 0.5 && *vis != Visibility::Hidden {
             *vis = Visibility::Hidden;
-        } else if distance > 0.1 && *vis != Visibility::Inherited {
+        } else if distance > 0.5 && *vis != Visibility::Inherited {
             *vis = Visibility::Inherited;
         }
     }

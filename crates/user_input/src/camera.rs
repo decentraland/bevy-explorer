@@ -132,7 +132,7 @@ pub fn update_camera_position(
         if target_direction.y + player_head.y < 0.0 {
             distance = distance * player_head.y / -target_direction.y;
         }
-        let target_direction = target_direction.normalize();
+        let target_direction = target_direction.normalize_or_zero();
 
         if distance > 0.0 {
             // cast to check visibility
