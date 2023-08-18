@@ -316,4 +316,11 @@ impl CrdtStore {
             }
         }
     }
+
+    // update with entries from another store
+    // can be used with `CrdtStore::take_updates` to maintain a copy by patching
+    pub fn update_from(&mut self, other: CrdtStore) {
+        self.lww.extend(other.lww.into_iter());
+        self.go.extend(other.go.into_iter());
+    }
 }

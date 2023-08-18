@@ -17,41 +17,51 @@ use super::{
 };
 
 pub mod engine;
+pub mod restricted_actions;
 
 // marker to indicate shutdown has been triggered
 pub struct ShuttingDown;
 
+pub struct RendererStore(pub CrdtStore);
+
 pub fn create_runtime() -> JsRuntime {
-    // create an extension referencing our native functions and JS initialisation scripts
-    // TODO: to make this more generic for multiple modules we could use
-    // https://crates.io/crates/inventory or similar
-    let ext = Extension::builder("decentraland")
-        // add require operation
-        .ops(vec![op_require::decl(), op_log::decl(), op_error::decl()])
-        // add plugin registrations
-        .ops(engine::ops())
+    let mut ext = &mut Extension::builder("decentraland");
+
+    // add core ops
+    ext = ext.ops(vec![op_require::decl(), op_log::decl(), op_error::decl()]);
+
+    let op_sets: [Vec<deno_core::OpDecl>; 2] = [engine::ops(), restricted_actions::ops()];
+
+    let op_names: Vec<_> = op_sets
+        .iter()
+        .flat_map(|op_set| op_set.iter().map(|set| set.name).collect::<Vec<_>>())
+        .collect();
+
+    // add plugin registrations
+    for ops in op_sets {
+        ext = ext.ops(ops)
+    }
+
+    let ext = ext
         // set startup JS script
         .js(include_js_files!(
             BevyExplorer
             "modules/init.js",
         ))
         // remove core deno ops that are not required
-        .middleware(|op| {
-            const ALLOW: [&str; 7] = [
+        .middleware(move |op| {
+            const ALLOW: [&str; 5] = [
                 "op_run_microtasks", // TODO check if we can remove this on next deno version
                 "op_eval_context",
                 "op_require",
                 "op_log",
                 "op_error",
-                "op_crdt_send_to_renderer",
-                "op_crdt_recv_from_renderer",
             ];
-            if ALLOW.contains(&op.name) {
+            if ALLOW.contains(&op.name) || op_names.contains(&op.name) {
                 op
             } else {
                 debug!("deny: {}", op.name);
                 op.disable()
-                // op
             }
         })
         .build();
@@ -96,8 +106,10 @@ pub(crate) fn scene_thread(
     state.borrow_mut().put(thread_rx);
     state.borrow_mut().put(global_update_receiver);
 
-    // store crdt state
+    // store crdt outbound state
     state.borrow_mut().put(CrdtStore::default());
+    // and renderer incoming state
+    state.borrow_mut().put(RendererStore(CrdtStore::default()));
 
     // store log output and initial elapsed of zero
     state.borrow_mut().put(Vec::<SceneLogMessage>::default());

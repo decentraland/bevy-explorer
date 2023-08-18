@@ -108,9 +108,13 @@ impl Plugin for MeshDefinitionPlugin {
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn update_mesh(
     mut commands: Commands,
-    new_primitives: Query<(Entity, &MeshDefinition, Option<&Handle<StandardMaterial>>), Changed<MeshDefinition>>,
+    new_primitives: Query<
+        (Entity, &MeshDefinition, Option<&Handle<StandardMaterial>>),
+        Changed<MeshDefinition>,
+    >,
     mut removed_primitives: RemovedComponents<MeshDefinition>,
     mut meshes: ResMut<Assets<Mesh>>,
     defaults: Res<MeshPrimitiveDefaults>,

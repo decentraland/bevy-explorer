@@ -9,9 +9,13 @@ use crate::{
     primary_entities::PrimaryEntities, DeletedSceneEntities, RendererSceneContext, SceneEntity,
     SceneLoopSchedule, TargetParent,
 };
-use common::sets::SceneLoopSets;
+use common::{
+    sets::SceneLoopSets,
+    structs::{PrimaryUser, RestrictedAction},
+};
 use dcl_component::{
     transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
+    SceneEntityId,
 };
 
 use super::{AddCrdtInterfaceExt, CrdtLWWStateComponent};
@@ -38,6 +42,7 @@ impl Plugin for TransformAndParentPlugin {
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub(crate) fn process_transform_and_parent_updates(
     mut commands: Commands,
     mut scenes: Query<(
@@ -46,8 +51,9 @@ pub(crate) fn process_transform_and_parent_updates(
         &mut CrdtLWWStateComponent<DclTransformAndParent>,
         &DeletedSceneEntities,
     )>,
-    mut entities: Query<(&mut Transform, &mut TargetParent), With<SceneEntity>>,
     primaries: PrimaryEntities,
+    mut scene_entities: Query<(&mut Transform, &mut TargetParent), With<SceneEntity>>,
+    mut restricted_actions: EventWriter<RestrictedAction>,
 ) {
     for (root, mut scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
         // remove crdt state for dead entities
@@ -56,11 +62,6 @@ pub(crate) fn process_transform_and_parent_updates(
         }
 
         for (scene_entity, entry) in std::mem::take(&mut updates.last_write) {
-            let Some(entity) = scene_context.bevy_entity(scene_entity) else {
-                info!("skipping {} update for missing entity {:?}", std::any::type_name::<DclTransformAndParent>(), scene_entity);
-                continue;
-            };
-
             let (transform, new_target_parent) = if entry.is_some {
                 match DclTransformAndParent::from_reader(&mut DclReader::new(&entry.data)) {
                     Ok(dcl_tp) => {
@@ -106,18 +107,40 @@ pub(crate) fn process_transform_and_parent_updates(
                 (Transform::default(), root)
             };
 
-            let Ok((mut target_transform, mut target_parent)) = entities.get_mut(entity) else {
-                warn!("failed to find entity for transform update?!");
-                continue;
-            };
-            *target_transform = transform;
-            if new_target_parent != target_parent.0 {
-                // update the target
-                target_parent.0 = new_target_parent;
-                // mark the entity as needing hierarchy check
-                scene_context.unparented_entities.insert(entity);
-                // mark the scene so hierarchy checking is performed
-                scene_context.hierarchy_changed = true;
+            match scene_entity {
+                SceneEntityId::PLAYER => {
+                    restricted_actions.send(RestrictedAction::MovePlayer {
+                        scene: root,
+                        to: transform,
+                    });
+                }
+                SceneEntityId::CAMERA => {
+                    restricted_actions.send(RestrictedAction::MoveCamera {
+                        scene: root,
+                        to: transform,
+                    });
+                }
+                _ => {
+                    // normal scene-space entity
+                    let Some(entity) = scene_context.bevy_entity(scene_entity) else {
+                        info!("skipping {} update for missing entity {:?}", std::any::type_name::<DclTransformAndParent>(), scene_entity);
+                        continue;
+                    };
+
+                    let Ok((mut target_transform, mut target_parent)) = scene_entities.get_mut(entity) else {
+                        warn!("failed to find entity for transform update?!");
+                        continue;
+                    };
+                    *target_transform = transform;
+                    if new_target_parent != target_parent.0 {
+                        // update the target
+                        target_parent.0 = new_target_parent;
+                        // mark the entity as needing hierarchy check
+                        scene_context.unparented_entities.insert(entity);
+                        // mark the scene so hierarchy checking is performed
+                        scene_context.hierarchy_changed = true;
+                    }
+                }
             }
         }
     }
@@ -148,7 +171,7 @@ pub(crate) fn process_transform_and_parent_updates(
                     let parent = match parents.entry(pointer) {
                         Entry::Occupied(o) => o.into_mut(),
                         Entry::Vacant(v) => v.insert(
-                            entities
+                            scene_entities
                                 .get(pointer)
                                 .map(|(_, target_parent)| target_parent.0)
                                 .unwrap_or(root),
