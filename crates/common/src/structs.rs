@@ -111,7 +111,7 @@ impl Default for PrimaryCamera {
 #[derive(Event)]
 pub enum RestrictedAction {
     MovePlayer { scene: Entity, to: Transform },
-    MoveCamera { scene: Entity, to: Transform },
+    MoveCamera(Quat),
 }
 
 #[derive(Resource)]

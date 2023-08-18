@@ -9,10 +9,7 @@ use crate::{
     primary_entities::PrimaryEntities, DeletedSceneEntities, RendererSceneContext, SceneEntity,
     SceneLoopSchedule, TargetParent,
 };
-use common::{
-    sets::SceneLoopSets,
-    structs::RestrictedAction,
-};
+use common::{sets::SceneLoopSets, structs::RestrictedAction};
 use dcl_component::{
     transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
     SceneEntityId,
@@ -115,10 +112,7 @@ pub(crate) fn process_transform_and_parent_updates(
                     });
                 }
                 SceneEntityId::CAMERA => {
-                    restricted_actions.send(RestrictedAction::MoveCamera {
-                        scene: root,
-                        to: transform,
-                    });
+                    restricted_actions.send(RestrictedAction::MoveCamera(transform.rotation));
                 }
                 _ => {
                     // normal scene-space entity

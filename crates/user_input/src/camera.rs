@@ -7,6 +7,10 @@ use bevy::{
 };
 
 use common::structs::{CameraOverride, PrimaryCamera, PrimaryUser, UiRoot};
+use scene_runner::{
+    renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
+    ContainingScene,
+};
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn update_camera(
@@ -103,6 +107,8 @@ pub fn update_camera(
 pub fn update_camera_position(
     mut camera: Query<(&mut Transform, &PrimaryCamera)>,
     mut player: Query<&Transform, (With<PrimaryUser>, Without<PrimaryCamera>)>,
+    containing_scene: ContainingScene,
+    mut scene_colliders: Query<(&RendererSceneContext, &mut SceneColliderData)>,
 ) {
     let (
         Ok(player_transform),
@@ -119,8 +125,47 @@ pub fn update_camera_position(
             _ => options.distance,
         };
 
-        camera_transform.translation = player_transform.translation
-            + Vec3::Y * (1.81 + 0.2 * distance)
-            + camera_transform.rotation.mul_vec3(Vec3::Z * 5.0 * distance);
+        let player_head = player_transform.translation + Vec3::Y * 1.81;
+        let target_direction =
+            Vec3::Y * 0.2 * distance + camera_transform.rotation.mul_vec3(Vec3::Z * 5.0 * distance);
+        let mut distance = target_direction.length();
+        if target_direction.y + player_head.y < 0.0 {
+            distance = distance * player_head.y / -target_direction.y;
+        }
+        let target_direction = target_direction.normalize();
+
+        if distance > 0.0 {
+            // cast to check visibility
+            if let Some((context, mut colliders)) = containing_scene
+                .get_position(player_head)
+                .and_then(|root| scene_colliders.get_mut(root).ok())
+            {
+                if let Some(hit) = colliders.cast_ray_nearest(
+                    context.last_update_frame,
+                    player_head,
+                    target_direction.normalize(),
+                    distance,
+                    u32::MAX,
+                ) {
+                    distance = hit.toi;
+                }
+            }
+            if let Some((context, mut colliders)) = containing_scene
+                .get_position(player_head + target_direction * distance)
+                .and_then(|root| scene_colliders.get_mut(root).ok())
+            {
+                if let Some(hit) = colliders.cast_ray_nearest(
+                    context.last_update_frame,
+                    player_head,
+                    target_direction.normalize(),
+                    distance,
+                    u32::MAX,
+                ) {
+                    distance = hit.toi;
+                }
+            }
+        }
+
+        camera_transform.translation = player_head + target_direction * distance;
     }
 }

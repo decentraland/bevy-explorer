@@ -406,9 +406,8 @@ pub struct ContainingScene<'w, 's> {
 }
 
 impl<'w, 's> ContainingScene<'w, 's> {
-    pub fn get(&self, ent: Entity) -> Option<Entity> {
-        let parcel = (self.transforms.get(ent).ok()?.translation().xz() * Vec2::new(1.0, -1.0)
-            / PARCEL_SIZE)
+    pub fn get_position(&self, position: Vec3) -> Option<Entity> {
+        let parcel = (position.xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
             .floor()
             .as_ivec2();
 
@@ -417,6 +416,10 @@ impl<'w, 's> ContainingScene<'w, 's> {
         } else {
             None
         }
+    }
+
+    pub fn get(&self, ent: Entity) -> Option<Entity> {
+        self.get_position(self.transforms.get(ent).ok()?.translation())
     }
 
     // get all scenes within radius of the given entity
