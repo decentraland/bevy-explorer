@@ -50,7 +50,6 @@ fn hide_player_in_first_person(
         let distance =
             (cam_transform.translation() - player_transform.translation() - Vec3::Y * 1.81)
                 .length();
-        println!("{distance}");
         if distance < 0.5 && *vis != Visibility::Hidden {
             *vis = Visibility::Hidden;
         } else if distance > 0.5 && *vis != Visibility::Inherited {
