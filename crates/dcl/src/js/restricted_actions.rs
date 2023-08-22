@@ -16,6 +16,7 @@ pub fn ops() -> Vec<OpDecl> {
 #[op(v8)]
 fn op_move_player_to(
     op_state: Rc<RefCell<OpState>>,
+    absolute: bool,
     position: [f32; 3],
     maybe_camera: Option<[f32; 3]>,
 ) {
@@ -23,30 +24,23 @@ fn op_move_player_to(
 
     // get current
     let inbound = &op_state.borrow::<RendererStore>().0;
-    let mut player_transform: DclTransformAndParent = DclReader::new(
-        &inbound
-            .lww
-            .get(&SceneComponentId::TRANSFORM)
-            .unwrap()
-            .last_write
-            .get(&SceneEntityId::PLAYER)
-            .unwrap()
-            .data,
-    )
-    .read()
-    .unwrap();
-    let mut camera_transform: DclTransformAndParent = DclReader::new(
-        &inbound
-            .lww
-            .get(&SceneComponentId::TRANSFORM)
-            .unwrap()
-            .last_write
-            .get(&SceneEntityId::CAMERA)
-            .unwrap()
-            .data,
-    )
-    .read()
-    .unwrap();
+    let get_transform = |id: SceneEntityId| -> DclTransformAndParent {
+        DclReader::new(
+            &inbound
+                .lww
+                .get(&SceneComponentId::TRANSFORM)
+                .unwrap()
+                .last_write
+                .get(&id)
+                .unwrap()
+                .data,
+        )
+        .read()
+        .unwrap()
+    };
+
+    let mut player_transform = get_transform(SceneEntityId::PLAYER);
+    let mut camera_transform = get_transform(SceneEntityId::CAMERA);
 
     // update
     let look_to = |direction: Vec3| -> DclQuat {
@@ -59,7 +53,13 @@ fn op_move_player_to(
         DclQuat::from_bevy_quat(Quat::from_mat3(&Mat3::from_cols(right, up, back)))
     };
 
-    player_transform.translation = DclTranslation(position);
+    player_transform.translation = if absolute {
+        let origin = get_transform(SceneEntityId::WORLD_ORIGIN).translation;
+        DclTranslation(position) - origin
+    } else {
+        DclTranslation(position)
+    };
+
     if let Some(camera) = maybe_camera {
         let target_offset = Vec3 {
             x: camera[0] - position[0],
