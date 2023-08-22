@@ -1,6 +1,6 @@
 module.exports.movePlayerTo = async function (body) { 
     if ("cameraTarget" in body) {
-        Deno.core.ops.op_move_player_to(false, [body.newRelativePosition.x, body.newRelativePosition.y, body.newRelativePosition.z], [target.x, target.y, target.z]);
+        Deno.core.ops.op_move_player_to(false, [body.newRelativePosition.x, body.newRelativePosition.y, body.newRelativePosition.z], [body.cameraTarget.x, body.cameraTarget.y, body.cameraTarget.z]);
     } else {
         Deno.core.ops.op_move_player_to(false, [body.newRelativePosition.x, body.newRelativePosition.y, body.newRelativePosition.z]);
     }
