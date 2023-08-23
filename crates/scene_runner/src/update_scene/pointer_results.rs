@@ -23,7 +23,7 @@ use dcl_component::{
     },
     SceneComponentId, SceneEntityId,
 };
-use input_manager::{InputManager, should_accept_any, AcceptInput};
+use input_manager::{should_accept_any, AcceptInput, InputManager};
 
 pub struct PointerResultPlugin;
 
@@ -66,6 +66,7 @@ pub enum UiPointerTarget {
     Some(Entity),
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_pointer_target(
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,

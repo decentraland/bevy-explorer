@@ -58,7 +58,9 @@ pub fn update_camera(
 
     // Handle mouse input
     let mut mouse_delta = Vec2::ZERO;
-    if accept_input.mouse && mouse_button_input.pressed(options.mouse_key_enable_mouse) || *move_toggled {
+    if accept_input.mouse && mouse_button_input.pressed(options.mouse_key_enable_mouse)
+        || *move_toggled
+    {
         for mut window in &mut windows {
             if !window.focused {
                 continue;
@@ -81,7 +83,9 @@ pub fn update_camera(
     }
 
     if mouse_button_input.just_released(options.mouse_key_enable_mouse)
-        || (accept_input.key && key_input.just_pressed(options.keyboard_key_enable_mouse) && !*move_toggled)
+        || (accept_input.key
+            && key_input.just_pressed(options.keyboard_key_enable_mouse)
+            && !*move_toggled)
     {
         for mut window in &mut windows {
             window.cursor.grab_mode = CursorGrabMode::None;

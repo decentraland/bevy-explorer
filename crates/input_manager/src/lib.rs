@@ -80,7 +80,9 @@ impl<'w> InputManager<'w> {
             .get_by_left(&action)
             .map_or(false, |item| match item {
                 InputItem::Key(k) => self.should_accept.key && self.key_input.just_pressed(*k),
-                InputItem::Mouse(mb) => self.should_accept.mouse && self.mouse_input.just_pressed(*mb),
+                InputItem::Mouse(mb) => {
+                    self.should_accept.mouse && self.mouse_input.just_pressed(*mb)
+                }
             })
     }
 
@@ -110,7 +112,9 @@ impl<'w> InputManager<'w> {
             .iter()
             .filter(|(_, button)| match button {
                 InputItem::Key(k) => self.should_accept.key && self.key_input.just_pressed(*k),
-                InputItem::Mouse(m) => self.should_accept.mouse && self.mouse_input.just_pressed(*m),
+                InputItem::Mouse(m) => {
+                    self.should_accept.mouse && self.mouse_input.just_pressed(*m)
+                }
             })
             .map(|(action, _)| action)
     }
@@ -172,7 +176,9 @@ fn check_accept_input(
     let Ok(mut ctx) = ctx.get_single_mut() else {
         return;
     };
-    should_accept.mouse = ui_roots.iter().any(|root| !matches!(root, Interaction::None));
+    should_accept.mouse = ui_roots
+        .iter()
+        .any(|root| !matches!(root, Interaction::None));
     should_accept.key = !console.open && !ctx.get_mut().wants_keyboard_input();
 }
 
@@ -187,4 +193,3 @@ pub fn should_accept_mouse(should_accept: Res<AcceptInput>) -> bool {
 pub fn should_accept_any(should_accept: Res<AcceptInput>) -> bool {
     should_accept.mouse || should_accept.key
 }
-

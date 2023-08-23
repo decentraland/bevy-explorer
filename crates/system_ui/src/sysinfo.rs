@@ -1,7 +1,8 @@
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     math::Vec3Swizzles,
-    prelude::*, ui::FocusPolicy,
+    prelude::*,
+    ui::FocusPolicy,
 };
 
 use common::{
