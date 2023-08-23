@@ -5,6 +5,7 @@ use common::{
     structs::{PrimaryCamera, PrimaryUser, RestrictedAction},
 };
 use scene_runner::{initialize_scene::PARCEL_SIZE, renderer_context::RendererSceneContext};
+use ui_core::dialog::SpawnDialog;
 
 pub struct RestrictedActionsPlugin;
 
@@ -19,6 +20,7 @@ impl Plugin for RestrictedActionsPlugin {
 }
 
 fn move_player(
+    mut commands: Commands,
     mut events: EventReader<RestrictedAction>,
     scenes: Query<&RendererSceneContext>,
     mut player: Query<(&mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
@@ -31,13 +33,32 @@ fn move_player(
             continue;
         };
 
-        let (mut player_transform, mut dynamics) = player.single_mut();
-        dynamics.velocity =
-            transform.rotation * player_transform.rotation.inverse() * dynamics.velocity;
-
-        *player_transform = *transform;
-        player_transform.translation +=
+        let mut target_transform = *transform;
+        target_transform.translation +=
             (scene.base * IVec2::new(1, -1)).as_vec2().extend(0.0).xzy() * PARCEL_SIZE;
+
+        if transform.translation.clamp(
+            Vec3::new(0.0, f32::MIN, -PARCEL_SIZE),
+            Vec3::new(PARCEL_SIZE, f32::MAX, 0.0),
+        ) != transform.translation
+        {
+            commands.spawn_dialog_two(
+                "Teleport".into(),
+                "The scene wants to teleport you to another location".into(),
+                "Let's go!",
+                move |mut player: Query<&mut Transform, With<PrimaryUser>>| {
+                    *player.single_mut() = target_transform;
+                },
+                "No thanks",
+                || {},
+            );
+        } else {
+            let (mut player_transform, mut dynamics) = player.single_mut();
+            dynamics.velocity =
+                transform.rotation * player_transform.rotation.inverse() * dynamics.velocity;
+
+            *player_transform = target_transform;
+        }
     }
 }
 
