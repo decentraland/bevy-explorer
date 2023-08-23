@@ -8,7 +8,7 @@ use common::{
     sets::SceneSets,
     structs::{PrimaryCamera, PrimaryUser},
 };
-use input_manager::AcceptInput;
+use input_manager::should_accept_key;
 
 use self::{
     camera::{update_camera, update_camera_position},
@@ -19,18 +19,14 @@ use self::{
 // plugin to pass user input messages to the scene
 pub struct UserInputPlugin;
 
-pub fn should_accept_input(should_accept: Res<AcceptInput>) -> bool {
-    should_accept.0
-}
-
 impl Plugin for UserInputPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
             (
-                update_user_velocity.run_if(should_accept_input),
+                update_user_velocity.run_if(should_accept_key),
                 update_user_position,
-                update_camera.run_if(should_accept_input),
+                update_camera,
                 update_camera_position,
             )
                 .chain()

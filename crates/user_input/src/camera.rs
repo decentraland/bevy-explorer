@@ -6,7 +6,8 @@ use bevy::{
     window::CursorGrabMode,
 };
 
-use common::structs::{CameraOverride, PrimaryCamera, PrimaryUser, UiRoot};
+use common::structs::{CameraOverride, PrimaryCamera, PrimaryUser};
+use input_manager::AcceptInput;
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
     ContainingScene,
@@ -18,12 +19,12 @@ pub fn update_camera(
     mut windows: Query<&mut Window>,
     mut mouse_events: EventReader<MouseMotion>,
     mut wheel_events: EventReader<MouseWheel>,
-    ui_root: Query<&Interaction, With<UiRoot>>,
     mouse_button_input: Res<Input<MouseButton>>,
     key_input: Res<Input<KeyCode>>,
     mut move_toggled: Local<bool>,
     mut camera: Query<(&mut Transform, &mut PrimaryCamera)>,
     mut locked_cursor_position: Local<Option<Vec2>>,
+    accept_input: Res<AcceptInput>,
 ) {
     let dt = time.delta_seconds();
 
@@ -39,23 +40,25 @@ pub fn update_camera(
         options.initialized = true;
     }
 
-    if key_input.just_pressed(options.keyboard_key_enable_mouse) {
-        *move_toggled = !*move_toggled;
-    }
+    if accept_input.key {
+        if key_input.just_pressed(options.keyboard_key_enable_mouse) {
+            *move_toggled = !*move_toggled;
+        }
 
-    if key_input.pressed(options.key_roll_left) {
-        options.roll += dt * 1.0;
-    } else if key_input.pressed(options.key_roll_right) {
-        options.roll -= dt * 1.0;
-    } else if options.roll > 0.0 {
-        options.roll = (options.roll - dt * 0.25).max(0.0);
-    } else {
-        options.roll = (options.roll + dt * 0.25).min(0.0);
+        if key_input.pressed(options.key_roll_left) {
+            options.roll += dt * 1.0;
+        } else if key_input.pressed(options.key_roll_right) {
+            options.roll -= dt * 1.0;
+        } else if options.roll > 0.0 {
+            options.roll = (options.roll - dt * 0.25).max(0.0);
+        } else {
+            options.roll = (options.roll + dt * 0.25).min(0.0);
+        }
     }
 
     // Handle mouse input
     let mut mouse_delta = Vec2::ZERO;
-    if mouse_button_input.pressed(options.mouse_key_enable_mouse) || *move_toggled {
+    if accept_input.mouse && mouse_button_input.pressed(options.mouse_key_enable_mouse) || *move_toggled {
         for mut window in &mut windows {
             if !window.focused {
                 continue;
@@ -76,8 +79,9 @@ pub fn update_camera(
             mouse_delta += mouse_event.delta;
         }
     }
+
     if mouse_button_input.just_released(options.mouse_key_enable_mouse)
-        || (key_input.just_pressed(options.keyboard_key_enable_mouse) && !*move_toggled)
+        || (accept_input.key && key_input.just_pressed(options.keyboard_key_enable_mouse) && !*move_toggled)
     {
         for mut window in &mut windows {
             window.cursor.grab_mode = CursorGrabMode::None;
@@ -86,7 +90,7 @@ pub fn update_camera(
         }
     }
 
-    if ui_root.get_single().ok() != Some(&Interaction::None) {
+    if accept_input.mouse {
         if let Some(event) = wheel_events.iter().last() {
             if event.y > 0.0 {
                 options.distance = 0f32.max((options.distance - 0.05) * 0.9);
