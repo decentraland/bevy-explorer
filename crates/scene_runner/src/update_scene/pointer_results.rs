@@ -23,7 +23,7 @@ use dcl_component::{
     },
     SceneComponentId, SceneEntityId,
 };
-use input_manager::{should_accept_any, AcceptInput, InputManager};
+use input_manager::{AcceptInput, InputManager};
 
 pub struct PointerResultPlugin;
 
@@ -37,7 +37,7 @@ impl Plugin for PointerResultPlugin {
             (
                 update_pointer_target,
                 send_hover_events,
-                send_action_events.run_if(should_accept_any),
+                send_action_events,
                 debug_pointer,
             )
                 .chain()
@@ -86,12 +86,6 @@ fn update_pointer_target(
     };
     let player_translation = player_transform.translation();
 
-    // check for system ui
-    if !accept_input.mouse {
-        hover_target.0 = None;
-        return;
-    }
-
     // check for ui target
     if let UiPointerTarget::Some(t) = *ui_target {
         hover_target.0 = Some(PointerTargetInfo {
@@ -101,6 +95,12 @@ fn update_pointer_target(
             position: None,
             normal: None,
         });
+        return;
+    }
+
+    // check for system ui
+    if !accept_input.mouse {
+        hover_target.0 = None;
         return;
     }
 

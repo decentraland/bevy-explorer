@@ -5,6 +5,7 @@ use bevy::{
     ui::FocusPolicy,
     utils::{HashMap, HashSet},
 };
+use input_manager::MouseInteractionComponent;
 
 use crate::{
     renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
@@ -803,6 +804,7 @@ fn layout_scene_ui(
                                     let node = *node;
 
                                     ent_cmds = ent_cmds.insert((
+                                        MouseInteractionComponent,
                                         FocusPolicy::Block,
                                         Interaction::default(),
                                         On::<HoverEnter>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
