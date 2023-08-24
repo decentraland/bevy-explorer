@@ -270,7 +270,6 @@ pub fn op_fetch_custom_client(
     state: &mut OpState,
     args: CreateHttpClientOptions,
 ) -> Result<ResourceId, AnyError> {
-    println!("custom client");
     let mut builder = isahc::HttpClient::builder();
     if let Some(proxy) = args.proxy {
         builder = builder.proxy(Uri::try_from(proxy.url).ok());
