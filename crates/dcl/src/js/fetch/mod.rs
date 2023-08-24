@@ -108,8 +108,6 @@ pub fn op_fetch(
             request = request.header(CONTENT_LENGTH, HeaderValue::from(body_size))
         }
 
-        // request = request.body(Body::from_reader(stream)).map_err(|e| anyhow!(e))?;
-
         match data {
             Some(data) => {
                 tx.blocking_send(Some(data.into()))?;
@@ -209,15 +207,15 @@ pub async fn op_fetch_send(
     };
 
     let status = res.status();
-    let mut res_headers = Vec::new();
+    let mut headers = Vec::new();
     for (key, val) in res.headers().iter() {
-        res_headers.push((key.as_str().into(), val.as_bytes().into()));
+        headers.push((key.as_str().into(), val.as_bytes().into()));
     }
 
     let content_length = res.body().len();
     let chunk = bytes::Bytes::from(res.bytes().await?);
 
-    let rid = state
+    let response_rid = state
         .borrow_mut()
         .resource_table
         .add(FetchResponseBodyResource {
@@ -229,9 +227,9 @@ pub async fn op_fetch_send(
     Ok(FetchResponse {
         status: status.as_u16(),
         status_text: status.canonical_reason().unwrap_or("").to_string(),
-        headers: res_headers,
+        headers,
         url: "why do you need that".into(),
-        response_rid: rid,
+        response_rid,
         content_length,
     })
 }
