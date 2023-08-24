@@ -13,7 +13,8 @@
                     "0,0"
                 ]
             },
-            "name": "empty scene"
+            "name": "empty scene",
+            "runtimeVersion": "7"
         },
         "content": [
             {

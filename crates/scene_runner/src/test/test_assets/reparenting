@@ -13,7 +13,8 @@
                     "0,0"
                 ]
             },
-            "name": "late entities"
+            "name": "late entities",
+            "runtimeVersion": "7"
         },
         "content": [
             {

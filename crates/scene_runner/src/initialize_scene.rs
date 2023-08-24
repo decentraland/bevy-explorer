@@ -191,6 +191,8 @@ pub struct SceneMeta {
     pub display: Option<SceneDisplay>,
     pub main: String,
     pub scene: SceneMetaScene,
+    #[serde(rename = "runtimeVersion")]
+    pub runtime_version: Option<String>,
 }
 
 #[derive(TypeUuid, Default, Clone, TypePath)]
@@ -266,13 +268,21 @@ pub(crate) fn load_scene_javascript(
             None => None,
         };
 
-        let h_code = match asset_server.load_content_file::<SceneJsFile>(&meta.main, &definition.id)
-        {
-            Ok(h_code) => h_code,
-            Err(e) => {
-                fail(&format!("couldn't load javascript: {e}"));
-                continue;
+        let is_sdk7 = match meta.runtime_version {
+            Some(runtime_version) => runtime_version == "7",
+            None => false
+        };
+
+        let h_code = if is_sdk7 {
+            match asset_server.load_content_file::<SceneJsFile>(&meta.main, &definition.id) {
+                Ok(h_code) => h_code,
+                Err(e) => {
+                    fail(&format!("couldn't load javascript: {}", e));
+                    continue;
+                }
             }
+        } else {
+            asset_server.load("sdk7_adaption_layer/index.js")
         };
 
         let crdt_component_interfaces = CrdtComponentInterfaces(HashMap::from_iter(
@@ -298,7 +308,7 @@ pub(crate) fn load_scene_javascript(
             .unwrap_or("???".to_owned());
         let mut renderer_context =
             RendererSceneContext::new(scene_id, definition.id.clone(), title, base, root, 1.0);
-        info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?})");
+        info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?})");
 
         scene_updates.scene_ids.insert(scene_id, root);
 
