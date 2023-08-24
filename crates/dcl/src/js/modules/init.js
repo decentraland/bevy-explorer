@@ -49,3 +49,13 @@ const console = {
 
 // timeout handler
 globalThis.setImmediate = (fn) => Promise.resolve().then(fn)
+
+globalThis.require = require;
+globalThis.console = console;
+
+// this does NOT seem like the nicest way to do re-exports but i can't figure out how to do it otherwise
+import { Request } from "ext:deno_fetch/23_request.js"
+globalThis.Request = Request;
+
+import * as fetch from "ext:deno_fetch/26_fetch.js";
+globalThis.fetch = fetch.fetch;

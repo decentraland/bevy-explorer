@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
 use bevy::prelude::{debug, error, info_span};
 use deno_core::{
@@ -10,6 +10,8 @@ use tokio::sync::mpsc::Receiver;
 
 use ipfs::SceneJsFile;
 
+use self::fetch::{FP, TP};
+
 use super::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
     RendererResponse, SceneElapsedTime, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse,
@@ -17,6 +19,7 @@ use super::{
 };
 
 pub mod engine;
+pub mod fetch;
 pub mod restricted_actions;
 
 // marker to indicate shutdown has been triggered
@@ -25,41 +28,48 @@ pub struct ShuttingDown;
 pub struct RendererStore(pub CrdtStore);
 
 pub fn create_runtime() -> JsRuntime {
-    let mut ext = &mut Extension::builder("decentraland");
+    // add fetch stack
+    let web = deno_web::deno_web::init_ops_and_esm::<TP>(deno_web::BlobStore::default(), None);
+    let webidl = deno_webidl::deno_webidl::init_ops_and_esm();
+    let url = deno_url::deno_url::init_ops_and_esm();
+    let console = deno_console::deno_console::init_ops_and_esm();
+    let fetch = deno_fetch::deno_fetch::init_js_only::<FP>();
+
+    let mut ext = &mut Extension::builder_with_deps("decentraland", &["deno_fetch"]);
 
     // add core ops
     ext = ext.ops(vec![op_require::decl(), op_log::decl(), op_error::decl()]);
 
-    let op_sets: [Vec<deno_core::OpDecl>; 2] = [engine::ops(), restricted_actions::ops()];
-
-    let op_names: Vec<_> = op_sets
-        .iter()
-        .flat_map(|op_set| op_set.iter().map(|set| set.name).collect::<Vec<_>>())
-        .collect();
+    let op_sets: [Vec<deno_core::OpDecl>; 3] =
+        [engine::ops(), restricted_actions::ops(), fetch::ops()];
 
     // add plugin registrations
-    for ops in op_sets {
-        ext = ext.ops(ops)
+    let mut op_map = HashMap::new();
+    for set in op_sets {
+        for op in &set {
+            // explicitly record the ones we added so we can remove deno_fetch imposters
+            op_map.insert(op.name, op.v8_fn_ptr);
+        }
+        ext = ext.ops(set)
     }
 
     let ext = ext
         // set startup JS script
-        .js(include_js_files!(
+        .esm(include_js_files!(
             BevyExplorer
-            "modules/init.js",
+            dir "modules",
+            "init.js",
         ))
-        // remove core deno ops that are not required
+        .esm_entry_point("ext:BevyExplorer/init.js")
         .middleware(move |op| {
-            const ALLOW: [&str; 5] = [
-                "op_run_microtasks", // TODO check if we can remove this on next deno version
-                "op_eval_context",
-                "op_require",
-                "op_log",
-                "op_error",
-            ];
-            if ALLOW.contains(&op.name) || op_names.contains(&op.name) {
+            if op_map
+                .get(&op.name)
+                .map_or(true, |custom_op_fn| custom_op_fn == &op.v8_fn_ptr)
+            {
+                debug!("allow: {}", op.name);
                 op
             } else {
+                // we've replaced this op
                 debug!("deny: {}", op.name);
                 op.disable()
             }
@@ -69,7 +79,7 @@ pub fn create_runtime() -> JsRuntime {
     // create runtime
     JsRuntime::new(RuntimeOptions {
         v8_platform: v8::Platform::new(1, false).make_shared().into(),
-        extensions: vec![ext],
+        extensions: vec![webidl, url, console, web, fetch, ext],
         ..Default::default()
     })
 }
