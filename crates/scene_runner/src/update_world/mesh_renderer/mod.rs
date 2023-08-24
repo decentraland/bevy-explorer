@@ -75,11 +75,19 @@ impl Plugin for MeshDefinitionPlugin {
             mesh
         };
         let flip_uv = |mut mesh: Mesh| {
-            let Some(VertexAttributeValues::Float32x3(ref mut positions)) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) else {panic!()};
+            let Some(VertexAttributeValues::Float32x3(ref mut positions)) =
+                mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION)
+            else {
+                panic!()
+            };
             for pos in positions.iter_mut() {
                 *pos = [pos[0], -pos[2], pos[1]];
             }
-            let Some(VertexAttributeValues::Float32x3(ref mut normals)) = mesh.attribute_mut(Mesh::ATTRIBUTE_NORMAL) else {panic!()};
+            let Some(VertexAttributeValues::Float32x3(ref mut normals)) =
+                mesh.attribute_mut(Mesh::ATTRIBUTE_NORMAL)
+            else {
+                panic!()
+            };
             for pos in normals.iter_mut() {
                 *pos = [pos[0], -pos[2], pos[1]];
             }
@@ -132,7 +140,11 @@ pub fn update_mesh(
                     defaults.boxx.clone()
                 } else {
                     let mut mesh = Mesh::from(shape::Cube::default());
-                    let Some(VertexAttributeValues::Float32x2(mesh_uvs)) = mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0) else { panic!("uvs are not f32x2") };
+                    let Some(VertexAttributeValues::Float32x2(mesh_uvs)) =
+                        mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
+                    else {
+                        panic!("uvs are not f32x2")
+                    };
                     for (attr, uv) in mesh_uvs.iter_mut().zip(uvs) {
                         *attr = *uv
                     }
@@ -161,7 +173,11 @@ pub fn update_mesh(
                     defaults.plane.clone()
                 } else {
                     let mut mesh = Mesh::from(shape::Quad::default());
-                    let Some(VertexAttributeValues::Float32x2(mesh_uvs)) = mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0) else { panic!("uvs are not f32x2") };
+                    let Some(VertexAttributeValues::Float32x2(mesh_uvs)) =
+                        mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
+                    else {
+                        panic!("uvs are not f32x2")
+                    };
                     for (attr, uv) in mesh_uvs.iter_mut().zip(uvs) {
                         attr[0] = uv[0];
                         attr[1] = 1.0 - uv[1];

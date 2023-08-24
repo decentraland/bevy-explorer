@@ -80,7 +80,9 @@ fn update_audio(
                     continue;
                 };
 
-                let Ok(handle) = asset_server.load_content_file(&audio_source.0.audio_clip_url, &scene.hash) else {
+                let Ok(handle) =
+                    asset_server.load_content_file(&audio_source.0.audio_clip_url, &scene.hash)
+                else {
                     warn!("failed to load content file");
                     continue;
                 };

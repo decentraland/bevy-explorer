@@ -49,7 +49,9 @@ pub fn update_text_entry_components(
     )>,
     mut lost_focus: RemovedComponents<Focus>,
 ) {
-    let Ok(mut ctx) = egui_ctx.get_single_mut() else { return; };
+    let Ok(mut ctx) = egui_ctx.get_single_mut() else {
+        return;
+    };
     let ctx = ctx.get_mut();
 
     let lost_focus = lost_focus.iter().collect::<HashSet<_>>();

@@ -201,7 +201,11 @@ pub(crate) fn process_crdt_lww_updates<
 
         for (scene_entity, entry) in std::mem::take(&mut updates.last_write) {
             let Some(entity) = scene_context.bevy_entity(scene_entity) else {
-                warn!("skipping {} update for missing entity {:?}", std::any::type_name::<D>(), scene_entity);
+                warn!(
+                    "skipping {} update for missing entity {:?}",
+                    std::any::type_name::<D>(),
+                    scene_entity
+                );
                 continue;
             };
             if entry.is_some {

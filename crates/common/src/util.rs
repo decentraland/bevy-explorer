@@ -40,7 +40,9 @@ impl AsH160 for &str {
             return (&self[2..]).as_h160();
         }
 
-        let Ok(hex_bytes) = hex::decode(self.as_bytes()) else { return None };
+        let Ok(hex_bytes) = hex::decode(self.as_bytes()) else {
+            return None;
+        };
         if hex_bytes.len() != H160::len_bytes() {
             return None;
         }

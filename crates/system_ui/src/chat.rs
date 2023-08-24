@@ -356,7 +356,9 @@ fn display_chat(
             chatbox.active_chat_sink = Some(receiver);
         }
 
-        let Some(rec) = chatbox.active_chat_sink.as_mut() else { panic!() };
+        let Some(rec) = chatbox.active_chat_sink.as_mut() else {
+            panic!()
+        };
         while let Ok(chat) = rec.try_recv() {
             let msg = make_chat(&mut commands, &asset_server, chat);
             commands.entity(entity).add_child(msg);

@@ -102,7 +102,7 @@ impl PacketIter for InputWrapper {
 
     fn reset(&mut self) {
         let Some(input) = self.get_input(false) else {
-            return
+            return;
         };
 
         if input.seek(0, ..).is_err() {

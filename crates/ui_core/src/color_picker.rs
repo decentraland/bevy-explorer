@@ -37,7 +37,9 @@ pub fn update_color_picker_components(
         Option<&Focus>,
     )>,
 ) {
-    let Ok(mut ctx) = egui_ctx.get_single_mut() else { return; };
+    let Ok(mut ctx) = egui_ctx.get_single_mut() else {
+        return;
+    };
     let ctx = ctx.get_mut();
 
     for (entity, mut color_picker, style, node, transform, _maybe_interaction, _maybe_focus) in

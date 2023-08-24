@@ -117,11 +117,17 @@ pub(crate) fn process_transform_and_parent_updates(
                 _ => {
                     // normal scene-space entity
                     let Some(entity) = scene_context.bevy_entity(scene_entity) else {
-                        info!("skipping {} update for missing entity {:?}", std::any::type_name::<DclTransformAndParent>(), scene_entity);
+                        info!(
+                            "skipping {} update for missing entity {:?}",
+                            std::any::type_name::<DclTransformAndParent>(),
+                            scene_entity
+                        );
                         continue;
                     };
 
-                    let Ok((mut target_transform, mut target_parent)) = scene_entities.get_mut(entity) else {
+                    let Ok((mut target_transform, mut target_parent)) =
+                        scene_entities.get_mut(entity)
+                    else {
                         warn!("failed to find entity for transform update?!");
                         continue;
                     };
@@ -218,8 +224,12 @@ fn parent_position_sync(
     locals: Query<(&Transform, Option<&Parent>), Without<ParentPositionSync>>,
 ) {
     for (mut transform, sync, parent) in syncees.iter_mut() {
-        let Ok(parent_transform) = globals.get(parent.get()) else { continue };
-        let Ok((sync_transform, maybe_parent)) = locals.get(sync.0) else { continue };
+        let Ok(parent_transform) = globals.get(parent.get()) else {
+            continue;
+        };
+        let Ok((sync_transform, maybe_parent)) = locals.get(sync.0) else {
+            continue;
+        };
 
         let mut transforms = vec![sync_transform];
         let mut pointer = maybe_parent;

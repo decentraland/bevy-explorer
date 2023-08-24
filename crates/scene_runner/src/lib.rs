@@ -424,7 +424,11 @@ impl<'w, 's> ContainingScene<'w, 's> {
 
     // get all scenes within radius of the given entity
     pub fn get_area(&self, ent: Entity, radius: f32) -> Vec<Entity> {
-        let Ok(focus) = self.transforms.get(ent).map(|t| t.translation().xz() * Vec2::new(1.0, -1.0)) else {
+        let Ok(focus) = self
+            .transforms
+            .get(ent)
+            .map(|t| t.translation().xz() * Vec2::new(1.0, -1.0))
+        else {
             return Default::default();
         };
 

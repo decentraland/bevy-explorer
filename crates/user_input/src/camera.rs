@@ -118,10 +118,9 @@ pub fn update_camera_position(
     containing_scene: ContainingScene,
     mut scene_colliders: Query<(&RendererSceneContext, &mut SceneColliderData)>,
 ) {
-    let (
-        Ok(player_transform),
-        Ok((mut camera_transform, options)),
-    ) = (player.get_single_mut(), camera.get_single_mut()) else {
+    let (Ok(player_transform), Ok((mut camera_transform, options))) =
+        (player.get_single_mut(), camera.get_single_mut())
+    else {
         return;
     };
 

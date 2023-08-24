@@ -190,7 +190,9 @@ impl<'w, 's> TextureResolver<'w, 's> {
             }
             texture_union::Tex::AvatarTexture(_) => Err(TextureResolveError::NotImplemented),
             texture_union::Tex::VideoTexture(vt) => {
-                let Some(video_entity) = scene.bevy_entity(SceneEntityId::from_proto_u32(vt.video_player_entity)) else {
+                let Some(video_entity) =
+                    scene.bevy_entity(SceneEntityId::from_proto_u32(vt.video_player_entity))
+                else {
                     warn!("failed to look up video source entity");
                     return Err(TextureResolveError::SourceNotAvailable);
                 };

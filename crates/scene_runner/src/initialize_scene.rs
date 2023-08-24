@@ -99,7 +99,9 @@ pub(crate) fn load_scene_entity(
     for event in load_scene_events.iter() {
         let mut commands = match event.entity {
             Some(entity) => {
-                let Some(commands) = commands.get_entity(entity) else { continue; };
+                let Some(commands) = commands.get_entity(entity) else {
+                    continue;
+                };
                 commands
             }
             None => commands.spawn_empty(),
@@ -218,7 +220,9 @@ pub(crate) fn load_scene_javascript(
             commands.entity(root).try_insert(SceneLoading::Failed);
         };
 
-        let SceneLoading::MainCrdt(ref maybe_h_crdt) = state else { panic!("wrong load state in load_scene_javascript")};
+        let SceneLoading::MainCrdt(ref maybe_h_crdt) = state else {
+            panic!("wrong load state in load_scene_javascript")
+        };
         if let Some(ref h_crdt) = maybe_h_crdt {
             match asset_server.get_load_state(h_crdt) {
                 bevy::asset::LoadState::Loaded => (),
