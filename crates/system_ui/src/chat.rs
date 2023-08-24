@@ -281,27 +281,24 @@ fn make_chat(
         .spawn((
             DisplayChatMessage { timestamp },
             TextBundle {
-                text: Text::from_sections(
-                    [
-                        TextSection::new(
-                            format!("{}: ", sender),
-                            TextStyle {
-                                font: asset_server.load("fonts/FiraSans-Bold.ttf"),
-                                font_size: 15.0,
-                                color: Color::YELLOW,
-                            },
-                        ),
-                        TextSection::new(
-                            message,
-                            TextStyle {
-                                font: asset_server.load("fonts/FiraSans-Bold.ttf"),
-                                font_size: 15.0,
-                                color: Color::WHITE,
-                            },
-                        ),
-                    ]
-                    .into_iter(),
-                ),
+                text: Text::from_sections([
+                    TextSection::new(
+                        format!("{}: ", sender),
+                        TextStyle {
+                            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                            font_size: 15.0,
+                            color: Color::YELLOW,
+                        },
+                    ),
+                    TextSection::new(
+                        message,
+                        TextStyle {
+                            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                            font_size: 15.0,
+                            color: Color::WHITE,
+                        },
+                    ),
+                ]),
                 ..Default::default()
             },
         ))
@@ -318,21 +315,18 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
         .spawn((
             DisplayChatMessage { timestamp },
             TextBundle {
-                text: Text::from_sections(
-                    [TextSection::new(
-                        message,
-                        TextStyle {
-                            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
-                            font_size: 15.0,
-                            color: match level {
-                                SceneLogLevel::Log => Color::WHITE,
-                                SceneLogLevel::SceneError => Color::YELLOW,
-                                SceneLogLevel::SystemError => Color::BISQUE,
-                            },
+                text: Text::from_sections([TextSection::new(
+                    message,
+                    TextStyle {
+                        font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                        font_size: 15.0,
+                        color: match level {
+                            SceneLogLevel::Log => Color::WHITE,
+                            SceneLogLevel::SceneError => Color::YELLOW,
+                            SceneLogLevel::SystemError => Color::BISQUE,
                         },
-                    )]
-                    .into_iter(),
-                ),
+                    },
+                )]),
                 ..Default::default()
             },
         ))

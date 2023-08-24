@@ -50,7 +50,7 @@ pub fn create_runtime() -> JsRuntime {
     for set in op_sets {
         for op in &set {
             // explicitly record the ones we added so we can remove deno_fetch imposters
-            op_map.insert(op.name, op.clone());
+            op_map.insert(op.name, *op);
         }
         ext = ext.ops(set)
     }
@@ -58,9 +58,9 @@ pub fn create_runtime() -> JsRuntime {
     let override_sets: [Vec<deno_core::OpDecl>; 1] = [fetch::ops()];
 
     for set in override_sets {
-        for op in &set {
+        for op in set {
             // explicitly record the ones we added so we can remove deno_fetch imposters
-            op_map.insert(op.name, op.clone());
+            op_map.insert(op.name, op);
         }
     }
 
@@ -75,7 +75,7 @@ pub fn create_runtime() -> JsRuntime {
         .middleware(move |op| {
             if let Some(custom_op) = op_map.get(&op.name) {
                 debug!("replace: {}", op.name);
-                op.with_implementation_from(&custom_op)
+                op.with_implementation_from(custom_op)
             } else {
                 op
             }

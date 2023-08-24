@@ -30,24 +30,21 @@ pub struct InputMap {
 impl Default for InputMap {
     fn default() -> Self {
         Self {
-            inputs: BiMap::from_iter(
-                [
-                    (InputAction::IaPointer, InputItem::Mouse(MouseButton::Left)),
-                    (InputAction::IaPrimary, InputItem::Key(KeyCode::E)),
-                    (InputAction::IaSecondary, InputItem::Key(KeyCode::F)),
-                    (InputAction::IaForward, InputItem::Key(KeyCode::W)),
-                    (InputAction::IaBackward, InputItem::Key(KeyCode::S)),
-                    (InputAction::IaRight, InputItem::Key(KeyCode::D)),
-                    (InputAction::IaLeft, InputItem::Key(KeyCode::A)),
-                    (InputAction::IaJump, InputItem::Key(KeyCode::Space)),
-                    (InputAction::IaWalk, InputItem::Key(KeyCode::ShiftLeft)),
-                    (InputAction::IaAction3, InputItem::Key(KeyCode::Key1)),
-                    (InputAction::IaAction4, InputItem::Key(KeyCode::Key2)),
-                    (InputAction::IaAction5, InputItem::Key(KeyCode::Key3)),
-                    (InputAction::IaAction6, InputItem::Key(KeyCode::Key4)),
-                ]
-                .into_iter(),
-            ),
+            inputs: BiMap::from_iter([
+                (InputAction::IaPointer, InputItem::Mouse(MouseButton::Left)),
+                (InputAction::IaPrimary, InputItem::Key(KeyCode::E)),
+                (InputAction::IaSecondary, InputItem::Key(KeyCode::F)),
+                (InputAction::IaForward, InputItem::Key(KeyCode::W)),
+                (InputAction::IaBackward, InputItem::Key(KeyCode::S)),
+                (InputAction::IaRight, InputItem::Key(KeyCode::D)),
+                (InputAction::IaLeft, InputItem::Key(KeyCode::A)),
+                (InputAction::IaJump, InputItem::Key(KeyCode::Space)),
+                (InputAction::IaWalk, InputItem::Key(KeyCode::ShiftLeft)),
+                (InputAction::IaAction3, InputItem::Key(KeyCode::Key1)),
+                (InputAction::IaAction4, InputItem::Key(KeyCode::Key2)),
+                (InputAction::IaAction5, InputItem::Key(KeyCode::Key3)),
+                (InputAction::IaAction6, InputItem::Key(KeyCode::Key4)),
+            ]),
         }
     }
 }

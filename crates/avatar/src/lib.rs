@@ -1033,7 +1033,7 @@ fn spawn_scenes(
                 .map(|h_gtlf| asset_server.get_load_state(h_gtlf))
             {
                 Some(bevy::asset::LoadState::Loading) | Some(bevy::asset::LoadState::NotLoaded) => {
-                    ()
+                    // nothing to do
                 }
                 otherwise => {
                     warn!("failed to load body gltf: {otherwise:?}");
