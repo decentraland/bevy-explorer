@@ -270,7 +270,7 @@ pub(crate) fn load_scene_javascript(
 
         let is_sdk7 = match meta.runtime_version {
             Some(runtime_version) => runtime_version == "7",
-            None => false
+            None => false,
         };
 
         let h_code = if is_sdk7 {
