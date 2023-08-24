@@ -8,7 +8,7 @@ use deno_core::{
     anyhow::anyhow,
     error::{type_error, AnyError},
     futures::TryStreamExt,
-    op, AsyncRefCell, ByteString, CancelHandle, OpDecl, OpState, ResourceId, ZeroCopyBuf,
+    op, AsyncRefCell, ByteString, CancelHandle, JsBuffer, Op, OpDecl, OpState, ResourceId,
 };
 use deno_fetch::FetchPermissions;
 use deno_web::TimersPermission;
@@ -52,9 +52,9 @@ impl TimersPermission for TP {
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
     vec![
-        op_fetch::decl(),
-        op_fetch_send::decl(),
-        op_fetch_custom_client::decl(),
+        op_fetch::DECL,
+        op_fetch_send::DECL,
+        op_fetch_custom_client::DECL,
     ]
 }
 
@@ -82,7 +82,7 @@ pub fn op_fetch(
     client_rid: Option<u32>,
     has_body: bool,
     body_length: Option<u64>,
-    data: Option<ZeroCopyBuf>,
+    data: Option<JsBuffer>,
 ) -> Result<IsahcFetchReturn, AnyError> {
     let client = if let Some(rid) = client_rid {
         let r = state.resource_table.get::<IsahcClientResource>(rid)?;

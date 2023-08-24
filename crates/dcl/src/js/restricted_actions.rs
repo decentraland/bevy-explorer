@@ -1,5 +1,5 @@
 use bevy::prelude::{Mat3, Quat, Vec3};
-use deno_core::{op, OpDecl, OpState};
+use deno_core::{op, Op, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{interface::CrdtType, js::RendererStore, CrdtStore};
@@ -10,7 +10,7 @@ use dcl_component::{
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![op_move_player_to::decl()]
+    vec![op_move_player_to::DECL]
 }
 
 #[op(v8)]

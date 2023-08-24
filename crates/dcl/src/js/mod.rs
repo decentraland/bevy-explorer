@@ -4,7 +4,7 @@ use bevy::prelude::{debug, error, info_span};
 use deno_core::{
     ascii_str,
     error::{generic_error, AnyError},
-    include_js_files, op, v8, Extension, JsRuntime, OpState, RuntimeOptions,
+    include_js_files, op, v8, Extension, JsRuntime, Op, OpState, RuntimeOptions,
 };
 use tokio::sync::mpsc::Receiver;
 
@@ -29,7 +29,10 @@ pub struct RendererStore(pub CrdtStore);
 
 pub fn create_runtime() -> JsRuntime {
     // add fetch stack
-    let web = deno_web::deno_web::init_ops_and_esm::<TP>(deno_web::BlobStore::default(), None);
+    let web = deno_web::deno_web::init_ops_and_esm::<TP>(
+        std::sync::Arc::new(deno_web::BlobStore::default()),
+        None,
+    );
     let webidl = deno_webidl::deno_webidl::init_ops_and_esm();
     let url = deno_url::deno_url::init_ops_and_esm();
     let console = deno_console::deno_console::init_ops_and_esm();
@@ -38,40 +41,43 @@ pub fn create_runtime() -> JsRuntime {
     let mut ext = &mut Extension::builder_with_deps("decentraland", &["deno_fetch"]);
 
     // add core ops
-    ext = ext.ops(vec![op_require::decl(), op_log::decl(), op_error::decl()]);
+    ext = ext.ops(vec![op_require::DECL, op_log::DECL, op_error::DECL]);
 
-    let op_sets: [Vec<deno_core::OpDecl>; 3] =
-        [engine::ops(), restricted_actions::ops(), fetch::ops()];
+    let op_sets: [Vec<deno_core::OpDecl>; 2] = [engine::ops(), restricted_actions::ops()];
 
     // add plugin registrations
     let mut op_map = HashMap::new();
     for set in op_sets {
         for op in &set {
             // explicitly record the ones we added so we can remove deno_fetch imposters
-            op_map.insert(op.name, op.v8_fn_ptr);
+            op_map.insert(op.name, op.clone());
         }
         ext = ext.ops(set)
+    }
+
+    let override_sets: [Vec<deno_core::OpDecl>; 1] = [fetch::ops()];
+
+    for set in override_sets {
+        for op in &set {
+            // explicitly record the ones we added so we can remove deno_fetch imposters
+            op_map.insert(op.name, op.clone());
+        }
     }
 
     let ext = ext
         // set startup JS script
         .esm(include_js_files!(
             BevyExplorer
-            dir "modules",
+            dir "src/js/modules",
             "init.js",
         ))
         .esm_entry_point("ext:BevyExplorer/init.js")
         .middleware(move |op| {
-            if op_map
-                .get(&op.name)
-                .map_or(true, |custom_op_fn| custom_op_fn == &op.v8_fn_ptr)
-            {
-                debug!("allow: {}", op.name);
-                op
+            if let Some(custom_op) = op_map.get(&op.name) {
+                debug!("replace: {}", op.name);
+                op.with_implementation_from(&custom_op)
             } else {
-                // we've replaced this op
-                debug!("deny: {}", op.name);
-                op.disable()
+                op
             }
         })
         .build();
@@ -148,8 +154,14 @@ pub(crate) fn scene_thread(
         Ok(script) => script,
     };
 
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+
     // run startup function
-    let result = run_script(&mut runtime, &script, "onStart", (), |_| Vec::new());
+    let result = rt
+        .block_on(async { run_script(&mut runtime, &script, "onStart", (), |_| Vec::new()).await });
 
     if let Err(e) = result {
         // ignore failure to send failure
@@ -174,8 +186,11 @@ pub(crate) fn scene_thread(
             .put(SceneElapsedTime(elapsed.as_secs_f32()));
 
         // run the onUpdate function
-        let result = run_script(&mut runtime, &script, "onUpdate", (), |scope| {
-            vec![v8::Number::new(scope, dt.as_secs_f64()).into()]
+        let result = rt.block_on(async {
+            run_script(&mut runtime, &script, "onUpdate", (), |scope| {
+                vec![v8::Number::new(scope, dt.as_secs_f64()).into()]
+            })
+            .await
         });
 
         if state.borrow().try_borrow::<ShuttingDown>().is_some() {
@@ -193,7 +208,7 @@ pub(crate) fn scene_thread(
 }
 
 // helper to setup, acquire, run and return results from a script function
-fn run_script(
+async fn run_script(
     runtime: &mut JsRuntime,
     script: &v8::Global<v8::Value>,
     fn_name: &str,
@@ -239,7 +254,7 @@ fn run_script(
     };
 
     let f = runtime.resolve_value(promise);
-    futures_lite::future::block_on(f).map(|_| ())
+    f.await.map(|_| ())
 }
 
 // synchronously returns a string containing JS code from the file system
