@@ -28,8 +28,6 @@ pub struct ShuttingDown;
 
 pub struct RendererStore(pub CrdtStore);
 
-pub struct SceneHash(pub String);
-
 pub fn create_runtime() -> JsRuntime {
     // add fetch stack
     let web = deno_web::deno_web::init_ops_and_esm::<TP>(
