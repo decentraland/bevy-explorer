@@ -200,3 +200,19 @@ macro_rules! dcl_assert {
 }
 
 pub use dcl_assert;
+
+// quaternion normalization
+pub trait QuatNormalizeExt {
+    fn normalize_or_identity(&self) -> Self;
+}
+
+impl QuatNormalizeExt for bevy::prelude::Quat {
+    fn normalize_or_identity(&self) -> Self {
+        let norm = self.normalize();
+        if norm.is_finite() {
+            norm
+        } else {
+            bevy::prelude::Quat::IDENTITY
+        }
+    }
+}
