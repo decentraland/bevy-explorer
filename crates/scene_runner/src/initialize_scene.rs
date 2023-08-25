@@ -448,6 +448,7 @@ pub(crate) fn initialize_scene(
             crdt_component_interfaces,
             thread_sx,
             global_updates,
+            asset_server.clone(),
             scene_id,
         );
 

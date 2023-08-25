@@ -3,9 +3,8 @@ use std::{cell::RefCell, rc::Rc};
 mod byte_stream;
 mod fetch_response_body_resource;
 
-use bevy::prelude::debug;
+use bevy::prelude::{debug, AssetServer};
 use deno_core::{
-    anyhow::anyhow,
     error::{type_error, AnyError},
     futures::TryStreamExt,
     op, AsyncRefCell, ByteString, CancelHandle, JsBuffer, Op, OpDecl, OpState, ResourceId,
@@ -16,6 +15,7 @@ use http::{
     header::{ACCEPT_ENCODING, CONTENT_LENGTH, HOST, RANGE},
     HeaderName, HeaderValue, Method, Uri,
 };
+use ipfs::IpfsLoaderExt;
 use isahc::{
     config::{CaCertificate, ClientCertificate, PrivateKey},
     prelude::Configurable,
@@ -59,7 +59,7 @@ pub fn ops() -> Vec<OpDecl> {
 }
 
 struct IsahcFetchRequestResource {
-    client: isahc::HttpClient,
+    client: Option<isahc::HttpClient>,
     request: http::request::Builder,
     body: Option<MpscByteStream>,
 }
@@ -86,14 +86,9 @@ pub fn op_fetch(
 ) -> Result<IsahcFetchReturn, AnyError> {
     let client = if let Some(rid) = client_rid {
         let r = state.resource_table.get::<IsahcClientResource>(rid)?;
-        r.0.clone()
-    } else if let Some(client) = state.try_borrow::<IsahcDefaultClientResource>() {
-        client.0.clone()
+        Some(r.0.clone())
     } else {
-        state.put(IsahcDefaultClientResource(
-            isahc::HttpClient::new().map_err(|e| anyhow!(e))?,
-        ));
-        state.borrow::<IsahcDefaultClientResource>().0.clone()
+        None
     };
 
     let mut request = isahc::Request::builder().uri(url.clone());
@@ -192,16 +187,17 @@ pub async fn op_fetch_send(
         .ok()
         .expect("multiple op_fetch_send ongoing");
 
-    let fut = if let Some(body) = body {
-        let body = AsyncBody::from_reader(body.into_async_read());
-        let request = request.body(body)?;
-        client.send_async(request)
+    let body = if let Some(body) = body {
+        AsyncBody::from_reader(body.into_async_read())
     } else {
-        let request = request.body(())?;
-        client.send_async(request)
+        AsyncBody::empty()
     };
 
-    let mut res = match fut.await {
+    let request = request.body(body)?;
+
+    let asset_server = state.borrow_mut().borrow_mut::<AssetServer>().clone();
+
+    let mut res = match asset_server.ipfs().async_request(request, client).await {
         Ok(res) => res,
         Err(err) => return Err(type_error(err.to_string())),
     };

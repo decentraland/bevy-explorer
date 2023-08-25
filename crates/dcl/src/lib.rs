@@ -4,7 +4,10 @@ use std::sync::{
     Mutex,
 };
 
-use bevy::utils::{HashMap, HashSet};
+use bevy::{
+    prelude::AssetServer,
+    utils::{HashMap, HashSet},
+};
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use tokio::sync::mpsc::Sender;
@@ -92,6 +95,7 @@ pub fn spawn_scene(
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SyncSender<SceneResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    asset_server: AssetServer,
     id: SceneId,
 ) -> Sender<RendererResponse> {
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
@@ -106,6 +110,7 @@ pub fn spawn_scene(
                 renderer_sender,
                 thread_rx,
                 global_update_receiver,
+                asset_server,
             )
         })
         .unwrap();

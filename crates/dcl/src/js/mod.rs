@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
-use bevy::prelude::{debug, error, info_span};
+use bevy::prelude::{debug, error, info_span, AssetServer};
 use deno_core::{
     ascii_str,
     error::{generic_error, AnyError},
@@ -98,6 +98,7 @@ pub(crate) fn scene_thread(
     thread_sx: SyncSender<SceneResponse>,
     thread_rx: Receiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    asset_server: AssetServer,
 ) {
     let scene_context = CrdtContext::new(scene_id);
     let mut runtime = create_runtime();
@@ -121,6 +122,9 @@ pub(crate) fn scene_thread(
     state.borrow_mut().put(thread_sx);
     state.borrow_mut().put(thread_rx);
     state.borrow_mut().put(global_update_receiver);
+
+    // store asset server
+    state.borrow_mut().put(asset_server);
 
     // store crdt outbound state
     state.borrow_mut().put(CrdtStore::default());
