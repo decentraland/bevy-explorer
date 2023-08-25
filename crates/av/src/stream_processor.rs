@@ -57,8 +57,11 @@ pub fn process_streams(
                     start_instant = Some(Instant::now());
                 }
                 continue;
-            } else if streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
+            } else if streams.iter().all(|ctx| ctx.buffered_time() == 0.0) {
                 info!("eof");
+                for stream in streams.iter() {
+                    info!("stream: {}", stream.buffered_time());
+                }
                 start_instant = None;
             }
         }
