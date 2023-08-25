@@ -618,7 +618,6 @@ impl IpfsIo {
         request: isahc::Request<isahc::AsyncBody>,
         client: Option<isahc::HttpClient>,
     ) -> Result<isahc::Response<isahc::AsyncBody>, anyhow::Error> {
-        println!("via ipfs");
         // get semaphore to limit concurrent requests
         let _permit = self
             .request_slots
