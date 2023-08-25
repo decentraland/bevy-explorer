@@ -91,6 +91,7 @@ pub fn get_next_scene_id() -> SceneId {
 }
 
 pub fn spawn_scene(
+    scene_hash: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SyncSender<SceneResponse>,
@@ -104,6 +105,7 @@ pub fn spawn_scene(
         .name(format!("scene thread {}", id.0))
         .spawn(move || {
             scene_thread(
+                scene_hash,
                 id,
                 scene_js,
                 crdt_component_interfaces,

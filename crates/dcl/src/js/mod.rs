@@ -21,11 +21,14 @@ use super::{
 pub mod engine;
 pub mod fetch;
 pub mod restricted_actions;
+pub mod runtime;
 
 // marker to indicate shutdown has been triggered
 pub struct ShuttingDown;
 
 pub struct RendererStore(pub CrdtStore);
+
+pub struct SceneHash(pub String);
 
 pub fn create_runtime() -> JsRuntime {
     // add fetch stack
@@ -43,7 +46,8 @@ pub fn create_runtime() -> JsRuntime {
     // add core ops
     ext = ext.ops(vec![op_require::DECL, op_log::DECL, op_error::DECL]);
 
-    let op_sets: [Vec<deno_core::OpDecl>; 2] = [engine::ops(), restricted_actions::ops()];
+    let op_sets: [Vec<deno_core::OpDecl>; 3] =
+        [engine::ops(), restricted_actions::ops(), runtime::ops()];
 
     // add plugin registrations
     let mut op_map = HashMap::new();
@@ -91,7 +95,9 @@ pub fn create_runtime() -> JsRuntime {
 }
 
 // main scene processing thread - constructs an isolate and runs the scene
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn scene_thread(
+    scene_hash: String,
     scene_id: SceneId,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
@@ -100,7 +106,7 @@ pub(crate) fn scene_thread(
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     asset_server: AssetServer,
 ) {
-    let scene_context = CrdtContext::new(scene_id);
+    let scene_context = CrdtContext::new(scene_id, scene_hash);
     let mut runtime = create_runtime();
 
     // store handle

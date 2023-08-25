@@ -632,6 +632,10 @@ impl IpfsIo {
         }
         .map_err(|e| anyhow!(e))
     }
+
+    pub async fn ipfs_hash(&self, ipfs_path: &IpfsPath) -> Option<String> {
+        ipfs_path.hash(&*self.context.read().await)
+    }
 }
 
 pub type ActiveEntityTask = Task<Result<Vec<EntityDefinition>, anyhow::Error>>;
