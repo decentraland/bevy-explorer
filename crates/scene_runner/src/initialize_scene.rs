@@ -286,6 +286,7 @@ pub(crate) fn load_scene_javascript(
                 }
             }
         } else {
+            // TODO: replace with remote version https://renderer-artifacts.decentraland.org/sdk7-adaption-layer/main/index.js
             asset_server.load("sdk7_adaption_layer/index.js")
         };
 
