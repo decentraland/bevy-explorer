@@ -43,8 +43,12 @@ function require(moduleName) {
 
 // minimal console
 const console = { 
-    log: function(text) { Deno.core.ops.op_log("" + text) },
-    error: function(text) { Deno.core.ops.op_error("" + text) },
+    log: function(...args) {
+        Deno.core.ops.op_log("" + args.join(' '))
+    },
+    error: function(...args) {
+        Deno.core.ops.op_error("" + args.join(' '))
+    },
 }
 
 // timeout handler
