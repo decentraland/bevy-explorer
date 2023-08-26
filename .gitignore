@@ -5,6 +5,5 @@ Cargo.lock
 !/assets/fonts
 !/assets/shaders
 !/assets/images
-!/assets/sdk7_adaption_layer
 .vscode/settings.json
 config.json
