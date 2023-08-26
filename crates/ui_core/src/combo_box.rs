@@ -37,7 +37,9 @@ pub fn update_comboboxen(
     mut egui_ctx: Query<&mut EguiContext, With<PrimaryWindow>>,
     mut combos: Query<(Entity, &mut ComboBox, &Style, &Node, &GlobalTransform)>,
 ) {
-    let Ok(mut ctx) = egui_ctx.get_single_mut() else { return; };
+    let Ok(mut ctx) = egui_ctx.get_single_mut() else {
+        return;
+    };
     let ctx = ctx.get_mut();
 
     for (entity, mut combo, style, node, transform) in combos.iter_mut() {

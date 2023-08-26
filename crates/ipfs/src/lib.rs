@@ -612,6 +612,29 @@ impl IpfsIo {
             Ok(res)
         })
     }
+
+    pub async fn async_request(
+        &self,
+        request: isahc::Request<isahc::AsyncBody>,
+        client: Option<isahc::HttpClient>,
+    ) -> Result<isahc::Response<isahc::AsyncBody>, anyhow::Error> {
+        // get semaphore to limit concurrent requests
+        let _permit = self
+            .request_slots
+            .acquire()
+            .await
+            .map_err(|e| AssetIoError::Io(std::io::Error::new(ErrorKind::Other, e)))?;
+
+        match client {
+            Some(client) => client.send_async(request).await,
+            None => request.send_async().await,
+        }
+        .map_err(|e| anyhow!(e))
+    }
+
+    pub async fn ipfs_hash(&self, ipfs_path: &IpfsPath) -> Option<String> {
+        ipfs_path.hash(&*self.context.read().await)
+    }
 }
 
 pub type ActiveEntityTask = Task<Result<Vec<EntityDefinition>, anyhow::Error>>;

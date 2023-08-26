@@ -194,7 +194,9 @@ fn update_scrollables(
         update_slider: Option<UpdateSliderPosition>,
     }
 
-    let Ok(window) = window.get_single() else { return; };
+    let Ok(window) = window.get_single() else {
+        return;
+    };
     let cursor_position = window.cursor_position().unwrap_or_default();
 
     let previously_clicked = std::mem::take(&mut *clicked_slider);
@@ -336,7 +338,9 @@ fn update_scrollables(
             }
         } else if interaction == &Interaction::Pressed {
             // jump the slider to the clicked position
-            let (Val::Px(left), Val::Px(top)) = (style.left, style.top) else { continue; };
+            let (Val::Px(left), Val::Px(top)) = (style.left, style.top) else {
+                continue;
+            };
             let relative_position = cursor_position - Vec2::new(left, top);
             let slider_len = info.length * info.ratio;
             let position = if bar.vertical {

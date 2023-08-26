@@ -6,6 +6,7 @@ pub mod toasts;
 use bevy::prelude::*;
 
 use common::{sets::SetupSets, structs::UiRoot};
+use input_manager::MouseInteractionComponent;
 use toasts::ToastsPlugin;
 
 use self::{chat::ChatPanelPlugin, profile::ProfileEditPlugin, sysinfo::SysInfoPanelPlugin};
@@ -45,6 +46,7 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
                 ..Default::default()
             },
             Interaction::default(),
+            MouseInteractionComponent,
             UiRoot,
         ))
         .id();

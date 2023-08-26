@@ -27,7 +27,7 @@ use crate::{
     },
     RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
 };
-use common::structs::{AppConfig, GraphicsSettings, PrimaryCamera};
+use common::structs::{AppConfig, GraphicsSettings, PrimaryCamera, RestrictedAction};
 use comms::{wallet::WalletPlugin, CommsPlugin};
 use console::{self, ConsolePlugin};
 use dcl::interface::{CrdtStore, CrdtType};
@@ -105,6 +105,7 @@ fn init_test_app(entity_json: &str) -> App {
     app.add_plugins(SceneRunnerPlugin);
     app.init_resource::<InputMap>();
     app.init_resource::<AcceptInput>();
+    app.add_event::<RestrictedAction>();
 
     let mut test_path = std::env::current_dir().unwrap();
     test_path.push("src");
@@ -370,7 +371,7 @@ fn late_entities() {
 
 #[test]
 fn cyclic_recovery() {
-    let states = [(3, 1), (1, 2), (2, 3), (3, 0)]
+    let states = [(603, 601), (601, 602), (602, 603), (603, 0)]
         .into_iter()
         .enumerate()
         .map(|(timestamp, (ent, par))| {

@@ -386,9 +386,15 @@ fn select_avatar(
                 commands.entity(ent).try_insert(AvatarSelection {
                     scene: Some(scene_ent.root),
                     shape: PbAvatarShape {
-                        name: Some(scene_avatar_shape.0.name.clone().unwrap_or_else(|| "NPC".into())),
+                        name: Some(
+                            scene_avatar_shape
+                                .0
+                                .name
+                                .clone()
+                                .unwrap_or_else(|| "NPC".into()),
+                        ),
                         ..scene_avatar_shape.0.clone()
-                    }
+                    },
                 });
 
                 debug!("npc avatar {:?}", scene_ent);
@@ -589,13 +595,15 @@ impl WearableDefinition {
         body_shape: &str,
         content_hash: &str,
     ) -> Option<WearableDefinition> {
-        let Some(representation) = (
-            if body_shape.is_empty() {
-                Some(&meta.data.representations[0])
-            } else {
-                meta.data.representations.iter().find(|rep| rep.body_shapes.iter().any(|rep_shape| rep_shape.to_lowercase() == *body_shape))
-            }
-        ) else {
+        let Some(representation) = (if body_shape.is_empty() {
+            Some(&meta.data.representations[0])
+        } else {
+            meta.data.representations.iter().find(|rep| {
+                rep.body_shapes
+                    .iter()
+                    .any(|rep_shape| rep_shape.to_lowercase() == *body_shape)
+            })
+        }) else {
             warn!("no representation for body shape {body_shape}");
             return None;
         };
@@ -892,14 +900,18 @@ fn update_render_avatar(
         );
 
         // add defaults
-        let defaults: Vec<_> = base_wearables::default_wearables().flat_map(|default| {
-            let Some(WearablePointerResult::Exists(hash)) = wearable_pointers.0.get(&Urn::from_str(default).unwrap()) else {
-                warn!("failed to load default renderable {}", default);
-                return None;
-            };
-            let meta = wearable_metas.0.get(hash).unwrap();
-            WearableDefinition::new(meta, &asset_server, body_shape, hash)
-        }).collect();
+        let defaults: Vec<_> = base_wearables::default_wearables()
+            .flat_map(|default| {
+                let Some(WearablePointerResult::Exists(hash)) =
+                    wearable_pointers.0.get(&Urn::from_str(default).unwrap())
+                else {
+                    warn!("failed to load default renderable {}", default);
+                    return None;
+                };
+                let meta = wearable_metas.0.get(hash).unwrap();
+                WearableDefinition::new(meta, &asset_server, body_shape, hash)
+            })
+            .collect();
 
         for default in defaults {
             if !wearables.contains_key(&default.category) {
@@ -1013,12 +1025,16 @@ fn spawn_scenes(
             continue;
         }
 
-        let Some(gltf) = def.body.model.as_ref()
-            .and_then(|h_gltf| gltfs.get(h_gltf))
-        else {
-            match def.body.model.as_ref().map(|h_gtlf| asset_server.get_load_state(h_gtlf)) {
-                Some(bevy::asset::LoadState::Loading) |
-                Some(bevy::asset::LoadState::NotLoaded) => (),
+        let Some(gltf) = def.body.model.as_ref().and_then(|h_gltf| gltfs.get(h_gltf)) else {
+            match def
+                .body
+                .model
+                .as_ref()
+                .map(|h_gtlf| asset_server.get_load_state(h_gtlf))
+            {
+                Some(bevy::asset::LoadState::Loading) | Some(bevy::asset::LoadState::NotLoaded) => {
+                    // nothing to do
+                }
                 otherwise => {
                     warn!("failed to load body gltf: {otherwise:?}");
                     commands.entity(ent).try_insert(AvatarProcessed);
@@ -1139,9 +1155,14 @@ fn process_avatar(
 
         // hide and colour the base model
         for scene_ent in scene_spawner.iter_instance_entities(loaded_avatar.body_instance) {
-            let Ok((mut vis, parent, maybe_h_mat, maybe_h_mesh)) = instance_ents.get_mut(scene_ent) else { continue };
+            let Ok((mut vis, parent, maybe_h_mat, maybe_h_mesh)) = instance_ents.get_mut(scene_ent)
+            else {
+                continue;
+            };
 
-            let Ok(name) = named_ents.get(scene_ent) else { continue };
+            let Ok(name) = named_ents.get(scene_ent) else {
+                continue;
+            };
             let name = name.to_lowercase();
 
             // add animation player to armature root
@@ -1212,7 +1233,9 @@ fn process_avatar(
                 ("mask_mouth", def.skin_color, WearableCategory::MOUTH, false),
             ];
 
-            let Ok(parent_name) = named_ents.get(parent.get()) else { continue };
+            let Ok(parent_name) = named_ents.get(parent.get()) else {
+                continue;
+            };
             let parent_name = parent_name.to_lowercase();
 
             debug!("parent: {parent_name}");
@@ -1326,12 +1349,19 @@ fn process_avatar(
             let mut armature_map = HashMap::default();
 
             for scene_ent in scene_spawner.iter_instance_entities(*instance) {
-                let Ok((_, parent, maybe_h_mat, maybe_h_mesh)) = instance_ents.get(scene_ent) else { continue };
+                let Ok((_, parent, maybe_h_mat, maybe_h_mesh)) = instance_ents.get(scene_ent)
+                else {
+                    continue;
+                };
 
-                let Ok(parent_name) = named_ents.get(parent.get()) else { continue };
+                let Ok(parent_name) = named_ents.get(parent.get()) else {
+                    continue;
+                };
                 let parent_name = parent_name.to_lowercase();
 
-                let Ok(name) = named_ents.get(scene_ent) else { continue };
+                let Ok(name) = named_ents.get(scene_ent) else {
+                    continue;
+                };
                 let name = name.to_lowercase();
 
                 // record bone entities so we can remap them, and delete this instance

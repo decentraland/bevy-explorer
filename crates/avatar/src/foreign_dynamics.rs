@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use common::{dynamics::MAX_FALL_SPEED, util::TryInsertEx};
+use common::{dynamics::MAX_FALL_SPEED, util::{TryInsertEx, QuatNormalizeExt}};
 
 use comms::global_crdt::{ForeignPlayer, PlayerPositionEvent};
 use dcl_component::{transform_and_parent::DclTransformAndParent, SceneEntityId};
@@ -55,7 +55,7 @@ fn update_foreign_user_target_position(
                     *pos = PlayerTargetPosition {
                         time: ev.time,
                         translation: bevy_trans.translation,
-                        rotation: bevy_trans.rotation,
+                        rotation: bevy_trans.rotation.normalize_or_identity(),
                         index: ev.index,
                     }
                 }

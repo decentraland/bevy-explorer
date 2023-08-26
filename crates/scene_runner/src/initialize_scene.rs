@@ -99,7 +99,9 @@ pub(crate) fn load_scene_entity(
     for event in load_scene_events.iter() {
         let mut commands = match event.entity {
             Some(entity) => {
-                let Some(commands) = commands.get_entity(entity) else { continue; };
+                let Some(commands) = commands.get_entity(entity) else {
+                    continue;
+                };
                 commands
             }
             None => commands.spawn_empty(),
@@ -220,7 +222,9 @@ pub(crate) fn load_scene_javascript(
             commands.entity(root).try_insert(SceneLoading::Failed);
         };
 
-        let SceneLoading::MainCrdt(ref maybe_h_crdt) = state else { panic!("wrong load state in load_scene_javascript")};
+        let SceneLoading::MainCrdt(ref maybe_h_crdt) = state else {
+            panic!("wrong load state in load_scene_javascript")
+        };
         if let Some(ref h_crdt) = maybe_h_crdt {
             match asset_server.get_load_state(h_crdt) {
                 bevy::asset::LoadState::Loaded => (),
@@ -330,7 +334,7 @@ pub(crate) fn load_scene_javascript(
 
         if let Some(serialized_crdt) = maybe_serialized_crdt {
             // add main.crdt
-            let mut context = CrdtContext::new(scene_id);
+            let mut context = CrdtContext::new(scene_id, renderer_context.hash.clone());
             let mut stream = DclReader::new(&serialized_crdt);
             initial_crdt.process_message_stream(
                 &mut context,
@@ -450,10 +454,12 @@ pub(crate) fn initialize_scene(
 
         let scene_id = context.scene_id;
         let main_sx = spawn_scene(
+            context.hash.clone(),
             js_file.clone(),
             crdt_component_interfaces,
             thread_sx,
             global_updates,
+            asset_server.clone(),
             scene_id,
         );
 

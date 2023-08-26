@@ -6,7 +6,12 @@ use bevy::{
     window::CursorGrabMode,
 };
 
-use common::structs::{CameraOverride, PrimaryCamera, PrimaryUser, UiRoot};
+use common::structs::{CameraOverride, PrimaryCamera, PrimaryUser};
+use input_manager::AcceptInput;
+use scene_runner::{
+    renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
+    ContainingScene,
+};
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn update_camera(
@@ -14,12 +19,12 @@ pub fn update_camera(
     mut windows: Query<&mut Window>,
     mut mouse_events: EventReader<MouseMotion>,
     mut wheel_events: EventReader<MouseWheel>,
-    ui_root: Query<&Interaction, With<UiRoot>>,
     mouse_button_input: Res<Input<MouseButton>>,
     key_input: Res<Input<KeyCode>>,
     mut move_toggled: Local<bool>,
     mut camera: Query<(&mut Transform, &mut PrimaryCamera)>,
     mut locked_cursor_position: Local<Option<Vec2>>,
+    accept_input: Res<AcceptInput>,
 ) {
     let dt = time.delta_seconds();
 
@@ -35,23 +40,27 @@ pub fn update_camera(
         options.initialized = true;
     }
 
-    if key_input.just_pressed(options.keyboard_key_enable_mouse) {
-        *move_toggled = !*move_toggled;
-    }
+    if accept_input.key {
+        if key_input.just_pressed(options.keyboard_key_enable_mouse) {
+            *move_toggled = !*move_toggled;
+        }
 
-    if key_input.pressed(options.key_roll_left) {
-        options.roll += dt * 1.0;
-    } else if key_input.pressed(options.key_roll_right) {
-        options.roll -= dt * 1.0;
-    } else if options.roll > 0.0 {
-        options.roll = (options.roll - dt * 0.25).max(0.0);
-    } else {
-        options.roll = (options.roll + dt * 0.25).min(0.0);
+        if key_input.pressed(options.key_roll_left) {
+            options.roll += dt * 1.0;
+        } else if key_input.pressed(options.key_roll_right) {
+            options.roll -= dt * 1.0;
+        } else if options.roll > 0.0 {
+            options.roll = (options.roll - dt * 0.25).max(0.0);
+        } else {
+            options.roll = (options.roll + dt * 0.25).min(0.0);
+        }
     }
 
     // Handle mouse input
     let mut mouse_delta = Vec2::ZERO;
-    if mouse_button_input.pressed(options.mouse_key_enable_mouse) || *move_toggled {
+    if accept_input.mouse && mouse_button_input.pressed(options.mouse_key_enable_mouse)
+        || *move_toggled
+    {
         for mut window in &mut windows {
             if !window.focused {
                 continue;
@@ -72,8 +81,11 @@ pub fn update_camera(
             mouse_delta += mouse_event.delta;
         }
     }
+
     if mouse_button_input.just_released(options.mouse_key_enable_mouse)
-        || (key_input.just_pressed(options.keyboard_key_enable_mouse) && !*move_toggled)
+        || (accept_input.key
+            && key_input.just_pressed(options.keyboard_key_enable_mouse)
+            && !*move_toggled)
     {
         for mut window in &mut windows {
             window.cursor.grab_mode = CursorGrabMode::None;
@@ -82,7 +94,7 @@ pub fn update_camera(
         }
     }
 
-    if ui_root.get_single().ok() != Some(&Interaction::None) {
+    if accept_input.mouse {
         if let Some(event) = wheel_events.iter().last() {
             if event.y > 0.0 {
                 options.distance = 0f32.max((options.distance - 0.05) * 0.9);
@@ -103,11 +115,12 @@ pub fn update_camera(
 pub fn update_camera_position(
     mut camera: Query<(&mut Transform, &PrimaryCamera)>,
     mut player: Query<&Transform, (With<PrimaryUser>, Without<PrimaryCamera>)>,
+    containing_scene: ContainingScene,
+    mut scene_colliders: Query<(&RendererSceneContext, &mut SceneColliderData)>,
 ) {
-    let (
-        Ok(player_transform),
-        Ok((mut camera_transform, options)),
-    ) = (player.get_single_mut(), camera.get_single_mut()) else {
+    let (Ok(player_transform), Ok((mut camera_transform, options))) =
+        (player.get_single_mut(), camera.get_single_mut())
+    else {
         return;
     };
 
@@ -119,8 +132,47 @@ pub fn update_camera_position(
             _ => options.distance,
         };
 
-        camera_transform.translation = player_transform.translation
-            + Vec3::Y * (1.81 + 0.2 * distance)
-            + camera_transform.rotation.mul_vec3(Vec3::Z * 5.0 * distance);
+        let player_head = player_transform.translation + Vec3::Y * 1.81;
+        let target_direction =
+            Vec3::Y * 0.2 * distance + camera_transform.rotation.mul_vec3(Vec3::Z * 5.0 * distance);
+        let mut distance = target_direction.length();
+        if target_direction.y + player_head.y < 0.0 {
+            distance = distance * player_head.y / -target_direction.y;
+        }
+        let target_direction = target_direction.normalize_or_zero();
+
+        if distance > 0.0 {
+            // cast to check visibility
+            if let Some((context, mut colliders)) = containing_scene
+                .get_position(player_head)
+                .and_then(|root| scene_colliders.get_mut(root).ok())
+            {
+                if let Some(hit) = colliders.cast_ray_nearest(
+                    context.last_update_frame,
+                    player_head,
+                    target_direction.normalize(),
+                    distance,
+                    u32::MAX,
+                ) {
+                    distance = hit.toi;
+                }
+            }
+            if let Some((context, mut colliders)) = containing_scene
+                .get_position(player_head + target_direction * distance)
+                .and_then(|root| scene_colliders.get_mut(root).ok())
+            {
+                if let Some(hit) = colliders.cast_ray_nearest(
+                    context.last_update_frame,
+                    player_head,
+                    target_direction.normalize(),
+                    distance,
+                    u32::MAX,
+                ) {
+                    distance = hit.toi;
+                }
+            }
+        }
+
+        camera_transform.translation = player_head + target_direction * distance;
     }
 }

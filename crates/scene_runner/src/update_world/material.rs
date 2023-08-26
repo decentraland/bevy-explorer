@@ -12,7 +12,7 @@ use dcl_component::{
 };
 use ipfs::IpfsLoaderExt;
 
-use super::AddCrdtInterfaceExt;
+use super::{mesh_renderer::update_mesh, AddCrdtInterfaceExt};
 
 pub struct MaterialDefinitionPlugin;
 
@@ -130,7 +130,10 @@ impl Plugin for MaterialDefinitionPlugin {
 
         app.add_systems(
             Update,
-            (update_materials, update_bias).in_set(SceneSets::PostLoop),
+            (update_materials, update_bias)
+                .in_set(SceneSets::PostLoop)
+                // we must run after update_mesh as that inserts a default material if none is present
+                .after(update_mesh),
         );
     }
 }
@@ -187,7 +190,9 @@ impl<'w, 's> TextureResolver<'w, 's> {
             }
             texture_union::Tex::AvatarTexture(_) => Err(TextureResolveError::NotImplemented),
             texture_union::Tex::VideoTexture(vt) => {
-                let Some(video_entity) = scene.bevy_entity(SceneEntityId::from_proto_u32(vt.video_player_entity)) else {
+                let Some(video_entity) =
+                    scene.bevy_entity(SceneEntityId::from_proto_u32(vt.video_player_entity))
+                else {
                     warn!("failed to look up video source entity");
                     return Err(TextureResolveError::SourceNotAvailable);
                 };

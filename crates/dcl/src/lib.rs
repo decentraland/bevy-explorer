@@ -4,7 +4,10 @@ use std::sync::{
     Mutex,
 };
 
-use bevy::utils::{HashMap, HashSet};
+use bevy::{
+    prelude::AssetServer,
+    utils::{HashMap, HashSet},
+};
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use tokio::sync::mpsc::Sender;
@@ -88,10 +91,12 @@ pub fn get_next_scene_id() -> SceneId {
 }
 
 pub fn spawn_scene(
+    scene_hash: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SyncSender<SceneResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    asset_server: AssetServer,
     id: SceneId,
 ) -> Sender<RendererResponse> {
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
@@ -100,12 +105,14 @@ pub fn spawn_scene(
         .name(format!("scene thread {}", id.0))
         .spawn(move || {
             scene_thread(
+                scene_hash,
                 id,
                 scene_js,
                 crdt_component_interfaces,
                 renderer_sender,
                 thread_rx,
                 global_update_receiver,
+                asset_server,
             )
         })
         .unwrap();

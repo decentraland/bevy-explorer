@@ -14,6 +14,7 @@ scene_runner = { workspace = true }
 ipfs = { workspace = true }
 ui_core = { workspace = true }
 avatar = { workspace = true }
+input_manager = { workspace = true }
 
 bevy = { workspace = true }
 bevy_egui = { workspace = true }

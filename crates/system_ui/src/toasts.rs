@@ -61,11 +61,17 @@ fn update_toasts(
     for (key, toast) in &toasts.0 {
         let Some(maybe_ent) = prev_displays.remove(key) else {
             commands.entity(toaster_ent).with_children(|c| {
-                let id = c.spawn(TextBundle {
-                    text: Text::from_section(&toast.message, BODY_TEXT_STYLE.get().unwrap().clone()).with_alignment(TextAlignment::Center),
-                    background_color: Color::rgba(0.2, 0.2, 1.0, 0.0).into(),
-                    ..Default::default()
-                }).id();
+                let id = c
+                    .spawn(TextBundle {
+                        text: Text::from_section(
+                            &toast.message,
+                            BODY_TEXT_STYLE.get().unwrap().clone(),
+                        )
+                        .with_alignment(TextAlignment::Center),
+                        background_color: Color::rgba(0.2, 0.2, 1.0, 0.0).into(),
+                        ..Default::default()
+                    })
+                    .id();
                 displays.insert(key, Some(id));
             });
             continue;

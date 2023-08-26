@@ -404,7 +404,11 @@ fn update_gltf(
                             _ => {
                                 // asynchronously create the collider
                                 let scale = transform.scale;
-                                let VertexAttributeValues::Float32x3(positions) = mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else { panic!() };
+                                let VertexAttributeValues::Float32x3(positions) =
+                                    mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
+                                else {
+                                    panic!()
+                                };
                                 let vertices: Vec<_> = positions
                                     .iter()
                                     .map(|p| {
@@ -586,7 +590,8 @@ fn _node_graph(
 
     while let Some(ent) = to_check.pop() {
         debug!("current: {ent:?}, to_check: {to_check:?}");
-        let Ok((ent, name, maybe_children, maybe_skinned, transform)) = scene_entity_query.get(ent) else {
+        let Ok((ent, name, maybe_children, maybe_skinned, transform)) = scene_entity_query.get(ent)
+        else {
             return "?".to_owned();
         };
 

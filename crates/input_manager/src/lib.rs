@@ -18,6 +18,10 @@ impl Plugin for InputManagerPlugin {
     }
 }
 
+// marker to attach to components that pass mouse input through to scenes
+#[derive(Component)]
+pub struct MouseInteractionComponent;
+
 #[derive(Resource)]
 pub struct InputMap {
     inputs: BiMap<InputAction, InputItem>,
@@ -26,24 +30,21 @@ pub struct InputMap {
 impl Default for InputMap {
     fn default() -> Self {
         Self {
-            inputs: BiMap::from_iter(
-                [
-                    (InputAction::IaPointer, InputItem::Mouse(MouseButton::Left)),
-                    (InputAction::IaPrimary, InputItem::Key(KeyCode::E)),
-                    (InputAction::IaSecondary, InputItem::Key(KeyCode::F)),
-                    (InputAction::IaForward, InputItem::Key(KeyCode::W)),
-                    (InputAction::IaBackward, InputItem::Key(KeyCode::S)),
-                    (InputAction::IaRight, InputItem::Key(KeyCode::D)),
-                    (InputAction::IaLeft, InputItem::Key(KeyCode::A)),
-                    (InputAction::IaJump, InputItem::Key(KeyCode::Space)),
-                    (InputAction::IaWalk, InputItem::Key(KeyCode::ShiftLeft)),
-                    (InputAction::IaAction3, InputItem::Key(KeyCode::Key1)),
-                    (InputAction::IaAction4, InputItem::Key(KeyCode::Key2)),
-                    (InputAction::IaAction5, InputItem::Key(KeyCode::Key3)),
-                    (InputAction::IaAction6, InputItem::Key(KeyCode::Key4)),
-                ]
-                .into_iter(),
-            ),
+            inputs: BiMap::from_iter([
+                (InputAction::IaPointer, InputItem::Mouse(MouseButton::Left)),
+                (InputAction::IaPrimary, InputItem::Key(KeyCode::E)),
+                (InputAction::IaSecondary, InputItem::Key(KeyCode::F)),
+                (InputAction::IaForward, InputItem::Key(KeyCode::W)),
+                (InputAction::IaBackward, InputItem::Key(KeyCode::S)),
+                (InputAction::IaRight, InputItem::Key(KeyCode::D)),
+                (InputAction::IaLeft, InputItem::Key(KeyCode::A)),
+                (InputAction::IaJump, InputItem::Key(KeyCode::Space)),
+                (InputAction::IaWalk, InputItem::Key(KeyCode::ShiftLeft)),
+                (InputAction::IaAction3, InputItem::Key(KeyCode::Key1)),
+                (InputAction::IaAction4, InputItem::Key(KeyCode::Key2)),
+                (InputAction::IaAction5, InputItem::Key(KeyCode::Key3)),
+                (InputAction::IaAction6, InputItem::Key(KeyCode::Key4)),
+            ]),
         }
     }
 }
@@ -71,22 +72,18 @@ impl<'w> InputManager<'w> {
     }
 
     pub fn just_down(&self, action: InputAction) -> bool {
-        if !self.should_accept.0 {
-            return false;
-        }
         self.map
             .inputs
             .get_by_left(&action)
             .map_or(false, |item| match item {
-                InputItem::Key(k) => self.key_input.just_pressed(*k),
-                InputItem::Mouse(mb) => self.mouse_input.just_pressed(*mb),
+                InputItem::Key(k) => self.should_accept.key && self.key_input.just_pressed(*k),
+                InputItem::Mouse(mb) => {
+                    self.should_accept.mouse && self.mouse_input.just_pressed(*mb)
+                }
             })
     }
 
     pub fn just_up(&self, action: InputAction) -> bool {
-        if !self.should_accept.0 {
-            return false;
-        }
         self.map
             .inputs
             .get_by_left(&action)
@@ -97,15 +94,12 @@ impl<'w> InputManager<'w> {
     }
 
     pub fn is_down(&self, action: InputAction) -> bool {
-        if !self.should_accept.0 {
-            return false;
-        }
         self.map
             .inputs
             .get_by_left(&action)
             .map_or(false, |item| match item {
-                InputItem::Key(k) => self.key_input.pressed(*k),
-                InputItem::Mouse(mb) => self.mouse_input.pressed(*mb),
+                InputItem::Key(k) => self.should_accept.key && self.key_input.pressed(*k),
+                InputItem::Mouse(mb) => self.should_accept.mouse && self.mouse_input.pressed(*mb),
             })
     }
 
@@ -114,10 +108,11 @@ impl<'w> InputManager<'w> {
             .inputs
             .iter()
             .filter(|(_, button)| match button {
-                InputItem::Key(k) => self.key_input.just_pressed(*k),
-                InputItem::Mouse(m) => self.mouse_input.just_pressed(*m),
+                InputItem::Key(k) => self.should_accept.key && self.key_input.just_pressed(*k),
+                InputItem::Mouse(m) => {
+                    self.should_accept.mouse && self.mouse_input.just_pressed(*m)
+                }
             })
-            .filter(|_| self.should_accept.0)
             .map(|(action, _)| action)
     }
 
@@ -129,7 +124,6 @@ impl<'w> InputManager<'w> {
                 InputItem::Key(k) => self.key_input.just_released(*k),
                 InputItem::Mouse(m) => self.mouse_input.just_released(*m),
             })
-            .filter(|_| self.should_accept.0)
             .map(|(action, _)| action)
     }
 }
@@ -165,9 +159,13 @@ fn key_to_str(key: &KeyCode) -> String {
 }
 
 #[derive(Resource, Default)]
-pub struct AcceptInput(pub bool);
+pub struct AcceptInput {
+    pub mouse: bool,
+    pub key: bool,
+}
 
 fn check_accept_input(
+    ui_roots: Query<&Interaction, With<MouseInteractionComponent>>,
     console: Res<ConsoleOpen>,
     mut ctx: Query<&mut EguiContext, With<PrimaryWindow>>,
     mut should_accept: ResMut<AcceptInput>,
@@ -175,5 +173,20 @@ fn check_accept_input(
     let Ok(mut ctx) = ctx.get_single_mut() else {
         return;
     };
-    should_accept.0 = !console.open && !ctx.get_mut().wants_keyboard_input();
+    should_accept.mouse = ui_roots
+        .iter()
+        .any(|root| !matches!(root, Interaction::None));
+    should_accept.key = !console.open && !ctx.get_mut().wants_keyboard_input();
+}
+
+pub fn should_accept_key(should_accept: Res<AcceptInput>) -> bool {
+    should_accept.key
+}
+
+pub fn should_accept_mouse(should_accept: Res<AcceptInput>) -> bool {
+    should_accept.mouse
+}
+
+pub fn should_accept_any(should_accept: Res<AcceptInput>) -> bool {
+    should_accept.mouse || should_accept.key
 }
