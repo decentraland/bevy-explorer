@@ -13482,14 +13482,12 @@ var componentUpdates = /* @__PURE__ */ new Map([
   [8 /* UUID_CALLBACK */, UuidCallback_exports]
 ]);
 function ecs7DeleteComponent(state, ecs6EntityId, ecs6ClassId) {
-  console.log("Delete Component", ecs6ClassId);
   const deleteFn = componentUpdates.get(ecs6ClassId)?.remove;
   if (deleteFn) {
     deleteFn(state, ecs6EntityId);
   }
 }
 function ecs7UpdateComponent(state, ecs6EntityId, ecs6ClassId, payload) {
-  console.log("Update Component", ecs6ClassId);
   const updateFn = componentUpdates.get(ecs6ClassId)?.update;
   if (updateFn) {
     updateFn(state, ecs6EntityId, payload);
@@ -13860,6 +13858,7 @@ var AdaptionLayer;
 async function getSceneJsonData() {
   const res = await (0, import_Runtime.readFile)({ fileName: "scene.json" });
   var sceneJson = new import_text_encoding.TextDecoder().decode(res.content);
+  console.log('sceneJson:', sceneJson);
   return JSON.parse(sceneJson);
 }
 async function getSceneCode() {
@@ -13874,6 +13873,9 @@ async function getSceneCode() {
 }
 async function main() {
   const code = await getSceneCode();
+
+  console.log(`code: ${code}`);
+
   const newDcl = await AdaptionLayer.createDecentralandInterface();
   await customEval(code, { dcl: newDcl });
 }
