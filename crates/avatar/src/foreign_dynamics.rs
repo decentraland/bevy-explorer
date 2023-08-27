@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 
-use common::{dynamics::MAX_FALL_SPEED, util::{TryInsertEx, QuatNormalizeExt}};
+use common::{
+    dynamics::MAX_FALL_SPEED,
+    util::{QuatNormalizeExt, TryInsertEx},
+};
 
 use comms::global_crdt::{ForeignPlayer, PlayerPositionEvent};
 use dcl_component::{transform_and_parent::DclTransformAndParent, SceneEntityId};
