@@ -387,7 +387,7 @@ fn cyclic_recovery() {
 
     for messages in states.permutations(4) {
         // create new app instance
-        let mut app = init_test_app("empty_scene.scene_entity");
+        let mut app = init_test_app("empty_scene.entity_definition");
         // add lww state
         let scene_entity = app
             .world

@@ -13,11 +13,10 @@
 //   - a single folder with the parent entity hash
 //   - the remainder of the path is interpreted as the "file" within the entity's `content` collection, including the extension
 //   - a leading `.` is added to the terminal filename of the path, to aid in mapping extensions to asset loaders
-// - `$pointer` -> resolves to a `/entities/{type}?pointer={p}` http address
-//   - urlencoded `p` folder, (e,g, for scenes, `x,y` where x and y are i32s corresponding to the pointer address)
-//   - a `type` filename, which is `type.{type}_pointer`, e.g. `type.scene_pointer`
 // - `$entity` -> resolves to a `contents/{hash}` http address
 //   - a single filename component, made up of the entity hash and type, e.g. `b64-deadbeef.scene`
+// - `$url` -> a raw url
+//   - a single filename component, made up of the urlencoded url, and type, e.g. `b64-deadbeef.scene`
 //
 // key value pairs:
 // - `&baseUrl`
@@ -42,44 +41,8 @@ use urn::Urn;
 
 use super::IpfsContext;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum EntityType {
-    Scene,
-}
-
-impl EntityType {
-    fn ty(&self) -> &str {
-        match self {
-            EntityType::Scene => "type.scene_entity",
-        }
-    }
-
-    pub fn ext(&self) -> &str {
-        self.ty().split_once('.').unwrap().1
-    }
-
-    fn base_url_extension(&self) -> &str {
-        match self {
-            EntityType::Scene => "/entities/scene?",
-        }
-    }
-}
-
-impl AsRef<Path> for EntityType {
-    fn as_ref(&self) -> &Path {
-        Path::new(self.ty())
-    }
-}
-
-impl TryFrom<&str> for EntityType {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "type.scene_entity" => Ok(EntityType::Scene),
-            other => anyhow::bail!("invalid pointer type: {:?}", other),
-        }
-    }
+pub trait IpfsAsset: bevy::asset::Asset {
+    fn ext() -> &'static str;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -88,12 +51,12 @@ pub enum IpfsType {
         content_hash: String,
         file_path: String,
     },
-    Pointer {
-        entity_type: EntityType,
-        address: String,
-    },
     Entity {
         hash: String,
+        ext: String,
+    },
+    Url {
+        url: String,
         ext: String,
     },
 }
@@ -109,10 +72,7 @@ impl IpfsType {
     fn base_url_extension(&self) -> &str {
         match self {
             IpfsType::ContentFile { .. } | IpfsType::Entity { .. } => "/contents/",
-            IpfsType::Pointer {
-                entity_type: pointer_type,
-                ..
-            } => pointer_type.base_url_extension(),
+            IpfsType::Url { .. } => "",
         }
     }
 
@@ -138,13 +98,8 @@ impl IpfsType {
                 .ok_or_else(|| {
                     anyhow::anyhow!("file not found in content map: {file_path:?} in {scene_hash}")
                 }),
-            IpfsType::Pointer {
-                entity_type: pointer_type,
-                address,
-            } => match pointer_type {
-                EntityType::Scene => Ok(format!("{base_url}pointer={}", address)),
-            },
             IpfsType::Entity { hash, .. } => Ok(format!("{base_url}{}", hash)),
+            IpfsType::Url { url, .. } => Ok(format!("{}", urlencoding::decode(url)?)),
         }
     }
 
@@ -155,7 +110,7 @@ impl IpfsType {
                 file_path,
                 ..
             } => context.collections.get(scene_hash)?.hash(file_path),
-            IpfsType::Pointer { .. } => None,
+            IpfsType::Url { .. } => None,
             IpfsType::Entity { hash, .. } => Some(hash),
         }
     }
@@ -164,7 +119,7 @@ impl IpfsType {
     fn context_hash(&self) -> Option<&str> {
         match self {
             IpfsType::ContentFile { content_hash, .. } => Some(content_hash),
-            IpfsType::Pointer { .. } => None,
+            IpfsType::Url { .. } => None,
             IpfsType::Entity { hash, .. } => Some(hash),
         }
     }
@@ -174,7 +129,7 @@ impl IpfsType {
             IpfsType::ContentFile { .. } => {
                 anyhow::bail!("Can't get hash for content files without context")
             }
-            IpfsType::Pointer { .. } => Ok(None),
+            IpfsType::Url { .. } => Ok(None),
             IpfsType::Entity { hash, .. } => Ok(Some(hash)),
         }
     }
@@ -203,15 +158,14 @@ impl From<&IpfsType> for PathBuf {
                     .join(scene_hash)
                     .join(file_path)
             }
-            IpfsType::Pointer {
-                entity_type: pointer_type,
-                address,
-            } => PathBuf::from("$pointer")
-                .join(urlpath!(address))
-                .join(pointer_type),
             IpfsType::Entity { hash, ext } => {
                 PathBuf::from("$entity").join(format!("{hash}.{ext}"))
             }
+            IpfsType::Url { url, ext } => PathBuf::from("$url").join(format!(
+                "{}.{}",
+                urlencoding::encode(url).into_owned(),
+                ext
+            )),
         }
     }
 }
@@ -256,22 +210,6 @@ where
                     file_path: file_path.to_lowercase(),
                 })
             }
-            "$pointer" => {
-                let address = urlencoding::decode(
-                    components
-                        .next()
-                        .ok_or(anyhow::anyhow!("pointer specifier missing address"))?,
-                )?
-                .into_owned();
-                let pointer_type = components
-                    .next()
-                    .ok_or(anyhow::anyhow!("pointer specifier missing address"))?
-                    .try_into()?;
-                Ok(IpfsType::Pointer {
-                    entity_type: pointer_type,
-                    address,
-                })
-            }
             "$entity" => {
                 let hash_ext: &str = components
                     .next()
@@ -281,6 +219,18 @@ where
                     .ok_or(anyhow::anyhow!("entity specified malformed (no '.')"))?;
                 Ok(IpfsType::Entity {
                     hash: hash.to_owned(),
+                    ext: ext.to_owned(),
+                })
+            }
+            "$url" => {
+                let url_ext: &str = components
+                    .next()
+                    .ok_or(anyhow::anyhow!("url specifier missing"))?;
+                let (url, ext) = url_ext
+                    .rsplit_once('.')
+                    .ok_or(anyhow::anyhow!("url specified malformed (no '.')"))?;
+                Ok(IpfsType::Url {
+                    url: url.to_owned(),
                     ext: ext.to_owned(),
                 })
             }
@@ -327,7 +277,7 @@ impl IpfsPath {
         }
     }
 
-    pub fn new_from_urn(urn: &str, entity_type: EntityType) -> Result<Self, anyhow::Error> {
+    pub fn new_from_urn<T: IpfsAsset>(urn: &str) -> Result<Self, anyhow::Error> {
         let urn = Urn::from_str(urn)?;
         anyhow::ensure!(
             urn.nid() == "decentraland",
@@ -359,7 +309,7 @@ impl IpfsPath {
         Ok(Self {
             ipfs_type: IpfsType::Entity {
                 hash,
-                ext: entity_type.ext().to_owned(),
+                ext: T::ext().to_owned(),
             },
             key_values,
         })
@@ -397,6 +347,18 @@ impl IpfsPath {
             key_values,
             ipfs_type,
         }))
+    }
+
+    pub fn new_from_url(url: &str, ext: &str) -> Self {
+        Self {
+            key_values: Default::default(),
+            ipfs_type: {
+                IpfsType::Url {
+                    url: url.to_owned(),
+                    ext: ext.to_owned(),
+                }
+            },
+        }
     }
 
     pub fn with_keyvalue(mut self, key: IpfsKey, value: String) -> Self {
