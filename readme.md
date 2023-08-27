@@ -14,7 +14,7 @@ This project's goals are to:
 
 1. Clone the repo using `git clone https://github.com/decentraland/bevy-explorer`
 2. Install [rust](https://www.rust-lang.org/tools/install)
-3. download and install ffmpeg shared binaries
+3. download and install third party libraries
     - on linux:
       - Install alsa and udev: `sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev`
       - Install ffmpeg deps: `sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev`
