@@ -20,13 +20,14 @@ use bevy::{
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use bimap::BiMap;
+use ipfs_path::IpfsAsset;
 use isahc::{http::StatusCode, prelude::Configurable, AsyncReadResponseExt, RequestExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use console::DoAddConsoleCommand;
 
-use self::ipfs_path::{normalize_path, EntityType, IpfsPath, IpfsType};
+use self::ipfs_path::{normalize_path, IpfsPath, IpfsType};
 
 const MAX_CONCURRENT_REQUESTS: usize = 8;
 
@@ -53,9 +54,21 @@ pub struct EntityDefinition {
     pub metadata: Option<serde_json::Value>,
 }
 
+impl IpfsAsset for EntityDefinition {
+    fn ext() -> &'static str {
+        "entity_definition"
+    }
+}
+
 #[derive(TypeUuid, Debug, Clone, TypePath)]
 #[uuid = "f9f54e97-439f-4768-9ea0-f3e894049492"]
 pub struct SceneJsFile(pub Arc<String>);
+
+impl IpfsAsset for SceneJsFile {
+    fn ext() -> &'static str {
+        "js"
+    }
+}
 
 #[derive(Default)]
 pub struct EntityDefinitionLoader;
@@ -114,7 +127,7 @@ impl AssetLoader for EntityDefinitionLoader {
     }
 
     fn extensions(&self) -> &[&str] {
-        &["scene_pointer", "scene_entity"]
+        &["entity_definition"]
     }
 }
 
@@ -168,9 +181,11 @@ pub trait IpfsLoaderExt {
         content_hash: &str,
     ) -> Result<Handle<T>, anyhow::Error>;
 
-    fn load_urn<T: Asset>(&self, urn: &str, ty: EntityType) -> Result<Handle<T>, anyhow::Error>;
+    fn load_urn<T: IpfsAsset>(&self, urn: &str) -> Result<Handle<T>, anyhow::Error>;
 
-    fn load_hash<T: Asset>(&self, hash: &str, ty: EntityType) -> Handle<T>;
+    fn load_url<T: IpfsAsset>(&self, urn: &str) -> Handle<T>;
+
+    fn load_hash<T: IpfsAsset>(&self, hash: &str) -> Handle<T>;
 
     fn active_endpoint(&self) -> Option<String>;
 
@@ -211,12 +226,12 @@ impl IpfsLoaderExt for AssetServer {
         Ok(self.load(PathBuf::from(&ipfs_path)))
     }
 
-    fn load_urn<T: Asset>(&self, urn: &str, ty: EntityType) -> Result<Handle<T>, anyhow::Error> {
-        let ipfs_path = IpfsPath::new_from_urn(urn, ty)?;
+    fn load_urn<T: IpfsAsset>(&self, urn: &str) -> Result<Handle<T>, anyhow::Error> {
+        let ext = T::ext();
+        let ipfs_path = IpfsPath::new_from_urn::<T>(urn)?;
         let hash = ipfs_path
             .context_free_hash()?
             .ok_or(anyhow::anyhow!("urn did not resolve to a hash"))?;
-        let ext = ty.ext();
         let path = format!("$ipfs/$entity/{hash}.{ext}");
 
         if let Some(base_url) = ipfs_path.base_url() {
@@ -233,8 +248,14 @@ impl IpfsLoaderExt for AssetServer {
         Ok(self.load(path))
     }
 
-    fn load_hash<T: Asset>(&self, hash: &str, ty: EntityType) -> Handle<T> {
-        let ext = ty.ext();
+    fn load_url<T: IpfsAsset>(&self, url: &str) -> Handle<T> {
+        let ext = T::ext();
+        let ipfs_path = IpfsPath::new_from_url(url, ext);
+        self.load(PathBuf::from(&ipfs_path))
+    }
+
+    fn load_hash<T: IpfsAsset>(&self, hash: &str) -> Handle<T> {
+        let ext = T::ext();
         let path = format!("$ipfs/$entity/{hash}.{ext}");
         self.load(path)
     }

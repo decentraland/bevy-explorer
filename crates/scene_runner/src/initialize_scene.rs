@@ -19,9 +19,8 @@ use dcl_component::{
     SceneEntityId,
 };
 use ipfs::{
-    ipfs_path::{EntityType, IpfsPath},
-    ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsLoaderExt, SceneIpfsLocation,
-    SceneJsFile,
+    ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsLoaderExt,
+    SceneIpfsLocation, SceneJsFile,
 };
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
@@ -108,19 +107,15 @@ pub(crate) fn load_scene_entity(
         };
 
         let h_scene = match &event.location {
-            SceneIpfsLocation::Hash(hash) => {
-                asset_server.load_hash::<EntityDefinition>(hash, EntityType::Scene)
-            }
-            SceneIpfsLocation::Urn(urn) => {
-                match asset_server.load_urn::<EntityDefinition>(urn, EntityType::Scene) {
-                    Ok(h_scene) => h_scene,
-                    Err(e) => {
-                        warn!("failed to parse urn: {e}");
-                        commands.try_insert(SceneLoading::Failed);
-                        continue;
-                    }
+            SceneIpfsLocation::Hash(hash) => asset_server.load_hash::<EntityDefinition>(hash),
+            SceneIpfsLocation::Urn(urn) => match asset_server.load_urn::<EntityDefinition>(urn) {
+                Ok(h_scene) => h_scene,
+                Err(e) => {
+                    warn!("failed to parse urn: {e}");
+                    commands.try_insert(SceneLoading::Failed);
+                    continue;
                 }
-            }
+            },
         };
 
         commands.try_insert((SceneLoading::SceneEntity, h_scene));
@@ -540,7 +535,7 @@ pub fn process_realm_change(
             .unwrap_or(&Vec::default())
         {
             let hacked_urn = urn.replace('?', "?=&");
-            let path = match IpfsPath::new_from_urn(&hacked_urn, EntityType::Scene) {
+            let path = match IpfsPath::new_from_urn::<EntityDefinition>(&hacked_urn) {
                 Ok(path) => path,
                 Err(e) => {
                     warn!("failed to parse urn: `{}`: {}", urn, e);
@@ -668,7 +663,7 @@ pub fn process_scene_lifecycle(
     if let Some(scenes) = current_realm.config.scenes_urn.as_ref() {
         required_scene_ids.extend(scenes.iter().flat_map(|urn| {
             let hacked_urn = urn.replace('?', "?=&");
-            IpfsPath::new_from_urn(&hacked_urn, EntityType::Scene)
+            IpfsPath::new_from_urn::<EntityDefinition>(&hacked_urn)
                 .ok()?
                 .context_free_hash()
                 .ok()?
