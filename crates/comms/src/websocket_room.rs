@@ -167,10 +167,14 @@ async fn websocket_room_handler_inner(
     let from_alias;
     let mut foreign_aliases;
     loop {
-        let Some(response) = stream.next().await else { bail!("stream closed unexpectedly awaiting challenge") };
+        let Some(response) = stream.next().await else {
+            bail!("stream closed unexpectedly awaiting challenge")
+        };
         let response = response?;
         let response = WsPacket::decode(response.into_data().as_slice())?;
-        let Some(message) = response.message else { bail!("received empty packet") };
+        let Some(message) = response.message else {
+            bail!("received empty packet")
+        };
 
         match message {
             ws_packet::Message::WelcomeMessage(welcome) => {
@@ -241,13 +245,15 @@ async fn websocket_room_handler_inner(
         while let Some(next) = read.next().await {
             let next = next?;
             let next = WsPacket::decode(next.into_data().as_slice())?;
-            let Some(message) = next.message else { bail!("received empty packet") };
+            let Some(message) = next.message else {
+                bail!("received empty packet")
+            };
 
             match message {
-                ws_packet::Message::ChallengeMessage(_) |
-                ws_packet::Message::PeerIdentification(_) |
-                ws_packet::Message::SignedChallengeForServer(_) |
-                ws_packet::Message::WelcomeMessage(_) => {
+                ws_packet::Message::ChallengeMessage(_)
+                | ws_packet::Message::PeerIdentification(_)
+                | ws_packet::Message::SignedChallengeForServer(_)
+                | ws_packet::Message::WelcomeMessage(_) => {
                     warn!("unexpected bau message: {message:?}");
                     continue;
                 }
@@ -258,11 +264,15 @@ async fn websocket_room_handler_inner(
                     } else {
                         warn!("failed to parse hash: {}", peer.address);
                     }
-                },
+                }
                 ws_packet::Message::PeerLeaveMessage(peer) => {
-                    debug!("peer left: {} -> {:?}", peer.alias, foreign_aliases.get_by_left(&peer.alias));
+                    debug!(
+                        "peer left: {} -> {:?}",
+                        peer.alias,
+                        foreign_aliases.get_by_left(&peer.alias)
+                    );
                     foreign_aliases.remove_by_left(&peer.alias);
-                },
+                }
                 ws_packet::Message::PeerUpdateMessage(update) => {
                     let packet = match rfc4::Packet::decode(update.body.as_slice()) {
                         Ok(packet) => packet,
@@ -276,29 +286,35 @@ async fn websocket_room_handler_inner(
                         continue;
                     };
 
-                    let Some(address) = foreign_aliases.get_by_left(&update.from_alias).cloned() else {
+                    let Some(address) = foreign_aliases.get_by_left(&update.from_alias).cloned()
+                    else {
                         warn!("received packet for unknown alias {}", update.from_alias);
                         continue;
                     };
 
-                    debug!("[tid: {:?}] received message {:?} from {:?}", transport_id, message, address);
-                    sender.send(PlayerUpdate {
-                        transport_id,
-                        message: PlayerMessage::PlayerData(message),
-                        address,
-                    })
-                    .await
-                    .map_err(|_| anyhow!("Send error"))?;
-                },
+                    debug!(
+                        "[tid: {:?}] received message {:?} from {:?}",
+                        transport_id, message, address
+                    );
+                    sender
+                        .send(PlayerUpdate {
+                            transport_id,
+                            message: PlayerMessage::PlayerData(message),
+                            address,
+                        })
+                        .await
+                        .map_err(|_| anyhow!("Send error"))?;
+                }
                 ws_packet::Message::PeerKicked(reason) => {
                     warn!("kicked: {}", reason.reason);
                     return Ok(());
-                },
+                }
             }
         }
 
         Ok(())
-    }.fuse();
+    }
+    .fuse();
 
     // until either stream is broken
     pin_mut!(f_read, f_write);

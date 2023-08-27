@@ -33,7 +33,9 @@ pub fn update_user_position(
     time: Res<Time>,
     _frame: Res<FrameCount>,
 ) {
-    let Ok((user_ent, user, mut transform, mut dynamic_state, mut ground_collider)) = player.get_single_mut() else {
+    let Ok((user_ent, user, mut transform, mut dynamic_state, mut ground_collider)) =
+        player.get_single_mut()
+    else {
         return;
     };
 

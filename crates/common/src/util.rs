@@ -40,7 +40,9 @@ impl AsH160 for &str {
             return (&self[2..]).as_h160();
         }
 
-        let Ok(hex_bytes) = hex::decode(self.as_bytes()) else { return None };
+        let Ok(hex_bytes) = hex::decode(self.as_bytes()) else {
+            return None;
+        };
         if hex_bytes.len() != H160::len_bytes() {
             return None;
         }
@@ -198,3 +200,19 @@ macro_rules! dcl_assert {
 }
 
 pub use dcl_assert;
+
+// quaternion normalization
+pub trait QuatNormalizeExt {
+    fn normalize_or_identity(&self) -> Self;
+}
+
+impl QuatNormalizeExt for bevy::prelude::Quat {
+    fn normalize_or_identity(&self) -> Self {
+        let norm = self.normalize();
+        if norm.is_finite() {
+            norm
+        } else {
+            bevy::prelude::Quat::IDENTITY
+        }
+    }
+}

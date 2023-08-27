@@ -1,6 +1,10 @@
+use std::ops::{Add, Sub};
+
 use bevy::prelude::{Quat, Transform, Vec3};
 
 use super::{DclReader, DclReaderError, FromDclReader, SceneEntityId, ToDclWriter};
+
+use common::util::QuatNormalizeExt;
 
 // for dcl: +z -> forward
 // for bevy: +z -> backward
@@ -28,6 +32,30 @@ impl DclTranslation {
 
     pub fn to_bevy_translation(self) -> Vec3 {
         Vec3::new(self.0[0], self.0[1], -self.0[2])
+    }
+}
+
+impl Add<DclTranslation> for DclTranslation {
+    type Output = Self;
+
+    fn add(self, rhs: DclTranslation) -> Self::Output {
+        Self([
+            self.0[0] + rhs.0[0],
+            self.0[1] + rhs.0[1],
+            self.0[2] + rhs.0[2],
+        ])
+    }
+}
+
+impl Sub<DclTranslation> for DclTranslation {
+    type Output = Self;
+
+    fn sub(self, rhs: DclTranslation) -> Self::Output {
+        Self([
+            self.0[0] - rhs.0[0],
+            self.0[1] - rhs.0[1],
+            self.0[2] - rhs.0[2],
+        ])
     }
 }
 
@@ -79,7 +107,7 @@ impl DclTransformAndParent {
     pub fn to_bevy_transform(&self) -> Transform {
         Transform {
             translation: self.translation.to_bevy_translation(),
-            rotation: self.rotation.to_bevy_quat(),
+            rotation: self.rotation.to_bevy_quat().normalize_or_identity(),
             scale: self.scale,
         }
     }

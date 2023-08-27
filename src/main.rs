@@ -23,6 +23,7 @@ use common::{
         AppConfig, AttachPoints, GraphicsSettings, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
     },
 };
+use restricted_actions::RestrictedActionsPlugin;
 use scene_runner::{
     initialize_scene::SceneLoadDistance, update_world::mesh_collider::GroundCollider,
     SceneRunnerPlugin,
@@ -208,6 +209,7 @@ fn main() {
         .add_plugins(CommsPlugin)
         .add_plugins(AvatarPlugin)
         .add_plugins(AudioPlugin)
+        .add_plugins(RestrictedActionsPlugin)
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
         .add_systems(Startup, setup.in_set(SetupSets::Init))
         .insert_resource(AmbientLight {

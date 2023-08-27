@@ -9,7 +9,7 @@ edition = "2021"
 bevy = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
-
+common = { workspace = true }
 
 [build-dependencies]
 prost-build = "0.11.8"

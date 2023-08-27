@@ -183,7 +183,8 @@ mod test {
             is_some,
             data: output_data,
             ..
-        }) = state.last_write.get(&entity) else {
+        }) = state.last_write.get(&entity)
+        else {
             panic!("expected entry")
         };
 

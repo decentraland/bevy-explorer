@@ -567,17 +567,33 @@ fn update_colliders(
     for (ent, collider_def, container) in new_colliders.iter() {
         let collider = match &collider_def.shape {
             MeshColliderShape::Box => ColliderBuilder::cuboid(0.5, 0.5, 0.5),
-            MeshColliderShape::Cylinder { radius_top, radius_bottom } => {
+            MeshColliderShape::Cylinder {
+                radius_top,
+                radius_bottom,
+            } => {
                 // TODO we could use explicit support points to make queries faster
-                let mesh: Mesh = TruncatedCone{ base_radius: *radius_bottom, tip_radius: *radius_top, ..Default::default() }.into();
-                let VertexAttributeValues::Float32x3(positions) = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else { panic!() };
-                ColliderBuilder::convex_hull(&positions.iter().map(|p| Point::from(*p)).collect::<Vec<_>>()).unwrap()
+                let mesh: Mesh = TruncatedCone {
+                    base_radius: *radius_bottom,
+                    tip_radius: *radius_top,
+                    ..Default::default()
+                }
+                .into();
+                let VertexAttributeValues::Float32x3(positions) =
+                    mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
+                else {
+                    panic!()
+                };
+                ColliderBuilder::convex_hull(
+                    &positions
+                        .iter()
+                        .map(|p| Point::from(*p))
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap()
             }
             MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.5, 0.05),
             MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),
-            MeshColliderShape::Shape(shape, _) => {
-                ColliderBuilder::new(shape.clone())
-            },
+            MeshColliderShape::Shape(shape, _) => ColliderBuilder::new(shape.clone()),
         }
         .collision_groups(InteractionGroups {
             memberships: Group::from_bits_truncate(collider_def.collision_mask),

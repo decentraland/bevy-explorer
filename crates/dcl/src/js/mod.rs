@@ -1,14 +1,16 @@
-use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
-use bevy::prelude::{debug, error, info_span};
+use bevy::prelude::{debug, error, info_span, AssetServer};
 use deno_core::{
     ascii_str,
     error::{generic_error, AnyError},
-    include_js_files, op, v8, Extension, JsRuntime, OpState, RuntimeOptions,
+    include_js_files, op, v8, Extension, JsRuntime, Op, OpState, RuntimeOptions,
 };
 use tokio::sync::mpsc::Receiver;
 
 use ipfs::SceneJsFile;
+
+use self::fetch::{FP, TP};
 
 use super::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
@@ -17,41 +19,67 @@ use super::{
 };
 
 pub mod engine;
+pub mod fetch;
+pub mod restricted_actions;
+pub mod runtime;
 
 // marker to indicate shutdown has been triggered
 pub struct ShuttingDown;
 
+pub struct RendererStore(pub CrdtStore);
+
 pub fn create_runtime() -> JsRuntime {
-    // create an extension referencing our native functions and JS initialisation scripts
-    // TODO: to make this more generic for multiple modules we could use
-    // https://crates.io/crates/inventory or similar
-    let ext = Extension::builder("decentraland")
-        // add require operation
-        .ops(vec![op_require::decl(), op_log::decl(), op_error::decl()])
-        // add plugin registrations
-        .ops(engine::ops())
+    // add fetch stack
+    let web = deno_web::deno_web::init_ops_and_esm::<TP>(
+        std::sync::Arc::new(deno_web::BlobStore::default()),
+        None,
+    );
+    let webidl = deno_webidl::deno_webidl::init_ops_and_esm();
+    let url = deno_url::deno_url::init_ops_and_esm();
+    let console = deno_console::deno_console::init_ops_and_esm();
+    let fetch = deno_fetch::deno_fetch::init_js_only::<FP>();
+
+    let mut ext = &mut Extension::builder_with_deps("decentraland", &["deno_fetch"]);
+
+    // add core ops
+    ext = ext.ops(vec![op_require::DECL, op_log::DECL, op_error::DECL]);
+
+    let op_sets: [Vec<deno_core::OpDecl>; 3] =
+        [engine::ops(), restricted_actions::ops(), runtime::ops()];
+
+    // add plugin registrations
+    let mut op_map = HashMap::new();
+    for set in op_sets {
+        for op in &set {
+            // explicitly record the ones we added so we can remove deno_fetch imposters
+            op_map.insert(op.name, *op);
+        }
+        ext = ext.ops(set)
+    }
+
+    let override_sets: [Vec<deno_core::OpDecl>; 1] = [fetch::ops()];
+
+    for set in override_sets {
+        for op in set {
+            // explicitly record the ones we added so we can remove deno_fetch imposters
+            op_map.insert(op.name, op);
+        }
+    }
+
+    let ext = ext
         // set startup JS script
-        .js(include_js_files!(
+        .esm(include_js_files!(
             BevyExplorer
-            "modules/init.js",
+            dir "src/js/modules",
+            "init.js",
         ))
-        // remove core deno ops that are not required
-        .middleware(|op| {
-            const ALLOW: [&str; 7] = [
-                "op_run_microtasks", // TODO check if we can remove this on next deno version
-                "op_eval_context",
-                "op_require",
-                "op_log",
-                "op_error",
-                "op_crdt_send_to_renderer",
-                "op_crdt_recv_from_renderer",
-            ];
-            if ALLOW.contains(&op.name) {
-                op
+        .esm_entry_point("ext:BevyExplorer/init.js")
+        .middleware(move |op| {
+            if let Some(custom_op) = op_map.get(&op.name) {
+                debug!("replace: {}", op.name);
+                op.with_implementation_from(custom_op)
             } else {
-                debug!("deny: {}", op.name);
-                op.disable()
-                // op
+                op
             }
         })
         .build();
@@ -59,21 +87,24 @@ pub fn create_runtime() -> JsRuntime {
     // create runtime
     JsRuntime::new(RuntimeOptions {
         v8_platform: v8::Platform::new(1, false).make_shared().into(),
-        extensions: vec![ext],
+        extensions: vec![webidl, url, console, web, fetch, ext],
         ..Default::default()
     })
 }
 
 // main scene processing thread - constructs an isolate and runs the scene
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn scene_thread(
+    scene_hash: String,
     scene_id: SceneId,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     thread_sx: SyncSender<SceneResponse>,
     thread_rx: Receiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    asset_server: AssetServer,
 ) {
-    let scene_context = CrdtContext::new(scene_id);
+    let scene_context = CrdtContext::new(scene_id, scene_hash);
     let mut runtime = create_runtime();
 
     // store handle
@@ -96,8 +127,13 @@ pub(crate) fn scene_thread(
     state.borrow_mut().put(thread_rx);
     state.borrow_mut().put(global_update_receiver);
 
-    // store crdt state
+    // store asset server
+    state.borrow_mut().put(asset_server);
+
+    // store crdt outbound state
     state.borrow_mut().put(CrdtStore::default());
+    // and renderer incoming state
+    state.borrow_mut().put(RendererStore(CrdtStore::default()));
 
     // store log output and initial elapsed of zero
     state.borrow_mut().put(Vec::<SceneLogMessage>::default());
@@ -126,8 +162,14 @@ pub(crate) fn scene_thread(
         Ok(script) => script,
     };
 
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+
     // run startup function
-    let result = run_script(&mut runtime, &script, "onStart", (), |_| Vec::new());
+    let result = rt
+        .block_on(async { run_script(&mut runtime, &script, "onStart", (), |_| Vec::new()).await });
 
     if let Err(e) = result {
         // ignore failure to send failure
@@ -152,8 +194,11 @@ pub(crate) fn scene_thread(
             .put(SceneElapsedTime(elapsed.as_secs_f32()));
 
         // run the onUpdate function
-        let result = run_script(&mut runtime, &script, "onUpdate", (), |scope| {
-            vec![v8::Number::new(scope, dt.as_secs_f64()).into()]
+        let result = rt.block_on(async {
+            run_script(&mut runtime, &script, "onUpdate", (), |scope| {
+                vec![v8::Number::new(scope, dt.as_secs_f64()).into()]
+            })
+            .await
         });
 
         if state.borrow().try_borrow::<ShuttingDown>().is_some() {
@@ -171,7 +216,7 @@ pub(crate) fn scene_thread(
 }
 
 // helper to setup, acquire, run and return results from a script function
-fn run_script(
+async fn run_script(
     runtime: &mut JsRuntime,
     script: &v8::Global<v8::Value>,
     fn_name: &str,
@@ -217,7 +262,7 @@ fn run_script(
     };
 
     let f = runtime.resolve_value(promise);
-    futures_lite::future::block_on(f).map(|_| ())
+    f.await.map(|_| ())
 }
 
 // synchronously returns a string containing JS code from the file system

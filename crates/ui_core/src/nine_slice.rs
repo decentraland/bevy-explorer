@@ -153,77 +153,94 @@ fn update_slices(
         ];
 
         // get or build tree
-        let Some(container) = maybe_children.and_then(|children| children.iter().find(|child| existing_slices.get(**child).is_ok())) else {
+        let Some(container) = maybe_children.and_then(|children| {
+            children
+                .iter()
+                .find(|child| existing_slices.get(**child).is_ok())
+        }) else {
             // build
-            commands.entity(ent).try_insert(SliceInitMarker).with_children(|c| {
-                // container
-                c.spawn((
-                    NodeBundle{
-                        style: Style {
-                            flex_direction: FlexDirection::Column,
-                            flex_grow: 1.0,
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                    SliceInitMarker
-                ))
+            commands
+                .entity(ent)
+                .try_insert(SliceInitMarker)
                 .with_children(|c| {
-                    // row
-                    for row in &row_data {
-                        c.spawn(NodeBundle{
+                    // container
+                    c.spawn((
+                        NodeBundle {
                             style: Style {
-                                flex_direction: FlexDirection::Row,
-                                flex_grow: row.grow,
+                                flex_direction: FlexDirection::Column,
+                                flex_grow: 1.0,
                                 ..Default::default()
                             },
                             ..Default::default()
-                        }).with_children(|r| {
-                            // column
-                            for col in &col_data {
-                                r.spawn(NodeBundle {
-                                    style: Style {
-                                        width: col.outer_size,
-                                        height: row.outer_size,
-                                        flex_grow: col.grow,
-                                        overflow: Overflow::clip(),
-                                        ..Default::default()
-                                    },
+                        },
+                        SliceInitMarker,
+                    ))
+                    .with_children(|c| {
+                        // row
+                        for row in &row_data {
+                            c.spawn(NodeBundle {
+                                style: Style {
+                                    flex_direction: FlexDirection::Row,
+                                    flex_grow: row.grow,
                                     ..Default::default()
-                                })
-                                .with_children(|i| {
-                                    // image
-                                    i.spawn(ImageBundle{
+                                },
+                                ..Default::default()
+                            })
+                            .with_children(|r| {
+                                // column
+                                for col in &col_data {
+                                    r.spawn(NodeBundle {
                                         style: Style {
-                                            width: col.inner_size,
-                                            height: row.inner_size,
-                                            left: col.start,
-                                            top: row.start,
-                                            right: col.end,
-                                            bottom: row.end,
-                                            position_type: PositionType::Absolute,
+                                            width: col.outer_size,
+                                            height: row.outer_size,
+                                            flex_grow: col.grow,
+                                            overflow: Overflow::clip(),
                                             ..Default::default()
                                         },
-                                        image: UiImage { texture: slice.image.clone(), ..Default::default() },
                                         ..Default::default()
+                                    })
+                                    .with_children(|i| {
+                                        // image
+                                        i.spawn(ImageBundle {
+                                            style: Style {
+                                                width: col.inner_size,
+                                                height: row.inner_size,
+                                                left: col.start,
+                                                top: row.start,
+                                                right: col.end,
+                                                bottom: row.end,
+                                                position_type: PositionType::Absolute,
+                                                ..Default::default()
+                                            },
+                                            image: UiImage {
+                                                texture: slice.image.clone(),
+                                                ..Default::default()
+                                            },
+                                            ..Default::default()
+                                        });
                                     });
-                                });
-                            }
-                        });
-                    }
+                                }
+                            });
+                        }
+                    });
                 });
-            });
 
             continue;
         };
 
         // update existing sizes and images
-        let Ok(rows) = children_query.get_component::<Children>(*container).map(|children| children.iter().copied().collect::<Vec<_>>()) else {
+        let Ok(rows) = children_query
+            .get_component::<Children>(*container)
+            .map(|children| children.iter().copied().collect::<Vec<_>>())
+        else {
             panic!("do not taunt happy fun 9slice");
         };
         assert_eq!(rows.len(), 3);
         for (row, row_ent) in row_data.iter().zip(rows.into_iter()) {
-            let Ok(cols) = children_query.get_component::<Children>(row_ent).map(|children| children.iter().copied().collect::<Vec<_>>()) else {
+            let Ok(cols) = children_query
+                .get_component::<Children>(row_ent)
+                .map(|children| children.iter().copied().collect::<Vec<_>>())
+            else {
                 panic!("do not taunt happy fun 9slice");
             };
             assert_eq!(cols.len(), 3);

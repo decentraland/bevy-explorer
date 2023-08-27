@@ -1,11 +1,16 @@
 use bevy::{prelude::*, utils::HashSet};
 
-use common::util::{dcl_assert, RingBuffer};
+use common::util::{dcl_assert, RingBuffer, TryInsertEx};
 use dcl::{
     interface::{CrdtStore, CrdtType},
     SceneId, SceneLogMessage,
 };
 use dcl_component::{DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter};
+
+use crate::{
+    primary_entities::PrimaryEntities, update_world::transform_and_parent::ParentPositionSync,
+    ContainerEntity, SceneEntity, TargetParent,
+};
 
 // contains a list of (SceneEntityId.generation, bevy entity) indexed by SceneEntityId.id
 // where generation is the earliest non-dead (though maybe not yet live)
@@ -140,6 +145,60 @@ impl RendererSceneContext {
 
     pub fn is_dead(&self, entity: SceneEntityId) -> bool {
         self.entity_entry(entity.id).0 > entity.generation
+    }
+
+    pub fn spawn_bevy_entity(
+        &mut self,
+        commands: &mut Commands,
+        root: Entity,
+        id: SceneEntityId,
+        primaries: &PrimaryEntities,
+    ) -> Entity {
+        dcl_assert!(self.bevy_entity(id).is_none());
+
+        let spawned = commands
+            .spawn((
+                SpatialBundle::default(),
+                SceneEntity {
+                    scene_id: self.scene_id,
+                    root,
+                    id,
+                },
+                TargetParent(root),
+            ))
+            .id();
+
+        commands.entity(spawned).try_insert(ContainerEntity {
+            root,
+            container: spawned,
+            container_id: id,
+        });
+
+        if id == SceneEntityId::CAMERA {
+            commands
+                .entity(spawned)
+                .try_insert(ParentPositionSync(primaries.camera()));
+        }
+        if id == SceneEntityId::PLAYER {
+            commands
+                .entity(spawned)
+                .try_insert(ParentPositionSync(primaries.player()));
+        }
+
+        commands.entity(root).add_child(spawned);
+
+        self.associate_bevy_entity(id, spawned);
+
+        self.hierarchy_changed = true;
+
+        debug!(
+            "spawned {:?}/{:?} -> {:?}",
+            root,
+            id,
+            self.bevy_entity(id).unwrap()
+        );
+
+        spawned
     }
 
     pub fn update_crdt(

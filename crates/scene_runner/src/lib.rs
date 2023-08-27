@@ -19,7 +19,7 @@ use bevy::{
 use common::{
     sets::{SceneLoopSets, SceneSets},
     structs::{AppConfig, PrimaryCamera, PrimaryUser},
-    util::{dcl_assert, TryInsertEx, TryPushChildrenEx},
+    util::{dcl_assert, TryPushChildrenEx},
 };
 use dcl::{
     interface::CrdtType, RendererResponse, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse,
@@ -30,6 +30,7 @@ use dcl_component::{
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
 use ipfs::SceneIpfsLocation;
+use primary_entities::PrimaryEntities;
 use spin_sleep::SpinSleeper;
 
 use self::{
@@ -42,6 +43,7 @@ use self::{
 };
 
 pub mod initialize_scene;
+pub mod primary_entities;
 pub mod renderer_context;
 #[cfg(test)]
 pub mod test;
@@ -404,9 +406,8 @@ pub struct ContainingScene<'w, 's> {
 }
 
 impl<'w, 's> ContainingScene<'w, 's> {
-    pub fn get(&self, ent: Entity) -> Option<Entity> {
-        let parcel = (self.transforms.get(ent).ok()?.translation().xz() * Vec2::new(1.0, -1.0)
-            / PARCEL_SIZE)
+    pub fn get_position(&self, position: Vec3) -> Option<Entity> {
+        let parcel = (position.xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
             .floor()
             .as_ivec2();
 
@@ -417,9 +418,17 @@ impl<'w, 's> ContainingScene<'w, 's> {
         }
     }
 
+    pub fn get(&self, ent: Entity) -> Option<Entity> {
+        self.get_position(self.transforms.get(ent).ok()?.translation())
+    }
+
     // get all scenes within radius of the given entity
     pub fn get_area(&self, ent: Entity, radius: f32) -> Vec<Entity> {
-        let Ok(focus) = self.transforms.get(ent).map(|t| t.translation().xz() * Vec2::new(1.0, -1.0)) else {
+        let Ok(focus) = self
+            .transforms
+            .get(ent)
+            .map(|t| t.translation().xz() * Vec2::new(1.0, -1.0))
+        else {
             return Default::default();
         };
 
@@ -634,14 +643,10 @@ fn process_scene_entity_lifecycle(
     mut commands: Commands,
     mut scenes: Query<(Entity, &mut RendererSceneContext, &mut DeletedSceneEntities)>,
     children: Query<&Children>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut handles: Local<Option<Handle<StandardMaterial>>>,
     scene_entities: Query<(), With<SceneEntity>>,
+    primaries: PrimaryEntities,
 ) {
-    let material = handles.get_or_insert_with(|| materials.add(Color::WHITE.into()));
-
     for (root, mut context, mut deleted_entities) in scenes.iter_mut() {
-        let scene_id = context.scene_id;
         if !context.nascent.is_empty() {
             debug!("{:?}: nascent: {:?}", root, context.nascent);
         }
@@ -651,37 +656,7 @@ fn process_scene_entity_lifecycle(
                 continue;
             }
 
-            let spawned = commands
-                .spawn((
-                    PbrBundle {
-                        // TODO remove these and replace with spatial bundle when mesh and material components are supported
-                        material: material.clone(),
-                        ..Default::default()
-                    },
-                    SceneEntity {
-                        scene_id,
-                        root,
-                        id: scene_entity_id,
-                    },
-                    TargetParent(root),
-                ))
-                .id();
-
-            commands.entity(spawned).try_insert(ContainerEntity {
-                root,
-                container: spawned,
-                container_id: scene_entity_id,
-            });
-
-            commands.entity(root).add_child(spawned);
-
-            context.associate_bevy_entity(scene_entity_id, spawned);
-
-            debug!(
-                "spawned {:?} -> {:?}",
-                scene_entity_id,
-                context.bevy_entity(scene_entity_id).unwrap()
-            );
+            context.spawn_bevy_entity(&mut commands, root, scene_entity_id, &primaries);
         }
 
         // update deleted entities list, used by crdt processors to filter results

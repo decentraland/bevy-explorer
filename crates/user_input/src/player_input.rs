@@ -16,10 +16,9 @@ pub(crate) fn update_user_velocity(
     input: InputManager,
     time: Res<Time>,
 ) {
-    let (
-        Ok((mut dynamic_state, user)),
-        Ok(camera_transform),
-    ) = (player.get_single_mut(), camera.get_single()) else {
+    let (Ok((mut dynamic_state, user)), Ok(camera_transform)) =
+        (player.get_single_mut(), camera.get_single())
+    else {
         return;
     };
 

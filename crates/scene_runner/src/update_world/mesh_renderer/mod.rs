@@ -75,11 +75,19 @@ impl Plugin for MeshDefinitionPlugin {
             mesh
         };
         let flip_uv = |mut mesh: Mesh| {
-            let Some(VertexAttributeValues::Float32x3(ref mut positions)) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) else {panic!()};
+            let Some(VertexAttributeValues::Float32x3(ref mut positions)) =
+                mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION)
+            else {
+                panic!()
+            };
             for pos in positions.iter_mut() {
                 *pos = [pos[0], -pos[2], pos[1]];
             }
-            let Some(VertexAttributeValues::Float32x3(ref mut normals)) = mesh.attribute_mut(Mesh::ATTRIBUTE_NORMAL) else {panic!()};
+            let Some(VertexAttributeValues::Float32x3(ref mut normals)) =
+                mesh.attribute_mut(Mesh::ATTRIBUTE_NORMAL)
+            else {
+                panic!()
+            };
             for pos in normals.iter_mut() {
                 *pos = [pos[0], -pos[2], pos[1]];
             }
@@ -108,21 +116,35 @@ impl Plugin for MeshDefinitionPlugin {
     }
 }
 
-fn update_mesh(
+#[allow(clippy::type_complexity)]
+pub fn update_mesh(
     mut commands: Commands,
-    new_primitives: Query<(Entity, &MeshDefinition), Changed<MeshDefinition>>,
+    new_primitives: Query<
+        (Entity, &MeshDefinition, Option<&Handle<StandardMaterial>>),
+        Changed<MeshDefinition>,
+    >,
     mut removed_primitives: RemovedComponents<MeshDefinition>,
     mut meshes: ResMut<Assets<Mesh>>,
     defaults: Res<MeshPrimitiveDefaults>,
+    mut default_material: Local<Handle<StandardMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for (ent, prim) in new_primitives.iter() {
+    if default_material.is_weak() {
+        *default_material = materials.add(StandardMaterial::default());
+    }
+
+    for (ent, prim, maybe_material) in new_primitives.iter() {
         let handle = match prim {
             MeshDefinition::Box { uvs } => {
                 if uvs.is_empty() {
                     defaults.boxx.clone()
                 } else {
                     let mut mesh = Mesh::from(shape::Cube::default());
-                    let Some(VertexAttributeValues::Float32x2(mesh_uvs)) = mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0) else { panic!("uvs are not f32x2") };
+                    let Some(VertexAttributeValues::Float32x2(mesh_uvs)) =
+                        mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
+                    else {
+                        panic!("uvs are not f32x2")
+                    };
                     for (attr, uv) in mesh_uvs.iter_mut().zip(uvs) {
                         *attr = *uv
                     }
@@ -151,7 +173,11 @@ fn update_mesh(
                     defaults.plane.clone()
                 } else {
                     let mut mesh = Mesh::from(shape::Quad::default());
-                    let Some(VertexAttributeValues::Float32x2(mesh_uvs)) = mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0) else { panic!("uvs are not f32x2") };
+                    let Some(VertexAttributeValues::Float32x2(mesh_uvs)) =
+                        mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
+                    else {
+                        panic!("uvs are not f32x2")
+                    };
                     for (attr, uv) in mesh_uvs.iter_mut().zip(uvs) {
                         attr[0] = uv[0];
                         attr[1] = 1.0 - uv[1];
@@ -162,6 +188,10 @@ fn update_mesh(
             MeshDefinition::Sphere => defaults.sphere.clone(),
         };
         commands.entity(ent).try_insert(handle);
+
+        if maybe_material.is_none() {
+            commands.entity(ent).try_insert(default_material.clone());
+        }
     }
 
     for ent in removed_primitives.iter() {

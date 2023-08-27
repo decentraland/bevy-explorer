@@ -1,0 +1,14 @@
+[package]
+name = "restricted_actions"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { workspace = true }
+scene_runner = { workspace = true }
+avatar = { workspace = true }
+ui_core = { workspace = true }
+
+bevy = { workspace = true }

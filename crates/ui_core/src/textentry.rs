@@ -49,7 +49,9 @@ pub fn update_text_entry_components(
     )>,
     mut lost_focus: RemovedComponents<Focus>,
 ) {
-    let Ok(mut ctx) = egui_ctx.get_single_mut() else { return; };
+    let Ok(mut ctx) = egui_ctx.get_single_mut() else {
+        return;
+    };
     let ctx = ctx.get_mut();
 
     let lost_focus = lost_focus.iter().collect::<HashSet<_>>();
@@ -76,9 +78,10 @@ pub fn update_text_entry_components(
                         ref font_size,
                         ..
                     } = &mut *textbox;
+                    let enabled = *enabled;
 
                     let response = ui.add_enabled(
-                        *enabled,
+                        enabled,
                         TextEdit::singleline(content)
                             .frame(false)
                             .desired_width(f32::INFINITY)
@@ -116,7 +119,7 @@ pub fn update_text_entry_components(
                             *interaction = Interaction::None;
                         }
                     }
-                    if maybe_focus.is_some() && !response.has_focus() && !defocus {
+                    if maybe_focus.is_some() && !response.has_focus() && !defocus && enabled {
                         debug!("Focus -> tb focus");
                         response.request_focus();
                     }

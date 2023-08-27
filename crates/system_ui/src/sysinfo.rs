@@ -2,6 +2,7 @@ use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     math::Vec3Swizzles,
     prelude::*,
+    ui::FocusPolicy,
 };
 
 use common::{
@@ -44,6 +45,7 @@ pub(crate) fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res
                     ..default()
                 },
                 background_color: Color::rgba(0.8, 0.8, 1.0, 0.8).into(),
+                focus_policy: FocusPolicy::Block,
                 ..default()
             })
             .with_children(|commands| {
