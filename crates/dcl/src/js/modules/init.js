@@ -44,10 +44,13 @@ function require(moduleName) {
 // minimal console
 const console = { 
     log: function(...args) {
-        Deno.core.ops.op_log("" + args.join(' '))
+        Deno.core.ops.op_log("[log]" + args.join(' '))
+    },
+    warn: function(...args) {
+        Deno.core.ops.op_log("[warn] " + args.join(' '))
     },
     error: function(...args) {
-        Deno.core.ops.op_error("" + args.join(' '))
+        Deno.core.ops.op_error("[err]" + args.join(' '))
     },
 }
 
