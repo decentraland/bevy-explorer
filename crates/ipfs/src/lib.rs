@@ -634,9 +634,9 @@ impl IpfsIo {
         })
     }
 
-    pub async fn async_request(
+    pub async fn async_request<T: Into<isahc::AsyncBody>>(
         &self,
-        request: isahc::Request<isahc::AsyncBody>,
+        request: isahc::Request<T>,
         client: Option<isahc::HttpClient>,
     ) -> Result<isahc::Response<isahc::AsyncBody>, anyhow::Error> {
         // get semaphore to limit concurrent requests
