@@ -44,7 +44,7 @@ fn setup(
             color: Color::rgb(0.3, 0.2, 0.1),
             directional_light_color: Color::rgb(1.0, 1.0, 0.7),
             directional_light_exponent: 10.0,
-            falloff: FogFalloff::ExponentialSquared { density: 0.015 },
+            falloff: FogFalloff::ExponentialSquared { density: 0.01 },
         });
 
     commands.spawn((
