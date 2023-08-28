@@ -9,11 +9,11 @@ use bevy::{
     reflect::{TypePath, TypeUuid},
     render::{
         mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
-        view::NoFrustumCulling,
+        view::{NoFrustumCulling, VisibleEntities, ColorGrading}, camera::CameraRenderGraph, primitives::Frustum,
     },
     scene::InstanceId,
     tasks::{AsyncComputeTaskPool, Task},
-    utils::{HashMap, HashSet},
+    utils::{HashMap, HashSet}, core_pipeline::tonemapping::{Tonemapping, DebandDither},
 };
 use futures_lite::future;
 use nalgebra::Point;
@@ -296,6 +296,21 @@ fn update_gltf(
             let mut collider_counter: HashMap<_, u32> = HashMap::default();
 
             for spawned_ent in scene_spawner.iter_instance_entities(*instance) {
+                // delete any cameras
+                commands.entity(spawned_ent).remove::<
+                (
+                    Camera,
+                    CameraRenderGraph,
+                    Projection,
+                    VisibleEntities,
+                    Frustum,
+                    Camera3d,
+                    Tonemapping,
+                    DebandDither,
+                    ColorGrading,
+                )
+                >();
+
                 // add a container node so other systems can reference the root
                 commands.entity(spawned_ent).try_insert(ContainerEntity {
                     container: bevy_scene_entity,
