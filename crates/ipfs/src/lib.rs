@@ -167,7 +167,7 @@ impl ContentMap {
             .map(String::as_str)
     }
 
-    pub fn files(&self) -> impl Iterator<Item=&String> {
+    pub fn files(&self) -> impl Iterator<Item = &String> {
         self.0.left_values()
     }
 }

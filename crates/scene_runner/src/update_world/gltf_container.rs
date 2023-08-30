@@ -4,16 +4,19 @@
 use std::collections::BTreeMap;
 
 use bevy::{
+    core_pipeline::tonemapping::{DebandDither, Tonemapping},
     gltf::{Gltf, GltfExtras},
     prelude::*,
     reflect::{TypePath, TypeUuid},
     render::{
+        camera::CameraRenderGraph,
         mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
-        view::{NoFrustumCulling, VisibleEntities, ColorGrading}, camera::CameraRenderGraph, primitives::Frustum,
+        primitives::Frustum,
+        view::{ColorGrading, NoFrustumCulling, VisibleEntities},
     },
     scene::InstanceId,
     tasks::{AsyncComputeTaskPool, Task},
-    utils::{HashMap, HashSet}, core_pipeline::tonemapping::{Tonemapping, DebandDither},
+    utils::{HashMap, HashSet},
 };
 use futures_lite::future;
 use nalgebra::Point;
@@ -298,8 +301,7 @@ fn update_gltf(
 
             for spawned_ent in scene_spawner.iter_instance_entities(*instance) {
                 // delete any cameras
-                commands.entity(spawned_ent).remove::<
-                (
+                commands.entity(spawned_ent).remove::<(
                     Camera,
                     CameraRenderGraph,
                     Projection,
@@ -309,8 +311,7 @@ fn update_gltf(
                     Tonemapping,
                     DebandDither,
                     ColorGrading,
-                )
-                >();
+                )>();
 
                 // add a container node so other systems can reference the root
                 commands.entity(spawned_ent).try_insert(ContainerEntity {
@@ -353,7 +354,8 @@ fn update_gltf(
                         continue;
                     };
 
-                    let is_skinned = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some() && maybe_skin.is_some();
+                    let is_skinned = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some()
+                        && maybe_skin.is_some();
                     if is_skinned {
                         // bevy doesn't calculate culling correctly for skinned entities
                         commands.entity(spawned_ent).try_insert(NoFrustumCulling);

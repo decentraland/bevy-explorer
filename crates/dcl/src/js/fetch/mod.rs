@@ -105,9 +105,7 @@ pub fn op_fetch(
         }
 
         match data {
-            Some(data) => {
-                (None, None, Some(data.to_vec()))
-            }
+            Some(data) => (None, None, Some(data.to_vec())),
             None => {
                 let request_body_rid = state.resource_table.add(FetchRequestBodyResource {
                     body: AsyncRefCell::new(tx),
@@ -199,7 +197,7 @@ pub async fn op_fetch_send(
         asset_server.ipfs().async_request(request, client).await
     } else {
         let request = request.body(())?;
-        asset_server.ipfs().async_request(request, client).await        
+        asset_server.ipfs().async_request(request, client).await
     };
 
     let mut res = match async_req {

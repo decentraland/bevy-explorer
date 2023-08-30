@@ -1,12 +1,19 @@
 use std::path::PathBuf;
 
-use bevy::{prelude::*, asset::AssetIo, tasks::{IoTaskPool, Task}};
+use bevy::{
+    asset::AssetIo,
+    prelude::*,
+    tasks::{IoTaskPool, Task},
+};
 use bevy_console::ConsoleCommand;
 use common::{structs::PrimaryUser, util::TaskExt};
 use console::DoAddConsoleCommand;
-use ipfs::{EntityDefinition, IpfsLoaderExt, ipfs_path::{IpfsPath, IpfsType}};
+use ipfs::{
+    ipfs_path::{IpfsPath, IpfsType},
+    EntityDefinition, IpfsLoaderExt,
+};
 
-use crate::{ContainingScene, renderer_context::RendererSceneContext};
+use crate::{renderer_context::RendererSceneContext, ContainingScene};
 
 pub struct SceneUtilPlugin;
 
@@ -20,6 +27,7 @@ impl Plugin for SceneUtilPlugin {
 #[command(name = "/debug_dump_scene")]
 struct DebugDumpScene;
 
+#[allow(clippy::too_many_arguments)]
 fn debug_dump_scene(
     mut input: ConsoleCommand<DebugDumpScene>,
     containing_scene: ContainingScene,
@@ -31,7 +39,12 @@ fn debug_dump_scene(
     mut response: Local<Vec<Option<String>>>,
 ) {
     if let Some(Ok(_)) = input.take() {
-        let Some(scene) = player.get_single().ok().and_then(|p |containing_scene.get(p)).and_then(|s| scene.get(s).ok()) else { 
+        let Some(scene) = player
+            .get_single()
+            .ok()
+            .and_then(|p| containing_scene.get(p))
+            .and_then(|s| scene.get(s).ok())
+        else {
             input.reply_failed("no scene");
             return;
         };
@@ -42,7 +55,12 @@ fn debug_dump_scene(
             return;
         };
 
-        let dump_folder = asset_server.ipfs().cache_path().to_owned().join("scene_dump").join(&scene.hash);
+        let dump_folder = asset_server
+            .ipfs()
+            .cache_path()
+            .to_owned()
+            .join("scene_dump")
+            .join(&scene.hash);
         std::fs::create_dir_all(&dump_folder).unwrap();
 
         for content_file in def.content.files() {
@@ -64,7 +82,9 @@ fn debug_dump_scene(
                 let file = dump_folder.join(&content_file);
                 if let Some(parent) = file.parent() {
                     if let Err(e) = std::fs::create_dir_all(parent) {
-                        return Some(format!("{content_file} failed: couldn't create parent: {e}\n"));
+                        return Some(format!(
+                            "{content_file} failed: couldn't create parent: {e}\n"
+                        ));
                     }
                 }
                 if let Err(e) = std::fs::write(file, bytes) {
@@ -77,13 +97,11 @@ fn debug_dump_scene(
     }
 
     if tasks.len() > 0 {
-        tasks.retain_mut(|t| {
-            match t.complete() {
-                None => true,
-                Some(resp) => {
-                    response.push(resp);
-                    false
-                }
+        tasks.retain_mut(|t| match t.complete() {
+            None => true,
+            Some(resp) => {
+                response.push(resp);
+                false
             }
         });
         if tasks.is_empty() {
@@ -92,7 +110,11 @@ fn debug_dump_scene(
             if errs.is_empty() {
                 input.reply_ok("All good");
             } else {
-                input.reply_failed(format!("{}/{} files saved successfully. Errors:", tasks - errs.len(), tasks));
+                input.reply_failed(format!(
+                    "{}/{} files saved successfully. Errors:",
+                    tasks - errs.len(),
+                    tasks
+                ));
                 for err in errs {
                     input.reply_failed(err);
                 }
