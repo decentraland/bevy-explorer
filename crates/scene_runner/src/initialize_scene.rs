@@ -7,7 +7,7 @@ use bevy::{
 };
 use serde::Deserialize;
 
-use common::util::{TaskExt, TryInsertEx};
+use common::{util::{TaskExt, TryInsertEx}, structs::SceneLoadDistance};
 use comms::global_crdt::GlobalCrdtState;
 use dcl::{
     get_next_scene_id,
@@ -466,9 +466,6 @@ pub(crate) fn initialize_scene(
         commands.entity(root).remove::<SceneLoading>();
     }
 }
-
-#[derive(Resource)]
-pub struct SceneLoadDistance(pub f32);
 
 #[derive(Resource, Default)]
 pub struct LiveScenes(pub HashMap<String, Entity>);

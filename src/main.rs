@@ -20,12 +20,12 @@ use bevy_console::ConsoleCommand;
 use common::{
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, GraphicsSettings, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
+        AppConfig, AttachPoints, GraphicsSettings, PrimaryCamera, PrimaryCameraRes, PrimaryUser, SceneLoadDistance,
     },
 };
 use restricted_actions::RestrictedActionsPlugin;
 use scene_runner::{
-    initialize_scene::SceneLoadDistance, update_world::mesh_collider::GroundCollider,
+    update_world::mesh_collider::GroundCollider,
     SceneRunnerPlugin,
 };
 

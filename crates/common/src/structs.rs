@@ -171,3 +171,6 @@ pub enum AudioDecoderError {
     StreamClosed,
     Other(String),
 }
+
+#[derive(Resource)]
+pub struct SceneLoadDistance(pub f32);

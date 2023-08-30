@@ -11,7 +11,7 @@ use bevy_atmosphere::{
 
 use common::{
     sets::SetupSets,
-    structs::{PrimaryCameraRes, PrimaryUser},
+    structs::{PrimaryCameraRes, PrimaryUser, PrimaryCamera, SceneLoadDistance},
     util::TryInsertEx,
 };
 
@@ -74,6 +74,8 @@ fn daylight_cycle(
     mut atmosphere: AtmosphereMut<Nishita>,
     mut sun: Query<(&mut Transform, &mut DirectionalLight)>,
     time: Res<Time>,
+    camera: Query<&PrimaryCamera>,
+    scene_distance: Res<SceneLoadDistance>,
 ) {
     let t = 120.0 + time.elapsed_seconds_wrapped() / 200.0;
     let rotation = Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0);
@@ -84,6 +86,8 @@ fn daylight_cycle(
         directional.illuminance = t.sin().max(0.0).powf(2.0) * 30000.0;
 
         if let Ok(mut fog) = fog.get_single_mut() {
+            let distance = scene_distance.0 + camera.get_single().map(|c| c.distance).unwrap_or_default() * 5.0;
+            fog.falloff = FogFalloff::from_visibility_squared(distance);
             let sun_up = atmosphere.sun_position.dot(Vec3::Y);
             let rgb = Vec3::new(0.4, 0.4, 0.2) * sun_up.clamp(0.0, 1.0)
                 + Vec3::new(0.0, 0.0, 0.0) * (8.0 * (0.125 - sun_up.clamp(0.0, 0.125)));
