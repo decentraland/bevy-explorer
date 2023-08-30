@@ -133,6 +133,7 @@ fn update_gltf(
         Option<&AnimationPlayer>,
         Option<&Handle<Mesh>>,
         Option<&GltfExtras>,
+        Option<&SkinnedMesh>,
     )>,
     scene_def_handles: Query<&Handle<EntityDefinition>>,
     (scene_defs, asset_server, gltfs): (
@@ -325,6 +326,7 @@ fn update_gltf(
                     maybe_player,
                     maybe_h_mesh,
                     maybe_extras,
+                    maybe_skin,
                 )) = gltf_spawned_entities.get(spawned_ent)
                 {
                     // children of root nodes -> rotate
@@ -351,10 +353,18 @@ fn update_gltf(
                         continue;
                     };
 
-                    let is_skinned = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
+                    let is_skinned = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some() && maybe_skin.is_some();
                     if is_skinned {
                         // bevy doesn't calculate culling correctly for skinned entities
                         commands.entity(spawned_ent).try_insert(NoFrustumCulling);
+                    } else {
+                        // bevy crashes if unskinned models have joints and weights
+                        if mesh_data.contains_attribute(Mesh::ATTRIBUTE_JOINT_INDEX) {
+                            mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_INDEX);
+                        }
+                        if mesh_data.contains_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT) {
+                            mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT);
+                        }
                     }
 
                     let mut collider_base_name =
