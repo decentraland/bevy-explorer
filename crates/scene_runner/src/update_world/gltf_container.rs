@@ -20,7 +20,7 @@ use bevy::{
 };
 use futures_lite::future;
 use nalgebra::Point;
-use rapier3d::prelude::*;
+use rapier3d::{prelude::*, parry::transformation::ConvexHullError};
 use serde::Deserialize;
 
 use crate::{renderer_context::RendererSceneContext, ContainerEntity, SceneEntity, SceneSets};
@@ -74,8 +74,8 @@ impl Plugin for GltfDefinitionPlugin {
 #[derive(TypeUuid, TypePath)]
 #[uuid = "09e7812e-ea71-4046-a9be-65565257d459"]
 pub enum GltfCachedShape {
-    Shape(SharedShape),
-    Task(Task<SharedShape>),
+    Shape((Result<SharedShape, ConvexHullError>, Vec3)),
+    Task(Task<(Result<SharedShape, ConvexHullError>, Vec3)>),
 }
 
 #[derive(Component)]
@@ -354,18 +354,23 @@ fn update_gltf(
                         continue;
                     };
 
-                    let is_skinned = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some()
-                        && maybe_skin.is_some();
+                    let has_joints = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();
+                    let has_weights = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
+                    let has_skin = maybe_skin.is_some();
+                    let is_skinned = has_skin && has_joints && has_weights;
                     if is_skinned {
                         // bevy doesn't calculate culling correctly for skinned entities
                         commands.entity(spawned_ent).try_insert(NoFrustumCulling);
                     } else {
-                        // bevy crashes if unskinned models have joints and weights
-                        if mesh_data.contains_attribute(Mesh::ATTRIBUTE_JOINT_INDEX) {
+                        // bevy crashes if unskinned models have joints and weights, or if skinned models don't
+                        if has_joints {
                             mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_INDEX);
                         }
-                        if mesh_data.contains_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT) {
+                        if has_weights {
                             mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT);
+                        }
+                        if has_skin {
+                            commands.entity(spawned_ent).remove::<SkinnedMesh>();
                         }
                     }
 
@@ -430,12 +435,22 @@ fn update_gltf(
                             }
                             _ => {
                                 // asynchronously create the collider
-                                let scale = transform.scale;
                                 let VertexAttributeValues::Float32x3(positions) =
                                     mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
                                 else {
                                     panic!()
                                 };
+
+                                // parry doesn't like thin colliders, so as long as it's not zero-sized, we rescale to a cube
+                                let min = positions.iter().fold(Vec3::MAX, |a,b| a.min(Vec3::from_slice(b)));
+                                let max = positions.iter().fold(Vec3::MIN, |a,b| a.max(Vec3::from_slice(b)));
+                                let size = max - min;
+                                let scale = if size.min_element() > 0.0 {
+                                    size.recip() * size.max_element()
+                                } else {
+                                    Vec3::ONE
+                                };
+
                                 let vertices: Vec<_> = positions
                                     .iter()
                                     .map(|p| {
@@ -463,7 +478,10 @@ fn update_gltf(
                                 };
 
                                 let task = AsyncComputeTaskPool::get().spawn(async move {
-                                    SharedShape::convex_decomposition(&vertices, &indices)
+                                    (
+                                        SharedShape::convex_decomposition(&vertices, &indices),
+                                        scale
+                                    )
                                 });
                                 let h_shape = cached_shapes.add(GltfCachedShape::Task(task));
                                 shape_lookup.0.insert(h_mesh.clone(), h_shape.clone());
@@ -525,16 +543,27 @@ fn attach_ready_colliders(
             }
         };
 
-        if let Some(shape) = maybe_shape {
-            commands
-                .entity(entity)
-                .try_insert(MeshCollider {
-                    shape: MeshColliderShape::Shape(shape, pending.h_mesh.clone()),
-                    collision_mask: pending.collision_mask,
-                    mesh_name: pending.mesh_name.clone(),
-                    index: pending.index,
-                })
-                .remove::<PendingGltfCollider>();
+        if let Some((maybe_shape, base_scale)) = maybe_shape {
+            match maybe_shape {
+                Ok(shape) => {
+                    commands
+                        .entity(entity)
+                        .try_insert(MeshCollider {
+                            shape: MeshColliderShape::Shape(shape, pending.h_mesh.clone()),
+                            base_scale,
+                            collision_mask: pending.collision_mask,
+                            mesh_name: pending.mesh_name.clone(),
+                            index: pending.index,
+                        })
+                        .remove::<PendingGltfCollider>();
+                }
+                Err(e) => {
+                    commands
+                        .entity(entity)
+                        .remove::<PendingGltfCollider>();
+                    warn!("failed to generate collider for {entity:?}: {e}")
+                }
+            }
         }
     }
 }

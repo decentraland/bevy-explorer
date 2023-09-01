@@ -40,6 +40,7 @@ pub struct MeshCollider {
     pub collision_mask: u32,
     pub mesh_name: Option<String>,
     pub index: u32,
+    pub base_scale: Vec3,
 }
 
 impl Default for MeshCollider {
@@ -49,6 +50,7 @@ impl Default for MeshCollider {
             collision_mask: ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32,
             mesh_name: Default::default(),
             index: Default::default(),
+            base_scale: Vec3::ONE,
         }
     }
 }
@@ -161,6 +163,7 @@ pub struct RaycastResult {
 
 struct ColliderState {
     base_collider: Collider,
+    base_scale: Vec3,
     translation: Vec3,
     rotation: Quat,
     scale: Vec3,
@@ -180,18 +183,57 @@ pub struct SceneColliderData {
 const SCALE_EPSILON: f32 = 0.001;
 
 impl SceneColliderData {
-    pub fn set_collider(&mut self, id: &ColliderId, new_collider: Collider) {
+    fn scale_shape(s: &dyn Shape, req_scale: Vec3) -> SharedShape {
+        match s.as_typed_shape() {
+            TypedShape::Ball(b) => match b.scaled(&req_scale.into(), 5).unwrap() {
+                itertools::Either::Left(ball) => SharedShape::new(ball),
+                itertools::Either::Right(convex) => SharedShape::new(convex),
+            },
+            TypedShape::Cuboid(c) => SharedShape::new(c.scaled(&req_scale.into())),
+            TypedShape::ConvexPolyhedron(p) => {
+                SharedShape::new(p.clone().scaled(&req_scale.into()).unwrap())
+            }
+            TypedShape::Compound(c) => {
+                let scaled_items = c
+                    .shapes()
+                    .iter()
+                    .map(|(iso, shape)| {
+                        let mut vector = iso.translation.vector;
+                        // TODO gotta be a clean way to do this
+                        vector[0] *= req_scale.x;
+                        vector[1] *= req_scale.y;
+                        vector[2] *= req_scale.z;
+                        (
+                            Isometry {
+                                rotation: iso.rotation,
+                                translation: Translation { vector },
+                            },
+                            Self::scale_shape(shape.0.as_ref(), req_scale),
+                        )
+                    })
+                    .collect();
+                SharedShape::compound(scaled_items)
+            }
+            _ => panic!(),
+        }
+    }
+
+    pub fn set_collider(&mut self, id: &ColliderId, mut new_collider: Collider, base_scale: Vec3) {
         self.remove_collider(id);
 
         self.collider_state.insert(
             id.to_owned(),
             ColliderState {
                 base_collider: new_collider.clone(),
+                base_scale,
                 translation: Vec3::ZERO,
                 rotation: Quat::IDENTITY,
                 scale: Vec3::ONE,
             },
         );
+
+        new_collider.set_shape(Self::scale_shape(new_collider.shape(), base_scale.recip()));
+
         let handle = self.collider_set.insert(new_collider);
         self.scaled_collider.insert(id.to_owned(), handle);
         self.query_state_valid_at = None;
@@ -210,52 +252,18 @@ impl SceneColliderData {
                     transform.to_scale_rotation_translation();
                 let ColliderState {
                     base_collider,
+                    base_scale,
                     translation: init_translation,
                     scale: init_scale,
                     rotation: init_rotation,
                 } = self.collider_state.get(id).unwrap();
-
-                fn scale_shape(s: &dyn Shape, req_scale: Vec3) -> SharedShape {
-                    match s.as_typed_shape() {
-                        TypedShape::Ball(b) => match b.scaled(&req_scale.into(), 5).unwrap() {
-                            itertools::Either::Left(ball) => SharedShape::new(ball),
-                            itertools::Either::Right(convex) => SharedShape::new(convex),
-                        },
-                        TypedShape::Cuboid(c) => SharedShape::new(c.scaled(&req_scale.into())),
-                        TypedShape::ConvexPolyhedron(p) => {
-                            SharedShape::new(p.clone().scaled(&req_scale.into()).unwrap())
-                        }
-                        TypedShape::Compound(c) => {
-                            let scaled_items = c
-                                .shapes()
-                                .iter()
-                                .map(|(iso, shape)| {
-                                    let mut vector = iso.translation.vector;
-                                    // TODO gotta be a clean way to do this
-                                    vector[0] *= req_scale.x;
-                                    vector[1] *= req_scale.y;
-                                    vector[2] *= req_scale.z;
-                                    (
-                                        Isometry {
-                                            rotation: iso.rotation,
-                                            translation: Translation { vector },
-                                        },
-                                        scale_shape(shape.0.as_ref(), req_scale),
-                                    )
-                                })
-                                .collect();
-                            SharedShape::compound(scaled_items)
-                        }
-                        _ => panic!(),
-                    }
-                }
 
                 let mut cast_result = None;
                 let mut new_scale = *init_scale;
                 if (req_scale - *init_scale).length_squared() > SCALE_EPSILON {
                     new_scale = req_scale;
                     // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
-                    collider.set_shape(scale_shape(base_collider.shape(), req_scale));
+                    collider.set_shape(Self::scale_shape(base_collider.shape(), req_scale / *base_scale));
                 } else if self.disabled.contains(&handle) {
                     // don't shapecast
                 } else if let Some(colliders) = cast_with {
@@ -277,7 +285,7 @@ impl SceneColliderData {
                                 linvel: (req_translation - *init_translation).into(),
                                 angvel: [euler_axes.0, euler_axes.1, euler_axes.2].into(),
                             },
-                            base_collider.shape(),
+                            collider.shape(),
                             0.0,
                             1.0,
                             true,
@@ -612,7 +620,7 @@ fn update_colliders(
             continue;
         };
 
-        scene_data.set_collider(&collider_id, collider);
+        scene_data.set_collider(&collider_id, collider, collider_def.base_scale);
         commands.entity(ent).try_insert(HasCollider(collider_id));
     }
 
