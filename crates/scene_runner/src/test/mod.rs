@@ -27,7 +27,9 @@ use crate::{
     },
     RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
 };
-use common::structs::{AppConfig, GraphicsSettings, PrimaryCamera, RestrictedAction, SceneLoadDistance};
+use common::structs::{
+    AppConfig, GraphicsSettings, PrimaryCamera, RestrictedAction, SceneLoadDistance,
+};
 use comms::{wallet::WalletPlugin, CommsPlugin};
 use console::{self, ConsolePlugin};
 use dcl::interface::{CrdtStore, CrdtType};
