@@ -7,7 +7,10 @@ use bevy::{
 };
 use serde::Deserialize;
 
-use common::{util::{TaskExt, TryInsertEx}, structs::SceneLoadDistance};
+use common::{
+    structs::SceneLoadDistance,
+    util::{TaskExt, TryInsertEx},
+};
 use comms::global_crdt::GlobalCrdtState;
 use dcl::{
     get_next_scene_id,

@@ -20,7 +20,7 @@ use bevy::{
 };
 use futures_lite::future;
 use nalgebra::Point;
-use rapier3d::{prelude::*, parry::transformation::ConvexHullError};
+use rapier3d::{parry::transformation::ConvexHullError, prelude::*};
 use serde::Deserialize;
 
 use crate::{renderer_context::RendererSceneContext, ContainerEntity, SceneEntity, SceneSets};
@@ -442,8 +442,12 @@ fn update_gltf(
                                 };
 
                                 // parry doesn't like thin colliders, so as long as it's not zero-sized, we rescale to a cube
-                                let min = positions.iter().fold(Vec3::MAX, |a,b| a.min(Vec3::from_slice(b)));
-                                let max = positions.iter().fold(Vec3::MIN, |a,b| a.max(Vec3::from_slice(b)));
+                                let min = positions
+                                    .iter()
+                                    .fold(Vec3::MAX, |a, b| a.min(Vec3::from_slice(b)));
+                                let max = positions
+                                    .iter()
+                                    .fold(Vec3::MIN, |a, b| a.max(Vec3::from_slice(b)));
                                 let size = max - min;
                                 let scale = if size.min_element() > 0.0 {
                                     size.recip() * size.max_element()
@@ -480,7 +484,7 @@ fn update_gltf(
                                 let task = AsyncComputeTaskPool::get().spawn(async move {
                                     (
                                         SharedShape::convex_decomposition(&vertices, &indices),
-                                        scale
+                                        scale,
                                     )
                                 });
                                 let h_shape = cached_shapes.add(GltfCachedShape::Task(task));
@@ -558,9 +562,7 @@ fn attach_ready_colliders(
                         .remove::<PendingGltfCollider>();
                 }
                 Err(e) => {
-                    commands
-                        .entity(entity)
-                        .remove::<PendingGltfCollider>();
+                    commands.entity(entity).remove::<PendingGltfCollider>();
                     warn!("failed to generate collider for {entity:?}: {e}")
                 }
             }

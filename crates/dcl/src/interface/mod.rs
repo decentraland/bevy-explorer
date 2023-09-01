@@ -327,7 +327,6 @@ impl CrdtStore {
         other.go.into_iter().for_each(|(id, update_go)| {
             let self_go = self.go.entry(id).or_default();
             self_go.0.extend(update_go.0);
-
         });
     }
 }

@@ -20,7 +20,8 @@ use bevy_console::ConsoleCommand;
 use common::{
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, GraphicsSettings, PrimaryCamera, PrimaryCameraRes, PrimaryUser, SceneLoadDistance,
+        AppConfig, AttachPoints, GraphicsSettings, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
+        SceneLoadDistance,
     },
 };
 use restricted_actions::RestrictedActionsPlugin;
@@ -225,8 +226,7 @@ fn main() {
         app.add_plugins(AvatarPlugin);
     }
 
-    app
-        .add_plugins(AudioPlugin)
+    app.add_plugins(AudioPlugin)
         .add_plugins(RestrictedActionsPlugin)
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
         .add_systems(Startup, setup.in_set(SetupSets::Init))

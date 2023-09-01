@@ -263,7 +263,10 @@ impl SceneColliderData {
                 if (req_scale - *init_scale).length_squared() > SCALE_EPSILON {
                     new_scale = req_scale;
                     // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
-                    collider.set_shape(Self::scale_shape(base_collider.shape(), req_scale / *base_scale));
+                    collider.set_shape(Self::scale_shape(
+                        base_collider.shape(),
+                        req_scale / *base_scale,
+                    ));
                 } else if self.disabled.contains(&handle) {
                     // don't shapecast
                 } else if let Some(colliders) = cast_with {

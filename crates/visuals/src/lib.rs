@@ -11,11 +11,13 @@ use bevy_atmosphere::{
 
 use common::{
     sets::SetupSets,
-    structs::{PrimaryCameraRes, PrimaryUser, PrimaryCamera, SceneLoadDistance},
+    structs::{PrimaryCamera, PrimaryCameraRes, PrimaryUser, SceneLoadDistance},
     util::TryInsertEx,
 };
 
-pub struct VisualsPlugin { pub no_fog: bool }
+pub struct VisualsPlugin {
+    pub no_fog: bool,
+}
 
 impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
@@ -47,9 +49,7 @@ fn setup(
         .try_insert(AtmosphereCamera::default());
 
     if !no_fog.0 {
-        commands
-        .entity(camera.0)
-        .try_insert(FogSettings {
+        commands.entity(camera.0).try_insert(FogSettings {
             color: Color::rgb(0.3, 0.2, 0.1),
             directional_light_color: Color::rgb(1.0, 1.0, 0.7),
             directional_light_exponent: 10.0,
@@ -96,7 +96,8 @@ fn daylight_cycle(
         directional.illuminance = t.sin().max(0.0).powf(2.0) * 30000.0;
 
         if let Ok(mut fog) = fog.get_single_mut() {
-            let distance = scene_distance.0 + camera.get_single().map(|c| c.distance).unwrap_or_default() * 5.0;
+            let distance = scene_distance.0
+                + camera.get_single().map(|c| c.distance).unwrap_or_default() * 5.0;
             fog.falloff = FogFalloff::from_visibility_squared(distance);
             let sun_up = atmosphere.sun_position.dot(Vec3::Y);
             let rgb = Vec3::new(0.4, 0.4, 0.2) * sun_up.clamp(0.0, 1.0)

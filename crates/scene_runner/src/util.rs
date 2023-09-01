@@ -1,4 +1,7 @@
-use std::{path::PathBuf, sync::{Arc, Mutex}};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use bevy::{
     asset::AssetIo,
@@ -21,7 +24,7 @@ pub struct SceneUtilPlugin;
 impl Plugin for SceneUtilPlugin {
     fn build(&self, app: &mut App) {
         let (send, recv) = tokio::sync::mpsc::unbounded_channel();
-        app.insert_resource(ConsoleRelay{ send, recv });
+        app.insert_resource(ConsoleRelay { send, recv });
         app.add_console_command::<DebugDumpScene, _>(debug_dump_scene);
         app.add_systems(Update, console_relay);
     }
@@ -33,10 +36,7 @@ pub struct ConsoleRelay {
     recv: tokio::sync::mpsc::UnboundedReceiver<StyledStr>,
 }
 
-fn console_relay(
-    mut write: EventWriter<PrintConsoleLine>,
-    mut relay: ResMut<ConsoleRelay>,
-) {
+fn console_relay(mut write: EventWriter<PrintConsoleLine>, mut relay: ResMut<ConsoleRelay>) {
     while let Ok(line) = relay.recv.try_recv() {
         write.send(PrintConsoleLine { line });
     }
@@ -112,20 +112,26 @@ fn debug_dump_scene(
                         if count.2 == 0 {
                             let _ = send.send(format!("[ok] {} files downloaded", count.0).into());
                         } else {
-                            let _ = send.send(format!("[failed] {}/{} files downloaded", count.1, count.0).into());
+                            let _ = send.send(
+                                format!("[failed] {}/{} files downloaded", count.1, count.0).into(),
+                            );
                         }
                     }
                 };
 
                 let Ok(bytes) = asset_server.ipfs().load_path(&path).await else {
-                    report(Some(format!("{content_file} failed: couldn't load bytes\n")));
+                    report(Some(format!(
+                        "{content_file} failed: couldn't load bytes\n"
+                    )));
                     return;
                 };
 
                 let file = dump_folder.join(&content_file);
                 if let Some(parent) = file.parent() {
                     if let Err(e) = std::fs::create_dir_all(parent) {
-                        report(Some(format!("{content_file} failed: couldn't create parent: {e}")));
+                        report(Some(format!(
+                            "{content_file} failed: couldn't create parent: {e}"
+                        )));
                         return;
                     }
                 }
@@ -138,7 +144,11 @@ fn debug_dump_scene(
             }));
         }
 
-        input.reply(format!("scene hash {}, downloading {} files", scene.hash, tasks.len()));
+        input.reply(format!(
+            "scene hash {}, downloading {} files",
+            scene.hash,
+            tasks.len()
+        ));
     }
 
     tasks.retain_mut(|t| !t.is_finished());

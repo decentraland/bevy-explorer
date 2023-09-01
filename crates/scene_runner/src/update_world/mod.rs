@@ -120,7 +120,11 @@ impl Plugin for SceneOutputPlugin {
         app.add_plugins(MaterialDefinitionPlugin);
         app.add_plugins(MeshColliderPlugin);
 
-        if !app.world.get_resource::<NoGltf>().map_or(false, |no_gltf| no_gltf.0) {
+        if !app
+            .world
+            .get_resource::<NoGltf>()
+            .map_or(false, |no_gltf| no_gltf.0)
+        {
             app.add_plugins(GltfDefinitionPlugin);
         }
         app.add_plugins(AnimatorPlugin);
