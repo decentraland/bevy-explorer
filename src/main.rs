@@ -25,7 +25,7 @@ use common::{
 };
 use restricted_actions::RestrictedActionsPlugin;
 use scene_runner::{
-    update_world::mesh_collider::GroundCollider,
+    update_world::{mesh_collider::GroundCollider, NoGltf},
     SceneRunnerPlugin,
 };
 
@@ -126,7 +126,15 @@ fn main() {
             .value_from_str("--threads")
             .ok()
             .unwrap_or(base_config.scene_threads),
+        scene_load_distance: args
+            .value_from_str("--distance")
+            .ok()
+            .unwrap_or(base_config.scene_load_distance),
     };
+
+    let no_avatar = args.contains("--no_avatar");
+    let no_gltf = args.contains("--no_gltf");
+    let no_fog = args.contains("--no_fog");
 
     let remaining = args.finish();
     if !remaining.is_empty() {
@@ -193,7 +201,12 @@ fn main() {
             .add_plugins(LogDiagnosticsPlugin::default());
     }
 
+    app.insert_resource(SceneLoadDistance(final_config.scene_load_distance));
+
     app.insert_resource(final_config);
+    if no_gltf {
+        app.world.insert_resource(NoGltf(true));
+    }
 
     app.configure_set(Startup, SetupSets::Init.before(SetupSets::Main));
 
@@ -204,10 +217,15 @@ fn main() {
         .add_plugins(UiCorePlugin)
         .add_plugins(SystemUiPlugin)
         .add_plugins(ConsolePlugin { add_egui: true })
-        .add_plugins(VisualsPlugin)
+        .add_plugins(VisualsPlugin { no_fog })
         .add_plugins(WalletPlugin)
-        .add_plugins(CommsPlugin)
-        .add_plugins(AvatarPlugin)
+        .add_plugins(CommsPlugin);
+
+    if !no_avatar {
+        app.add_plugins(AvatarPlugin);
+    }
+
+    app
         .add_plugins(AudioPlugin)
         .add_plugins(RestrictedActionsPlugin)
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
@@ -246,9 +264,9 @@ fn setup(
         .spawn((
             SpatialBundle {
                 transform: Transform::from_translation(Vec3::new(
-                    16.0 * config.location.x as f32,
+                    8.0 + 16.0 * config.location.x as f32,
                     0.0,
-                    -16.0 * config.location.y as f32,
+                    -8.0 + -16.0 * config.location.y as f32,
                 )),
                 ..Default::default()
             },
@@ -321,8 +339,8 @@ fn change_location(
 ) {
     if let Some(Ok(command)) = input.take() {
         if let Ok(mut transform) = player.get_single_mut() {
-            transform.translation.x = command.x as f32 * 16.0;
-            transform.translation.z = -command.y as f32 * 16.0;
+            transform.translation.x = command.x as f32 * 16.0 + 8.0;
+            transform.translation.z = -command.y as f32 * 16.0 - 8.0;
             input.reply_ok(format!("new location: {:?}", (command.x, command.y)));
             return;
         }

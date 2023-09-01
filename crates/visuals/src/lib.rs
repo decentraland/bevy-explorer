@@ -15,10 +15,11 @@ use common::{
     util::TryInsertEx,
 };
 
-pub struct VisualsPlugin;
+pub struct VisualsPlugin { pub no_fog: bool }
 
 impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
+        app.insert_resource(NoFog(self.no_fog));
         app.insert_resource(DirectionalLightShadowMap { size: 4096 })
             .insert_resource(AtmosphereModel::default())
             .add_plugins(AtmospherePlugin)
@@ -29,23 +30,32 @@ impl Plugin for VisualsPlugin {
     }
 }
 
+#[derive(Resource)]
+struct NoFog(bool);
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     camera: Res<PrimaryCameraRes>,
+    no_fog: Res<NoFog>,
 ) {
     info!("visuals::setup");
 
     commands
         .entity(camera.0)
-        .try_insert(AtmosphereCamera::default())
+        .try_insert(AtmosphereCamera::default());
+
+    if !no_fog.0 {
+        commands
+        .entity(camera.0)
         .try_insert(FogSettings {
             color: Color::rgb(0.3, 0.2, 0.1),
             directional_light_color: Color::rgb(1.0, 1.0, 0.7),
             directional_light_exponent: 10.0,
             falloff: FogFalloff::ExponentialSquared { density: 0.01 },
         });
+    }
 
     commands.spawn((
         PbrBundle {

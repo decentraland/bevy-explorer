@@ -54,7 +54,6 @@ impl Plugin for SceneLifecyclePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LiveScenes>();
         app.init_resource::<ScenePointers>();
-        app.insert_resource(SceneLoadDistance(100.0));
         app.add_asset::<SerializedCrdtStore>();
         app.add_asset_loader(CrdtLoader);
 

@@ -131,6 +131,7 @@ pub struct AppConfig {
     pub profile_base_url: String,
     pub graphics: GraphicsSettings,
     pub scene_threads: usize,
+    pub scene_load_distance: f32,
 }
 
 impl Default for AppConfig {
@@ -143,6 +144,7 @@ impl Default for AppConfig {
             profile_base_url: "https://peer.decentraland.zone/content/contents/".to_owned(),
             graphics: Default::default(),
             scene_threads: 4,
+            scene_load_distance: 100.0,
         }
     }
 }
