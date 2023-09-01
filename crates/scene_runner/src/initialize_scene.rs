@@ -284,7 +284,7 @@ pub(crate) fn load_scene_javascript(
             }
         } else {
             asset_server.load_url(
-                "https://renderer-artifacts.decentraland.org/sdk7-adaption-layer/main/index.js",
+                "https://renderer-artifacts.decentraland.org/sdk7-adaption-layer/d7f6936999eb7371ac5c701d21e97b97c2d43ae7/index.js",
             )
         };
 
