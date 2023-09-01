@@ -1,12 +1,13 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::{Arc, Mutex}};
 
 use bevy::{
     asset::AssetIo,
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
-use bevy_console::ConsoleCommand;
-use common::{structs::PrimaryUser, util::TaskExt};
+use bevy_console::{ConsoleCommand, PrintConsoleLine};
+use clap::builder::StyledStr;
+use common::structs::PrimaryUser;
 use console::DoAddConsoleCommand;
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},
@@ -19,7 +20,25 @@ pub struct SceneUtilPlugin;
 
 impl Plugin for SceneUtilPlugin {
     fn build(&self, app: &mut App) {
+        let (send, recv) = tokio::sync::mpsc::unbounded_channel();
+        app.insert_resource(ConsoleRelay{ send, recv });
         app.add_console_command::<DebugDumpScene, _>(debug_dump_scene);
+        app.add_systems(Update, console_relay);
+    }
+}
+
+#[derive(Resource)]
+pub struct ConsoleRelay {
+    pub send: tokio::sync::mpsc::UnboundedSender<StyledStr>,
+    recv: tokio::sync::mpsc::UnboundedReceiver<StyledStr>,
+}
+
+fn console_relay(
+    mut write: EventWriter<PrintConsoleLine>,
+    mut relay: ResMut<ConsoleRelay>,
+) {
+    while let Ok(line) = relay.recv.try_recv() {
+        write.send(PrintConsoleLine { line });
     }
 }
 
@@ -35,8 +54,8 @@ fn debug_dump_scene(
     scene: Query<&RendererSceneContext>,
     asset_server: Res<AssetServer>,
     scene_definitions: Res<Assets<EntityDefinition>>,
-    mut tasks: Local<Vec<Task<Option<String>>>>,
-    mut response: Local<Vec<Option<String>>>,
+    mut tasks: Local<Vec<Task<()>>>,
+    console_relay: Res<ConsoleRelay>,
 ) {
     if let Some(Ok(_)) = input.take() {
         let Some(scene) = player
@@ -63,7 +82,11 @@ fn debug_dump_scene(
             .join(&scene.hash);
         std::fs::create_dir_all(&dump_folder).unwrap();
 
+        // total / succeed / fail
+        let count = Arc::new(Mutex::new((0, 0, 0)));
+
         for content_file in def.content.files() {
+            count.lock().unwrap().0 += 1;
             let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
                 scene.hash.to_owned(),
                 content_file.to_owned(),
@@ -74,53 +97,49 @@ fn debug_dump_scene(
             let asset_server = asset_server.clone();
             let content_file = content_file.clone();
             let dump_folder = dump_folder.clone();
+            let count = count.clone();
+            let send = console_relay.send.clone();
             tasks.push(IoTaskPool::get().spawn(async move {
+                let report = |fail: Option<String>| {
+                    let mut count = count.lock().unwrap();
+                    if let Some(fail) = fail {
+                        count.2 += 1;
+                        let _ = send.send(fail.into());
+                    } else {
+                        count.1 += 1;
+                    }
+                    if count.0 == count.1 + count.2 {
+                        if count.2 == 0 {
+                            let _ = send.send(format!("[ok] {} files downloaded", count.0).into());
+                        } else {
+                            let _ = send.send(format!("[failed] {}/{} files downloaded", count.1, count.0).into());
+                        }
+                    }
+                };
+
                 let Ok(bytes) = asset_server.ipfs().load_path(&path).await else {
-                    return Some(format!("{content_file} failed: couldn't load bytes\n"));
+                    report(Some(format!("{content_file} failed: couldn't load bytes\n")));
+                    return;
                 };
 
                 let file = dump_folder.join(&content_file);
                 if let Some(parent) = file.parent() {
                     if let Err(e) = std::fs::create_dir_all(parent) {
-                        return Some(format!(
-                            "{content_file} failed: couldn't create parent: {e}\n"
-                        ));
+                        report(Some(format!("{content_file} failed: couldn't create parent: {e}")));
+                        return;
                     }
                 }
                 if let Err(e) = std::fs::write(file, bytes) {
-                    return Some(format!("{content_file} failed: {e}\n"));
+                    report(Some(format!("{content_file} failed: {e}")));
+                    return;
                 }
 
-                None
+                report(None);
             }));
         }
+
+        input.reply(format!("scene hash {}, downloading {} files", scene.hash, tasks.len()));
     }
 
-    if tasks.len() > 0 {
-        tasks.retain_mut(|t| match t.complete() {
-            None => true,
-            Some(resp) => {
-                response.push(resp);
-                false
-            }
-        });
-        if tasks.is_empty() {
-            let tasks = response.len();
-            let errs = response.iter().flatten().collect::<Vec<_>>();
-            if errs.is_empty() {
-                input.reply_ok("All good");
-            } else {
-                input.reply_failed(format!(
-                    "{}/{} files saved successfully. Errors:",
-                    tasks - errs.len(),
-                    tasks
-                ));
-                for err in errs {
-                    input.reply_failed(err);
-                }
-            }
-
-            response.clear();
-        }
-    }
+    tasks.retain_mut(|t| !t.is_finished());
 }
