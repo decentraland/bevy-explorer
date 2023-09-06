@@ -252,13 +252,13 @@ async fn run_script(
 
         // get args
         let mut args = arg_fn(scope);
-
-        args.insert(0, v8::Local::<v8::Value>::from(target_function));
+        // add function
+        args.insert(0, target_function);
 
         let wrapper_function = v8::Local::new(scope, wrapper_function);
         let wrapper_function = v8::Local::<v8::Function>::try_from(wrapper_function).unwrap();
 
-        // call
+        // call try/catch wrapper
         let res = wrapper_function.call(scope, script_this, &args);
         let Some(res) = res else {
             // error!("{fn_name} did not return a promise");
