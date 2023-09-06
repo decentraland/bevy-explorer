@@ -40,7 +40,6 @@ pub struct MeshCollider {
     pub collision_mask: u32,
     pub mesh_name: Option<String>,
     pub index: u32,
-    pub base_scale: Vec3,
 }
 
 impl Default for MeshCollider {
@@ -50,7 +49,6 @@ impl Default for MeshCollider {
             collision_mask: ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32,
             mesh_name: Default::default(),
             index: Default::default(),
-            base_scale: Vec3::ONE,
         }
     }
 }
@@ -163,7 +161,6 @@ pub struct RaycastResult {
 
 struct ColliderState {
     base_collider: Collider,
-    base_scale: Vec3,
     translation: Vec3,
     rotation: Quat,
     scale: Vec3,
@@ -182,9 +179,13 @@ pub struct SceneColliderData {
 
 const SCALE_EPSILON: f32 = 0.001;
 
-impl SceneColliderData {
-    fn scale_shape(s: &dyn Shape, req_scale: Vec3) -> SharedShape {
-        match s.as_typed_shape() {
+pub trait ScaleShapeExt {
+    fn scale_ext(&self, req_scale: Vec3) -> SharedShape;
+}
+
+impl ScaleShapeExt for dyn Shape {
+    fn scale_ext(&self, req_scale: Vec3) -> SharedShape {
+        match self.as_typed_shape() {
             TypedShape::Ball(b) => match b.scaled(&req_scale.into(), 5).unwrap() {
                 itertools::Either::Left(ball) => SharedShape::new(ball),
                 itertools::Either::Right(convex) => SharedShape::new(convex),
@@ -208,7 +209,7 @@ impl SceneColliderData {
                                 rotation: iso.rotation,
                                 translation: Translation { vector },
                             },
-                            Self::scale_shape(shape.0.as_ref(), req_scale),
+                            shape.0.scale_ext(req_scale),
                         )
                     })
                     .collect();
@@ -217,22 +218,21 @@ impl SceneColliderData {
             _ => panic!(),
         }
     }
+}
 
-    pub fn set_collider(&mut self, id: &ColliderId, mut new_collider: Collider, base_scale: Vec3) {
+impl SceneColliderData {
+    pub fn set_collider(&mut self, id: &ColliderId, new_collider: Collider) {
         self.remove_collider(id);
 
         self.collider_state.insert(
             id.to_owned(),
             ColliderState {
                 base_collider: new_collider.clone(),
-                base_scale,
                 translation: Vec3::ZERO,
                 rotation: Quat::IDENTITY,
                 scale: Vec3::ONE,
             },
         );
-
-        new_collider.set_shape(Self::scale_shape(new_collider.shape(), base_scale.recip()));
 
         let handle = self.collider_set.insert(new_collider);
         self.scaled_collider.insert(id.to_owned(), handle);
@@ -252,7 +252,6 @@ impl SceneColliderData {
                     transform.to_scale_rotation_translation();
                 let ColliderState {
                     base_collider,
-                    base_scale,
                     translation: init_translation,
                     scale: init_scale,
                     rotation: init_rotation,
@@ -263,10 +262,7 @@ impl SceneColliderData {
                 if (req_scale - *init_scale).length_squared() > SCALE_EPSILON {
                     new_scale = req_scale;
                     // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
-                    collider.set_shape(Self::scale_shape(
-                        base_collider.shape(),
-                        req_scale / *base_scale,
-                    ));
+                    collider.set_shape(base_collider.shape().scale_ext(req_scale));
                 } else if self.disabled.contains(&handle) {
                     // don't shapecast
                 } else if let Some(colliders) = cast_with {
@@ -623,7 +619,7 @@ fn update_colliders(
             continue;
         };
 
-        scene_data.set_collider(&collider_id, collider, collider_def.base_scale);
+        scene_data.set_collider(&collider_id, collider);
         commands.entity(ent).try_insert(HasCollider(collider_id));
     }
 

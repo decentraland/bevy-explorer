@@ -35,7 +35,7 @@ use dcl_component::{
 use ipfs::{EntityDefinition, IpfsLoaderExt};
 
 use super::{
-    mesh_collider::{MeshCollider, MeshColliderShape},
+    mesh_collider::{MeshCollider, MeshColliderShape, ScaleShapeExt},
     AddCrdtInterfaceExt,
 };
 
@@ -74,8 +74,8 @@ impl Plugin for GltfDefinitionPlugin {
 #[derive(TypeUuid, TypePath)]
 #[uuid = "09e7812e-ea71-4046-a9be-65565257d459"]
 pub enum GltfCachedShape {
-    Shape((Result<SharedShape, ConvexHullError>, Vec3)),
-    Task(Task<(Result<SharedShape, ConvexHullError>, Vec3)>),
+    Shape(Result<SharedShape, ConvexHullError>),
+    Task(Task<Result<SharedShape, ConvexHullError>>),
 }
 
 #[derive(Component)]
@@ -481,11 +481,24 @@ fn update_gltf(
                                         .collect(),
                                 };
 
+                                let vertices = vec!(vertices);
+                                let indices = vec!(indices);
+                                let scales = vec!(scale);
+
                                 let task = AsyncComputeTaskPool::get().spawn(async move {
-                                    (
-                                        SharedShape::convex_decomposition(&vertices, &indices),
-                                        scale,
-                                    )
+                                    let colliders: Result<Vec<Vec<(Isometry<Real>, SharedShape)>>, ConvexHullError> = vertices.into_iter().zip(indices.into_iter()).zip(scales.into_iter()).map(|((vertices, indices), scale)| {
+                                        let shape = SharedShape::convex_decomposition(&vertices, &indices)?;
+
+                                        let Some(compound) = shape.as_compound() else {
+                                            panic!("expoected compound");
+                                        };
+
+                                        Ok(compound.shapes().iter().map(|(iso, shape)| {
+                                            (*iso, shape.scale_ext(scale.recip()))
+                                        }).collect::<Vec<_>>())
+                                    }).collect();
+
+                                    colliders.map(|colliders| SharedShape::compound(colliders.into_iter().flatten().collect()))
                                 });
                                 let h_shape = cached_shapes.add(GltfCachedShape::Task(task));
                                 shape_lookup.0.insert(h_mesh.clone(), h_shape.clone());
@@ -547,14 +560,13 @@ fn attach_ready_colliders(
             }
         };
 
-        if let Some((maybe_shape, base_scale)) = maybe_shape {
+        if let Some(maybe_shape) = maybe_shape {
             match maybe_shape {
                 Ok(shape) => {
                     commands
                         .entity(entity)
                         .try_insert(MeshCollider {
                             shape: MeshColliderShape::Shape(shape, pending.h_mesh.clone()),
-                            base_scale,
                             collision_mask: pending.collision_mask,
                             mesh_name: pending.mesh_name.clone(),
                             index: pending.index,
