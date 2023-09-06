@@ -64,7 +64,13 @@ impl From<PbMaterial> for MaterialDefinition {
                         AlphaMode::Mask(pbr.alpha_test.unwrap_or(0.5))
                     }
                     Some(MaterialTransparencyMode::MtmAlphaBlend) => AlphaMode::Blend,
-                    Some(MaterialTransparencyMode::MtmAlphaTestAndAlphaBlend) => unimplemented!(), // TODO requires bevy patch or custom material or material extension tbd
+                    Some(MaterialTransparencyMode::MtmAlphaTestAndAlphaBlend) => {
+                        // TODO requires bevy patch or custom material or material extension tbd
+                        warn!(
+                            "MaterialTransparencyMode::MtmAlphaTestAndAlphaBlend not implemented!"
+                        );
+                        AlphaMode::Blend
+                    }
                     Some(MaterialTransparencyMode::MtmAuto) | None => {
                         if base_color.a() < 1.0 {
                             AlphaMode::Blend
