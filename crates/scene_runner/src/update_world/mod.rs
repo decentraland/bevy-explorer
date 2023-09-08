@@ -36,6 +36,7 @@ pub mod scene_ui;
 pub mod text_shape;
 pub mod transform_and_parent;
 pub mod visibility;
+pub mod mesh_collider_conversion;
 
 #[derive(Component, Default)]
 pub struct CrdtLWWStateComponent<T> {

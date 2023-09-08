@@ -10,7 +10,7 @@ use bevy::{
     reflect::{TypePath, TypeUuid},
     render::{
         camera::CameraRenderGraph,
-        mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
+        mesh::{skinning::SkinnedMesh, VertexAttributeValues},
         primitives::Frustum,
         view::{ColorGrading, NoFrustumCulling, VisibleEntities},
     },
@@ -19,7 +19,6 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use futures_lite::future;
-use nalgebra::Point;
 use rapier3d::{parry::transformation::ConvexHullError, prelude::*};
 use serde::Deserialize;
 
@@ -35,8 +34,8 @@ use dcl_component::{
 use ipfs::{EntityDefinition, IpfsLoaderExt};
 
 use super::{
-    mesh_collider::{MeshCollider, MeshColliderShape, ScaleShapeExt},
-    AddCrdtInterfaceExt,
+    mesh_collider::{MeshCollider, MeshColliderShape},
+    AddCrdtInterfaceExt, mesh_collider_conversion::calculate_mesh_collider,
 };
 
 pub struct GltfDefinitionPlugin;
@@ -435,71 +434,17 @@ fn update_gltf(
                             }
                             _ => {
                                 // asynchronously create the collider
-                                let VertexAttributeValues::Float32x3(positions) =
+                                let VertexAttributeValues::Float32x3(positions_ref) =
                                     mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
                                 else {
                                     panic!()
                                 };
 
-                                // parry doesn't like thin colliders, so as long as it's not zero-sized, we rescale to a cube
-                                let min = positions
-                                    .iter()
-                                    .fold(Vec3::MAX, |a, b| a.min(Vec3::from_slice(b)));
-                                let max = positions
-                                    .iter()
-                                    .fold(Vec3::MIN, |a, b| a.max(Vec3::from_slice(b)));
-                                let size = max - min;
-                                let scale = if size.min_element() > 0.0 {
-                                    size.recip() * size.max_element()
-                                } else {
-                                    Vec3::ONE
-                                };
+                                let positions = positions_ref.to_owned();
+                                let indices = mesh_data.indices().map(ToOwned::to_owned);
 
-                                let vertices: Vec<_> = positions
-                                    .iter()
-                                    .map(|p| {
-                                        Point::from([
-                                            p[0] * scale.x,
-                                            p[1] * scale.y,
-                                            p[2] * scale.z,
-                                        ])
-                                    })
-                                    .collect();
-                                let indices: Vec<_> = match mesh_data.indices() {
-                                    Some(Indices::U16(u16s)) => u16s
-                                        .chunks_exact(3)
-                                        .map(|ix| [ix[0] as u32, ix[1] as u32, ix[2] as u32])
-                                        .collect(),
-                                    Some(Indices::U32(u32s)) => u32s
-                                        .chunks_exact(3)
-                                        .map(|ix| [ix[0], ix[1], ix[2]])
-                                        .collect(),
-                                    None => (0u32..positions.len() as u32)
-                                        .collect::<Vec<_>>()
-                                        .chunks_exact(3)
-                                        .map(|ix| [ix[0], ix[1], ix[2]])
-                                        .collect(),
-                                };
+                                let task = AsyncComputeTaskPool::get().spawn(calculate_mesh_collider(positions, indices, transform.scale, false, collider_base_name.as_ref().unwrap().to_string()));
 
-                                let vertices = vec!(vertices);
-                                let indices = vec!(indices);
-                                let scales = vec!(scale);
-
-                                let task = AsyncComputeTaskPool::get().spawn(async move {
-                                    let colliders: Result<Vec<Vec<(Isometry<Real>, SharedShape)>>, ConvexHullError> = vertices.into_iter().zip(indices.into_iter()).zip(scales.into_iter()).map(|((vertices, indices), scale)| {
-                                        let shape = SharedShape::convex_decomposition(&vertices, &indices)?;
-
-                                        let Some(compound) = shape.as_compound() else {
-                                            panic!("expoected compound");
-                                        };
-
-                                        Ok(compound.shapes().iter().map(|(iso, shape)| {
-                                            (*iso, shape.scale_ext(scale.recip()))
-                                        }).collect::<Vec<_>>())
-                                    }).collect();
-
-                                    colliders.map(|colliders| SharedShape::compound(colliders.into_iter().flatten().collect()))
-                                });
                                 let h_shape = cached_shapes.add(GltfCachedShape::Task(task));
                                 shape_lookup.0.insert(h_mesh.clone(), h_shape.clone());
                                 h_shape
@@ -541,7 +486,15 @@ fn attach_ready_colliders(
     mut commands: Commands,
     mut pending_colliders: Query<(Entity, &mut PendingGltfCollider)>,
     mut cached_shapes: ResMut<Assets<GltfCachedShape>>,
+    // mut last_len: Local<usize>,
+    // time: Res<Time>,
 ) {
+    // let len = pending_colliders.iter().count();
+    // if len != *last_len {
+    //     println!("{len} ({})", time.elapsed_seconds());
+    //     *last_len = len;
+    // }
+
     for (entity, pending) in pending_colliders.iter_mut() {
         let Some(cached_shape) = cached_shapes.get_mut(&pending.h_shape) else {
             panic!("shape or task should have been added")
