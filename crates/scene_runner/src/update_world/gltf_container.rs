@@ -438,7 +438,7 @@ fn update_gltf(
                                 let VertexAttributeValues::Float32x3(positions_ref) =
                                     mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
                                 else {
-                                    panic!()
+                                    panic!("no positions")
                                 };
 
                                 let positions = positions_ref.to_owned();
@@ -450,7 +450,7 @@ fn update_gltf(
                                         indices,
                                         transform.scale,
                                         false,
-                                        collider_base_name.as_ref().unwrap().to_string(),
+                                        collider_base_name.unwrap_or_default().to_string(),
                                     ));
 
                                 let h_shape = cached_shapes.add(GltfCachedShape::Task(task));
