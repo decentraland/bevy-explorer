@@ -35,7 +35,8 @@ use ipfs::{EntityDefinition, IpfsLoaderExt};
 
 use super::{
     mesh_collider::{MeshCollider, MeshColliderShape},
-    AddCrdtInterfaceExt, mesh_collider_conversion::calculate_mesh_collider,
+    mesh_collider_conversion::calculate_mesh_collider,
+    AddCrdtInterfaceExt,
 };
 
 pub struct GltfDefinitionPlugin;
@@ -443,7 +444,14 @@ fn update_gltf(
                                 let positions = positions_ref.to_owned();
                                 let indices = mesh_data.indices().map(ToOwned::to_owned);
 
-                                let task = AsyncComputeTaskPool::get().spawn(calculate_mesh_collider(positions, indices, transform.scale, false, collider_base_name.as_ref().unwrap().to_string()));
+                                let task =
+                                    AsyncComputeTaskPool::get().spawn(calculate_mesh_collider(
+                                        positions,
+                                        indices,
+                                        transform.scale,
+                                        false,
+                                        collider_base_name.as_ref().unwrap().to_string(),
+                                    ));
 
                                 let h_shape = cached_shapes.add(GltfCachedShape::Task(task));
                                 shape_lookup.0.insert(h_mesh.clone(), h_shape.clone());
