@@ -83,7 +83,8 @@ pico-args = "0.5.0"
 prost-build = "0.11.8"
 
 [patch.crates-io]
-bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.11.2-hotfix" }
+bevy = { path = "../../gamedev/local_naga_oil/bevy" }
+# bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.11.2-hotfix" }
 bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "pub-manager" }
 ffmpeg-next = { git = "https://github.com/decentraland/rust-ffmpeg" }
 parry3d = { git = "https://github.com/robtfm/parry", branch = "try_convex" }

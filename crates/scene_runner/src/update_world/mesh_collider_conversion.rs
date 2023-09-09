@@ -39,7 +39,7 @@ pub async fn calculate_mesh_collider(positions: Vec<[f32; 3]>, maybe_indices: Op
 
 use bevy::{
     core::cast_slice,
-    prelude::{warn, Vec3},
+    prelude::{warn, Vec3, debug, info_span},
     render::mesh::Indices,
     utils::HashMap,
 };
@@ -49,21 +49,26 @@ use rapier3d::{
 };
 use vhacd_rs::VHACDWrapperParams;
 
+static PERMITS: once_cell::sync::Lazy<tokio::sync::Semaphore> =
+    once_cell::sync::Lazy::new(|| tokio::sync::Semaphore::new(1));
+
 pub async fn calculate_mesh_collider(
     positions: Vec<[f32; 3]>,
     maybe_indices: Option<Indices>,
     size_hint: Vec3,
-    dbg: bool,
     label: String,
 ) -> Result<SharedShape, ConvexHullError> {
+    let _permit = PERMITS.acquire().await.unwrap();
+
+    // return Err(ConvexHullError::Unreachable);
+
     let start = std::time::Instant::now();
-    if dbg {
-        println!(
-            "positions [{}]: {positions:?}\nindices [{:?}]: {maybe_indices:?}",
-            positions.len(),
-            maybe_indices.as_ref().map(|i| i.len())
-        );
-    }
+    let _span = info_span!("collider").entered();
+    debug!(
+        "[{label}] positions [{}]: {positions:?}\n[{label}] indices [{:?}]: {maybe_indices:?}",
+        positions.len(),
+        maybe_indices.as_ref().map(|i| i.len())
+    );
     // calculate a unique index per vertex using the bit pattern
     let mut vertex_ids = Vec::with_capacity(positions.len());
     let mut positions_vec3 = Vec::with_capacity(positions.len());
@@ -81,10 +86,8 @@ pub async fn calculate_mesh_collider(
         }
     }
 
-    if dbg {
-        println!("vec3s [{}]: {positions_vec3:?}", positions_vec3.len());
-        println!("ids [{}]: {vertex_ids:?}", vertex_ids.len());
-    }
+    debug!("[{label}] vec3s [{}]: {positions_vec3:?}", positions_vec3.len());
+    debug!("[{label}]ids [{}]: {vertex_ids:?}", vertex_ids.len());
 
     // normalize indices
     let indices: Vec<usize> = match &maybe_indices {
@@ -95,9 +98,7 @@ pub async fn calculate_mesh_collider(
     // map through to vertex ids to ensure uniqueness of vertices
     let indices: Vec<usize> = indices.into_iter().map(|ix| vertex_ids[ix]).collect();
 
-    if dbg {
-        println!("normalized indices [{}]: {indices:?}", indices.len());
-    }
+    debug!("[{label}] normalized indices [{}]: {indices:?}", indices.len());
 
     // lookup from vertex id -> group
     //  let mut vertex_group: Vec<Option<usize>> = vec![Some(0); positions_vec3.len()];
@@ -131,10 +132,10 @@ pub async fn calculate_mesh_collider(
     //      }
     //  }
 
-    if dbg {
+    // if dbg {
         //  println!("vertex groups [{}]: {vertex_group:?}", vertex_group.len());
         //  println!("group joins [{}]: {group_joins:?}", group_joins.len());
-    }
+    // }
 
     let mut group_count = 0;
     // let mut tasks = Vec::default();
@@ -170,13 +171,10 @@ pub async fn calculate_mesh_collider(
     //  }).copied().collect();
     let matching_indices = indices;
 
-    if dbg {
-        //  println!("group from {key}: {target_groups:?}");
-        println!(
-            "includes [{}]: {matching_indices:?}",
-            matching_indices.len()
-        );
-    }
+    //  println!("group from {key}: {target_groups:?}");
+    debug!("[{label}] includes [{}]: {matching_indices:?}",
+        matching_indices.len()
+    );
 
     // calculate extents
     let (min, max) = matching_indices
@@ -187,6 +185,12 @@ pub async fn calculate_mesh_collider(
 
     // rescale if not flat
     let size = max - min;
+    let scale = size.recip();
+
+    if size.min_element() < 1e-5 {
+        warn!("[{label}] skipping collider for flat mesh");
+        return Err(ConvexHullError::Unreachable);
+    }
 
     // make parry-shaped data
     //  let positions_parry: Vec<_> = matching_indices.iter().map(|ix| {
@@ -202,7 +206,7 @@ pub async fn calculate_mesh_collider(
         .iter()
         .map(|ix| {
             let pos = positions_vec3[*ix];
-            [pos[0], pos[1], pos[2]]
+            [pos[0] * scale.x, pos[1] * scale.y, pos[2] * scale.z]
         })
         .collect();
 
@@ -222,10 +226,10 @@ pub async fn calculate_mesh_collider(
     //     (size * size_hint.as_dvec3()).length_squared() as u32 / 8
     // ).clamp(64, 64);
 
-    let size = size * size_hint;
+    let global_size = size * size_hint;
     // let min_error = (0.01 / max_dimension).clamp(0.000001, 0.1);
-    let resolution_unclamped = (size.x * size.y * size.z * 4.0 * 4.0 * 4.0) as u32;
-    let resolution = resolution_unclamped.clamp(10_000, 4_000_000);
+    let resolution_unclamped = (global_size.x * global_size.y * global_size.z * 4.0 * 4.0 * 4.0) as u32;
+    let resolution = resolution_unclamped.clamp(10_000, 1_000_000);
 
     let max_hulls = 100_000;
     let error = 0.005;
@@ -238,25 +242,33 @@ pub async fn calculate_mesh_collider(
         depth,
     };
 
-    if dbg {
-        println!("[{label}] group {group_count} going to vhacd. tris: {tris}, size: {size}, resolution: {resolution} (clamped from {resolution_unclamped}), hulls: {max_hulls}");
-    }
+    debug!("[{label}] group {group_count} going to vhacd. tris: {tris}, size: {global_size}, resolution: {resolution} (clamped from {resolution_unclamped}), hulls: {max_hulls}");
+
+    let _span = info_span!("compute").entered();
 
     let indices: Vec<_> = indices_parry.into_iter().flatten().collect();
     let hulls = vhacd.compute(&positions_vhacd, &indices, &params);
     // let mut shapes = Vec::default();
 
-    if dbg {
-        println!("[{label}] got {} hulls", hulls.len());
-    }
+    drop (_span);
+    let _span = info_span!("convex_hulls").entered();
+
+    debug!("[{label}] got {} hulls", hulls.len());
 
     // for hull in hulls.take(1) {
     for hull in hulls {
-        let mid = Vec3::ZERO; //(Vec3::from(hull.min_bound) + Vec3::from(hull.max_bound)) / 2.0;
         let points: Vec<_> = hull
             .points
             .into_iter()
-            .map(|f32s| Point::from(Point::from(f32s) - Point::from(mid)))
+            .map(|f32s| {
+                // round slightly to help poor parry
+                let f32s = [
+                    (f32s[0] * 1e5).round() / 1e5 * size.x,
+                    (f32s[1] * 1e5).round() / 1e5 * size.y,
+                    (f32s[2] * 1e5).round() / 1e5 * size.z,    
+                ];
+                Point::from(f32s)
+            })
             .collect();
         // let indices: Vec<_> = hull.indices.chunks_exact(3).map(|chunk| chunk.try_into().unwrap()).collect();
 
@@ -265,18 +277,17 @@ pub async fn calculate_mesh_collider(
         // println!("indices: {indices:?}");
 
         let Some(shape) = SharedShape::convex_hull(&points) else {
-            warn!("failed on shape ...");
+            warn!("[{label}] failed on shape ...");
+            warn!("[{label}] points: {}, indices: {}, min: {:?}, max: {:?}", points.len(), hull.indices.len(), hull.min_bound, hull.max_bound);
+            warn!("[{label}] points: {points:?}, indices: {:?}", hull.indices);
             continue;
         };
         // let shape = SharedShape::convex_mesh(points, &indices).unwrap();
-        let iso = Isometry {
-            rotation: Default::default(),
-            translation: nalgebra::Translation {
-                vector: (mid * -1.0).into(),
-            },
-        };
+        let iso = Isometry::default();
         shapes.push((iso, shape))
     }
+
+    drop(_span);
 
     group_count += 1;
 
@@ -318,11 +329,11 @@ pub async fn calculate_mesh_collider(
     //     // shapes.push((*iso, shape.scale_ext(scale.recip())));
     // }
     //  }
+    let _span = info_span!("compound").entered();
 
     if shapes.is_empty() {
-        println!("[{label}] nothing out for ");
-        println!(
-            "positions [{}]: {positions:?}\nindices [{:?}]: {maybe_indices:?}",
+        debug!("[{label}] nothing out for ");
+        debug!("[{label}] positions [{}]: {positions:?}\nindices [{:?}]: {maybe_indices:?}",
             positions.len(),
             maybe_indices.as_ref().map(|i| i.len())
         );
@@ -331,11 +342,9 @@ pub async fn calculate_mesh_collider(
 
     let end = std::time::Instant::now();
     let duration = end.checked_duration_since(start);
-    if dbg {
-        println!(
-            "[{label}] done ! {group_count} groups, {} shapes, {duration:?}",
-            shapes.len()
-        );
-    }
+    debug!("[{label}] done ! {group_count} groups, {} shapes, {duration:?}",
+        shapes.len()
+    );
+    drop(_span);
     Ok(SharedShape::compound(shapes))
 }

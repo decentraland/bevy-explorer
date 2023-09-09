@@ -16,13 +16,13 @@ use bevy::{
     },
     scene::InstanceId,
     tasks::{AsyncComputeTaskPool, Task},
-    utils::{HashMap, HashSet},
+    utils::{HashMap, HashSet}, ecs::system::SystemParam,
 };
 use futures_lite::future;
 use rapier3d::{parry::transformation::ConvexHullError, prelude::*};
 use serde::Deserialize;
 
-use crate::{renderer_context::RendererSceneContext, ContainerEntity, SceneEntity, SceneSets};
+use crate::{renderer_context::RendererSceneContext, ContainerEntity, SceneEntity, SceneSets, DebugInfo};
 use common::util::TryInsertEx;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -108,6 +108,26 @@ struct DclNodeExtras {
     dcl_collision_mask: Option<u32>,
 }
 
+#[derive(SystemParam)]
+pub struct DynamicGlobalTransform<'w, 's> {
+    transform_stack: Query<'w, 's, (Option<&'static Parent>, &'static Transform)>,
+}
+
+impl<'w, 's> DynamicGlobalTransform<'w, 's> {
+    pub fn compute_global_transform(&self, entity: Entity) -> Transform {
+        let mut transform = Transform::IDENTITY;
+        let mut ptr = entity;
+        loop {
+            let (par, t) = self.transform_stack.get(ptr).unwrap();
+            transform = t.mul_transform(transform);
+            match par {
+                Some(parent) => ptr = parent.get(),
+                None => return transform,
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_gltf(
     mut commands: Commands,
@@ -157,6 +177,7 @@ fn update_gltf(
         &Transform,
     )>,
     mut instances_to_despawn_when_ready: Local<Vec<InstanceId>>,
+    dynamic_transform: DynamicGlobalTransform,
 ) {
     // clean up old instances
     instances_to_despawn_when_ready.retain(|instance| {
@@ -444,13 +465,15 @@ fn update_gltf(
                                 let positions = positions_ref.to_owned();
                                 let indices = mesh_data.indices().map(ToOwned::to_owned);
 
+                                let global_scale = dynamic_transform.compute_global_transform(spawned_ent).scale;
+                                let label = format!("{}/{}/{}", contexts.get(dcl_scene_entity.root).map(|r| r.title.as_str()).unwrap_or_default(), definition.0.src, collider_base_name.unwrap_or(maybe_name.map(|n| n.as_str()).unwrap_or_default()));
+
                                 let task =
                                     AsyncComputeTaskPool::get().spawn(calculate_mesh_collider(
                                         positions,
                                         indices,
-                                        transform.scale,
-                                        false,
-                                        collider_base_name.unwrap_or_default().to_string(),
+                                        global_scale,
+                                        label,
                                     ));
 
                                 let h_shape = cached_shapes.add(GltfCachedShape::Task(task));
@@ -494,14 +517,14 @@ fn attach_ready_colliders(
     mut commands: Commands,
     mut pending_colliders: Query<(Entity, &mut PendingGltfCollider)>,
     mut cached_shapes: ResMut<Assets<GltfCachedShape>>,
-    // mut last_len: Local<usize>,
-    // time: Res<Time>,
+    mut debug_info: ResMut<DebugInfo>,
 ) {
-    // let len = pending_colliders.iter().count();
-    // if len != *last_len {
-    //     println!("{len} ({})", time.elapsed_seconds());
-    //     *last_len = len;
-    // }
+    let len = pending_colliders.iter().count();
+    if len > 0 {
+        debug_info.info.insert("pending colliders", format!("{}", len));
+    } else {
+        debug_info.info.remove("pending colliders");
+    }
 
     for (entity, pending) in pending_colliders.iter_mut() {
         let Some(cached_shape) = cached_shapes.get_mut(&pending.h_shape) else {

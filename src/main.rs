@@ -13,7 +13,7 @@ use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::CascadeShadowConfigBuilder,
     prelude::*,
-    render::view::ColorGrading,
+    render::view::ColorGrading, core::TaskPoolThreadAssignmentPolicy,
 };
 use bevy_console::ConsoleCommand;
 
@@ -178,6 +178,12 @@ fn main() {
 
     app.insert_resource(msaa).add_plugins(
         DefaultPlugins
+            .set(TaskPoolPlugin {
+                task_pool_options: TaskPoolOptions {
+                    async_compute: TaskPoolThreadAssignmentPolicy { min_threads: 8, max_threads: 8, percent: 0.25 },
+                    ..Default::default()
+                }
+            })
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "Decentraland Bevy Explorer".to_owned(),
