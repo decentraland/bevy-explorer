@@ -6,6 +6,7 @@ use std::{num::ParseIntError, str::FromStr};
 
 use avatar::AvatarDynamicState;
 use bevy::{
+    core::TaskPoolThreadAssignmentPolicy,
     core_pipeline::{
         bloom::BloomSettings,
         tonemapping::{DebandDither, Tonemapping},
@@ -13,7 +14,7 @@ use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::CascadeShadowConfigBuilder,
     prelude::*,
-    render::view::ColorGrading, core::TaskPoolThreadAssignmentPolicy,
+    render::view::ColorGrading,
 };
 use bevy_console::ConsoleCommand;
 
@@ -180,9 +181,13 @@ fn main() {
         DefaultPlugins
             .set(TaskPoolPlugin {
                 task_pool_options: TaskPoolOptions {
-                    async_compute: TaskPoolThreadAssignmentPolicy { min_threads: 8, max_threads: 8, percent: 0.25 },
+                    async_compute: TaskPoolThreadAssignmentPolicy {
+                        min_threads: 1,
+                        max_threads: 8,
+                        percent: 0.25,
+                    },
                     ..Default::default()
-                }
+                },
             })
             .set(WindowPlugin {
                 primary_window: Some(Window {

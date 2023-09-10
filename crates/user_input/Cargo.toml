@@ -13,4 +13,4 @@ dcl_component = { workspace = true }
 avatar = { workspace = true }
 
 bevy = { workspace = true }
-rapier3d = { workspace = true }
+rapier3d-f64 = { workspace = true }

@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use bevy::{
     core_pipeline::tonemapping::{DebandDither, Tonemapping},
+    ecs::system::SystemParam,
     gltf::{Gltf, GltfExtras},
     prelude::*,
     reflect::{TypePath, TypeUuid},
@@ -16,13 +17,15 @@ use bevy::{
     },
     scene::InstanceId,
     tasks::{AsyncComputeTaskPool, Task},
-    utils::{HashMap, HashSet}, ecs::system::SystemParam,
+    utils::{HashMap, HashSet},
 };
 use futures_lite::future;
-use rapier3d::{parry::transformation::ConvexHullError, prelude::*};
+use rapier3d_f64::{parry::transformation::ConvexHullError, prelude::*};
 use serde::Deserialize;
 
-use crate::{renderer_context::RendererSceneContext, ContainerEntity, SceneEntity, SceneSets, DebugInfo};
+use crate::{
+    renderer_context::RendererSceneContext, ContainerEntity, DebugInfo, SceneEntity, SceneSets,
+};
 use common::util::TryInsertEx;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -465,8 +468,20 @@ fn update_gltf(
                                 let positions = positions_ref.to_owned();
                                 let indices = mesh_data.indices().map(ToOwned::to_owned);
 
-                                let global_scale = dynamic_transform.compute_global_transform(spawned_ent).scale;
-                                let label = format!("{}/{}/{}", contexts.get(dcl_scene_entity.root).map(|r| r.title.as_str()).unwrap_or_default(), definition.0.src, collider_base_name.unwrap_or(maybe_name.map(|n| n.as_str()).unwrap_or_default()));
+                                let global_scale = dynamic_transform
+                                    .compute_global_transform(spawned_ent)
+                                    .scale;
+                                let label = format!(
+                                    "{}/{}/{}",
+                                    contexts
+                                        .get(dcl_scene_entity.root)
+                                        .map(|r| r.title.as_str())
+                                        .unwrap_or_default(),
+                                    definition.0.src,
+                                    collider_base_name.unwrap_or(
+                                        maybe_name.map(|n| n.as_str()).unwrap_or_default()
+                                    )
+                                );
 
                                 let task =
                                     AsyncComputeTaskPool::get().spawn(calculate_mesh_collider(
@@ -521,7 +536,9 @@ fn attach_ready_colliders(
 ) {
     let len = pending_colliders.iter().count();
     if len > 0 {
-        debug_info.info.insert("pending colliders", format!("{}", len));
+        debug_info
+            .info
+            .insert("pending colliders", format!("{}", len));
     } else {
         debug_info.info.remove("pending colliders");
     }

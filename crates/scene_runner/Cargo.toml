@@ -27,7 +27,7 @@ bimap = { workspace = true }
 nalgebra = { version = "0.32.3", features = [ "convert-glam024" ] }
 futures-lite = { workspace = true }
 once_cell = { workspace = true }
-rapier3d = { workspace = true }
+rapier3d-f64 = { workspace = true }
 
 itertools = "0.10.5"
 petgraph = "0.6.3"
