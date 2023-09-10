@@ -32,6 +32,3 @@ rapier3d-f64 = { workspace = true }
 itertools = "0.10.5"
 petgraph = "0.6.3"
 spin_sleep = "1.1.1"
-
-# vhacd_rs = { git = "https://github.com/robtfm/vhacd_rs" }
-vhacd_rs = { path = "../../../vhacd_rs" }
