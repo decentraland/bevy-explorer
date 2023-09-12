@@ -30,7 +30,7 @@ This project's goals are to:
 
 # Arguments
 
-`cargo run --release -- [--server serverpath] [--location location] [--vsync true|false] [--log_fps true|false] [--msaa 1|2|4|8]`
+`cargo run --release -- [--server serverpath] [--location location] [--vsync true|false] [--log_fps true|false] [--msaa 1|2|4|8] [--threads u32] [--distance f32]`
 
 `--server https://sdk-test-scenes.decentraland.zone`
 - specify the content server, defaults to the sdk test server.
@@ -50,6 +50,19 @@ This project's goals are to:
 `--threads n`
 - set the max simultaneous thread count for scene javascript execution. higher will allow better performance for distant scenes, but requires more cpu power. defaults to 4.
 - also accessible via console command `/scene_threads`
+
+`--distance n`
+- set the distance (in meters) at which scenes will be loaded. defaults to 100.0.
+- also accessible via console command `/scene_distance`
+
+`--no_gltf`
+- disable gltf loading.
+
+`--no_avatar`
+- disable avatar rendering.
+
+`--no_fog`
+- disable distance fog
 
 # Testing
 

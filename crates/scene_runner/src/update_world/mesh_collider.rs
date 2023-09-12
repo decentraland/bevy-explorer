@@ -1,11 +1,12 @@
 use bevy::{
+    math::DVec3,
     pbr::{wireframe::Wireframe, NotShadowCaster, NotShadowReceiver},
     prelude::*,
     render::mesh::VertexAttributeValues,
     utils::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
-use rapier3d::{
+use rapier3d_f64::{
     control::{EffectiveCharacterMovement, KinematicCharacterController},
     parry::{
         query::{NonlinearRigidMotion, TOIStatus},
@@ -172,12 +173,53 @@ pub struct SceneColliderData {
     scaled_collider: bimap::BiMap<ColliderId, ColliderHandle>,
     collider_state: HashMap<ColliderId, ColliderState>,
     query_state_valid_at: Option<u32>,
-    query_state: Option<rapier3d::pipeline::QueryPipeline>,
+    query_state: Option<rapier3d_f64::pipeline::QueryPipeline>,
     dummy_rapier_structs: (IslandManager, RigidBodySet),
     disabled: HashSet<ColliderHandle>,
 }
 
 const SCALE_EPSILON: f32 = 0.001;
+
+pub trait ScaleShapeExt {
+    fn scale_ext(&self, req_scale: DVec3) -> SharedShape;
+}
+
+impl ScaleShapeExt for dyn Shape {
+    fn scale_ext(&self, req_scale: DVec3) -> SharedShape {
+        match self.as_typed_shape() {
+            TypedShape::Ball(b) => match b.scaled(&req_scale.into(), 5).unwrap() {
+                itertools::Either::Left(ball) => SharedShape::new(ball),
+                itertools::Either::Right(convex) => SharedShape::new(convex),
+            },
+            TypedShape::Cuboid(c) => SharedShape::new(c.scaled(&req_scale.into())),
+            TypedShape::ConvexPolyhedron(p) => {
+                SharedShape::new(p.clone().scaled(&req_scale.into()).unwrap())
+            }
+            TypedShape::Compound(c) => {
+                let scaled_items = c
+                    .shapes()
+                    .iter()
+                    .map(|(iso, shape)| {
+                        let mut vector = iso.translation.vector;
+                        // TODO gotta be a clean way to do this
+                        vector[0] *= req_scale.x;
+                        vector[1] *= req_scale.y;
+                        vector[2] *= req_scale.z;
+                        (
+                            Isometry {
+                                rotation: iso.rotation,
+                                translation: Translation { vector },
+                            },
+                            shape.0.scale_ext(req_scale),
+                        )
+                    })
+                    .collect();
+                SharedShape::compound(scaled_items)
+            }
+            _ => panic!(),
+        }
+    }
+}
 
 impl SceneColliderData {
     pub fn set_collider(&mut self, id: &ColliderId, new_collider: Collider) {
@@ -192,6 +234,7 @@ impl SceneColliderData {
                 scale: Vec3::ONE,
             },
         );
+
         let handle = self.collider_set.insert(new_collider);
         self.scaled_collider.insert(id.to_owned(), handle);
         self.query_state_valid_at = None;
@@ -215,47 +258,12 @@ impl SceneColliderData {
                     rotation: init_rotation,
                 } = self.collider_state.get(id).unwrap();
 
-                fn scale_shape(s: &dyn Shape, req_scale: Vec3) -> SharedShape {
-                    match s.as_typed_shape() {
-                        TypedShape::Ball(b) => match b.scaled(&req_scale.into(), 5).unwrap() {
-                            itertools::Either::Left(ball) => SharedShape::new(ball),
-                            itertools::Either::Right(convex) => SharedShape::new(convex),
-                        },
-                        TypedShape::Cuboid(c) => SharedShape::new(c.scaled(&req_scale.into())),
-                        TypedShape::ConvexPolyhedron(p) => {
-                            SharedShape::new(p.clone().scaled(&req_scale.into()).unwrap())
-                        }
-                        TypedShape::Compound(c) => {
-                            let scaled_items = c
-                                .shapes()
-                                .iter()
-                                .map(|(iso, shape)| {
-                                    let mut vector = iso.translation.vector;
-                                    // TODO gotta be a clean way to do this
-                                    vector[0] *= req_scale.x;
-                                    vector[1] *= req_scale.y;
-                                    vector[2] *= req_scale.z;
-                                    (
-                                        Isometry {
-                                            rotation: iso.rotation,
-                                            translation: Translation { vector },
-                                        },
-                                        scale_shape(shape.0.as_ref(), req_scale),
-                                    )
-                                })
-                                .collect();
-                            SharedShape::compound(scaled_items)
-                        }
-                        _ => panic!(),
-                    }
-                }
-
                 let mut cast_result = None;
                 let mut new_scale = *init_scale;
                 if (req_scale - *init_scale).length_squared() > SCALE_EPSILON {
                     new_scale = req_scale;
                     // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
-                    collider.set_shape(scale_shape(base_collider.shape(), req_scale));
+                    collider.set_shape(base_collider.shape().scale_ext(req_scale.as_dvec3()));
                 } else if self.disabled.contains(&handle) {
                     // don't shapecast
                 } else if let Some(colliders) = cast_with {
@@ -270,14 +278,19 @@ impl SceneColliderData {
                             colliders,
                             &NonlinearRigidMotion {
                                 start: Isometry::from_parts(
-                                    (*init_translation).into(),
-                                    (*init_rotation).into(),
+                                    (*init_translation).as_dvec3().into(),
+                                    (*init_rotation).as_f64().into(),
                                 ),
                                 local_center: Default::default(),
-                                linvel: (req_translation - *init_translation).into(),
-                                angvel: [euler_axes.0, euler_axes.1, euler_axes.2].into(),
+                                linvel: (req_translation - *init_translation).as_dvec3().into(),
+                                angvel: [
+                                    euler_axes.0 as f64,
+                                    euler_axes.1 as f64,
+                                    euler_axes.2 as f64,
+                                ]
+                                .into(),
                             },
-                            base_collider.shape(),
+                            collider.shape(),
                             0.0,
                             1.0,
                             true,
@@ -297,8 +310,8 @@ impl SceneColliderData {
                 state_mut.scale = new_scale;
 
                 collider.set_position(Isometry::from_parts(
-                    req_translation.into(),
-                    req_rotation.into(),
+                    req_translation.as_dvec3().into(),
+                    req_rotation.as_f64().into(),
                 ));
                 return (Some(initial_transform), cast_result);
             }
@@ -339,9 +352,9 @@ impl SceneColliderData {
         distance: f32,
         collision_mask: u32,
     ) -> Option<RaycastResult> {
-        let ray = rapier3d::prelude::Ray {
-            origin: origin.into(),
-            dir: direction.into(),
+        let ray = rapier3d_f64::prelude::Ray {
+            origin: origin.as_dvec3().into(),
+            dir: direction.as_dvec3().into(),
         };
         self.update_pipeline(scene_time);
 
@@ -352,7 +365,7 @@ impl SceneColliderData {
                 &self.dummy_rapier_structs.1,
                 &self.collider_set,
                 &ray,
-                distance,
+                distance as f64,
                 true,
                 QueryFilter::default().groups(InteractionGroups::new(
                     Group::from_bits_truncate(collision_mask),
@@ -361,8 +374,8 @@ impl SceneColliderData {
             )
             .map(|(handle, intersection)| RaycastResult {
                 id: self.get_id(handle).unwrap().clone(),
-                toi: intersection.toi,
-                normal: Vec3::from(intersection.normal),
+                toi: intersection.toi as f32,
+                normal: DVec3::from(intersection.normal).as_vec3(),
             })
     }
 
@@ -371,15 +384,17 @@ impl SceneColliderData {
         let contact = self.query_state.as_ref().unwrap().cast_shape(
             &self.dummy_rapier_structs.1,
             &self.collider_set,
-            &(origin + Vec3::Y * (PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP)).into(),
-            &(-Vec3::Y).into(),
-            &Ball::new(PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP),
+            &(origin + Vec3::Y * (PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP))
+                .as_dvec3()
+                .into(),
+            &(-DVec3::Y).into(),
+            &Ball::new((PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP) as f64),
             10.0,
             true,
             QueryFilter::default().predicate(&|h, _| self.collider_enabled(h)),
         );
 
-        contact.map(|(handle, toi)| (toi.toi, self.get_id(handle).unwrap().clone()))
+        contact.map(|(handle, toi)| (toi.toi as f32, self.get_id(handle).unwrap().clone()))
     }
 
     pub fn collider_enabled(&self, handle: ColliderHandle) -> bool {
@@ -400,14 +415,14 @@ impl SceneColliderData {
             &self.collider_set,
             self.query_state.as_ref().unwrap(),
             &Capsule::new_y(
-                PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
-                PLAYER_COLLIDER_RADIUS,
+                (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS) as f64,
+                PLAYER_COLLIDER_RADIUS as f64,
             ),
             &Isometry {
                 rotation: Default::default(),
-                translation: (origin + Vec3::Y * 1.0).into(),
+                translation: (origin + Vec3::Y * 1.0).as_dvec3().into(),
             },
-            direction.into(),
+            direction.as_dvec3().into(),
             QueryFilter::default().predicate(&|h, _| !self.disabled.contains(&h)),
             |_| {},
         )
@@ -421,9 +436,9 @@ impl SceneColliderData {
         distance: f32,
         collision_mask: u32,
     ) -> Vec<RaycastResult> {
-        let ray = rapier3d::prelude::Ray {
-            origin: origin.into(),
-            dir: direction.into(),
+        let ray = rapier3d_f64::prelude::Ray {
+            origin: origin.as_dvec3().into(),
+            dir: direction.as_dvec3().into(),
         };
         let mut results = Vec::default();
         self.update_pipeline(scene_time);
@@ -432,7 +447,7 @@ impl SceneColliderData {
             &self.dummy_rapier_structs.1,
             &self.collider_set,
             &ray,
-            distance,
+            distance as f64,
             true,
             QueryFilter::default().groups(InteractionGroups::new(
                 Group::from_bits_truncate(collision_mask),
@@ -441,8 +456,8 @@ impl SceneColliderData {
             |handle, intersection| {
                 results.push(RaycastResult {
                     id: self.get_id(handle).unwrap().clone(),
-                    toi: intersection.toi,
-                    normal: Vec3::from(intersection.normal),
+                    toi: intersection.toi as f32,
+                    normal: DVec3::from(intersection.normal).as_vec3(),
                 });
                 true
             },
@@ -470,11 +485,11 @@ impl SceneColliderData {
             .project_point(
                 &self.dummy_rapier_structs.1,
                 &self.collider_set,
-                &Point::from(origin),
+                &Point::from(origin.as_dvec3()),
                 true,
                 q,
             )
-            .map(|(_, point)| point.point.into())
+            .map(|(_, point)| DVec3::from(point.point).as_vec3())
     }
 
     pub fn remove_collider(&mut self, id: &ColliderId) {
@@ -586,7 +601,7 @@ fn update_colliders(
                 ColliderBuilder::convex_hull(
                     &positions
                         .iter()
-                        .map(|p| Point::from(*p))
+                        .map(|p| Point::from([p[0] as f64, p[1] as f64, p[2] as f64]))
                         .collect::<Vec<_>>(),
                 )
                 .unwrap()
@@ -710,14 +725,15 @@ fn update_collider_transforms(
     let mut player_collider_set = ColliderSet::default();
     player_collider_set.insert(
         ColliderBuilder::new(SharedShape::capsule_y(
-            PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
-            PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP,
+            (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS) as f64,
+            (PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP) as f64,
         ))
         .position(Isometry::from_parts(
             player_transform
                 .as_ref()
                 .map(|t| t.translation + PLAYER_COLLIDER_HEIGHT * 0.5 * Vec3::Y)
                 .unwrap_or_default()
+                .as_dvec3()
                 .into(),
             Default::default(),
         ))
@@ -733,17 +749,19 @@ fn update_collider_transforms(
             // just use the bottom sphere of the player collider
             let base_of_sphere = translation + PLAYER_COLLIDER_RADIUS * Vec3::Y;
             let closest_point = match toi.status {
-                TOIStatus::OutOfIterations | TOIStatus::Converged => Vec3::from(toi.witness1),
+                TOIStatus::OutOfIterations | TOIStatus::Converged => {
+                    DVec3::from(toi.witness1).as_vec3()
+                }
                 TOIStatus::Failed | TOIStatus::Penetrating => {
                     scene_data.force_update();
-                    scene_data
+                    let dv: DVec3 = scene_data
                         .query_state
                         .as_ref()
                         .unwrap()
                         .project_point(
                             &scene_data.dummy_rapier_structs.1,
                             &scene_data.collider_set,
-                            &base_of_sphere.into(),
+                            &base_of_sphere.as_dvec3().into(),
                             true,
                             QueryFilter::default()
                                 .predicate(&|h, _| scene_data.collider_enabled(h)),
@@ -751,7 +769,8 @@ fn update_collider_transforms(
                         .unwrap()
                         .1
                         .point
-                        .into()
+                        .into();
+                    dv.as_vec3()
                 }
             };
             let fix_dir = base_of_sphere - closest_point;
@@ -804,8 +823,8 @@ fn update_collider_transforms(
                     _ => {
                         // get contact point at toi
                         // use 0.9 cap to avoid clipping
-                        let ratio = toi.toi.min(0.9);
-                        let relative_hit_point = Vec3::from(toi.witness2);
+                        let ratio = toi.toi.min(0.9) as f32;
+                        let relative_hit_point = DVec3::from(toi.witness2).as_vec3();
                         let (new_scale, new_rotation, new_translation) =
                             global_transform.to_scale_rotation_translation();
                         let transform_at_toi = Transform {
@@ -829,10 +848,10 @@ fn update_collider_transforms(
                         let req_translation = contact_at_end - contact_at_toi;
                         let dot_w_normal1 = req_translation
                             .normalize_or_zero()
-                            .dot(Vec3::from(toi.normal1));
+                            .dot(DVec3::from(toi.normal1).as_vec3());
                         let dot_w_normal2 = req_translation
                             .normalize_or_zero()
-                            .dot(Vec3::from(toi.normal2));
+                            .dot(DVec3::from(toi.normal2).as_vec3());
                         if req_translation.length() > 1.0 {
                             // disregard too large deltas as the collider probably just warped
                             // TODO we could check this before updating based on translation?
@@ -864,6 +883,7 @@ fn update_collider_transforms(
                                 .as_ref()
                                 .map(|t| t.translation + Vec3::Y)
                                 .unwrap_or_default()
+                                .as_dvec3()
                                 .into(),
                             Default::default(),
                         ));
@@ -911,7 +931,9 @@ fn update_collider_transforms(
                 // check for intersection and move out until safe
                 let (_, player_collider) = player_collider_set.iter_mut().next().unwrap();
                 player_collider.set_position(Isometry::from_parts(
-                    (player_transform.translation + PLAYER_COLLIDER_HEIGHT * 0.5).into(),
+                    (player_transform.translation + PLAYER_COLLIDER_HEIGHT * 0.5)
+                        .as_dvec3()
+                        .into(),
                     Default::default(),
                 ));
                 let new_toi = scene_data

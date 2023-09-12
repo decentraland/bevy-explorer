@@ -157,11 +157,13 @@ impl FfmpegContext for VideoContext {
             self.current_frame,
             self.buffer.len()
         );
-        let _ = self.sink.blocking_send(VideoData::Frame(
-            self.buffer.pop_front().unwrap(),
-            self.current_frame as f64 / self.rate,
-        ));
-        self.current_frame += 1;
+        if let Some(frame) = self.buffer.pop_front() {
+            let _ = self.sink.blocking_send(VideoData::Frame(
+                frame,
+                self.current_frame as f64 / self.rate,
+            ));
+            self.current_frame += 1;
+        }
     }
 
     fn set_start_frame(&mut self) {

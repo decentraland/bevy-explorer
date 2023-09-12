@@ -31,6 +31,7 @@ impl Default for InputMap {
     fn default() -> Self {
         Self {
             inputs: BiMap::from_iter([
+                (InputAction::IaAny, InputItem::Any),
                 (InputAction::IaPointer, InputItem::Mouse(MouseButton::Left)),
                 (InputAction::IaPrimary, InputItem::Key(KeyCode::E)),
                 (InputAction::IaSecondary, InputItem::Key(KeyCode::F)),
@@ -80,6 +81,7 @@ impl<'w> InputManager<'w> {
                 InputItem::Mouse(mb) => {
                     self.should_accept.mouse && self.mouse_input.just_pressed(*mb)
                 }
+                InputItem::Any => self.iter_just_down().next().is_some(),
             })
     }
 
@@ -90,6 +92,7 @@ impl<'w> InputManager<'w> {
             .map_or(false, |item| match item {
                 InputItem::Key(k) => self.key_input.just_released(*k),
                 InputItem::Mouse(mb) => self.mouse_input.just_released(*mb),
+                InputItem::Any => self.iter_just_up().next().is_some(),
             })
     }
 
@@ -100,6 +103,7 @@ impl<'w> InputManager<'w> {
             .map_or(false, |item| match item {
                 InputItem::Key(k) => self.should_accept.key && self.key_input.pressed(*k),
                 InputItem::Mouse(mb) => self.should_accept.mouse && self.mouse_input.pressed(*mb),
+                InputItem::Any => self.iter_down().next().is_some(),
             })
     }
 
@@ -112,6 +116,7 @@ impl<'w> InputManager<'w> {
                 InputItem::Mouse(m) => {
                     self.should_accept.mouse && self.mouse_input.just_pressed(*m)
                 }
+                InputItem::Any => false,
             })
             .map(|(action, _)| action)
     }
@@ -123,6 +128,31 @@ impl<'w> InputManager<'w> {
             .filter(|(_, button)| match button {
                 InputItem::Key(k) => self.key_input.just_released(*k),
                 InputItem::Mouse(m) => self.mouse_input.just_released(*m),
+                InputItem::Any => false,
+            })
+            .map(|(action, _)| action)
+    }
+
+    pub fn iter_down(&self) -> impl Iterator<Item = &InputAction> {
+        self.map
+            .inputs
+            .iter()
+            .filter(|(_, button)| match button {
+                InputItem::Key(k) => self.should_accept.key && self.key_input.pressed(*k),
+                InputItem::Mouse(m) => self.should_accept.mouse && self.mouse_input.pressed(*m),
+                InputItem::Any => false,
+            })
+            .map(|(action, _)| action)
+    }
+
+    pub fn iter_up(&self) -> impl Iterator<Item = &InputAction> {
+        self.map
+            .inputs
+            .iter()
+            .filter(|(_, button)| match button {
+                InputItem::Key(k) => self.key_input.just_released(*k),
+                InputItem::Mouse(m) => self.mouse_input.just_released(*m),
+                InputItem::Any => false,
             })
             .map(|(action, _)| action)
     }
@@ -132,6 +162,7 @@ impl<'w> InputManager<'w> {
 pub enum InputItem {
     Key(KeyCode),
     Mouse(MouseButton),
+    Any,
 }
 
 impl std::fmt::Display for InputItem {
@@ -139,6 +170,7 @@ impl std::fmt::Display for InputItem {
         match self {
             InputItem::Key(k) => f.write_str(key_to_str(k).as_str()),
             InputItem::Mouse(m) => f.write_fmt(format_args!("{:?}", m)),
+            InputItem::Any => f.write_str("(Any)"),
         }
     }
 }

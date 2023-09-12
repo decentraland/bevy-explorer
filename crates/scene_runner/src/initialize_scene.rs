@@ -7,7 +7,10 @@ use bevy::{
 };
 use serde::Deserialize;
 
-use common::util::{TaskExt, TryInsertEx};
+use common::{
+    structs::SceneLoadDistance,
+    util::{TaskExt, TryInsertEx},
+};
 use comms::global_crdt::GlobalCrdtState;
 use dcl::{
     get_next_scene_id,
@@ -54,7 +57,6 @@ impl Plugin for SceneLifecyclePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LiveScenes>();
         app.init_resource::<ScenePointers>();
-        app.insert_resource(SceneLoadDistance(100.0));
         app.add_asset::<SerializedCrdtStore>();
         app.add_asset_loader(CrdtLoader);
 
@@ -245,6 +247,8 @@ pub(crate) fn load_scene_javascript(
         };
 
         // populate pointers
+        let mut extent_min = IVec2::MAX;
+        let mut extent_max = IVec2::MIN;
         for pointer in meta.scene.parcels {
             let (x, y) = pointer.split_once(',').unwrap();
             let x = x.parse::<i32>().unwrap();
@@ -253,7 +257,10 @@ pub(crate) fn load_scene_javascript(
             pointers
                 .0
                 .insert(parcel, PointerResult::Exists(definition.id.clone()));
+            extent_min = extent_min.min(parcel);
+            extent_max = extent_max.max(parcel);
         }
+        let size = (extent_max - extent_min).as_uvec2();
 
         // get main.crdt
         let maybe_serialized_crdt = match maybe_h_crdt {
@@ -307,8 +314,15 @@ pub(crate) fn load_scene_javascript(
             .display
             .and_then(|display| display.title)
             .unwrap_or("???".to_owned());
-        let mut renderer_context =
-            RendererSceneContext::new(scene_id, definition.id.clone(), title, base, root, 1.0);
+        let mut renderer_context = RendererSceneContext::new(
+            scene_id,
+            definition.id.clone(),
+            title,
+            base,
+            root,
+            size,
+            1.0,
+        );
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?})");
 
         scene_updates.scene_ids.insert(scene_id, root);
@@ -466,9 +480,6 @@ pub(crate) fn initialize_scene(
         commands.entity(root).remove::<SceneLoading>();
     }
 }
-
-#[derive(Resource)]
-pub struct SceneLoadDistance(pub f32);
 
 #[derive(Resource, Default)]
 pub struct LiveScenes(pub HashMap<String, Entity>);

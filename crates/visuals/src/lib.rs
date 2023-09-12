@@ -11,14 +11,17 @@ use bevy_atmosphere::{
 
 use common::{
     sets::SetupSets,
-    structs::{PrimaryCameraRes, PrimaryUser},
+    structs::{PrimaryCamera, PrimaryCameraRes, PrimaryUser, SceneLoadDistance},
     util::TryInsertEx,
 };
 
-pub struct VisualsPlugin;
+pub struct VisualsPlugin {
+    pub no_fog: bool,
+}
 
 impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
+        app.insert_resource(NoFog(self.no_fog));
         app.insert_resource(DirectionalLightShadowMap { size: 4096 })
             .insert_resource(AtmosphereModel::default())
             .add_plugins(AtmospherePlugin)
@@ -29,23 +32,30 @@ impl Plugin for VisualsPlugin {
     }
 }
 
+#[derive(Resource)]
+struct NoFog(bool);
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     camera: Res<PrimaryCameraRes>,
+    no_fog: Res<NoFog>,
 ) {
     info!("visuals::setup");
 
     commands
         .entity(camera.0)
-        .try_insert(AtmosphereCamera::default())
-        .try_insert(FogSettings {
+        .try_insert(AtmosphereCamera::default());
+
+    if !no_fog.0 {
+        commands.entity(camera.0).try_insert(FogSettings {
             color: Color::rgb(0.3, 0.2, 0.1),
             directional_light_color: Color::rgb(1.0, 1.0, 0.7),
             directional_light_exponent: 10.0,
-            falloff: FogFalloff::ExponentialSquared { density: 0.015 },
+            falloff: FogFalloff::ExponentialSquared { density: 0.01 },
         });
+    }
 
     commands.spawn((
         PbrBundle {
@@ -74,6 +84,8 @@ fn daylight_cycle(
     mut atmosphere: AtmosphereMut<Nishita>,
     mut sun: Query<(&mut Transform, &mut DirectionalLight)>,
     time: Res<Time>,
+    camera: Query<&PrimaryCamera>,
+    scene_distance: Res<SceneLoadDistance>,
 ) {
     let t = 120.0 + time.elapsed_seconds_wrapped() / 200.0;
     let rotation = Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0);
@@ -84,6 +96,9 @@ fn daylight_cycle(
         directional.illuminance = t.sin().max(0.0).powf(2.0) * 30000.0;
 
         if let Ok(mut fog) = fog.get_single_mut() {
+            let distance = scene_distance.0
+                + camera.get_single().map(|c| c.distance).unwrap_or_default() * 5.0;
+            fog.falloff = FogFalloff::from_visibility_squared(distance);
             let sun_up = atmosphere.sun_position.dot(Vec3::Y);
             let rgb = Vec3::new(0.4, 0.4, 0.2) * sun_up.clamp(0.0, 1.0)
                 + Vec3::new(0.0, 0.0, 0.0) * (8.0 * (0.125 - sun_up.clamp(0.0, 0.125)));

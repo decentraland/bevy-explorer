@@ -4,23 +4,29 @@
 use std::collections::BTreeMap;
 
 use bevy::{
+    core_pipeline::tonemapping::{DebandDither, Tonemapping},
+    ecs::system::SystemParam,
     gltf::{Gltf, GltfExtras},
     prelude::*,
     reflect::{TypePath, TypeUuid},
     render::{
-        mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
-        view::NoFrustumCulling,
+        camera::CameraRenderGraph,
+        mesh::{skinning::SkinnedMesh, VertexAttributeValues},
+        primitives::Frustum,
+        view::{ColorGrading, NoFrustumCulling, VisibleEntities},
     },
     scene::InstanceId,
     tasks::{AsyncComputeTaskPool, Task},
     utils::{HashMap, HashSet},
 };
 use futures_lite::future;
-use nalgebra::Point;
-use rapier3d::prelude::*;
+use rapier3d_f64::{parry::transformation::ConvexHullError, prelude::*};
 use serde::Deserialize;
 
-use crate::{renderer_context::RendererSceneContext, ContainerEntity, SceneEntity, SceneSets};
+use crate::{
+    initialize_scene::PARCEL_SIZE, renderer_context::RendererSceneContext, ContainerEntity,
+    DebugInfo, SceneEntity, SceneSets,
+};
 use common::util::TryInsertEx;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -33,6 +39,7 @@ use ipfs::{EntityDefinition, IpfsLoaderExt};
 
 use super::{
     mesh_collider::{MeshCollider, MeshColliderShape},
+    mesh_collider_conversion::calculate_mesh_collider,
     AddCrdtInterfaceExt,
 };
 
@@ -71,8 +78,8 @@ impl Plugin for GltfDefinitionPlugin {
 #[derive(TypeUuid, TypePath)]
 #[uuid = "09e7812e-ea71-4046-a9be-65565257d459"]
 pub enum GltfCachedShape {
-    Shape(SharedShape),
-    Task(Task<SharedShape>),
+    Shape(Result<SharedShape, ConvexHullError>),
+    Task(Task<Result<SharedShape, ConvexHullError>>),
 }
 
 #[derive(Component)]
@@ -105,6 +112,26 @@ struct DclNodeExtras {
     dcl_collision_mask: Option<u32>,
 }
 
+#[derive(SystemParam)]
+pub struct DynamicGlobalTransform<'w, 's> {
+    transform_stack: Query<'w, 's, (Option<&'static Parent>, &'static Transform)>,
+}
+
+impl<'w, 's> DynamicGlobalTransform<'w, 's> {
+    pub fn compute_global_transform(&self, entity: Entity) -> Transform {
+        let mut transform = Transform::IDENTITY;
+        let mut ptr = entity;
+        loop {
+            let (par, t) = self.transform_stack.get(ptr).unwrap();
+            transform = t.mul_transform(transform);
+            match par {
+                Some(parent) => ptr = parent.get(),
+                None => return transform,
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_gltf(
     mut commands: Commands,
@@ -119,7 +146,7 @@ fn update_gltf(
         Changed<GltfDefinition>,
     >,
     unprocessed_gltfs: Query<
-        (Entity, &SceneEntity, &Handle<Gltf>),
+        (Entity, &SceneEntity, &Handle<Gltf>, &GltfDefinition),
         (With<GltfDefinition>, Without<GltfLoaded>),
     >,
     ready_gltfs: Query<
@@ -133,6 +160,7 @@ fn update_gltf(
         Option<&AnimationPlayer>,
         Option<&Handle<Mesh>>,
         Option<&GltfExtras>,
+        Option<&SkinnedMesh>,
     )>,
     scene_def_handles: Query<&Handle<EntityDefinition>>,
     (scene_defs, asset_server, gltfs): (
@@ -153,6 +181,7 @@ fn update_gltf(
         &Transform,
     )>,
     mut instances_to_despawn_when_ready: Local<Vec<InstanceId>>,
+    dynamic_transform: DynamicGlobalTransform,
 ) {
     // clean up old instances
     instances_to_despawn_when_ready.retain(|instance| {
@@ -230,11 +259,11 @@ fn update_gltf(
             .remove::<GltfLoaded>();
     }
 
-    for (ent, scene_ent, h_gltf) in unprocessed_gltfs.iter() {
+    for (ent, scene_ent, h_gltf, def) in unprocessed_gltfs.iter() {
         match asset_server.get_load_state(h_gltf) {
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed => {
-                warn!("failed to process gltf");
+                warn!("failed to process gltf: {}", def.0.src);
                 set_state(scene_ent, LoadingState::FinishedWithError);
                 commands.entity(ent).try_insert(GltfLoaded(None));
                 continue;
@@ -295,7 +324,24 @@ fn update_gltf(
             // create a counter per name so we can make unique collider handles
             let mut collider_counter: HashMap<_, u32> = HashMap::default();
 
+            let Ok(context) = contexts.get(dcl_scene_entity.root) else {
+                continue;
+            };
+
             for spawned_ent in scene_spawner.iter_instance_entities(*instance) {
+                // delete any cameras
+                commands.entity(spawned_ent).remove::<(
+                    Camera,
+                    CameraRenderGraph,
+                    Projection,
+                    VisibleEntities,
+                    Frustum,
+                    Camera3d,
+                    Tonemapping,
+                    DebandDither,
+                    ColorGrading,
+                )>();
+
                 // add a container node so other systems can reference the root
                 commands.entity(spawned_ent).try_insert(ContainerEntity {
                     container: bevy_scene_entity,
@@ -310,6 +356,7 @@ fn update_gltf(
                     maybe_player,
                     maybe_h_mesh,
                     maybe_extras,
+                    maybe_skin,
                 )) = gltf_spawned_entities.get(spawned_ent)
                 {
                     // children of root nodes -> rotate
@@ -336,10 +383,24 @@ fn update_gltf(
                         continue;
                     };
 
-                    let is_skinned = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
+                    let has_joints = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();
+                    let has_weights = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
+                    let has_skin = maybe_skin.is_some();
+                    let is_skinned = has_skin && has_joints && has_weights;
                     if is_skinned {
                         // bevy doesn't calculate culling correctly for skinned entities
                         commands.entity(spawned_ent).try_insert(NoFrustumCulling);
+                    } else {
+                        // bevy crashes if unskinned models have joints and weights, or if skinned models don't
+                        if has_joints {
+                            mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_INDEX);
+                        }
+                        if has_weights {
+                            mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT);
+                        }
+                        if has_skin {
+                            commands.entity(spawned_ent).remove::<SkinnedMesh>();
+                        }
                     }
 
                     let mut collider_base_name =
@@ -403,41 +464,39 @@ fn update_gltf(
                             }
                             _ => {
                                 // asynchronously create the collider
-                                let scale = transform.scale;
-                                let VertexAttributeValues::Float32x3(positions) =
+                                let VertexAttributeValues::Float32x3(positions_ref) =
                                     mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
                                 else {
-                                    panic!()
-                                };
-                                let vertices: Vec<_> = positions
-                                    .iter()
-                                    .map(|p| {
-                                        Point::from([
-                                            p[0] * scale.x,
-                                            p[1] * scale.y,
-                                            p[2] * scale.z,
-                                        ])
-                                    })
-                                    .collect();
-                                let indices: Vec<_> = match mesh_data.indices() {
-                                    Some(Indices::U16(u16s)) => u16s
-                                        .chunks_exact(3)
-                                        .map(|ix| [ix[0] as u32, ix[1] as u32, ix[2] as u32])
-                                        .collect(),
-                                    Some(Indices::U32(u32s)) => u32s
-                                        .chunks_exact(3)
-                                        .map(|ix| [ix[0], ix[1], ix[2]])
-                                        .collect(),
-                                    None => (0u32..positions.len() as u32)
-                                        .collect::<Vec<_>>()
-                                        .chunks_exact(3)
-                                        .map(|ix| [ix[0], ix[1], ix[2]])
-                                        .collect(),
+                                    panic!("no positions")
                                 };
 
-                                let task = AsyncComputeTaskPool::get().spawn(async move {
-                                    SharedShape::convex_decomposition(&vertices, &indices)
-                                });
+                                let positions = positions_ref.to_owned();
+                                let indices = mesh_data.indices().map(ToOwned::to_owned);
+
+                                let global_scale = dynamic_transform
+                                    .compute_global_transform(spawned_ent)
+                                    .scale;
+                                let label = format!(
+                                    "{}/{}/{}",
+                                    contexts
+                                        .get(dcl_scene_entity.root)
+                                        .map(|r| r.title.as_str())
+                                        .unwrap_or_default(),
+                                    definition.0.src,
+                                    collider_base_name.unwrap_or(
+                                        maybe_name.map(|n| n.as_str()).unwrap_or_default()
+                                    )
+                                );
+
+                                let task =
+                                    AsyncComputeTaskPool::get().spawn(calculate_mesh_collider(
+                                        positions,
+                                        indices,
+                                        global_scale,
+                                        label,
+                                        context.size.max_element() * PARCEL_SIZE as u32,
+                                    ));
+
                                 let h_shape = cached_shapes.add(GltfCachedShape::Task(task));
                                 shape_lookup.0.insert(h_mesh.clone(), h_shape.clone());
                                 h_shape
@@ -473,13 +532,27 @@ fn update_gltf(
             ));
         }
     }
+
+    shape_lookup
+        .0
+        .retain(|h_mesh, _| meshes.get(h_mesh).is_some());
 }
 
 fn attach_ready_colliders(
     mut commands: Commands,
     mut pending_colliders: Query<(Entity, &mut PendingGltfCollider)>,
     mut cached_shapes: ResMut<Assets<GltfCachedShape>>,
+    mut debug_info: ResMut<DebugInfo>,
 ) {
+    let len = pending_colliders.iter().count();
+    if len > 0 {
+        debug_info
+            .info
+            .insert("pending colliders", format!("{}", len));
+    } else {
+        debug_info.info.remove("pending colliders");
+    }
+
     for (entity, pending) in pending_colliders.iter_mut() {
         let Some(cached_shape) = cached_shapes.get_mut(&pending.h_shape) else {
             panic!("shape or task should have been added")
@@ -498,16 +571,24 @@ fn attach_ready_colliders(
             }
         };
 
-        if let Some(shape) = maybe_shape {
-            commands
-                .entity(entity)
-                .try_insert(MeshCollider {
-                    shape: MeshColliderShape::Shape(shape, pending.h_mesh.clone()),
-                    collision_mask: pending.collision_mask,
-                    mesh_name: pending.mesh_name.clone(),
-                    index: pending.index,
-                })
-                .remove::<PendingGltfCollider>();
+        if let Some(maybe_shape) = maybe_shape {
+            match maybe_shape {
+                Ok(shape) => {
+                    commands
+                        .entity(entity)
+                        .try_insert(MeshCollider {
+                            shape: MeshColliderShape::Shape(shape, pending.h_mesh.clone()),
+                            collision_mask: pending.collision_mask,
+                            mesh_name: pending.mesh_name.clone(),
+                            index: pending.index,
+                        })
+                        .remove::<PendingGltfCollider>();
+                }
+                Err(e) => {
+                    commands.entity(entity).remove::<PendingGltfCollider>();
+                    warn!("failed to generate collider for {entity:?}: {e}")
+                }
+            }
         }
     }
 }

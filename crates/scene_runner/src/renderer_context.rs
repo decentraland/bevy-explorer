@@ -31,6 +31,7 @@ pub struct RendererSceneContext {
     pub title: String,
     pub base: IVec2,
     pub priority: f32,
+    pub size: UVec2,
 
     // entities waiting to be born in bevy
     pub nascent: HashSet<SceneEntityId>,
@@ -78,6 +79,7 @@ impl RendererSceneContext {
         title: String,
         base: IVec2,
         root: Entity,
+        size: UVec2,
         priority: f32,
     ) -> Self {
         let mut new_context = Self {
@@ -85,6 +87,7 @@ impl RendererSceneContext {
             hash,
             title,
             base,
+            size,
             nascent: Default::default(),
             death_row: Default::default(),
             live_entities: Vec::from_iter(std::iter::repeat((0, None)).take(u16::MAX as usize)),

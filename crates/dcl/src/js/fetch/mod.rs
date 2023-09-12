@@ -61,7 +61,8 @@ pub fn ops() -> Vec<OpDecl> {
 struct IsahcFetchRequestResource {
     client: Option<isahc::HttpClient>,
     request: http::request::Builder,
-    body: Option<MpscByteStream>,
+    body_stream: Option<MpscByteStream>,
+    body_bytes: Option<Vec<u8>>,
 }
 impl deno_core::Resource for IsahcFetchRequestResource {}
 
@@ -94,7 +95,7 @@ pub fn op_fetch(
     let mut request = isahc::Request::builder().uri(url.clone());
     let method = Method::from_bytes(&method)?;
 
-    let (body, request_body_rid) = if has_body {
+    let (body_stream, request_body_rid, body_bytes) = if has_body {
         let (stream, tx) = MpscByteStream::new();
 
         // If the size of the body is known, we include a content-length
@@ -104,16 +105,13 @@ pub fn op_fetch(
         }
 
         match data {
-            Some(data) => {
-                tx.blocking_send(Some(data.into()))?;
-                (Some(stream), None)
-            }
+            Some(data) => (None, None, Some(data.to_vec())),
             None => {
                 let request_body_rid = state.resource_table.add(FetchRequestBodyResource {
                     body: AsyncRefCell::new(tx),
                     cancel: CancelHandle::default(),
                 });
-                (Some(stream), Some(request_body_rid))
+                (Some(stream), Some(request_body_rid), None)
             }
         }
     } else {
@@ -122,7 +120,7 @@ pub fn op_fetch(
         if matches!(method, Method::POST | Method::PUT) {
             request = request.header(CONTENT_LENGTH, HeaderValue::from(0));
         }
-        (None, None)
+        (None, None, None)
     };
 
     request = request.method(method);
@@ -142,7 +140,8 @@ pub fn op_fetch(
     }
 
     let request_rid = state.resource_table.add(IsahcFetchRequestResource {
-        body,
+        body_stream,
+        body_bytes,
         client,
         request,
     });
@@ -182,22 +181,26 @@ pub async fn op_fetch_send(
     let IsahcFetchRequestResource {
         client,
         request,
-        body,
+        body_stream,
+        body_bytes,
     } = Rc::try_unwrap(request)
         .ok()
         .expect("multiple op_fetch_send ongoing");
 
-    let body = if let Some(body) = body {
-        AsyncBody::from_reader(body.into_async_read())
-    } else {
-        AsyncBody::empty()
-    };
-
-    let request = request.body(body)?;
-
     let asset_server = state.borrow_mut().borrow_mut::<AssetServer>().clone();
 
-    let mut res = match asset_server.ipfs().async_request(request, client).await {
+    let async_req = if let Some(body) = body_stream {
+        let request = request.body(AsyncBody::from_reader(body.into_async_read()))?;
+        asset_server.ipfs().async_request(request, client).await
+    } else if let Some(body) = body_bytes {
+        let request = request.body(body)?;
+        asset_server.ipfs().async_request(request, client).await
+    } else {
+        let request = request.body(())?;
+        asset_server.ipfs().async_request(request, client).await
+    };
+
+    let mut res = match async_req {
         Ok(res) => res,
         Err(err) => return Err(type_error(err.to_string())),
     };

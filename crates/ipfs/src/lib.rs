@@ -166,6 +166,10 @@ impl ContentMap {
             .get_by_left(file.to_lowercase().as_str())
             .map(String::as_str)
     }
+
+    pub fn files(&self) -> impl Iterator<Item = &String> {
+        self.0.left_values()
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -634,9 +638,9 @@ impl IpfsIo {
         })
     }
 
-    pub async fn async_request(
+    pub async fn async_request<T: Into<isahc::AsyncBody>>(
         &self,
-        request: isahc::Request<isahc::AsyncBody>,
+        request: isahc::Request<T>,
         client: Option<isahc::HttpClient>,
     ) -> Result<isahc::Response<isahc::AsyncBody>, anyhow::Error> {
         // get semaphore to limit concurrent requests

@@ -1,5 +1,9 @@
-use bevy::{core::FrameCount, math::Vec3Swizzles, prelude::*};
-use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
+use bevy::{
+    core::FrameCount,
+    math::{DVec3, Vec3Swizzles},
+    prelude::*,
+};
+use rapier3d_f64::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 
 use common::{
     dynamics::{
@@ -74,15 +78,15 @@ pub fn update_user_position(
         Some((context, mut collider_data, _scene_transform)) => {
             // setup physics controller
             let mut controller = KinematicCharacterController {
-                offset: CharacterLength::Absolute(PLAYER_COLLIDER_OVERLAP),
+                offset: CharacterLength::Absolute(PLAYER_COLLIDER_OVERLAP as f64),
                 slide: true,
                 autostep: Some(CharacterAutostep {
-                    max_height: CharacterLength::Absolute(MAX_STEP_HEIGHT),
+                    max_height: CharacterLength::Absolute(MAX_STEP_HEIGHT as f64),
                     min_width: CharacterLength::Relative(0.75),
                     include_dynamic_bodies: true,
                 }),
-                max_slope_climb_angle: MAX_CLIMBABLE_INCLINE,
-                min_slope_slide_angle: MAX_CLIMBABLE_INCLINE,
+                max_slope_climb_angle: MAX_CLIMBABLE_INCLINE as f64,
+                min_slope_slide_angle: MAX_CLIMBABLE_INCLINE as f64,
                 snap_to_ground: Some(CharacterLength::Absolute(0.1)),
                 ..Default::default()
             };
@@ -100,14 +104,14 @@ pub fn update_user_position(
                 &controller,
             );
 
-            if Vec3::from(eff_movement.translation).length() > 0.0 {
+            if DVec3::from(eff_movement.translation).length() > 0.0 {
                 debug!(
                     "dynamics: {} -> {}",
                     transform.translation,
-                    transform.translation + Vec3::from(eff_movement.translation)
+                    transform.translation + DVec3::from(eff_movement.translation).as_vec3()
                 );
             }
-            transform.translation += Vec3::from(eff_movement.translation);
+            transform.translation += DVec3::from(eff_movement.translation).as_vec3();
             transform.translation.y = transform.translation.y.max(0.0);
 
             // calculate ground height
@@ -125,10 +129,11 @@ pub fn update_user_position(
             if dynamic_state.ground_height <= 0.0 || transform.translation.y == 0.0 {
                 // on the floor, set vertical velocity to zero
                 dynamic_state.velocity.y = dynamic_state.velocity.y.max(0.0);
-            } else if eff_movement.translation.y.abs() < (0.5 * dynamic_state.velocity.y * dt).abs()
+            } else if eff_movement.translation.y.abs()
+                < (0.5 * dynamic_state.velocity.y * dt).abs() as f64
             {
                 // vertical motion was blocked by something, use the effective motion
-                dynamic_state.velocity.y = eff_movement.translation.y / dt - half_g_force;
+                dynamic_state.velocity.y = eff_movement.translation.y as f32 / dt - half_g_force;
             } else {
                 dynamic_state.velocity.y -= half_g_force;
             }

@@ -46,7 +46,7 @@ bimap = "0.6.3"
 prost = "0.11.8"
 clap = "4.1.10"
 once_cell = "1.16.0"
-rapier3d = "0.17.2"
+rapier3d-f64 = "0.17.2"
 urlencoding = "2.1.2"
 async-std = "1.12.0"
 # todo: use isahc 2.0 when it's released
@@ -86,3 +86,5 @@ prost-build = "0.11.8"
 bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.11.2-hotfix" }
 bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "pub-manager" }
 ffmpeg-next = { git = "https://github.com/decentraland/rust-ffmpeg" }
+parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "try_convex" }
+rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }

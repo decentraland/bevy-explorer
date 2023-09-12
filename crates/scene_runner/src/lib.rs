@@ -32,6 +32,7 @@ use dcl_component::{
 use ipfs::SceneIpfsLocation;
 use primary_entities::PrimaryEntities;
 use spin_sleep::SpinSleeper;
+use util::SceneUtilPlugin;
 
 use self::{
     initialize_scene::{
@@ -49,6 +50,7 @@ pub mod renderer_context;
 pub mod test;
 pub mod update_scene;
 pub mod update_world;
+pub mod util;
 
 // bookkeeping struct for javascript execution of scenes
 #[derive(Resource)]
@@ -266,6 +268,7 @@ impl Plugin for SceneRunnerPlugin {
 
         app.add_plugins(SceneInputPlugin);
         app.add_plugins(SceneOutputPlugin);
+        app.add_plugins(SceneUtilPlugin);
     }
 }
 

@@ -29,6 +29,7 @@ pub mod camera_mode_area;
 pub mod gltf_container;
 pub mod material;
 pub mod mesh_collider;
+pub mod mesh_collider_conversion;
 pub mod mesh_renderer;
 pub mod pointer_events;
 pub mod raycast;
@@ -110,13 +111,23 @@ pub struct CrdtExtractors(
 // plugin to manage some commands from the scene script
 pub struct SceneOutputPlugin;
 
+#[derive(Resource)]
+pub struct NoGltf(pub bool);
+
 impl Plugin for SceneOutputPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(TransformAndParentPlugin);
         app.add_plugins(MeshDefinitionPlugin);
         app.add_plugins(MaterialDefinitionPlugin);
         app.add_plugins(MeshColliderPlugin);
-        app.add_plugins(GltfDefinitionPlugin);
+
+        if !app
+            .world
+            .get_resource::<NoGltf>()
+            .map_or(false, |no_gltf| no_gltf.0)
+        {
+            app.add_plugins(GltfDefinitionPlugin);
+        }
         app.add_plugins(AnimatorPlugin);
         app.add_plugins(BillboardPlugin);
         app.add_plugins(RaycastPlugin);

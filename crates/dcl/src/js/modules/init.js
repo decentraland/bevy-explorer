@@ -44,10 +44,13 @@ function require(moduleName) {
 // minimal console
 const console = { 
     log: function(...args) {
-        Deno.core.ops.op_log("" + args.join(' '))
+        Deno.core.ops.op_log("[log]" + args.join(' '))
+    },
+    warn: function(...args) {
+        Deno.core.ops.op_log("[warn] " + args.join(' '))
     },
     error: function(...args) {
-        Deno.core.ops.op_error("" + args.join(' '))
+        Deno.core.ops.op_error("[err]" + args.join(' '))
     },
 }
 
@@ -63,6 +66,9 @@ globalThis.Request = Request;
 
 import * as fetch from "ext:deno_fetch/26_fetch.js";
 globalThis.fetch = fetch.fetch;
+
+import * as timers from "ext:deno_web/02_timers.js";
+globalThis.setTimeout = timers.setTimeout;
 
 // we need to ensure all modules are evaluated, else deno complains in debug mode
 import * as _0 from "ext:deno_url/01_urlpattern.js"
