@@ -247,6 +247,8 @@ pub(crate) fn load_scene_javascript(
         };
 
         // populate pointers
+        let mut extent_min = IVec2::MAX;
+        let mut extent_max = IVec2::MIN;
         for pointer in meta.scene.parcels {
             let (x, y) = pointer.split_once(',').unwrap();
             let x = x.parse::<i32>().unwrap();
@@ -255,7 +257,10 @@ pub(crate) fn load_scene_javascript(
             pointers
                 .0
                 .insert(parcel, PointerResult::Exists(definition.id.clone()));
+            extent_min = extent_min.min(parcel);
+            extent_max = extent_max.max(parcel);
         }
+        let size = (extent_max - extent_min).as_uvec2();
 
         // get main.crdt
         let maybe_serialized_crdt = match maybe_h_crdt {
@@ -310,7 +315,7 @@ pub(crate) fn load_scene_javascript(
             .and_then(|display| display.title)
             .unwrap_or("???".to_owned());
         let mut renderer_context =
-            RendererSceneContext::new(scene_id, definition.id.clone(), title, base, root, 1.0);
+            RendererSceneContext::new(scene_id, definition.id.clone(), title, base, root, size, 1.0);
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?})");
 
         scene_updates.scene_ids.insert(scene_id, root);

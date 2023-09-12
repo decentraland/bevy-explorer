@@ -1,7 +1,7 @@
 use bevy::{
     core::cast_slice,
     math::DVec3,
-    prelude::{debug, warn, Vec3},
+    prelude::{debug, Vec3},
     render::mesh::Indices,
     utils::HashMap,
 };
@@ -15,6 +15,7 @@ pub async fn calculate_mesh_collider(
     maybe_indices: Option<Indices>,
     size_hint: Vec3,
     label: String,
+    size_max: u32,
 ) -> Result<SharedShape, ConvexHullError> {
     let start = std::time::Instant::now();
     debug!(
@@ -68,11 +69,6 @@ pub async fn calculate_mesh_collider(
 
     let size = max - min;
 
-    if size.min_element() < 1e-5 {
-        warn!("[{label}] skipping collider for flat mesh");
-        return Err(ConvexHullError::Unreachable);
-    }
-
     // make parry-shaped data
     let positions_parry: Vec<_> = indices
         .iter()
@@ -93,10 +89,13 @@ pub async fn calculate_mesh_collider(
         .collect();
 
     let global_size = size * size_hint.as_dvec3();
-    let resolution_unclamped = global_size.max_element() * 3.0;
-    let resolution = resolution_unclamped.clamp(32.0, 512.0) as u32;
+    let largest_edge = (global_size.max_element() as u32).min(size_max);
+    let resolution_unclamped = largest_edge * 4;
+    let resolution = resolution_unclamped.clamp(32, 512);
+    let max_convex_hulls_unclamped = largest_edge / 2;
+    let max_convex_hulls = max_convex_hulls_unclamped.clamp(5, 15);
 
-    debug!("[{label}] going to vhacd. tris: {tris}, size: {global_size}, resolution: {resolution} (clamped from {resolution_unclamped})");
+    debug!("[{label}] going to vhacd. tris: {tris}, size: {global_size}, largest_edge: {largest_edge}, resolution: {resolution} (clamped from {resolution_unclamped}), depth: {max_convex_hulls} (clamped from {max_convex_hulls_unclamped})");
 
     let shape = SharedShape::convex_decomposition_with_params(
         &positions_parry,
@@ -104,7 +103,7 @@ pub async fn calculate_mesh_collider(
         &VHACDParameters {
             concavity: 1e-8,
             resolution,
-            max_convex_hulls: 1 << 15,
+            max_convex_hulls: 1 << max_convex_hulls,
             ..Default::default()
         },
     );

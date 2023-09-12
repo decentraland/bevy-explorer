@@ -24,7 +24,7 @@ use rapier3d_f64::{parry::transformation::ConvexHullError, prelude::*};
 use serde::Deserialize;
 
 use crate::{
-    renderer_context::RendererSceneContext, ContainerEntity, DebugInfo, SceneEntity, SceneSets,
+    renderer_context::RendererSceneContext, ContainerEntity, DebugInfo, SceneEntity, SceneSets, initialize_scene::PARCEL_SIZE,
 };
 use common::util::TryInsertEx;
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -323,6 +323,10 @@ fn update_gltf(
             // create a counter per name so we can make unique collider handles
             let mut collider_counter: HashMap<_, u32> = HashMap::default();
 
+            let Ok(context) = contexts.get(dcl_scene_entity.root) else {
+                continue;
+            };
+
             for spawned_ent in scene_spawner.iter_instance_entities(*instance) {
                 // delete any cameras
                 commands.entity(spawned_ent).remove::<(
@@ -489,6 +493,7 @@ fn update_gltf(
                                         indices,
                                         global_scale,
                                         label,
+                                        context.size.max_element() * PARCEL_SIZE as u32,
                                     ));
 
                                 let h_shape = cached_shapes.add(GltfCachedShape::Task(task));
