@@ -145,7 +145,7 @@ fn update_gltf(
         Changed<GltfDefinition>,
     >,
     unprocessed_gltfs: Query<
-        (Entity, &SceneEntity, &Handle<Gltf>),
+        (Entity, &SceneEntity, &Handle<Gltf>, &GltfDefinition),
         (With<GltfDefinition>, Without<GltfLoaded>),
     >,
     ready_gltfs: Query<
@@ -258,11 +258,11 @@ fn update_gltf(
             .remove::<GltfLoaded>();
     }
 
-    for (ent, scene_ent, h_gltf) in unprocessed_gltfs.iter() {
+    for (ent, scene_ent, h_gltf, def) in unprocessed_gltfs.iter() {
         match asset_server.get_load_state(h_gltf) {
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed => {
-                warn!("failed to process gltf");
+                warn!("failed to process gltf: {}", def.0.src);
                 set_state(scene_ent, LoadingState::FinishedWithError);
                 commands.entity(ent).try_insert(GltfLoaded(None));
                 continue;
@@ -526,6 +526,10 @@ fn update_gltf(
             ));
         }
     }
+
+    shape_lookup.0.retain(|h_mesh, _| {
+        meshes.get(h_mesh).is_some()
+    });
 }
 
 fn attach_ready_colliders(
