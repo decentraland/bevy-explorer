@@ -24,7 +24,8 @@ use rapier3d_f64::{parry::transformation::ConvexHullError, prelude::*};
 use serde::Deserialize;
 
 use crate::{
-    renderer_context::RendererSceneContext, ContainerEntity, DebugInfo, SceneEntity, SceneSets, initialize_scene::PARCEL_SIZE,
+    initialize_scene::PARCEL_SIZE, renderer_context::RendererSceneContext, ContainerEntity,
+    DebugInfo, SceneEntity, SceneSets,
 };
 use common::util::TryInsertEx;
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -532,9 +533,9 @@ fn update_gltf(
         }
     }
 
-    shape_lookup.0.retain(|h_mesh, _| {
-        meshes.get(h_mesh).is_some()
-    });
+    shape_lookup
+        .0
+        .retain(|h_mesh, _| meshes.get(h_mesh).is_some());
 }
 
 fn attach_ready_colliders(

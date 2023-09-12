@@ -314,8 +314,15 @@ pub(crate) fn load_scene_javascript(
             .display
             .and_then(|display| display.title)
             .unwrap_or("???".to_owned());
-        let mut renderer_context =
-            RendererSceneContext::new(scene_id, definition.id.clone(), title, base, root, size, 1.0);
+        let mut renderer_context = RendererSceneContext::new(
+            scene_id,
+            definition.id.clone(),
+            title,
+            base,
+            root,
+            size,
+            1.0,
+        );
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?})");
 
         scene_updates.scene_ids.insert(scene_id, root);
