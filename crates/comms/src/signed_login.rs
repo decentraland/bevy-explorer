@@ -47,7 +47,6 @@ pub async fn sign_request(
         .unwrap()
         .as_millis();
 
-
     let meta = serde_json::to_string(&meta).unwrap();
     let payload = format!("{}:{}:{}:{}", method, uri.path(), unix_time, meta).to_lowercase();
     let signature = wallet.sign_message(&payload).await.unwrap();

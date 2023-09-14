@@ -36,7 +36,7 @@ impl WebSocketPermissions for WebSocketPerms {
         &mut self,
         _url: &deno_core::url::Url,
         _api_name: &str,
-      ) -> Result<(), AnyError> {
+    ) -> Result<(), AnyError> {
         Ok(())
     }
 }
@@ -51,7 +51,11 @@ pub fn create_runtime(init: bool) -> JsRuntime {
     let url = deno_url::deno_url::init_ops_and_esm();
     let console = deno_console::deno_console::init_ops_and_esm();
     let fetch = deno_fetch::deno_fetch::init_js_only::<FP>();
-    let websocket = deno_websocket::deno_websocket::init_ops_and_esm::<WebSocketPerms>("bevy-explorer".to_owned(), None, None);
+    let websocket = deno_websocket::deno_websocket::init_ops_and_esm::<WebSocketPerms>(
+        "bevy-explorer".to_owned(),
+        None,
+        None,
+    );
 
     let mut ext = &mut Extension::builder_with_deps("decentraland", &["deno_fetch"]);
 
@@ -100,7 +104,11 @@ pub fn create_runtime(init: bool) -> JsRuntime {
 
     // create runtime
     JsRuntime::new(RuntimeOptions {
-        v8_platform: if init { v8::Platform::new(1, false).make_shared().into() } else { None },
+        v8_platform: if init {
+            v8::Platform::new(1, false).make_shared().into()
+        } else {
+            None
+        },
         extensions: vec![webidl, url, console, web, fetch, websocket, ext],
         ..Default::default()
     })
