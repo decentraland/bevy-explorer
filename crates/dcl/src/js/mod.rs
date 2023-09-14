@@ -90,7 +90,7 @@ pub fn create_runtime(init: bool) -> JsRuntime {
             BevyExplorer
             dir "src/js/modules",
             "init.js",
-        ))
+        ).to_vec())
         .esm_entry_point("ext:BevyExplorer/init.js")
         .middleware(move |op| {
             if let Some(custom_op) = op_map.get(&op.name) {
