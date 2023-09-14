@@ -86,8 +86,8 @@ pub fn create_runtime() -> JsRuntime {
 
     // create runtime
     JsRuntime::new(RuntimeOptions {
-        v8_platform: v8::Platform::new(1, false).make_shared().into(),
-        extensions: vec![webidl, url, console, web, fetch, ext],
+        v8_platform: if init { v8::Platform::new(1, false).make_shared().into() } else { None },
+        extensions: vec![webidl, url, console, web, fetch, websocket, ext],
         ..Default::default()
     })
 }
@@ -105,7 +105,7 @@ pub(crate) fn scene_thread(
     asset_server: AssetServer,
 ) {
     let scene_context = CrdtContext::new(scene_id, scene_hash);
-    let mut runtime = create_runtime();
+    let mut runtime = create_runtime(false);
 
     // store handle
     let vm_handle = runtime.v8_isolate().thread_safe_handle();

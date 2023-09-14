@@ -82,7 +82,7 @@ pub fn get_next_scene_id() -> SceneId {
 
     if id.0 == 0 {
         // synchronously create and drop a single runtime to hopefully avoid initial segfaults
-        create_runtime();
+        create_runtime(true);
         // and skip the dummy id
         id = SceneId(SCENE_ID.fetch_add(1, Ordering::Relaxed));
     }
