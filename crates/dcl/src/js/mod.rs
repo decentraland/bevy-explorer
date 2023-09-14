@@ -6,6 +6,7 @@ use deno_core::{
     error::{generic_error, AnyError},
     include_js_files, op, v8, Extension, JsRuntime, Op, OpState, RuntimeOptions,
 };
+use deno_websocket::WebSocketPermissions;
 use tokio::sync::mpsc::Receiver;
 
 use ipfs::SceneJsFile;
@@ -28,7 +29,19 @@ pub struct ShuttingDown;
 
 pub struct RendererStore(pub CrdtStore);
 
-pub fn create_runtime() -> JsRuntime {
+pub struct WebSocketPerms;
+
+impl WebSocketPermissions for WebSocketPerms {
+    fn check_net_url(
+        &mut self,
+        _url: &deno_core::url::Url,
+        _api_name: &str,
+      ) -> Result<(), AnyError> {
+        Ok(())
+    }
+}
+
+pub fn create_runtime(init: bool) -> JsRuntime {
     // add fetch stack
     let web = deno_web::deno_web::init_ops_and_esm::<TP>(
         std::sync::Arc::new(deno_web::BlobStore::default()),
@@ -38,6 +51,7 @@ pub fn create_runtime() -> JsRuntime {
     let url = deno_url::deno_url::init_ops_and_esm();
     let console = deno_console::deno_console::init_ops_and_esm();
     let fetch = deno_fetch::deno_fetch::init_js_only::<FP>();
+    let websocket = deno_websocket::deno_websocket::init_ops_and_esm::<WebSocketPerms>("bevy-explorer".to_owned(), None, None);
 
     let mut ext = &mut Extension::builder_with_deps("decentraland", &["deno_fetch"]);
 
@@ -147,6 +161,9 @@ pub(crate) fn scene_thread(
         .borrow_mut()
         .put(runtime.v8_isolate().thread_safe_handle());
 
+    // store websocket permissions object
+    state.borrow_mut().put(WebSocketPerms);
+
     // load module
     let script = runtime.execute_script("<loader>", ascii_str!("require (\"~scene.js\")"));
 
@@ -164,6 +181,7 @@ pub(crate) fn scene_thread(
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_time()
+        .enable_io()
         .build()
         .unwrap();
 

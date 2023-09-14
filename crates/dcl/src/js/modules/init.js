@@ -117,6 +117,11 @@ globalThis.fetch = fetch.fetch;
 import * as timers from "ext:deno_web/02_timers.js";
 globalThis.setTimeout = timers.setTimeout;
 
+import * as websocket from "ext:deno_websocket/01_websocket.js";
+globalThis.WebSocket = websocket.WebSocket;
+
+import * as _10 from "ext:deno_websocket/02_websocketstream.js";
+
 // we need to ensure all modules are evaluated, else deno complains in debug mode
 import * as _0 from "ext:deno_url/01_urlpattern.js"
 import * as _1 from "ext:deno_web/02_structured_clone.js"
