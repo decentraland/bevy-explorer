@@ -36,33 +36,43 @@ impl SignedLoginMeta {
     }
 }
 
-pub async fn signed_login(
-    uri: Uri,
-    wallet: Wallet,
+pub async fn sign_request(
+    method: &str,
+    uri: &Uri,
+    wallet: &Wallet,
     meta: SignedLoginMeta,
-) -> Result<SignedLoginResponse, anyhow::Error> {
+) -> Vec<(String, String)> {
     let unix_time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_millis();
 
-    let meta = serde_json::to_string(&meta).unwrap();
 
-    let payload = format!("post:{}:{}:{}", uri.path(), unix_time, meta).to_lowercase();
+    let meta = serde_json::to_string(&meta).unwrap();
+    let payload = format!("{}:{}:{}:{}", method, uri.path(), unix_time, meta).to_lowercase();
     let signature = wallet.sign_message(&payload).await.unwrap();
     let auth_chain = SimpleAuthChain::new(wallet.address(), payload, signature);
 
+    let mut headers: Vec<_> = auth_chain.headers().collect();
+    headers.push(("x-identity-timestamp".to_owned(), format!("{}", unix_time)));
+    headers.push(("x-identity-metadata".to_owned(), meta));
+    headers
+}
+
+pub async fn signed_login(
+    uri: Uri,
+    wallet: Wallet,
+    meta: SignedLoginMeta,
+) -> Result<SignedLoginResponse, anyhow::Error> {
+    let auth_chain = sign_request("post", &uri, &wallet, meta).await;
+
     let mut builder = isahc::Request::builder().method(Method::POST).uri(uri);
 
-    for (key, value) in auth_chain.headers() {
+    for (key, value) in auth_chain {
         builder = builder.header(key, value)
     }
 
-    let req = builder
-        .header("x-identity-timestamp", format!("{unix_time}"))
-        .header("x-identity-metadata", meta)
-        .body(())?;
-
+    let req = builder.body(())?;
     let mut res = req.send_async().await?;
 
     if res.status() != StatusCode::OK {
