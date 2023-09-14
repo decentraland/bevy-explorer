@@ -279,6 +279,7 @@ impl CrdtStore {
                 let entity = stream.read()?;
                 for lww in self.lww.values_mut() {
                     lww.last_write.remove(&entity);
+                    lww.updates.remove(&entity);
                 }
                 for go in self.go.values_mut() {
                     go.0.remove(&entity);
