@@ -1,4 +1,4 @@
-// --server https://worlds-content-server.decentraland.org/world/shibu.dcl.eth --location 1 1
+// --server https://worlds-content-server.decentraland.org/world/shibu.dcl.eth --location 1,1
 
 use std::sync::Arc;
 
@@ -113,7 +113,8 @@ async fn livekit_handler_inner(
     let token = params.get("access_token").cloned().unwrap_or_default();
 
     let rt = Arc::new(
-        tokio::runtime::Builder::new_current_thread()
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
             .enable_all()
             .build()
             .unwrap(),
@@ -212,7 +213,9 @@ async fn livekit_handler_inner(
                                             while let Some(frame) = x.next().await {
                                                 match frame_sender.try_send(frame) {
                                                     Ok(()) => (),
-                                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => (),
+                                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                                        warn!("livekit audio receiver buffer full, dropping frame");
+                                                    },
                                                     Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
                                                         warn!("livekit audio receiver dropped, exiting task");
                                                         return;
