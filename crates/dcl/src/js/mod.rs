@@ -4,7 +4,7 @@ use bevy::prelude::{debug, error, info_span, AssetServer};
 use deno_core::{
     ascii_str,
     error::{generic_error, AnyError},
-    include_js_files, op, v8, Extension, JsRuntime, Op, OpState, RuntimeOptions,
+    include_js_files, op, v8, Extension, JsRuntime, Op, OpDecl, OpState, RuntimeOptions,
 };
 use deno_websocket::WebSocketPermissions;
 use tokio::sync::mpsc::Receiver;
@@ -57,10 +57,7 @@ pub fn create_runtime(init: bool) -> JsRuntime {
         None,
     );
 
-    let mut ext = &mut Extension::builder_with_deps("decentraland", &["deno_fetch"]);
-
-    // add core ops
-    ext = ext.ops(vec![op_require::DECL, op_log::DECL, op_error::DECL]);
+    let mut ops = vec![op_require::DECL, op_log::DECL, op_error::DECL];
 
     let op_sets: [Vec<deno_core::OpDecl>; 3] =
         [engine::ops(), restricted_actions::ops(), runtime::ops()];
@@ -72,7 +69,7 @@ pub fn create_runtime(init: bool) -> JsRuntime {
             // explicitly record the ones we added so we can remove deno_fetch imposters
             op_map.insert(op.name, *op);
         }
-        ext = ext.ops(set)
+        ops.extend(set);
     }
 
     let override_sets: [Vec<deno_core::OpDecl>; 1] = [fetch::ops()];
@@ -84,23 +81,28 @@ pub fn create_runtime(init: bool) -> JsRuntime {
         }
     }
 
-    let ext = ext
-        // set startup JS script
-        .esm(include_js_files!(
+    let ext = Extension {
+        name: "decentraland",
+        deps: &["deno_fetch"],
+        ops: ops.into(),
+        esm_files: include_js_files!(
             BevyExplorer
             dir "src/js/modules",
             "init.js",
-        ).to_vec())
-        .esm_entry_point("ext:BevyExplorer/init.js")
-        .middleware(move |op| {
+        )
+        .to_vec()
+        .into(),
+        esm_entry_point: Some("ext:BevyExplorer/init.js"),
+        middleware_fn: Some(Box::new(move |op: OpDecl| -> OpDecl {
             if let Some(custom_op) = op_map.get(&op.name) {
                 debug!("replace: {}", op.name);
                 op.with_implementation_from(custom_op)
             } else {
                 op
             }
-        })
-        .build();
+        })),
+        ..Default::default()
+    };
 
     // create runtime
     JsRuntime::new(RuntimeOptions {
