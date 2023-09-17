@@ -30,7 +30,8 @@ use crate::{
 use common::structs::{
     AppConfig, GraphicsSettings, PrimaryCamera, RestrictedAction, SceneLoadDistance,
 };
-use comms::{wallet::WalletPlugin, CommsPlugin};
+use wallet::WalletPlugin;
+use comms::CommsPlugin;
 use console::{self, ConsolePlugin};
 use dcl::interface::{CrdtStore, CrdtType};
 use dcl_component::{

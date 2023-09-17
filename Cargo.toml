@@ -27,6 +27,7 @@ av = { path="crates/av" }
 dcl = { path="crates/dcl" }
 dcl_component = { path="crates/dcl_component" }
 restricted_actions = { path="crates/restricted_actions" }
+wallet = { path="crates/wallet" }
 
 bevy = { version = "0.11", features=["jpeg"] }
 bevy_console = "0.8.0"
@@ -68,6 +69,7 @@ scene_runner = { workspace = true }
 console = { workspace = true }
 av = { workspace = true }
 restricted_actions = { workspace = true }
+wallet = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }
@@ -83,7 +85,8 @@ pico-args = "0.5.0"
 prost-build = "0.11.8"
 
 [patch.crates-io]
-bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.11.2-hotfix" }
+# bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.11.2-hotfix" }
+bevy = { path = "../bevy" }
 bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "pub-manager" }
 ffmpeg-next = { git = "https://github.com/decentraland/rust-ffmpeg" }
 parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "try_convex" }

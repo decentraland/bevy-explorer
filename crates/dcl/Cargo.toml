@@ -9,6 +9,7 @@ edition = "2021"
 common = { workspace = true }
 dcl_component = { workspace = true }
 ipfs = { workspace = true }
+wallet = { workspace = true }
 
 bevy = { workspace = true }
 tokio = { workspace = true }

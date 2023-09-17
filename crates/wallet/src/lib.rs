@@ -4,15 +4,16 @@ use async_trait::async_trait;
 use bevy::prelude::*;
 use ethers_core::types::{transaction::eip2718::TypedTransaction, Address, Signature};
 use ethers_signers::{LocalWallet, Signer, WalletError};
+use isahc::http::Uri;
 use serde::{Deserialize, Serialize};
+
+pub mod signed_login;
 
 pub struct WalletPlugin;
 
 impl Plugin for WalletPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(Wallet {
-            inner: Arc::new(Box::new(LocalWallet::new(&mut rand::thread_rng()))),
-        });
+        app.insert_resource(Wallet::new(LocalWallet::new(&mut rand::thread_rng())));
     }
 }
 
@@ -22,6 +23,12 @@ pub struct Wallet {
 }
 
 impl Wallet {
+    pub fn new(local_wallet: LocalWallet) -> Self {
+        Self{ 
+            inner: Arc::new(Box::new(local_wallet))
+        }
+    }
+
     pub async fn sign_message<S: Send + Sync + AsRef<[u8]>>(
         &self,
         message: S,
@@ -94,6 +101,50 @@ impl SimpleAuthChain {
             )
         })
     }
+}
+
+#[derive(serde::Serialize)]
+pub struct SignedLoginMeta {
+    pub intent: String,
+    pub signer: String,
+    #[serde(rename = "isGuest")]
+    is_guest: bool,
+    origin: String,
+}
+
+impl SignedLoginMeta {
+    pub fn new(is_guest: bool, origin: Uri) -> Self {
+        let origin = origin.into_parts();
+
+        Self {
+            intent: "dcl:explorer:comms-handshake".to_owned(),
+            signer: "dcl:explorer".to_owned(),
+            is_guest,
+            origin: format!("{}://{}", origin.scheme.unwrap(), origin.authority.unwrap()),
+        }
+    }
+}
+
+pub async fn sign_request<META: Serialize>(
+    method: &str,
+    uri: &Uri,
+    wallet: &Wallet,
+    meta: META,
+) -> Vec<(String, String)> {
+    let unix_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+
+    let meta = serde_json::to_string(&meta).unwrap();
+    let payload = format!("{}:{}:{}:{}", method, uri.path(), unix_time, meta).to_lowercase();
+    let signature = wallet.sign_message(&payload).await.unwrap();
+    let auth_chain = SimpleAuthChain::new(wallet.address(), payload, signature);
+
+    let mut headers: Vec<_> = auth_chain.headers().collect();
+    headers.push(("x-identity-timestamp".to_owned(), format!("{}", unix_time)));
+    headers.push(("x-identity-metadata".to_owned(), meta));
+    headers
 }
 
 #[derive(Serialize, Deserialize)]

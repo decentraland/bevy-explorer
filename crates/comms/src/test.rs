@@ -17,11 +17,7 @@ use livekit::{
     },
     RoomOptions,
 };
-
-use crate::{
-    signed_login::{signed_login, SignedLoginMeta},
-    wallet::Wallet,
-};
+use wallet::{SignedLoginMeta, signed_login::signed_login, Wallet};
 
 #[test]
 fn test_tls() {
@@ -30,9 +26,7 @@ fn test_tls() {
 
 #[test]
 fn test_livekit() {
-    let wallet = Wallet {
-        inner: Arc::new(Box::new(LocalWallet::new(&mut rand::thread_rng()))),
-    };
+    let wallet = Wallet::new(LocalWallet::new(&mut rand::thread_rng()));
     let meta = SignedLoginMeta::new(
         true,
         Uri::try_from("https://worlds-content-server.decentraland.org/world/shibu.dcl.eth")

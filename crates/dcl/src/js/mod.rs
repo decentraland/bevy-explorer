@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
-use bevy::prelude::{debug, error, info_span, AssetServer};
+use bevy::prelude::{debug, error, info_span, AssetServer, info};
 use deno_core::{
     ascii_str,
     error::{generic_error, AnyError},
@@ -10,6 +10,7 @@ use deno_websocket::WebSocketPermissions;
 use tokio::sync::mpsc::Receiver;
 
 use ipfs::SceneJsFile;
+use wallet::Wallet;
 
 use self::fetch::{FP, TP};
 
@@ -59,8 +60,8 @@ pub fn create_runtime(init: bool) -> JsRuntime {
 
     let mut ops = vec![op_require::DECL, op_log::DECL, op_error::DECL];
 
-    let op_sets: [Vec<deno_core::OpDecl>; 3] =
-        [engine::ops(), restricted_actions::ops(), runtime::ops()];
+    let op_sets: [Vec<deno_core::OpDecl>; 4] =
+        [engine::ops(), restricted_actions::ops(), runtime::ops(), fetch::ops()];
 
     // add plugin registrations
     let mut op_map = HashMap::new();
@@ -72,7 +73,7 @@ pub fn create_runtime(init: bool) -> JsRuntime {
         ops.extend(set);
     }
 
-    let override_sets: [Vec<deno_core::OpDecl>; 1] = [fetch::ops()];
+    let override_sets: [Vec<deno_core::OpDecl>; 1] = [fetch::override_ops()];
 
     for set in override_sets {
         for op in set {
@@ -127,6 +128,7 @@ pub(crate) fn scene_thread(
     thread_rx: Receiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     asset_server: AssetServer,
+    wallet: Wallet,
 ) {
     let scene_context = CrdtContext::new(scene_id, scene_hash);
     let mut runtime = create_runtime(false);
@@ -151,8 +153,9 @@ pub(crate) fn scene_thread(
     state.borrow_mut().put(thread_rx);
     state.borrow_mut().put(global_update_receiver);
 
-    // store asset server
+    // store asset server and wallet
     state.borrow_mut().put(asset_server);
+    state.borrow_mut().put(wallet);    
 
     // store crdt outbound state
     state.borrow_mut().put(CrdtStore::default());
@@ -333,6 +336,7 @@ fn op_require(
 #[op(v8)]
 fn op_log(state: Rc<RefCell<OpState>>, message: String) {
     let time = state.borrow().borrow::<SceneElapsedTime>().0;
+    info!(message);
     state
         .borrow_mut()
         .borrow_mut::<Vec<SceneLogMessage>>()

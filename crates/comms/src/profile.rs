@@ -5,10 +5,9 @@ use serde::{Deserialize, Serialize};
 use common::structs::{AppConfig, PrimaryUser};
 use common::util::{AsH160, TryInsertEx};
 use dcl_component::proto_components::{common::Color3, kernel::comms::rfc4};
-
+use wallet::Wallet;
 use super::{
     global_crdt::{process_transport_updates, ForeignPlayer, ProfileEvent, ProfileEventType},
-    wallet::Wallet,
     NetworkMessage, Transport,
 };
 

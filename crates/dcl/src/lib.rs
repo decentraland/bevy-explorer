@@ -14,6 +14,7 @@ use tokio::sync::mpsc::Sender;
 
 use dcl_component::SceneEntityId;
 use ipfs::SceneJsFile;
+use wallet::Wallet;
 
 use self::{
     interface::{CrdtComponentInterfaces, CrdtStore},
@@ -97,6 +98,7 @@ pub fn spawn_scene(
     renderer_sender: SyncSender<SceneResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     asset_server: AssetServer,
+    wallet: Wallet,
     id: SceneId,
 ) -> Sender<RendererResponse> {
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
@@ -113,6 +115,7 @@ pub fn spawn_scene(
                 thread_rx,
                 global_update_receiver,
                 asset_server,
+                wallet,
             )
         })
         .unwrap();

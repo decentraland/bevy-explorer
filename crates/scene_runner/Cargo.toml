@@ -14,6 +14,7 @@ comms = { workspace = true }
 ui_core = { workspace = true }
 console = { workspace = true }
 input_manager = { workspace = true }
+wallet = { workspace = true }
 
 bevy = { workspace = true }
 tokio = { workspace = true }

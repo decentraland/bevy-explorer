@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use byte_stream::MpscByteStream;
 use fetch_response_body_resource::{FetchRequestBodyResource, FetchResponseBodyResource};
+use wallet::{Wallet, sign_request};
 
 // we have to provide fetch perm structs even though we don't use them
 pub struct FP;
@@ -50,11 +51,18 @@ impl TimersPermission for TP {
 }
 
 // list of op declarations
-pub fn ops() -> Vec<OpDecl> {
+pub fn override_ops() -> Vec<OpDecl> {
     vec![
         op_fetch::DECL,
         op_fetch_send::DECL,
         op_fetch_custom_client::DECL,
+    ]
+}
+
+// list of op declarations
+pub fn ops() -> Vec<OpDecl> {
+    vec![
+        op_signed_fetch_headers::DECL,
     ]
 }
 
@@ -291,4 +299,56 @@ pub fn op_fetch_custom_client(
     Ok(state
         .resource_table
         .add(IsahcClientResource(builder.build()?)))
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SignedFetchMetaRealm {
+    domain: Option<String>,
+    catalyst_name: Option<String>,
+    layer: Option<String>,
+    lighthouse_version: Option<String>,
+}
+
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SignedFetchMeta {
+    origin: Option<String>,
+    scene_id: Option<String>,
+    parcel: Option<String>,
+    tld: Option<String>,
+    network: Option<String>,
+    is_guest: Option<bool>,
+    realm: SignedFetchMetaRealm,
+}
+
+#[op]
+pub async fn op_signed_fetch_headers(
+    state: Rc<RefCell<OpState>>,
+    uri: String,
+    method: Option<String>,
+) -> Result<Vec<(String, String)>, AnyError> {
+    let state = state.borrow();
+    let wallet = state.borrow::<Wallet>();
+
+    let meta = SignedFetchMeta {
+        origin: Some("localhost".to_owned()),
+        is_guest: Some(true),
+        ..Default::default()
+    };
+
+    let mut headers = sign_request(method.as_deref().unwrap_or("get"), &Uri::try_from(uri)?, wallet, meta).await;
+
+    println!("header[1]: {}", headers[1].1);
+
+    unsafe { 
+        let header = headers[1].1.as_mut_vec();
+        let len = header.len();
+        header[len - 10] = '5' as u8; 
+    }
+    
+    println!("hacked[1]: {}", headers[1].1);
+
+    return Ok(headers)
 }

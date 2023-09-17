@@ -1,5 +1,5 @@
 [package]
-name = "comms"
+name = "wallet"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,10 +7,7 @@ edition = "2021"
 
 [dependencies]
 common = { workspace = true }
-dcl = { workspace = true }
-dcl_component = { workspace = true }
 ipfs = { workspace = true }
-wallet = { workspace = true }
 
 bevy = { workspace = true }
 bimap = { workspace = true }

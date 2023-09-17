@@ -25,6 +25,7 @@ use ipfs::{
     ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsLoaderExt,
     SceneIpfsLocation, SceneJsFile,
 };
+use wallet::Wallet;
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 use crate::{
@@ -420,6 +421,7 @@ pub(crate) fn initialize_scene(
     )>,
     scene_js_files: Res<Assets<SceneJsFile>>,
     asset_server: Res<AssetServer>,
+    wallet: Res<Wallet>,
 ) {
     for (root, mut state, h_code, context) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
@@ -471,6 +473,7 @@ pub(crate) fn initialize_scene(
             thread_sx,
             global_updates,
             asset_server.clone(),
+            wallet.clone(),
             scene_id,
         );
 

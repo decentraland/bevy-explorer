@@ -2,10 +2,8 @@ pub mod broadcast_position;
 pub mod global_crdt;
 pub mod livekit_room;
 pub mod profile;
-pub mod signed_login;
 #[cfg(test)]
 mod test;
-pub mod wallet;
 pub mod websocket_room;
 
 use std::marker::PhantomData;
@@ -24,13 +22,16 @@ use common::util::TaskExt;
 use dcl_component::{proto_components::kernel::comms::rfc4, DclWriter, ToDclWriter};
 use ipfs::CurrentRealm;
 
+use wallet::{
+    SignedLoginMeta, Wallet,
+    signed_login::{signed_login, SignedLoginResponse},
+};
+
 use self::{
     broadcast_position::BroadcastPositionPlugin,
     global_crdt::GlobalCrdtPlugin,
     livekit_room::{LivekitPlugin, LivekitTransport},
     profile::{CurrentUserProfile, UserProfilePlugin},
-    signed_login::{signed_login, SignedLoginMeta, SignedLoginResponse},
-    wallet::Wallet,
     websocket_room::{WebsocketRoomPlugin, WebsocketRoomTransport},
 };
 

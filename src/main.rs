@@ -33,7 +33,8 @@ use scene_runner::{
 
 use av::AudioPlugin;
 use avatar::AvatarPlugin;
-use comms::{wallet::WalletPlugin, CommsPlugin};
+use wallet::WalletPlugin;
+use comms::CommsPlugin;
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
 use ipfs::IpfsIoPlugin;
