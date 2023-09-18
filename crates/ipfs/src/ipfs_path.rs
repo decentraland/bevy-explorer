@@ -30,6 +30,7 @@ macro_rules! urlpath {
 }
 
 use std::{
+    borrow::Cow,
     collections::BTreeMap,
     ffi::OsStr,
     iter::Peekable,
@@ -410,9 +411,9 @@ impl IpfsPath {
         self.key_values.get(&IpfsKey::BaseUrl).map(String::as_str)
     }
 
-    pub fn file_path(&self) -> Option<&str> {
+    pub fn filename(&self) -> Option<Cow<'_, str>> {
         if let IpfsType::ContentFile { file_path, .. } = &self.ipfs_type {
-            Some(file_path.as_str())
+            Path::new(file_path).file_name().map(OsStr::to_string_lossy)
         } else {
             None
         }

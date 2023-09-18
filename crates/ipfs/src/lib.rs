@@ -348,7 +348,9 @@ impl Plugin for IpfsIoPlugin {
         // create the custom asset io instance
         info!("remote server: {:?}", self.starting_realm);
 
-        let ipfs_io = IpfsIo::new(default_io, default_fs_path);
+        let static_paths = HashMap::from_iter([("genesis_tx.png", "images/genesis_tx.png")]);
+
+        let ipfs_io = IpfsIo::new(default_io, default_fs_path, static_paths);
 
         // the asset server is constructed and added the resource manager
         app.insert_resource(AssetServer::new(ipfs_io))
@@ -476,10 +478,15 @@ pub struct IpfsIo {
     context: RwLock<IpfsContext>,
     request_slots: tokio::sync::Semaphore,
     reqno: AtomicU16,
+    static_files: HashMap<&'static str, &'static str>,
 }
 
 impl IpfsIo {
-    pub fn new(default_io: Box<dyn AssetIo>, default_fs_path: PathBuf) -> Self {
+    pub fn new(
+        default_io: Box<dyn AssetIo>,
+        default_fs_path: PathBuf,
+        static_paths: HashMap<&'static str, &'static str>,
+    ) -> Self {
         let (sender, receiver) = tokio::sync::watch::channel(None);
 
         Self {
@@ -490,6 +497,7 @@ impl IpfsIo {
             context: Default::default(),
             request_slots: tokio::sync::Semaphore::new(MAX_CONCURRENT_REQUESTS),
             reqno: default(),
+            static_files: static_paths,
         }
     }
 
@@ -736,8 +744,11 @@ impl AssetIo for IpfsIo {
 
                 if remote.is_err() {
                     // check for default file
-                    if ipfs_path.file_path().map_or(false, |p| p.ends_with("genesis_tx.png")) {
-                        return self.default_io.load_path(&Path::new("images/genesis_tx.png")).await;
+                    if let Some(static_path) = ipfs_path
+                        .filename()
+                        .and_then(|file_path| self.static_files.get(file_path.as_ref()))
+                    {
+                        return self.default_io.load_path(&Path::new(static_path)).await;
                     }
                 }
                 let remote = remote?;
