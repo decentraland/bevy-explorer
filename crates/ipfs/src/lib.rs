@@ -748,7 +748,7 @@ impl AssetIo for IpfsIo {
                         .filename()
                         .and_then(|file_path| self.static_files.get(file_path.as_ref()))
                     {
-                        return self.default_io.load_path(&Path::new(static_path)).await;
+                        return self.default_io.load_path(Path::new(static_path)).await;
                     }
                 }
                 let remote = remote?;
