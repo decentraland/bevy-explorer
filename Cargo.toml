@@ -88,5 +88,3 @@ prost-build = "0.11.8"
 bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.11.2-hotfix" }
 bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "pub-manager" }
 ffmpeg-next = { git = "https://github.com/decentraland/rust-ffmpeg" }
-parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "try_convex" }
-rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }
