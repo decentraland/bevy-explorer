@@ -409,6 +409,14 @@ impl IpfsPath {
     pub fn base_url(&self) -> Option<&str> {
         self.key_values.get(&IpfsKey::BaseUrl).map(String::as_str)
     }
+
+    pub fn file_path(&self) -> Option<&str> {
+        if let IpfsType::ContentFile { file_path, .. } = &self.ipfs_type {
+            Some(file_path.as_str())
+        } else {
+            None
+        }
+    }
 }
 
 impl From<&IpfsPath> for PathBuf {

@@ -732,7 +732,15 @@ impl AssetIo for IpfsIo {
 
                 let remote = ipfs_path
                     .to_url(&*self.context.read().await)
-                    .map_err(wrap_err)?;
+                    .map_err(wrap_err);
+
+                if remote.is_err() {
+                    // check for default file
+                    if ipfs_path.file_path().map_or(false, |p| p.ends_with("genesis_tx.png")) {
+                        return self.default_io.load_path(&Path::new("images/genesis_tx.png")).await;
+                    }
+                }
+                let remote = remote?;
 
                 debug!("[{token:?}]: remote url: `{remote}`");
 
