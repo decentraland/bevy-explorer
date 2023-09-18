@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use byte_stream::MpscByteStream;
 use fetch_response_body_resource::{FetchRequestBodyResource, FetchResponseBodyResource};
-use wallet::{Wallet, sign_request};
+use wallet::{sign_request, Wallet};
 
 // we have to provide fetch perm structs even though we don't use them
 pub struct FP;
@@ -61,9 +61,7 @@ pub fn override_ops() -> Vec<OpDecl> {
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![
-        op_signed_fetch_headers::DECL,
-    ]
+    vec![op_signed_fetch_headers::DECL]
 }
 
 struct IsahcFetchRequestResource {
@@ -310,7 +308,6 @@ pub struct SignedFetchMetaRealm {
     lighthouse_version: Option<String>,
 }
 
-
 #[derive(Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SignedFetchMeta {
@@ -329,8 +326,7 @@ pub async fn op_signed_fetch_headers(
     uri: String,
     method: Option<String>,
 ) -> Result<Vec<(String, String)>, AnyError> {
-    let state = state.borrow();
-    let wallet = state.borrow::<Wallet>();
+    let wallet = state.borrow().borrow::<Wallet>().clone();
 
     let meta = SignedFetchMeta {
         origin: Some("localhost".to_owned()),
@@ -338,17 +334,13 @@ pub async fn op_signed_fetch_headers(
         ..Default::default()
     };
 
-    let mut headers = sign_request(method.as_deref().unwrap_or("get"), &Uri::try_from(uri)?, wallet, meta).await;
+    let headers = sign_request(
+        method.as_deref().unwrap_or("get"),
+        &Uri::try_from(uri)?,
+        &wallet,
+        meta,
+    )
+    .await;
 
-    println!("header[1]: {}", headers[1].1);
-
-    unsafe { 
-        let header = headers[1].1.as_mut_vec();
-        let len = header.len();
-        header[len - 10] = '5' as u8; 
-    }
-    
-    println!("hacked[1]: {}", headers[1].1);
-
-    return Ok(headers)
+    Ok(headers)
 }

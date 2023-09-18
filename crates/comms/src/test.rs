@@ -17,7 +17,7 @@ use livekit::{
     },
     RoomOptions,
 };
-use wallet::{SignedLoginMeta, signed_login::signed_login, Wallet};
+use wallet::{signed_login::signed_login, SignedLoginMeta, Wallet};
 
 #[test]
 fn test_tls() {

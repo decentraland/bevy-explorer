@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
-use bevy::prelude::{debug, error, info_span, AssetServer, info};
+use bevy::prelude::{debug, error, info, info_span, AssetServer};
 use deno_core::{
     ascii_str,
     error::{generic_error, AnyError},
@@ -60,8 +60,12 @@ pub fn create_runtime(init: bool) -> JsRuntime {
 
     let mut ops = vec![op_require::DECL, op_log::DECL, op_error::DECL];
 
-    let op_sets: [Vec<deno_core::OpDecl>; 4] =
-        [engine::ops(), restricted_actions::ops(), runtime::ops(), fetch::ops()];
+    let op_sets: [Vec<deno_core::OpDecl>; 4] = [
+        engine::ops(),
+        restricted_actions::ops(),
+        runtime::ops(),
+        fetch::ops(),
+    ];
 
     // add plugin registrations
     let mut op_map = HashMap::new();
@@ -155,7 +159,7 @@ pub(crate) fn scene_thread(
 
     // store asset server and wallet
     state.borrow_mut().put(asset_server);
-    state.borrow_mut().put(wallet);    
+    state.borrow_mut().put(wallet);
 
     // store crdt outbound state
     state.borrow_mut().put(CrdtStore::default());

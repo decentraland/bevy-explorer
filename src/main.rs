@@ -33,7 +33,6 @@ use scene_runner::{
 
 use av::AudioPlugin;
 use avatar::AvatarPlugin;
-use wallet::WalletPlugin;
 use comms::CommsPlugin;
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
@@ -42,6 +41,7 @@ use system_ui::SystemUiPlugin;
 use ui_core::UiCorePlugin;
 use user_input::UserInputPlugin;
 use visuals::VisualsPlugin;
+use wallet::WalletPlugin;
 
 #[derive(Debug)]
 struct IVec2Arg(IVec2);

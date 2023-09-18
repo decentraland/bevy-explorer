@@ -26,7 +26,6 @@ use dcl_component::proto_components::kernel::comms::{
 };
 use wallet::{SimpleAuthChain, Wallet};
 
-
 use crate::global_crdt::PlayerMessage;
 
 use super::{

@@ -24,8 +24,8 @@ pub struct Wallet {
 
 impl Wallet {
     pub fn new(local_wallet: LocalWallet) -> Self {
-        Self{ 
-            inner: Arc::new(Box::new(local_wallet))
+        Self {
+            inner: Arc::new(Box::new(local_wallet)),
         }
     }
 

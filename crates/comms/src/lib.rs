@@ -23,8 +23,8 @@ use dcl_component::{proto_components::kernel::comms::rfc4, DclWriter, ToDclWrite
 use ipfs::CurrentRealm;
 
 use wallet::{
-    SignedLoginMeta, Wallet,
     signed_login::{signed_login, SignedLoginResponse},
+    SignedLoginMeta, Wallet,
 };
 
 use self::{

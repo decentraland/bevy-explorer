@@ -91,6 +91,7 @@ pub fn get_next_scene_id() -> SceneId {
     id
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_scene(
     scene_hash: String,
     scene_js: SceneJsFile,
