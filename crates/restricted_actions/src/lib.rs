@@ -4,7 +4,7 @@ use common::{
     sets::SceneSets,
     structs::{PrimaryCamera, PrimaryUser, RestrictedAction},
 };
-use scene_runner::{initialize_scene::PARCEL_SIZE, renderer_context::RendererSceneContext};
+use scene_runner::{initialize_scene::PARCEL_SIZE, renderer_context::RendererSceneContext, ContainingScene};
 use ui_core::dialog::SpawnDialog;
 
 pub struct RestrictedActionsPlugin;
@@ -23,7 +23,8 @@ fn move_player(
     mut commands: Commands,
     mut events: EventReader<RestrictedAction>,
     scenes: Query<&RendererSceneContext>,
-    mut player: Query<(&mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
+    mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
+    containing_scene: ContainingScene,
 ) {
     for (root, transform) in events.iter().filter_map(|ev| match ev {
         RestrictedAction::MovePlayer { scene, to } => Some((scene, to)),
@@ -32,6 +33,11 @@ fn move_player(
         let Ok(scene) = scenes.get(*root) else {
             continue;
         };
+
+        if player.get_single().ok().and_then(|(e, ..)| containing_scene.get(e)) != Some(*root) {
+            warn!("invalid move request from non-containing scene");
+            return;
+        }
 
         let mut target_transform = *transform;
         target_transform.translation +=
@@ -53,7 +59,7 @@ fn move_player(
                 || {},
             );
         } else {
-            let (mut player_transform, mut dynamics) = player.single_mut();
+            let (_, mut player_transform, mut dynamics) = player.single_mut();
             dynamics.velocity =
                 transform.rotation * player_transform.rotation.inverse() * dynamics.velocity;
 
