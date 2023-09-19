@@ -7,7 +7,7 @@ use bevy::prelude::{debug, AssetServer};
 use deno_core::{
     error::{type_error, AnyError},
     futures::TryStreamExt,
-    op, AsyncRefCell, ByteString, CancelHandle, JsBuffer, Op, OpDecl, OpState, ResourceId,
+    op, AsyncRefCell, ByteString, CancelHandle, JsBuffer, Op, OpDecl, OpState, ResourceId, anyhow,
 };
 use deno_fetch::FetchPermissions;
 use deno_web::TimersPermission;
@@ -91,12 +91,18 @@ pub fn op_fetch(
     body_length: Option<u64>,
     data: Option<JsBuffer>,
 ) -> Result<IsahcFetchReturn, AnyError> {
+    // TODO scene permissions
+
     let client = if let Some(rid) = client_rid {
         let r = state.resource_table.get::<IsahcClientResource>(rid)?;
         Some(r.0.clone())
     } else {
         None
     };
+
+    if Uri::try_from(&url)?.scheme_str() != Some("https") {
+        anyhow::bail!("URL scheme must be `https`")
+    }
 
     let mut request = isahc::Request::builder().uri(url.clone());
     let method = Method::from_bytes(&method)?;

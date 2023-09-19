@@ -4,7 +4,7 @@ use bevy::prelude::{debug, error, info, info_span, AssetServer};
 use deno_core::{
     ascii_str,
     error::{generic_error, AnyError},
-    include_js_files, op, v8, Extension, JsRuntime, Op, OpDecl, OpState, RuntimeOptions,
+    include_js_files, op, v8, Extension, JsRuntime, Op, OpDecl, OpState, RuntimeOptions, anyhow::anyhow,
 };
 use deno_websocket::WebSocketPermissions;
 use tokio::sync::mpsc::Receiver;
@@ -35,10 +35,17 @@ pub struct WebSocketPerms;
 impl WebSocketPermissions for WebSocketPerms {
     fn check_net_url(
         &mut self,
-        _url: &deno_core::url::Url,
+        url: &deno_core::url::Url,
         _api_name: &str,
     ) -> Result<(), AnyError> {
-        Ok(())
+        // TODO scene permissions
+
+        // must use `wss`
+        if url.scheme() == "https" {
+            Ok(())
+        } else {
+            Err(anyhow!("URL scheme must be `wss`"))
+        }
     }
 }
 
