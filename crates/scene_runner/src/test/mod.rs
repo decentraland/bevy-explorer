@@ -122,6 +122,7 @@ fn init_test_app(entity_json: &str) -> App {
         content: None,
         configurations: Some(ServerConfiguration {
             scenes_urn: Some(vec![urn]),
+            ..Default::default()
         }),
         ..Default::default()
     });

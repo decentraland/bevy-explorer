@@ -288,24 +288,26 @@ impl IpfsLoaderExt for AssetServer {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct EndpointConfig {
     pub healthy: bool,
-    #[serde(rename = "publicUrl")]
     pub public_url: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct CommsConfig {
     pub healthy: bool,
     pub protocol: String,
-    #[serde(rename = "fixedAdapter")]
     pub fixed_adapter: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerConfiguration {
-    #[serde(rename = "scenesUrn")]
     pub scenes_urn: Option<Vec<String>>,
+    pub realm_name: Option<String>,
+    pub network_id: Option<u32>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -313,6 +315,12 @@ pub struct ServerAbout {
     pub content: Option<EndpointConfig>,
     pub comms: Option<CommsConfig>,
     pub configurations: Option<ServerConfiguration>,
+}
+
+impl ServerAbout {
+    pub fn base_url(&self) -> Option<&str> {
+        self.content.as_ref().map(|c| c.public_url.as_str())
+    }
 }
 
 impl Default for ServerAbout {
@@ -476,7 +484,7 @@ pub struct IpfsEntity {
 #[derive(Default)]
 pub struct IpfsContext {
     entities: HashMap<String, IpfsEntity>,
-    base_url: Option<String>,
+    about: Option<ServerAbout>,
     modifiers: HashMap<String, IpfsModifier>,
 }
 
@@ -522,19 +530,20 @@ impl IpfsIo {
     }
 
     pub fn set_realm_about(&self, about: ServerAbout) {
-        self.context.blocking_write().base_url = about
-            .content
-            .as_ref()
-            .map(|endpoint| endpoint.public_url.clone());
+        self.context.blocking_write().about = Some(about.clone());
         self.realm_config_sender
             .send(Some(("manual value".to_owned(), about)))
             .expect("channel closed");
     }
 
+    pub async fn get_realm_info(&self) -> Option<ServerAbout> {
+        self.context.read().await.about.clone()
+    }
+
     async fn set_realm_inner(&self, new_realm: String) -> Result<(), anyhow::Error> {
         info!("disconnecting");
         self.realm_config_sender.send(None).expect("channel closed");
-        self.context.write().await.base_url = None;
+        self.context.write().await.about = None;
 
         let mut about = isahc::get_async(format!("{new_realm}/about"))
             .await
@@ -545,10 +554,7 @@ impl IpfsIo {
 
         let about = about.json::<ServerAbout>().await.map_err(|e| anyhow!(e))?;
 
-        self.context.write().await.base_url = about
-            .content
-            .as_ref()
-            .map(|endpoint| endpoint.public_url.clone());
+        self.context.write().await.about = Some(about.clone());
         self.realm_config_sender
             .send(Some((new_realm, about)))
             .expect("channel closed");
@@ -690,14 +696,13 @@ impl IpfsIo {
         let context = self.context.read().await;
         Some((
             context.entities.get(hash)?.clone(),
-            format!(
-                "{}/contents/",
-                context
-                    .modifiers
-                    .get(hash)
-                    .and_then(|m| m.base_url.as_ref())
-                    .unwrap_or(context.base_url.as_ref().unwrap_or(&String::default()))
-            ),
+            context
+                .modifiers
+                .get(hash)
+                .and_then(|m| m.base_url.as_deref())
+                .or_else(|| context.about.as_ref().and_then(ServerAbout::base_url))
+                .map(ToOwned::to_owned)
+                .unwrap_or_default(),
         ))
     }
 }

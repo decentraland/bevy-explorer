@@ -40,6 +40,8 @@ use std::{
 
 use urn::Urn;
 
+use crate::ServerAbout;
+
 use super::IpfsContext;
 
 pub trait IpfsAsset: bevy::asset::Asset {
@@ -386,8 +388,9 @@ impl IpfsPath {
             .or_else(|| {
                 // fall back to the context base url
                 context
-                    .base_url
+                    .about
                     .as_ref()
+                    .and_then(ServerAbout::base_url)
                     .map(|base_url| format!("{}{}", base_url, self.ipfs_type.base_url_extension()))
             })
             .ok_or_else(|| anyhow::anyhow!("base url not specified in asset path or context"))?;
