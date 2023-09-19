@@ -67,7 +67,7 @@ function logValue(value, seen) {
         } else {
             seen.add(value);
 
-            const objName = value.constructor.name ?? 'Object'
+            const objName = value.constructor?.name ?? 'Object'
             if (objName === 'Object') {
                 return `Object {${Object.keys(value).map(key => `${key}: ${logValue(value[key], seen)}`).join(', ')}}`;
             } else {
