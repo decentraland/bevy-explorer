@@ -4,7 +4,9 @@ use common::{
     sets::SceneSets,
     structs::{PrimaryCamera, PrimaryUser, RestrictedAction},
 };
-use scene_runner::{initialize_scene::PARCEL_SIZE, renderer_context::RendererSceneContext, ContainingScene};
+use scene_runner::{
+    initialize_scene::PARCEL_SIZE, renderer_context::RendererSceneContext, ContainingScene,
+};
 use ui_core::dialog::SpawnDialog;
 
 pub struct RestrictedActionsPlugin;
@@ -34,7 +36,12 @@ fn move_player(
             continue;
         };
 
-        if player.get_single().ok().and_then(|(e, ..)| containing_scene.get(e)) != Some(*root) {
+        if player
+            .get_single()
+            .ok()
+            .and_then(|(e, ..)| containing_scene.get(e))
+            != Some(*root)
+        {
             warn!("invalid move request from non-containing scene");
             return;
         }

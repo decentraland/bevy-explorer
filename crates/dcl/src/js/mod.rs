@@ -2,9 +2,10 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
 use bevy::prelude::{debug, error, info, info_span, AssetServer};
 use deno_core::{
+    anyhow::anyhow,
     ascii_str,
     error::{generic_error, AnyError},
-    include_js_files, op, v8, Extension, JsRuntime, Op, OpDecl, OpState, RuntimeOptions, anyhow::anyhow,
+    include_js_files, op, v8, Extension, JsRuntime, Op, OpDecl, OpState, RuntimeOptions,
 };
 use deno_websocket::WebSocketPermissions;
 use tokio::sync::mpsc::Receiver;

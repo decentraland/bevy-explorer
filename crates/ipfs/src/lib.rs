@@ -170,6 +170,10 @@ impl ContentMap {
     pub fn files(&self) -> impl Iterator<Item = &String> {
         self.0.left_values()
     }
+
+    pub fn values(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.0.iter()
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -463,9 +467,15 @@ pub struct IpfsModifier {
     pub base_url: Option<String>,
 }
 
+#[derive(Clone)]
+pub struct IpfsEntity {
+    pub collection: ContentMap,
+    pub metadata: Option<String>,
+}
+
 #[derive(Default)]
 pub struct IpfsContext {
-    collections: HashMap<String, ContentMap>,
+    entities: HashMap<String, IpfsEntity>,
     base_url: Option<String>,
     modifiers: HashMap<String, IpfsModifier>,
 }
@@ -566,13 +576,20 @@ impl IpfsIo {
         hash: String,
         collection: ContentMap,
         modifier: Option<IpfsModifier>,
+        metadata: Option<String>,
     ) {
         let mut write = self.context.blocking_write();
+
+        let entity = IpfsEntity {
+            collection,
+            metadata,
+        };
 
         if let Some(modifier) = modifier {
             write.modifiers.insert(hash.clone(), modifier);
         }
-        write.collections.insert(hash, collection);
+
+        write.entities.insert(hash, entity);
     }
 
     pub fn cache_path(&self) -> &Path {
@@ -667,6 +684,21 @@ impl IpfsIo {
 
     pub async fn ipfs_hash(&self, ipfs_path: &IpfsPath) -> Option<String> {
         ipfs_path.hash(&*self.context.read().await)
+    }
+
+    pub async fn entity_definition(&self, hash: &str) -> Option<(IpfsEntity, String)> {
+        let context = self.context.read().await;
+        Some((
+            context.entities.get(hash)?.clone(),
+            format!(
+                "{}/contents/",
+                context
+                    .modifiers
+                    .get(hash)
+                    .and_then(|m| m.base_url.as_ref())
+                    .unwrap_or(context.base_url.as_ref().unwrap_or(&String::default()))
+            ),
+        ))
     }
 }
 

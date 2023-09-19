@@ -160,9 +160,12 @@ pub(crate) fn load_scene_json(
             continue;
         }
 
-        asset_server
-            .ipfs()
-            .add_collection(definition.id.clone(), definition.content.clone(), None);
+        asset_server.ipfs().add_collection(
+            definition.id.clone(),
+            definition.content.clone(),
+            None,
+            definition.metadata.as_ref().map(|v| v.to_string()),
+        );
 
         if definition.content.hash("main.crdt").is_some() {
             let h_crdt: Handle<SerializedCrdtStore> = asset_server

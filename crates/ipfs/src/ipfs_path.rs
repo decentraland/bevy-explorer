@@ -84,9 +84,10 @@ impl IpfsType {
                 file_path,
                 ..
             } => context
-                .collections
+                .entities
                 .get(scene_hash)
                 .ok_or_else(|| anyhow::anyhow!("required collection hash not found: {scene_hash}"))?
+                .collection
                 .hash(file_path)
                 .map(|hash| format!("{base_url}{hash}"))
                 .or_else(|| {
@@ -110,7 +111,7 @@ impl IpfsType {
                 content_hash: scene_hash,
                 file_path,
                 ..
-            } => context.collections.get(scene_hash)?.hash(file_path),
+            } => context.entities.get(scene_hash)?.collection.hash(file_path),
             IpfsType::Url { .. } => None,
             IpfsType::Entity { hash, .. } => Some(hash),
         }

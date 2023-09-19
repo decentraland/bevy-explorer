@@ -5,9 +5,10 @@ mod fetch_response_body_resource;
 
 use bevy::prelude::{debug, AssetServer};
 use deno_core::{
+    anyhow,
     error::{type_error, AnyError},
     futures::TryStreamExt,
-    op, AsyncRefCell, ByteString, CancelHandle, JsBuffer, Op, OpDecl, OpState, ResourceId, anyhow,
+    op, AsyncRefCell, ByteString, CancelHandle, JsBuffer, Op, OpDecl, OpState, ResourceId,
 };
 use deno_fetch::FetchPermissions;
 use deno_web::TimersPermission;

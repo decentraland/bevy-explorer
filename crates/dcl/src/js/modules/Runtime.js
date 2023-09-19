@@ -7,4 +7,19 @@ module.exports.readFile = async function (body) {
         hash: res.hash
     }
 }
-module.exports.getSceneInformation = async function (body) { return {} }
+
+/*
+export interface CurrentSceneEntityResponse {
+    ** this is either the entityId or the full URN of the scene that is running *
+    urn: string;
+    ** contents of the deployed entities *
+    content: ContentMapping[];
+    ** JSON serialization of the entity.metadata field *
+    metadataJson: string;
+    ** baseUrl used to resolve all content files *
+    baseUrl: string;
+}
+*/
+module.exports.getSceneInformation = async function (body) { 
+    return await Deno.core.ops.op_scene_information();
+}
