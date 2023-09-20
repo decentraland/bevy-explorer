@@ -26,5 +26,7 @@ module.exports.signedFetch = async function (body) {
 }
 
 module.exports.getHeaders = async function (body) { 
-    return await Deno.core.ops.op_signed_fetch_headers(body.url, body.init?.method);
+    return {
+        headers: await Deno.core.ops.op_signed_fetch_headers(body.url, body.init?.method)
+    };
 }
