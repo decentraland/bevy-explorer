@@ -872,16 +872,18 @@ impl AssetIo for IpfsIo {
 
     fn read_directory(
         &self,
-        _: &std::path::Path,
+        path: &std::path::Path,
     ) -> Result<Box<dyn Iterator<Item = std::path::PathBuf>>, bevy::asset::AssetIoError> {
-        panic!("unsupported")
+        // we assume we are running for a default io path
+        self.default_io.read_directory(path)
     }
 
     fn get_metadata(
         &self,
-        _: &std::path::Path,
+        path: &std::path::Path,
     ) -> Result<bevy::asset::Metadata, bevy::asset::AssetIoError> {
-        panic!("unsupported")
+        // we assume we are running for a default io path
+        self.default_io.get_metadata(path)
     }
 
     fn watch_path_for_changes(

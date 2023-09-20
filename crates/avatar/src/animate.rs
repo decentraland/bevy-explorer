@@ -27,19 +27,14 @@ fn load_animations(
     mut animations: ResMut<AvatarAnimations>,
 ) {
     if builtin_animations.is_none() {
-        *builtin_animations = Some(vec![
-            asset_server.load("animations/walk.glb"),
-            asset_server.load("animations/idle.glb"),
-            asset_server.load("animations/run.glb"),
-            asset_server.load("animations/jump.glb"),
-        ]);
+        *builtin_animations = Some(asset_server.load_folder("animations").unwrap().into_iter().map(|h| h.typed()).collect());
     } else {
         builtin_animations.as_mut().unwrap().retain(|h_gltf| {
             match gltfs.get(h_gltf).map(|gltf| &gltf.named_animations) {
                 Some(anims) => {
                     for (name, h_clip) in anims {
                         animations.0.insert(name.clone(), h_clip.clone());
-                        debug!("added animation {name}");
+                        error!("added animation {name}");
                     }
                     false
                 }
