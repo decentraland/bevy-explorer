@@ -158,7 +158,7 @@ pub enum RestrictedAction {
 #[derive(Debug)]
 pub enum SceneRpcCall {
     ChangeRealm { to: String, message: Option<String> },
-    ExternalUrl { url: String, },
+    ExternalUrl { url: String },
 }
 
 #[derive(Resource)]

@@ -183,7 +183,9 @@ fn external_url(
             ),
             "Ok",
             move || {
-                let result = opener::open(Path::new(&url)).map(|_| String::default()).map_err(|e| e.to_string());
+                let result = opener::open(Path::new(&url))
+                    .map(|_| String::default())
+                    .map_err(|e| e.to_string());
                 response_ok.send(result);
             },
             "Cancel",

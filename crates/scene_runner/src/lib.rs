@@ -627,10 +627,12 @@ fn receive_scene_updates(
                                     message,
                                     response: RpcResultSender::new(resp.unwrap()),
                                 }
-                            },
-                            SceneRpcCall::ExternalUrl { url } => {
-                                RestrictedAction::ExternalUrl { scene: *root, url, response: RpcResultSender::new(resp.unwrap()) }
                             }
+                            SceneRpcCall::ExternalUrl { url } => RestrictedAction::ExternalUrl {
+                                scene: *root,
+                                url,
+                                response: RpcResultSender::new(resp.unwrap()),
+                            },
                         };
 
                         restricted_actions.send(restricted_action);
