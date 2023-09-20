@@ -123,6 +123,6 @@ async fn op_realm_information(
         realm_name: config.realm_name.unwrap_or_default(),
         network_id: config.network_id.unwrap_or_default(),
         comms_adapter: info.comms.and_then(|c| c.fixed_adapter).unwrap_or_default(),
-        is_preview: true, // TODO
+        is_preview: false,
     })
 }
