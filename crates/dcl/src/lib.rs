@@ -8,6 +8,7 @@ use bevy::{
     prelude::AssetServer,
     utils::{HashMap, HashSet},
 };
+use common::structs::{RpcResult, SceneRpcCall};
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use tokio::sync::mpsc::Sender;
@@ -47,6 +48,8 @@ pub enum RendererResponse {
     Ok(CrdtStore),
 }
 
+type RpcCalls = Vec<(SceneRpcCall, Option<RpcResult>)>;
+
 #[allow(clippy::large_enum_variant)] // we don't care since the error case is very rare
                                      // data from scene to renderer
 pub enum SceneResponse {
@@ -57,6 +60,7 @@ pub enum SceneResponse {
         CrdtStore,
         SceneElapsedTime,
         Vec<SceneLogMessage>,
+        RpcCalls,
     ),
 }
 

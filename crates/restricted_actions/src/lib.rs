@@ -4,6 +4,7 @@ use common::{
     sets::SceneSets,
     structs::{PrimaryCamera, PrimaryUser, RestrictedAction},
 };
+use ipfs::ChangeRealmEvent;
 use scene_runner::{
     initialize_scene::PARCEL_SIZE, renderer_context::RendererSceneContext, ContainingScene,
 };
@@ -16,7 +17,7 @@ impl Plugin for RestrictedActionsPlugin {
         app.add_event::<RestrictedAction>();
         app.add_systems(
             Update,
-            (move_player, move_camera).in_set(SceneSets::PostLoop),
+            (move_player, move_camera, change_realm).in_set(SceneSets::PostLoop),
         );
     }
 }
@@ -86,5 +87,60 @@ fn move_camera(mut events: EventReader<RestrictedAction>, mut camera: Query<&mut
         camera.yaw = yaw;
         camera.pitch = pitch;
         camera.roll = roll;
+    }
+}
+
+fn change_realm(
+    mut commands: Commands,
+    mut events: EventReader<RestrictedAction>,
+    containing_scene: ContainingScene,
+    player: Query<Entity, With<PrimaryUser>>,
+) {
+    for (scene, to, message, response) in events.iter().filter_map(|ev| match ev {
+        RestrictedAction::ChangeRealm {
+            scene,
+            to,
+            message,
+            response,
+        } => Some((scene, to, message, response)),
+        _ => None,
+    }) {
+        if player
+            .get_single()
+            .ok()
+            .and_then(|e| containing_scene.get(e))
+            != Some(*scene)
+        {
+            warn!("invalid changeRealm request from non-containing scene");
+            return;
+        }
+
+        let new_realm = to.clone();
+        let response_ok = response.clone();
+        let response_fail = response.clone();
+
+        commands.spawn_dialog_two(
+            "Change Realm".into(),
+            format!(
+                "The scene wants to move you to a new realm\n`{}`\n{}",
+                to.clone(),
+                if let Some(message) = message {
+                    message
+                } else {
+                    ""
+                }
+            ),
+            "Let's go!",
+            move |mut writer: EventWriter<ChangeRealmEvent>| {
+                writer.send(ChangeRealmEvent {
+                    new_realm: new_realm.clone(),
+                });
+                response_ok.send(Ok(String::default()));
+            },
+            "No thanks",
+            move || {
+                response_fail.send(Err(String::default()));
+            },
+        );
     }
 }

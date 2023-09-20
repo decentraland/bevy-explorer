@@ -18,7 +18,9 @@ use bevy::{
 
 use common::{
     sets::{SceneLoopSets, SceneSets},
-    structs::{AppConfig, PrimaryCamera, PrimaryUser},
+    structs::{
+        AppConfig, PrimaryCamera, PrimaryUser, RestrictedAction, RpcResultSender, SceneRpcCall,
+    },
     util::{dcl_assert, TryPushChildrenEx},
 };
 use dcl::{
@@ -561,6 +563,7 @@ fn receive_scene_updates(
     mut scenes: Query<&mut RendererSceneContext>,
     crdt_interfaces: Res<CrdtExtractors>,
     frame: Res<FrameCount>,
+    mut restricted_actions: EventWriter<RestrictedAction>,
 ) {
     loop {
         let maybe_completed_job = match updates.receiver().try_recv() {
@@ -583,7 +586,7 @@ fn receive_scene_updates(
                         None
                     }
                 }
-                SceneResponse::Ok(scene_id, census, mut crdt, runtime, messages) => {
+                SceneResponse::Ok(scene_id, census, mut crdt, runtime, messages, actions) => {
                     let root = updates.scene_ids.get(&scene_id).unwrap();
                     debug!(
                         "scene {:?}/{:?} received updates! [+{}, -{}]",
@@ -614,6 +617,20 @@ fn receive_scene_updates(
                         debug!(
                             "no scene entity, probably got dropped before we processed the result"
                         );
+                    }
+                    for (action, resp) in actions {
+                        let restricted_action = match action {
+                            SceneRpcCall::ChangeRealm { to, message } => {
+                                RestrictedAction::ChangeRealm {
+                                    scene: *root,
+                                    to,
+                                    message,
+                                    response: RpcResultSender::new(resp.unwrap()),
+                                }
+                            }
+                        };
+
+                        restricted_actions.send(restricted_action);
                     }
                     Some(*root)
                 }

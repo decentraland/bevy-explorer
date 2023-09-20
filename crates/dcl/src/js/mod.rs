@@ -13,6 +13,8 @@ use tokio::sync::mpsc::Receiver;
 use ipfs::SceneJsFile;
 use wallet::Wallet;
 
+use crate::RpcCalls;
+
 use self::fetch::{FP, TP};
 
 use super::{
@@ -169,8 +171,9 @@ pub(crate) fn scene_thread(
     state.borrow_mut().put(asset_server);
     state.borrow_mut().put(wallet);
 
-    // store crdt outbound state
+    // store crdt outbound state and event queue
     state.borrow_mut().put(CrdtStore::default());
+    state.borrow_mut().put(RpcCalls::default());
     // and renderer incoming state
     state.borrow_mut().put(RendererStore(CrdtStore::default()));
 

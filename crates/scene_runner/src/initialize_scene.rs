@@ -369,6 +369,7 @@ pub(crate) fn load_scene_javascript(
                 updates,
                 SceneElapsedTime(0.0),
                 Default::default(),
+                Default::default(),
             )) {
                 error!("failed to send initial updates to renderer: {e}");
             }

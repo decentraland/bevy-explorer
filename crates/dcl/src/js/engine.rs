@@ -12,8 +12,8 @@ use crate::{
     crdt::{append_component, put_component},
     interface::crdt_context::CrdtContext,
     js::{RendererStore, ShuttingDown},
-    CrdtComponentInterfaces, CrdtStore, RendererResponse, SceneElapsedTime, SceneLogMessage,
-    SceneResponse,
+    CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
+    SceneLogMessage, SceneResponse,
 };
 use dcl_component::DclReader;
 
@@ -45,6 +45,8 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
     crdt_store.clean_up(&census.died);
     let updates = crdt_store.take_updates();
 
+    let rpc_calls = std::mem::take(op_state.borrow_mut::<RpcCalls>());
+
     let sender = op_state.borrow_mut::<SyncSender<SceneResponse>>();
     sender
         .send(SceneResponse::Ok(
@@ -53,6 +55,7 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
             updates,
             SceneElapsedTime(elapsed_time),
             logs,
+            rpc_calls,
         ))
         .expect("failed to send to renderer");
 
