@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use avatar::AvatarDynamicState;
 use bevy::{math::Vec3Swizzles, prelude::*};
 use common::{
@@ -17,7 +19,7 @@ impl Plugin for RestrictedActionsPlugin {
         app.add_event::<RestrictedAction>();
         app.add_systems(
             Update,
-            (move_player, move_camera, change_realm).in_set(SceneSets::PostLoop),
+            (move_player, move_camera, change_realm, external_url).in_set(SceneSets::PostLoop),
         );
     }
 }
@@ -138,6 +140,53 @@ fn change_realm(
                 response_ok.send(Ok(String::default()));
             },
             "No thanks",
+            move || {
+                response_fail.send(Err(String::default()));
+            },
+        );
+    }
+}
+
+fn external_url(
+    mut commands: Commands,
+    mut events: EventReader<RestrictedAction>,
+    containing_scene: ContainingScene,
+    player: Query<Entity, With<PrimaryUser>>,
+) {
+    for (scene, url, response) in events.iter().filter_map(|ev| match ev {
+        RestrictedAction::ExternalUrl {
+            scene,
+            url,
+            response,
+        } => Some((scene, url, response)),
+        _ => None,
+    }) {
+        if player
+            .get_single()
+            .ok()
+            .and_then(|e| containing_scene.get(e))
+            != Some(*scene)
+        {
+            warn!("invalid changeRealm request from non-containing scene");
+            return;
+        }
+
+        let url = url.clone();
+        let response_ok = response.clone();
+        let response_fail = response.clone();
+
+        commands.spawn_dialog_two(
+            "Open External Link".into(),
+            format!(
+                "The scene wants to display a link in an external application\n`{}`",
+                url.clone(),
+            ),
+            "Ok",
+            move || {
+                let result = opener::open(Path::new(&url)).map(|_| String::default()).map_err(|e| e.to_string());
+                response_ok.send(result);
+            },
+            "Cancel",
             move || {
                 response_fail.send(Err(String::default()));
             },

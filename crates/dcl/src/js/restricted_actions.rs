@@ -13,7 +13,7 @@ use super::RpcCalls;
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![op_move_player_to::DECL, op_change_realm::DECL]
+    vec![op_move_player_to::DECL, op_change_realm::DECL, op_external_url::DECL]
 }
 
 #[op(v8)]
@@ -107,6 +107,20 @@ async fn op_change_realm(
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
         .push((SceneRpcCall::ChangeRealm { to: realm, message }, Some(sx)));
+
+    matches!(rx.await, Ok(Ok(_)))
+}
+
+#[op]
+async fn op_external_url(
+    state: Rc<RefCell<OpState>>,
+    url: String,
+) -> bool {
+    let (sx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
+    state
+        .borrow_mut()
+        .borrow_mut::<RpcCalls>()
+        .push((SceneRpcCall::ExternalUrl { url }, Some(sx)));
 
     matches!(rx.await, Ok(Ok(_)))
 }

@@ -143,6 +143,11 @@ pub enum RestrictedAction {
         message: Option<String>,
         response: RpcResultSender,
     },
+    ExternalUrl {
+        scene: Entity,
+        url: String,
+        response: RpcResultSender,
+    },
     MovePlayer {
         scene: Entity,
         to: Transform,
@@ -153,6 +158,7 @@ pub enum RestrictedAction {
 #[derive(Debug)]
 pub enum SceneRpcCall {
     ChangeRealm { to: String, message: Option<String> },
+    ExternalUrl { url: String, },
 }
 
 #[derive(Resource)]
