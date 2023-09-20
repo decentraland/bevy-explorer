@@ -5,28 +5,21 @@ use std::collections::BTreeMap;
 
 use bevy::{
     core_pipeline::tonemapping::{DebandDither, Tonemapping},
-    ecs::system::SystemParam,
     gltf::{Gltf, GltfExtras},
     prelude::*,
-    reflect::{TypePath, TypeUuid},
     render::{
         camera::CameraRenderGraph,
-        mesh::{skinning::SkinnedMesh, VertexAttributeValues},
+        mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
         primitives::Frustum,
         view::{ColorGrading, NoFrustumCulling, VisibleEntities},
     },
     scene::InstanceId,
-    tasks::{AsyncComputeTaskPool, Task},
     utils::{HashMap, HashSet},
 };
-use futures_lite::future;
-use rapier3d_f64::{parry::transformation::ConvexHullError, prelude::*};
+use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
-use crate::{
-    initialize_scene::PARCEL_SIZE, renderer_context::RendererSceneContext, ContainerEntity,
-    DebugInfo, SceneEntity, SceneSets,
-};
+use crate::{renderer_context::RendererSceneContext, ContainerEntity, SceneEntity, SceneSets};
 use common::util::TryInsertEx;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -39,7 +32,6 @@ use ipfs::{EntityDefinition, IpfsLoaderExt};
 
 use super::{
     mesh_collider::{MeshCollider, MeshColliderShape},
-    mesh_collider_conversion::calculate_mesh_collider,
     AddCrdtInterfaceExt,
 };
 
@@ -62,33 +54,8 @@ impl Plugin for GltfDefinitionPlugin {
         );
 
         app.add_systems(Update, update_gltf.in_set(SceneSets::PostLoop));
-        app.add_systems(
-            Update,
-            attach_ready_colliders
-                .after(update_gltf)
-                .in_set(SceneSets::PostLoop),
-        );
-        app.add_asset::<GltfCachedShape>();
-        app.init_resource::<MeshToShape>();
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
-        app.add_systems(Update, update_container_finished.in_set(SceneSets::Input));
     }
-}
-
-#[derive(TypeUuid, TypePath)]
-#[uuid = "09e7812e-ea71-4046-a9be-65565257d459"]
-pub enum GltfCachedShape {
-    Shape(Result<SharedShape, ConvexHullError>),
-    Task(Task<Result<SharedShape, ConvexHullError>>),
-}
-
-#[derive(Component)]
-pub struct PendingGltfCollider {
-    h_shape: Handle<GltfCachedShape>,
-    h_mesh: Handle<Mesh>,
-    collision_mask: u32,
-    mesh_name: Option<String>,
-    index: u32,
 }
 
 #[derive(Component, Debug)]
@@ -104,32 +71,9 @@ pub struct GltfProcessed {
     pub animation_roots: HashSet<(Entity, Name)>,
 }
 
-#[derive(Resource, Default)]
-pub struct MeshToShape(HashMap<Handle<Mesh>, Handle<GltfCachedShape>>);
-
 #[derive(Deserialize)]
 struct DclNodeExtras {
     dcl_collision_mask: Option<u32>,
-}
-
-#[derive(SystemParam)]
-pub struct DynamicGlobalTransform<'w, 's> {
-    transform_stack: Query<'w, 's, (Option<&'static Parent>, &'static Transform)>,
-}
-
-impl<'w, 's> DynamicGlobalTransform<'w, 's> {
-    pub fn compute_global_transform(&self, entity: Entity) -> Transform {
-        let mut transform = Transform::IDENTITY;
-        let mut ptr = entity;
-        loop {
-            let (par, t) = self.transform_stack.get(ptr).unwrap();
-            transform = t.mul_transform(transform);
-            match par {
-                Some(parent) => ptr = parent.get(),
-                None => return transform,
-            }
-        }
-    }
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -170,8 +114,6 @@ fn update_gltf(
     ),
     mut scene_spawner: ResMut<SceneSpawner>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut cached_shapes: ResMut<Assets<GltfCachedShape>>,
-    mut shape_lookup: ResMut<MeshToShape>,
     mut contexts: Query<&mut RendererSceneContext>,
     _debug_query: Query<(
         Entity,
@@ -181,7 +123,6 @@ fn update_gltf(
         &Transform,
     )>,
     mut instances_to_despawn_when_ready: Local<Vec<InstanceId>>,
-    dynamic_transform: DynamicGlobalTransform,
 ) {
     // clean up old instances
     instances_to_despawn_when_ready.retain(|instance| {
@@ -300,7 +241,6 @@ fn update_gltf(
         let instance = loaded.0.as_ref().unwrap();
         if scene_spawner.instance_is_ready(*instance) {
             let mut animation_roots = HashSet::default();
-            let mut pending_colliders = HashSet::default();
 
             // let graph = _node_graph(&_debug_query, bevy_scene_entity);
             // println!("{bevy_scene_entity:?}");
@@ -324,7 +264,7 @@ fn update_gltf(
             // create a counter per name so we can make unique collider handles
             let mut collider_counter: HashMap<_, u32> = HashMap::default();
 
-            let Ok(context) = contexts.get(dcl_scene_entity.root) else {
+            let Ok(mut context) = contexts.get_mut(dcl_scene_entity.root) else {
                 continue;
             };
 
@@ -455,140 +395,59 @@ fn update_gltf(
                         });
 
                     if collider_bits != 0 && !is_skinned {
-                        // get or create handle to collider shape
-                        let h_shape = match shape_lookup.0.get(h_mesh) {
-                            Some(cached_shape_handle)
-                                if cached_shapes.get(cached_shape_handle).is_some() =>
-                            {
-                                cached_shape_handle.clone()
-                            }
-                            _ => {
-                                // asynchronously create the collider
-                                let VertexAttributeValues::Float32x3(positions_ref) =
-                                    mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
-                                else {
-                                    panic!("no positions")
-                                };
-
-                                let positions = positions_ref.to_owned();
-                                let indices = mesh_data.indices().map(ToOwned::to_owned);
-
-                                let global_scale = dynamic_transform
-                                    .compute_global_transform(spawned_ent)
-                                    .scale;
-                                let label = format!(
-                                    "{}/{}/{}",
-                                    contexts
-                                        .get(dcl_scene_entity.root)
-                                        .map(|r| r.title.as_str())
-                                        .unwrap_or_default(),
-                                    definition.0.src,
-                                    collider_base_name.unwrap_or(
-                                        maybe_name.map(|n| n.as_str()).unwrap_or_default()
-                                    )
-                                );
-
-                                let task =
-                                    AsyncComputeTaskPool::get().spawn(calculate_mesh_collider(
-                                        positions,
-                                        indices,
-                                        global_scale,
-                                        label,
-                                        context.size.max_element() * PARCEL_SIZE as u32,
-                                    ));
-
-                                let h_shape = cached_shapes.add(GltfCachedShape::Task(task));
-                                shape_lookup.0.insert(h_mesh.clone(), h_shape.clone());
-                                h_shape
-                            }
+                        // create collider shape
+                        let VertexAttributeValues::Float32x3(positions_ref) =
+                            mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
+                        else {
+                            panic!("no positions")
                         };
+
+                        let positions_parry: Vec<_> = positions_ref
+                            .iter()
+                            .map(|pos| Point::from([pos[0] as f64, pos[1] as f64, pos[2] as f64]))
+                            .collect();
+
+                        let indices: Vec<u32> = match mesh_data.indices() {
+                            None => (0..positions_ref.len() as u32).collect(),
+                            Some(Indices::U16(ixs)) => ixs.iter().map(|ix| *ix as u32).collect(),
+                            Some(Indices::U32(ixs)) => ixs.to_vec(),
+                        };
+                        let indices_parry = indices
+                            .chunks_exact(3)
+                            .map(|chunk| chunk.try_into().unwrap())
+                            .collect();
+
+                        let shape = SharedShape::trimesh(positions_parry, indices_parry);
 
                         let index = collider_counter
                             .entry(collider_base_name.to_owned())
                             .or_default();
                         *index += 1u32;
 
-                        pending_colliders.insert(h_shape.clone_weak());
-
-                        commands
-                            .entity(spawned_ent)
-                            .try_insert(PendingGltfCollider {
-                                h_shape,
-                                h_mesh: h_mesh.clone_weak(),
-                                collision_mask: collider_bits,
-                                mesh_name: collider_base_name.map(ToOwned::to_owned),
-                                index: *index,
-                            });
+                        commands.entity(spawned_ent).try_insert(MeshCollider {
+                            shape: MeshColliderShape::Shape(shape, h_mesh.clone()),
+                            collision_mask: collider_bits,
+                            mesh_name: collider_base_name.map(ToOwned::to_owned),
+                            index: *index,
+                        });
                     }
                 }
             }
 
-            commands.entity(bevy_scene_entity).try_insert((
-                GltfProcessed {
+            commands
+                .entity(bevy_scene_entity)
+                .try_insert((GltfProcessed {
                     animation_roots,
                     instance_id: Some(*instance),
+                },));
+            context.update_crdt(
+                SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
+                CrdtType::LWW_ANY,
+                dcl_scene_entity.id,
+                &PbGltfContainerLoadingState {
+                    current_state: LoadingState::Finished as i32,
                 },
-                PendingGltfColliders(pending_colliders),
-            ));
-        }
-    }
-
-    shape_lookup
-        .0
-        .retain(|h_mesh, _| meshes.get(h_mesh).is_some());
-}
-
-fn attach_ready_colliders(
-    mut commands: Commands,
-    mut pending_colliders: Query<(Entity, &mut PendingGltfCollider)>,
-    mut cached_shapes: ResMut<Assets<GltfCachedShape>>,
-    mut debug_info: ResMut<DebugInfo>,
-) {
-    let len = pending_colliders.iter().count();
-    if len > 0 {
-        debug_info
-            .info
-            .insert("pending colliders", format!("{}", len));
-    } else {
-        debug_info.info.remove("pending colliders");
-    }
-
-    for (entity, pending) in pending_colliders.iter_mut() {
-        let Some(cached_shape) = cached_shapes.get_mut(&pending.h_shape) else {
-            panic!("shape or task should have been added")
-        };
-
-        let maybe_shape = match cached_shape {
-            GltfCachedShape::Shape(shape) => Some(shape.clone()),
-            GltfCachedShape::Task(task) => {
-                if task.is_finished() {
-                    let shape = future::block_on(future::poll_once(task)).unwrap();
-                    *cached_shape = GltfCachedShape::Shape(shape.clone());
-                    Some(shape)
-                } else {
-                    None
-                }
-            }
-        };
-
-        if let Some(maybe_shape) = maybe_shape {
-            match maybe_shape {
-                Ok(shape) => {
-                    commands
-                        .entity(entity)
-                        .try_insert(MeshCollider {
-                            shape: MeshColliderShape::Shape(shape, pending.h_mesh.clone()),
-                            collision_mask: pending.collision_mask,
-                            mesh_name: pending.mesh_name.clone(),
-                            index: pending.index,
-                        })
-                        .remove::<PendingGltfCollider>();
-                }
-                Err(e) => {
-                    commands.entity(entity).remove::<PendingGltfCollider>();
-                    warn!("failed to generate collider for {entity:?}: {e}")
-                }
-            }
+            );
         }
     }
 }
@@ -598,15 +457,10 @@ pub const GLTF_LOADING: &str = "gltfs loading";
 fn check_gltfs_ready(
     mut scenes: Query<(Entity, &mut RendererSceneContext)>,
     unready_gltfs: Query<&SceneEntity, (With<GltfDefinition>, Without<GltfProcessed>)>,
-    unready_colliders: Query<&ContainerEntity, With<PendingGltfCollider>>,
 ) {
     let mut unready_scenes = HashSet::default();
 
     for ent in &unready_gltfs {
-        unready_scenes.insert(ent.root);
-    }
-
-    for ent in &unready_colliders {
         unready_scenes.insert(ent.root);
     }
 
@@ -616,39 +470,6 @@ fn check_gltfs_ready(
             context.blocked.insert(GLTF_LOADING);
         } else {
             context.blocked.remove(GLTF_LOADING);
-        }
-    }
-}
-
-// list of pending shapes for a gltf container
-#[derive(Component)]
-pub struct PendingGltfColliders(pub HashSet<Handle<GltfCachedShape>>);
-
-// set loading finished once all colliders resolved
-fn update_container_finished(
-    mut commands: Commands,
-    mut loading_containers: Query<(Entity, &SceneEntity, &mut PendingGltfColliders)>,
-    colliders: Res<Assets<GltfCachedShape>>,
-    mut contexts: Query<&mut RendererSceneContext>,
-) {
-    for (entity, scene_ent, mut pending) in loading_containers.iter_mut() {
-        pending.0.retain(|h_shape| match colliders.get(h_shape) {
-            Some(shape) => matches!(shape, GltfCachedShape::Task(_)),
-            None => true,
-        });
-
-        if pending.0.is_empty() {
-            commands.entity(entity).remove::<PendingGltfColliders>();
-            if let Ok(mut context) = contexts.get_mut(scene_ent.root) {
-                context.update_crdt(
-                    SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
-                    CrdtType::LWW_ANY,
-                    scene_ent.id,
-                    &PbGltfContainerLoadingState {
-                        current_state: LoadingState::Finished as i32,
-                    },
-                );
-            }
         }
     }
 }

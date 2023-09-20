@@ -170,6 +170,10 @@ impl ContentMap {
     pub fn files(&self) -> impl Iterator<Item = &String> {
         self.0.left_values()
     }
+
+    pub fn values(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.0.iter()
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -284,24 +288,26 @@ impl IpfsLoaderExt for AssetServer {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct EndpointConfig {
     pub healthy: bool,
-    #[serde(rename = "publicUrl")]
     pub public_url: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct CommsConfig {
     pub healthy: bool,
     pub protocol: String,
-    #[serde(rename = "fixedAdapter")]
     pub fixed_adapter: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerConfiguration {
-    #[serde(rename = "scenesUrn")]
     pub scenes_urn: Option<Vec<String>>,
+    pub realm_name: Option<String>,
+    pub network_id: Option<u32>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -309,6 +315,12 @@ pub struct ServerAbout {
     pub content: Option<EndpointConfig>,
     pub comms: Option<CommsConfig>,
     pub configurations: Option<ServerConfiguration>,
+}
+
+impl ServerAbout {
+    pub fn base_url(&self) -> Option<&str> {
+        self.content.as_ref().map(|c| c.public_url.as_str())
+    }
 }
 
 impl Default for ServerAbout {
@@ -348,7 +360,9 @@ impl Plugin for IpfsIoPlugin {
         // create the custom asset io instance
         info!("remote server: {:?}", self.starting_realm);
 
-        let ipfs_io = IpfsIo::new(default_io, default_fs_path);
+        let static_paths = HashMap::from_iter([("genesis_tx.png", "images/genesis_tx.png")]);
+
+        let ipfs_io = IpfsIo::new(default_io, default_fs_path, static_paths);
 
         // the asset server is constructed and added the resource manager
         app.insert_resource(AssetServer::new(ipfs_io))
@@ -461,10 +475,16 @@ pub struct IpfsModifier {
     pub base_url: Option<String>,
 }
 
+#[derive(Clone)]
+pub struct IpfsEntity {
+    pub collection: ContentMap,
+    pub metadata: Option<String>,
+}
+
 #[derive(Default)]
 pub struct IpfsContext {
-    collections: HashMap<String, ContentMap>,
-    base_url: Option<String>,
+    entities: HashMap<String, IpfsEntity>,
+    about: Option<ServerAbout>,
     modifiers: HashMap<String, IpfsModifier>,
 }
 
@@ -476,10 +496,15 @@ pub struct IpfsIo {
     context: RwLock<IpfsContext>,
     request_slots: tokio::sync::Semaphore,
     reqno: AtomicU16,
+    static_files: HashMap<&'static str, &'static str>,
 }
 
 impl IpfsIo {
-    pub fn new(default_io: Box<dyn AssetIo>, default_fs_path: PathBuf) -> Self {
+    pub fn new(
+        default_io: Box<dyn AssetIo>,
+        default_fs_path: PathBuf,
+        static_paths: HashMap<&'static str, &'static str>,
+    ) -> Self {
         let (sender, receiver) = tokio::sync::watch::channel(None);
 
         Self {
@@ -490,6 +515,7 @@ impl IpfsIo {
             context: Default::default(),
             request_slots: tokio::sync::Semaphore::new(MAX_CONCURRENT_REQUESTS),
             reqno: default(),
+            static_files: static_paths,
         }
     }
 
@@ -504,19 +530,20 @@ impl IpfsIo {
     }
 
     pub fn set_realm_about(&self, about: ServerAbout) {
-        self.context.blocking_write().base_url = about
-            .content
-            .as_ref()
-            .map(|endpoint| endpoint.public_url.clone());
+        self.context.blocking_write().about = Some(about.clone());
         self.realm_config_sender
             .send(Some(("manual value".to_owned(), about)))
             .expect("channel closed");
     }
 
+    pub async fn get_realm_info(&self) -> Option<ServerAbout> {
+        self.context.read().await.about.clone()
+    }
+
     async fn set_realm_inner(&self, new_realm: String) -> Result<(), anyhow::Error> {
         info!("disconnecting");
         self.realm_config_sender.send(None).expect("channel closed");
-        self.context.write().await.base_url = None;
+        self.context.write().await.about = None;
 
         let mut about = isahc::get_async(format!("{new_realm}/about"))
             .await
@@ -527,10 +554,7 @@ impl IpfsIo {
 
         let about = about.json::<ServerAbout>().await.map_err(|e| anyhow!(e))?;
 
-        self.context.write().await.base_url = about
-            .content
-            .as_ref()
-            .map(|endpoint| endpoint.public_url.clone());
+        self.context.write().await.about = Some(about.clone());
         self.realm_config_sender
             .send(Some((new_realm, about)))
             .expect("channel closed");
@@ -558,13 +582,20 @@ impl IpfsIo {
         hash: String,
         collection: ContentMap,
         modifier: Option<IpfsModifier>,
+        metadata: Option<String>,
     ) {
         let mut write = self.context.blocking_write();
+
+        let entity = IpfsEntity {
+            collection,
+            metadata,
+        };
 
         if let Some(modifier) = modifier {
             write.modifiers.insert(hash.clone(), modifier);
         }
-        write.collections.insert(hash, collection);
+
+        write.entities.insert(hash, entity);
     }
 
     pub fn cache_path(&self) -> &Path {
@@ -660,6 +691,20 @@ impl IpfsIo {
     pub async fn ipfs_hash(&self, ipfs_path: &IpfsPath) -> Option<String> {
         ipfs_path.hash(&*self.context.read().await)
     }
+
+    pub async fn entity_definition(&self, hash: &str) -> Option<(IpfsEntity, String)> {
+        let context = self.context.read().await;
+        Some((
+            context.entities.get(hash)?.clone(),
+            context
+                .modifiers
+                .get(hash)
+                .and_then(|m| m.base_url.as_deref())
+                .or_else(|| context.about.as_ref().and_then(ServerAbout::base_url))
+                .map(ToOwned::to_owned)
+                .unwrap_or_default(),
+        ))
+    }
 }
 
 pub type ActiveEntityTask = Task<Result<Vec<EntityDefinition>, anyhow::Error>>;
@@ -732,7 +777,18 @@ impl AssetIo for IpfsIo {
 
                 let remote = ipfs_path
                     .to_url(&*self.context.read().await)
-                    .map_err(wrap_err)?;
+                    .map_err(wrap_err);
+
+                if remote.is_err() {
+                    // check for default file
+                    if let Some(static_path) = ipfs_path
+                        .filename()
+                        .and_then(|file_path| self.static_files.get(file_path.as_ref()))
+                    {
+                        return self.default_io.load_path(Path::new(static_path)).await;
+                    }
+                }
+                let remote = remote?;
 
                 debug!("[{token:?}]: remote url: `{remote}`");
 

@@ -5,6 +5,7 @@ mod fetch_response_body_resource;
 
 use bevy::prelude::{debug, AssetServer};
 use deno_core::{
+    anyhow,
     error::{type_error, AnyError},
     futures::TryStreamExt,
     op, AsyncRefCell, ByteString, CancelHandle, JsBuffer, Op, OpDecl, OpState, ResourceId,
@@ -25,6 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use byte_stream::MpscByteStream;
 use fetch_response_body_resource::{FetchRequestBodyResource, FetchResponseBodyResource};
+use wallet::{sign_request, Wallet};
 
 // we have to provide fetch perm structs even though we don't use them
 pub struct FP;
@@ -50,12 +52,17 @@ impl TimersPermission for TP {
 }
 
 // list of op declarations
-pub fn ops() -> Vec<OpDecl> {
+pub fn override_ops() -> Vec<OpDecl> {
     vec![
         op_fetch::DECL,
         op_fetch_send::DECL,
         op_fetch_custom_client::DECL,
     ]
+}
+
+// list of op declarations
+pub fn ops() -> Vec<OpDecl> {
+    vec![op_signed_fetch_headers::DECL]
 }
 
 struct IsahcFetchRequestResource {
@@ -85,12 +92,18 @@ pub fn op_fetch(
     body_length: Option<u64>,
     data: Option<JsBuffer>,
 ) -> Result<IsahcFetchReturn, AnyError> {
+    // TODO scene permissions
+
     let client = if let Some(rid) = client_rid {
         let r = state.resource_table.get::<IsahcClientResource>(rid)?;
         Some(r.0.clone())
     } else {
         None
     };
+
+    if Uri::try_from(&url)?.scheme_str() != Some("https") {
+        anyhow::bail!("URL scheme must be `https`")
+    }
 
     let mut request = isahc::Request::builder().uri(url.clone());
     let method = Method::from_bytes(&method)?;
@@ -291,4 +304,50 @@ pub fn op_fetch_custom_client(
     Ok(state
         .resource_table
         .add(IsahcClientResource(builder.build()?)))
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SignedFetchMetaRealm {
+    domain: Option<String>,
+    catalyst_name: Option<String>,
+    layer: Option<String>,
+    lighthouse_version: Option<String>,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SignedFetchMeta {
+    origin: Option<String>,
+    scene_id: Option<String>,
+    parcel: Option<String>,
+    tld: Option<String>,
+    network: Option<String>,
+    is_guest: Option<bool>,
+    realm: SignedFetchMetaRealm,
+}
+
+#[op]
+pub async fn op_signed_fetch_headers(
+    state: Rc<RefCell<OpState>>,
+    uri: String,
+    method: Option<String>,
+) -> Result<Vec<(String, String)>, AnyError> {
+    let wallet = state.borrow().borrow::<Wallet>().clone();
+
+    let meta = SignedFetchMeta {
+        origin: Some("localhost".to_owned()),
+        is_guest: Some(true),
+        ..Default::default()
+    };
+
+    let headers = sign_request(
+        method.as_deref().unwrap_or("get"),
+        &Uri::try_from(uri)?,
+        &wallet,
+        meta,
+    )
+    .await;
+
+    Ok(headers)
 }

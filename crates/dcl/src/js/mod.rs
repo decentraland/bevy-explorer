@@ -1,14 +1,19 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
-use bevy::prelude::{debug, error, info_span, AssetServer};
+use bevy::prelude::{debug, error, info, info_span, AssetServer};
 use deno_core::{
+    anyhow::anyhow,
     ascii_str,
     error::{generic_error, AnyError},
-    include_js_files, op, v8, Extension, JsRuntime, Op, OpState, RuntimeOptions,
+    include_js_files, op, v8, Extension, JsRuntime, Op, OpDecl, OpState, RuntimeOptions,
 };
+use deno_websocket::WebSocketPermissions;
 use tokio::sync::mpsc::Receiver;
 
 use ipfs::SceneJsFile;
+use wallet::Wallet;
+
+use crate::RpcCalls;
 
 use self::fetch::{FP, TP};
 
@@ -28,7 +33,26 @@ pub struct ShuttingDown;
 
 pub struct RendererStore(pub CrdtStore);
 
-pub fn create_runtime() -> JsRuntime {
+pub struct WebSocketPerms;
+
+impl WebSocketPermissions for WebSocketPerms {
+    fn check_net_url(
+        &mut self,
+        url: &deno_core::url::Url,
+        _api_name: &str,
+    ) -> Result<(), AnyError> {
+        // TODO scene permissions
+
+        // must use `wss`
+        if url.scheme() == "wss" {
+            Ok(())
+        } else {
+            Err(anyhow!("URL scheme must be `wss`"))
+        }
+    }
+}
+
+pub fn create_runtime(init: bool) -> JsRuntime {
     // add fetch stack
     let web = deno_web::deno_web::init_ops_and_esm::<TP>(
         std::sync::Arc::new(deno_web::BlobStore::default()),
@@ -38,14 +62,20 @@ pub fn create_runtime() -> JsRuntime {
     let url = deno_url::deno_url::init_ops_and_esm();
     let console = deno_console::deno_console::init_ops_and_esm();
     let fetch = deno_fetch::deno_fetch::init_js_only::<FP>();
+    let websocket = deno_websocket::deno_websocket::init_ops_and_esm::<WebSocketPerms>(
+        "bevy-explorer".to_owned(),
+        None,
+        None,
+    );
 
-    let mut ext = &mut Extension::builder_with_deps("decentraland", &["deno_fetch"]);
+    let mut ops = vec![op_require::DECL, op_log::DECL, op_error::DECL];
 
-    // add core ops
-    ext = ext.ops(vec![op_require::DECL, op_log::DECL, op_error::DECL]);
-
-    let op_sets: [Vec<deno_core::OpDecl>; 3] =
-        [engine::ops(), restricted_actions::ops(), runtime::ops()];
+    let op_sets: [Vec<deno_core::OpDecl>; 4] = [
+        engine::ops(),
+        restricted_actions::ops(),
+        runtime::ops(),
+        fetch::ops(),
+    ];
 
     // add plugin registrations
     let mut op_map = HashMap::new();
@@ -54,10 +84,10 @@ pub fn create_runtime() -> JsRuntime {
             // explicitly record the ones we added so we can remove deno_fetch imposters
             op_map.insert(op.name, *op);
         }
-        ext = ext.ops(set)
+        ops.extend(set);
     }
 
-    let override_sets: [Vec<deno_core::OpDecl>; 1] = [fetch::ops()];
+    let override_sets: [Vec<deno_core::OpDecl>; 1] = [fetch::override_ops()];
 
     for set in override_sets {
         for op in set {
@@ -66,28 +96,37 @@ pub fn create_runtime() -> JsRuntime {
         }
     }
 
-    let ext = ext
-        // set startup JS script
-        .esm(include_js_files!(
+    let ext = Extension {
+        name: "decentraland",
+        deps: &["deno_fetch"],
+        ops: ops.into(),
+        esm_files: include_js_files!(
             BevyExplorer
             dir "src/js/modules",
             "init.js",
-        ))
-        .esm_entry_point("ext:BevyExplorer/init.js")
-        .middleware(move |op| {
+        )
+        .to_vec()
+        .into(),
+        esm_entry_point: Some("ext:BevyExplorer/init.js"),
+        middleware_fn: Some(Box::new(move |op: OpDecl| -> OpDecl {
             if let Some(custom_op) = op_map.get(&op.name) {
                 debug!("replace: {}", op.name);
                 op.with_implementation_from(custom_op)
             } else {
                 op
             }
-        })
-        .build();
+        })),
+        ..Default::default()
+    };
 
     // create runtime
     JsRuntime::new(RuntimeOptions {
-        v8_platform: v8::Platform::new(1, false).make_shared().into(),
-        extensions: vec![webidl, url, console, web, fetch, ext],
+        v8_platform: if init {
+            v8::Platform::new(1, false).make_shared().into()
+        } else {
+            None
+        },
+        extensions: vec![webidl, url, console, web, fetch, websocket, ext],
         ..Default::default()
     })
 }
@@ -103,9 +142,10 @@ pub(crate) fn scene_thread(
     thread_rx: Receiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     asset_server: AssetServer,
+    wallet: Wallet,
 ) {
     let scene_context = CrdtContext::new(scene_id, scene_hash);
-    let mut runtime = create_runtime();
+    let mut runtime = create_runtime(false);
 
     // store handle
     let vm_handle = runtime.v8_isolate().thread_safe_handle();
@@ -127,11 +167,13 @@ pub(crate) fn scene_thread(
     state.borrow_mut().put(thread_rx);
     state.borrow_mut().put(global_update_receiver);
 
-    // store asset server
+    // store asset server and wallet
     state.borrow_mut().put(asset_server);
+    state.borrow_mut().put(wallet);
 
-    // store crdt outbound state
+    // store crdt outbound state and event queue
     state.borrow_mut().put(CrdtStore::default());
+    state.borrow_mut().put(RpcCalls::default());
     // and renderer incoming state
     state.borrow_mut().put(RendererStore(CrdtStore::default()));
 
@@ -146,6 +188,9 @@ pub(crate) fn scene_thread(
     state
         .borrow_mut()
         .put(runtime.v8_isolate().thread_safe_handle());
+
+    // store websocket permissions object
+    state.borrow_mut().put(WebSocketPerms);
 
     // load module
     let script = runtime.execute_script("<loader>", ascii_str!("require (\"~scene.js\")"));
@@ -164,6 +209,7 @@ pub(crate) fn scene_thread(
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_time()
+        .enable_io()
         .build()
         .unwrap();
 
@@ -305,6 +351,7 @@ fn op_require(
 #[op(v8)]
 fn op_log(state: Rc<RefCell<OpState>>, message: String) {
     let time = state.borrow().borrow::<SceneElapsedTime>().0;
+    info!(message);
     state
         .borrow_mut()
         .borrow_mut::<Vec<SceneLogMessage>>()

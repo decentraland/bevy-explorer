@@ -1,5 +1,12 @@
-module.exports.getRealm = async function (body) { return {} }
-module.exports.getWorldTime = async function (body) { return {} }
+module.exports.getRealm = async function (body) { 
+    return await Deno.core.ops.op_realm_information();
+}
+
+module.exports.getWorldTime = async function (body) { 
+    // TODO
+    return {} 
+}
+
 module.exports.readFile = async function (body) { 
     const res = await Deno.core.ops.op_read_file(body.fileName)
     return {
@@ -7,4 +14,7 @@ module.exports.readFile = async function (body) {
         hash: res.hash
     }
 }
-module.exports.getSceneInformation = async function (body) { return {} }
+
+module.exports.getSceneInformation = async function (body) { 
+    return await Deno.core.ops.op_scene_information();
+}

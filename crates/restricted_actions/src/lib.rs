@@ -1,10 +1,15 @@
+use std::path::Path;
+
 use avatar::AvatarDynamicState;
 use bevy::{math::Vec3Swizzles, prelude::*};
 use common::{
     sets::SceneSets,
     structs::{PrimaryCamera, PrimaryUser, RestrictedAction},
 };
-use scene_runner::{initialize_scene::PARCEL_SIZE, renderer_context::RendererSceneContext};
+use ipfs::ChangeRealmEvent;
+use scene_runner::{
+    initialize_scene::PARCEL_SIZE, renderer_context::RendererSceneContext, ContainingScene,
+};
 use ui_core::dialog::SpawnDialog;
 
 pub struct RestrictedActionsPlugin;
@@ -14,7 +19,7 @@ impl Plugin for RestrictedActionsPlugin {
         app.add_event::<RestrictedAction>();
         app.add_systems(
             Update,
-            (move_player, move_camera).in_set(SceneSets::PostLoop),
+            (move_player, move_camera, change_realm, external_url).in_set(SceneSets::PostLoop),
         );
     }
 }
@@ -23,7 +28,8 @@ fn move_player(
     mut commands: Commands,
     mut events: EventReader<RestrictedAction>,
     scenes: Query<&RendererSceneContext>,
-    mut player: Query<(&mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
+    mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
+    containing_scene: ContainingScene,
 ) {
     for (root, transform) in events.iter().filter_map(|ev| match ev {
         RestrictedAction::MovePlayer { scene, to } => Some((scene, to)),
@@ -32,6 +38,16 @@ fn move_player(
         let Ok(scene) = scenes.get(*root) else {
             continue;
         };
+
+        if player
+            .get_single()
+            .ok()
+            .and_then(|(e, ..)| containing_scene.get(e))
+            != Some(*root)
+        {
+            warn!("invalid move request from non-containing scene");
+            return;
+        }
 
         let mut target_transform = *transform;
         target_transform.translation +=
@@ -53,7 +69,7 @@ fn move_player(
                 || {},
             );
         } else {
-            let (mut player_transform, mut dynamics) = player.single_mut();
+            let (_, mut player_transform, mut dynamics) = player.single_mut();
             dynamics.velocity =
                 transform.rotation * player_transform.rotation.inverse() * dynamics.velocity;
 
@@ -73,5 +89,109 @@ fn move_camera(mut events: EventReader<RestrictedAction>, mut camera: Query<&mut
         camera.yaw = yaw;
         camera.pitch = pitch;
         camera.roll = roll;
+    }
+}
+
+fn change_realm(
+    mut commands: Commands,
+    mut events: EventReader<RestrictedAction>,
+    containing_scene: ContainingScene,
+    player: Query<Entity, With<PrimaryUser>>,
+) {
+    for (scene, to, message, response) in events.iter().filter_map(|ev| match ev {
+        RestrictedAction::ChangeRealm {
+            scene,
+            to,
+            message,
+            response,
+        } => Some((scene, to, message, response)),
+        _ => None,
+    }) {
+        if player
+            .get_single()
+            .ok()
+            .and_then(|e| containing_scene.get(e))
+            != Some(*scene)
+        {
+            warn!("invalid changeRealm request from non-containing scene");
+            return;
+        }
+
+        let new_realm = to.clone();
+        let response_ok = response.clone();
+        let response_fail = response.clone();
+
+        commands.spawn_dialog_two(
+            "Change Realm".into(),
+            format!(
+                "The scene wants to move you to a new realm\n`{}`\n{}",
+                to.clone(),
+                if let Some(message) = message {
+                    message
+                } else {
+                    ""
+                }
+            ),
+            "Let's go!",
+            move |mut writer: EventWriter<ChangeRealmEvent>| {
+                writer.send(ChangeRealmEvent {
+                    new_realm: new_realm.clone(),
+                });
+                response_ok.send(Ok(String::default()));
+            },
+            "No thanks",
+            move || {
+                response_fail.send(Err(String::default()));
+            },
+        );
+    }
+}
+
+fn external_url(
+    mut commands: Commands,
+    mut events: EventReader<RestrictedAction>,
+    containing_scene: ContainingScene,
+    player: Query<Entity, With<PrimaryUser>>,
+) {
+    for (scene, url, response) in events.iter().filter_map(|ev| match ev {
+        RestrictedAction::ExternalUrl {
+            scene,
+            url,
+            response,
+        } => Some((scene, url, response)),
+        _ => None,
+    }) {
+        if player
+            .get_single()
+            .ok()
+            .and_then(|e| containing_scene.get(e))
+            != Some(*scene)
+        {
+            warn!("invalid changeRealm request from non-containing scene");
+            return;
+        }
+
+        let url = url.clone();
+        let response_ok = response.clone();
+        let response_fail = response.clone();
+
+        commands.spawn_dialog_two(
+            "Open External Link".into(),
+            format!(
+                "The scene wants to display a link in an external application\n`{}`",
+                url.clone(),
+            ),
+            "Ok",
+            move || {
+                let result = opener::open(Path::new(&url))
+                    .map(|_| String::default())
+                    .map_err(|e| e.to_string());
+                response_ok.send(result);
+            },
+            "Cancel",
+            move || {
+                response_fail.send(Err(String::default()));
+            },
+        );
     }
 }

@@ -30,6 +30,7 @@ macro_rules! urlpath {
 }
 
 use std::{
+    borrow::Cow,
     collections::BTreeMap,
     ffi::OsStr,
     iter::Peekable,
@@ -38,6 +39,8 @@ use std::{
 };
 
 use urn::Urn;
+
+use crate::ServerAbout;
 
 use super::IpfsContext;
 
@@ -83,9 +86,10 @@ impl IpfsType {
                 file_path,
                 ..
             } => context
-                .collections
+                .entities
                 .get(scene_hash)
                 .ok_or_else(|| anyhow::anyhow!("required collection hash not found: {scene_hash}"))?
+                .collection
                 .hash(file_path)
                 .map(|hash| format!("{base_url}{hash}"))
                 .or_else(|| {
@@ -109,7 +113,7 @@ impl IpfsType {
                 content_hash: scene_hash,
                 file_path,
                 ..
-            } => context.collections.get(scene_hash)?.hash(file_path),
+            } => context.entities.get(scene_hash)?.collection.hash(file_path),
             IpfsType::Url { .. } => None,
             IpfsType::Entity { hash, .. } => Some(hash),
         }
@@ -384,8 +388,9 @@ impl IpfsPath {
             .or_else(|| {
                 // fall back to the context base url
                 context
-                    .base_url
+                    .about
                     .as_ref()
+                    .and_then(ServerAbout::base_url)
                     .map(|base_url| format!("{}{}", base_url, self.ipfs_type.base_url_extension()))
             })
             .ok_or_else(|| anyhow::anyhow!("base url not specified in asset path or context"))?;
@@ -408,6 +413,14 @@ impl IpfsPath {
 
     pub fn base_url(&self) -> Option<&str> {
         self.key_values.get(&IpfsKey::BaseUrl).map(String::as_str)
+    }
+
+    pub fn filename(&self) -> Option<Cow<'_, str>> {
+        if let IpfsType::ContentFile { file_path, .. } = &self.ipfs_type {
+            Path::new(file_path).file_name().map(OsStr::to_string_lossy)
+        } else {
+            None
+        }
     }
 }
 

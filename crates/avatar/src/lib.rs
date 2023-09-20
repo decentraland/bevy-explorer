@@ -25,7 +25,6 @@ use common::{
 use comms::{
     global_crdt::{ForeignPlayer, GlobalCrdtState},
     profile::UserProfile,
-    wallet::Wallet,
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -38,6 +37,7 @@ use dcl_component::{
 use ipfs::{ActiveEntityTask, IpfsLoaderExt, IpfsModifier};
 use scene_runner::{update_world::AddCrdtInterfaceExt, ContainingScene, SceneEntity};
 use ui_core::TEXT_SHAPE_FONT;
+use wallet::Wallet;
 
 use crate::animate::AvatarAnimPlayer;
 
@@ -157,6 +157,7 @@ fn load_base_wearables(
                         Some(IpfsModifier {
                             base_url: Some(base_wearables::CONTENT_URL.to_owned()),
                         }),
+                        entity.metadata.as_ref().map(ToString::to_string),
                     );
 
                     let Some(metadata) = entity.metadata else {
@@ -730,6 +731,7 @@ fn update_render_avatar(
                         Some(IpfsModifier {
                             base_url: Some(base_wearables::CONTENT_URL.to_owned()),
                         }),
+                        entity.metadata.as_ref().map(ToString::to_string),
                     );
 
                     let Some(metadata) = entity.metadata else {

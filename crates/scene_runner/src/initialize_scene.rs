@@ -25,6 +25,7 @@ use ipfs::{
     ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsLoaderExt,
     SceneIpfsLocation, SceneJsFile,
 };
+use wallet::Wallet;
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 use crate::{
@@ -159,9 +160,12 @@ pub(crate) fn load_scene_json(
             continue;
         }
 
-        asset_server
-            .ipfs()
-            .add_collection(definition.id.clone(), definition.content.clone(), None);
+        asset_server.ipfs().add_collection(
+            definition.id.clone(),
+            definition.content.clone(),
+            None,
+            definition.metadata.as_ref().map(|v| v.to_string()),
+        );
 
         if definition.content.hash("main.crdt").is_some() {
             let h_crdt: Handle<SerializedCrdtStore> = asset_server
@@ -365,6 +369,7 @@ pub(crate) fn load_scene_javascript(
                 updates,
                 SceneElapsedTime(0.0),
                 Default::default(),
+                Default::default(),
             )) {
                 error!("failed to send initial updates to renderer: {e}");
             }
@@ -420,6 +425,7 @@ pub(crate) fn initialize_scene(
     )>,
     scene_js_files: Res<Assets<SceneJsFile>>,
     asset_server: Res<AssetServer>,
+    wallet: Res<Wallet>,
 ) {
     for (root, mut state, h_code, context) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
@@ -471,6 +477,7 @@ pub(crate) fn initialize_scene(
             thread_sx,
             global_updates,
             asset_server.clone(),
+            wallet.clone(),
             scene_id,
         );
 

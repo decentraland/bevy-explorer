@@ -216,6 +216,9 @@ impl ScaleShapeExt for dyn Shape {
                     .collect();
                 SharedShape::compound(scaled_items)
             }
+            TypedShape::TriMesh(trimesh) => {
+                SharedShape::new(trimesh.clone().scaled(&req_scale.into()))
+            }
             _ => panic!(),
         }
     }

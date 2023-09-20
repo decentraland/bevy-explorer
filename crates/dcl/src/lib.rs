@@ -8,12 +8,14 @@ use bevy::{
     prelude::AssetServer,
     utils::{HashMap, HashSet},
 };
+use common::structs::{RpcResult, SceneRpcCall};
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use tokio::sync::mpsc::Sender;
 
 use dcl_component::SceneEntityId;
 use ipfs::SceneJsFile;
+use wallet::Wallet;
 
 use self::{
     interface::{CrdtComponentInterfaces, CrdtStore},
@@ -46,6 +48,8 @@ pub enum RendererResponse {
     Ok(CrdtStore),
 }
 
+type RpcCalls = Vec<(SceneRpcCall, Option<RpcResult>)>;
+
 #[allow(clippy::large_enum_variant)] // we don't care since the error case is very rare
                                      // data from scene to renderer
 pub enum SceneResponse {
@@ -56,6 +60,7 @@ pub enum SceneResponse {
         CrdtStore,
         SceneElapsedTime,
         Vec<SceneLogMessage>,
+        RpcCalls,
     ),
 }
 
@@ -82,7 +87,7 @@ pub fn get_next_scene_id() -> SceneId {
 
     if id.0 == 0 {
         // synchronously create and drop a single runtime to hopefully avoid initial segfaults
-        create_runtime();
+        create_runtime(true);
         // and skip the dummy id
         id = SceneId(SCENE_ID.fetch_add(1, Ordering::Relaxed));
     }
@@ -90,6 +95,7 @@ pub fn get_next_scene_id() -> SceneId {
     id
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_scene(
     scene_hash: String,
     scene_js: SceneJsFile,
@@ -97,6 +103,7 @@ pub fn spawn_scene(
     renderer_sender: SyncSender<SceneResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     asset_server: AssetServer,
+    wallet: Wallet,
     id: SceneId,
 ) -> Sender<RendererResponse> {
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
@@ -113,6 +120,7 @@ pub fn spawn_scene(
                 thread_rx,
                 global_update_receiver,
                 asset_server,
+                wallet,
             )
         })
         .unwrap();

@@ -27,6 +27,7 @@ av = { path="crates/av" }
 dcl = { path="crates/dcl" }
 dcl_component = { path="crates/dcl_component" }
 restricted_actions = { path="crates/restricted_actions" }
+wallet = { path="crates/wallet" }
 
 bevy = { version = "0.11", features=["jpeg"] }
 bevy_console = "0.8.0"
@@ -68,6 +69,7 @@ scene_runner = { workspace = true }
 console = { workspace = true }
 av = { workspace = true }
 restricted_actions = { workspace = true }
+wallet = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }

@@ -30,7 +30,7 @@ use crate::{
 use common::structs::{
     AppConfig, GraphicsSettings, PrimaryCamera, RestrictedAction, SceneLoadDistance,
 };
-use comms::{wallet::WalletPlugin, CommsPlugin};
+use comms::CommsPlugin;
 use console::{self, ConsolePlugin};
 use dcl::interface::{CrdtStore, CrdtType};
 use dcl_component::{
@@ -39,6 +39,7 @@ use dcl_component::{
 };
 use input_manager::{AcceptInput, InputMap};
 use ipfs::{IpfsIoPlugin, IpfsLoaderExt, ServerAbout, ServerConfiguration};
+use wallet::WalletPlugin;
 
 use super::{initialize_scene::SceneLoading, PrimaryUser};
 
@@ -121,6 +122,7 @@ fn init_test_app(entity_json: &str) -> App {
         content: None,
         configurations: Some(ServerConfiguration {
             scenes_urn: Some(vec![urn]),
+            ..Default::default()
         }),
         ..Default::default()
     });

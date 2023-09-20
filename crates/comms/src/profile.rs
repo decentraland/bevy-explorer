@@ -2,15 +2,14 @@ use bevy::{prelude::*, utils::HashMap};
 use ethers_core::types::Address;
 use serde::{Deserialize, Serialize};
 
+use super::{
+    global_crdt::{process_transport_updates, ForeignPlayer, ProfileEvent, ProfileEventType},
+    NetworkMessage, Transport,
+};
 use common::structs::{AppConfig, PrimaryUser};
 use common::util::{AsH160, TryInsertEx};
 use dcl_component::proto_components::{common::Color3, kernel::comms::rfc4};
-
-use super::{
-    global_crdt::{process_transport_updates, ForeignPlayer, ProfileEvent, ProfileEventType},
-    wallet::Wallet,
-    NetworkMessage, Transport,
-};
+use wallet::Wallet;
 
 pub struct UserProfilePlugin;
 

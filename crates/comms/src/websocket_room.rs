@@ -24,12 +24,12 @@ use dcl_component::proto_components::kernel::comms::{
         WsSignedChallenge, WsWelcome,
     },
 };
+use wallet::{SimpleAuthChain, Wallet};
 
 use crate::global_crdt::PlayerMessage;
 
 use super::{
     global_crdt::{GlobalCrdtState, PlayerUpdate},
-    wallet::{SimpleAuthChain, Wallet},
     NetworkMessage,
 };
 
