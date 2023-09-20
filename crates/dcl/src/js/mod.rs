@@ -42,7 +42,7 @@ impl WebSocketPermissions for WebSocketPerms {
         // TODO scene permissions
 
         // must use `wss`
-        if url.scheme() == "https" {
+        if url.scheme() == "wss" {
             Ok(())
         } else {
             Err(anyhow!("URL scheme must be `wss`"))
