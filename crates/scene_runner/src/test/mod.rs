@@ -23,7 +23,7 @@ use crate::{
     process_scene_entity_lifecycle, receive_scene_updates, send_scene_updates,
     update_scene_priority,
     update_world::{
-        transform_and_parent::process_transform_and_parent_updates, CrdtLWWStateComponent,
+        transform_and_parent::process_transform_and_parent_updates, CrdtStateComponent,
     },
     RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
 };
@@ -32,7 +32,10 @@ use common::structs::{
 };
 use comms::CommsPlugin;
 use console::{self, ConsolePlugin};
-use dcl::interface::{CrdtStore, CrdtType};
+use dcl::{
+    crdt::lww::CrdtLWWState,
+    interface::{CrdtStore, CrdtType},
+};
 use dcl_component::{
     transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
     SceneCrdtTimestamp, SceneEntityId,
@@ -400,7 +403,7 @@ fn cyclic_recovery() {
             .single(&mut app.world);
         app.world
             .entity_mut(scene_entity)
-            .insert(CrdtLWWStateComponent::<DclTransformAndParent>::default());
+            .insert(CrdtStateComponent::<CrdtLWWState, DclTransformAndParent>::default());
 
         let mut crdt_store = CrdtStore::default();
 
@@ -410,7 +413,7 @@ fn cyclic_recovery() {
                 .world
                 .query::<(
                     &mut RendererSceneContext,
-                    &mut CrdtLWWStateComponent<DclTransformAndParent>,
+                    &mut CrdtStateComponent<CrdtLWWState, DclTransformAndParent>,
                 )>()
                 .single_mut(&mut app.world);
 
@@ -429,7 +432,7 @@ fn cyclic_recovery() {
                 Some(reader),
             );
             // pull updates
-            *crdt_state = CrdtLWWStateComponent::new(
+            *crdt_state = CrdtStateComponent::new(
                 crdt_store
                     .take_updates()
                     .lww

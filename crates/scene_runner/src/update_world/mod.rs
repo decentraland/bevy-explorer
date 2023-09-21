@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
@@ -7,10 +8,12 @@ use bevy::{ecs::system::EntityCommands, prelude::*, utils::HashMap};
 
 use common::util::TryInsertEx;
 use dcl::{
-    crdt::lww::CrdtLWWState,
+    crdt::{growonly::CrdtGOState, lww::CrdtLWWState},
     interface::{ComponentPosition, CrdtStore, CrdtType},
 };
 use dcl_component::{DclReader, FromDclReader, SceneComponentId};
+
+use crate::primary_entities::PrimaryEntities;
 
 use self::{
     animation::AnimatorPlugin, billboard::BillboardPlugin, camera_mode_area::CameraModeAreaPlugin,
@@ -38,27 +41,27 @@ pub mod transform_and_parent;
 pub mod visibility;
 
 #[derive(Component, Default)]
-pub struct CrdtLWWStateComponent<T> {
-    pub state: CrdtLWWState,
+pub struct CrdtStateComponent<C, T> {
+    pub state: C,
     _marker: PhantomData<T>,
 }
 
-impl<T> DerefMut for CrdtLWWStateComponent<T> {
+impl<C, T> DerefMut for CrdtStateComponent<C, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.state
     }
 }
 
-impl<T> Deref for CrdtLWWStateComponent<T> {
-    type Target = CrdtLWWState;
+impl<C, T> Deref for CrdtStateComponent<C, T> {
+    type Target = C;
 
     fn deref(&self) -> &Self::Target {
         &self.state
     }
 }
 
-impl<T> CrdtLWWStateComponent<T> {
-    pub fn new(state: CrdtLWWState) -> Self {
+impl<C, T> CrdtStateComponent<C, T> {
+    pub fn new(state: C) -> Self {
         Self {
             state,
             _marker: PhantomData,
@@ -98,7 +101,30 @@ impl<T: FromDclReader> CrdtInterface for CrdtLWWInterface<T> {
         type_map
             .lww
             .remove(&component_id)
-            .map(|state| commands.try_insert(CrdtLWWStateComponent::<T>::new(state)));
+            .map(|state| commands.try_insert(CrdtStateComponent::<CrdtLWWState, T>::new(state)));
+    }
+}
+
+pub struct CrdtGOInterface<T: FromDclReader> {
+    position: ComponentPosition,
+    _marker: PhantomData<T>,
+}
+
+impl<T: FromDclReader> CrdtInterface for CrdtGOInterface<T> {
+    fn crdt_type(&self) -> CrdtType {
+        CrdtType::GO(self.position)
+    }
+
+    fn updates_to_entity(
+        &self,
+        component_id: SceneComponentId,
+        type_map: &mut CrdtStore,
+        commands: &mut EntityCommands,
+    ) {
+        type_map
+            .go
+            .remove(&component_id)
+            .map(|state| commands.try_insert(CrdtStateComponent::<CrdtGOState, T>::new(state)));
     }
 }
 
@@ -152,6 +178,15 @@ pub trait AddCrdtInterfaceExt {
         position: ComponentPosition,
     ) where
         <C as TryFrom<D>>::Error: std::fmt::Display;
+
+    fn add_crdt_go_component<
+        D: FromDclReader + std::fmt::Debug,
+        C: Component + DerefMut<Target = VecDeque<D>> + Default,
+    >(
+        &mut self,
+        id: SceneComponentId,
+        position: ComponentPosition,
+    );
 }
 
 impl AddCrdtInterfaceExt for App {
@@ -186,6 +221,31 @@ impl AddCrdtInterfaceExt for App {
             .schedule
             .add_systems(process_crdt_lww_updates::<D, C>.in_set(SceneLoopSets::UpdateWorld));
     }
+
+    fn add_crdt_go_component<
+        D: FromDclReader + std::fmt::Debug,
+        C: Component + DerefMut<Target = VecDeque<D>> + Default,
+    >(
+        &mut self,
+        id: SceneComponentId,
+        position: ComponentPosition,
+    ) {
+        // store a writer
+        let existing = self.world.resource_mut::<CrdtExtractors>().0.insert(
+            id,
+            Box::new(CrdtGOInterface::<D> {
+                position,
+                _marker: PhantomData,
+            }),
+        );
+
+        assert!(existing.is_none(), "duplicate registration for {id:?}");
+
+        self.world
+            .resource_mut::<SceneLoopSchedule>()
+            .schedule
+            .add_systems(process_crdt_go_updates::<D, C>.in_set(SceneLoopSets::UpdateWorld));
+    }
 }
 
 // a default system for processing LWW comonent updates
@@ -197,9 +257,10 @@ pub(crate) fn process_crdt_lww_updates<
     mut scenes: Query<(
         Entity,
         &RendererSceneContext,
-        &mut CrdtLWWStateComponent<D>,
+        &mut CrdtStateComponent<CrdtLWWState, D>,
         &DeletedSceneEntities,
     )>,
+    entities: PrimaryEntities,
 ) where
     <C as TryFrom<D>>::Error: std::fmt::Display,
 {
@@ -210,7 +271,7 @@ pub(crate) fn process_crdt_lww_updates<
         }
 
         for (scene_entity, entry) in std::mem::take(&mut updates.last_write) {
-            let Some(entity) = scene_context.bevy_entity(scene_entity) else {
+            let Some(entity) = entities.primary_or_scene(scene_entity, scene_context) else {
                 warn!(
                     "skipping {} update for missing entity {:?}",
                     std::any::type_name::<D>(),
@@ -251,6 +312,63 @@ pub(crate) fn process_crdt_lww_updates<
                 };
             } else {
                 commands.entity(entity).remove::<C>();
+            }
+        }
+    }
+}
+
+fn process_crdt_go_updates<
+    D: FromDclReader + std::fmt::Debug,
+    C: Component + DerefMut<Target = VecDeque<D>> + Default,
+>(
+    mut commands: Commands,
+    mut scenes: Query<(
+        Entity,
+        &RendererSceneContext,
+        &mut CrdtStateComponent<CrdtGOState, D>,
+        &DeletedSceneEntities,
+    )>,
+    mut existing: Query<&mut C>,
+    entities: PrimaryEntities,
+) {
+    for (_root, scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
+        // remove crdt state for dead entities
+        for deleted in &deleted_entities.0 {
+            updates.0.remove(deleted);
+        }
+
+        for (scene_entity, entries) in std::mem::take(&mut updates.0) {
+            let Some(entity) = entities.primary_or_scene(scene_entity, scene_context) else {
+                warn!(
+                    "skipping {} update for missing entity {:?}",
+                    std::any::type_name::<D>(),
+                    scene_entity
+                );
+                continue;
+            };
+
+            let mut new = C::default();
+            let mut target = &mut new;
+            let mut exists = false;
+
+            if let Ok(existing) = existing.get_mut(entity) {
+                target = existing.into_inner();
+                exists = true;
+            }
+
+            for entry in entries {
+                match D::from_reader(&mut DclReader::new(&entry.data)) {
+                    Ok(d) => target.push_back(d),
+                    Err(e) => warn!(
+                        "failed to deserialize {} from buffer: {:?}",
+                        std::any::type_name::<D>(),
+                        e
+                    ),
+                }
+            }
+
+            if !exists {
+                commands.entity(entity).try_insert(new);
             }
         }
     }

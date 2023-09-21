@@ -3,7 +3,7 @@ use bevy::{
     transform::systems::{propagate_transforms, sync_simple_transforms},
     utils::{Entry, HashMap, HashSet},
 };
-use dcl::interface::ComponentPosition;
+use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
 
 use crate::{
     primary_entities::PrimaryEntities, DeletedSceneEntities, RendererSceneContext, SceneEntity,
@@ -15,7 +15,7 @@ use dcl_component::{
     SceneEntityId,
 };
 
-use super::{AddCrdtInterfaceExt, CrdtLWWStateComponent};
+use super::{AddCrdtInterfaceExt, CrdtStateComponent};
 
 pub struct TransformAndParentPlugin;
 
@@ -45,7 +45,7 @@ pub(crate) fn process_transform_and_parent_updates(
     mut scenes: Query<(
         Entity,
         &mut RendererSceneContext,
-        &mut CrdtLWWStateComponent<DclTransformAndParent>,
+        &mut CrdtStateComponent<CrdtLWWState, DclTransformAndParent>,
         &DeletedSceneEntities,
     )>,
     primaries: PrimaryEntities,
