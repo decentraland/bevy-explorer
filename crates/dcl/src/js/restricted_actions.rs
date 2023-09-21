@@ -5,6 +5,9 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{interface::CrdtType, js::RendererStore, CrdtStore};
 use dcl_component::{
+    proto_components::sdk::components::{
+        pb_avatar_emote_command::EmoteCommand, PbAvatarEmoteCommand,
+    },
     transform_and_parent::{DclQuat, DclTransformAndParent, DclTranslation},
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
@@ -17,18 +20,17 @@ pub fn ops() -> Vec<OpDecl> {
         op_move_player_to::DECL,
         op_change_realm::DECL,
         op_external_url::DECL,
+        op_emote::DECL,
     ]
 }
 
 #[op(v8)]
 fn op_move_player_to(
-    op_state: Rc<RefCell<OpState>>,
+    op_state: &mut OpState,
     absolute: bool,
     position: [f32; 3],
     maybe_camera: Option<[f32; 3]>,
 ) {
-    let mut op_state = op_state.borrow_mut();
-
     // get current
     let inbound = &op_state.borrow::<RendererStore>().0;
     let get_transform = |id: SceneEntityId| -> DclTransformAndParent {
@@ -124,4 +126,24 @@ async fn op_external_url(state: Rc<RefCell<OpState>>, url: String) -> bool {
         .push((SceneRpcCall::ExternalUrl { url }, Some(sx)));
 
     matches!(rx.await, Ok(Ok(_)))
+}
+
+#[op]
+fn op_emote(op_state: &mut OpState, emote: String) {
+    let emote = PbAvatarEmoteCommand {
+        emote_command: Some(EmoteCommand {
+            emote_urn: emote,
+            r#loop: false,
+        }),
+    };
+
+    let outbound = op_state.borrow_mut::<CrdtStore>();
+    let mut buf = Vec::default();
+    DclWriter::new(&mut buf).write(&emote);
+    outbound.force_update(
+        SceneComponentId::AVATAR_EMOTE_COMMAND,
+        CrdtType::GO_ANY,
+        SceneEntityId::PLAYER,
+        Some(&mut DclReader::new(&buf)),
+    );
 }

@@ -35,6 +35,12 @@ use self::{
     websocket_room::{WebsocketRoomPlugin, WebsocketRoomTransport},
 };
 
+pub mod chat_marker_things {
+    pub const EMOTE: char = '␐';
+
+    pub const ALL: [char; 3] = [EMOTE, '␑', '␆'];
+}
+
 pub struct CommsPlugin;
 
 impl Plugin for CommsPlugin {

@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 common = { workspace = true }
 comms = { workspace = true }
+console = { workspace = true}
 dcl = { workspace = true }
 dcl_component = { workspace = true }
 ipfs = { workspace = true }
@@ -21,3 +22,5 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 urn = { workspace = true }
 anyhow = { workspace = true }
+clap = { workspace = true }
+bevy_console = { workspace = true }
