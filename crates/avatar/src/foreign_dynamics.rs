@@ -95,7 +95,7 @@ fn update_foreign_user_actual_position(
     for (foreign_ent, target, mut actual, mut dynamic_state) in avatars.iter_mut() {
         // arrive at target position by time + 0.5
         let walk_time_left = target.time + 0.5 - time.elapsed_seconds();
-        if walk_time_left <= 0.0 {
+        if walk_time_left <= 0.0 || (actual.translation - target.translation).length() > 125.0 {
             actual.translation = target.translation;
             dynamic_state.velocity = Vec3::ZERO;
         } else {
