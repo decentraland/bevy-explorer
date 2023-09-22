@@ -3,7 +3,9 @@ use std::{collections::VecDeque, time::Duration};
 use bevy::{gltf::Gltf, math::Vec3Swizzles, prelude::*, utils::HashMap};
 use bevy_console::ConsoleCommand;
 use common::{sets::SceneSets, structs::PrimaryUser, util::TryInsertEx};
-use comms::{chat_marker_things, global_crdt::ChatEvent, NetworkMessage, Transport};
+use comms::{
+    chat_marker_things, global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport,
+};
 use console::DoAddConsoleCommand;
 use dcl::interface::ComponentPosition;
 use dcl_component::{
@@ -16,6 +18,60 @@ use dcl_component::{
 use scene_runner::update_world::AddCrdtInterfaceExt;
 
 use super::AvatarDynamicState;
+
+use once_cell::sync::Lazy;
+
+struct DefaultAnim {
+    male: &'static str,
+    female: &'static str,
+    repeat: bool,
+}
+
+impl DefaultAnim {
+    fn new(male: &'static str, female: &'static str, repeat: bool) -> Self {
+        Self {
+            male,
+            female,
+            repeat,
+        }
+    }
+}
+
+//                                           network|animation   |
+//                                           name   |male  female|repeat
+static DEFAULT_ANIMATION_LOOKUP: Lazy<HashMap<&str, DefaultAnim>> = Lazy::new(|| {
+    HashMap::from_iter([
+        (
+            "handsair",
+            DefaultAnim::new("Hands_In_The_Air", "Hands_In_The_Air", false),
+        ),
+        ("wave", DefaultAnim::new("Wave_Male", "Wave_Female", false)),
+        (
+            "fistpump",
+            DefaultAnim::new("M_FistPump", "F_FistPump", false),
+        ),
+        (
+            "dance",
+            DefaultAnim::new("Dance_Male", "Dance_Female", true),
+        ),
+        (
+            "raiseHand",
+            DefaultAnim::new("Raise_Hand", "Raise_Hand", false),
+        ),
+        // "clap" defaults
+        (
+            "money",
+            DefaultAnim::new(
+                "Armature|Throw Money-Emote_v02|BaseLayer",
+                "Armature|Throw Money-Emote_v02|BaseLayer",
+                false,
+            ),
+        ),
+        // "kiss" defaults
+        ("headexplode", DefaultAnim::new("explode", "explode", false)),
+        // "shrug" defaults
+    ])
+});
 
 #[derive(Resource, Default)]
 pub struct AvatarAnimations(pub HashMap<String, Handle<AnimationClip>>);
@@ -149,12 +205,14 @@ fn receive_emotes(mut commands: Commands, mut chat_events: EventReader<ChatEvent
 
 // TODO this function is a POS
 // lots of magic numbers that don't even deserve to be constants, needs reworking
+#[allow(clippy::type_complexity)]
 fn animate(
     mut avatars: Query<(
         Entity,
         &AvatarAnimPlayer,
         &AvatarDynamicState,
         Option<&mut EmoteList>,
+        Option<&UserProfile>,
     )>,
     mut players: Query<&mut AnimationPlayer>,
     animations: Res<AvatarAnimations>,
@@ -166,18 +224,19 @@ fn animate(
     let prior_velocities = std::mem::take(&mut *velocities);
     let prior_playing = std::mem::take(&mut *playing);
 
-    let mut play = |anim: String, speed: f32, ent: Entity, restart: bool, repeat: bool| -> bool {
-        if let Some(clip) = animations.0.get(&anim) {
+    let mut play = |anim: &str, speed: f32, ent: Entity, restart: bool, repeat: bool| -> bool {
+        if let Some(clip) = animations.0.get(anim) {
             if let Ok(mut player) = players.get_mut(ent) {
                 if restart && player.elapsed() == 0.75 {
                     player.start(clip.clone()).repeat();
-                } else if Some(&anim) != prior_playing.get(&ent) || restart {
+                } else if Some(anim) != prior_playing.get(&ent).map(String::as_str) || restart {
                     player.play_with_transition(clip.clone(), Duration::from_millis(100));
                     if repeat {
                         player.repeat();
                     } else {
                         player.stop_repeating();
                     }
+                    playing.insert(ent, anim.to_owned());
                 }
 
                 if anim == "Jump" && player.elapsed() >= 0.75 {
@@ -187,7 +246,6 @@ fn animate(
                 }
 
                 player.set_speed(speed);
-                playing.insert(ent, anim);
                 return player.elapsed() > anim_assets.get(clip).map_or(f32::MAX, |c| c.duration());
             }
         }
@@ -195,7 +253,7 @@ fn animate(
         false
     };
 
-    for (avatar_ent, animplayer_ent, dynamic_state, mut emotes) in avatars.iter_mut() {
+    for (avatar_ent, animplayer_ent, dynamic_state, mut emotes, profile) in avatars.iter_mut() {
         // take a copy of the last entry, remove others
         let mut emote = emotes
             .as_mut()
@@ -230,7 +288,13 @@ fn animate(
             emote_command: Some(EmoteCommand { emote_urn, r#loop }),
         }) = emote
         {
-            if play(emote_urn, 1.0, animplayer_ent.0, false, r#loop) && !r#loop {
+            let is_female = profile.map_or(true, UserProfile::is_female);
+            let (emote_urn, repeat) = DEFAULT_ANIMATION_LOOKUP
+                .get(emote_urn.as_str())
+                .map(|anim| (if is_female { anim.female } else { anim.male }, anim.repeat))
+                .unwrap_or((emote_urn.as_str(), r#loop));
+
+            if play(emote_urn, 1.0, animplayer_ent.0, false, repeat) && !repeat {
                 // emote has finished, remove from the set so will resume default anim after
                 emotes.as_mut().unwrap().clear();
             };
@@ -239,7 +303,7 @@ fn animate(
 
         if dynamic_state.ground_height > 0.2 {
             play(
-                "Jump".to_owned(),
+                "Jump",
                 1.25,
                 animplayer_ent.0,
                 dynamic_state.velocity.y > 0.0,
@@ -251,7 +315,7 @@ fn animate(
         if damped_velocity_len > 0.1 {
             if damped_velocity_len < 2.0 {
                 play(
-                    "Walk".to_owned(),
+                    "Walk",
                     damped_velocity_len / 1.5,
                     animplayer_ent.0,
                     false,
@@ -259,7 +323,7 @@ fn animate(
                 );
             } else {
                 play(
-                    "Run".to_owned(),
+                    "Run",
                     damped_velocity_len / 4.5,
                     animplayer_ent.0,
                     false,
@@ -267,7 +331,7 @@ fn animate(
                 );
             }
         } else {
-            play("Idle_Male".to_owned(), 1.0, animplayer_ent.0, false, true);
+            play("Idle_Male", 1.0, animplayer_ent.0, false, true);
         }
     }
 }

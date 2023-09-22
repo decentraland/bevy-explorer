@@ -342,3 +342,14 @@ pub struct UserProfile {
     pub content: SerializedProfile,
     pub base_url: String,
 }
+
+impl UserProfile {
+    pub fn is_female(&self) -> bool {
+        self.content
+            .avatar
+            .body_shape
+            .as_ref()
+            .and_then(|s| s.rsplit(':').next())
+            .map_or(true, |shape| shape.to_lowercase() == "basefemale")
+    }
+}
