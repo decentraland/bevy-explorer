@@ -152,7 +152,7 @@ fn update_source_volume(
     for (scene, source, emitter, transform) in query.iter() {
         if current_scene == Some(scene.root) {
             let sound_path = transform.translation() - receiver.translation();
-            let volume = (1. - sound_path.length() / 25.0).clamp(0., 1.).powi(2)
+            let volume = (1. - sound_path.length() / 125.0).clamp(0., 1.).powi(2)
                 * source.0.volume.unwrap_or(1.0);
 
             let right_ear_angle = receiver.right().angle_between(sound_path);
