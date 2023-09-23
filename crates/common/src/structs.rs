@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use bevy::prelude::*;
+use bevy::{prelude::*, utils::HashMap};
 use serde::{Deserialize, Serialize};
 
 // main user entity
@@ -167,6 +167,9 @@ pub struct PrimaryCameraRes(pub Entity);
 // marker for the root ui component (full screen, used for checking pointer/mouse button events are not intercepted by any other ui component)
 #[derive(Component)]
 pub struct UiRoot;
+
+#[derive(Resource, Default)]
+pub struct ToolTips(pub HashMap<&'static str, Vec<(String, bool)>>);
 
 // app configuration
 #[derive(Serialize, Deserialize, Resource)]
