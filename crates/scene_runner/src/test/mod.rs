@@ -28,7 +28,7 @@ use crate::{
     RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
 };
 use common::structs::{
-    AppConfig, GraphicsSettings, PrimaryCamera, RestrictedAction, SceneLoadDistance,
+    AppConfig, GraphicsSettings, PrimaryCamera, RestrictedAction, SceneLoadDistance, ToolTips,
 };
 use comms::CommsPlugin;
 use console::{self, ConsolePlugin};
@@ -111,6 +111,7 @@ fn init_test_app(entity_json: &str) -> App {
     app.add_plugins(SceneRunnerPlugin);
     app.init_resource::<InputMap>();
     app.init_resource::<AcceptInput>();
+    app.init_resource::<ToolTips>();
     app.add_event::<RestrictedAction>();
     app.insert_resource(SceneLoadDistance(1.0));
 

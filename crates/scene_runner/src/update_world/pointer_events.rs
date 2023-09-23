@@ -4,10 +4,7 @@ use input_manager::InputMap;
 
 use crate::update_scene::pointer_results::{PointerTarget, PointerTargetInfo};
 use dcl::interface::ComponentPosition;
-use dcl_component::{
-    proto_components::sdk::components::PbPointerEvents,
-    SceneComponentId,
-};
+use dcl_component::{proto_components::sdk::components::PbPointerEvents, SceneComponentId};
 
 use super::AddCrdtInterfaceExt;
 

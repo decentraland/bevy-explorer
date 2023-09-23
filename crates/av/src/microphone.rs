@@ -4,9 +4,16 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 pub struct MicPlugin;
 
+#[derive(Resource, Default)]
+pub struct MicState {
+    pub available: bool,
+    pub enabled: bool,
+}
+
 impl Plugin for MicPlugin {
     fn build(&self, app: &mut App) {
         app.init_non_send_resource::<MicStream>();
+        app.init_resource::<MicState>();
         app.add_systems(Update, update_mic);
     }
 }
@@ -18,17 +25,25 @@ pub fn update_mic(
     mic: Res<LocalAudioSource>,
     mut last_name: Local<String>,
     mut stream: NonSendMut<MicStream>,
+    mut mic_state: ResMut<MicState>,
 ) {
     let default_host = cpal::default_host();
     let default_input = default_host.default_input_device();
     if let Some(input) = default_input {
         if let Ok(name) = input.name() {
-            if name == *last_name {
+            mic_state.available = true;
+
+            if name == *last_name && mic_state.enabled {
                 return;
             }
 
             // drop old stream
             stream.0 = None;
+
+            if !mic_state.enabled {
+                *last_name = "disabled".to_owned();
+                return;
+            }
 
             let config = input.default_input_config().unwrap();
             let sender = mic.sender.clone();
@@ -66,6 +81,13 @@ pub fn update_mic(
                     warn!("failed to stream mic: {e}");
                 }
             }
+
+            return;
         }
     }
+
+    // faild to find input - drop old stream
+    stream.0 = None;
+    *last_name = "no device".to_owned();
+    mic_state.available = false;
 }

@@ -70,6 +70,7 @@ pub struct TransportAlias {
     pub alias: u32,
 }
 
+#[derive(PartialEq, Eq)]
 pub enum TransportType {
     WebsocketRoom,
     Livekit,
