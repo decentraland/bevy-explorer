@@ -15,7 +15,10 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use scene_runner::update_world::AddCrdtInterfaceExt;
+use scene_runner::{
+    update_world::{transform_and_parent::ParentPositionSync, AddCrdtInterfaceExt},
+    ContainerEntity, ContainingScene,
+};
 
 use super::AvatarDynamicState;
 
@@ -81,7 +84,7 @@ pub struct AvatarAnimPlayer(pub Entity);
 
 pub struct AvatarAnimationPlugin;
 
-#[derive(Component, Default, Deref, DerefMut, Debug)]
+#[derive(Component, Default, Deref, DerefMut, Debug, Clone)]
 pub struct EmoteList(VecDeque<PbAvatarEmoteCommand>);
 
 impl EmoteList {
@@ -105,7 +108,7 @@ impl Plugin for AvatarAnimationPlugin {
             Update,
             (
                 load_animations,
-                (broadcast_emote, receive_emotes).before(animate),
+                (read_player_emotes, broadcast_emote, receive_emotes).before(animate),
                 animate,
             )
                 .in_set(SceneSets::PostLoop),
@@ -144,6 +147,31 @@ fn load_animations(
                 None => true,
             }
         })
+    }
+}
+
+// copy emotes from scene-player entities onto main player entity
+fn read_player_emotes(
+    mut commands: Commands,
+    scene_player_emotes: Query<
+        (Entity, &EmoteList, &ParentPositionSync, &ContainerEntity),
+        Without<PrimaryUser>,
+    >,
+    mut player_emotes: Query<Entity, With<PrimaryUser>>,
+    containing_scene: ContainingScene,
+) {
+    let Ok(player) = player_emotes.get_single_mut() else {
+        return;
+    };
+    let containing_scene = containing_scene.get(player);
+
+    for (scene_ent, emotes, parent, container) in &scene_player_emotes {
+        if parent.0 == player {
+            commands.entity(scene_ent).remove::<EmoteList>();
+            if containing_scene == Some(container.root) {
+                commands.entity(player).insert(emotes.clone());
+            }
+        }
     }
 }
 

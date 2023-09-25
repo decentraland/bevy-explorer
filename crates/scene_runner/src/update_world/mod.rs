@@ -13,8 +13,6 @@ use dcl::{
 };
 use dcl_component::{DclReader, FromDclReader, SceneComponentId};
 
-use crate::primary_entities::PrimaryEntities;
-
 use self::{
     animation::AnimatorPlugin, billboard::BillboardPlugin, camera_mode_area::CameraModeAreaPlugin,
     gltf_container::GltfDefinitionPlugin, material::MaterialDefinitionPlugin,
@@ -260,7 +258,6 @@ pub(crate) fn process_crdt_lww_updates<
         &mut CrdtStateComponent<CrdtLWWState, D>,
         &DeletedSceneEntities,
     )>,
-    entities: PrimaryEntities,
 ) where
     <C as TryFrom<D>>::Error: std::fmt::Display,
 {
@@ -271,7 +268,7 @@ pub(crate) fn process_crdt_lww_updates<
         }
 
         for (scene_entity, entry) in std::mem::take(&mut updates.last_write) {
-            let Some(entity) = entities.primary_or_scene(scene_entity, scene_context) else {
+            let Some(entity) = scene_context.bevy_entity(scene_entity) else {
                 warn!(
                     "skipping {} update for missing entity {:?}",
                     std::any::type_name::<D>(),
@@ -329,7 +326,6 @@ fn process_crdt_go_updates<
         &DeletedSceneEntities,
     )>,
     mut existing: Query<&mut C>,
-    entities: PrimaryEntities,
 ) {
     for (_root, scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
         // remove crdt state for dead entities
@@ -338,7 +334,7 @@ fn process_crdt_go_updates<
         }
 
         for (scene_entity, entries) in std::mem::take(&mut updates.0) {
-            let Some(entity) = entities.primary_or_scene(scene_entity, scene_context) else {
+            let Some(entity) = scene_context.bevy_entity(scene_entity) else {
                 warn!(
                     "skipping {} update for missing entity {:?}",
                     std::any::type_name::<D>(),
