@@ -214,6 +214,7 @@ pub(crate) fn load_scene_javascript(
     mut scene_updates: ResMut<SceneUpdates>,
     global_scene: Res<GlobalCrdtState>,
     mut pointers: ResMut<ScenePointers>,
+    portable_scenes: Res<PortableScenes>,
 ) {
     for (root, state, h_scene) in loading_scenes
         .iter()
@@ -251,6 +252,8 @@ pub(crate) fn load_scene_javascript(
             continue;
         };
 
+        let is_portable = portable_scenes.0.contains_key(&definition.id);
+
         // populate pointers
         let mut extent_min = IVec2::MAX;
         let mut extent_max = IVec2::MIN;
@@ -259,9 +262,13 @@ pub(crate) fn load_scene_javascript(
             let x = x.parse::<i32>().unwrap();
             let y = y.parse::<i32>().unwrap();
             let parcel = IVec2::new(x, y);
-            pointers
-                .0
-                .insert(parcel, PointerResult::Exists(definition.id.clone()));
+
+            if !is_portable {
+                pointers
+                    .0
+                    .insert(parcel, PointerResult::Exists(definition.id.clone()));
+            }
+
             extent_min = extent_min.min(parcel);
             extent_max = extent_max.max(parcel);
         }
@@ -322,6 +329,7 @@ pub(crate) fn load_scene_javascript(
         let mut renderer_context = RendererSceneContext::new(
             scene_id,
             definition.id.clone(),
+            is_portable,
             title,
             base,
             root,

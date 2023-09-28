@@ -339,6 +339,12 @@ fn spawn_portable(
     });
 
     pending_responses.retain(|hash, sender| {
+        let mut fail = |msg: String| -> bool {
+            let _ = sender.take().unwrap().send(Err(msg));
+            portables.0.remove(hash);
+            false
+        };
+
         let Some(ent) = live_scenes.0.get(hash) else {
             debug!("no scene yet");
             return true;
@@ -346,19 +352,11 @@ fn spawn_portable(
 
         let Ok((maybe_context, maybe_loading)) = scenes.get(*ent) else {
             // with no context and no load state something went wrong
-            let _ = sender
-                .take()
-                .unwrap()
-                .send(Err("failed to start loading".to_owned()));
-            return false;
+            return fail("failed to start loading".to_owned());
         };
 
         if matches!(maybe_loading, Some(SceneLoading::Failed)) {
-            let _ = sender
-                .take()
-                .unwrap()
-                .send(Err("failed to load".to_owned()));
-            return false;
+            return fail("failed to load".to_owned());
         }
 
         if let Some(context) = maybe_context {
@@ -378,7 +376,7 @@ fn spawn_portable(
             return false;
         }
 
-        println!("waiting for context, load state is {maybe_loading:?}");
+        debug!("waiting for context, load state is {maybe_loading:?}");
         true
     });
 }
