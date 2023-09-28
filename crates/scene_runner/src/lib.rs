@@ -17,10 +17,9 @@ use bevy::{
 };
 
 use common::{
+    rpc::{RestrictedAction, RpcResultSender, SceneRpcCall},
     sets::{SceneLoopSets, SceneSets},
-    structs::{
-        AppConfig, PrimaryCamera, PrimaryUser, RestrictedAction, RpcResultSender, SceneRpcCall,
-    },
+    structs::{AppConfig, PrimaryCamera, PrimaryUser},
     util::{dcl_assert, TryPushChildrenEx},
 };
 use dcl::{
@@ -31,6 +30,7 @@ use dcl_component::{
     transform_and_parent::DclTransformAndParent,
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
+use initialize_scene::PortableScenes;
 use ipfs::SceneIpfsLocation;
 use primary_entities::PrimaryEntities;
 use spin_sleep::SpinSleeper;
@@ -351,7 +351,7 @@ fn update_scene_priority(
 ) {
     updates.eligible_jobs = 0;
 
-    let (player_scene, player_translation) = player
+    let (active_scenes, player_translation) = player
         .get_single()
         .map(|(e, gt)| (containing_scene.get(e), gt.translation()))
         .unwrap_or_default();
@@ -369,7 +369,7 @@ fn update_scene_priority(
         .filter_map(|(ent, transform, mut context)| {
             // TODO clamp to scene bounds instead of using distance to scene origin
             let distance = (transform.translation() - player_translation).length();
-            context.priority = if Some(ent) == player_scene {
+            context.priority = if active_scenes.contains(&ent) {
                 0.0
             } else {
                 distance
@@ -408,10 +408,11 @@ pub struct ContainingScene<'w, 's> {
     transforms: Query<'w, 's, &'static GlobalTransform>,
     pointers: Res<'w, ScenePointers>,
     live_scenes: Res<'w, LiveScenes>,
+    portable_scenes: Res<'w, PortableScenes>,
 }
 
 impl<'w, 's> ContainingScene<'w, 's> {
-    pub fn get_position(&self, position: Vec3) -> Option<Entity> {
+    pub fn get_parcel_position(&self, position: Vec3) -> Option<Entity> {
         let parcel = (position.xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
             .floor()
             .as_ivec2();
@@ -423,12 +424,45 @@ impl<'w, 's> ContainingScene<'w, 's> {
         }
     }
 
-    pub fn get(&self, ent: Entity) -> Option<Entity> {
-        self.get_position(self.transforms.get(ent).ok()?.translation())
+    pub fn get_parcel(&self, ent: Entity) -> Option<Entity> {
+        self.transforms
+            .get(ent)
+            .map(|gt| self.get_parcel_position(gt.translation()))
+            .unwrap_or_default()
+    }
+
+    pub fn get_position(&self, position: Vec3) -> HashSet<Entity> {
+        let parcel = (position.xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
+            .floor()
+            .as_ivec2();
+
+        let mut results = HashSet::default();
+
+        if let Some(PointerResult::Exists(hash)) = self.pointers.0.get(&parcel) {
+            if let Some(scene) = self.live_scenes.0.get(hash) {
+                results.insert(*scene);
+            }
+        }
+
+        results.extend(
+            self.portable_scenes
+                .0
+                .iter()
+                .flat_map(|(hash, _)| self.live_scenes.0.get(hash)),
+        );
+
+        results
+    }
+
+    pub fn get(&self, ent: Entity) -> HashSet<Entity> {
+        self.transforms
+            .get(ent)
+            .map(|gt| self.get_position(gt.translation()))
+            .unwrap_or_default()
     }
 
     // get all scenes within radius of the given entity
-    pub fn get_area(&self, ent: Entity, radius: f32) -> Vec<Entity> {
+    pub fn get_area(&self, ent: Entity, radius: f32) -> HashSet<Entity> {
         let Ok(focus) = self
             .transforms
             .get(ent)
@@ -443,7 +477,7 @@ impl<'w, 's> ContainingScene<'w, 's> {
         let min_parcel = (min_point / PARCEL_SIZE).floor().as_ivec2();
         let max_parcel = (max_point / PARCEL_SIZE).floor().as_ivec2();
 
-        let mut results = Vec::default();
+        let mut results = HashSet::default();
 
         for parcel_x in min_parcel.x..=max_parcel.x {
             for parcel_y in min_parcel.y..=max_parcel.y {
@@ -451,7 +485,7 @@ impl<'w, 's> ContainingScene<'w, 's> {
                     self.pointers.0.get(&IVec2::new(parcel_x, parcel_y))
                 {
                     if let Some(scene) = self.live_scenes.0.get(hash).copied() {
-                        results.push(scene)
+                        results.insert(scene);
                     }
                 }
             }
@@ -613,29 +647,48 @@ fn receive_scene_updates(
                         dcl_assert!(
                             updates.jobs_in_flight.contains(root) || context.tick_number == 1
                         );
+
+                        for (action, resp) in actions {
+                            let restricted_action = match action {
+                                SceneRpcCall::ChangeRealm { to, message } => {
+                                    RestrictedAction::ChangeRealm {
+                                        scene: *root,
+                                        to,
+                                        message,
+                                        response: RpcResultSender::new(resp.unwrap()),
+                                    }
+                                }
+                                SceneRpcCall::ExternalUrl { url } => {
+                                    RestrictedAction::ExternalUrl {
+                                        scene: *root,
+                                        url,
+                                        response: RpcResultSender::new(resp.unwrap()),
+                                    }
+                                }
+                                SceneRpcCall::SpawnPortable { location } => {
+                                    RestrictedAction::SpawnPortable {
+                                        location,
+                                        spawner: Some(context.hash.to_owned()),
+                                        response: RpcResultSender::new(resp.unwrap()),
+                                    }
+                                }
+                                SceneRpcCall::KillPortable { location } => {
+                                    RestrictedAction::KillPortable {
+                                        location,
+                                        response: RpcResultSender::new(resp.unwrap()),
+                                    }
+                                }
+                                SceneRpcCall::ListPortables => RestrictedAction::ListPortables {
+                                    response: RpcResultSender::new(resp.unwrap()),
+                                },
+                            };
+
+                            restricted_actions.send(restricted_action);
+                        }
                     } else {
                         debug!(
                             "no scene entity, probably got dropped before we processed the result"
                         );
-                    }
-                    for (action, resp) in actions {
-                        let restricted_action = match action {
-                            SceneRpcCall::ChangeRealm { to, message } => {
-                                RestrictedAction::ChangeRealm {
-                                    scene: *root,
-                                    to,
-                                    message,
-                                    response: RpcResultSender::new(resp.unwrap()),
-                                }
-                            }
-                            SceneRpcCall::ExternalUrl { url } => RestrictedAction::ExternalUrl {
-                                scene: *root,
-                                url,
-                                response: RpcResultSender::new(resp.unwrap()),
-                            },
-                        };
-
-                        restricted_actions.send(restricted_action);
                     }
                     Some(*root)
                 }

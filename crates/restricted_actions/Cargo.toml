@@ -13,4 +13,6 @@ avatar = { workspace = true }
 ui_core = { workspace = true }
 
 bevy = { workspace = true }
+tokio = { workspace = true }
+isahc = { workspace = true }
 opener = "0.6"

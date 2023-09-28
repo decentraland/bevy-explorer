@@ -9,7 +9,7 @@ use crate::{
     primary_entities::PrimaryEntities, DeletedSceneEntities, RendererSceneContext, SceneEntity,
     SceneLoopSchedule, TargetParent,
 };
-use common::{sets::SceneLoopSets, structs::RestrictedAction};
+use common::{rpc::RestrictedAction, sets::SceneLoopSets};
 use dcl_component::{
     transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
     SceneEntityId,

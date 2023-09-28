@@ -115,21 +115,24 @@ fn update_foreign_user_actual_position(
         }
 
         // update ground height
+        dynamic_state.ground_height = actual.translation.y;
         // get containing scene
-        match containing_scene
+        containing_scene
             .get(foreign_ent)
-            .and_then(|scene| scene_datas.get_mut(scene).ok())
-        {
-            Some((context, mut collider_data, _scene_transform)) => {
-                dynamic_state.ground_height = collider_data
-                    .get_groundheight(context.last_update_frame, actual.translation)
-                    .map(|(h, _)| h)
-                    .unwrap_or(actual.translation.y);
-            }
-            None => {
-                dynamic_state.ground_height = actual.translation.y;
-            }
-        };
+            .into_iter()
+            .for_each(|scene| {
+                if let Ok((context, mut collider_data, _scene_transform)) =
+                    scene_datas.get_mut(scene)
+                {
+                    if let Some(ground_height) = collider_data
+                        .get_groundheight(context.last_update_frame, actual.translation)
+                        .map(|(h, _)| h)
+                    {
+                        dynamic_state.ground_height =
+                            dynamic_state.ground_height.min(ground_height);
+                    }
+                }
+            });
 
         // fall
         if actual.translation.y > target.translation.y && dynamic_state.ground_height > 0.0 {

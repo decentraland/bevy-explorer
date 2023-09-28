@@ -1,5 +1,5 @@
 use bevy::prelude::{Mat3, Quat, Vec3};
-use common::structs::SceneRpcCall;
+use common::rpc::{RpcResult, SceneRpcCall};
 use deno_core::{op, Op, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 
@@ -108,22 +108,22 @@ async fn op_change_realm(
     realm: String,
     message: Option<String>,
 ) -> bool {
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
-    state
-        .borrow_mut()
-        .borrow_mut::<RpcCalls>()
-        .push((SceneRpcCall::ChangeRealm { to: realm, message }, Some(sx)));
+    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    state.borrow_mut().borrow_mut::<RpcCalls>().push((
+        SceneRpcCall::ChangeRealm { to: realm, message },
+        Some(RpcResult::new(sx)),
+    ));
 
     matches!(rx.await, Ok(Ok(_)))
 }
 
 #[op]
 async fn op_external_url(state: Rc<RefCell<OpState>>, url: String) -> bool {
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
+    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
-        .push((SceneRpcCall::ExternalUrl { url }, Some(sx)));
+        .push((SceneRpcCall::ExternalUrl { url }, Some(RpcResult::new(sx))));
 
     matches!(rx.await, Ok(Ok(_)))
 }

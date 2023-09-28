@@ -58,6 +58,7 @@ impl Plugin for SceneLifecyclePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LiveScenes>();
         app.init_resource::<ScenePointers>();
+        app.init_resource::<PortableScenes>();
         app.add_asset::<SerializedCrdtStore>();
         app.add_asset_loader(CrdtLoader);
 
@@ -491,6 +492,15 @@ pub(crate) fn initialize_scene(
 #[derive(Resource, Default)]
 pub struct LiveScenes(pub HashMap<String, Entity>);
 
+pub struct PortableSource {
+    pub pid: String,
+    pub parent_scene: Option<String>,
+    pub ens: Option<String>,
+}
+
+#[derive(Resource, Default)]
+pub struct PortableScenes(pub HashMap<String, PortableSource>);
+
 pub const PARCEL_SIZE: f32 = 16.0;
 
 #[derive(Resource, Default, Debug)]
@@ -669,8 +679,12 @@ fn load_active_entities(
 pub fn process_scene_lifecycle(
     mut commands: Commands,
     current_realm: Res<CurrentRealm>,
+    portables: Res<PortableScenes>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
-    scene_entities: Query<Entity, Or<(With<SceneLoading>, With<RendererSceneContext>)>>,
+    scene_entities: Query<
+        (Entity, &SceneHash),
+        Or<(With<SceneLoading>, With<RendererSceneContext>)>,
+    >,
     range: Res<SceneLoadDistance>,
     mut live_scenes: ResMut<LiveScenes>,
     mut spawn: EventWriter<LoadSceneEvent>,
@@ -707,6 +721,14 @@ pub fn process_scene_lifecycle(
         ));
     }
 
+    // add any portables to requirements
+    required_scene_ids.extend(
+        portables
+            .0
+            .iter()
+            .map(|(hash, source)| (hash.clone(), Some(source.pid.clone()))),
+    );
+
     // record which scene entities we should keep
     let required_entities: HashMap<_, _> = required_scene_ids
         .iter()
@@ -714,9 +736,10 @@ pub fn process_scene_lifecycle(
         .collect();
 
     let mut existing_ids = HashSet::default();
+    let mut removed_hashes = Vec::default();
 
     // despawn any no-longer required entities
-    for entity in &scene_entities {
+    for (entity, scene_hash) in &scene_entities {
         match required_entities.get(&entity) {
             Some((hash, _)) => {
                 existing_ids.insert(<&String>::clone(hash));
@@ -726,17 +749,27 @@ pub fn process_scene_lifecycle(
                     info!("despawning {:?}", entity);
                     commands.despawn_recursive();
                 }
+                removed_hashes.push(&scene_hash.0);
             }
         }
     }
     drop(required_entities);
+
+    for removed_hash in removed_hashes {
+        live_scenes.0.remove(removed_hash);
+    }
 
     // spawn any newly required scenes
     for (required_scene_hash, maybe_urn) in required_scene_ids
         .iter()
         .filter(|(hash, _)| !existing_ids.contains(hash))
     {
-        let entity = commands.spawn(SceneLoading::SceneSpawned).id();
+        let entity = commands
+            .spawn((
+                SceneHash(required_scene_hash.clone()),
+                SceneLoading::SceneSpawned,
+            ))
+            .id();
         info!("spawning scene {:?} @ ??: {entity:?}", required_scene_hash);
         live_scenes.0.insert(required_scene_hash.clone(), entity);
         spawn.send(LoadSceneEvent {
@@ -748,3 +781,6 @@ pub fn process_scene_lifecycle(
         })
     }
 }
+
+#[derive(Component)]
+pub struct SceneHash(pub String);

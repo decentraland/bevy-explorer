@@ -140,7 +140,7 @@ fn load_animations(
                 Some(anims) => {
                     for (name, h_clip) in anims {
                         animations.0.insert(name.clone(), h_clip.clone());
-                        error!("added animation {name}");
+                        debug!("added animation {name}");
                     }
                     false
                 }
@@ -163,12 +163,12 @@ fn read_player_emotes(
     let Ok(player) = player_emotes.get_single_mut() else {
         return;
     };
-    let containing_scene = containing_scene.get(player);
+    let containing_scenes = containing_scene.get(player);
 
     for (scene_ent, emotes, parent, container) in &scene_player_emotes {
         if parent.0 == player {
             commands.entity(scene_ent).remove::<EmoteList>();
-            if containing_scene == Some(container.root) {
+            if containing_scenes.contains(&container.root) {
                 commands.entity(player).insert(emotes.clone());
             }
         }

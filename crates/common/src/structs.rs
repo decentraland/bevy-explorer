@@ -1,7 +1,4 @@
-use std::{
-    f32::consts::PI,
-    sync::{Arc, RwLock},
-};
+use std::f32::consts::PI;
 
 use bevy::{prelude::*, utils::HashMap};
 use serde::{Deserialize, Serialize};
@@ -109,56 +106,6 @@ impl Default for PrimaryCamera {
             scene_override: None,
         }
     }
-}
-
-pub type RpcResult = tokio::sync::oneshot::Sender<Result<String, String>>;
-
-// helper to make sending results from systems easy
-#[derive(Debug, Clone)]
-pub struct RpcResultSender {
-    inner: Arc<RwLock<Option<RpcResult>>>,
-}
-
-impl RpcResultSender {
-    pub fn new(sender: RpcResult) -> Self {
-        Self {
-            inner: Arc::new(RwLock::new(Some(sender))),
-        }
-    }
-
-    pub fn send(&self, result: Result<String, String>) {
-        if let Ok(mut guard) = self.inner.write() {
-            if let Some(response) = guard.take() {
-                let _ = response.send(result);
-            }
-        }
-    }
-}
-
-#[derive(Event, Debug)]
-pub enum RestrictedAction {
-    ChangeRealm {
-        scene: Entity,
-        to: String,
-        message: Option<String>,
-        response: RpcResultSender,
-    },
-    ExternalUrl {
-        scene: Entity,
-        url: String,
-        response: RpcResultSender,
-    },
-    MovePlayer {
-        scene: Entity,
-        to: Transform,
-    },
-    MoveCamera(Quat),
-}
-
-#[derive(Debug)]
-pub enum SceneRpcCall {
-    ChangeRealm { to: String, message: Option<String> },
-    ExternalUrl { url: String },
 }
 
 #[derive(Resource)]

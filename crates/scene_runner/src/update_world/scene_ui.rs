@@ -495,20 +495,21 @@ fn layout_scene_ui(
     ui_input_state: Query<&UiInputPersistentState>,
     ui_dropdown_state: Query<&UiDropdownPersistentState>,
 ) {
-    let current_scene = player
+    let current_scenes = player
         .get_single()
         .ok()
-        .and_then(|p| containing_scene.get(p));
+        .map(|p| containing_scene.get(p))
+        .unwrap_or_default();
 
     // remove any non-current uis
     for (ent, ui_root) in &current_uis {
-        if Some(ui_root.0) != current_scene {
+        if !current_scenes.contains(&ui_root.0) {
             commands.entity(ent).despawn_recursive();
         }
     }
 
     for (ent, mut ui_data, scene_context) in scene_uis.iter_mut() {
-        if Some(ent) == current_scene {
+        if current_scenes.contains(&ent) {
             if ui_data.relayout || ui_data.current_node.is_none() {
                 // clear any existing ui target
                 *ui_target = UiPointerTarget::None;

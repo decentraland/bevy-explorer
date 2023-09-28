@@ -33,7 +33,7 @@ pub fn update_user_position(
         &mut SceneColliderData,
         &GlobalTransform,
     )>,
-    containing_scene: ContainingScene,
+    containing_scenes: ContainingScene,
     time: Res<Time>,
     _frame: Res<FrameCount>,
 ) {
@@ -60,85 +60,78 @@ pub fn update_user_position(
         transform.rotation = transform.rotation.lerp(target_rotation, dt * 10.0);
     }
 
-    // get containing scene
-    let scene = containing_scene.get(user_ent);
-    match scene.and_then(|scene| scene_datas.get_mut(scene).ok()) {
-        None => {
-            // no scene, just update translation directly
-            transform.translation += dynamic_state.velocity * dt;
+    let mut target_motion = dynamic_state.velocity * dt;
+    dynamic_state.ground_height = transform.translation.y;
+    ground_collider.0 = None;
 
-            if transform.translation.y > 0.0 {
-                dynamic_state.velocity.y -= half_g_force;
-            } else {
-                dynamic_state.velocity.y = 0f32.max(dynamic_state.velocity.y - half_g_force);
-            }
+    // check containing scenes
+    for scene in containing_scenes.get(user_ent) {
+        let Ok((context, mut collider_data, _scene_transform)) = scene_datas.get_mut(scene) else {
+            continue;
+        };
 
-            dynamic_state.ground_height = transform.translation.y;
+        // setup physics controller
+        let mut controller = KinematicCharacterController {
+            offset: CharacterLength::Absolute(PLAYER_COLLIDER_OVERLAP as f64),
+            slide: true,
+            autostep: Some(CharacterAutostep {
+                max_height: CharacterLength::Absolute(MAX_STEP_HEIGHT as f64),
+                min_width: CharacterLength::Relative(0.75),
+                include_dynamic_bodies: true,
+            }),
+            max_slope_climb_angle: MAX_CLIMBABLE_INCLINE as f64,
+            min_slope_slide_angle: MAX_CLIMBABLE_INCLINE as f64,
+            snap_to_ground: Some(CharacterLength::Absolute(0.1)),
+            ..Default::default()
+        };
+
+        // unset autostep when jumping
+        if dynamic_state.velocity.y > 0.0 {
+            controller.autostep = None;
         }
-        Some((context, mut collider_data, _scene_transform)) => {
-            // setup physics controller
-            let mut controller = KinematicCharacterController {
-                offset: CharacterLength::Absolute(PLAYER_COLLIDER_OVERLAP as f64),
-                slide: true,
-                autostep: Some(CharacterAutostep {
-                    max_height: CharacterLength::Absolute(MAX_STEP_HEIGHT as f64),
-                    min_width: CharacterLength::Relative(0.75),
-                    include_dynamic_bodies: true,
-                }),
-                max_slope_climb_angle: MAX_CLIMBABLE_INCLINE as f64,
-                min_slope_slide_angle: MAX_CLIMBABLE_INCLINE as f64,
-                snap_to_ground: Some(CharacterLength::Absolute(0.1)),
-                ..Default::default()
-            };
 
-            // unset autostep when jumping
-            if dynamic_state.velocity.y > 0.0 {
-                controller.autostep = None;
-            }
+        // get allowed movement
+        let eff_movement = collider_data.move_character(
+            context.last_update_frame,
+            transform.translation,
+            target_motion,
+            &controller,
+        );
 
-            // get allowed movement
-            let eff_movement = collider_data.move_character(
-                context.last_update_frame,
-                transform.translation,
-                dynamic_state.velocity * dt,
-                &controller,
-            );
+        target_motion = DVec3::from(eff_movement.translation).as_vec3();
 
-            if DVec3::from(eff_movement.translation).length() > 0.0 {
-                debug!(
-                    "dynamics: {} -> {}",
-                    transform.translation,
-                    transform.translation + DVec3::from(eff_movement.translation).as_vec3()
-                );
-            }
-            transform.translation += DVec3::from(eff_movement.translation).as_vec3();
-            transform.translation.y = transform.translation.y.max(0.0);
-
-            // calculate ground height
-            (dynamic_state.ground_height, ground_collider.0) = match collider_data
-                .get_groundheight(context.last_update_frame, transform.translation)
-            {
-                Some((height, collider)) => (
-                    height,
-                    (height < PLAYER_GROUND_THRESHOLD).then_some((scene.unwrap(), collider)),
-                ),
-                None => (transform.translation.y, None),
-            };
-
-            // update vertical velocity
-            if dynamic_state.ground_height <= 0.0 || transform.translation.y == 0.0 {
-                // on the floor, set vertical velocity to zero
-                dynamic_state.velocity.y = dynamic_state.velocity.y.max(0.0);
-            } else if eff_movement.translation.y.abs()
-                < (0.5 * dynamic_state.velocity.y * dt).abs() as f64
-            {
-                // vertical motion was blocked by something, use the effective motion
-                dynamic_state.velocity.y = eff_movement.translation.y as f32 / dt - half_g_force;
-            } else {
-                dynamic_state.velocity.y -= half_g_force;
+        // calculate ground height
+        if let Some((height, collider)) =
+            collider_data.get_groundheight(context.last_update_frame, transform.translation)
+        {
+            if height < dynamic_state.ground_height {
+                dynamic_state.ground_height = height;
+                if height < PLAYER_GROUND_THRESHOLD {
+                    ground_collider.0 = Some((scene, collider));
+                }
             }
         }
-    };
+    }
+
+    debug!(
+        "dynamics: {} -> {}",
+        transform.translation,
+        transform.translation + target_motion
+    );
+
+    transform.translation += target_motion;
+    transform.translation.y = transform.translation.y.max(0.0);
+
+    // update vertical velocity
+    if dynamic_state.ground_height <= 0.0 || transform.translation.y == 0.0 {
+        // on the floor, set vertical velocity to zero
+        dynamic_state.velocity.y = dynamic_state.velocity.y.max(0.0);
+    } else if target_motion.y.abs() < (0.5 * dynamic_state.velocity.y * dt).abs() {
+        // vertical motion was blocked by something, use the effective motion
+        dynamic_state.velocity.y = target_motion.y / dt - half_g_force;
+    } else {
+        dynamic_state.velocity.y -= half_g_force;
+    }
 
     // cap fall speed
     dynamic_state.velocity.y = dynamic_state.velocity.y.max(-MAX_FALL_SPEED);

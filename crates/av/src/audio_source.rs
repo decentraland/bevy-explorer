@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, utils::HashSet};
 use bevy_kira_audio::{
     prelude::{AudioEmitter, AudioReceiver},
     AudioControl, AudioInstance, AudioTween,
@@ -65,10 +65,11 @@ fn update_audio(
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
 ) {
-    let current_scene = player
+    let current_scenes = player
         .get_single()
         .ok()
-        .and_then(|p| containing_scene.get(p));
+        .map(|p| containing_scene.get(p))
+        .unwrap_or_default();
 
     for (ent, scene_ent, audio_source, maybe_source, maybe_emitter) in query.iter_mut() {
         // preload clips
@@ -108,7 +109,7 @@ fn update_audio(
                 instance = instance.looped();
             }
 
-            let volume = if Some(scene_ent.root) == current_scene {
+            let volume = if current_scenes.contains(&scene_ent.root) {
                 audio_source.0.volume.unwrap_or(1.0)
             } else {
                 0.0
@@ -137,20 +138,21 @@ fn update_source_volume(
     mut audio_instances: ResMut<Assets<AudioInstance>>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
-    mut prev_scene: Local<Option<Entity>>,
+    mut prev_scenes: Local<HashSet<Entity>>,
     receiver: Query<&GlobalTransform, With<AudioReceiver>>,
 ) {
-    let current_scene = player
+    let current_scenes = player
         .get_single()
         .ok()
-        .and_then(|p| containing_scene.get(p));
+        .map(|p| containing_scene.get(p))
+        .unwrap_or_default();
 
     let Ok(receiver) = receiver.get_single() else {
         return;
     };
 
     for (scene, source, emitter, transform) in query.iter() {
-        if current_scene == Some(scene.root) {
+        if current_scenes.contains(&scene.root) {
             let sound_path = transform.translation() - receiver.translation();
             let volume = (1. - sound_path.length() / 125.0).clamp(0., 1.).powi(2)
                 * source.0.volume.unwrap_or(1.0);
@@ -164,7 +166,7 @@ fn update_source_volume(
                     instance.set_panning(panning as f64, AudioTween::default());
                 }
             }
-        } else if *prev_scene == Some(scene.root) {
+        } else if prev_scenes.contains(&scene.root) {
             for h_instance in &emitter.instances {
                 if let Some(instance) = audio_instances.get_mut(h_instance) {
                     instance.set_volume(0.0, AudioTween::default());
@@ -173,5 +175,5 @@ fn update_source_volume(
         }
     }
 
-    *prev_scene = current_scene;
+    *prev_scenes = current_scenes;
 }

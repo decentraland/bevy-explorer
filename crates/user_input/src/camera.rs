@@ -143,10 +143,15 @@ pub fn update_camera_position(
 
         if distance > 0.0 {
             // cast to check visibility
-            if let Some((context, mut colliders)) = containing_scene
-                .get_position(player_head)
-                .and_then(|root| scene_colliders.get_mut(root).ok())
-            {
+            let scenes_head = containing_scene.get_position(player_head);
+            let scenes_cam =
+                containing_scene.get_position(player_head + target_direction * distance);
+
+            for scene in (scenes_head).union(&scenes_cam) {
+                let Ok((context, mut colliders)) = scene_colliders.get_mut(*scene) else {
+                    continue;
+                };
+
                 if let Some(hit) = colliders.cast_ray_nearest(
                     context.last_update_frame,
                     player_head,
@@ -154,21 +159,7 @@ pub fn update_camera_position(
                     distance,
                     u32::MAX,
                 ) {
-                    distance = hit.toi;
-                }
-            }
-            if let Some((context, mut colliders)) = containing_scene
-                .get_position(player_head + target_direction * distance)
-                .and_then(|root| scene_colliders.get_mut(root).ok())
-            {
-                if let Some(hit) = colliders.cast_ray_nearest(
-                    context.last_update_frame,
-                    player_head,
-                    target_direction.normalize(),
-                    distance,
-                    u32::MAX,
-                ) {
-                    distance = hit.toi;
+                    distance = distance.min(hit.toi);
                 }
             }
         }

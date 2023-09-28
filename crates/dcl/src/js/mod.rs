@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
-use bevy::prelude::{debug, error, info, info_span, AssetServer};
+use bevy::prelude::{debug, error, info_span, AssetServer};
 use deno_core::{
     anyhow::anyhow,
     ascii_str,
@@ -25,6 +25,7 @@ use super::{
 
 pub mod engine;
 pub mod fetch;
+pub mod portables;
 pub mod restricted_actions;
 pub mod runtime;
 
@@ -70,11 +71,12 @@ pub fn create_runtime(init: bool) -> JsRuntime {
 
     let mut ops = vec![op_require::DECL, op_log::DECL, op_error::DECL];
 
-    let op_sets: [Vec<deno_core::OpDecl>; 4] = [
+    let op_sets: [Vec<deno_core::OpDecl>; 5] = [
         engine::ops(),
         restricted_actions::ops(),
         runtime::ops(),
         fetch::ops(),
+        portables::ops(),
     ];
 
     // add plugin registrations
@@ -351,7 +353,7 @@ fn op_require(
 #[op(v8)]
 fn op_log(state: Rc<RefCell<OpState>>, message: String) {
     let time = state.borrow().borrow::<SceneElapsedTime>().0;
-    info!(message);
+    // info!(message);
     state
         .borrow_mut()
         .borrow_mut::<Vec<SceneLogMessage>>()

@@ -368,8 +368,9 @@ fn display_chat(
     if chatbox.active_tab == "Scene Log" {
         let current_scene = player
             .get_single()
-            .map(|player| containing_scene.get(player))
+            .map(|player| containing_scene.get_parcel(player))
             .unwrap_or_default();
+
         if chatbox.active_log_sink.as_ref().map(|(id, _)| id) != current_scene.as_ref() {
             chatbox.active_log_sink = None;
             commands.entity(entity).despawn_descendants();

@@ -27,8 +27,9 @@ use crate::{
     },
     RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
 };
-use common::structs::{
-    AppConfig, GraphicsSettings, PrimaryCamera, RestrictedAction, SceneLoadDistance, ToolTips,
+use common::{
+    rpc::RestrictedAction,
+    structs::{AppConfig, GraphicsSettings, PrimaryCamera, SceneLoadDistance, ToolTips},
 };
 use comms::CommsPlugin;
 use console::{self, ConsolePlugin};
