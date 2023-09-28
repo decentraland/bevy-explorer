@@ -681,6 +681,9 @@ fn receive_scene_updates(
                                 SceneRpcCall::ListPortables => RestrictedAction::ListPortables {
                                     response: RpcResultSender::new(resp.unwrap()),
                                 },
+                                SceneRpcCall::GetUserData => RestrictedAction::GetUserData {
+                                    response: RpcResultSender::new(resp.unwrap()),
+                                },
                             };
 
                             restricted_actions.send(restricted_action);

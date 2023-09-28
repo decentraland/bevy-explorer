@@ -17,6 +17,7 @@ once_cell = { workspace = true }
 futures-lite = { workspace = true }
 isahc = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 
 deno_core = "0.204"
 deno_fetch = "0.142"

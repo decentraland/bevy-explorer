@@ -13,6 +13,7 @@ use common::{
     structs::{PrimaryCamera, PrimaryUser},
     util::TaskExt,
 };
+use comms::profile::CurrentUserProfile;
 use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, ServerAbout};
 use isahc::{http::StatusCode, AsyncReadResponseExt};
 use scene_runner::{
@@ -37,6 +38,7 @@ impl Plugin for RestrictedActionsPlugin {
                 spawn_portable,
                 kill_portable,
                 list_portables,
+                get_user_data,
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -436,5 +438,14 @@ fn list_portables(
             })
             .collect();
         response.send(portables);
+    }
+}
+
+fn get_user_data(profile: Res<CurrentUserProfile>, mut events: EventReader<RestrictedAction>) {
+    for response in events.iter().filter_map(|ev| match ev {
+        RestrictedAction::GetUserData { response } => Some(response),
+        _ => None,
+    }) {
+        response.send(profile.0.content.clone());
     }
 }

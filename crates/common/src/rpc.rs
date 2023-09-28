@@ -6,6 +6,8 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use crate::profile::SerializedProfile;
+
 pub trait DynRpcResult: std::any::Any + std::fmt::Debug + Send + Sync + 'static {
     fn as_any(&mut self) -> &mut dyn Any;
 }
@@ -119,6 +121,9 @@ pub enum RestrictedAction {
     ListPortables {
         response: RpcResultSender<Vec<SpawnResponse>>,
     },
+    GetUserData {
+        response: RpcResultSender<SerializedProfile>,
+    },
 }
 
 #[derive(Debug)]
@@ -128,4 +133,5 @@ pub enum SceneRpcCall {
     SpawnPortable { location: PortableLocation },
     KillPortable { location: PortableLocation },
     ListPortables,
+    GetUserData,
 }
