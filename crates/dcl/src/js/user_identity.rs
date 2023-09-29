@@ -56,7 +56,7 @@ async fn op_get_user_data(state: Rc<RefCell<OpState>>) -> Result<UserData, AnyEr
 
     Ok(UserData {
         display_name: profile.name,
-        public_key: None, // ethers doesn't even give me access to this
+        public_key: Some(profile.eth_address.clone()),
         has_connected_web3: profile.has_connected_web3.unwrap_or_default(),
         user_id: profile.user_id.unwrap_or_default(),
         version: profile.version,
