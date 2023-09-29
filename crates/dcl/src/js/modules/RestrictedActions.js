@@ -27,4 +27,7 @@ module.exports.openExternalUrl = async function (body) {
 }
 
 module.exports.openNftDialog = async function (body) { return {} }
-module.exports.setCommunicationsAdapter = async function (body) { return {} }
+module.exports.setCommunicationsAdapter = async function (body) { 
+    console.error("RestrictedActions::setCommunicationsAdapter not implemented");
+    return {} 
+}

@@ -4,8 +4,8 @@ module.exports.getRealm = async function (body) {
     };
 }
 
-module.exports.getWorldTime = async function (body) { 
-    // TODO
+module.exports.getWorldTime = async function  (body) { 
+    console.error("Runtime::getWorldTime not implemented");
     return {} 
 }
 

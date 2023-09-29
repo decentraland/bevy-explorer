@@ -15,7 +15,7 @@ module.exports.kill = async function (body) {
     }
 }
 module.exports.exit = async function (body) { 
-    console.log("PortableExperiences.exit - todo", body)
+    console.error("PortableExperiences::exit not implemented", body)
     return {} 
 }
 module.exports.getPortableExperiencesLoaded = async function (body) { 
