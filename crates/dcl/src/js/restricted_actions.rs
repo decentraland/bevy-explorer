@@ -3,7 +3,7 @@ use common::rpc::{RpcResult, SceneRpcCall};
 use deno_core::{op, Op, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{interface::CrdtType, js::RendererStore, CrdtStore};
+use crate::{interface::{CrdtType, crdt_context::CrdtContext}, js::RendererStore, CrdtStore};
 use dcl_component::{
     proto_components::sdk::components::{
         pb_avatar_emote_command::EmoteCommand, PbAvatarEmoteCommand,
@@ -79,6 +79,11 @@ fn op_move_player_to(
         player_transform.rotation = look_to(target_offset * (Vec3::X + Vec3::Z));
     }
 
+    //ensure entities
+    let context = op_state.borrow_mut::<CrdtContext>();
+    context.init(SceneEntityId::PLAYER);
+    context.init(SceneEntityId::CAMERA);
+
     // write commands
     let mut buf = Vec::default();
     let outbound = op_state.borrow_mut::<CrdtStore>();
@@ -137,6 +142,11 @@ fn op_emote(op_state: &mut OpState, emote: String) {
         }),
     };
 
+    //ensure entity
+    let context = op_state.borrow_mut::<CrdtContext>();
+    context.init(SceneEntityId::PLAYER);
+
+    // write update
     let outbound = op_state.borrow_mut::<CrdtStore>();
     let mut buf = Vec::default();
     DclWriter::new(&mut buf).write(&emote);
