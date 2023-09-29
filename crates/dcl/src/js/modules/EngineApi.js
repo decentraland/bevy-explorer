@@ -8,7 +8,7 @@ module.exports.crdtSendToRenderer = async function(messages) {
 }
 
 module.exports.sendBatch = async function() {
-    console.error("EngineApi::sendBatch not implemented");
+    // console.error("EngineApi::sendBatch not implemented");
     return { events: [] }
 }
 
