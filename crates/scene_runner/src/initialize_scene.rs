@@ -421,7 +421,10 @@ pub(crate) fn load_scene_javascript(
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[derive(Default, Resource)]
+pub struct InspectHash(pub String);
+
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub(crate) fn initialize_scene(
     mut commands: Commands,
     scene_updates: Res<SceneUpdates>,
@@ -435,6 +438,7 @@ pub(crate) fn initialize_scene(
     scene_js_files: Res<Assets<SceneJsFile>>,
     asset_server: Res<AssetServer>,
     wallet: Res<Wallet>,
+    inspect: Res<InspectHash>,
 ) {
     for (root, mut state, h_code, context) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
@@ -488,6 +492,7 @@ pub(crate) fn initialize_scene(
             asset_server.clone(),
             wallet.clone(),
             scene_id,
+            context.hash == inspect.0,
         );
 
         commands

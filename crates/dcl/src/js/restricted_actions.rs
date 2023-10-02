@@ -3,7 +3,11 @@ use common::rpc::{RpcResult, SceneRpcCall};
 use deno_core::{op, Op, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{interface::{CrdtType, crdt_context::CrdtContext}, js::RendererStore, CrdtStore};
+use crate::{
+    interface::{crdt_context::CrdtContext, CrdtType},
+    js::RendererStore,
+    CrdtStore,
+};
 use dcl_component::{
     proto_components::sdk::components::{
         pb_avatar_emote_command::EmoteCommand, PbAvatarEmoteCommand,

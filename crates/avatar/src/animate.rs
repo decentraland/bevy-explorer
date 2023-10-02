@@ -40,8 +40,6 @@ impl DefaultAnim {
     }
 }
 
-//                                           network|animation   |
-//                                           name   |male  female|repeat
 static DEFAULT_ANIMATION_LOOKUP: Lazy<HashMap<&str, DefaultAnim>> = Lazy::new(|| {
     HashMap::from_iter([
         (

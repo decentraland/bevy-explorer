@@ -27,6 +27,7 @@ use common::{
 };
 use restricted_actions::RestrictedActionsPlugin;
 use scene_runner::{
+    initialize_scene::InspectHash,
     update_world::{mesh_collider::GroundCollider, NoGltf},
     SceneRunnerPlugin,
 };
@@ -83,6 +84,7 @@ impl FromStr for IVec2Arg {
 fn main() {
     // warnings before log init must be stored and replayed later
     let mut warnings = Vec::default();
+    let mut app = App::new();
 
     let base_config: AppConfig = std::fs::read("config.json")
         .ok()
@@ -135,6 +137,10 @@ fn main() {
             .unwrap_or(base_config.scene_load_distance),
     };
 
+    if let Ok(inspect) = args.value_from_str("--inspect") {
+        app.insert_resource(InspectHash(inspect));
+    }
+
     let no_avatar = args.contains("--no_avatar");
     let no_gltf = args.contains("--no_gltf");
     let no_fog = args.contains("--no_fog");
@@ -158,7 +164,6 @@ fn main() {
     // )
     // .unwrap();
 
-    let mut app = App::new();
     let present_mode = match final_config.graphics.vsync {
         true => bevy::window::PresentMode::AutoVsync,
         false => bevy::window::PresentMode::AutoNoVsync,

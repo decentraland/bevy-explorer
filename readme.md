@@ -64,6 +64,9 @@ This project's goals are to:
 `--no_fog`
 - disable distance fog
 
+`--inspect <scene_hash>`
+- when the scene with the input hash is first loaded, the js runtime will pause waiting for a debugger session (such as `chrome://inspect`) to connect, and allow you to debug the scene code. requires a build with --features "inspect"
+
 # Testing
 
 `cargo test` executes all the tests.

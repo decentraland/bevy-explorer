@@ -62,6 +62,7 @@ pub enum SceneResponse {
         Vec<SceneLogMessage>,
         RpcCalls,
     ),
+    WaitingForInspector,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -87,7 +88,7 @@ pub fn get_next_scene_id() -> SceneId {
 
     if id.0 == 0 {
         // synchronously create and drop a single runtime to hopefully avoid initial segfaults
-        create_runtime(true);
+        create_runtime(true, false);
         // and skip the dummy id
         id = SceneId(SCENE_ID.fetch_add(1, Ordering::Relaxed));
     }
@@ -105,6 +106,7 @@ pub fn spawn_scene(
     asset_server: AssetServer,
     wallet: Wallet,
     id: SceneId,
+    inspect: bool,
 ) -> Sender<RendererResponse> {
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
 
@@ -121,6 +123,7 @@ pub fn spawn_scene(
                 global_update_receiver,
                 asset_server,
                 wallet,
+                inspect,
             )
         })
         .unwrap();

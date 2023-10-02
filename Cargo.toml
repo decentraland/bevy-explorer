@@ -7,6 +7,7 @@ edition = "2021"
 dcl-assert = []
 gen-tests = []
 tracy = ["bevy/trace_tracy"]
+inspect = ["dcl/inspect"]
 
 [workspace]
 members = ["crates/*"]
@@ -70,6 +71,7 @@ console = { workspace = true }
 av = { workspace = true }
 restricted_actions = { workspace = true }
 wallet = { workspace = true }
+dcl = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }

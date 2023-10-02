@@ -15,6 +15,13 @@ use wallet::Wallet;
 
 use crate::RpcCalls;
 
+#[cfg(feature = "inspect")]
+use crate::js::inspector::InspectorServer;
+#[cfg(feature = "inspect")]
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+#[cfg(not(feature = "inspect"))]
+pub struct InspectorServer;
+
 use self::fetch::{FP, TP};
 
 use super::{
@@ -29,6 +36,9 @@ pub mod portables;
 pub mod restricted_actions;
 pub mod runtime;
 pub mod user_identity;
+
+#[cfg(feature = "inspect")]
+pub mod inspector;
 
 // marker to indicate shutdown has been triggered
 pub struct ShuttingDown;
@@ -54,7 +64,7 @@ impl WebSocketPermissions for WebSocketPerms {
     }
 }
 
-pub fn create_runtime(init: bool) -> JsRuntime {
+pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<InspectorServer>) {
     // add fetch stack
     let web = deno_web::deno_web::init_ops_and_esm::<TP>(
         std::sync::Arc::new(deno_web::BlobStore::default()),
@@ -124,15 +134,40 @@ pub fn create_runtime(init: bool) -> JsRuntime {
     };
 
     // create runtime
-    JsRuntime::new(RuntimeOptions {
+    #[allow(unused_mut)]
+    let mut runtime = JsRuntime::new(RuntimeOptions {
         v8_platform: if init {
             v8::Platform::new(1, false).make_shared().into()
         } else {
             None
         },
         extensions: vec![webidl, url, console, web, fetch, websocket, ext],
+        inspector: inspect,
         ..Default::default()
-    })
+    });
+
+    #[cfg(feature = "inspect")]
+    if inspect {
+        bevy::prelude::info!(
+            "[{}] inspector attached",
+            std::thread::current().name().unwrap()
+        );
+        let server = InspectorServer::new(
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9222),
+            "bevy-explorer",
+        );
+        server.register_inspector("decentraland".to_owned(), &mut runtime, true);
+        (runtime, Some(server))
+    } else {
+        (runtime, None)
+    }
+
+    #[cfg(not(feature = "inspect"))]
+    if inspect {
+        panic!("can't inspect without inspect feature")
+    } else {
+        (runtime, None)
+    }
 }
 
 // main scene processing thread - constructs an isolate and runs the scene
@@ -147,9 +182,10 @@ pub(crate) fn scene_thread(
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     asset_server: AssetServer,
     wallet: Wallet,
+    inspect: bool,
 ) {
     let scene_context = CrdtContext::new(scene_id, scene_hash);
-    let mut runtime = create_runtime(false);
+    let (mut runtime, inspector) = create_runtime(false, inspect);
 
     // store handle
     let vm_handle = runtime.v8_isolate().thread_safe_handle();
@@ -216,6 +252,18 @@ pub(crate) fn scene_thread(
         .enable_io()
         .build()
         .unwrap();
+
+    if inspector.is_some() {
+        let _ = state
+            .borrow_mut()
+            .borrow_mut::<SyncSender<SceneResponse>>()
+            .send(SceneResponse::WaitingForInspector);
+
+        runtime
+            .inspector()
+            .borrow_mut()
+            .wait_for_session_and_break_on_next_statement();
+    }
 
     // run startup function
     let result = rt

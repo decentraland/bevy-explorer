@@ -30,7 +30,7 @@ use dcl_component::{
     transform_and_parent::DclTransformAndParent,
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
-use initialize_scene::PortableScenes;
+use initialize_scene::{InspectHash, PortableScenes};
 use ipfs::SceneIpfsLocation;
 use primary_entities::PrimaryEntities;
 use spin_sleep::SpinSleeper;
@@ -170,6 +170,7 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<CrdtExtractors>();
         app.init_resource::<DebugInfo>();
         app.init_resource::<Toasts>();
+        app.init_resource::<InspectHash>();
 
         let (sender, receiver) = sync_channel(1000);
         app.insert_resource(SceneUpdates {
@@ -559,7 +560,7 @@ fn send_scene_updates(
                 top: 0.0,
                 left: 0.0,
                 right: 0.0,
-                bottom: 0.0,
+                bottom: 36.0,
             }),
         });
         crdt_store.force_update(
@@ -598,10 +599,15 @@ fn receive_scene_updates(
     crdt_interfaces: Res<CrdtExtractors>,
     frame: Res<FrameCount>,
     mut restricted_actions: EventWriter<RestrictedAction>,
+    mut toaster: Toaster,
 ) {
     loop {
         let maybe_completed_job = match updates.receiver().try_recv() {
             Ok(response) => match response {
+                SceneResponse::WaitingForInspector => {
+                    toaster.add_toast("inspector", "Scene paused waiting for inspector session");
+                    None
+                }
                 SceneResponse::Error(scene_id, message) => {
                     error!("[{scene_id:?}] error: {message}");
                     if let Some(root) = updates.scene_ids.get(&scene_id) {
