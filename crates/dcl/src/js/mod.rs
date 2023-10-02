@@ -232,6 +232,18 @@ pub(crate) fn scene_thread(
     // store websocket permissions object
     state.borrow_mut().put(WebSocketPerms);
 
+    if inspector.is_some() {
+        let _ = state
+            .borrow_mut()
+            .borrow_mut::<SyncSender<SceneResponse>>()
+            .send(SceneResponse::WaitingForInspector);
+
+        runtime
+            .inspector()
+            .borrow_mut()
+            .wait_for_session_and_break_on_next_statement();
+    }
+
     // load module
     let script = runtime.execute_script("<loader>", ascii_str!("require (\"~scene.js\")"));
 
@@ -252,18 +264,6 @@ pub(crate) fn scene_thread(
         .enable_io()
         .build()
         .unwrap();
-
-    if inspector.is_some() {
-        let _ = state
-            .borrow_mut()
-            .borrow_mut::<SyncSender<SceneResponse>>()
-            .send(SceneResponse::WaitingForInspector);
-
-        runtime
-            .inspector()
-            .borrow_mut()
-            .wait_for_session_and_break_on_next_statement();
-    }
 
     // run startup function
     let result = rt
