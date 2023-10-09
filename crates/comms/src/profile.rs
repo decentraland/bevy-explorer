@@ -30,8 +30,8 @@ impl Plugin for UserProfilePlugin {
         let wallet = app.world.resource::<Wallet>();
 
         let config = &app.world.resource::<AppConfig>();
-        let current_content = serde_json::from_str::<SerializedProfile>(&config.profile_content)
-            .unwrap_or(SerializedProfile::default());
+        let current_content =
+            serde_json::from_str::<SerializedProfile>(&config.profile_content).unwrap_or_default();
 
         let user_profile = UserProfile {
             version: config.profile_version,
@@ -82,7 +82,7 @@ pub fn setup_primary_profile(
             let mut config: AppConfig = std::fs::read("config.json")
                 .ok()
                 .and_then(|f| serde_json::from_slice(&f).ok())
-                .unwrap_or(Default::default());
+                .unwrap_or_default();
             config.profile_version = current_profile.0.version;
             config.profile_content = serde_json::to_string(&current_profile.0.content).unwrap();
             config.profile_base_url = current_profile.0.base_url.clone();

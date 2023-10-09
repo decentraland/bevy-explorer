@@ -93,7 +93,7 @@ fn main() {
                 .map_err(|e| warnings.push(format!("failed to parse config.json: {e}")))
                 .ok()
         })
-        .unwrap_or(Default::default());
+        .unwrap_or_default();
     let mut args = pico_args::Arguments::from_env();
 
     let final_config = AppConfig {

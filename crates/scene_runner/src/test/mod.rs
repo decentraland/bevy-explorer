@@ -459,3 +459,109 @@ fn cyclic_recovery() {
         check_or_write!(graph, "expected/cyclic_recovery.dot");
     }
 }
+
+#[test]
+fn test_scene_ray() {
+    fn ray_code(mut position: Vec3, mut ray: Vec3) -> Vec<(IVec2, f32)> {
+        let mut results = Vec::default();
+
+        let mut distance = 0.0;
+
+        if ray.length() == 0.0 {
+            return results;
+        }
+
+        if ray.length() > 1000.0 {
+            ray = ray.normalize() * 1000.0;
+        }
+
+        const EPS: f32 = 0.01;
+        let offset: Vec3 = Vec3::new(ray.x.signum() * EPS, ray.y.signum() * EPS, 0.0);
+
+        loop {
+            let adj_position = position + offset;
+
+            results.push((
+                (adj_position / 16.0).floor().truncate().as_ivec2(),
+                distance,
+            ));
+
+            let x_dist = if ray.x < 0.0 {
+                (((adj_position.x / 16.0).floor() * 16.0) - position.x) / ray.x
+            } else if ray.x > 0.0 {
+                (((adj_position.x / 16.0).ceil() * 16.0) - position.x) / ray.x
+            } else {
+                999.0
+            };
+            let y_dist = if ray.y < 0.0 {
+                (((adj_position.y / 16.0).floor() * 16.0) - position.y) / ray.y
+            } else if ray.y > 0.0 {
+                (((adj_position.y / 16.0).ceil() * 16.0) - position.y) / ray.y
+            } else {
+                999.0
+            };
+            println!("pos: {position}, ray: {ray}, x:{x_dist} / y:{y_dist}");
+
+            let step_fraction = x_dist.min(y_dist);
+            if step_fraction > 1.0 {
+                return results;
+            }
+
+            let step = ray * step_fraction;
+            position += step;
+            distance += step.length();
+            ray -= step;
+            println!("step: {step}, dist: {distance}");
+        }
+    }
+
+    assert_eq!(ray_code(Vec3::ONE, Vec3::ONE), vec![(IVec2::ZERO, 0.0)]);
+    assert_eq!(
+        ray_code(Vec3::splat(17.0), Vec3::ONE),
+        vec![(IVec2::ONE, 0.0)]
+    );
+    assert_eq!(
+        ray_code(Vec3::splat(-17.0), -Vec3::ONE),
+        vec![(IVec2::splat(-2), 0.0)]
+    );
+
+    let results = ray_code(Vec3::splat(15.0), Vec3::new(2.0, 2.0, 0.0));
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].0, IVec2::splat(0));
+    assert_eq!(results[1].0, IVec2::splat(1));
+    assert_eq!(results[0].1, 0.0);
+    assert!((results[1].1 - 2f32.sqrt()).abs() < 0.01);
+
+    let results = ray_code(Vec3::splat(15.0), Vec3::new(2.0, 4.0, 0.0));
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0].0, IVec2::splat(0));
+    assert_eq!(results[1].0, IVec2::new(0, 1));
+    assert_eq!(results[2].0, IVec2::splat(1));
+    assert_eq!(results[0].1, 0.0);
+    assert!((results[1].1 - f32::sqrt(1.0 + 0.5 * 0.5)).abs() < 0.01);
+    assert!((results[2].1 - 2.0 * f32::sqrt(1.0 + 0.5 * 0.5)).abs() < 0.01);
+
+    let results = ray_code(Vec3::splat(-15.0), -Vec3::new(2.0, 2.0, 0.0));
+    println!("results: {results:?}");
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].0, IVec2::splat(-1));
+    assert_eq!(results[1].0, IVec2::splat(-2));
+    assert_eq!(results[0].1, 0.0);
+    assert!((results[1].1 - 2f32.sqrt()).abs() < 0.01);
+
+    let results = ray_code(Vec3::splat(-15.0), -Vec3::new(2.0, 4.0, 0.0));
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0].0, IVec2::splat(-1));
+    assert_eq!(results[1].0, IVec2::new(-1, -2));
+    assert_eq!(results[2].0, IVec2::splat(-2));
+    assert_eq!(results[0].1, 0.0);
+    assert!((results[1].1 - f32::sqrt(1.0 + 0.5 * 0.5)).abs() < 0.01);
+    assert!((results[2].1 - 2.0 * f32::sqrt(1.0 + 0.5 * 0.5)).abs() < 0.01);
+
+    let results = ray_code(Vec3::splat(-8.0), Vec3::new(8.0, -8.0, 0.0));
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].0, IVec2::splat(-1));
+    assert_eq!(results[1].0, IVec2::new(0, -2));
+    assert_eq!(results[0].1, 0.0);
+    assert!((results[1].1 - f32::sqrt(8.0 * 8.0 * 2.0)).abs() < 0.01);
+}

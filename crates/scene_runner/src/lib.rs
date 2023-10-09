@@ -413,6 +413,7 @@ pub struct ContainingScene<'w, 's> {
 }
 
 impl<'w, 's> ContainingScene<'w, 's> {
+    // just the parcel at the position
     pub fn get_parcel_position(&self, position: Vec3) -> Option<Entity> {
         let parcel = (position.xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
             .floor()
@@ -425,6 +426,7 @@ impl<'w, 's> ContainingScene<'w, 's> {
         }
     }
 
+    // just the parcel at the entity's position
     pub fn get_parcel(&self, ent: Entity) -> Option<Entity> {
         self.transforms
             .get(ent)
@@ -432,6 +434,7 @@ impl<'w, 's> ContainingScene<'w, 's> {
             .unwrap_or_default()
     }
 
+    // the parcel at the position, plus any global scenes
     pub fn get_position(&self, position: Vec3) -> HashSet<Entity> {
         let parcel = (position.xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
             .floor()
@@ -455,6 +458,7 @@ impl<'w, 's> ContainingScene<'w, 's> {
         results
     }
 
+    // the parcel at the entity's position, plus any global scenes
     pub fn get(&self, ent: Entity) -> HashSet<Entity> {
         self.transforms
             .get(ent)
@@ -462,7 +466,7 @@ impl<'w, 's> ContainingScene<'w, 's> {
             .unwrap_or_default()
     }
 
-    // get all scenes within radius of the given entity
+    // get all scenes within radius of the given entity, plus any global scenes
     pub fn get_area(&self, ent: Entity, radius: f32) -> HashSet<Entity> {
         let Ok(focus) = self
             .transforms
@@ -493,6 +497,64 @@ impl<'w, 's> ContainingScene<'w, 's> {
         }
 
         results
+    }
+
+    // get all scenes along a ray ordered by closest point, together with distance to closest point
+    pub fn get_ray(&self, mut position: Vec3, mut ray: Vec3) -> Vec<(Entity, f32)> {
+        // global scenes first
+        let mut results: Vec<(Entity, f32)> = self
+            .portable_scenes
+            .0
+            .iter()
+            .flat_map(|(hash, _)| self.live_scenes.0.get(hash))
+            .map(|ent| (*ent, 0.0))
+            .collect();
+
+        let mut distance = 0.0;
+
+        if ray.length() == 0.0 {
+            return results;
+        }
+
+        if ray.length() > 1000.0 {
+            ray = ray.normalize() * 1000.0;
+        }
+
+        let offset: Vec3 = Vec3::new(ray.x.signum() * 0.01, ray.y.signum() * 0.01, 0.0);
+
+        loop {
+            let adj_position = position + offset;
+
+            results.extend(
+                self.get_parcel_position(position)
+                    .map(|parcel| (parcel, distance)),
+            );
+
+            let x_dist = if ray.x < 0.0 {
+                (((adj_position.x / 16.0).floor() * 16.0) - position.x) / ray.x
+            } else if ray.x > 0.0 {
+                (((adj_position.x / 16.0).ceil() * 16.0) - position.x) / ray.x
+            } else {
+                999.0
+            };
+            let y_dist = if ray.y < 0.0 {
+                (((adj_position.y / 16.0).floor() * 16.0) - position.y) / ray.y
+            } else if ray.y > 0.0 {
+                (((adj_position.y / 16.0).ceil() * 16.0) - position.y) / ray.y
+            } else {
+                999.0
+            };
+
+            let step_fraction = x_dist.min(y_dist);
+            if step_fraction > 1.0 {
+                return results;
+            }
+
+            let step = ray * step_fraction;
+            position += step;
+            distance += step.length();
+            ray -= step;
+        }
     }
 }
 

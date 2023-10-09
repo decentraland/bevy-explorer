@@ -266,8 +266,8 @@ pub(crate) fn scene_thread(
         .unwrap();
 
     // run startup function
-    let result = rt
-        .block_on(async { run_script(&mut runtime, &script, "onStart", (), |_| Vec::new()).await });
+    let result =
+        rt.block_on(async { run_script(&mut runtime, &script, "onStart", |_| Vec::new()).await });
 
     if let Err(e) = result {
         // ignore failure to send failure
@@ -293,7 +293,7 @@ pub(crate) fn scene_thread(
 
         // run the onUpdate function
         let result = rt.block_on(async {
-            run_script(&mut runtime, &script, "onUpdate", (), |scope| {
+            run_script(&mut runtime, &script, "onUpdate", |scope| {
                 vec![v8::Number::new(scope, dt.as_secs_f64()).into()]
             })
             .await
@@ -318,13 +318,9 @@ async fn run_script(
     runtime: &mut JsRuntime,
     script: &v8::Global<v8::Value>,
     fn_name: &str,
-    messages_in: (),
     arg_fn: impl for<'a> Fn(&mut v8::HandleScope<'a>) -> Vec<v8::Local<'a, v8::Value>>,
 ) -> Result<(), AnyError> {
     // set up scene i/o
-    let op_state = runtime.op_state();
-    op_state.borrow_mut().put(messages_in);
-
     let promise = {
         let scope = &mut runtime.handle_scope();
         let script_this = v8::Local::new(scope, script.clone());
