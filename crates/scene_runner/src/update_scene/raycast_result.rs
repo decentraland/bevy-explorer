@@ -63,6 +63,7 @@ fn run_raycasts(
     mut raycast_requests: Query<(Entity, &SceneEntity, &mut Raycast, &GlobalTransform)>,
     target_positions: Query<&GlobalTransform>,
     mut scene_context: Query<(
+        Entity,
         &mut RendererSceneContext,
         &mut SceneColliderData,
         &GlobalTransform,
@@ -81,7 +82,8 @@ fn run_raycasts(
 
     for (e, scene_ent, mut raycast, transform) in raycast_requests.iter_mut() {
         debug!("{e:?} has raycast request: {raycast:?}");
-        let Ok((context, mut scene_data, scene_transform)) = scene_context.get_mut(scene_ent.root)
+        let Ok((_, context, mut scene_data, scene_transform)) =
+            scene_context.get_mut(scene_ent.root)
         else {
             continue;
         };
@@ -149,29 +151,34 @@ fn run_raycasts(
                     raycast.max_distance,
                     mask,
                 )
-                .map(|hit| vec![hit])
+                .map(|hit| vec![(scene_ent.root, hit)])
                 .unwrap_or_default(),
-            (false, RaycastQueryType::RqtQueryAll) => scene_data.cast_ray_all(
-                context.last_update_frame,
-                origin,
-                direction,
-                raycast.max_distance,
-                mask,
-            ),
+            (false, RaycastQueryType::RqtQueryAll) => scene_data
+                .cast_ray_all(
+                    context.last_update_frame,
+                    origin,
+                    direction,
+                    raycast.max_distance,
+                    mask,
+                )
+                .into_iter()
+                .map(|hit| (scene_ent.root, hit))
+                .collect(),
             (true, RaycastQueryType::RqtHitFirst) => {
                 let full_ray = direction * raycast.max_distance;
                 let mut scenes = containing_scene
                     .get_ray(origin, full_ray)
                     .into_iter()
                     .peekable();
-                let mut best_result = None;
+                let mut best_result: Option<(Entity, RaycastResult)> = None;
                 while scenes.peek().map_or(false, |(_, closest)| {
                     best_result
                         .as_ref()
-                        .map_or(true, |br: &RaycastResult| br.toi > *closest)
+                        .map_or(true, |(_, br)| br.toi > *closest)
                 }) {
                     let scene = scenes.next().unwrap().0;
-                    let Ok((context, mut colliders, _)) = scene_context.get_mut(scene) else {
+                    let Ok((scene, context, mut colliders, _)) = scene_context.get_mut(scene)
+                    else {
                         continue;
                     };
                     if let Some(result) = colliders.cast_ray_nearest(
@@ -181,8 +188,11 @@ fn run_raycasts(
                         raycast.max_distance,
                         mask,
                     ) {
-                        if best_result.as_ref().map_or(true, |b| b.toi > result.toi) {
-                            best_result = Some(result);
+                        if best_result
+                            .as_ref()
+                            .map_or(true, |(_, b)| b.toi > result.toi)
+                        {
+                            best_result = Some((scene, result));
                         }
                     }
                 }
@@ -197,7 +207,8 @@ fn run_raycasts(
                 let full_ray = direction * raycast.max_distance;
                 let mut results = Vec::new();
                 for (scene, _) in containing_scene.get_ray(origin, full_ray) {
-                    let Ok((context, mut colliders, _)) = scene_context.get_mut(scene) else {
+                    let Ok((scene, context, mut colliders, _)) = scene_context.get_mut(scene)
+                    else {
                         continue;
                     };
                     if let Some(result) = colliders.cast_ray_nearest(
@@ -207,7 +218,7 @@ fn run_raycasts(
                         raycast.max_distance,
                         mask,
                     ) {
-                        results.push(result);
+                        results.push((scene, result));
                     }
                 }
 
@@ -228,7 +239,7 @@ fn run_raycasts(
         // output
         let scene_origin = origin - scene_translation;
 
-        let make_hit = |result: RaycastResult| -> RaycastHit {
+        let make_hit = |(scene, result): (Entity, RaycastResult)| -> RaycastHit {
             RaycastHit {
                 position: Some(Vector3::world_vec_from_vec3(
                     &(scene_origin + direction * result.toi),
@@ -237,8 +248,17 @@ fn run_raycasts(
                 direction: Some(Vector3::world_vec_from_vec3(&direction)),
                 normal_hit: Some(Vector3::world_vec_from_vec3(&result.normal)),
                 length: result.toi,
-                mesh_name: result.id.name,
-                entity_id: result.id.entity.as_proto_u32(),
+                // only pass details for hits on current scene entities
+                mesh_name: if scene == scene_ent.root {
+                    result.id.name
+                } else {
+                    None
+                },
+                entity_id: if scene == scene_ent.root {
+                    result.id.entity.as_proto_u32()
+                } else {
+                    None
+                },
             }
         };
 
