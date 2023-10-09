@@ -1,6 +1,9 @@
 use std::ops::RangeInclusive;
 
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{
+    prelude::*,
+    utils::{HashMap, HashSet},
+};
 use bimap::BiMap;
 use common::structs::{AttachPoints, AudioDecoderError};
 use ethers_core::types::Address;
@@ -8,7 +11,7 @@ use kira::sound::streaming::StreamingSoundData;
 use tokio::sync::{broadcast, mpsc};
 
 use dcl::{
-    crdt::{append_component, put_component},
+    crdt::{append_component, delete_entity, put_component},
     interface::{crdt_context::CrdtContext, CrdtStore, CrdtType},
     SceneId,
 };
@@ -115,6 +118,14 @@ impl GlobalCrdtState {
             CrdtType::LWW(_) => put_component(&id, &component_id, &timestamp, Some(&buf)),
             CrdtType::GO(_) => append_component(&id, &component_id, &buf),
         };
+        if let Err(e) = self.int_sender.send(crdt_message) {
+            error!("failed to send foreign player update to scenes: {e}");
+        }
+    }
+
+    pub fn delete_entity(&mut self, id: SceneEntityId) {
+        self.store.clean_up(&HashSet::from_iter(Some(id)));
+        let crdt_message = delete_entity(&id);
         if let Err(e) = self.int_sender.send(crdt_message) {
             error!("failed to send foreign player update to scenes: {e}");
         }
@@ -358,6 +369,7 @@ fn despawn_players(
                 commands.despawn_recursive();
             }
 
+            state.delete_entity(player.scene_id);
             state.lookup.remove_by_right(&entity);
         }
     }

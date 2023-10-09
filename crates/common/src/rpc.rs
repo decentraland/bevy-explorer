@@ -124,6 +124,9 @@ pub enum RestrictedAction {
     GetUserData {
         response: RpcResultSender<SerializedProfile>,
     },
+    GetConnectedPlayers {
+        response: RpcResultSender<Vec<String>>,
+    },
 }
 
 #[derive(Debug)]
@@ -134,4 +137,5 @@ pub enum SceneRpcCall {
     KillPortable { location: PortableLocation },
     ListPortables,
     GetUserData,
+    GetConnectedPlayers,
 }

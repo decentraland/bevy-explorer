@@ -39,6 +39,7 @@ pub mod user_identity;
 
 #[cfg(feature = "inspect")]
 pub mod inspector;
+pub mod player;
 
 // marker to indicate shutdown has been triggered
 pub struct ShuttingDown;
@@ -82,13 +83,14 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
 
     let mut ops = vec![op_require::DECL, op_log::DECL, op_error::DECL];
 
-    let op_sets: [Vec<deno_core::OpDecl>; 6] = [
+    let op_sets: [Vec<deno_core::OpDecl>; 7] = [
         engine::ops(),
         restricted_actions::ops(),
         runtime::ops(),
         fetch::ops(),
         portables::ops(),
         user_identity::ops(),
+        player::ops(),
     ];
 
     // add plugin registrations

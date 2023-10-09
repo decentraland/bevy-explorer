@@ -9,6 +9,8 @@ module.exports.getPlayersInScene = async function (body) {
 }
 
 module.exports.getConnectedPlayers = async function (body) { 
-    console.error("Player::getConnectedPlayers not implemented");
-    return {} 
+    let res = await Deno.core.ops.op_get_connected_players();
+    return {
+        players: res.map((address) => ({ userId: address }))
+    } 
 }

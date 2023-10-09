@@ -13,7 +13,7 @@ use common::{
     structs::{PrimaryCamera, PrimaryUser},
     util::TaskExt,
 };
-use comms::profile::CurrentUserProfile;
+use comms::{global_crdt::ForeignPlayer, profile::CurrentUserProfile};
 use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, ServerAbout};
 use isahc::{http::StatusCode, AsyncReadResponseExt};
 use scene_runner::{
@@ -22,6 +22,7 @@ use scene_runner::{
     ContainingScene,
 };
 use ui_core::dialog::SpawnDialog;
+use wallet::Wallet;
 
 pub struct RestrictedActionsPlugin;
 
@@ -39,6 +40,7 @@ impl Plugin for RestrictedActionsPlugin {
                 kill_portable,
                 list_portables,
                 get_user_data,
+                op_get_connected_players,
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -447,5 +449,23 @@ fn get_user_data(profile: Res<CurrentUserProfile>, mut events: EventReader<Restr
         _ => None,
     }) {
         response.send(profile.0.content.clone());
+    }
+}
+
+fn op_get_connected_players(
+    me: Res<Wallet>,
+    others: Query<&ForeignPlayer>,
+    mut events: EventReader<RestrictedAction>,
+) {
+    for response in events.iter().filter_map(|ev| match ev {
+        RestrictedAction::GetConnectedPlayers { response } => Some(response),
+        _ => None,
+    }) {
+        let results = others
+            .iter()
+            .map(|f| format!("{:#x}", f.address))
+            .chain(Some(format!("{:#x}", me.address())))
+            .collect();
+        response.send(results);
     }
 }

@@ -752,6 +752,11 @@ fn receive_scene_updates(
                                 SceneRpcCall::GetUserData => RestrictedAction::GetUserData {
                                     response: RpcResultSender::new(resp.unwrap()),
                                 },
+                                SceneRpcCall::GetConnectedPlayers => {
+                                    RestrictedAction::GetConnectedPlayers {
+                                        response: RpcResultSender::new(resp.unwrap()),
+                                    }
+                                }
                             };
 
                             restricted_actions.send(restricted_action);
