@@ -45,6 +45,7 @@ impl Plugin for RestrictedActionsPlugin {
                 get_connected_players,
                 event_player_connected,
                 event_player_disconnected,
+                event_player_moved_scene,
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -474,6 +475,7 @@ fn get_connected_players(
     }
 }
 
+// todo: move this to global_crdt to do it all in one place?
 fn event_player_connected(
     mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
     mut events: EventReader<RpcCall>,
@@ -501,6 +503,7 @@ fn event_player_connected(
     });
 }
 
+// todo: move this to global_crdt to do it all in one place?
 fn event_player_disconnected(
     mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
     mut events: EventReader<RpcCall>,
@@ -540,4 +543,81 @@ fn event_player_disconnected(
         }
         true
     });
+}
+
+#[allow(clippy::type_complexity)]
+fn event_player_moved_scene(
+    mut enter_receivers: Local<HashMap<Entity, tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut leave_receivers: Local<HashMap<Entity, tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut current_scene: Local<HashMap<Address, Entity>>,
+    players: Query<(Entity, Option<&ForeignPlayer>), Or<(With<PrimaryUser>, With<ForeignPlayer>)>>,
+    me: Res<Wallet>,
+    containing_scene: ContainingScene,
+    mut events: EventReader<RpcCall>,
+) {
+    // gather new receivers
+    for (enter, scene, sender) in events.iter().filter_map(|ev| match ev {
+        RpcCall::SubscribePlayerEnteredScene { scene, sender } => Some((true, scene, sender)),
+        RpcCall::SubscribePlayerLeftScene { scene, sender } => Some((false, scene, sender)),
+        _ => None,
+    }) {
+        if enter {
+            enter_receivers.insert(*scene, sender.clone());
+        } else {
+            leave_receivers.insert(*scene, sender.clone());
+        }
+    }
+
+    // gather current scene
+    let new_scene: HashMap<_, _> = players
+        .iter()
+        .flat_map(|(p, f)| {
+            containing_scene
+                .get_parcel(p)
+                .map(|parcel| (f.map(|f| f.address).unwrap_or(me.address()), parcel))
+        })
+        .collect();
+
+    // gather diffs
+    let mut left: HashMap<Entity, Vec<Address>> = HashMap::default();
+    let mut entered: HashMap<Entity, Vec<Address>> = HashMap::default();
+
+    for (address, scene) in current_scene.iter() {
+        if new_scene.get(address) != Some(scene) {
+            left.entry(*scene).or_default().push(*address);
+        }
+    }
+
+    for (address, scene) in new_scene.iter() {
+        if current_scene.get(address) != Some(scene) {
+            entered.entry(*scene).or_default().push(*address);
+        }
+    }
+
+    // send events
+    for (mut receivers, events) in [(leave_receivers, left), (enter_receivers, entered)] {
+        for (scene, addresses) in events.into_iter() {
+            if let Some(sender) = receivers.remove(&scene) {
+                let mut retain = true;
+                for address in addresses {
+                    let data = json!({
+                        "userId": format!("{:#x}", address)
+                    })
+                    .to_string();
+
+                    if sender.send(data).is_err() {
+                        retain = false;
+                        break;
+                    }
+                }
+
+                if retain {
+                    receivers.insert(scene, sender);
+                }
+            }
+        }
+    }
+
+    // update state
+    *current_scene = new_scene;
 }

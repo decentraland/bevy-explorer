@@ -100,4 +100,12 @@ pub enum RpcCall {
     SubscribePlayerDisconnected {
         sender: tokio::sync::mpsc::UnboundedSender<String>,
     },
+    SubscribePlayerEnteredScene {
+        scene: Entity,
+        sender: tokio::sync::mpsc::UnboundedSender<String>,
+    },
+    SubscribePlayerLeftScene {
+        scene: Entity,
+        sender: tokio::sync::mpsc::UnboundedSender<String>,
+    },
 }

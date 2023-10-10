@@ -5,7 +5,7 @@ use common::rpc::RpcCall;
 use deno_core::{op, Op, OpDecl, OpState};
 use serde::Serialize;
 
-use crate::RpcCalls;
+use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
@@ -23,20 +23,20 @@ struct EventReceiver<T> {
 
 struct PlayerConnected;
 struct PlayerDisconnected;
+struct PlayerEnteredScene;
+struct PlayerLeftScene;
 
 #[op]
 fn op_subscribe(state: &mut OpState, id: &str) {
     macro_rules! register {
-        ($state: expr, $marker: ty, $call: tt) => {{
+        ($state: expr, $marker: ty, $call: expr) => {{
             if $state.has::<EventReceiver<$marker>>() {
                 // already subscribed
                 return;
             }
             let (sx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
-            state
-                .borrow_mut::<RpcCalls>()
-                .push(RpcCall::$call { sender: sx });
+            state.borrow_mut::<RpcCalls>().push($call(sx));
 
             state.put(EventReceiver::<$marker> {
                 inner: rx,
@@ -45,9 +45,23 @@ fn op_subscribe(state: &mut OpState, id: &str) {
         }};
     }
 
+    let scene = state.borrow::<CrdtContext>().scene_id.0;
+
+    // clippy is wrong https://github.com/rust-lang/rust-clippy/issues/1553
+    #[allow(clippy::redundant_closure_call)]
     match id {
-        "playerConnected" => register!(state, PlayerConnected, SubscribePlayerConnected),
-        "playerDisconnected" => register!(state, PlayerDisconnected, SubscribePlayerDisconnected),
+        "playerConnected" => register!(state, PlayerConnected, |sender| {
+            RpcCall::SubscribePlayerConnected { sender }
+        }),
+        "playerDisconnected" => register!(state, PlayerDisconnected, |sender| {
+            RpcCall::SubscribePlayerDisconnected { sender }
+        }),
+        "onEnterScene" => register!(state, PlayerEnteredScene, |sender| {
+            RpcCall::SubscribePlayerEnteredScene { sender, scene }
+        }),
+        "onLeaveScene" => register!(state, PlayerLeftScene, |sender| {
+            RpcCall::SubscribePlayerLeftScene { sender, scene }
+        }),
         _ => warn!("subscribe to unrecognised event {id}"),
     }
 }
@@ -56,6 +70,7 @@ fn op_subscribe(state: &mut OpState, id: &str) {
 fn op_unsubscribe(state: &mut OpState, id: &str) {
     macro_rules! unregister {
         ($state: expr, $marker: ty) => {{
+            // removing the receiver will cause the sender to error so it can be cleaned up at the sender side
             state.try_take::<EventReceiver<$marker>>();
         }};
     }
@@ -63,6 +78,8 @@ fn op_unsubscribe(state: &mut OpState, id: &str) {
     match id {
         "playerConnected" => unregister!(state, PlayerConnected),
         "playerDisconnected" => unregister!(state, PlayerDisconnected),
+        "onEnterScene" => unregister!(state, PlayerEnteredScene),
+        "onLeaveScene" => unregister!(state, PlayerLeftScene),
         _ => warn!("subscribe to unrecognised event {id}"),
     }
 }
@@ -100,6 +117,8 @@ fn op_send_batch(state: &mut OpState) -> Vec<Event> {
 
     poll!(state, PlayerConnected, "playerConnected");
     poll!(state, PlayerDisconnected, "playerDisconnected");
+    poll!(state, PlayerEnteredScene, "onEnterScene");
+    poll!(state, PlayerLeftScene, "onLeaveScene");
 
     results
 }
