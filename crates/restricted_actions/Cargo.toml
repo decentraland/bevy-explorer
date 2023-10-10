@@ -17,4 +17,6 @@ wallet = { workspace = true }
 bevy = { workspace = true }
 tokio = { workspace = true }
 isahc = { workspace = true }
+serde_json = { workspace = true }
+ethers-core = { workspace = true }
 opener = "0.6"

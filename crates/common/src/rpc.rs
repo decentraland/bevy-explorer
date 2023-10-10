@@ -94,4 +94,10 @@ pub enum RpcCall {
     GetConnectedPlayers {
         response: RpcResultSender<Vec<String>>,
     },
+    SubscribePlayerConnected {
+        sender: tokio::sync::mpsc::UnboundedSender<String>,
+    },
+    SubscribePlayerDisconnected {
+        sender: tokio::sync::mpsc::UnboundedSender<String>,
+    },
 }

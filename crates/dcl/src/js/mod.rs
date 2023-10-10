@@ -37,6 +37,7 @@ pub mod restricted_actions;
 pub mod runtime;
 pub mod user_identity;
 
+pub mod events;
 #[cfg(feature = "inspect")]
 pub mod inspector;
 pub mod player;
@@ -83,7 +84,7 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
 
     let mut ops = vec![op_require::DECL, op_log::DECL, op_error::DECL];
 
-    let op_sets: [Vec<deno_core::OpDecl>; 7] = [
+    let op_sets: [Vec<deno_core::OpDecl>; 8] = [
         engine::ops(),
         restricted_actions::ops(),
         runtime::ops(),
@@ -91,6 +92,7 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
         portables::ops(),
         user_identity::ops(),
         player::ops(),
+        events::ops(),
     ];
 
     // add plugin registrations

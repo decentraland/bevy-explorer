@@ -21,8 +21,10 @@ use scene_runner::{
     renderer_context::RendererSceneContext,
     ContainingScene,
 };
+use serde_json::json;
 use ui_core::dialog::SpawnDialog;
 use wallet::Wallet;
+use ethers_core::types::Address;
 
 pub struct RestrictedActionsPlugin;
 
@@ -40,7 +42,9 @@ impl Plugin for RestrictedActionsPlugin {
                 kill_portable,
                 list_portables,
                 get_user_data,
-                op_get_connected_players,
+                get_connected_players,
+                event_player_connected,
+                event_player_disconnected,
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -452,7 +456,7 @@ fn get_user_data(profile: Res<CurrentUserProfile>, mut events: EventReader<RpcCa
     }
 }
 
-fn op_get_connected_players(
+fn get_connected_players(
     me: Res<Wallet>,
     others: Query<&ForeignPlayer>,
     mut events: EventReader<RpcCall>,
@@ -469,3 +473,69 @@ fn op_get_connected_players(
         response.send(results);
     }
 }
+
+fn event_player_connected(
+    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut events: EventReader<RpcCall>,
+    players: Query<&ForeignPlayer, Added<ForeignPlayer>>,
+) {
+    for sender in events.iter().filter_map(|ev| match ev {
+        RpcCall::SubscribePlayerConnected { sender } => Some(sender),
+        _ => None,
+    }) {
+        senders.push(sender.clone());
+    }
+
+    senders.retain_mut(|sender| {
+        for player in players.iter() {
+            let data = json!({
+                "userId": format!("{:#x}", player.address)
+            })
+            .to_string();
+
+            if sender.send(data).is_err() {
+                return false;
+            }
+        }
+        true
+    });
+}
+
+fn event_player_disconnected(
+    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut events: EventReader<RpcCall>,
+    players: Query<(Entity, &ForeignPlayer), Added<ForeignPlayer>>,
+    mut removed: RemovedComponents<ForeignPlayer>,
+    mut last_players: Local<HashMap<Entity, Address>>,
+) {
+    // gather new receivers
+    for sender in events.iter().filter_map(|ev| match ev {
+        RpcCall::SubscribePlayerDisconnected { sender } => Some(sender),
+        _ => None,
+    }) {
+        senders.push(sender.clone());
+    }
+
+    // add new players to our local record
+    for (ent, player) in players.iter() {
+        last_players.insert(ent, player.address);
+    }
+
+    // gather addresses of removed players
+    let removed = removed.iter().flat_map(|e| last_players.remove(&e)).collect::<Vec<_>>();
+
+    senders.retain_mut(|sender| {
+        for address in removed.iter() {
+            let data = json!({
+                "userId": format!("{:#x}", address)
+            })
+            .to_string();
+
+            if sender.send(data).is_err() {
+                return false;
+            }
+        }
+        true
+    });
+}
+
