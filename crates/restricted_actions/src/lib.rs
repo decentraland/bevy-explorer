@@ -8,7 +8,7 @@ use bevy::{
     utils::HashMap,
 };
 use common::{
-    rpc::{PortableLocation, RestrictedAction, SpawnResponse},
+    rpc::{PortableLocation, RpcCall, SpawnResponse},
     sets::SceneSets,
     structs::{PrimaryCamera, PrimaryUser},
     util::TaskExt,
@@ -28,7 +28,7 @@ pub struct RestrictedActionsPlugin;
 
 impl Plugin for RestrictedActionsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<RestrictedAction>();
+        app.add_event::<RpcCall>();
         app.add_systems(
             Update,
             (
@@ -49,13 +49,13 @@ impl Plugin for RestrictedActionsPlugin {
 
 fn move_player(
     mut commands: Commands,
-    mut events: EventReader<RestrictedAction>,
+    mut events: EventReader<RpcCall>,
     scenes: Query<&RendererSceneContext>,
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
     containing_scene: ContainingScene,
 ) {
     for (root, transform) in events.iter().filter_map(|ev| match ev {
-        RestrictedAction::MovePlayer { scene, to } => Some((scene, to)),
+        RpcCall::MovePlayer { scene, to } => Some((scene, to)),
         _ => None,
     }) {
         let Ok(scene) = scenes.get(*root) else {
@@ -105,9 +105,9 @@ fn move_player(
     }
 }
 
-fn move_camera(mut events: EventReader<RestrictedAction>, mut camera: Query<&mut PrimaryCamera>) {
+fn move_camera(mut events: EventReader<RpcCall>, mut camera: Query<&mut PrimaryCamera>) {
     for rotation in events.iter().filter_map(|ev| match ev {
-        RestrictedAction::MoveCamera(rotation) => Some(rotation),
+        RpcCall::MoveCamera(rotation) => Some(rotation),
         _ => None,
     }) {
         let (yaw, pitch, roll) = rotation.to_euler(EulerRot::YXZ);
@@ -121,17 +121,17 @@ fn move_camera(mut events: EventReader<RestrictedAction>, mut camera: Query<&mut
 
 fn change_realm(
     mut commands: Commands,
-    mut events: EventReader<RestrictedAction>,
+    mut events: EventReader<RpcCall>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
 ) {
     for (scene, to, message, response) in events.iter().filter_map(|ev| match ev {
-        RestrictedAction::ChangeRealm {
+        RpcCall::ChangeRealm {
             scene,
             to,
             message,
             response,
-        } => Some((scene, to, message, response)),
+        } => Some((scene, to, message, response.clone())),
         _ => None,
     }) {
         if !player
@@ -175,12 +175,12 @@ fn change_realm(
 
 fn external_url(
     mut commands: Commands,
-    mut events: EventReader<RestrictedAction>,
+    mut events: EventReader<RpcCall>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
 ) {
     for (scene, url, response) in events.iter().filter_map(|ev| match ev {
-        RestrictedAction::ExternalUrl {
+        RpcCall::ExternalUrl {
             scene,
             url,
             response,
@@ -224,7 +224,7 @@ type SpawnResponseChannel = Option<tokio::sync::oneshot::Sender<Result<SpawnResp
 #[allow(clippy::type_complexity)]
 fn spawn_portable(
     mut portables: ResMut<PortableScenes>,
-    mut events: EventReader<RestrictedAction>,
+    mut events: EventReader<RpcCall>,
     mut pending_lookups: Local<
         Vec<(
             Task<Result<(String, PortableSource), String>>,
@@ -237,7 +237,7 @@ fn spawn_portable(
 ) {
     // process incoming events
     for (location, spawner, response) in events.iter().filter_map(|ev| match ev {
-        RestrictedAction::SpawnPortable {
+        RpcCall::SpawnPortable {
             location,
             spawner,
             response,
@@ -385,9 +385,9 @@ fn spawn_portable(
     });
 }
 
-fn kill_portable(mut portables: ResMut<PortableScenes>, mut events: EventReader<RestrictedAction>) {
+fn kill_portable(mut portables: ResMut<PortableScenes>, mut events: EventReader<RpcCall>) {
     for (location, response) in events.iter().filter_map(|ev| match ev {
-        RestrictedAction::KillPortable { location, response } => Some((location, response)),
+        RpcCall::KillPortable { location, response } => Some((location, response)),
         _ => None,
     }) {
         match location {
@@ -413,12 +413,12 @@ fn kill_portable(mut portables: ResMut<PortableScenes>, mut events: EventReader<
 
 fn list_portables(
     portables: ResMut<PortableScenes>,
-    mut events: EventReader<RestrictedAction>,
+    mut events: EventReader<RpcCall>,
     live_scenes: Res<LiveScenes>,
     contexts: Query<&RendererSceneContext>,
 ) {
     for response in events.iter().filter_map(|ev| match ev {
-        RestrictedAction::ListPortables { response } => Some(response),
+        RpcCall::ListPortables { response } => Some(response),
         _ => None,
     }) {
         println!("listing portables");
@@ -443,9 +443,9 @@ fn list_portables(
     }
 }
 
-fn get_user_data(profile: Res<CurrentUserProfile>, mut events: EventReader<RestrictedAction>) {
+fn get_user_data(profile: Res<CurrentUserProfile>, mut events: EventReader<RpcCall>) {
     for response in events.iter().filter_map(|ev| match ev {
-        RestrictedAction::GetUserData { response } => Some(response),
+        RpcCall::GetUserData { response } => Some(response),
         _ => None,
     }) {
         response.send(profile.0.content.clone());
@@ -455,10 +455,10 @@ fn get_user_data(profile: Res<CurrentUserProfile>, mut events: EventReader<Restr
 fn op_get_connected_players(
     me: Res<Wallet>,
     others: Query<&ForeignPlayer>,
-    mut events: EventReader<RestrictedAction>,
+    mut events: EventReader<RpcCall>,
 ) {
     for response in events.iter().filter_map(|ev| match ev {
-        RestrictedAction::GetConnectedPlayers { response } => Some(response),
+        RpcCall::GetConnectedPlayers { response } => Some(response),
         _ => None,
     }) {
         let results = others

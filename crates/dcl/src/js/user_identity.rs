@@ -1,9 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use common::{
-    profile::SerializedProfile,
-    rpc::{RpcResult, SceneRpcCall},
-};
+use common::{profile::SerializedProfile, rpc::RpcCall};
 use deno_core::{anyhow, error::AnyError, op, Op, OpDecl, OpState};
 use serde::Serialize;
 
@@ -50,7 +47,9 @@ async fn op_get_user_data(state: Rc<RefCell<OpState>>) -> Result<UserData, AnyEr
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
-        .push((SceneRpcCall::GetUserData, Some(RpcResult::new(sx))));
+        .push(RpcCall::GetUserData {
+            response: sx.into(),
+        });
 
     let profile = rx.await.map_err(|e| anyhow::anyhow!(e))?;
 

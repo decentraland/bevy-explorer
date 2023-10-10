@@ -17,7 +17,7 @@ use bevy::{
 };
 
 use common::{
-    rpc::{RestrictedAction, RpcResultSender, SceneRpcCall},
+    rpc::RpcCall,
     sets::{SceneLoopSets, SceneSets},
     structs::{AppConfig, PrimaryCamera, PrimaryUser},
     util::{dcl_assert, TryPushChildrenEx},
@@ -660,7 +660,7 @@ fn receive_scene_updates(
     mut scenes: Query<&mut RendererSceneContext>,
     crdt_interfaces: Res<CrdtExtractors>,
     frame: Res<FrameCount>,
-    mut restricted_actions: EventWriter<RestrictedAction>,
+    mut rpc_call_events: EventWriter<RpcCall>,
     mut toaster: Toaster,
 ) {
     loop {
@@ -688,7 +688,7 @@ fn receive_scene_updates(
                         None
                     }
                 }
-                SceneResponse::Ok(scene_id, census, mut crdt, runtime, messages, actions) => {
+                SceneResponse::Ok(scene_id, census, mut crdt, runtime, messages, rpc_calls) => {
                     let root = updates.scene_ids.get(&scene_id).unwrap();
                     debug!(
                         "scene {:?}/{:?} received updates! [+{}, -{}]",
@@ -716,50 +716,8 @@ fn receive_scene_updates(
                             updates.jobs_in_flight.contains(root) || context.tick_number == 1
                         );
 
-                        for (action, resp) in actions {
-                            let restricted_action = match action {
-                                SceneRpcCall::ChangeRealm { to, message } => {
-                                    RestrictedAction::ChangeRealm {
-                                        scene: *root,
-                                        to,
-                                        message,
-                                        response: RpcResultSender::new(resp.unwrap()),
-                                    }
-                                }
-                                SceneRpcCall::ExternalUrl { url } => {
-                                    RestrictedAction::ExternalUrl {
-                                        scene: *root,
-                                        url,
-                                        response: RpcResultSender::new(resp.unwrap()),
-                                    }
-                                }
-                                SceneRpcCall::SpawnPortable { location } => {
-                                    RestrictedAction::SpawnPortable {
-                                        location,
-                                        spawner: Some(context.hash.to_owned()),
-                                        response: RpcResultSender::new(resp.unwrap()),
-                                    }
-                                }
-                                SceneRpcCall::KillPortable { location } => {
-                                    RestrictedAction::KillPortable {
-                                        location,
-                                        response: RpcResultSender::new(resp.unwrap()),
-                                    }
-                                }
-                                SceneRpcCall::ListPortables => RestrictedAction::ListPortables {
-                                    response: RpcResultSender::new(resp.unwrap()),
-                                },
-                                SceneRpcCall::GetUserData => RestrictedAction::GetUserData {
-                                    response: RpcResultSender::new(resp.unwrap()),
-                                },
-                                SceneRpcCall::GetConnectedPlayers => {
-                                    RestrictedAction::GetConnectedPlayers {
-                                        response: RpcResultSender::new(resp.unwrap()),
-                                    }
-                                }
-                            };
-
-                            restricted_actions.send(restricted_action);
+                        for rpc_call in rpc_calls {
+                            rpc_call_events.send(rpc_call);
                         }
                     } else {
                         debug!(

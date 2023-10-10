@@ -28,7 +28,7 @@ use crate::{
     RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
 };
 use common::{
-    rpc::RestrictedAction,
+    rpc::RpcCall,
     structs::{AppConfig, GraphicsSettings, PrimaryCamera, SceneLoadDistance, ToolTips},
 };
 use comms::CommsPlugin;
@@ -113,7 +113,7 @@ fn init_test_app(entity_json: &str) -> App {
     app.init_resource::<InputMap>();
     app.init_resource::<AcceptInput>();
     app.init_resource::<ToolTips>();
-    app.add_event::<RestrictedAction>();
+    app.add_event::<RpcCall>();
     app.insert_resource(SceneLoadDistance(1.0));
 
     let mut test_path = std::env::current_dir().unwrap();

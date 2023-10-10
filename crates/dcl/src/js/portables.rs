@@ -1,10 +1,12 @@
-use common::rpc::{PortableLocation, RpcResult, SceneRpcCall, SpawnResponse};
+use common::rpc::{PortableLocation, RpcCall, SpawnResponse};
 use deno_core::{
     anyhow::{self, anyhow},
     error::AnyError,
     op, Op, OpDecl, OpState,
 };
 use std::{cell::RefCell, rc::Rc};
+
+use crate::interface::crdt_context::CrdtContext;
 
 use super::RpcCalls;
 
@@ -31,10 +33,16 @@ async fn op_portable_spawn(
         _ => anyhow::bail!("provide exactly one of `pid` and `ens`"),
     };
 
-    state.borrow_mut().borrow_mut::<RpcCalls>().push((
-        SceneRpcCall::SpawnPortable { location },
-        Some(RpcResult::new(sx)),
-    ));
+    let spawner = Some(state.borrow().borrow::<CrdtContext>().hash.clone());
+
+    state
+        .borrow_mut()
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::SpawnPortable {
+            location,
+            spawner,
+            response: sx.into(),
+        });
 
     rx.await
         .map_err(|e| anyhow::anyhow!(e))?
@@ -47,12 +55,13 @@ async fn op_portable_kill(state: Rc<RefCell<OpState>>, pid: String) -> Result<bo
 
     // might not be a urn, who even knows
 
-    state.borrow_mut().borrow_mut::<RpcCalls>().push((
-        SceneRpcCall::KillPortable {
+    state
+        .borrow_mut()
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::KillPortable {
             location: PortableLocation::Urn(pid.clone()),
-        },
-        Some(RpcResult::new(sx)),
-    ));
+            response: sx.into(),
+        });
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
 }
@@ -64,7 +73,9 @@ async fn op_portable_list(state: Rc<RefCell<OpState>>) -> Vec<SpawnResponse> {
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
-        .push((SceneRpcCall::ListPortables, Some(RpcResult::new(sx))));
+        .push(RpcCall::ListPortables {
+            response: sx.into(),
+        });
 
     let res = rx.await.unwrap_or_default();
     println!("res: {res:?}");

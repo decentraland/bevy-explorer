@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use common::rpc::{RpcResult, SceneRpcCall};
+use common::rpc::RpcCall;
 use deno_core::{op, Op, OpDecl, OpState};
 
 use crate::RpcCalls;
@@ -17,7 +17,9 @@ async fn op_get_connected_players(state: Rc<RefCell<OpState>>) -> Vec<String> {
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
-        .push((SceneRpcCall::GetConnectedPlayers, Some(RpcResult::new(sx))));
+        .push(RpcCall::GetConnectedPlayers {
+            response: sx.into(),
+        });
 
     rx.await.unwrap_or_default()
 }

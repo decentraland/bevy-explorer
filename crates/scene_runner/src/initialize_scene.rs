@@ -13,9 +13,8 @@ use common::{
 };
 use comms::global_crdt::GlobalCrdtState;
 use dcl::{
-    get_next_scene_id,
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
-    spawn_scene, SceneElapsedTime, SceneResponse,
+    spawn_scene, SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
     transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
@@ -321,7 +320,7 @@ pub(crate) fn load_scene_javascript(
         let initial_position = base.as_vec2() * Vec2::splat(PARCEL_SIZE);
 
         // setup the scene root entity
-        let scene_id = get_next_scene_id();
+        let scene_id = SceneId(root);
         let title = meta
             .display
             .and_then(|display| display.title)
