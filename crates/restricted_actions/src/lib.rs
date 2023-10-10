@@ -14,6 +14,7 @@ use common::{
     util::TaskExt,
 };
 use comms::{global_crdt::ForeignPlayer, profile::CurrentUserProfile};
+use ethers_core::types::Address;
 use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, ServerAbout};
 use isahc::{http::StatusCode, AsyncReadResponseExt};
 use scene_runner::{
@@ -24,7 +25,6 @@ use scene_runner::{
 use serde_json::json;
 use ui_core::dialog::SpawnDialog;
 use wallet::Wallet;
-use ethers_core::types::Address;
 
 pub struct RestrictedActionsPlugin;
 
@@ -522,7 +522,10 @@ fn event_player_disconnected(
     }
 
     // gather addresses of removed players
-    let removed = removed.iter().flat_map(|e| last_players.remove(&e)).collect::<Vec<_>>();
+    let removed = removed
+        .iter()
+        .flat_map(|e| last_players.remove(&e))
+        .collect::<Vec<_>>();
 
     senders.retain_mut(|sender| {
         for address in removed.iter() {
@@ -538,4 +541,3 @@ fn event_player_disconnected(
         true
     });
 }
-

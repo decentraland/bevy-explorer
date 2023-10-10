@@ -57,7 +57,7 @@ fn op_unsubscribe(state: &mut OpState, id: &str) {
     macro_rules! unregister {
         ($state: expr, $marker: ty) => {{
             state.try_take::<EventReceiver<$marker>>();
-        }}
+        }};
     }
 
     match id {
