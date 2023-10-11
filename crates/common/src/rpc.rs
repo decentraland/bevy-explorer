@@ -108,4 +108,8 @@ pub enum RpcCall {
         scene: Entity,
         sender: tokio::sync::mpsc::UnboundedSender<String>,
     },
+    SubscribeSceneReady {
+        scene: Entity,
+        sender: tokio::sync::mpsc::UnboundedSender<String>,
+    },
 }

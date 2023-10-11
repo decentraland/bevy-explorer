@@ -5,7 +5,7 @@ use bevy::{
     math::Vec3Swizzles,
     prelude::*,
     tasks::{IoTaskPool, Task},
-    utils::HashMap,
+    utils::{HashMap, HashSet},
 };
 use common::{
     rpc::{PortableLocation, RpcCall, SpawnResponse},
@@ -20,7 +20,8 @@ use isahc::{http::StatusCode, AsyncReadResponseExt};
 use scene_runner::{
     initialize_scene::{LiveScenes, PortableScenes, PortableSource, SceneLoading, PARCEL_SIZE},
     renderer_context::RendererSceneContext,
-    ContainingScene,
+    update_world::gltf_container::{GltfDefinition, GltfProcessed},
+    ContainingScene, SceneEntity,
 };
 use serde_json::json;
 use ui_core::dialog::SpawnDialog;
@@ -46,6 +47,7 @@ impl Plugin for RestrictedActionsPlugin {
                 event_player_connected,
                 event_player_disconnected,
                 event_player_moved_scene,
+                event_scene_ready,
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -495,11 +497,9 @@ fn event_player_connected(
             })
             .to_string();
 
-            if sender.send(data).is_err() {
-                return false;
-            }
+            let _ = sender.send(data);
         }
-        true
+        !sender.is_closed()
     });
 }
 
@@ -537,18 +537,16 @@ fn event_player_disconnected(
             })
             .to_string();
 
-            if sender.send(data).is_err() {
-                return false;
-            }
+            let _ = sender.send(data);
         }
-        true
+        !sender.is_closed()
     });
 }
 
 #[allow(clippy::type_complexity)]
 fn event_player_moved_scene(
-    mut enter_receivers: Local<HashMap<Entity, tokio::sync::mpsc::UnboundedSender<String>>>,
-    mut leave_receivers: Local<HashMap<Entity, tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut enter_senders: Local<HashMap<Entity, tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut leave_senders: Local<HashMap<Entity, tokio::sync::mpsc::UnboundedSender<String>>>,
     mut current_scene: Local<HashMap<Address, Entity>>,
     players: Query<(Entity, Option<&ForeignPlayer>), Or<(With<PrimaryUser>, With<ForeignPlayer>)>>,
     me: Res<Wallet>,
@@ -562,9 +560,9 @@ fn event_player_moved_scene(
         _ => None,
     }) {
         if enter {
-            enter_receivers.insert(*scene, sender.clone());
+            enter_senders.insert(*scene, sender.clone());
         } else {
-            leave_receivers.insert(*scene, sender.clone());
+            leave_senders.insert(*scene, sender.clone());
         }
     }
 
@@ -595,29 +593,62 @@ fn event_player_moved_scene(
     }
 
     // send events
-    for (mut receivers, events) in [(leave_receivers, left), (enter_receivers, entered)] {
-        for (scene, addresses) in events.into_iter() {
-            if let Some(sender) = receivers.remove(&scene) {
-                let mut retain = true;
+    for (mut senders, events) in [(leave_senders, left), (enter_senders, entered)] {
+        senders.retain(|scene, sender| {
+            if let Some(addresses) = events.get(scene) {
                 for address in addresses {
                     let data = json!({
                         "userId": format!("{:#x}", address)
                     })
                     .to_string();
 
-                    if sender.send(data).is_err() {
-                        retain = false;
-                        break;
-                    }
-                }
-
-                if retain {
-                    receivers.insert(scene, sender);
+                    let _ = sender.send(data);
                 }
             }
-        }
+            !sender.is_closed()
+        });
     }
 
     // update state
     *current_scene = new_scene;
+}
+
+// todo: move this to global_crdt to do it all in one place?
+fn event_scene_ready(
+    mut senders: Local<Vec<(Entity, tokio::sync::mpsc::UnboundedSender<String>)>>,
+    mut events: EventReader<RpcCall>,
+    unready_gltfs: Query<&SceneEntity, (With<GltfDefinition>, Without<GltfProcessed>)>,
+    mut previously_unready: Local<HashSet<Entity>>,
+) {
+    for (scene, sender) in events.iter().filter_map(|ev| match ev {
+        RpcCall::SubscribeSceneReady { scene, sender } => Some((scene, sender)),
+        _ => None,
+    }) {
+        senders.push((*scene, sender.clone()));
+        // add to the prev_unready set so that the event gets triggered even if
+        // it is registered after all gltfs are loaded
+        previously_unready.insert(*scene);
+    }
+
+    let mut now_unready = HashSet::default();
+
+    for ent in &unready_gltfs {
+        now_unready.insert(ent.root);
+    }
+
+    let now_ready = previously_unready
+        .iter()
+        .filter(|&s| !now_unready.contains(s))
+        .collect::<HashSet<_>>();
+
+    senders.retain_mut(|(scene, sender)| {
+        if now_ready.contains(scene) {
+            let _ = sender.send("{}".into());
+        }
+
+        !sender.is_closed()
+    });
+
+    drop(now_ready);
+    *previously_unready = now_unready;
 }

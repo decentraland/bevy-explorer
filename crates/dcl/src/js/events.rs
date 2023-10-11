@@ -25,6 +25,7 @@ struct PlayerConnected;
 struct PlayerDisconnected;
 struct PlayerEnteredScene;
 struct PlayerLeftScene;
+struct SceneReady;
 
 #[op]
 fn op_subscribe(state: &mut OpState, id: &str) {
@@ -62,6 +63,9 @@ fn op_subscribe(state: &mut OpState, id: &str) {
         "onLeaveScene" => register!(state, PlayerLeftScene, |sender| {
             RpcCall::SubscribePlayerLeftScene { sender, scene }
         }),
+        "sceneStart" => register!(state, SceneReady, |sender| {
+            RpcCall::SubscribeSceneReady { sender, scene }
+        }),
         _ => warn!("subscribe to unrecognised event {id}"),
     }
 }
@@ -80,6 +84,7 @@ fn op_unsubscribe(state: &mut OpState, id: &str) {
         "playerDisconnected" => unregister!(state, PlayerDisconnected),
         "onEnterScene" => unregister!(state, PlayerEnteredScene),
         "onLeaveScene" => unregister!(state, PlayerLeftScene),
+        "sceneStart" => unregister!(state, SceneReady),
         _ => warn!("subscribe to unrecognised event {id}"),
     }
 }
@@ -119,6 +124,7 @@ fn op_send_batch(state: &mut OpState) -> Vec<Event> {
     poll!(state, PlayerDisconnected, "playerDisconnected");
     poll!(state, PlayerEnteredScene, "onEnterScene");
     poll!(state, PlayerLeftScene, "onLeaveScene");
+    poll!(state, SceneReady, "sceneStart");
 
     results
 }
