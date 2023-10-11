@@ -2,7 +2,7 @@ use std::{collections::VecDeque, time::Duration};
 
 use bevy::{gltf::Gltf, math::Vec3Swizzles, prelude::*, utils::HashMap};
 use bevy_console::ConsoleCommand;
-use common::{sets::SceneSets, structs::PrimaryUser, util::TryInsertEx};
+use common::{rpc::RpcCall, sets::SceneSets, structs::PrimaryUser, util::TryInsertEx};
 use comms::{
     chat_marker_things, global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport,
 };
@@ -179,7 +179,17 @@ fn broadcast_emote(
     mut last: Local<Option<String>>,
     mut count: Local<usize>,
     time: Res<Time>,
+    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut subscribe_events: EventReader<RpcCall>,
 ) {
+    // gather any event receivers
+    for sender in subscribe_events.iter().filter_map(|ev| match ev {
+        RpcCall::SubscribePlayerExpression { sender } => Some(sender),
+        _ => None,
+    }) {
+        senders.push(sender.clone());
+    }
+
     for list in q.iter() {
         if let Some(PbAvatarEmoteCommand {
             emote_command: Some(EmoteCommand { emote_urn, .. }),
@@ -202,6 +212,11 @@ fn broadcast_emote(
                 }
 
                 *last = Some(emote_urn.to_owned());
+
+                senders.retain(|sender| {
+                    let _ = sender.send(format!("{{ \"expressionId\": \"{emote_urn}\" }}"));
+                    !sender.is_closed()
+                })
             }
             return;
         }

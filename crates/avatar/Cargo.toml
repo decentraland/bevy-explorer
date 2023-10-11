@@ -25,3 +25,4 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 bevy_console = { workspace = true }
 once_cell = { workspace = true }
+tokio = { workspace = true }
