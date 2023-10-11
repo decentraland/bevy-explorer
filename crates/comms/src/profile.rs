@@ -6,10 +6,13 @@ use super::{
     global_crdt::{process_transport_updates, ForeignPlayer, ProfileEvent, ProfileEventType},
     NetworkMessage, Transport,
 };
-use common::util::{AsH160, TryInsertEx};
 use common::{
     profile::SerializedProfile,
     structs::{AppConfig, PrimaryUser},
+};
+use common::{
+    rpc::RpcCall,
+    util::{AsH160, TryInsertEx},
 };
 use dcl_component::proto_components::kernel::comms::rfc4;
 use wallet::Wallet;
@@ -50,7 +53,17 @@ pub fn setup_primary_profile(
     player: Query<(Entity, Option<&UserProfile>), With<PrimaryUser>>,
     current_profile: Res<CurrentUserProfile>,
     transports: Query<&Transport>,
+    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut subscribe_events: EventReader<RpcCall>,
 ) {
+    // gather any event receivers
+    for sender in subscribe_events.iter().filter_map(|ev| match ev {
+        RpcCall::SubscribeProfileChanged { sender } => Some(sender),
+        _ => None,
+    }) {
+        senders.push(sender.clone());
+    }
+
     if let Ok((player, maybe_profile)) = player.get_single() {
         if maybe_profile.is_none() || current_profile.is_changed() {
             // update component
@@ -89,6 +102,15 @@ pub fn setup_primary_profile(
             if let Err(e) = std::fs::write("config.json", serde_json::to_string(&config).unwrap()) {
                 warn!("failed to write to config: {e}");
             }
+
+            // send to event receivers
+            senders.retain(|sender| {
+                let _ = sender.send(format!(
+                    "{{ \"ethAddress\": \"{}\", \"version\": \"{}\" }}",
+                    current_profile.0.content.user_id.as_ref().unwrap(), current_profile.0.version
+                ));
+                !sender.is_closed()
+            });
         }
     }
 }

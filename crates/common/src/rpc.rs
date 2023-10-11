@@ -115,4 +115,7 @@ pub enum RpcCall {
     SubscribePlayerExpression {
         sender: tokio::sync::mpsc::UnboundedSender<String>,
     },
+    SubscribeProfileChanged {
+        sender: tokio::sync::mpsc::UnboundedSender<String>,
+    },
 }
