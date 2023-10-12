@@ -1,7 +1,6 @@
-use bevy::{
-    prelude::*,
-    utils::{Entry, HashMap},
-};
+use std::collections::{btree_map::Entry, BTreeMap};
+
+use bevy::prelude::*;
 use common::structs::ToolTips;
 use ui_core::{ui_builder::SpawnSpacer, HOVER_TEXT_STYLE};
 
@@ -23,7 +22,7 @@ pub fn update_tooltip(
     mut commands: Commands,
     mut tips: ResMut<ToolTips>,
     cur_tips: Query<Entity, With<ToolTipNode>>,
-    mut active_tips: Local<HashMap<&'static str, (Vec<(String, bool)>, f32)>>,
+    mut active_tips: Local<BTreeMap<&'static str, (Vec<(String, bool)>, f32)>>,
     time: Res<Time>,
 ) {
     let Ok(window) = windows.get_single() else {
@@ -93,8 +92,7 @@ pub fn update_tooltip(
                         left,
                         right,
                         top: Val::Px(
-                            (cursor_position.y - active_tips.len() as f32 * 15.0).max(0.0)
-                                + y_offset,
+                            (cursor_position.y - content.len() as f32 * 15.0).max(0.0) + y_offset,
                         ),
                         border: UiRect::all(Val::Px(1.0)),
                         padding: UiRect::all(Val::Px(2.0)),
@@ -130,6 +128,6 @@ pub fn update_tooltip(
                 }
             });
 
-        y_offset += active_tips.len() as f32 * 15.0 + 10.0;
+        y_offset += content.len() as f32 * 30.0 + 15.0;
     }
 }

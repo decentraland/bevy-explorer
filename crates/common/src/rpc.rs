@@ -118,4 +118,10 @@ pub enum RpcCall {
     SubscribeProfileChanged {
         sender: tokio::sync::mpsc::UnboundedSender<String>,
     },
+    SubscribeRealmChanged {
+        sender: tokio::sync::mpsc::UnboundedSender<String>,
+    },
+    SubscribePlayerClicked {
+        sender: tokio::sync::mpsc::UnboundedSender<String>,
+    },
 }

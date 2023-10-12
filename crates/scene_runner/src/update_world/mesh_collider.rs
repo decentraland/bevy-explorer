@@ -546,6 +546,10 @@ impl SceneColliderData {
     pub fn clear_disabled(&mut self) {
         self.disabled.clear();
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &ColliderId> {
+        self.scaled_collider.left_values()
+    }
 }
 
 fn update_scene_collider_data(

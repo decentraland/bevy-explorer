@@ -15,6 +15,7 @@ ipfs = { workspace = true }
 scene_runner = { workspace = true }
 ui_core = { workspace = true }
 wallet = { workspace = true }
+input_manager = { workspace = true }
 
 bevy = { workspace = true }
 bevy_mod_billboard = { workspace = true }
@@ -26,3 +27,4 @@ clap = { workspace = true }
 bevy_console = { workspace = true }
 once_cell = { workspace = true }
 tokio = { workspace = true }
+rapier3d-f64 = { workspace = true }

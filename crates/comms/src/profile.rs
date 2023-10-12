@@ -107,7 +107,8 @@ pub fn setup_primary_profile(
             senders.retain(|sender| {
                 let _ = sender.send(format!(
                     "{{ \"ethAddress\": \"{}\", \"version\": \"{}\" }}",
-                    current_profile.0.content.user_id.as_ref().unwrap(), current_profile.0.version
+                    current_profile.0.content.user_id.as_ref().unwrap(),
+                    current_profile.0.version
                 ));
                 !sender.is_closed()
             });

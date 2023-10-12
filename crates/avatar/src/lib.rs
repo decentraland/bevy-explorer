@@ -9,12 +9,14 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use bevy_mod_billboard::BillboardTextBundle;
+use colliders::AvatarColliderPlugin;
 use serde::Deserialize;
 use urn::Urn;
 
 pub mod animate;
 pub mod attach;
 pub mod base_wearables;
+pub mod colliders;
 pub mod foreign_dynamics;
 pub mod mask_material;
 
@@ -55,6 +57,7 @@ impl Plugin for AvatarPlugin {
         app.add_plugins(PlayerMovementPlugin);
         app.add_plugins(AvatarAnimationPlugin);
         app.add_plugins(AttachPlugin);
+        app.add_plugins(AvatarColliderPlugin);
         app.init_resource::<WearablePointers>();
         app.init_resource::<WearableMetas>();
         app.add_systems(Update, load_base_wearables);
