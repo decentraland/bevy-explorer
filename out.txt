@@ -1,0 +1,2 @@
+   Compiling av v0.1.0 (C:\Users\robfm\Documents\decentraland\bevy-explorer\crates\av)
+^C

@@ -705,6 +705,16 @@ impl IpfsIo {
                 .unwrap_or_default(),
         ))
     }
+
+    // note - blocking. use from a blockable thread
+    pub fn content_url(&self, file_path: &str, content_hash: &str) -> Option<String> {
+        let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+            content_hash.to_owned(),
+            file_path.to_owned(),
+        ));
+        let res = ipfs_path.to_url(&self.context.blocking_read()).ok();
+        res
+    }
 }
 
 pub type ActiveEntityTask = Task<Result<Vec<EntityDefinition>, anyhow::Error>>;

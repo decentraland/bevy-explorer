@@ -58,7 +58,7 @@ pub fn spawn_audio_streams(
         .unwrap_or_default();
 
     for (ent, scene, mut stream, mut maybe_spawned) in streams.iter_mut() {
-        if maybe_spawned.is_none() {
+        if maybe_spawned.is_none() || stream.is_changed() {
             match stream.sound_data.try_recv() {
                 Ok(sound_data) => {
                     info!("{ent:?} received sound data!");
@@ -75,6 +75,7 @@ pub fn spawn_audio_streams(
                 }
                 Err(TryRecvError::Empty) => {
                     debug!("{ent:?} waiting for sound data");
+                    commands.entity(ent).remove::<AudioSpawned>();
                 }
             }
         }
