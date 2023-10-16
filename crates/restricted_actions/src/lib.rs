@@ -87,11 +87,8 @@ fn move_player(
         target_transform.translation +=
             (scene.base * IVec2::new(1, -1)).as_vec2().extend(0.0).xzy() * PARCEL_SIZE;
 
-        if transform.translation.clamp(
-            Vec3::new(0.0, f32::MIN, -PARCEL_SIZE),
-            Vec3::new(PARCEL_SIZE, f32::MAX, 0.0),
-        ) != transform.translation
-        {
+        let target_scenes = containing_scene.get_position(target_transform.translation);
+        if !target_scenes.contains(root) {
             commands.spawn_dialog_two(
                 "Teleport".into(),
                 "The scene wants to teleport you to another location".into(),
