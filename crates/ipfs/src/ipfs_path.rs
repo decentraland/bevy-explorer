@@ -390,7 +390,7 @@ impl IpfsPath {
                 context
                     .about
                     .as_ref()
-                    .and_then(ServerAbout::base_url)
+                    .and_then(ServerAbout::content_url)
                     .map(|base_url| format!("{}{}", base_url, self.ipfs_type.base_url_extension()))
             })
             .ok_or_else(|| anyhow::anyhow!("base url not specified in asset path or context"))?;

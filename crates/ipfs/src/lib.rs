@@ -318,7 +318,7 @@ pub struct ServerAbout {
 }
 
 impl ServerAbout {
-    pub fn base_url(&self) -> Option<&str> {
+    pub fn content_url(&self) -> Option<&str> {
         self.content.as_ref().map(|c| c.public_url.as_str())
     }
 }
@@ -414,7 +414,7 @@ pub struct ChangeRealmEvent {
     pub new_realm: String,
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Debug)]
 pub struct CurrentRealm {
     pub address: String,
     pub config: ServerConfiguration,
@@ -483,6 +483,7 @@ pub struct IpfsEntity {
 
 #[derive(Default)]
 pub struct IpfsContext {
+    base_url: String,
     entities: HashMap<String, IpfsEntity>,
     about: Option<ServerAbout>,
     modifiers: HashMap<String, IpfsModifier>,
@@ -530,14 +531,17 @@ impl IpfsIo {
     }
 
     pub fn set_realm_about(&self, about: ServerAbout) {
-        self.context.blocking_write().about = Some(about.clone());
+        let mut write = self.context.blocking_write();
+        write.base_url = String::default();
+        write.about = Some(about.clone());
         self.realm_config_sender
             .send(Some(("manual value".to_owned(), about)))
             .expect("channel closed");
     }
 
-    pub async fn get_realm_info(&self) -> Option<ServerAbout> {
-        self.context.read().await.about.clone()
+    pub async fn get_realm_info(&self) -> (String, Option<ServerAbout>) {
+        let context = self.context.read().await;
+        (context.base_url.clone(), context.about.clone())
     }
 
     async fn set_realm_inner(&self, new_realm: String) -> Result<(), anyhow::Error> {
@@ -554,7 +558,9 @@ impl IpfsIo {
 
         let about = about.json::<ServerAbout>().await.map_err(|e| anyhow!(e))?;
 
-        self.context.write().await.about = Some(about.clone());
+        let mut write = self.context.write().await;
+        write.base_url = new_realm.clone();
+        write.about = Some(about.clone());
         self.realm_config_sender
             .send(Some((new_realm, about)))
             .expect("channel closed");
@@ -700,7 +706,7 @@ impl IpfsIo {
                 .modifiers
                 .get(hash)
                 .and_then(|m| m.base_url.as_deref())
-                .or_else(|| context.about.as_ref().and_then(ServerAbout::base_url))
+                .or_else(|| context.about.as_ref().and_then(ServerAbout::content_url))
                 .map(ToOwned::to_owned)
                 .unwrap_or_default(),
         ))

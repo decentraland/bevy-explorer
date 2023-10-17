@@ -105,21 +105,15 @@ async fn op_realm_information(
     op_state: Rc<RefCell<OpState>>,
 ) -> Result<RealmInfoResponse, AnyError> {
     let asset_server = op_state.borrow().borrow::<AssetServer>().clone();
-    let info = asset_server
-        .ipfs()
-        .get_realm_info()
-        .await
-        .ok_or_else(|| anyhow!("Not connected?"))?;
+    let (base_url, info) = asset_server.ipfs().get_realm_info().await;
 
-    let base_url = info.base_url().unwrap_or_default();
-    let base_url = base_url
-        .strip_suffix("/content")
-        .unwrap_or(base_url)
-        .to_owned();
+    let info = info.ok_or_else(|| anyhow!("Not connected?"))?;
+
+    let base_url = base_url.strip_suffix("/content").unwrap_or(&base_url);
     let config = info.configurations.unwrap_or_default();
 
     Ok(RealmInfoResponse {
-        base_url,
+        base_url: base_url.to_owned(),
         realm_name: config.realm_name.unwrap_or_default(),
         network_id: config.network_id.unwrap_or_default(),
         comms_adapter: info.comms.and_then(|c| c.fixed_adapter).unwrap_or_default(),
