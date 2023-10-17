@@ -21,10 +21,17 @@ use livekit::{
 use prost::Message;
 use tokio::sync::mpsc::{error::TryRecvError, Receiver, Sender};
 
-use common::{structs::AudioDecoderError, util::AsH160};
+use common::{
+    structs::AudioDecoderError,
+    util::{AsH160, TryInsertEx},
+};
 use dcl_component::proto_components::kernel::comms::rfc4;
 
-use crate::global_crdt::{LocalAudioFrame, LocalAudioSource, PlayerMessage};
+use crate::{
+    global_crdt::{LocalAudioFrame, LocalAudioSource, PlayerMessage},
+    profile::CurrentUserProfile,
+    Transport, TransportType,
+};
 
 use super::{
     global_crdt::{GlobalCrdtState, PlayerUpdate},
@@ -35,8 +42,15 @@ pub struct LivekitPlugin;
 
 impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, connect_livekit);
+        app.add_systems(Update, (connect_livekit, start_livekit));
+        app.add_event::<StartLivekit>();
     }
+}
+
+#[derive(Event)]
+pub struct StartLivekit {
+    pub entity: Entity,
+    pub address: String,
 }
 
 #[derive(Component)]
@@ -48,6 +62,40 @@ pub struct LivekitTransport {
 
 #[derive(Component)]
 pub struct LivekitConnection(Task<()>);
+
+pub fn start_livekit(
+    mut commands: Commands,
+    mut room_events: EventReader<StartLivekit>,
+    current_profile: Res<CurrentUserProfile>,
+) {
+    if let Some(ev) = room_events.iter().last() {
+        info!("starting livekit protocol");
+        let (sender, receiver) = tokio::sync::mpsc::channel(1000);
+
+        // queue a profile version message
+        let response = rfc4::Packet {
+            message: Some(rfc4::packet::Message::ProfileVersion(
+                rfc4::AnnounceProfileVersion {
+                    profile_version: current_profile.0.version,
+                },
+            )),
+        };
+        let _ = sender.try_send(NetworkMessage::reliable(&response));
+
+        commands.entity(ev.entity).try_insert((
+            Transport {
+                transport_type: TransportType::Livekit,
+                sender,
+                foreign_aliases: Default::default(),
+            },
+            LivekitTransport {
+                address: ev.address.to_owned(),
+                receiver: Some(receiver),
+                retries: 0,
+            },
+        ));
+    }
+}
 
 #[allow(clippy::type_complexity)]
 fn connect_livekit(
@@ -86,7 +134,7 @@ async fn livekit_handler(
     {
         warn!("livekit error: {e}");
     }
-    warn!("thread exit")
+    warn!("livekit thread exit");
 }
 
 async fn livekit_handler_inner(
@@ -244,9 +292,9 @@ async fn livekit_handler_inner(
                     } else {
                         DataPacketKind::Reliable
                     };
-                    if let Err(e) = room.local_participant().publish_data(outgoing.data, kind, Default::default()).await {
-                        debug!("outgoing failed: {e}; not exiting loop though since it often fails at least once or twice at the start...");
-                        // break 'stream;
+                    if let Err(_e) = room.local_participant().publish_data(outgoing.data, kind, Default::default()).await {
+                        // debug!("outgoing failed: {_e}; not exiting loop though since it often fails at least once or twice at the start...");
+                        break 'stream;
                     };
                 }
             );

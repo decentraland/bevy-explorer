@@ -29,6 +29,9 @@ pub mod kernel {
                 "/decentraland.kernel.comms.rfc4.rs"
             ));
         }
+        pub mod v3 {
+            include!(concat!(env!("OUT_DIR"), "/decentraland.kernel.comms.v3.rs"));
+        }
     }
 }
 

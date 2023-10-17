@@ -43,6 +43,7 @@ fn main() -> Result<()> {
 
     sources.push("src/proto/decentraland/kernel/comms/rfc5/ws_comms.proto".into());
     sources.push("src/proto/decentraland/kernel/comms/rfc4/comms.proto".into());
+    sources.push("src/proto/decentraland/kernel/comms/v3/archipelago.proto".into());
 
     let serde_components = ["Color3"];
 

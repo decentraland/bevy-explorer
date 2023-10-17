@@ -26,7 +26,7 @@ use dcl_component::proto_components::kernel::comms::{
 };
 use wallet::{SimpleAuthChain, Wallet};
 
-use crate::global_crdt::PlayerMessage;
+use crate::{global_crdt::PlayerMessage, profile::CurrentUserProfile, Transport, TransportType};
 
 use super::{
     global_crdt::{GlobalCrdtState, PlayerUpdate},
@@ -37,9 +37,17 @@ pub struct WebsocketRoomPlugin;
 
 impl Plugin for WebsocketRoomPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, connect_websocket);
-        app.add_systems(Update, reconnect_websocket);
+        app.add_systems(
+            Update,
+            (connect_websocket, reconnect_websocket, start_ws_room),
+        );
+        app.add_event::<StartWsRoom>();
     }
+}
+
+#[derive(Event)]
+pub struct StartWsRoom {
+    pub address: String,
 }
 
 #[derive(Component)]
@@ -56,6 +64,40 @@ pub struct WebSocketInitTask(Task<Result<(WssStream, WsWelcome), anyhow::Error>>
 
 #[derive(Component)]
 pub struct WebSocketConnection(Task<(Receiver<NetworkMessage>, anyhow::Error)>);
+
+pub fn start_ws_room(
+    mut commands: Commands,
+    mut room_events: EventReader<StartWsRoom>,
+    current_profile: Res<CurrentUserProfile>,
+) {
+    if let Some(ev) = room_events.iter().last() {
+        info!("starting ws-room protocol");
+        let (sender, receiver) = tokio::sync::mpsc::channel(1000);
+
+        // queue a profile version message
+        let response = rfc4::Packet {
+            message: Some(rfc4::packet::Message::ProfileVersion(
+                rfc4::AnnounceProfileVersion {
+                    profile_version: current_profile.0.version,
+                },
+            )),
+        };
+        let _ = sender.try_send(NetworkMessage::reliable(&response));
+
+        commands.spawn((
+            Transport {
+                transport_type: TransportType::WebsocketRoom,
+                sender,
+                foreign_aliases: Default::default(),
+            },
+            WebsocketRoomTransport {
+                address: ev.address.to_owned(),
+                receiver: Some(receiver),
+                retries: 0,
+            },
+        ));
+    }
+}
 
 #[allow(clippy::type_complexity)]
 fn connect_websocket(

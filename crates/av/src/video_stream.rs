@@ -119,11 +119,14 @@ pub fn av_thread_inner(
 
     // source might be a content map file or a url
     if let Some(content_url) = asset_server.ipfs().content_url(&path, &hash) {
-        // check if it changed as content_url will return Some(path) when not found and path is url-compliant. 
+        // check if it changed as content_url will return Some(path) when not found and path is url-compliant.
         // if it is a raw url we don't want to download initially as some servers reject http get requests on videos.
         if content_url != path {
             // for content paths we download
-            debug!("content map file {} -> {}, downloading ...", path, content_url);
+            debug!(
+                "content map file {} -> {}, downloading ...",
+                path, content_url
+            );
             path = download(&content_url)?;
         }
     };
