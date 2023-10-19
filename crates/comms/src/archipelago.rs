@@ -13,10 +13,12 @@ use bevy::{
 };
 use futures_lite::future;
 use futures_util::{pin_mut, select, stream::StreamExt, FutureExt, SinkExt};
+use ipfs::CurrentRealm;
 use prost::Message;
+use serde_json::json;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use common::util::TryInsertEx;
+use common::{rpc::RpcCall, util::TryInsertEx};
 use wallet::{SimpleAuthChain, Wallet};
 
 use crate::{AdapterManager, Transport, TransportType};
@@ -64,6 +66,7 @@ pub struct StartArchipelago {
 pub struct StartIsland {
     owner: Entity,
     connect_str: String,
+    name: String,
 }
 
 #[derive(Resource)]
@@ -119,7 +122,17 @@ fn manage_islands(
     mut manager: AdapterManager,
     mut channel: ResMut<IslandChannel>,
     mut current_island: Local<HashMap<Entity, Entity>>,
+    current_realm: ResMut<CurrentRealm>,
+    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut events: EventReader<RpcCall>,
 ) {
+    for sender in events.iter().filter_map(|ev| match ev {
+        RpcCall::SubscribeRealmChanged { sender } => Some(sender),
+        _ => None,
+    }) {
+        senders.push(sender.clone());
+    }
+
     while let Ok(island) = channel.receiver.try_recv() {
         if let Some(entity) = current_island.remove(&island.owner) {
             commands.entity(entity).despawn_recursive();
@@ -127,6 +140,23 @@ fn manage_islands(
         if let Some(entity) = manager.connect(&island.connect_str) {
             current_island.insert(island.owner, entity);
         }
+
+        let mut event_data = None;
+        senders.retain_mut(|sender| {
+            let message = event_data.get_or_insert_with(|| {
+                let server = current_realm.config.realm_name.as_deref().unwrap_or_default();
+                let room = &island.name;
+                json!({
+                    "serverName": server,
+                    "room": room,
+                    "displayName": format!("{server}-{room}"),
+                    "domain": current_realm.address.strip_suffix("/content").unwrap_or(&current_realm.address),
+                })
+                .to_string()
+            }).clone();
+            let _ = sender.send(message);
+            !sender.is_closed()
+        });
     }
 }
 
@@ -335,7 +365,8 @@ async fn archipelago_handler_inner(
                     sender
                         .send(StartIsland {
                             owner: transport_id,
-                            connect_str: change.conn_str.clone(),
+                            connect_str: change.conn_str,
+                            name: change.island_id,
                         })
                         .await?;
                 }

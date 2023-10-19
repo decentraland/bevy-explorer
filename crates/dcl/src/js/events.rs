@@ -77,7 +77,7 @@ fn op_subscribe(state: &mut OpState, id: &str) {
             RpcCall::SubscribeProfileChanged { sender }
         }),
         "onRealmChanged" => register!(state, RealmChanged, |sender| {
-            RpcCall::SubscribeProfileChanged { sender }
+            RpcCall::SubscribeRealmChanged { sender }
         }),
         "playerClicked" => register!(state, PlayerClicked, |sender| {
             RpcCall::SubscribePlayerClicked { sender }
