@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use bevy::prelude::*;
+use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::ffi::AVPixelFormat;
 use ffmpeg_next::format::Pixel;
 use ffmpeg_next::software::scaling::{context::Context, flag::Flags};
@@ -19,6 +20,7 @@ pub struct VideoInfo {
 pub enum VideoData {
     Info(VideoInfo),
     Frame(frame::Video, f64),
+    State(VideoState),
 }
 
 pub struct VideoContext {
@@ -177,5 +179,9 @@ impl FfmpegContext for VideoContext {
 
     fn seconds_till_next_frame(&self) -> f64 {
         (self.current_frame - self.start_frame + 1) as f64 / self.rate
+    }
+
+    fn update_state(&self, state: VideoState) {
+        let _ = self.sink.blocking_send(VideoData::State(state));
     }
 }

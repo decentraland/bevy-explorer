@@ -1,4 +1,5 @@
 use bevy::{log::info, prelude::debug};
+use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::Packet;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::error::TryRecvError;
@@ -22,6 +23,7 @@ pub trait FfmpegContext {
     fn set_start_frame(&mut self);
     fn reset_start_frame(&mut self);
     fn seconds_till_next_frame(&self) -> f64;
+    fn update_state(&self, state: VideoState);
 }
 
 // pumps packets through stream contexts keeping them in sync
@@ -32,10 +34,23 @@ pub fn process_streams(
 ) -> Result<(), anyhow::Error> {
     let mut start_instant: Option<Instant> = None;
     let mut repeat = false;
+    let mut init = false;
+    let mut last_state = VideoState::VsNone;
+
+    let mut update_state = |state: VideoState, streams: &mut [&mut dyn FfmpegContext]| {
+        if state != last_state {
+            for stream in streams {
+                stream.update_state(state)
+            }
+            last_state = state;
+        }
+    };
 
     loop {
         // ensure frame available
         while !input_context.is_eof() && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
+            update_state(VideoState::VsBuffering, streams);
+
             if let Some((stream_index, packet)) = input_context.blocking_next() {
                 for stream in streams.iter_mut() {
                     if Some(stream_index) == stream.stream_index() {
@@ -44,6 +59,12 @@ pub fn process_streams(
                     }
                 }
             }
+        }
+
+        // state ready if required
+        if !init {
+            update_state(VideoState::VsReady, streams);
+            init = true;
         }
 
         if input_context.is_eof() {
@@ -81,7 +102,9 @@ pub fn process_streams(
                     }
                 }
             }
-            Ok(AVCommand::Pause) => start_instant = None,
+            Ok(AVCommand::Pause) => {
+                start_instant = None;
+            }
             Ok(AVCommand::Repeat(r)) => repeat = r,
             Ok(AVCommand::Seek(_time)) => {
                 todo!();
@@ -89,6 +112,12 @@ pub fn process_streams(
             }
             Err(TryRecvError::Empty) => (),
             Err(TryRecvError::Disconnected) | Ok(AVCommand::Dispose) => return Ok(()),
+        }
+
+        if start_instant.is_some() {
+            update_state(VideoState::VsPlaying, streams);
+        } else {
+            update_state(VideoState::VsPaused, streams);
         }
 
         if let Some(play_instant) = start_instant {

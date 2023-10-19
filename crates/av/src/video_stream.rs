@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;
 use common::structs::AudioDecoderError;
+use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::format::input;
 use ipfs::IpfsLoaderExt;
 use isahc::ReadResponseExt;
@@ -61,7 +62,7 @@ pub fn av_sinks(
             command_sender: command_sender.clone(),
             video_receiver,
             image,
-            current_time: 0.0,
+            current_time: -1.0,
             length: None,
             rate: None,
         },
@@ -88,7 +89,8 @@ fn av_thread(
     path: String,
     hash: String,
 ) {
-    if let Err(e) = av_thread_inner(asset_server, commands, frames, audio, path, hash) {
+    if let Err(e) = av_thread_inner(asset_server, commands, frames.clone(), audio, path, hash) {
+        let _ = frames.blocking_send(VideoData::State(VideoState::VsError));
         warn!("av error: {e}");
     } else {
         debug!("av closed");
@@ -103,6 +105,7 @@ pub fn av_thread_inner(
     mut path: String,
     hash: String,
 ) -> Result<(), anyhow::Error> {
+    let _ = video.blocking_send(VideoData::State(VideoState::VsLoading));
     debug!("av thread spawned for {path} ...");
     let download = |url: &str| -> Result<String, anyhow::Error> {
         let local_folder = PathBuf::from("assets/video_downloads");

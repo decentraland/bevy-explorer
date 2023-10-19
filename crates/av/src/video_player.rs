@@ -1,20 +1,23 @@
-use bevy::{
-    prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
-};
-use common::{sets::SceneSets, util::TryInsertEx};
-use dcl::interface::ComponentPosition;
-use dcl_component::{proto_components::sdk::components::PbVideoPlayer, SceneComponentId};
-use scene_runner::{
-    renderer_context::RendererSceneContext,
-    update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
-    ContainerEntity,
-};
-
 use crate::{
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
     video_stream::{av_sinks, VideoSink},
+};
+use bevy::{
+    core::FrameCount,
+    prelude::*,
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
+};
+use common::{sets::SceneSets, util::TryInsertEx};
+use dcl::interface::{ComponentPosition, CrdtType};
+use dcl_component::{
+    proto_components::sdk::components::{PbVideoEvent, PbVideoPlayer},
+    SceneComponentId,
+};
+use scene_runner::{
+    renderer_context::RendererSceneContext,
+    update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
+    ContainerEntity,
 };
 
 pub struct VideoPlayerPlugin;
@@ -45,9 +48,15 @@ fn init_ffmpeg() {
     ffmpeg_next::log::set_level(ffmpeg_next::log::Level::Error);
 }
 
-fn play_videos(mut images: ResMut<Assets<Image>>, mut q: Query<&mut VideoSink>) {
-    for mut sink in q.iter_mut() {
+fn play_videos(
+    mut images: ResMut<Assets<Image>>,
+    mut q: Query<(&mut VideoSink, &ContainerEntity)>,
+    mut scenes: Query<&mut RendererSceneContext>,
+    frame: Res<FrameCount>,
+) {
+    for (mut sink, container) in q.iter_mut() {
         let mut last_frame_received = None;
+        let mut new_state = None;
         loop {
             match sink.video_receiver.try_recv() {
                 Ok(VideoData::Info(VideoInfo {
@@ -69,6 +78,7 @@ fn play_videos(mut images: ResMut<Assets<Image>>, mut q: Query<&mut VideoSink>) 
                     last_frame_received = Some(frame);
                     sink.current_time = time;
                 }
+                Ok(VideoData::State(state)) => new_state = Some(state),
                 Err(_) => break,
             }
         }
@@ -80,6 +90,24 @@ fn play_videos(mut images: ResMut<Assets<Image>>, mut q: Query<&mut VideoSink>) 
                 .unwrap()
                 .data
                 .copy_from_slice(frame.data(0));
+        }
+
+        if let Some(state) = new_state {
+            if let Ok(mut context) = scenes.get_mut(container.root) {
+                let event = PbVideoEvent {
+                    timestamp: frame.0,
+                    tick_number: context.tick_number,
+                    current_offset: sink.current_time as f32,
+                    video_length: sink.length.unwrap_or(-1.0) as f32,
+                    state: state.into(),
+                };
+                context.update_crdt(
+                    SceneComponentId::VIDEO_EVENT,
+                    CrdtType::GO_ANY,
+                    container.container_id,
+                    &event,
+                );
+            }
         }
     }
 }
@@ -122,14 +150,14 @@ pub fn update_video_players(
                 Some(texture) => texture.0.clone(),
             };
 
-            let Ok(hash) = scenes.get(container.root).map(|context| &context.hash) else {
+            let Ok(context) = scenes.get(container.root) else {
                 continue;
             };
 
             let (video_sink, audio_sink) = av_sinks(
                 asset_server.clone(),
                 player.0.src.clone(),
-                hash.clone(),
+                context.hash.clone(),
                 image_handle,
                 player.0.volume.unwrap_or(1.0),
                 player.0.playing.unwrap_or(true),
