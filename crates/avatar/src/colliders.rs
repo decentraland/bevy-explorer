@@ -1,7 +1,7 @@
 use bevy::{core::FrameCount, prelude::*, utils::HashMap};
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
-    rpc::RpcCall,
+    rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
     structs::{PrimaryCamera, ToolTips},
 };
@@ -108,7 +108,7 @@ fn update_avatar_collider_actions(
     mut tooltips: ResMut<ToolTips>,
     profiles: Query<(&ForeignPlayer, &UserProfile)>,
     mouse_input: Res<Input<MouseButton>>,
-    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
 ) {
     // gather any event receivers

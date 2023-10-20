@@ -8,17 +8,20 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use common::{
-    rpc::{PortableLocation, RpcCall, SpawnResponse},
+    rpc::{PortableLocation, RpcCall, RpcEventSender, SpawnResponse},
     sets::SceneSets,
     structs::{PrimaryCamera, PrimaryUser},
     util::TaskExt,
 };
-use comms::{global_crdt::ForeignPlayer, profile::CurrentUserProfile};
+use comms::{global_crdt::ForeignPlayer, profile::CurrentUserProfile, NetworkMessage, Transport};
+use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
 use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, ServerAbout};
 use isahc::{http::StatusCode, AsyncReadResponseExt};
 use scene_runner::{
-    initialize_scene::{LiveScenes, PortableScenes, PortableSource, SceneLoading, PARCEL_SIZE},
+    initialize_scene::{
+        LiveScenes, PortableScenes, PortableSource, SceneHash, SceneLoading, PARCEL_SIZE,
+    },
     renderer_context::RendererSceneContext,
     update_world::gltf_container::{GltfDefinition, GltfProcessed},
     ContainingScene, SceneEntity,
@@ -48,6 +51,7 @@ impl Plugin for RestrictedActionsPlugin {
                 event_player_disconnected,
                 event_player_moved_scene,
                 event_scene_ready,
+                send_scene_messages,
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -476,7 +480,7 @@ fn get_connected_players(
 
 // todo: move this to global_crdt to do it all in one place?
 fn event_player_connected(
-    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut senders: Local<Vec<RpcEventSender>>,
     mut events: EventReader<RpcCall>,
     players: Query<&ForeignPlayer, Added<ForeignPlayer>>,
 ) {
@@ -502,7 +506,7 @@ fn event_player_connected(
 
 // todo: move this to global_crdt to do it all in one place?
 fn event_player_disconnected(
-    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut senders: Local<Vec<RpcEventSender>>,
     mut events: EventReader<RpcCall>,
     players: Query<(Entity, &ForeignPlayer), Added<ForeignPlayer>>,
     mut removed: RemovedComponents<ForeignPlayer>,
@@ -542,8 +546,8 @@ fn event_player_disconnected(
 
 #[allow(clippy::type_complexity)]
 fn event_player_moved_scene(
-    mut enter_senders: Local<HashMap<Entity, tokio::sync::mpsc::UnboundedSender<String>>>,
-    mut leave_senders: Local<HashMap<Entity, tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut enter_senders: Local<HashMap<Entity, RpcEventSender>>,
+    mut leave_senders: Local<HashMap<Entity, RpcEventSender>>,
     mut current_scene: Local<HashMap<Address, Entity>>,
     players: Query<(Entity, Option<&ForeignPlayer>), Or<(With<PrimaryUser>, With<ForeignPlayer>)>>,
     me: Res<Wallet>,
@@ -612,7 +616,7 @@ fn event_player_moved_scene(
 
 // todo: move this to global_crdt to do it all in one place?
 fn event_scene_ready(
-    mut senders: Local<Vec<(Entity, tokio::sync::mpsc::UnboundedSender<String>)>>,
+    mut senders: Local<Vec<(Entity, RpcEventSender)>>,
     mut events: EventReader<RpcCall>,
     unready_gltfs: Query<&SceneEntity, (With<GltfDefinition>, Without<GltfProcessed>)>,
     mut previously_unready: Local<HashSet<Entity>>,
@@ -648,4 +652,33 @@ fn event_scene_ready(
 
     drop(now_ready);
     *previously_unready = now_unready;
+}
+
+fn send_scene_messages(
+    mut events: EventReader<RpcCall>,
+    transports: Query<&Transport>,
+    scenes: Query<&SceneHash>,
+) {
+    for (scene, message) in events.iter().filter_map(|c| match c {
+        RpcCall::SendMessageBus { scene, message } => Some((scene, message)),
+        _ => None,
+    }) {
+        let Ok(hash) = scenes.get(*scene) else {
+            continue;
+        };
+
+        debug!("messagebus sent from scene {}: {:?}", &hash.0, message);
+        let message = rfc4::Packet {
+            message: Some(rfc4::packet::Message::Scene(rfc4::Scene {
+                scene_id: hash.0.clone(),
+                data: message.clone().into_bytes(),
+            })),
+        };
+
+        for transport in transports.iter() {
+            let _ = transport
+                .sender
+                .try_send(NetworkMessage::reliable(&message));
+        }
+    }
 }

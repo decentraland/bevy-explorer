@@ -5,9 +5,13 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use bimap::BiMap;
-use common::structs::{AttachPoints, AudioDecoderError};
+use common::{
+    rpc::{RpcCall, RpcEventSender},
+    structs::{AttachPoints, AudioDecoderError},
+};
 use ethers_core::types::Address;
 use kira::sound::streaming::StreamingSoundData;
+use serde_json::json;
 use tokio::sync::{broadcast, mpsc};
 
 use dcl::{
@@ -197,6 +201,7 @@ pub struct ChatEvent {
 #[derive(Component)]
 pub struct TransportRef(Entity);
 
+#[allow(clippy::too_many_arguments)]
 pub fn process_transport_updates(
     mut commands: Commands,
     mut state: ResMut<GlobalCrdtState>,
@@ -205,7 +210,18 @@ pub fn process_transport_updates(
     mut profile_events: EventWriter<ProfileEvent>,
     mut position_events: EventWriter<PlayerPositionEvent>,
     mut chat_events: EventWriter<ChatEvent>,
+    mut senders: Local<HashMap<String, RpcEventSender>>,
+    mut subscribers: EventReader<RpcCall>,
 ) {
+    // gather any event receivers
+    for (hash, sender) in subscribers.iter().filter_map(|ev| match ev {
+        RpcCall::SubscribeMessageBus { sender, hash } => Some((hash, sender)),
+        _ => None,
+    }) {
+        senders.insert(hash.clone(), sender.clone());
+    }
+    senders.retain(|_, s| !s.is_closed());
+
     let mut created_this_frame: HashMap<
         Address,
         (
@@ -350,7 +366,29 @@ pub fn process_transport_updates(
                     message: chat.message,
                 });
             }
-            PlayerMessage::PlayerData(Message::Scene(_)) => (),
+            PlayerMessage::PlayerData(Message::Scene(scene)) => {
+                if let Some(sender) = senders.get(&scene.scene_id) {
+                    let data = match String::from_utf8(scene.data) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            error!("failed to parse data as utf8: {:?}", e);
+                            continue;
+                        }
+                    };
+
+                    debug!(
+                        "messagebus received from {} to scene {}: `{}`",
+                        update.address, scene.scene_id, data
+                    );
+                    let _ = sender.send(
+                        json!({
+                            "message": data,
+                            "sender": format!("{:#x}", update.address),
+                        })
+                        .to_string(),
+                    );
+                }
+            }
             PlayerMessage::PlayerData(Message::Voice(_)) => (),
         }
     }

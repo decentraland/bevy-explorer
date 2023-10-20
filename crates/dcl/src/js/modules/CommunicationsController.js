@@ -1,4 +1,4 @@
 module.exports.send = async function (body) { 
-    console.error("CommunicationsController::send not implemented");
-    return {} 
+    console.log("send:", body.message);
+    return await Deno.core.ops.op_comms_send(body.message);
 }

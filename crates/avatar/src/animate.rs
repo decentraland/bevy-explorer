@@ -2,7 +2,12 @@ use std::{collections::VecDeque, time::Duration};
 
 use bevy::{gltf::Gltf, math::Vec3Swizzles, prelude::*, utils::HashMap};
 use bevy_console::ConsoleCommand;
-use common::{rpc::RpcCall, sets::SceneSets, structs::PrimaryUser, util::TryInsertEx};
+use common::{
+    rpc::{RpcCall, RpcEventSender},
+    sets::SceneSets,
+    structs::PrimaryUser,
+    util::TryInsertEx,
+};
 use comms::{
     chat_marker_things, global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport,
 };
@@ -179,7 +184,7 @@ fn broadcast_emote(
     mut last: Local<Option<String>>,
     mut count: Local<usize>,
     time: Res<Time>,
-    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
 ) {
     // gather any event receivers

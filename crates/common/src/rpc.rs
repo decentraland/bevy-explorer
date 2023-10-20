@@ -58,6 +58,8 @@ pub struct SpawnResponse {
     pub ens: Option<String>,
 }
 
+pub type RpcEventSender = tokio::sync::mpsc::UnboundedSender<String>;
+
 #[derive(Event, Debug)]
 pub enum RpcCall {
     ChangeRealm {
@@ -95,33 +97,41 @@ pub enum RpcCall {
         response: RpcResultSender<Vec<String>>,
     },
     SubscribePlayerConnected {
-        sender: tokio::sync::mpsc::UnboundedSender<String>,
+        sender: RpcEventSender,
     },
     SubscribePlayerDisconnected {
-        sender: tokio::sync::mpsc::UnboundedSender<String>,
+        sender: RpcEventSender,
     },
     SubscribePlayerEnteredScene {
         scene: Entity,
-        sender: tokio::sync::mpsc::UnboundedSender<String>,
+        sender: RpcEventSender,
     },
     SubscribePlayerLeftScene {
         scene: Entity,
-        sender: tokio::sync::mpsc::UnboundedSender<String>,
+        sender: RpcEventSender,
     },
     SubscribeSceneReady {
         scene: Entity,
-        sender: tokio::sync::mpsc::UnboundedSender<String>,
+        sender: RpcEventSender,
     },
     SubscribePlayerExpression {
-        sender: tokio::sync::mpsc::UnboundedSender<String>,
+        sender: RpcEventSender,
     },
     SubscribeProfileChanged {
-        sender: tokio::sync::mpsc::UnboundedSender<String>,
+        sender: RpcEventSender,
     },
     SubscribeRealmChanged {
-        sender: tokio::sync::mpsc::UnboundedSender<String>,
+        sender: RpcEventSender,
     },
     SubscribePlayerClicked {
-        sender: tokio::sync::mpsc::UnboundedSender<String>,
+        sender: RpcEventSender,
+    },
+    SendMessageBus {
+        scene: Entity,
+        message: String,
+    },
+    SubscribeMessageBus {
+        hash: String,
+        sender: RpcEventSender,
     },
 }

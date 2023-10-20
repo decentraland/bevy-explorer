@@ -8,6 +8,7 @@ use super::{
 };
 use common::{
     profile::SerializedProfile,
+    rpc::RpcEventSender,
     structs::{AppConfig, PrimaryUser},
 };
 use common::{
@@ -53,7 +54,7 @@ pub fn setup_primary_profile(
     player: Query<(Entity, Option<&UserProfile>), With<PrimaryUser>>,
     current_profile: Res<CurrentUserProfile>,
     transports: Query<&Transport>,
-    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
 ) {
     // gather any event receivers

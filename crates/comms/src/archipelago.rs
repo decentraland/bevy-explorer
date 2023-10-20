@@ -18,7 +18,10 @@ use prost::Message;
 use serde_json::json;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use common::{rpc::RpcCall, util::TryInsertEx};
+use common::{
+    rpc::{RpcCall, RpcEventSender},
+    util::TryInsertEx,
+};
 use wallet::{SimpleAuthChain, Wallet};
 
 use crate::{AdapterManager, Transport, TransportType};
@@ -123,7 +126,7 @@ fn manage_islands(
     mut channel: ResMut<IslandChannel>,
     mut current_island: Local<HashMap<Entity, Entity>>,
     current_realm: ResMut<CurrentRealm>,
-    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
+    mut senders: Local<Vec<RpcEventSender>>,
     mut events: EventReader<RpcCall>,
 ) {
     for sender in events.iter().filter_map(|ev| match ev {
