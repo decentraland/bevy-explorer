@@ -11,7 +11,7 @@ use bevy::{
 use common::{sets::SceneSets, util::TryInsertEx};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
-    proto_components::sdk::components::{PbVideoEvent, PbVideoPlayer},
+    proto_components::sdk::components::{PbAudioStream, PbVideoEvent, PbVideoPlayer},
     SceneComponentId,
 };
 use scene_runner::{
@@ -24,8 +24,12 @@ pub struct VideoPlayerPlugin;
 
 impl Plugin for VideoPlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_crdt_lww_component::<PbVideoPlayer, VideoPlayer>(
+        app.add_crdt_lww_component::<PbVideoPlayer, AVPlayer>(
             SceneComponentId::VIDEO_PLAYER,
+            ComponentPosition::EntityOnly,
+        );
+        app.add_crdt_lww_component::<PbAudioStream, AVPlayer>(
+            SceneComponentId::AUDIO_STREAM,
             ComponentPosition::EntityOnly,
         );
         app.add_systems(Startup, init_ffmpeg);
@@ -35,11 +39,27 @@ impl Plugin for VideoPlayerPlugin {
 }
 
 #[derive(Component, Debug)]
-pub struct VideoPlayer(pub PbVideoPlayer);
+pub struct AVPlayer {
+    // note we reuse PbVideoPlayer for audio as well
+    pub source: PbVideoPlayer,
+}
 
-impl From<PbVideoPlayer> for VideoPlayer {
+impl From<PbVideoPlayer> for AVPlayer {
     fn from(value: PbVideoPlayer) -> Self {
-        Self(value)
+        Self { source: value }
+    }
+}
+
+impl From<PbAudioStream> for AVPlayer {
+    fn from(value: PbAudioStream) -> Self {
+        Self {
+            source: PbVideoPlayer {
+                src: value.url,
+                playing: value.playing,
+                volume: value.volume,
+                ..Default::default()
+            },
+        }
     }
 }
 
@@ -119,18 +139,18 @@ pub fn update_video_players(
         (
             Entity,
             &ContainerEntity,
-            &VideoPlayer,
+            &AVPlayer,
             Option<&VideoSink>,
             Option<&VideoTextureOutput>,
         ),
-        Changed<VideoPlayer>,
+        Changed<AVPlayer>,
     >,
     mut images: ResMut<Assets<Image>>,
     asset_server: Res<AssetServer>,
     scenes: Query<&RendererSceneContext>,
 ) {
     for (ent, container, player, maybe_sink, maybe_texture) in video_players.iter() {
-        if maybe_sink.map(|sink| &sink.source) != Some(&player.0.src) {
+        if maybe_sink.map(|sink| &sink.source) != Some(&player.source.src) {
             let image_handle = match maybe_texture {
                 None => {
                     let mut image = Image::new_fill(
@@ -156,27 +176,28 @@ pub fn update_video_players(
 
             let (video_sink, audio_sink) = av_sinks(
                 asset_server.clone(),
-                player.0.src.clone(),
+                player.source.src.clone(),
                 context.hash.clone(),
                 image_handle,
-                player.0.volume.unwrap_or(1.0),
-                player.0.playing.unwrap_or(true),
-                player.0.r#loop.unwrap_or(false),
+                player.source.volume.unwrap_or(1.0),
+                player.source.playing.unwrap_or(true),
+                player.source.r#loop.unwrap_or(false),
             );
             let video_output = VideoTextureOutput(video_sink.image.clone());
             commands
                 .entity(ent)
                 .try_insert((video_sink, video_output, audio_sink));
+            println!("{ent:?} has {}", player.source.src);
         } else {
             let sink = maybe_sink.as_ref().unwrap();
-            if player.0.playing.unwrap_or(true) {
+            if player.source.playing.unwrap_or(true) {
                 let _ = sink.command_sender.try_send(AVCommand::Play);
             } else {
                 let _ = sink.command_sender.try_send(AVCommand::Pause);
             }
             let _ = sink
                 .command_sender
-                .try_send(AVCommand::Repeat(player.0.r#loop.unwrap_or(false)));
+                .try_send(AVCommand::Repeat(player.source.r#loop.unwrap_or(false)));
         }
     }
 }

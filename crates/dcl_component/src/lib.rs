@@ -59,6 +59,7 @@ impl SceneComponentId {
     pub const MESH_RENDERER: SceneComponentId = SceneComponentId(1018);
     pub const MESH_COLLIDER: SceneComponentId = SceneComponentId(1019);
     pub const AUDIO_SOURCE: SceneComponentId = SceneComponentId(1020);
+    pub const AUDIO_STREAM: SceneComponentId = SceneComponentId(1021);
 
     pub const TEXT_SHAPE: SceneComponentId = SceneComponentId(1030);
 
