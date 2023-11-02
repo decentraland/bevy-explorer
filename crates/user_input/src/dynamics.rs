@@ -17,17 +17,20 @@ use avatar::AvatarDynamicState;
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::mesh_collider::{GroundCollider, SceneColliderData},
-    ContainingScene,
+    ContainingScene, OutOfWorld,
 };
 
 pub fn update_user_position(
-    mut player: Query<(
-        Entity,
-        &PrimaryUser,
-        &mut Transform,
-        &mut AvatarDynamicState,
-        &mut GroundCollider,
-    )>,
+    mut player: Query<
+        (
+            Entity,
+            &PrimaryUser,
+            &mut Transform,
+            &mut AvatarDynamicState,
+            &mut GroundCollider,
+        ),
+        Without<OutOfWorld>,
+    >,
     mut scene_datas: Query<(
         &mut RendererSceneContext,
         &mut SceneColliderData,

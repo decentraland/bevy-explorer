@@ -2,13 +2,14 @@ pub mod camera;
 pub mod dynamics;
 pub mod player_input;
 
-use bevy::prelude::*;
+use bevy::{prelude::*, ecs::query::Has};
 
 use common::{
     sets::SceneSets,
     structs::{PrimaryCamera, PrimaryUser},
 };
 use input_manager::should_accept_key;
+use scene_runner::OutOfWorld;
 
 use self::{
     camera::{update_camera, update_camera_position},
@@ -38,15 +39,15 @@ impl Plugin for UserInputPlugin {
 
 fn hide_player_in_first_person(
     camera: Query<&GlobalTransform, With<PrimaryCamera>>,
-    mut player: Query<(&GlobalTransform, &mut Visibility), With<PrimaryUser>>,
+    mut player: Query<(&GlobalTransform, &mut Visibility, Has<OutOfWorld>), With<PrimaryUser>>,
 ) {
-    if let (Ok(cam_transform), Ok((player_transform, mut vis))) =
+    if let (Ok(cam_transform), Ok((player_transform, mut vis, is_oow))) =
         (camera.get_single(), player.get_single_mut())
     {
         let distance =
             (cam_transform.translation() - player_transform.translation() - Vec3::Y * 1.81)
                 .length();
-        if distance < 0.5 && *vis != Visibility::Hidden {
+        if is_oow || (distance < 0.5 && *vis != Visibility::Hidden) {
             *vis = Visibility::Hidden;
         } else if distance > 0.5 && *vis != Visibility::Inherited {
             *vis = Visibility::Inherited;

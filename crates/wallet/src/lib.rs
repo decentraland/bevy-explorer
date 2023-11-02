@@ -104,10 +104,10 @@ impl SimpleAuthChain {
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SignedLoginMeta {
     pub intent: String,
     pub signer: String,
-    #[serde(rename = "isGuest")]
     is_guest: bool,
     origin: String,
 }

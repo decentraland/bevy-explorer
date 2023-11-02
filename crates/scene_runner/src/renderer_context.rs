@@ -9,7 +9,7 @@ use dcl_component::{DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDcl
 
 use crate::{
     primary_entities::PrimaryEntities, update_world::transform_and_parent::ParentPositionSync,
-    ContainerEntity, SceneEntity, TargetParent,
+    ContainerEntity, SceneEntity, TargetParent, initialize_scene::SpawnPoint,
 };
 
 // contains a list of (SceneEntityId.generation, bevy entity) indexed by SceneEntityId.id
@@ -31,6 +31,7 @@ pub struct RendererSceneContext {
     pub is_portable: bool,
     pub title: String,
     pub base: IVec2,
+    pub spawn_points: Vec<SpawnPoint>,
     pub priority: f32,
     pub size: UVec2,
 
@@ -81,6 +82,7 @@ impl RendererSceneContext {
         is_portable: bool,
         title: String,
         base: IVec2,
+        spawn_points: Vec<SpawnPoint>,
         root: Entity,
         size: UVec2,
         priority: f32,
@@ -91,6 +93,7 @@ impl RendererSceneContext {
             is_portable,
             title,
             base,
+            spawn_points,
             size,
             nascent: Default::default(),
             death_row: Default::default(),

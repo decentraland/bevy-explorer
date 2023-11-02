@@ -1,3 +1,5 @@
+pub mod teleport;
+
 use std::path::Path;
 
 use avatar::AvatarDynamicState;
@@ -27,6 +29,7 @@ use scene_runner::{
     ContainingScene, SceneEntity,
 };
 use serde_json::json;
+use teleport::handle_out_of_world;
 use ui_core::dialog::SpawnDialog;
 use wallet::Wallet;
 
@@ -52,6 +55,7 @@ impl Plugin for RestrictedActionsPlugin {
                 event_player_moved_scene,
                 event_scene_ready,
                 send_scene_messages,
+                handle_out_of_world,
             )
                 .in_set(SceneSets::PostLoop),
         );

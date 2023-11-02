@@ -19,9 +19,9 @@ pub struct AvatarColor {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct AvatarWireFormat {
     pub name: Option<String>,
-    #[serde(rename = "bodyShape")]
     pub body_shape: Option<String>,
     pub eyes: Option<AvatarColor>,
     pub hair: Option<AvatarColor>,

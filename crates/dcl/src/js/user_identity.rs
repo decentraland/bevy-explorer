@@ -12,14 +12,14 @@ pub fn ops() -> Vec<OpDecl> {
 }
 
 #[derive(Serialize)]
-#[serde(rename = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct Snapshots {
     face256: String,
     body: String,
 }
 
 #[derive(Serialize)]
-#[serde(rename = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct AvatarForUserData {
     body_shape: String,
     skin_color: String,
@@ -30,7 +30,7 @@ struct AvatarForUserData {
 }
 
 #[derive(Serialize)]
-#[serde(rename = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct UserData {
     display_name: String,
     public_key: Option<String>,

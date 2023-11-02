@@ -7,7 +7,7 @@ use std::{
 
 use bevy::{
     core::FrameCount,
-    ecs::system::SystemParam,
+    ecs::{query::Has, system::SystemParam},
     math::Vec3Swizzles,
     prelude::*,
     scene::scene_spawner_system,
@@ -403,10 +403,13 @@ fn update_scene_priority(
 // - see if we can get v8 single threaded / no native threads working
 // const MAX_CONCURRENT_SCENES: usize = 8;
 
+#[derive(Component)]
+pub struct OutOfWorld;
+
 // helper to get the scene entity containing a given world position
 #[derive(SystemParam)]
 pub struct ContainingScene<'w, 's> {
-    transforms: Query<'w, 's, &'static GlobalTransform>,
+    transforms: Query<'w, 's, (&'static GlobalTransform, Has<OutOfWorld>)>,
     pointers: Res<'w, ScenePointers>,
     live_scenes: Res<'w, LiveScenes>,
     portable_scenes: Res<'w, PortableScenes>,
@@ -428,9 +431,20 @@ impl<'w, 's> ContainingScene<'w, 's> {
 
     // just the parcel at the entity's position
     pub fn get_parcel(&self, ent: Entity) -> Option<Entity> {
+        self.transforms.get(ent).ok().and_then(|(gt, oow)| {
+            if oow {
+                None
+            } else {
+                self.get_parcel_position(gt.translation())
+            }
+        })
+    }
+
+    // just the parcel at the entity's position, even if they are out of world
+    pub fn get_parcel_oow(&self, ent: Entity) -> Option<Entity> {
         self.transforms
             .get(ent)
-            .map(|gt| self.get_parcel_position(gt.translation()))
+            .map(|(gt, _)| self.get_parcel_position(gt.translation()))
             .unwrap_or_default()
     }
 
@@ -462,17 +476,25 @@ impl<'w, 's> ContainingScene<'w, 's> {
     pub fn get(&self, ent: Entity) -> HashSet<Entity> {
         self.transforms
             .get(ent)
-            .map(|gt| self.get_position(gt.translation()))
+            .map(|(gt, oow)| {
+                if oow {
+                    HashSet::default()
+                } else {
+                    self.get_position(gt.translation())
+                }
+            })
             .unwrap_or_default()
     }
 
     // get all scenes within radius of the given entity, plus any global scenes
     pub fn get_area(&self, ent: Entity, radius: f32) -> HashSet<Entity> {
-        let Ok(focus) = self
-            .transforms
-            .get(ent)
-            .map(|t| t.translation().xz() * Vec2::new(1.0, -1.0))
-        else {
+        let Some(focus) = self.transforms.get(ent).ok().and_then(|(gt, oow)| {
+            if oow {
+                None
+            } else {
+                Some(gt.translation().xz() * Vec2::new(1.0, -1.0))
+            }
+        }) else {
             return Default::default();
         };
 

@@ -24,12 +24,13 @@ use common::{
         AppConfig, AttachPoints, GraphicsSettings, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
         SceneLoadDistance,
     },
+    util::TryInsertEx,
 };
 use restricted_actions::RestrictedActionsPlugin;
 use scene_runner::{
     initialize_scene::InspectHash,
     update_world::{mesh_collider::GroundCollider, NoGltf},
-    SceneRunnerPlugin,
+    OutOfWorld, SceneRunnerPlugin,
 };
 
 use av::AudioPlugin;
@@ -282,12 +283,13 @@ fn setup(
             SpatialBundle {
                 transform: Transform::from_translation(Vec3::new(
                     8.0 + 16.0 * config.location.x as f32,
-                    0.0,
+                    8.0,
                     -8.0 + -16.0 * config.location.y as f32,
                 )),
                 ..Default::default()
             },
             PrimaryUser::default(),
+            OutOfWorld,
             AvatarDynamicState::default(),
             GroundCollider::default(),
         ))
@@ -351,13 +353,17 @@ struct ChangeLocationCommand {
 }
 
 fn change_location(
+    mut commands: Commands,
     mut input: ConsoleCommand<ChangeLocationCommand>,
-    mut player: Query<&mut Transform, With<PrimaryUser>>,
+    mut player: Query<(Entity, &mut Transform), With<PrimaryUser>>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        if let Ok(mut transform) = player.get_single_mut() {
+        if let Ok((ent, mut transform)) = player.get_single_mut() {
             transform.translation.x = command.x as f32 * 16.0 + 8.0;
             transform.translation.z = -command.y as f32 * 16.0 - 8.0;
+            if let Some(mut commands) = commands.get_entity(ent) {
+                commands.try_insert(OutOfWorld);
+            }
             input.reply_ok(format!("new location: {:?}", (command.x, command.y)));
             return;
         }
