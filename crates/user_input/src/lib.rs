@@ -2,7 +2,7 @@ pub mod camera;
 pub mod dynamics;
 pub mod player_input;
 
-use bevy::{prelude::*, ecs::query::Has};
+use bevy::{ecs::query::Has, prelude::*};
 
 use common::{
     sets::SceneSets,

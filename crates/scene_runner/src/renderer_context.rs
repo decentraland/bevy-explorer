@@ -8,8 +8,9 @@ use dcl::{
 use dcl_component::{DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter};
 
 use crate::{
-    primary_entities::PrimaryEntities, update_world::transform_and_parent::ParentPositionSync,
-    ContainerEntity, SceneEntity, TargetParent, initialize_scene::SpawnPoint,
+    initialize_scene::SpawnPoint, primary_entities::PrimaryEntities,
+    update_world::transform_and_parent::ParentPositionSync, ContainerEntity, SceneEntity,
+    TargetParent,
 };
 
 // contains a list of (SceneEntityId.generation, bevy entity) indexed by SceneEntityId.id

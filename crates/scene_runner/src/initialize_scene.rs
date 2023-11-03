@@ -211,7 +211,10 @@ impl SpawnPosition {
         let y = parse_val(&self.y).unwrap_or(0.0..16.0);
         let z = parse_val(&self.z).unwrap_or(0.0..16.0);
 
-        (Vec3::new(x.start, y.start, z.start), Vec3::new(x.end, y.end, z.end))
+        (
+            Vec3::new(x.start, y.start, z.start),
+            Vec3::new(x.end, y.end, z.end),
+        )
     }
 }
 
@@ -234,7 +237,7 @@ pub struct SceneDisplay {
 }
 
 #[derive(Deserialize, Debug)]
-#[serde(rename_all="camelCase")]
+#[serde(rename_all = "camelCase")]
 pub struct SceneMeta {
     pub display: Option<SceneDisplay>,
     pub main: String,
