@@ -8,11 +8,15 @@ module.exports.movePlayerTo = async function (body) {
 }
 
 module.exports.teleportTo = async function (body) { 
-    Deno.core.ops.op_move_player_to(true, [body.newRelativePosition.x, body.newRelativePosition.y, body.newRelativePosition.z])
+    await Deno.core.ops.op_teleport_to([body.worldCoordinates.x, body.worldCoordinates.y]);
     return {} 
 }
 
-module.exports.triggerEmote = async function (body) { return {} }
+module.exports.triggerEmote = async function (body) { 
+    // if only there was a way to run an ecs system here
+    Deno.core.ops.op_emote(body.predefinedEmote)
+    return {} 
+}
 
 module.exports.changeRealm = async function (body) { 
     return await Deno.core.ops.op_change_realm(body.realm, body.message);
@@ -23,4 +27,7 @@ module.exports.openExternalUrl = async function (body) {
 }
 
 module.exports.openNftDialog = async function (body) { return {} }
-module.exports.setCommunicationsAdapter = async function (body) { return {} }
+module.exports.setCommunicationsAdapter = async function (body) { 
+    console.error("RestrictedActions::setCommunicationsAdapter not implemented");
+    return {} 
+}

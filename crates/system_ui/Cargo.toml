@@ -15,6 +15,7 @@ ipfs = { workspace = true }
 ui_core = { workspace = true }
 avatar = { workspace = true }
 input_manager = { workspace = true }
+av = { workspace = true }
 
 bevy = { workspace = true }
 bevy_egui = { workspace = true }

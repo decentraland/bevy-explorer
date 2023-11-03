@@ -1,14 +1,10 @@
-use std::sync::{
-    atomic::{AtomicU32, Ordering},
-    mpsc::SyncSender,
-    Mutex,
-};
+use std::sync::{mpsc::SyncSender, Mutex};
 
 use bevy::{
-    prelude::AssetServer,
+    prelude::{AssetServer, Entity},
     utils::{HashMap, HashSet},
 };
-use common::structs::{RpcResult, SceneRpcCall};
+use common::rpc::RpcCall;
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use tokio::sync::mpsc::Sender;
@@ -19,18 +15,18 @@ use wallet::Wallet;
 
 use self::{
     interface::{CrdtComponentInterfaces, CrdtStore},
-    js::{create_runtime, scene_thread},
+    js::scene_thread,
 };
 
 pub mod crdt;
 pub mod interface;
 pub mod js;
 
-#[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
-pub struct SceneId(u32);
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
+pub struct SceneId(pub Entity);
 
 impl SceneId {
-    pub const DUMMY: SceneId = SceneId(0);
+    pub const DUMMY: SceneId = SceneId(Entity::PLACEHOLDER);
 }
 
 // message from scene describing new and deleted entities
@@ -48,7 +44,7 @@ pub enum RendererResponse {
     Ok(CrdtStore),
 }
 
-type RpcCalls = Vec<(SceneRpcCall, Option<RpcResult>)>;
+type RpcCalls = Vec<RpcCall>;
 
 #[allow(clippy::large_enum_variant)] // we don't care since the error case is very rare
                                      // data from scene to renderer
@@ -62,6 +58,7 @@ pub enum SceneResponse {
         Vec<SceneLogMessage>,
         RpcCalls,
     ),
+    WaitingForInspector,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -78,22 +75,8 @@ pub struct SceneLogMessage {
     pub message: String,
 }
 
-static SCENE_ID: Lazy<AtomicU32> = Lazy::new(Default::default);
 pub(crate) static VM_HANDLES: Lazy<Mutex<HashMap<SceneId, IsolateHandle>>> =
     Lazy::new(Default::default);
-
-pub fn get_next_scene_id() -> SceneId {
-    let mut id = SceneId(SCENE_ID.fetch_add(1, Ordering::Relaxed));
-
-    if id.0 == 0 {
-        // synchronously create and drop a single runtime to hopefully avoid initial segfaults
-        create_runtime(true);
-        // and skip the dummy id
-        id = SceneId(SCENE_ID.fetch_add(1, Ordering::Relaxed));
-    }
-
-    id
-}
 
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_scene(
@@ -105,11 +88,12 @@ pub fn spawn_scene(
     asset_server: AssetServer,
     wallet: Wallet,
     id: SceneId,
+    inspect: bool,
 ) -> Sender<RendererResponse> {
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
 
     std::thread::Builder::new()
-        .name(format!("scene thread {}", id.0))
+        .name(format!("scene thread {:?}", id.0))
         .spawn(move || {
             scene_thread(
                 scene_hash,
@@ -121,6 +105,7 @@ pub fn spawn_scene(
                 global_update_receiver,
                 asset_server,
                 wallet,
+                inspect,
             )
         })
         .unwrap();

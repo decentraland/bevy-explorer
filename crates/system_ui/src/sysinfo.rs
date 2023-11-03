@@ -142,7 +142,7 @@ fn update_scene_load_state(
     let Ok((player, pos)) = player.get_single() else {
         return;
     };
-    let scene = containing_scene.get(player);
+    let scene = containing_scene.get_parcel(player);
     let parcel = (pos.translation().xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
         .floor()
         .as_ivec2();

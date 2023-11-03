@@ -1,10 +1,17 @@
 use bevy::prelude::{Mat3, Quat, Vec3};
-use common::structs::SceneRpcCall;
+use common::rpc::RpcCall;
 use deno_core::{op, Op, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{interface::CrdtType, js::RendererStore, CrdtStore};
+use crate::{
+    interface::{crdt_context::CrdtContext, CrdtType},
+    js::RendererStore,
+    CrdtStore,
+};
 use dcl_component::{
+    proto_components::sdk::components::{
+        pb_avatar_emote_command::EmoteCommand, PbAvatarEmoteCommand,
+    },
     transform_and_parent::{DclQuat, DclTransformAndParent, DclTranslation},
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
@@ -15,20 +22,20 @@ use super::RpcCalls;
 pub fn ops() -> Vec<OpDecl> {
     vec![
         op_move_player_to::DECL,
+        op_teleport_to::DECL,
         op_change_realm::DECL,
         op_external_url::DECL,
+        op_emote::DECL,
     ]
 }
 
 #[op(v8)]
 fn op_move_player_to(
-    op_state: Rc<RefCell<OpState>>,
+    op_state: &mut OpState,
     absolute: bool,
     position: [f32; 3],
     maybe_camera: Option<[f32; 3]>,
 ) {
-    let mut op_state = op_state.borrow_mut();
-
     // get current
     let inbound = &op_state.borrow::<RendererStore>().0;
     let get_transform = |id: SceneEntityId| -> DclTransformAndParent {
@@ -77,6 +84,11 @@ fn op_move_player_to(
         player_transform.rotation = look_to(target_offset * (Vec3::X + Vec3::Z));
     }
 
+    //ensure entities
+    let context = op_state.borrow_mut::<CrdtContext>();
+    context.init(SceneEntityId::PLAYER);
+    context.init(SceneEntityId::CAMERA);
+
     // write commands
     let mut buf = Vec::default();
     let outbound = op_state.borrow_mut::<CrdtStore>();
@@ -101,27 +113,79 @@ fn op_move_player_to(
 }
 
 #[op]
+async fn op_teleport_to(state: Rc<RefCell<OpState>>, position: [i32; 2]) -> bool {
+    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
+    state
+        .borrow_mut()
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::TeleportPlayer {
+            scene,
+            to: position.into(),
+            response: sx.into(),
+        });
+
+    matches!(rx.await, Ok(Ok(_)))
+}
+
+#[op]
 async fn op_change_realm(
     state: Rc<RefCell<OpState>>,
     realm: String,
     message: Option<String>,
 ) -> bool {
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
+    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
-        .push((SceneRpcCall::ChangeRealm { to: realm, message }, Some(sx)));
+        .push(RpcCall::ChangeRealm {
+            scene,
+            to: realm,
+            message,
+            response: sx.into(),
+        });
 
     matches!(rx.await, Ok(Ok(_)))
 }
 
 #[op]
 async fn op_external_url(state: Rc<RefCell<OpState>>, url: String) -> bool {
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
+    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
-        .push((SceneRpcCall::ExternalUrl { url }, Some(sx)));
+        .push(RpcCall::ExternalUrl {
+            scene,
+            url,
+            response: sx.into(),
+        });
 
     matches!(rx.await, Ok(Ok(_)))
+}
+
+#[op]
+fn op_emote(op_state: &mut OpState, emote: String) {
+    let emote = PbAvatarEmoteCommand {
+        emote_command: Some(EmoteCommand {
+            emote_urn: emote,
+            r#loop: false,
+        }),
+    };
+
+    //ensure entity
+    let context = op_state.borrow_mut::<CrdtContext>();
+    context.init(SceneEntityId::PLAYER);
+
+    // write update
+    let outbound = op_state.borrow_mut::<CrdtStore>();
+    let mut buf = Vec::default();
+    DclWriter::new(&mut buf).write(&emote);
+    outbound.force_update(
+        SceneComponentId::AVATAR_EMOTE_COMMAND,
+        CrdtType::GO_ANY,
+        SceneEntityId::PLAYER,
+        Some(&mut DclReader::new(&buf)),
+    );
 }

@@ -8,8 +8,9 @@ use dcl::{
 use dcl_component::{DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter};
 
 use crate::{
-    primary_entities::PrimaryEntities, update_world::transform_and_parent::ParentPositionSync,
-    ContainerEntity, SceneEntity, TargetParent,
+    initialize_scene::SpawnPoint, primary_entities::PrimaryEntities,
+    update_world::transform_and_parent::ParentPositionSync, ContainerEntity, SceneEntity,
+    TargetParent,
 };
 
 // contains a list of (SceneEntityId.generation, bevy entity) indexed by SceneEntityId.id
@@ -28,8 +29,10 @@ type LiveEntityTable = Vec<(u16, Option<Entity>)>;
 pub struct RendererSceneContext {
     pub scene_id: SceneId,
     pub hash: String,
+    pub is_portable: bool,
     pub title: String,
     pub base: IVec2,
+    pub spawn_points: Vec<SpawnPoint>,
     pub priority: f32,
     pub size: UVec2,
 
@@ -73,11 +76,14 @@ pub struct RendererSceneContext {
 pub const SCENE_LOG_BUFFER_SIZE: usize = 100;
 
 impl RendererSceneContext {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         scene_id: SceneId,
         hash: String,
+        is_portable: bool,
         title: String,
         base: IVec2,
+        spawn_points: Vec<SpawnPoint>,
         root: Entity,
         size: UVec2,
         priority: f32,
@@ -85,8 +91,10 @@ impl RendererSceneContext {
         let mut new_context = Self {
             scene_id,
             hash,
+            is_portable,
             title,
             base,
+            spawn_points,
             size,
             nascent: Default::default(),
             death_row: Default::default(),

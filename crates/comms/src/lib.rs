@@ -1,61 +1,53 @@
+pub mod archipelago;
 pub mod broadcast_position;
 pub mod global_crdt;
 pub mod livekit_room;
 pub mod profile;
+pub mod signed_login;
 #[cfg(test)]
 mod test;
 pub mod websocket_room;
 
 use std::marker::PhantomData;
 
-use async_tungstenite::tungstenite::http::Uri;
-use bevy::{
-    ecs::{event::ManualEventReader, system::SystemParam},
-    prelude::*,
-    tasks::{IoTaskPool, Task},
-};
+use bevy::{ecs::system::SystemParam, prelude::*};
 use bimap::BiMap;
 use ethers_core::types::Address;
+use signed_login::{SignedLoginPlugin, StartSignedLogin};
 use tokio::sync::mpsc::Sender;
 
-use common::util::TaskExt;
-use dcl_component::{proto_components::kernel::comms::rfc4, DclWriter, ToDclWriter};
+use dcl_component::{DclWriter, ToDclWriter};
 use ipfs::CurrentRealm;
 
-use wallet::{
-    signed_login::{signed_login, SignedLoginResponse},
-    SignedLoginMeta, Wallet,
-};
-
 use self::{
+    archipelago::{ArchipelagoPlugin, StartArchipelago},
     broadcast_position::BroadcastPositionPlugin,
     global_crdt::GlobalCrdtPlugin,
-    livekit_room::{LivekitPlugin, LivekitTransport},
-    profile::{CurrentUserProfile, UserProfilePlugin},
-    websocket_room::{WebsocketRoomPlugin, WebsocketRoomTransport},
+    livekit_room::{LivekitPlugin, StartLivekit},
+    profile::UserProfilePlugin,
+    websocket_room::{StartWsRoom, WebsocketRoomPlugin},
 };
+
+pub mod chat_marker_things {
+    pub const EMOTE: char = '␐';
+
+    pub const ALL: [char; 3] = [EMOTE, '␑', '␆'];
+}
 
 pub struct CommsPlugin;
 
 impl Plugin for CommsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(WebsocketRoomPlugin);
-        app.add_plugins(LivekitPlugin);
-        app.add_plugins(BroadcastPositionPlugin);
-        app.add_plugins(GlobalCrdtPlugin);
-        app.add_plugins(UserProfilePlugin);
-        app.add_systems(
-            Update,
-            (
-                process_realm_change,
-                start_ws_room,
-                start_signed_login,
-                start_livekit,
-            ),
-        );
-        app.add_event::<StartWsRoom>();
-        app.add_event::<StartLivekit>();
-        app.add_event::<StartSignedLogin>();
+        app.add_plugins((
+            WebsocketRoomPlugin,
+            SignedLoginPlugin,
+            LivekitPlugin,
+            ArchipelagoPlugin,
+            BroadcastPositionPlugin,
+            GlobalCrdtPlugin,
+            UserProfilePlugin,
+        ));
+        app.add_systems(Update, process_realm_change);
     }
 }
 
@@ -64,9 +56,12 @@ pub struct TransportAlias {
     pub alias: u32,
 }
 
+#[derive(PartialEq, Eq)]
 pub enum TransportType {
     WebsocketRoom,
     Livekit,
+    Archipelago,
+    Island(String),
 }
 
 pub struct NetworkMessage {
@@ -115,7 +110,8 @@ fn process_realm_change(
             if let Some(fixed_adapter) = comms.fixed_adapter.as_ref() {
                 manager.connect(fixed_adapter);
             } else {
-                warn!("no fixed adapter, i don't understand anything else");
+                // must be archipelago
+                manager.connect(&format!("archipelago:{}", realm.address));
             }
         } else {
             debug!("missing comms!");
@@ -123,138 +119,12 @@ fn process_realm_change(
     }
 }
 
-#[derive(Event)]
-pub struct StartWsRoom {
-    address: String,
-}
-
-pub fn start_ws_room(
-    mut commands: Commands,
-    mut room_events: EventReader<StartWsRoom>,
-    current_profile: Res<CurrentUserProfile>,
-) {
-    if let Some(ev) = room_events.iter().last() {
-        info!("starting ws-room protocol");
-        let (sender, receiver) = tokio::sync::mpsc::channel(1000);
-
-        // queue a profile version message
-        let response = rfc4::Packet {
-            message: Some(rfc4::packet::Message::ProfileVersion(
-                rfc4::AnnounceProfileVersion {
-                    profile_version: current_profile.0.version,
-                },
-            )),
-        };
-        let _ = sender.try_send(NetworkMessage::reliable(&response));
-
-        commands.spawn((
-            Transport {
-                transport_type: TransportType::WebsocketRoom,
-                sender,
-                foreign_aliases: Default::default(),
-            },
-            WebsocketRoomTransport {
-                address: ev.address.to_owned(),
-                receiver: Some(receiver),
-                retries: 0,
-            },
-        ));
-    }
-}
-
-#[derive(Event)]
-pub struct StartSignedLogin {
-    address: String,
-}
-
-pub fn start_signed_login(
-    mut signed_login_events: Local<ManualEventReader<StartSignedLogin>>,
-    current_realm: Res<CurrentRealm>,
-    wallet: Res<Wallet>,
-    mut task: Local<Option<Task<Result<SignedLoginResponse, anyhow::Error>>>>,
-    mut manager: AdapterManager,
-) {
-    if let Some(ev) = signed_login_events
-        .iter(&manager.signed_login_events)
-        .last()
-    {
-        info!("starting signed login");
-        let address = ev.address.clone();
-        let Ok(uri) = Uri::try_from(&address) else {
-            warn!("failed to parse signed login address as a uri: {address}");
-            return;
-        };
-        let wallet = wallet.clone();
-        let Ok(origin) = Uri::try_from(&current_realm.address) else {
-            warn!("failed to parse signed login address as a uri: {address}");
-            return;
-        };
-
-        let meta = SignedLoginMeta::new(true, origin);
-        *task = Some(IoTaskPool::get().spawn(signed_login(uri, wallet, meta)));
-    }
-
-    if let Some(mut current_task) = task.take() {
-        if let Some(result) = current_task.complete() {
-            match result {
-                Ok(SignedLoginResponse {
-                    fixed_adapter: Some(adapter),
-                    ..
-                }) => {
-                    info!("signed login ok, connecting to inner {adapter}");
-                    manager.connect(adapter.as_str())
-                }
-                otherwise => warn!("signed login failed: {otherwise:?}"),
-            }
-        } else {
-            *task = Some(current_task);
-        }
-    }
-}
-
-#[derive(Event)]
-pub struct StartLivekit {
-    address: String,
-}
-
-pub fn start_livekit(
-    mut commands: Commands,
-    mut room_events: EventReader<StartLivekit>,
-    current_profile: Res<CurrentUserProfile>,
-) {
-    if let Some(ev) = room_events.iter().last() {
-        info!("starting livekit protocol");
-        let (sender, receiver) = tokio::sync::mpsc::channel(1000);
-
-        // queue a profile version message
-        let response = rfc4::Packet {
-            message: Some(rfc4::packet::Message::ProfileVersion(
-                rfc4::AnnounceProfileVersion {
-                    profile_version: current_profile.0.version,
-                },
-            )),
-        };
-        let _ = sender.try_send(NetworkMessage::reliable(&response));
-
-        commands.spawn((
-            Transport {
-                transport_type: TransportType::Livekit,
-                sender,
-                foreign_aliases: Default::default(),
-            },
-            LivekitTransport {
-                address: ev.address.to_owned(),
-                receiver: Some(receiver),
-                retries: 0,
-            },
-        ));
-    }
-}
-
 #[derive(SystemParam)]
 pub struct AdapterManager<'w, 's> {
+    commands: Commands<'w, 's>,
     ws_room_events: EventWriter<'w, StartWsRoom>,
     livekit_events: EventWriter<'w, StartLivekit>,
+    archipelago_events: EventWriter<'w, StartArchipelago>,
     // can't use event writer due to conflict on Res<Events>
     pub signed_login_events: ResMut<'w, Events<StartSignedLogin>>,
     #[system_param(ignore)]
@@ -262,10 +132,10 @@ pub struct AdapterManager<'w, 's> {
 }
 
 impl<'w, 's> AdapterManager<'w, 's> {
-    pub fn connect(&mut self, adapter: &str) {
+    pub fn connect(&mut self, adapter: &str) -> Option<Entity> {
         let Some((protocol, address)) = adapter.split_once(':') else {
             warn!("unrecognised fixed adapter string: {adapter}");
-            return;
+            return None;
         };
 
         match protocol {
@@ -275,15 +145,34 @@ impl<'w, 's> AdapterManager<'w, 's> {
             "signed-login" => self.signed_login_events.send(StartSignedLogin {
                 address: address.to_owned(),
             }),
-            "livekit" => self.livekit_events.send(StartLivekit {
-                address: address.to_owned(),
-            }),
+            "livekit" => {
+                let entity = self.commands.spawn_empty().id();
+                self.livekit_events.send(StartLivekit {
+                    entity,
+                    address: address.to_owned(),
+                });
+                return Some(entity);
+            }
             "offline" => {
                 info!("comms offline");
+            }
+            "archipelago" => {
+                let ws_url = format!(
+                    "{}/archipelago/ws",
+                    address
+                        .strip_prefix("http")
+                        .map(|stripped| format!("ws{stripped}"))
+                        .unwrap_or(address.to_owned())
+                );
+                debug!("arch starting: {ws_url}");
+                self.archipelago_events
+                    .send(StartArchipelago { address: ws_url });
             }
             _ => {
                 warn!("unrecognised adapter protocol: {protocol}");
             }
         }
+
+        None
     }
 }

@@ -23,7 +23,9 @@ impl<T> TaskExt for Task<T> {
 
     fn complete(&mut self) -> Option<Self::Output> {
         match self.is_finished() {
-            true => Some(future::block_on(future::poll_once(self)).unwrap()),
+            true => {
+                Some(future::block_on(future::poll_once(self)).expect("is_finished but !Some?"))
+            }
             false => None,
         }
     }

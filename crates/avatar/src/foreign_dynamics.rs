@@ -95,7 +95,7 @@ fn update_foreign_user_actual_position(
     for (foreign_ent, target, mut actual, mut dynamic_state) in avatars.iter_mut() {
         // arrive at target position by time + 0.5
         let walk_time_left = target.time + 0.5 - time.elapsed_seconds();
-        if walk_time_left <= 0.0 {
+        if walk_time_left <= 0.0 || (actual.translation - target.translation).length() > 125.0 {
             actual.translation = target.translation;
             dynamic_state.velocity = Vec3::ZERO;
         } else {
@@ -115,21 +115,24 @@ fn update_foreign_user_actual_position(
         }
 
         // update ground height
+        dynamic_state.ground_height = actual.translation.y;
         // get containing scene
-        match containing_scene
+        containing_scene
             .get(foreign_ent)
-            .and_then(|scene| scene_datas.get_mut(scene).ok())
-        {
-            Some((context, mut collider_data, _scene_transform)) => {
-                dynamic_state.ground_height = collider_data
-                    .get_groundheight(context.last_update_frame, actual.translation)
-                    .map(|(h, _)| h)
-                    .unwrap_or(actual.translation.y);
-            }
-            None => {
-                dynamic_state.ground_height = actual.translation.y;
-            }
-        };
+            .into_iter()
+            .for_each(|scene| {
+                if let Ok((context, mut collider_data, _scene_transform)) =
+                    scene_datas.get_mut(scene)
+                {
+                    if let Some(ground_height) = collider_data
+                        .get_groundheight(context.last_update_frame, actual.translation)
+                        .map(|(h, _)| h)
+                    {
+                        dynamic_state.ground_height =
+                            dynamic_state.ground_height.min(ground_height);
+                    }
+                }
+            });
 
         // fall
         if actual.translation.y > target.translation.y && dynamic_state.ground_height > 0.0 {

@@ -546,6 +546,10 @@ impl SceneColliderData {
     pub fn clear_disabled(&mut self) {
         self.disabled.clear();
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &ColliderId> {
+        self.scaled_collider.left_values()
+    }
 }
 
 fn update_scene_collider_data(
@@ -757,23 +761,16 @@ fn update_collider_transforms(
                 }
                 TOIStatus::Failed | TOIStatus::Penetrating => {
                     scene_data.force_update();
-                    let dv: DVec3 = scene_data
-                        .query_state
-                        .as_ref()
-                        .unwrap()
-                        .project_point(
-                            &scene_data.dummy_rapier_structs.1,
-                            &scene_data.collider_set,
-                            &base_of_sphere.as_dvec3().into(),
-                            true,
-                            QueryFilter::default()
-                                .predicate(&|h, _| scene_data.collider_enabled(h)),
-                        )
-                        .unwrap()
-                        .1
-                        .point
-                        .into();
-                    dv.as_vec3()
+                    match scene_data.query_state.as_ref().unwrap().project_point(
+                        &scene_data.dummy_rapier_structs.1,
+                        &scene_data.collider_set,
+                        &base_of_sphere.as_dvec3().into(),
+                        true,
+                        QueryFilter::default().predicate(&|h, _| scene_data.collider_enabled(h)),
+                    ) {
+                        Some((_, point)) => DVec3::from(point.point).as_vec3(),
+                        None => translation,
+                    }
                 }
             };
             let fix_dir = base_of_sphere - closest_point;

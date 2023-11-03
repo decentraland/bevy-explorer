@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
-use bevy::prelude::{debug, error, info, info_span, AssetServer};
+use bevy::prelude::{debug, error, info_span, AssetServer};
 use deno_core::{
     anyhow::anyhow,
     ascii_str,
@@ -15,6 +15,13 @@ use wallet::Wallet;
 
 use crate::RpcCalls;
 
+#[cfg(feature = "inspect")]
+use crate::js::inspector::InspectorServer;
+#[cfg(feature = "inspect")]
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+#[cfg(not(feature = "inspect"))]
+pub struct InspectorServer;
+
 use self::fetch::{FP, TP};
 
 use super::{
@@ -25,8 +32,16 @@ use super::{
 
 pub mod engine;
 pub mod fetch;
+pub mod portables;
 pub mod restricted_actions;
 pub mod runtime;
+pub mod user_identity;
+
+pub mod comms;
+pub mod events;
+#[cfg(feature = "inspect")]
+pub mod inspector;
+pub mod player;
 
 // marker to indicate shutdown has been triggered
 pub struct ShuttingDown;
@@ -52,7 +67,7 @@ impl WebSocketPermissions for WebSocketPerms {
     }
 }
 
-pub fn create_runtime(init: bool) -> JsRuntime {
+pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<InspectorServer>) {
     // add fetch stack
     let web = deno_web::deno_web::init_ops_and_esm::<TP>(
         std::sync::Arc::new(deno_web::BlobStore::default()),
@@ -70,11 +85,16 @@ pub fn create_runtime(init: bool) -> JsRuntime {
 
     let mut ops = vec![op_require::DECL, op_log::DECL, op_error::DECL];
 
-    let op_sets: [Vec<deno_core::OpDecl>; 4] = [
+    let op_sets: [Vec<deno_core::OpDecl>; 9] = [
         engine::ops(),
         restricted_actions::ops(),
         runtime::ops(),
         fetch::ops(),
+        portables::ops(),
+        user_identity::ops(),
+        player::ops(),
+        events::ops(),
+        comms::ops(),
     ];
 
     // add plugin registrations
@@ -120,15 +140,40 @@ pub fn create_runtime(init: bool) -> JsRuntime {
     };
 
     // create runtime
-    JsRuntime::new(RuntimeOptions {
+    #[allow(unused_mut)]
+    let mut runtime = JsRuntime::new(RuntimeOptions {
         v8_platform: if init {
             v8::Platform::new(1, false).make_shared().into()
         } else {
             None
         },
         extensions: vec![webidl, url, console, web, fetch, websocket, ext],
+        inspector: inspect,
         ..Default::default()
-    })
+    });
+
+    #[cfg(feature = "inspect")]
+    if inspect {
+        bevy::prelude::info!(
+            "[{}] inspector attached",
+            std::thread::current().name().unwrap()
+        );
+        let server = InspectorServer::new(
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9222),
+            "bevy-explorer",
+        );
+        server.register_inspector("decentraland".to_owned(), &mut runtime, true);
+        (runtime, Some(server))
+    } else {
+        (runtime, None)
+    }
+
+    #[cfg(not(feature = "inspect"))]
+    if inspect {
+        panic!("can't inspect without inspect feature")
+    } else {
+        (runtime, None)
+    }
 }
 
 // main scene processing thread - constructs an isolate and runs the scene
@@ -143,9 +188,10 @@ pub(crate) fn scene_thread(
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     asset_server: AssetServer,
     wallet: Wallet,
+    inspect: bool,
 ) {
     let scene_context = CrdtContext::new(scene_id, scene_hash);
-    let mut runtime = create_runtime(false);
+    let (mut runtime, inspector) = create_runtime(false, inspect);
 
     // store handle
     let vm_handle = runtime.v8_isolate().thread_safe_handle();
@@ -192,6 +238,18 @@ pub(crate) fn scene_thread(
     // store websocket permissions object
     state.borrow_mut().put(WebSocketPerms);
 
+    if inspector.is_some() {
+        let _ = state
+            .borrow_mut()
+            .borrow_mut::<SyncSender<SceneResponse>>()
+            .send(SceneResponse::WaitingForInspector);
+
+        runtime
+            .inspector()
+            .borrow_mut()
+            .wait_for_session_and_break_on_next_statement();
+    }
+
     // load module
     let script = runtime.execute_script("<loader>", ascii_str!("require (\"~scene.js\")"));
 
@@ -214,8 +272,8 @@ pub(crate) fn scene_thread(
         .unwrap();
 
     // run startup function
-    let result = rt
-        .block_on(async { run_script(&mut runtime, &script, "onStart", (), |_| Vec::new()).await });
+    let result =
+        rt.block_on(async { run_script(&mut runtime, &script, "onStart", |_| Vec::new()).await });
 
     if let Err(e) = result {
         // ignore failure to send failure
@@ -241,7 +299,7 @@ pub(crate) fn scene_thread(
 
         // run the onUpdate function
         let result = rt.block_on(async {
-            run_script(&mut runtime, &script, "onUpdate", (), |scope| {
+            run_script(&mut runtime, &script, "onUpdate", |scope| {
                 vec![v8::Number::new(scope, dt.as_secs_f64()).into()]
             })
             .await
@@ -266,13 +324,9 @@ async fn run_script(
     runtime: &mut JsRuntime,
     script: &v8::Global<v8::Value>,
     fn_name: &str,
-    messages_in: (),
     arg_fn: impl for<'a> Fn(&mut v8::HandleScope<'a>) -> Vec<v8::Local<'a, v8::Value>>,
 ) -> Result<(), AnyError> {
     // set up scene i/o
-    let op_state = runtime.op_state();
-    op_state.borrow_mut().put(messages_in);
-
     let promise = {
         let scope = &mut runtime.handle_scope();
         let script_this = v8::Local::new(scope, script.clone());
@@ -351,7 +405,7 @@ fn op_require(
 #[op(v8)]
 fn op_log(state: Rc<RefCell<OpState>>, message: String) {
     let time = state.borrow().borrow::<SceneElapsedTime>().0;
-    info!(message);
+    // info!(message);
     state
         .borrow_mut()
         .borrow_mut::<Vec<SceneLogMessage>>()

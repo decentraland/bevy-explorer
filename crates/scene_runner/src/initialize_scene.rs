@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use bevy::{
     asset::{AssetLoader, LoadedAsset},
     math::Vec3Swizzles,
@@ -13,9 +15,8 @@ use common::{
 };
 use comms::global_crdt::GlobalCrdtState;
 use dcl::{
-    get_next_scene_id,
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
-    spawn_scene, SceneElapsedTime, SceneResponse,
+    spawn_scene, SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
     transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
@@ -58,6 +59,7 @@ impl Plugin for SceneLifecyclePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LiveScenes>();
         app.init_resource::<ScenePointers>();
+        app.init_resource::<PortableScenes>();
         app.add_asset::<SerializedCrdtStore>();
         app.add_asset_loader(CrdtLoader);
 
@@ -178,6 +180,51 @@ pub(crate) fn load_scene_json(
     }
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct SpawnPosition {
+    x: serde_json::Value,
+    y: serde_json::Value,
+    z: serde_json::Value,
+}
+
+impl SpawnPosition {
+    pub fn bounding_box(&self) -> (Vec3, Vec3) {
+        let parse_val = |v: &serde_json::Value| -> Option<Range<f32>> {
+            if let Some(val) = v.as_f64() {
+                Some(val as f32..val as f32)
+            } else if let Some(array) = v.as_array() {
+                if let Some(mut start) = array.get(0).and_then(|s| s.as_f64()) {
+                    let mut end = array.get(1).and_then(|e| e.as_f64()).unwrap_or(start);
+                    if end < start {
+                        (start, end) = (end, start);
+                    }
+                    Some(start as f32..end as f32)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        let x = parse_val(&self.x).unwrap_or(0.0..16.0);
+        let y = parse_val(&self.y).unwrap_or(0.0..16.0);
+        let z = parse_val(&self.z).unwrap_or(0.0..16.0);
+
+        (
+            Vec3::new(x.start, y.start, z.start),
+            Vec3::new(x.end, y.end, z.end),
+        )
+    }
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct SpawnPoint {
+    pub name: Option<String>,
+    pub default: bool,
+    pub position: SpawnPosition,
+}
+
 #[derive(Deserialize, Debug)]
 pub struct SceneMetaScene {
     pub base: String,
@@ -190,12 +237,13 @@ pub struct SceneDisplay {
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct SceneMeta {
     pub display: Option<SceneDisplay>,
     pub main: String,
     pub scene: SceneMetaScene,
-    #[serde(rename = "runtimeVersion")]
     pub runtime_version: Option<String>,
+    pub spawn_points: Option<Vec<SpawnPoint>>,
 }
 
 #[derive(TypeUuid, Default, Clone, TypePath)]
@@ -213,6 +261,7 @@ pub(crate) fn load_scene_javascript(
     mut scene_updates: ResMut<SceneUpdates>,
     global_scene: Res<GlobalCrdtState>,
     mut pointers: ResMut<ScenePointers>,
+    portable_scenes: Res<PortableScenes>,
 ) {
     for (root, state, h_scene) in loading_scenes
         .iter()
@@ -250,6 +299,8 @@ pub(crate) fn load_scene_javascript(
             continue;
         };
 
+        let is_portable = portable_scenes.0.contains_key(&definition.id);
+
         // populate pointers
         let mut extent_min = IVec2::MAX;
         let mut extent_max = IVec2::MIN;
@@ -258,9 +309,13 @@ pub(crate) fn load_scene_javascript(
             let x = x.parse::<i32>().unwrap();
             let y = y.parse::<i32>().unwrap();
             let parcel = IVec2::new(x, y);
-            pointers
-                .0
-                .insert(parcel, PointerResult::Exists(definition.id.clone()));
+
+            if !is_portable {
+                pointers
+                    .0
+                    .insert(parcel, PointerResult::Exists(definition.id.clone()));
+            }
+
             extent_min = extent_min.min(parcel);
             extent_max = extent_max.max(parcel);
         }
@@ -313,7 +368,7 @@ pub(crate) fn load_scene_javascript(
         let initial_position = base.as_vec2() * Vec2::splat(PARCEL_SIZE);
 
         // setup the scene root entity
-        let scene_id = get_next_scene_id();
+        let scene_id = SceneId(root);
         let title = meta
             .display
             .and_then(|display| display.title)
@@ -321,8 +376,10 @@ pub(crate) fn load_scene_javascript(
         let mut renderer_context = RendererSceneContext::new(
             scene_id,
             definition.id.clone(),
+            is_portable,
             title,
             base,
+            meta.spawn_points.clone().unwrap_or_default(),
             root,
             size,
             1.0,
@@ -412,7 +469,10 @@ pub(crate) fn load_scene_javascript(
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[derive(Default, Resource)]
+pub struct InspectHash(pub String);
+
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub(crate) fn initialize_scene(
     mut commands: Commands,
     scene_updates: Res<SceneUpdates>,
@@ -426,6 +486,7 @@ pub(crate) fn initialize_scene(
     scene_js_files: Res<Assets<SceneJsFile>>,
     asset_server: Res<AssetServer>,
     wallet: Res<Wallet>,
+    inspect: Res<InspectHash>,
 ) {
     for (root, mut state, h_code, context) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
@@ -479,6 +540,7 @@ pub(crate) fn initialize_scene(
             asset_server.clone(),
             wallet.clone(),
             scene_id,
+            context.hash == inspect.0,
         );
 
         commands
@@ -490,6 +552,15 @@ pub(crate) fn initialize_scene(
 
 #[derive(Resource, Default)]
 pub struct LiveScenes(pub HashMap<String, Entity>);
+
+pub struct PortableSource {
+    pub pid: String,
+    pub parent_scene: Option<String>,
+    pub ens: Option<String>,
+}
+
+#[derive(Resource, Default)]
+pub struct PortableScenes(pub HashMap<String, PortableSource>);
 
 pub const PARCEL_SIZE: f32 = 16.0;
 
@@ -669,8 +740,12 @@ fn load_active_entities(
 pub fn process_scene_lifecycle(
     mut commands: Commands,
     current_realm: Res<CurrentRealm>,
+    portables: Res<PortableScenes>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
-    scene_entities: Query<Entity, Or<(With<SceneLoading>, With<RendererSceneContext>)>>,
+    scene_entities: Query<
+        (Entity, &SceneHash),
+        Or<(With<SceneLoading>, With<RendererSceneContext>)>,
+    >,
     range: Res<SceneLoadDistance>,
     mut live_scenes: ResMut<LiveScenes>,
     mut spawn: EventWriter<LoadSceneEvent>,
@@ -707,6 +782,14 @@ pub fn process_scene_lifecycle(
         ));
     }
 
+    // add any portables to requirements
+    required_scene_ids.extend(
+        portables
+            .0
+            .iter()
+            .map(|(hash, source)| (hash.clone(), Some(source.pid.clone()))),
+    );
+
     // record which scene entities we should keep
     let required_entities: HashMap<_, _> = required_scene_ids
         .iter()
@@ -714,9 +797,10 @@ pub fn process_scene_lifecycle(
         .collect();
 
     let mut existing_ids = HashSet::default();
+    let mut removed_hashes = Vec::default();
 
     // despawn any no-longer required entities
-    for entity in &scene_entities {
+    for (entity, scene_hash) in &scene_entities {
         match required_entities.get(&entity) {
             Some((hash, _)) => {
                 existing_ids.insert(<&String>::clone(hash));
@@ -726,17 +810,27 @@ pub fn process_scene_lifecycle(
                     info!("despawning {:?}", entity);
                     commands.despawn_recursive();
                 }
+                removed_hashes.push(&scene_hash.0);
             }
         }
     }
     drop(required_entities);
+
+    for removed_hash in removed_hashes {
+        live_scenes.0.remove(removed_hash);
+    }
 
     // spawn any newly required scenes
     for (required_scene_hash, maybe_urn) in required_scene_ids
         .iter()
         .filter(|(hash, _)| !existing_ids.contains(hash))
     {
-        let entity = commands.spawn(SceneLoading::SceneSpawned).id();
+        let entity = commands
+            .spawn((
+                SceneHash(required_scene_hash.clone()),
+                SceneLoading::SceneSpawned,
+            ))
+            .id();
         info!("spawning scene {:?} @ ??: {entity:?}", required_scene_hash);
         live_scenes.0.insert(required_scene_hash.clone(), entity);
         spawn.send(LoadSceneEvent {
@@ -748,3 +842,6 @@ pub fn process_scene_lifecycle(
         })
     }
 }
+
+#[derive(Component)]
+pub struct SceneHash(pub String);

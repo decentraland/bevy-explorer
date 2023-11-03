@@ -8,9 +8,9 @@ use isahc::{
 };
 
 #[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SignedLoginResponse {
     pub message: Option<String>,
-    #[serde(rename = "fixedAdapter")]
     pub fixed_adapter: Option<String>,
 }
 

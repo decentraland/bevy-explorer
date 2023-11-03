@@ -107,7 +107,7 @@ impl CrdtStore {
             CrdtType::LWW(_) => self
                 .lww
                 .entry(component_id)
-                .or_insert_with(CrdtLWWState::default)
+                .or_default()
                 .force_update(entity, maybe_new_data),
             CrdtType::GO(_) => {
                 self.go
@@ -130,7 +130,7 @@ impl CrdtStore {
             CrdtType::LWW(_) => self
                 .lww
                 .entry(component_id)
-                .or_insert_with(CrdtLWWState::default)
+                .or_default()
                 .update_if_different(entity, maybe_new_data),
             CrdtType::GO(_) => {
                 self.go

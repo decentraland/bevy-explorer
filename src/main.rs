@@ -24,11 +24,13 @@ use common::{
         AppConfig, AttachPoints, GraphicsSettings, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
         SceneLoadDistance,
     },
+    util::TryInsertEx,
 };
 use restricted_actions::RestrictedActionsPlugin;
 use scene_runner::{
+    initialize_scene::InspectHash,
     update_world::{mesh_collider::GroundCollider, NoGltf},
-    SceneRunnerPlugin,
+    OutOfWorld, SceneRunnerPlugin,
 };
 
 use av::AudioPlugin;
@@ -83,6 +85,7 @@ impl FromStr for IVec2Arg {
 fn main() {
     // warnings before log init must be stored and replayed later
     let mut warnings = Vec::default();
+    let mut app = App::new();
 
     let base_config: AppConfig = std::fs::read("config.json")
         .ok()
@@ -91,7 +94,7 @@ fn main() {
                 .map_err(|e| warnings.push(format!("failed to parse config.json: {e}")))
                 .ok()
         })
-        .unwrap_or(Default::default());
+        .unwrap_or_default();
     let mut args = pico_args::Arguments::from_env();
 
     let final_config = AppConfig {
@@ -135,6 +138,10 @@ fn main() {
             .unwrap_or(base_config.scene_load_distance),
     };
 
+    if let Ok(inspect) = args.value_from_str("--inspect") {
+        app.insert_resource(InspectHash(inspect));
+    }
+
     let no_avatar = args.contains("--no_avatar");
     let no_gltf = args.contains("--no_gltf");
     let no_fog = args.contains("--no_fog");
@@ -158,7 +165,6 @@ fn main() {
     // )
     // .unwrap();
 
-    let mut app = App::new();
     let present_mode = match final_config.graphics.vsync {
         true => bevy::window::PresentMode::AutoVsync,
         false => bevy::window::PresentMode::AutoNoVsync,
@@ -277,12 +283,13 @@ fn setup(
             SpatialBundle {
                 transform: Transform::from_translation(Vec3::new(
                     8.0 + 16.0 * config.location.x as f32,
-                    0.0,
+                    8.0,
                     -8.0 + -16.0 * config.location.y as f32,
                 )),
                 ..Default::default()
             },
             PrimaryUser::default(),
+            OutOfWorld,
             AvatarDynamicState::default(),
             GroundCollider::default(),
         ))
@@ -346,13 +353,17 @@ struct ChangeLocationCommand {
 }
 
 fn change_location(
+    mut commands: Commands,
     mut input: ConsoleCommand<ChangeLocationCommand>,
-    mut player: Query<&mut Transform, With<PrimaryUser>>,
+    mut player: Query<(Entity, &mut Transform), With<PrimaryUser>>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        if let Ok(mut transform) = player.get_single_mut() {
+        if let Ok((ent, mut transform)) = player.get_single_mut() {
             transform.translation.x = command.x as f32 * 16.0 + 8.0;
             transform.translation.z = -command.y as f32 * 16.0 - 8.0;
+            if let Some(mut commands) = commands.get_entity(ent) {
+                commands.try_insert(OutOfWorld);
+            }
             input.reply_ok(format!("new location: {:?}", (command.x, command.y)));
             return;
         }

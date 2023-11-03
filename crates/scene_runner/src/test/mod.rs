@@ -23,16 +23,20 @@ use crate::{
     process_scene_entity_lifecycle, receive_scene_updates, send_scene_updates,
     update_scene_priority,
     update_world::{
-        transform_and_parent::process_transform_and_parent_updates, CrdtLWWStateComponent,
+        transform_and_parent::process_transform_and_parent_updates, CrdtStateComponent,
     },
     RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
 };
-use common::structs::{
-    AppConfig, GraphicsSettings, PrimaryCamera, RestrictedAction, SceneLoadDistance,
+use common::{
+    rpc::RpcCall,
+    structs::{AppConfig, GraphicsSettings, PrimaryCamera, SceneLoadDistance, ToolTips},
 };
 use comms::CommsPlugin;
 use console::{self, ConsolePlugin};
-use dcl::interface::{CrdtStore, CrdtType};
+use dcl::{
+    crdt::lww::CrdtLWWState,
+    interface::{CrdtStore, CrdtType},
+};
 use dcl_component::{
     transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
     SceneCrdtTimestamp, SceneEntityId,
@@ -108,7 +112,8 @@ fn init_test_app(entity_json: &str) -> App {
     app.add_plugins(SceneRunnerPlugin);
     app.init_resource::<InputMap>();
     app.init_resource::<AcceptInput>();
-    app.add_event::<RestrictedAction>();
+    app.init_resource::<ToolTips>();
+    app.add_event::<RpcCall>();
     app.insert_resource(SceneLoadDistance(1.0));
 
     let mut test_path = std::env::current_dir().unwrap();
@@ -400,7 +405,7 @@ fn cyclic_recovery() {
             .single(&mut app.world);
         app.world
             .entity_mut(scene_entity)
-            .insert(CrdtLWWStateComponent::<DclTransformAndParent>::default());
+            .insert(CrdtStateComponent::<CrdtLWWState, DclTransformAndParent>::default());
 
         let mut crdt_store = CrdtStore::default();
 
@@ -410,7 +415,7 @@ fn cyclic_recovery() {
                 .world
                 .query::<(
                     &mut RendererSceneContext,
-                    &mut CrdtLWWStateComponent<DclTransformAndParent>,
+                    &mut CrdtStateComponent<CrdtLWWState, DclTransformAndParent>,
                 )>()
                 .single_mut(&mut app.world);
 
@@ -429,7 +434,7 @@ fn cyclic_recovery() {
                 Some(reader),
             );
             // pull updates
-            *crdt_state = CrdtLWWStateComponent::new(
+            *crdt_state = CrdtStateComponent::new(
                 crdt_store
                     .take_updates()
                     .lww
@@ -453,4 +458,110 @@ fn cyclic_recovery() {
         let graph = make_graph(&mut app);
         check_or_write!(graph, "expected/cyclic_recovery.dot");
     }
+}
+
+#[test]
+fn test_scene_ray() {
+    fn ray_code(mut position: Vec3, mut ray: Vec3) -> Vec<(IVec2, f32)> {
+        let mut results = Vec::default();
+
+        let mut distance = 0.0;
+
+        if ray.length() == 0.0 {
+            return results;
+        }
+
+        if ray.length() > 1000.0 {
+            ray = ray.normalize() * 1000.0;
+        }
+
+        const EPS: f32 = 0.01;
+        let offset: Vec3 = Vec3::new(ray.x.signum() * EPS, ray.y.signum() * EPS, 0.0);
+
+        loop {
+            let adj_position = position + offset;
+
+            results.push((
+                (adj_position / 16.0).floor().truncate().as_ivec2(),
+                distance,
+            ));
+
+            let x_dist = if ray.x < 0.0 {
+                (((adj_position.x / 16.0).floor() * 16.0) - position.x) / ray.x
+            } else if ray.x > 0.0 {
+                (((adj_position.x / 16.0).ceil() * 16.0) - position.x) / ray.x
+            } else {
+                999.0
+            };
+            let y_dist = if ray.y < 0.0 {
+                (((adj_position.y / 16.0).floor() * 16.0) - position.y) / ray.y
+            } else if ray.y > 0.0 {
+                (((adj_position.y / 16.0).ceil() * 16.0) - position.y) / ray.y
+            } else {
+                999.0
+            };
+            println!("pos: {position}, ray: {ray}, x:{x_dist} / y:{y_dist}");
+
+            let step_fraction = x_dist.min(y_dist);
+            if step_fraction > 1.0 {
+                return results;
+            }
+
+            let step = ray * step_fraction;
+            position += step;
+            distance += step.length();
+            ray -= step;
+            println!("step: {step}, dist: {distance}");
+        }
+    }
+
+    assert_eq!(ray_code(Vec3::ONE, Vec3::ONE), vec![(IVec2::ZERO, 0.0)]);
+    assert_eq!(
+        ray_code(Vec3::splat(17.0), Vec3::ONE),
+        vec![(IVec2::ONE, 0.0)]
+    );
+    assert_eq!(
+        ray_code(Vec3::splat(-17.0), -Vec3::ONE),
+        vec![(IVec2::splat(-2), 0.0)]
+    );
+
+    let results = ray_code(Vec3::splat(15.0), Vec3::new(2.0, 2.0, 0.0));
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].0, IVec2::splat(0));
+    assert_eq!(results[1].0, IVec2::splat(1));
+    assert_eq!(results[0].1, 0.0);
+    assert!((results[1].1 - 2f32.sqrt()).abs() < 0.01);
+
+    let results = ray_code(Vec3::splat(15.0), Vec3::new(2.0, 4.0, 0.0));
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0].0, IVec2::splat(0));
+    assert_eq!(results[1].0, IVec2::new(0, 1));
+    assert_eq!(results[2].0, IVec2::splat(1));
+    assert_eq!(results[0].1, 0.0);
+    assert!((results[1].1 - f32::sqrt(1.0 + 0.5 * 0.5)).abs() < 0.01);
+    assert!((results[2].1 - 2.0 * f32::sqrt(1.0 + 0.5 * 0.5)).abs() < 0.01);
+
+    let results = ray_code(Vec3::splat(-15.0), -Vec3::new(2.0, 2.0, 0.0));
+    println!("results: {results:?}");
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].0, IVec2::splat(-1));
+    assert_eq!(results[1].0, IVec2::splat(-2));
+    assert_eq!(results[0].1, 0.0);
+    assert!((results[1].1 - 2f32.sqrt()).abs() < 0.01);
+
+    let results = ray_code(Vec3::splat(-15.0), -Vec3::new(2.0, 4.0, 0.0));
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0].0, IVec2::splat(-1));
+    assert_eq!(results[1].0, IVec2::new(-1, -2));
+    assert_eq!(results[2].0, IVec2::splat(-2));
+    assert_eq!(results[0].1, 0.0);
+    assert!((results[1].1 - f32::sqrt(1.0 + 0.5 * 0.5)).abs() < 0.01);
+    assert!((results[2].1 - 2.0 * f32::sqrt(1.0 + 0.5 * 0.5)).abs() < 0.01);
+
+    let results = ray_code(Vec3::splat(-8.0), Vec3::new(8.0, -8.0, 0.0));
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].0, IVec2::splat(-1));
+    assert_eq!(results[1].0, IVec2::new(0, -2));
+    assert_eq!(results[0].1, 0.0);
+    assert!((results[1].1 - f32::sqrt(8.0 * 8.0 * 2.0)).abs() < 0.01);
 }

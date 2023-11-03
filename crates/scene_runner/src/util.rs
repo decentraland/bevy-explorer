@@ -58,97 +58,105 @@ fn debug_dump_scene(
     console_relay: Res<ConsoleRelay>,
 ) {
     if let Some(Ok(_)) = input.take() {
-        let Some(scene) = player
+        let scenes = player
             .get_single()
             .ok()
-            .and_then(|p| containing_scene.get(p))
-            .and_then(|s| scene.get(s).ok())
-        else {
-            input.reply_failed("no scene");
+            .map(|p| containing_scene.get(p))
+            .unwrap_or_default()
+            .into_iter()
+            .flat_map(|s| scene.get(s).ok())
+            .collect::<Vec<_>>();
+
+        if scenes.is_empty() {
+            input.reply_failed("no scenes");
             return;
         };
 
-        let h_scene = asset_server.load_hash::<EntityDefinition>(&scene.hash);
-        let Some(def) = scene_definitions.get(&h_scene) else {
-            input.reply_failed("can't resolve scene handle");
-            return;
-        };
+        for scene in scenes {
+            let h_scene = asset_server.load_hash::<EntityDefinition>(&scene.hash);
+            let Some(def) = scene_definitions.get(&h_scene) else {
+                input.reply_failed("can't resolve scene handle");
+                return;
+            };
 
-        let dump_folder = asset_server
-            .ipfs()
-            .cache_path()
-            .to_owned()
-            .join("scene_dump")
-            .join(&scene.hash);
-        std::fs::create_dir_all(&dump_folder).unwrap();
+            let dump_folder = asset_server
+                .ipfs()
+                .cache_path()
+                .to_owned()
+                .join("scene_dump")
+                .join(&scene.hash);
+            std::fs::create_dir_all(&dump_folder).unwrap();
 
-        // total / succeed / fail
-        let count = Arc::new(Mutex::new((0, 0, 0)));
+            // total / succeed / fail
+            let count = Arc::new(Mutex::new((0, 0, 0)));
 
-        for content_file in def.content.files() {
-            count.lock().unwrap().0 += 1;
-            let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
-                scene.hash.to_owned(),
-                content_file.to_owned(),
-            ));
+            for content_file in def.content.files() {
+                count.lock().unwrap().0 += 1;
+                let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+                    scene.hash.to_owned(),
+                    content_file.to_owned(),
+                ));
 
-            let path = PathBuf::from(&ipfs_path);
+                let path = PathBuf::from(&ipfs_path);
 
-            let asset_server = asset_server.clone();
-            let content_file = content_file.clone();
-            let dump_folder = dump_folder.clone();
-            let count = count.clone();
-            let send = console_relay.send.clone();
-            tasks.push(IoTaskPool::get().spawn(async move {
-                let report = |fail: Option<String>| {
-                    let mut count = count.lock().unwrap();
-                    if let Some(fail) = fail {
-                        count.2 += 1;
-                        let _ = send.send(fail.into());
-                    } else {
-                        count.1 += 1;
-                    }
-                    if count.0 == count.1 + count.2 {
-                        if count.2 == 0 {
-                            let _ = send.send(format!("[ok] {} files downloaded", count.0).into());
+                let asset_server = asset_server.clone();
+                let content_file = content_file.clone();
+                let dump_folder = dump_folder.clone();
+                let count = count.clone();
+                let send = console_relay.send.clone();
+                tasks.push(IoTaskPool::get().spawn(async move {
+                    let report = |fail: Option<String>| {
+                        let mut count = count.lock().unwrap();
+                        if let Some(fail) = fail {
+                            count.2 += 1;
+                            let _ = send.send(fail.into());
                         } else {
-                            let _ = send.send(
-                                format!("[failed] {}/{} files downloaded", count.1, count.0).into(),
-                            );
+                            count.1 += 1;
                         }
-                    }
-                };
+                        if count.0 == count.1 + count.2 {
+                            if count.2 == 0 {
+                                let _ =
+                                    send.send(format!("[ok] {} files downloaded", count.0).into());
+                            } else {
+                                let _ = send.send(
+                                    format!("[failed] {}/{} files downloaded", count.1, count.0)
+                                        .into(),
+                                );
+                            }
+                        }
+                    };
 
-                let Ok(bytes) = asset_server.ipfs().load_path(&path).await else {
-                    report(Some(format!(
-                        "{content_file} failed: couldn't load bytes\n"
-                    )));
-                    return;
-                };
-
-                let file = dump_folder.join(&content_file);
-                if let Some(parent) = file.parent() {
-                    if let Err(e) = std::fs::create_dir_all(parent) {
+                    let Ok(bytes) = asset_server.ipfs().load_path(&path).await else {
                         report(Some(format!(
-                            "{content_file} failed: couldn't create parent: {e}"
+                            "{content_file} failed: couldn't load bytes\n"
                         )));
                         return;
+                    };
+
+                    let file = dump_folder.join(&content_file);
+                    if let Some(parent) = file.parent() {
+                        if let Err(e) = std::fs::create_dir_all(parent) {
+                            report(Some(format!(
+                                "{content_file} failed: couldn't create parent: {e}"
+                            )));
+                            return;
+                        }
                     }
-                }
-                if let Err(e) = std::fs::write(file, bytes) {
-                    report(Some(format!("{content_file} failed: {e}")));
-                    return;
-                }
+                    if let Err(e) = std::fs::write(file, bytes) {
+                        report(Some(format!("{content_file} failed: {e}")));
+                        return;
+                    }
 
-                report(None);
-            }));
+                    report(None);
+                }));
+            }
+
+            input.reply(format!(
+                "scene hash {}, downloading {} files",
+                scene.hash,
+                tasks.len()
+            ));
         }
-
-        input.reply(format!(
-            "scene hash {}, downloading {} files",
-            scene.hash,
-            tasks.len()
-        ));
     }
 
     tasks.retain_mut(|t| !t.is_finished());

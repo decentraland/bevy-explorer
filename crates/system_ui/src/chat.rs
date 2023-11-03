@@ -9,7 +9,9 @@ use common::{
     structs::PrimaryUser,
     util::{RingBuffer, RingBufferReceiver, TryInsertEx},
 };
-use comms::{global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport};
+use comms::{
+    chat_marker_things, global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport,
+};
 use dcl::{SceneLogLevel, SceneLogMessage};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
@@ -258,7 +260,11 @@ fn append_chat_messages(
         return;
     };
 
-    for ev in chats.iter() {
+    for ev in chats.iter().filter(|ev| {
+        !chat_marker_things::ALL
+            .iter()
+            .any(|marker| ev.message.starts_with(*marker))
+    }) {
         let Ok(profile) = users.get(ev.sender) else {
             warn!("can't get profile for chat sender {:?}", ev.sender);
             continue;
@@ -362,8 +368,9 @@ fn display_chat(
     if chatbox.active_tab == "Scene Log" {
         let current_scene = player
             .get_single()
-            .map(|player| containing_scene.get(player))
+            .map(|player| containing_scene.get_parcel(player))
             .unwrap_or_default();
+
         if chatbox.active_log_sink.as_ref().map(|(id, _)| id) != current_scene.as_ref() {
             chatbox.active_log_sink = None;
             commands.entity(entity).despawn_descendants();

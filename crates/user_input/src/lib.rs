@@ -2,13 +2,14 @@ pub mod camera;
 pub mod dynamics;
 pub mod player_input;
 
-use bevy::prelude::*;
+use bevy::{ecs::query::Has, prelude::*};
 
 use common::{
     sets::SceneSets,
     structs::{PrimaryCamera, PrimaryUser},
 };
 use input_manager::should_accept_key;
+use scene_runner::{update_world::avatar_modifier_area::PlayerModifiers, OutOfWorld};
 
 use self::{
     camera::{update_camera, update_camera_position},
@@ -32,24 +33,38 @@ impl Plugin for UserInputPlugin {
                 .chain()
                 .in_set(SceneSets::Input),
         );
-        app.add_systems(Update, hide_player_in_first_person);
+        app.add_systems(Update, manage_player_visibility.in_set(SceneSets::PostLoop));
     }
 }
 
-fn hide_player_in_first_person(
+fn manage_player_visibility(
     camera: Query<&GlobalTransform, With<PrimaryCamera>>,
-    mut player: Query<(&GlobalTransform, &mut Visibility), With<PrimaryUser>>,
+    mut player: Query<
+        (
+            &GlobalTransform,
+            &mut Visibility,
+            Has<OutOfWorld>,
+            &PlayerModifiers,
+        ),
+        With<PrimaryUser>,
+    >,
 ) {
-    if let (Ok(cam_transform), Ok((player_transform, mut vis))) =
+    if let (Ok(cam_transform), Ok((player_transform, mut vis, is_oow, modifiers))) =
         (camera.get_single(), player.get_single_mut())
     {
         let distance =
             (cam_transform.translation() - player_transform.translation() - Vec3::Y * 1.81)
                 .length();
-        if distance < 0.5 && *vis != Visibility::Hidden {
-            *vis = Visibility::Hidden;
-        } else if distance > 0.5 && *vis != Visibility::Inherited {
-            *vis = Visibility::Inherited;
+
+        #[allow(clippy::collapsible_else_if)]
+        if is_oow || modifiers.hide || distance < 0.5 {
+            if *vis != Visibility::Hidden {
+                *vis = Visibility::Hidden;
+            }
+        } else {
+            if *vis != Visibility::Inherited {
+                *vis = Visibility::Inherited;
+            }
         }
     }
 }

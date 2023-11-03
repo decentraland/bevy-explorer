@@ -51,13 +51,14 @@ pub fn spawn_audio_streams(
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
 ) {
-    let containing_scene = player
+    let containing_scenes = player
         .get_single()
         .ok()
-        .and_then(|player| containing_scene.get(player));
+        .map(|player| containing_scene.get(player))
+        .unwrap_or_default();
 
     for (ent, scene, mut stream, mut maybe_spawned) in streams.iter_mut() {
-        if maybe_spawned.is_none() {
+        if maybe_spawned.is_none() || stream.is_changed() {
             match stream.sound_data.try_recv() {
                 Ok(sound_data) => {
                     info!("{ent:?} received sound data!");
@@ -74,13 +75,14 @@ pub fn spawn_audio_streams(
                 }
                 Err(TryRecvError::Empty) => {
                     debug!("{ent:?} waiting for sound data");
+                    commands.entity(ent).remove::<AudioSpawned>();
                 }
             }
         }
 
         let volume = stream.volume;
         if let Some(handle) = maybe_spawned.as_mut().and_then(|a| a.0.as_mut()) {
-            if Some(scene.root) == containing_scene {
+            if containing_scenes.contains(&scene.root) {
                 let _ = handle.set_volume(volume as f64, Tween::default());
             } else {
                 let _ = handle.set_volume(0.0, Tween::default());

@@ -33,7 +33,10 @@ fn main() -> Result<()> {
         "camera_mode_area",
         "audio_source",
         "video_player",
+        "audio_stream",
+        "video_event",
         "visibility_component",
+        "avatar_modifier_area",
     ];
 
     let mut sources = components
@@ -43,6 +46,7 @@ fn main() -> Result<()> {
 
     sources.push("src/proto/decentraland/kernel/comms/rfc5/ws_comms.proto".into());
     sources.push("src/proto/decentraland/kernel/comms/rfc4/comms.proto".into());
+    sources.push("src/proto/decentraland/kernel/comms/v3/archipelago.proto".into());
 
     let serde_components = ["Color3"];
 

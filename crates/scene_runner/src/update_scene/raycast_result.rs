@@ -15,7 +15,7 @@ use crate::{
         mesh_collider::{RaycastResult, SceneColliderData},
         raycast::Raycast,
     },
-    RendererSceneContext, SceneEntity, SceneSets,
+    ContainingScene, RendererSceneContext, SceneEntity, SceneSets,
 };
 use console::DoAddConsoleCommand;
 use dcl::interface::CrdtType;
@@ -58,10 +58,12 @@ fn debug_raycast(mut input: ConsoleCommand<DebugRaycastCommand>, mut debug: ResM
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_raycasts(
     mut raycast_requests: Query<(Entity, &SceneEntity, &mut Raycast, &GlobalTransform)>,
     target_positions: Query<&GlobalTransform>,
-    mut scene_datas: Query<(
+    mut scene_context: Query<(
+        Entity,
         &mut RendererSceneContext,
         &mut SceneColliderData,
         &GlobalTransform,
@@ -70,6 +72,7 @@ fn run_raycasts(
     mut gizmos: Gizmos,
     time: Res<Time>,
     mut gizmo_cache: Local<Vec<(f32, Vec3, Vec3)>>,
+    containing_scene: ContainingScene,
 ) {
     // redraw non-continuous gizmos for 1 sec
     gizmo_cache.retain(|(until, origin, end)| {
@@ -79,124 +82,204 @@ fn run_raycasts(
 
     for (e, scene_ent, mut raycast, transform) in raycast_requests.iter_mut() {
         debug!("{e:?} has raycast request: {raycast:?}");
-        if let Ok((mut context, mut scene_data, scene_transform)) =
-            scene_datas.get_mut(scene_ent.root)
-        {
-            // check if we can run
-            if context.blocked.contains(GLTF_LOADING) {
-                debug!("raycast skipped, waiting for gltfs");
+        let Ok((_, context, mut scene_data, scene_transform)) =
+            scene_context.get_mut(scene_ent.root)
+        else {
+            continue;
+        };
+
+        // check if we can run
+        if context.blocked.contains(GLTF_LOADING) {
+            debug!("raycast skipped, waiting for gltfs");
+            continue;
+        }
+
+        // check if we need to run
+        let continuous = raycast.raycast.continuous.unwrap_or(false);
+        if !continuous && raycast.last_run > 0 {
+            continue;
+        }
+        if continuous && raycast.last_run >= context.last_update_frame {
+            continue;
+        }
+        raycast.last_run = context.last_update_frame;
+        debug!("running raycast");
+
+        // execute the raycast
+        let raycast = &raycast.raycast;
+
+        let (_, local_rotation, _) = transform.to_scale_rotation_translation();
+        let scene_translation = scene_transform.translation();
+
+        let offset = raycast
+            .origin_offset
+            .as_ref()
+            .map(Vector3::world_vec_to_vec3)
+            .unwrap_or(Vec3::ZERO);
+        let origin = transform.transform_point(offset);
+        let direction = match &raycast.direction {
+            Some(Direction::LocalDirection(dir)) => local_rotation * dir.world_vec_to_vec3(),
+            Some(Direction::GlobalDirection(dir)) => dir.world_vec_to_vec3(),
+            Some(Direction::GlobalTarget(point)) => {
+                point.world_vec_to_vec3() + scene_translation - origin
+            }
+            Some(Direction::TargetEntity(id)) => {
+                let target_position = context
+                    .bevy_entity(SceneEntityId::from_proto_u32(*id))
+                    .and_then(|entity| target_positions.get(entity).ok())
+                    .map(|gt| gt.translation())
+                    .unwrap_or(origin);
+                target_position - origin
+            }
+            None => {
+                warn!("no direction on raycast");
                 continue;
             }
+        }
+        .normalize();
 
-            // check if we need to run
-            let continuous = raycast.raycast.continuous.unwrap_or(false);
-            if !continuous && raycast.last_run > 0 {
-                continue;
-            }
-            if continuous && raycast.last_run >= context.last_update_frame {
-                continue;
-            }
-            raycast.last_run = context.last_update_frame;
-            debug!("running raycast");
+        let mask = raycast
+            .collision_mask
+            .unwrap_or(ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32);
 
-            // execute the raycast
-            let raycast = &raycast.raycast;
-
-            let (_, local_rotation, _) = transform.to_scale_rotation_translation();
-            let scene_translation = scene_transform.translation();
-
-            let offset = raycast
-                .origin_offset
-                .as_ref()
-                .map(Vector3::world_vec_to_vec3)
-                .unwrap_or(Vec3::ZERO);
-            let origin = transform.transform_point(offset);
-            let direction = match &raycast.direction {
-                Some(Direction::LocalDirection(dir)) => local_rotation * dir.world_vec_to_vec3(),
-                Some(Direction::GlobalDirection(dir)) => dir.world_vec_to_vec3(),
-                Some(Direction::GlobalTarget(point)) => {
-                    point.world_vec_to_vec3() + scene_translation - origin
-                }
-                Some(Direction::TargetEntity(id)) => {
-                    let target_position = context
-                        .bevy_entity(SceneEntityId::from_proto_u32(*id))
-                        .and_then(|entity| target_positions.get(entity).ok())
-                        .map(|gt| gt.translation())
-                        .unwrap_or(origin);
-                    target_position - origin
-                }
-                None => {
-                    warn!("no direction on raycast");
-                    continue;
-                }
-            }
-            .normalize();
-
-            let results = match raycast.query_type() {
-                RaycastQueryType::RqtHitFirst => scene_data
-                    .cast_ray_nearest(
-                        context.last_update_frame,
-                        origin,
-                        direction,
-                        raycast.max_distance,
-                        raycast.collision_mask.unwrap_or(
-                            ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32,
-                        ),
-                    )
-                    .map(|hit| vec![hit])
-                    .unwrap_or_default(),
-                RaycastQueryType::RqtQueryAll => scene_data.cast_ray_all(
+        let results = match (context.is_portable, raycast.query_type()) {
+            (false, RaycastQueryType::RqtHitFirst) => scene_data
+                .cast_ray_nearest(
                     context.last_update_frame,
                     origin,
                     direction,
                     raycast.max_distance,
-                    raycast.collision_mask.unwrap_or(
-                        ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32,
-                    ),
-                ),
-                RaycastQueryType::RqtNone => Vec::default(),
-            };
+                    mask,
+                )
+                .map(|hit| vec![(scene_ent.root, hit)])
+                .unwrap_or_default(),
+            (false, RaycastQueryType::RqtQueryAll) => scene_data
+                .cast_ray_all(
+                    context.last_update_frame,
+                    origin,
+                    direction,
+                    raycast.max_distance,
+                    mask,
+                )
+                .into_iter()
+                .map(|hit| (scene_ent.root, hit))
+                .collect(),
+            (true, RaycastQueryType::RqtHitFirst) => {
+                let full_ray = direction * raycast.max_distance;
+                let mut scenes = containing_scene
+                    .get_ray(origin, full_ray)
+                    .into_iter()
+                    .peekable();
+                let mut best_result: Option<(Entity, RaycastResult)> = None;
+                while scenes.peek().map_or(false, |(_, closest)| {
+                    best_result
+                        .as_ref()
+                        .map_or(true, |(_, br)| br.toi > *closest)
+                }) {
+                    let scene = scenes.next().unwrap().0;
+                    let Ok((scene, context, mut colliders, _)) = scene_context.get_mut(scene)
+                    else {
+                        continue;
+                    };
+                    if let Some(result) = colliders.cast_ray_nearest(
+                        context.last_update_frame,
+                        origin,
+                        direction,
+                        raycast.max_distance,
+                        mask,
+                    ) {
+                        if best_result
+                            .as_ref()
+                            .map_or(true, |(_, b)| b.toi > result.toi)
+                        {
+                            best_result = Some((scene, result));
+                        }
+                    }
+                }
 
-            // debug line showing raycast
-            if debug.0 {
-                let end = origin + direction * raycast.max_distance;
-                gizmos.line(origin, end, Color::BLUE);
-                if !continuous {
-                    gizmo_cache.push((time.elapsed_seconds() + 1.0, origin, end));
+                if let Some(result) = best_result {
+                    vec![result]
+                } else {
+                    Vec::default()
                 }
             }
-
-            // output
-            let scene_origin = origin - scene_translation;
-
-            let make_hit = |result: RaycastResult| -> RaycastHit {
-                RaycastHit {
-                    position: Some(Vector3::world_vec_from_vec3(
-                        &(scene_origin + direction * result.toi),
-                    )),
-                    global_origin: Some(Vector3::world_vec_from_vec3(&scene_origin)),
-                    direction: Some(Vector3::world_vec_from_vec3(&direction)),
-                    normal_hit: Some(Vector3::world_vec_from_vec3(&result.normal)),
-                    length: result.toi,
-                    mesh_name: result.id.name,
-                    entity_id: result.id.entity.as_proto_u32(),
+            (true, RaycastQueryType::RqtQueryAll) => {
+                let full_ray = direction * raycast.max_distance;
+                let mut results = Vec::new();
+                for (scene, _) in containing_scene.get_ray(origin, full_ray) {
+                    let Ok((scene, context, mut colliders, _)) = scene_context.get_mut(scene)
+                    else {
+                        continue;
+                    };
+                    if let Some(result) = colliders.cast_ray_nearest(
+                        context.last_update_frame,
+                        origin,
+                        direction,
+                        raycast.max_distance,
+                        mask,
+                    ) {
+                        results.push((scene, result));
+                    }
                 }
-            };
 
-            let result = PbRaycastResult {
-                timestamp: raycast.timestamp,
+                results
+            }
+            (_, RaycastQueryType::RqtNone) => Vec::default(),
+        };
+
+        // debug line showing raycast
+        if debug.0 {
+            let end = origin + direction * raycast.max_distance;
+            gizmos.line(origin, end, Color::BLUE);
+            if !continuous {
+                gizmo_cache.push((time.elapsed_seconds() + 1.0, origin, end));
+            }
+        }
+
+        // output
+        let scene_origin = origin - scene_translation;
+
+        let make_hit = |(scene, result): (Entity, RaycastResult)| -> RaycastHit {
+            RaycastHit {
+                position: Some(Vector3::world_vec_from_vec3(
+                    &(scene_origin + direction * result.toi),
+                )),
                 global_origin: Some(Vector3::world_vec_from_vec3(&scene_origin)),
                 direction: Some(Vector3::world_vec_from_vec3(&direction)),
-                hits: results.into_iter().map(make_hit).collect(),
-                tick_number: context.tick_number,
-            };
+                normal_hit: Some(Vector3::world_vec_from_vec3(&result.normal)),
+                length: result.toi,
+                // only pass details for hits on current scene entities
+                mesh_name: if scene == scene_ent.root {
+                    result.id.name
+                } else {
+                    None
+                },
+                entity_id: if scene == scene_ent.root {
+                    result.id.entity.as_proto_u32()
+                } else {
+                    None
+                },
+            }
+        };
 
-            context.update_crdt(
-                SceneComponentId::RAYCAST_RESULT,
-                CrdtType::LWW_ENT,
-                scene_ent.id,
-                &result,
-            );
-        }
+        // lookup again as global raycasts require access to other contexts
+        let mut context = scene_context
+            .get_component_mut::<RendererSceneContext>(scene_ent.root)
+            .unwrap();
+
+        let result = PbRaycastResult {
+            timestamp: raycast.timestamp,
+            global_origin: Some(Vector3::world_vec_from_vec3(&scene_origin)),
+            direction: Some(Vector3::world_vec_from_vec3(&direction)),
+            hits: results.into_iter().map(make_hit).collect(),
+            tick_number: context.tick_number,
+        };
+
+        context.update_crdt(
+            SceneComponentId::RAYCAST_RESULT,
+            CrdtType::LWW_ENT,
+            scene_ent.id,
+            &result,
+        );
     }
 }

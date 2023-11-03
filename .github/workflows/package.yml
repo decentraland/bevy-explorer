@@ -9,7 +9,7 @@ jobs:
         runs-on: ubuntu-22.04
         outputs:
             package_prefix: bevy-explorer-${{ steps.current_time_underscores.outputs.formattedTime }}
-            tag_name: prealpha-${{ steps.current_time_dashes.outputs.formattedTime }}
+            tag_name: alpha-${{ steps.current_time_dashes.outputs.formattedTime }}
         if: github.repository == 'decentraland/bevy-explorer' || github.event_name == 'workflow_dispatch'
         steps:
           - name: Clone repo
@@ -30,7 +30,7 @@ jobs:
           - name: Create release
             id: create_release
             run: |
-                tag_name="prealpha-${{ steps.current_time_dashes.outputs.formattedTime }}"
+                tag_name="alpha-${{ steps.current_time_dashes.outputs.formattedTime }}"
                 release_name="Release ${{ steps.current_time_dashes.outputs.formattedTime }}"
                 gh release create "$tag_name" --title "$release_name" --generate-notes --prerelease
             env:

@@ -9,12 +9,14 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use bevy_mod_billboard::BillboardTextBundle;
+use colliders::AvatarColliderPlugin;
 use serde::Deserialize;
 use urn::Urn;
 
 pub mod animate;
 pub mod attach;
 pub mod base_wearables;
+pub mod colliders;
 pub mod foreign_dynamics;
 pub mod mask_material;
 
@@ -55,6 +57,7 @@ impl Plugin for AvatarPlugin {
         app.add_plugins(PlayerMovementPlugin);
         app.add_plugins(AvatarAnimationPlugin);
         app.add_plugins(AttachPlugin);
+        app.add_plugins(AvatarColliderPlugin);
         app.init_resource::<WearablePointers>();
         app.init_resource::<WearableMetas>();
         app.add_systems(Update, load_base_wearables);
@@ -352,7 +355,7 @@ fn select_avatar(
     struct AvatarUpdate {
         base_name: String,
         update_shape: Option<PbAvatarShape>,
-        active_scene: Option<Entity>,
+        active_scenes: HashSet<Entity>,
         prev_source: Option<Entity>,
         current_source: Option<Entity>,
     }
@@ -370,7 +373,7 @@ fn select_avatar(
             AvatarUpdate {
                 base_name: base_shape.0.name.clone().unwrap_or_else(|| "Guest".into()),
                 update_shape: changed.then_some(base_shape.0.clone()),
-                active_scene: containing_scene.get(entity),
+                active_scenes: containing_scene.get(entity),
                 prev_source: maybe_prev_selection
                     .as_ref()
                     .map(|prev| prev.scene)
@@ -404,7 +407,7 @@ fn select_avatar(
             continue;
         };
 
-        if Some(scene_ent.root) != update.active_scene {
+        if !update.active_scenes.contains(&scene_ent.root) {
             continue;
         }
 

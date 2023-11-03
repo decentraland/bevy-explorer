@@ -59,6 +59,7 @@ impl SceneComponentId {
     pub const MESH_RENDERER: SceneComponentId = SceneComponentId(1018);
     pub const MESH_COLLIDER: SceneComponentId = SceneComponentId(1019);
     pub const AUDIO_SOURCE: SceneComponentId = SceneComponentId(1020);
+    pub const AUDIO_STREAM: SceneComponentId = SceneComponentId(1021);
 
     pub const TEXT_SHAPE: SceneComponentId = SceneComponentId(1030);
 
@@ -66,6 +67,7 @@ impl SceneComponentId {
     pub const ANIMATOR: SceneComponentId = SceneComponentId(1042);
 
     pub const VIDEO_PLAYER: SceneComponentId = SceneComponentId(1043);
+    pub const VIDEO_EVENT: SceneComponentId = SceneComponentId(1044);
 
     pub const ENGINE_INFO: SceneComponentId = SceneComponentId(1048);
     pub const GLTF_CONTAINER_LOADING_STATE: SceneComponentId = SceneComponentId(1049);
@@ -82,6 +84,7 @@ impl SceneComponentId {
     pub const RAYCAST: SceneComponentId = SceneComponentId(1067);
     pub const RAYCAST_RESULT: SceneComponentId = SceneComponentId(1068);
 
+    pub const AVATAR_MODIFIER_AREA: SceneComponentId = SceneComponentId(1070);
     pub const CAMERA_MODE_AREA: SceneComponentId = SceneComponentId(1071);
     pub const CAMERA_MODE: SceneComponentId = SceneComponentId(1072);
 

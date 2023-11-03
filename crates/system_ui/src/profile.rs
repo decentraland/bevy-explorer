@@ -4,8 +4,8 @@ use bevy::{prelude::*, ui::FocusPolicy, utils::HashMap};
 use urn::Urn;
 
 use avatar::{WearableCategory, WearableMetas, WearablePointerResult, WearablePointers};
-use common::util::TryInsertEx;
-use comms::profile::{AvatarColor, CurrentUserProfile};
+use common::{profile::AvatarColor, util::TryInsertEx};
+use comms::profile::CurrentUserProfile;
 use ipfs::IpfsLoaderExt;
 use ui_core::{
     color_picker::ColorPicker,

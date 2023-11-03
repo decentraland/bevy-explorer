@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;
 use common::structs::AudioDecoderError;
+use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::format::input;
+use ipfs::IpfsLoaderExt;
 use isahc::ReadResponseExt;
 use kira::sound::streaming::StreamingSoundData;
 
@@ -26,7 +28,9 @@ pub struct VideoSink {
 }
 
 pub fn av_sinks(
+    asset_server: AssetServer,
     source: String,
+    hash: String,
     image: Handle<Image>,
     volume: f32,
     playing: bool,
@@ -34,9 +38,16 @@ pub fn av_sinks(
 ) -> (VideoSink, AudioSink) {
     let (command_sender, command_receiver) = tokio::sync::mpsc::channel(10);
     let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
-    let (audio_sender, audio_receiver) = tokio::sync::mpsc::channel(1);
+    let (audio_sender, audio_receiver) = tokio::sync::mpsc::channel(10);
 
-    spawn_av_thread(command_receiver, video_sender, audio_sender, source.clone());
+    spawn_av_thread(
+        asset_server,
+        command_receiver,
+        video_sender,
+        audio_sender,
+        source.clone(),
+        hash,
+    );
 
     if playing {
         command_sender.blocking_send(AVCommand::Play).unwrap();
@@ -51,7 +62,7 @@ pub fn av_sinks(
             command_sender: command_sender.clone(),
             video_receiver,
             image,
-            current_time: 0.0,
+            current_time: -1.0,
             length: None,
             rate: None,
         },
@@ -60,21 +71,26 @@ pub fn av_sinks(
 }
 
 pub fn spawn_av_thread(
+    asset_server: AssetServer,
     commands: tokio::sync::mpsc::Receiver<AVCommand>,
     frames: tokio::sync::mpsc::Sender<VideoData>,
     audio: tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
     path: String,
+    hash: String,
 ) {
-    std::thread::spawn(move || av_thread(commands, frames, audio, path));
+    std::thread::spawn(move || av_thread(asset_server, commands, frames, audio, path, hash));
 }
 
 fn av_thread(
+    asset_server: AssetServer,
     commands: tokio::sync::mpsc::Receiver<AVCommand>,
     frames: tokio::sync::mpsc::Sender<VideoData>,
     audio: tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
     path: String,
+    hash: String,
 ) {
-    if let Err(e) = av_thread_inner(commands, frames, audio, path) {
+    if let Err(e) = av_thread_inner(asset_server, commands, frames.clone(), audio, path, hash) {
+        let _ = frames.blocking_send(VideoData::State(VideoState::VsError));
         warn!("av error: {e}");
     } else {
         debug!("av closed");
@@ -82,11 +98,42 @@ fn av_thread(
 }
 
 pub fn av_thread_inner(
+    asset_server: AssetServer,
     commands: tokio::sync::mpsc::Receiver<AVCommand>,
     video: tokio::sync::mpsc::Sender<VideoData>,
     audio: tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
     mut path: String,
+    hash: String,
 ) -> Result<(), anyhow::Error> {
+    let _ = video.blocking_send(VideoData::State(VideoState::VsLoading));
+    debug!("av thread spawned for {path} ...");
+    let download = |url: &str| -> Result<String, anyhow::Error> {
+        let local_folder = PathBuf::from("assets/video_downloads");
+        let local_path = local_folder.join(Path::new(urlencoding::encode(url).as_ref()));
+
+        if std::fs::File::open(&local_path).is_err() {
+            let mut resp = isahc::get(url)?;
+            let data = resp.bytes()?;
+            std::fs::create_dir_all(&local_folder)?;
+            std::fs::write(&local_path, data)?;
+        }
+        Ok(local_path.to_string_lossy().to_string())
+    };
+
+    // source might be a content map file or a url
+    if let Some(content_url) = asset_server.ipfs().content_url(&path, &hash) {
+        // check if it changed as content_url will return Some(path) when not found and path is url-compliant.
+        // if it is a raw url we don't want to download initially as some servers reject http get requests on videos.
+        if content_url != path {
+            // for content paths we download
+            debug!(
+                "content map file {} -> {}, downloading ...",
+                path, content_url
+            );
+            path = download(&content_url)?;
+        }
+    };
+
     let mut input_context = input(&path)?;
 
     // try and get a video context
@@ -96,13 +143,7 @@ pub fn av_thread_inner(
             Err(VideoError::BadPixelFormat) => {
                 // try to workaround ffmpeg remote streaming issue by downloading the file
                 debug!("failed to determine pixel format - downloading ...");
-                let mut resp = isahc::get(&path)?;
-                let data = resp.bytes()?;
-                let local_folder = PathBuf::from("assets/video_downloads");
-                std::fs::create_dir_all(&local_folder)?;
-                let local_path = local_folder.join(Path::new(urlencoding::encode(&path).as_ref()));
-                std::fs::write(&local_path, data)?;
-                path = local_path.to_string_lossy().to_string();
+                let path = download(&path)?;
                 input_context = input(&path)?;
                 Some(VideoContext::init(&input_context, video).map_err(|e| anyhow::anyhow!(e))?)
             }

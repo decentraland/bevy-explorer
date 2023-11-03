@@ -59,3 +59,14 @@ pub fn append_component(
 
     buf
 }
+
+pub fn delete_entity(entity_id: &SceneEntityId) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(12);
+    let mut writer = DclWriter::new(&mut buf);
+
+    writer.write_u32(12);
+    writer.write(&CrdtMessageType::DeleteEntity);
+    writer.write(entity_id);
+
+    buf
+}

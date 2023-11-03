@@ -4,8 +4,6 @@ use bevy::prelude::{Quat, Transform, Vec3};
 
 use super::{DclReader, DclReaderError, FromDclReader, SceneEntityId, ToDclWriter};
 
-use common::util::QuatNormalizeExt;
-
 // for dcl: +z -> forward
 // for bevy: +z -> backward
 // DclTranslation internal format is wire format (+z = forward)
@@ -105,9 +103,16 @@ pub struct DclTransformAndParent {
 
 impl DclTransformAndParent {
     pub fn to_bevy_transform(&self) -> Transform {
+        let rotation = self.rotation.to_bevy_quat().normalize();
+        let rotation = if rotation.is_finite() {
+            rotation
+        } else {
+            bevy::prelude::Quat::IDENTITY
+        };
+
         Transform {
             translation: self.translation.to_bevy_translation(),
-            rotation: self.rotation.to_bevy_quat().normalize_or_identity(),
+            rotation,
             scale: self.scale,
         }
     }

@@ -465,7 +465,7 @@ fn check_gltfs_ready(
     }
 
     for (root, mut context) in scenes.iter_mut() {
-        if unready_scenes.contains(&root) && context.tick_number == 0 {
+        if unready_scenes.contains(&root) && context.tick_number <= 5 {
             debug!("{root:?} blocked on gltfs");
             context.blocked.insert(GLTF_LOADING);
         } else {
