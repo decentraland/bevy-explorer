@@ -243,7 +243,7 @@ pub struct SceneMeta {
     pub main: String,
     pub scene: SceneMetaScene,
     pub runtime_version: Option<String>,
-    pub spawn_points: Vec<SpawnPoint>,
+    pub spawn_points: Option<Vec<SpawnPoint>>,
 }
 
 #[derive(TypeUuid, Default, Clone, TypePath)]
@@ -379,7 +379,7 @@ pub(crate) fn load_scene_javascript(
             is_portable,
             title,
             base,
-            meta.spawn_points.clone(),
+            meta.spawn_points.clone().unwrap_or_default(),
             root,
             size,
             1.0,
