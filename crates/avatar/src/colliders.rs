@@ -13,7 +13,10 @@ use rapier3d_f64::{
 };
 use scene_runner::{
     update_scene::pointer_results::{PointerTarget, UiPointerTarget},
-    update_world::mesh_collider::{ColliderId, SceneColliderData},
+    update_world::{
+        avatar_modifier_area::PlayerModifiers,
+        mesh_collider::{ColliderId, SceneColliderData},
+    },
 };
 use serde_json::json;
 use ui_core::dialog::SpawnDialog;
@@ -106,7 +109,7 @@ fn update_avatar_collider_actions(
     pointer_target: Res<PointerTarget>,
     frame: Res<FrameCount>,
     mut tooltips: ResMut<ToolTips>,
-    profiles: Query<(&ForeignPlayer, &UserProfile)>,
+    profiles: Query<(&ForeignPlayer, &UserProfile, &PlayerModifiers)>,
     mouse_input: Res<Input<MouseButton>>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
@@ -177,9 +180,14 @@ fn update_avatar_collider_actions(
         );
 
         if mouse_input.just_pressed(MouseButton::Middle) {
-            let Ok((player, profile)) = profiles.get(*avatar) else {
+            let Ok((player, profile, modifiers)) = profiles.get(*avatar) else {
                 return;
             };
+
+            // check modifier
+            if modifiers.hide_profile {
+                return;
+            }
 
             // send event
             let event = json!({

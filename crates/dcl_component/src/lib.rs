@@ -84,6 +84,7 @@ impl SceneComponentId {
     pub const RAYCAST: SceneComponentId = SceneComponentId(1067);
     pub const RAYCAST_RESULT: SceneComponentId = SceneComponentId(1068);
 
+    pub const AVATAR_MODIFIER_AREA: SceneComponentId = SceneComponentId(1070);
     pub const CAMERA_MODE_AREA: SceneComponentId = SceneComponentId(1071);
     pub const CAMERA_MODE: SceneComponentId = SceneComponentId(1072);
 

@@ -36,6 +36,7 @@ fn main() -> Result<()> {
         "audio_stream",
         "video_event",
         "visibility_component",
+        "avatar_modifier_area",
     ];
 
     let mut sources = components

@@ -14,7 +14,8 @@ use dcl::{
 use dcl_component::{DclReader, FromDclReader, SceneComponentId};
 
 use self::{
-    animation::AnimatorPlugin, billboard::BillboardPlugin, camera_mode_area::CameraModeAreaPlugin,
+    animation::AnimatorPlugin, avatar_modifier_area::AvatarModifierAreaPlugin,
+    billboard::BillboardPlugin, camera_mode_area::CameraModeAreaPlugin,
     gltf_container::GltfDefinitionPlugin, material::MaterialDefinitionPlugin,
     mesh_collider::MeshColliderPlugin, mesh_renderer::MeshDefinitionPlugin,
     pointer_events::PointerEventsPlugin, raycast::RaycastPlugin, scene_ui::SceneUiPlugin,
@@ -25,6 +26,7 @@ use self::{
 use super::{DeletedSceneEntities, RendererSceneContext, SceneLoopSchedule, SceneLoopSets};
 
 pub mod animation;
+pub mod avatar_modifier_area;
 pub mod billboard;
 pub mod camera_mode_area;
 pub mod gltf_container;
@@ -159,6 +161,7 @@ impl Plugin for SceneOutputPlugin {
         app.add_plugins(TextShapePlugin);
         app.add_plugins(CameraModeAreaPlugin);
         app.add_plugins(VisibilityComponentPlugin);
+        app.add_plugins(AvatarModifierAreaPlugin);
     }
 }
 
