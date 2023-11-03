@@ -77,6 +77,11 @@ pub enum RpcCall {
         scene: Entity,
         to: Transform,
     },
+    TeleportPlayer {
+        scene: Entity,
+        to: IVec2,
+        response: RpcResultSender<Result<(), String>>,
+    },
     MoveCamera(Quat),
     SpawnPortable {
         location: PortableLocation,

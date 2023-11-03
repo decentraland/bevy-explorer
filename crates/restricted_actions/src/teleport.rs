@@ -1,5 +1,6 @@
+use avatar::AvatarDynamicState;
 use bevy::{math::Vec3Swizzles, prelude::*};
-use common::structs::PrimaryUser;
+use common::{rpc::RpcCall, structs::PrimaryUser, util::TryInsertEx};
 use comms::global_crdt::ForeignPlayer;
 use ethers_core::rand::{seq::SliceRandom, thread_rng, Rng};
 use scene_runner::{
@@ -7,8 +8,71 @@ use scene_runner::{
         LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, PARCEL_SIZE,
     },
     renderer_context::RendererSceneContext,
-    OutOfWorld,
+    ContainingScene, OutOfWorld,
 };
+use ui_core::dialog::SpawnDialog;
+
+pub fn teleport_player(
+    mut commands: Commands,
+    mut events: EventReader<RpcCall>,
+    player: Query<(Entity, &Transform), With<PrimaryUser>>,
+    containing_scene: ContainingScene,
+) {
+    for (root, parcel, response) in events.iter().filter_map(|ev| match ev {
+        RpcCall::TeleportPlayer {
+            scene,
+            to,
+            response,
+        } => Some((*scene, *to, response.clone())),
+        _ => None,
+    }) {
+        if !player
+            .get_single()
+            .ok()
+            .map_or(false, |(e, ..)| containing_scene.get(e).contains(&root))
+        {
+            warn!("invalid teleport request from non-containing scene");
+            warn!("request from {root:?}");
+            warn!(
+                "containing scenes {:?}",
+                player.get_single().map(|p| containing_scene.get(p.0))
+            );
+            return;
+        }
+
+        let response_fail = response.clone();
+
+        commands.spawn_dialog_two(
+            "Teleport".into(),
+            format!("The scene wants to teleport you to another location: {},{}\ntodo: put scene name and thumbnail here", parcel.x, parcel.y),
+            "Let's go!",
+            move |mut commands: Commands,
+                  mut player: Query<
+                (Entity, &mut Transform, &mut AvatarDynamicState),
+                With<PrimaryUser>,
+            >| {
+                let Ok((ent, mut transform, mut dynamic_state)) = player.get_single_mut() else {
+                    warn!("player doesn't exist?!");
+                    response.send(Err("Something went wrong".into()));
+                    return;
+                };
+
+                transform.translation.x = parcel.x as f32 * 16.0 + 8.0;
+                transform.translation.z = -parcel.y as f32 * 16.0 - 8.0;
+                dynamic_state.velocity = Vec3::ZERO;
+                if let Some(mut commands) = commands.get_entity(ent) {
+                    commands.try_insert(OutOfWorld);
+                }
+
+                response.send(Ok(()));
+            },
+            "No thanks",
+            move || {
+                response_fail.send(Err("User said no thanks".into()));
+            },
+        );
+    }
+}
 
 #[allow(clippy::type_complexity)]
 pub fn handle_out_of_world(

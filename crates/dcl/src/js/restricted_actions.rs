@@ -22,6 +22,7 @@ use super::RpcCalls;
 pub fn ops() -> Vec<OpDecl> {
     vec![
         op_move_player_to::DECL,
+        op_teleport_to::DECL,
         op_change_realm::DECL,
         op_external_url::DECL,
         op_emote::DECL,
@@ -109,6 +110,22 @@ fn op_move_player_to(
             Some(&mut DclReader::new(&buf)),
         );
     }
+}
+
+#[op]
+async fn op_teleport_to(state: Rc<RefCell<OpState>>, position: [i32; 2]) -> bool {
+    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
+    state
+        .borrow_mut()
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::TeleportPlayer {
+            scene,
+            to: position.into(),
+            response: sx.into(),
+        });
+
+    matches!(rx.await, Ok(Ok(_)))
 }
 
 #[op]

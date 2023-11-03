@@ -29,7 +29,7 @@ use scene_runner::{
     ContainingScene, SceneEntity,
 };
 use serde_json::json;
-use teleport::handle_out_of_world;
+use teleport::{handle_out_of_world, teleport_player};
 use ui_core::dialog::SpawnDialog;
 use wallet::Wallet;
 
@@ -55,6 +55,7 @@ impl Plugin for RestrictedActionsPlugin {
                 event_player_moved_scene,
                 event_scene_ready,
                 send_scene_messages,
+                teleport_player,
                 handle_out_of_world,
             )
                 .in_set(SceneSets::PostLoop),
@@ -63,7 +64,6 @@ impl Plugin for RestrictedActionsPlugin {
 }
 
 fn move_player(
-    mut commands: Commands,
     mut events: EventReader<RpcCall>,
     scenes: Query<&RendererSceneContext>,
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
@@ -97,16 +97,7 @@ fn move_player(
 
         let target_scenes = containing_scene.get_position(target_transform.translation);
         if !target_scenes.contains(root) {
-            commands.spawn_dialog_two(
-                "Teleport".into(),
-                "The scene wants to teleport you to another location".into(),
-                "Let's go!",
-                move |mut player: Query<&mut Transform, With<PrimaryUser>>| {
-                    *player.single_mut() = target_transform;
-                },
-                "No thanks",
-                || {},
-            );
+            warn!("move player request from {root:?} was outside scene bounds");
         } else {
             let (_, mut player_transform, mut dynamics) = player.single_mut();
             dynamics.velocity =
