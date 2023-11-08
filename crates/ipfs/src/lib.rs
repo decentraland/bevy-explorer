@@ -369,7 +369,7 @@ impl Plugin for IpfsIoPlugin {
         info!("remote server: {:?}", self.starting_realm);
 
         let file_path = self.cache_root.clone().unwrap_or("assets".to_owned());
-        let default_reader = FileAssetReader::new(&file_path);
+        let default_reader = FileAssetReader::new(file_path);
         let cache_root = default_reader.root_path().to_owned();
 
         let static_paths = HashMap::from_iter([("genesis_tx.png", "images/genesis_tx.png")]);
