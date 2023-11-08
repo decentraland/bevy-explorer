@@ -753,7 +753,8 @@ pub fn process_scene_lifecycle(
     range: Res<SceneLoadDistance>,
     mut live_scenes: ResMut<LiveScenes>,
     mut spawn: EventWriter<LoadSceneEvent>,
-    pointers: Res<ScenePointers>,
+    mut pointers: ResMut<ScenePointers>,
+    loading_scenes: Query<&SceneLoading>,
 ) {
     let mut required_scene_ids: HashSet<(String, Option<String>)> = HashSet::default();
 
@@ -768,6 +769,8 @@ pub fn process_scene_lifecycle(
                 .map(|hash| (hash, Some(hacked_urn)))
         }))
     }
+
+    let using_global_scene_list = !required_scene_ids.is_empty();
 
     // otherwise add nearby scenes to requirements
     if required_scene_ids.is_empty() {
@@ -825,10 +828,12 @@ pub fn process_scene_lifecycle(
     }
 
     // spawn any newly required scenes
+    let mut any_spawning = false;
     for (required_scene_hash, maybe_urn) in required_scene_ids
         .iter()
         .filter(|(hash, _)| !existing_ids.contains(hash))
     {
+        any_spawning = true;
         let entity = commands
             .spawn((
                 SceneHash(required_scene_hash.clone()),
@@ -844,6 +849,22 @@ pub fn process_scene_lifecycle(
                 None => SceneIpfsLocation::Hash(required_scene_hash.to_owned()),
             },
         })
+    }
+
+    // add nothing to current location if all scenes are loaded and nothing is in the current parcel 
+    // (workaround for teleport.rs testing for Pointer::Nothing)
+    if using_global_scene_list && !any_spawning && loading_scenes.is_empty() {
+        let Ok(focus) = focus.get_single() else {
+            return;
+        };
+
+        let parcel = (focus.translation().xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
+            .floor()
+            .as_ivec2();
+
+        if pointers.0.get(&parcel).is_none() {
+            pointers.0.insert(parcel, PointerResult::Nothing(parcel.x, parcel.y));
+        }
     }
 }
 
