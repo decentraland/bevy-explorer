@@ -1,6 +1,9 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
-use bevy::prelude::{debug, error, info_span, AssetServer};
+use bevy::{
+    prelude::AssetServer,
+    utils::tracing::{debug, error, info_span},
+};
 use deno_core::{
     anyhow::anyhow,
     ascii_str,

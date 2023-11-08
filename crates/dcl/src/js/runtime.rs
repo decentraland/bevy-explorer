@@ -1,5 +1,5 @@
-use bevy::asset::{AssetIo, AssetServer};
-use deno_core::{anyhow::anyhow, error::AnyError, op, Op, OpDecl, OpState};
+use bevy::asset::{io::AssetReader, AssetServer};
+use deno_core::{anyhow::anyhow, error::AnyError, futures::AsyncReadExt, op, Op, OpDecl, OpState};
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},
     IpfsLoaderExt,
@@ -33,10 +33,11 @@ async fn op_read_file(
     let asset_server = op_state.borrow_mut().borrow::<AssetServer>().clone();
     let hash = op_state.borrow_mut().borrow::<CrdtContext>().hash.clone();
     let ipfs_path = IpfsPath::new(IpfsType::new_content_file(hash, filename));
+    let ipfs_pathbuf = PathBuf::from(&ipfs_path);
 
-    let content = asset_server
+    let mut reader = asset_server
         .ipfs()
-        .load_path(&PathBuf::from(&ipfs_path))
+        .read(&ipfs_pathbuf)
         .await
         .map_err(|e| anyhow!(e))?;
     let hash = asset_server
@@ -44,6 +45,9 @@ async fn op_read_file(
         .ipfs_hash(&ipfs_path)
         .await
         .unwrap_or_default();
+
+    let mut content = Vec::default();
+    reader.read_to_end(&mut content).await?;
 
     Ok(ReadFileResponse { content, hash })
 }

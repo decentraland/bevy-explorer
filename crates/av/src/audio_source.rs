@@ -6,7 +6,6 @@ use bevy_kira_audio::{
 use common::{
     sets::{SceneSets, SetupSets},
     structs::{PrimaryCameraRes, PrimaryUser},
-    util::TryInsertEx,
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{proto_components::sdk::components::PbAudioSource, SceneComponentId};

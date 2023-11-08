@@ -1,8 +1,8 @@
 // Engine module
 
 use bevy::{
-    prelude::{debug, info, info_span, warn},
     utils::tracing::span::EnteredSpan,
+    utils::tracing::{debug, info, info_span, warn},
 };
 use deno_core::{op, Op, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};

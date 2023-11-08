@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use common::util::TryInsertEx;
+// use common::util::TryInsertEx;
 
 /// specify a background image using 9-slice scaling
 /// https://en.wikipedia.org/wiki/9-slice_scaling
@@ -60,7 +60,7 @@ fn update_slices(
     mut removed: RemovedComponents<Ui9Slice>,
 ) {
     // clean up removed slices
-    for ent in removed.iter() {
+    for ent in removed.read() {
         if let Ok(children) = children_query.get(ent) {
             if let Some(slice_ent) = children
                 .iter()
@@ -78,17 +78,17 @@ fn update_slices(
         };
 
         // calculate sizes
-        let image_size = image_data.size();
+        let image_size = image_data.size_f32();
 
         let top_px = slice
             .center_region
             .top
-            .evaluate(image_size.y)
+            .resolve(image_size.y, Vec2::ZERO)
             .unwrap_or(0.0);
         let bottom_px = slice
             .center_region
             .bottom
-            .evaluate(image_size.y)
+            .resolve(image_size.y, Vec2::ZERO)
             .unwrap_or(0.0);
         let middle_height_px = image_size.y - top_px - bottom_px;
 
@@ -119,12 +119,12 @@ fn update_slices(
         let left_px = slice
             .center_region
             .left
-            .evaluate(image_size.x)
+            .resolve(image_size.x, Vec2::ZERO)
             .unwrap_or(0.0);
         let right_px = slice
             .center_region
             .right
-            .evaluate(image_size.x)
+            .resolve(image_size.x, Vec2::ZERO)
             .unwrap_or(0.0);
         let middle_width_px = image_size.x - left_px - right_px;
 

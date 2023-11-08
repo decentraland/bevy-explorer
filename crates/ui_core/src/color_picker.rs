@@ -2,7 +2,6 @@ use bevy::{math::Vec3Swizzles, prelude::*, window::PrimaryWindow};
 use bevy_egui::{egui, EguiContext};
 
 use crate::ui_actions::DataChanged;
-use common::util::TryInsertEx;
 
 use super::focus::Focus;
 

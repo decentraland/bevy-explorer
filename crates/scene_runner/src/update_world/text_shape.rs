@@ -38,7 +38,7 @@ fn update_text_shapes(
     let old_parents = query
         .iter()
         .map(|(e, ..)| e)
-        .chain(removed.iter())
+        .chain(removed.read())
         .collect::<HashSet<_>>();
     for (ent, par) in existing.iter() {
         if old_parents.contains(&par.get()) {

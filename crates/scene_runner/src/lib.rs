@@ -7,7 +7,7 @@ use std::{
 
 use bevy::{
     core::FrameCount,
-    ecs::{query::Has, system::SystemParam},
+    ecs::{query::Has, schedule::ScheduleLabel, system::SystemParam},
     math::Vec3Swizzles,
     prelude::*,
     scene::scene_spawner_system,
@@ -165,6 +165,9 @@ pub struct SceneLoopSchedule {
     sleeper: SpinSleeper,
 }
 
+#[derive(ScheduleLabel, Hash, PartialEq, Eq, Clone, Copy, Debug)]
+pub struct SceneLoopLabel;
+
 impl Plugin for SceneRunnerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CrdtExtractors>();
@@ -238,7 +241,7 @@ impl Plugin for SceneRunnerPlugin {
                 .in_set(SceneSets::RunLoop),
         );
 
-        let mut scene_schedule = Schedule::new();
+        let mut scene_schedule = Schedule::new(SceneLoopLabel);
 
         scene_schedule.configure_sets(
             (

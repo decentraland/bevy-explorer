@@ -24,7 +24,6 @@ use common::{
         AppConfig, AttachPoints, GraphicsSettings, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
         SceneLoadDistance,
     },
-    util::TryInsertEx,
 };
 use restricted_actions::RestrictedActionsPlugin;
 use scene_runner::{
@@ -227,7 +226,7 @@ fn main() {
         app.world.insert_resource(NoGltf(true));
     }
 
-    app.configure_set(Startup, SetupSets::Init.before(SetupSets::Main));
+    app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
 
     app.add_plugins(bevy_mod_billboard::prelude::BillboardPlugin)
         .add_plugins(InputManagerPlugin)

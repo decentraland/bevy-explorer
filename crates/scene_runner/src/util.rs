@@ -4,7 +4,7 @@ use std::{
 };
 
 use bevy::{
-    asset::AssetIo,
+    asset::io::AssetReader,
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
@@ -12,6 +12,7 @@ use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use clap::builder::StyledStr;
 use common::structs::PrimaryUser;
 use console::DoAddConsoleCommand;
+use futures_lite::AsyncReadExt;
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},
     EntityDefinition, IpfsLoaderExt,
@@ -126,12 +127,17 @@ fn debug_dump_scene(
                         }
                     };
 
-                    let Ok(bytes) = asset_server.ipfs().load_path(&path).await else {
+                    let Ok(mut reader) = asset_server.ipfs().read(&path).await else {
                         report(Some(format!(
                             "{content_file} failed: couldn't load bytes\n"
                         )));
                         return;
                     };
+                    let mut bytes = Vec::default();
+                    if let Err(e) = reader.read_to_end(&mut bytes).await {
+                        report(Some(format!("{content_file} failed: {e}")));
+                        return;
+                    }
 
                     let file = dump_folder.join(&content_file);
                     if let Some(parent) = file.parent() {

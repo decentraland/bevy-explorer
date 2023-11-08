@@ -35,7 +35,7 @@ pub fn start_signed_login(
     mut manager: AdapterManager,
 ) {
     if let Some(ev) = signed_login_events
-        .iter(&manager.signed_login_events)
+        .read(&manager.signed_login_events)
         .last()
     {
         info!("starting signed login");

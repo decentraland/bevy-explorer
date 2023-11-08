@@ -18,10 +18,7 @@ use prost::Message;
 use serde_json::json;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use common::{
-    rpc::{RpcCall, RpcEventSender},
-    util::TryInsertEx,
-};
+use common::rpc::{RpcCall, RpcEventSender};
 use wallet::{SimpleAuthChain, Wallet};
 
 use crate::{AdapterManager, Transport, TransportType};
@@ -101,7 +98,7 @@ pub struct ArchipelagoInitTask(Task<Result<(WssStream, WelcomeMessage), anyhow::
 pub struct ArchipelagoConnection(Task<(Receiver<NetworkMessage>, anyhow::Error)>);
 
 pub fn start_archipelago(mut commands: Commands, mut archi_events: EventReader<StartArchipelago>) {
-    if let Some(ev) = archi_events.iter().last() {
+    if let Some(ev) = archi_events.read().last() {
         info!("starting archipelago protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
 
@@ -129,7 +126,7 @@ fn manage_islands(
     mut senders: Local<Vec<RpcEventSender>>,
     mut events: EventReader<RpcCall>,
 ) {
-    for sender in events.iter().filter_map(|ev| match ev {
+    for sender in events.read().filter_map(|ev| match ev {
         RpcCall::SubscribeRealmChanged { sender } => Some(sender),
         _ => None,
     }) {

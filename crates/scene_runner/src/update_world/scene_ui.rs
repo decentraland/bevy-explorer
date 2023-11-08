@@ -11,7 +11,7 @@ use crate::{
     renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
     ContainingScene, SceneEntity, SceneSets,
 };
-use common::{structs::PrimaryUser, util::TryInsertEx};
+use common::structs::PrimaryUser;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{

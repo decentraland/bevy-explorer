@@ -1,11 +1,9 @@
+use crate::ui_actions::DataChanged;
 use bevy::{math::Vec3Swizzles, prelude::*, utils::HashSet, window::PrimaryWindow};
 use bevy_egui::{
     egui::{self, TextEdit},
     EguiContext,
 };
-use common::util::TryInsertEx;
-
-use crate::ui_actions::DataChanged;
 
 use super::focus::Focus;
 
@@ -54,7 +52,7 @@ pub fn update_text_entry_components(
     };
     let ctx = ctx.get_mut();
 
-    let lost_focus = lost_focus.iter().collect::<HashSet<_>>();
+    let lost_focus = lost_focus.read().collect::<HashSet<_>>();
 
     for (entity, mut textbox, style, node, transform, maybe_interaction, maybe_focus) in
         text_entries.iter_mut()

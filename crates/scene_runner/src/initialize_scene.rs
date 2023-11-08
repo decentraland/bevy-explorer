@@ -1,18 +1,16 @@
 use std::ops::Range;
 
 use bevy::{
-    asset::{AssetLoader, LoadedAsset},
+    asset::{io::Reader, AssetLoader, LoadContext},
     math::Vec3Swizzles,
     prelude::*,
-    reflect::{TypePath, TypeUuid},
-    utils::{HashMap, HashSet},
+    reflect::TypePath,
+    utils::{BoxedFuture, HashMap, HashSet},
 };
+use futures_lite::AsyncReadExt;
 use serde::Deserialize;
 
-use common::{
-    structs::SceneLoadDistance,
-    util::{TaskExt, TryInsertEx},
-};
+use common::{structs::SceneLoadDistance, util::TaskExt};
 use comms::global_crdt::GlobalCrdtState;
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
@@ -34,17 +32,24 @@ use crate::{
     SceneThreadHandle,
 };
 
+#[derive(Default)]
 pub struct CrdtLoader;
 
 impl AssetLoader for CrdtLoader {
+    type Asset = SerializedCrdtStore;
+    type Error = std::io::Error;
+    type Settings = ();
+
     fn load<'a>(
         &'a self,
-        bytes: &'a [u8],
-        load_context: &'a mut bevy::asset::LoadContext,
-    ) -> bevy::utils::BoxedFuture<'a, anyhow::Result<(), anyhow::Error>> {
+        reader: &'a mut Reader,
+        _: &'a Self::Settings,
+        _: &'a mut LoadContext,
+    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
-            load_context.set_default_asset(LoadedAsset::new(SerializedCrdtStore(bytes.to_owned())));
-            Ok(())
+            let mut bytes = Vec::default();
+            reader.read_to_end(&mut bytes).await?;
+            Ok(SerializedCrdtStore(bytes))
         })
     }
 
@@ -60,8 +65,8 @@ impl Plugin for SceneLifecyclePlugin {
         app.init_resource::<LiveScenes>();
         app.init_resource::<ScenePointers>();
         app.init_resource::<PortableScenes>();
-        app.add_asset::<SerializedCrdtStore>();
-        app.add_asset_loader(CrdtLoader);
+        app.init_asset::<SerializedCrdtStore>();
+        app.init_asset_loader::<CrdtLoader>();
 
         app.add_systems(
             Update,
@@ -100,7 +105,7 @@ pub(crate) fn load_scene_entity(
     mut load_scene_events: EventReader<LoadSceneEvent>,
     asset_server: Res<AssetServer>,
 ) {
-    for event in load_scene_events.iter() {
+    for event in load_scene_events.read() {
         let mut commands = match event.entity {
             Some(entity) => {
                 let Some(commands) = commands.get_entity(entity) else {
@@ -142,7 +147,7 @@ pub(crate) fn load_scene_json(
             commands.entity(entity).try_insert(SceneLoading::Failed);
         };
 
-        match asset_server.get_load_state(h_scene) {
+        match asset_server.get_load_state(h_scene).unwrap() {
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed => {
                 fail("Scene entity could not be loaded");
@@ -246,8 +251,7 @@ pub struct SceneMeta {
     pub spawn_points: Option<Vec<SpawnPoint>>,
 }
 
-#[derive(TypeUuid, Default, Clone, TypePath)]
-#[uuid = "e5f49bd0-15b0-43c1-8609-00bf8e1d23d4"]
+#[derive(Asset, Default, Clone, TypePath)]
 pub struct SerializedCrdtStore(pub Vec<u8>);
 
 #[allow(clippy::too_many_arguments)]
@@ -276,7 +280,7 @@ pub(crate) fn load_scene_javascript(
             panic!("wrong load state in load_scene_javascript")
         };
         if let Some(ref h_crdt) = maybe_h_crdt {
-            match asset_server.get_load_state(h_crdt) {
+            match asset_server.get_load_state(h_crdt).unwrap() {
                 bevy::asset::LoadState::Loaded => (),
                 bevy::asset::LoadState::Failed => {
                     fail("scene.json could not be loaded");
@@ -499,7 +503,7 @@ pub(crate) fn initialize_scene(
             commands.entity(root).try_insert(SceneLoading::Failed);
         };
 
-        match asset_server.get_load_state(h_code) {
+        match asset_server.get_load_state(h_code).unwrap() {
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed => {
                 fail("main js could not be loaded");

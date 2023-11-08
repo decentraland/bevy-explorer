@@ -1,7 +1,6 @@
 use bevy::{ecs::system::SystemParam, pbr::NotShadowCaster, prelude::*, render::primitives::Aabb};
 
 use crate::{renderer_context::RendererSceneContext, ContainerEntity, SceneSets};
-use common::util::TryInsertEx;
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::{

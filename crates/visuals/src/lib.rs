@@ -12,7 +12,6 @@ use bevy_atmosphere::{
 use common::{
     sets::SetupSets,
     structs::{PrimaryCamera, PrimaryCameraRes, PrimaryUser, SceneLoadDistance},
-    util::TryInsertEx,
 };
 
 pub struct VisualsPlugin {

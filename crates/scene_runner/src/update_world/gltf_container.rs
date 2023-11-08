@@ -20,7 +20,6 @@ use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
 use crate::{renderer_context::RendererSceneContext, ContainerEntity, SceneEntity, SceneSets};
-use common::util::TryInsertEx;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{
@@ -201,7 +200,7 @@ fn update_gltf(
     }
 
     for (ent, scene_ent, h_gltf, def) in unprocessed_gltfs.iter() {
-        match asset_server.get_load_state(h_gltf) {
+        match asset_server.get_load_state(h_gltf).unwrap() {
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed => {
                 warn!("failed to process gltf: {}", def.0.src);

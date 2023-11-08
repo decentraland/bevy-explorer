@@ -1,6 +1,6 @@
 use bevy::{prelude::*, render::mesh::VertexAttributeValues};
 
-use common::{sets::SceneSets, util::TryInsertEx};
+use common::sets::SceneSets;
 
 use dcl::interface::ComponentPosition;
 use dcl_component::{
@@ -194,7 +194,7 @@ pub fn update_mesh(
         }
     }
 
-    for ent in removed_primitives.iter() {
+    for ent in removed_primitives.read() {
         if let Some(mut e) = commands.get_entity(ent) {
             e.remove::<Handle<Mesh>>();
         }

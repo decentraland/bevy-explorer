@@ -69,7 +69,7 @@ fn move_player(
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
     containing_scene: ContainingScene,
 ) {
-    for (root, transform) in events.iter().filter_map(|ev| match ev {
+    for (root, transform) in events.read().filter_map(|ev| match ev {
         RpcCall::MovePlayer { scene, to } => Some((scene, to)),
         _ => None,
     }) {
@@ -109,7 +109,7 @@ fn move_player(
 }
 
 fn move_camera(mut events: EventReader<RpcCall>, mut camera: Query<&mut PrimaryCamera>) {
-    for rotation in events.iter().filter_map(|ev| match ev {
+    for rotation in events.read().filter_map(|ev| match ev {
         RpcCall::MoveCamera(rotation) => Some(rotation),
         _ => None,
     }) {
@@ -128,7 +128,7 @@ fn change_realm(
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
 ) {
-    for (scene, to, message, response) in events.iter().filter_map(|ev| match ev {
+    for (scene, to, message, response) in events.read().filter_map(|ev| match ev {
         RpcCall::ChangeRealm {
             scene,
             to,
@@ -182,7 +182,7 @@ fn external_url(
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
 ) {
-    for (scene, url, response) in events.iter().filter_map(|ev| match ev {
+    for (scene, url, response) in events.read().filter_map(|ev| match ev {
         RpcCall::ExternalUrl {
             scene,
             url,
@@ -239,7 +239,7 @@ fn spawn_portable(
     scenes: Query<(Option<&RendererSceneContext>, Option<&SceneLoading>)>,
 ) {
     // process incoming events
-    for (location, spawner, response) in events.iter().filter_map(|ev| match ev {
+    for (location, spawner, response) in events.read().filter_map(|ev| match ev {
         RpcCall::SpawnPortable {
             location,
             spawner,
@@ -389,7 +389,7 @@ fn spawn_portable(
 }
 
 fn kill_portable(mut portables: ResMut<PortableScenes>, mut events: EventReader<RpcCall>) {
-    for (location, response) in events.iter().filter_map(|ev| match ev {
+    for (location, response) in events.read().filter_map(|ev| match ev {
         RpcCall::KillPortable { location, response } => Some((location, response)),
         _ => None,
     }) {
@@ -420,7 +420,7 @@ fn list_portables(
     live_scenes: Res<LiveScenes>,
     contexts: Query<&RendererSceneContext>,
 ) {
-    for response in events.iter().filter_map(|ev| match ev {
+    for response in events.read().filter_map(|ev| match ev {
         RpcCall::ListPortables { response } => Some(response),
         _ => None,
     }) {
@@ -447,7 +447,7 @@ fn list_portables(
 }
 
 fn get_user_data(profile: Res<CurrentUserProfile>, mut events: EventReader<RpcCall>) {
-    for response in events.iter().filter_map(|ev| match ev {
+    for response in events.read().filter_map(|ev| match ev {
         RpcCall::GetUserData { response } => Some(response),
         _ => None,
     }) {
@@ -460,7 +460,7 @@ fn get_connected_players(
     others: Query<&ForeignPlayer>,
     mut events: EventReader<RpcCall>,
 ) {
-    for response in events.iter().filter_map(|ev| match ev {
+    for response in events.read().filter_map(|ev| match ev {
         RpcCall::GetConnectedPlayers { response } => Some(response),
         _ => None,
     }) {
@@ -479,7 +479,7 @@ fn event_player_connected(
     mut events: EventReader<RpcCall>,
     players: Query<&ForeignPlayer, Added<ForeignPlayer>>,
 ) {
-    for sender in events.iter().filter_map(|ev| match ev {
+    for sender in events.read().filter_map(|ev| match ev {
         RpcCall::SubscribePlayerConnected { sender } => Some(sender),
         _ => None,
     }) {
@@ -508,7 +508,7 @@ fn event_player_disconnected(
     mut last_players: Local<HashMap<Entity, Address>>,
 ) {
     // gather new receivers
-    for sender in events.iter().filter_map(|ev| match ev {
+    for sender in events.read().filter_map(|ev| match ev {
         RpcCall::SubscribePlayerDisconnected { sender } => Some(sender),
         _ => None,
     }) {
@@ -522,7 +522,7 @@ fn event_player_disconnected(
 
     // gather addresses of removed players
     let removed = removed
-        .iter()
+        .read()
         .flat_map(|e| last_players.remove(&e))
         .collect::<Vec<_>>();
 
@@ -550,7 +550,7 @@ fn event_player_moved_scene(
     mut events: EventReader<RpcCall>,
 ) {
     // gather new receivers
-    for (enter, scene, sender) in events.iter().filter_map(|ev| match ev {
+    for (enter, scene, sender) in events.read().filter_map(|ev| match ev {
         RpcCall::SubscribePlayerEnteredScene { scene, sender } => Some((true, scene, sender)),
         RpcCall::SubscribePlayerLeftScene { scene, sender } => Some((false, scene, sender)),
         _ => None,
@@ -616,7 +616,7 @@ fn event_scene_ready(
     unready_gltfs: Query<&SceneEntity, (With<GltfDefinition>, Without<GltfProcessed>)>,
     mut previously_unready: Local<HashSet<Entity>>,
 ) {
-    for (scene, sender) in events.iter().filter_map(|ev| match ev {
+    for (scene, sender) in events.read().filter_map(|ev| match ev {
         RpcCall::SubscribeSceneReady { scene, sender } => Some((scene, sender)),
         _ => None,
     }) {
@@ -654,7 +654,7 @@ fn send_scene_messages(
     transports: Query<&Transport>,
     scenes: Query<&SceneHash>,
 ) {
-    for (scene, message) in events.iter().filter_map(|c| match c {
+    for (scene, message) in events.read().filter_map(|c| match c {
         RpcCall::SendMessageBus { scene, message } => Some((scene, message)),
         _ => None,
     }) {

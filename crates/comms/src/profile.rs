@@ -11,10 +11,7 @@ use common::{
     rpc::RpcEventSender,
     structs::{AppConfig, PrimaryUser},
 };
-use common::{
-    rpc::RpcCall,
-    util::{AsH160, TryInsertEx},
-};
+use common::{rpc::RpcCall, util::AsH160};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use wallet::Wallet;
 
@@ -58,7 +55,7 @@ pub fn setup_primary_profile(
     mut subscribe_events: EventReader<RpcCall>,
 ) {
     // gather any event receivers
-    for sender in subscribe_events.iter().filter_map(|ev| match ev {
+    for sender in subscribe_events.read().filter_map(|ev| match ev {
         RpcCall::SubscribeProfileChanged { sender } => Some(sender),
         _ => None,
     }) {
@@ -178,7 +175,7 @@ pub fn process_profile_events(
     transports: Query<&Transport>,
     current_profile: Res<CurrentUserProfile>,
 ) {
-    for ev in events.iter() {
+    for ev in events.read() {
         match &ev.event {
             ProfileEventType::Request(r) => {
                 if let Some(req_address) = r.address.as_h160() {

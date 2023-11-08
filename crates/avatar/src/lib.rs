@@ -22,7 +22,7 @@ pub mod mask_material;
 
 use common::{
     structs::{AttachPoints, PrimaryUser},
-    util::{TaskExt, TryInsertEx, TryPushChildrenEx},
+    util::{TaskExt, TryPushChildrenEx},
 };
 use comms::{
     global_crdt::{ForeignPlayer, GlobalCrdtState},
@@ -785,7 +785,7 @@ fn update_render_avatar(
     }
 
     // remove renderable entities when avatar selection is removed
-    for entity in removed_selections.iter() {
+    for entity in removed_selections.read() {
         if let Ok((children, attach_points)) = children.get(entity) {
             // reparent attach points
             commands
@@ -1022,7 +1022,7 @@ fn spawn_scenes(
             .any(|h_model| {
                 matches!(
                     asset_server.get_load_state(h_model),
-                    bevy::asset::LoadState::Loading
+                    Some(bevy::asset::LoadState::Loading)
                 )
             });
 
@@ -1035,7 +1035,7 @@ fn spawn_scenes(
                 .body
                 .model
                 .as_ref()
-                .map(|h_gtlf| asset_server.get_load_state(h_gtlf))
+                .and_then(|h_gtlf| asset_server.get_load_state(h_gtlf))
             {
                 Some(bevy::asset::LoadState::Loading) | Some(bevy::asset::LoadState::NotLoaded) => {
                     // nothing to do
@@ -1080,7 +1080,7 @@ fn spawn_scenes(
             .flat_map(|wearable| &wearable.model)
             .flat_map(|h_gltf| {
                 match asset_server.get_load_state(h_gltf) {
-                    bevy::asset::LoadState::Loaded => (),
+                    Some(bevy::asset::LoadState::Loaded) => (),
                     otherwise => {
                         warn!("wearable gltf didn't work out: {otherwise:?}");
                         return None;

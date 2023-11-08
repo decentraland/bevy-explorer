@@ -12,7 +12,7 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 
-use common::{sets::SceneSets, util::TryInsertEx};
+use common::sets::SceneSets;
 
 use super::focus::Focus;
 

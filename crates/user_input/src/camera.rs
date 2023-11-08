@@ -77,7 +77,7 @@ pub fn update_camera(
             }
         }
 
-        for mouse_event in mouse_events.iter() {
+        for mouse_event in mouse_events.read() {
             mouse_delta += mouse_event.delta;
         }
     }
@@ -95,7 +95,7 @@ pub fn update_camera(
     }
 
     if accept_input.mouse {
-        if let Some(event) = wheel_events.iter().last() {
+        if let Some(event) = wheel_events.read().last() {
             if event.y > 0.0 {
                 options.distance = 0f32.max((options.distance - 0.05) * 0.9);
             } else if event.y < 0.0 {

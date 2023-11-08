@@ -25,7 +25,8 @@ use crate::{
     update_world::{
         transform_and_parent::process_transform_and_parent_updates, CrdtStateComponent,
     },
-    RendererSceneContext, SceneEntity, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates,
+    RendererSceneContext, SceneEntity, SceneLoopLabel, SceneLoopSchedule, SceneRunnerPlugin,
+    SceneUpdates,
 };
 use common::{
     rpc::RpcCall,
@@ -104,9 +105,9 @@ fn init_test_app(entity_json: &str) -> App {
         ..Default::default()
     });
     app.add_plugins(TestPlugins);
-    app.add_asset::<Shader>();
-    app.add_asset::<AnimationClip>();
-    app.add_asset::<Image>();
+    app.init_asset::<Shader>();
+    app.init_asset::<AnimationClip>();
+    app.init_asset::<Image>();
     app.add_plugins(MaterialPlugin::<StandardMaterial>::default());
     app.add_plugins(GizmoPlugin);
     app.add_plugins(SceneRunnerPlugin);
@@ -115,6 +116,7 @@ fn init_test_app(entity_json: &str) -> App {
     app.init_resource::<ToolTips>();
     app.add_event::<RpcCall>();
     app.insert_resource(SceneLoadDistance(1.0));
+    app.finish();
 
     let mut test_path = std::env::current_dir().unwrap();
     test_path.push("src");
@@ -143,7 +145,7 @@ fn init_test_app(entity_json: &str) -> App {
 
     // replace the scene loop schedule with a dummy so we can better control it
     app.world.remove_resource::<SceneLoopSchedule>().unwrap();
-    let mut skip_loop_schedule = Schedule::new();
+    let mut skip_loop_schedule = Schedule::new(SceneLoopLabel);
     skip_loop_schedule.add_systems(|mut updates: ResMut<SceneUpdates>| updates.eligible_jobs = 0);
     app.world.insert_resource(SceneLoopSchedule {
         schedule: skip_loop_schedule,
@@ -167,7 +169,7 @@ fn init_test_app(entity_json: &str) -> App {
     }
 
     app.world.insert_resource(SceneLoopSchedule {
-        schedule: Schedule::new(),
+        schedule: Schedule::new(SceneLoopLabel),
         prev_time: Instant::now(),
         run_time: 100.0,
         sleeper: SpinSleeper::default(),
@@ -279,7 +281,7 @@ fn run_single_update(app: &mut App) {
             .query::<&mut RendererSceneContext>()
             .single_mut(&mut app.world)
             .last_sent = 0.0;
-        Schedule::new()
+        Schedule::new(SceneLoopLabel)
             .add_systems((update_scene_priority, send_scene_updates).chain())
             .run(&mut app.world);
     }
@@ -299,7 +301,7 @@ fn run_single_update(app: &mut App) {
         == 1
     {
         // run the receiver and lifecycle part of the schedule
-        Schedule::new()
+        Schedule::new(SceneLoopLabel)
             .add_systems(
                 (
                     receive_scene_updates,
@@ -444,7 +446,7 @@ fn cyclic_recovery() {
             );
 
             // run systems
-            Schedule::new()
+            Schedule::new(SceneLoopLabel)
                 .add_systems(
                     (
                         process_scene_entity_lifecycle,

@@ -3,8 +3,7 @@ use std::collections::VecDeque;
 use bevy::{
     ecs::system::{Command, EntityCommands},
     prelude::{
-        despawn_with_children_recursive, BuildWorldChildren, Bundle, Entity, IntoSystemConfigs,
-        World,
+        despawn_with_children_recursive, BuildWorldChildren, Entity, IntoSystemConfigs, World,
     },
     tasks::Task,
 };
@@ -108,35 +107,6 @@ impl<T: Clone + std::fmt::Debug> RingBuffer<T> {
 }
 
 pub type RingBufferReceiver<T> = tokio::sync::broadcast::Receiver<T>;
-
-// TryInsert command helper - insert a component but don't crash if the entity is already deleted
-pub struct TryInsert<T> {
-    pub entity: Entity,
-    pub bundle: T,
-}
-
-impl<T> Command for TryInsert<T>
-where
-    T: Bundle + 'static,
-{
-    fn apply(self, world: &mut World) {
-        if let Some(mut entity) = world.get_entity_mut(self.entity) {
-            entity.insert(self.bundle);
-        }
-    }
-}
-
-pub trait TryInsertEx {
-    fn try_insert(&mut self, bundle: impl Bundle) -> &mut Self;
-}
-
-impl<'w, 's> TryInsertEx for EntityCommands<'w, 's, '_> {
-    fn try_insert(&mut self, bundle: impl Bundle) -> &mut Self {
-        let entity = self.id();
-        self.commands().add(TryInsert { entity, bundle });
-        self
-    }
-}
 
 // TryPushChildren command helper - add children but don't crash if any entities are already deleted
 // if parent is deleted, despawn live children

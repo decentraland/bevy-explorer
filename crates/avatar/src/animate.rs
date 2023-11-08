@@ -1,12 +1,18 @@
 use std::{collections::VecDeque, time::Duration};
 
-use bevy::{gltf::Gltf, math::Vec3Swizzles, prelude::*, utils::HashMap};
+use bevy::{
+    animation::RepeatAnimation,
+    asset::{LoadState, LoadedFolder},
+    gltf::Gltf,
+    math::Vec3Swizzles,
+    prelude::*,
+    utils::HashMap,
+};
 use bevy_console::ConsoleCommand;
 use common::{
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
     structs::PrimaryUser,
-    util::TryInsertEx,
 };
 use comms::{
     chat_marker_things, global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport,
@@ -121,35 +127,54 @@ impl Plugin for AvatarAnimationPlugin {
     }
 }
 
+#[derive(Default)]
+enum AnimLoadState {
+    #[default]
+    Init,
+    WaitingForFolder(Handle<LoadedFolder>),
+    WaitingForGltfs(Vec<Handle<Gltf>>),
+    Done,
+}
+
 #[allow(clippy::type_complexity)]
 fn load_animations(
     asset_server: Res<AssetServer>,
     gltfs: Res<Assets<Gltf>>,
-    mut builtin_animations: Local<Option<Vec<Handle<Gltf>>>>,
+    mut state: Local<AnimLoadState>,
+    folders: Res<Assets<LoadedFolder>>,
     mut animations: ResMut<AvatarAnimations>,
 ) {
-    if builtin_animations.is_none() {
-        *builtin_animations = Some(
-            asset_server
-                .load_folder("animations")
-                .unwrap()
-                .into_iter()
-                .map(|h| h.typed())
-                .collect(),
-        );
-    } else {
-        builtin_animations.as_mut().unwrap().retain(|h_gltf| {
-            match gltfs.get(h_gltf).map(|gltf| &gltf.named_animations) {
-                Some(anims) => {
-                    for (name, h_clip) in anims {
-                        animations.0.insert(name.clone(), h_clip.clone());
-                        debug!("added animation {name}");
-                    }
-                    false
-                }
-                None => true,
+    match &mut *state {
+        AnimLoadState::Init => {
+            *state = AnimLoadState::WaitingForFolder(asset_server.load_folder("animations"));
+        }
+        AnimLoadState::WaitingForFolder(h_folder) => {
+            if asset_server.load_state(h_folder.id()) == LoadState::Loaded {
+                let folder = folders.get(h_folder.id()).unwrap();
+                *state = AnimLoadState::WaitingForGltfs(
+                    folder.handles.iter().map(|h| h.clone().typed()).collect(),
+                )
             }
-        })
+        }
+        AnimLoadState::WaitingForGltfs(ref mut h_gltfs) => {
+            h_gltfs.retain(
+                |h_gltf| match gltfs.get(h_gltf).map(|gltf| &gltf.named_animations) {
+                    Some(anims) => {
+                        for (name, h_clip) in anims {
+                            animations.0.insert(name.clone(), h_clip.clone());
+                            debug!("added animation {name}");
+                        }
+                        false
+                    }
+                    None => true,
+                },
+            );
+
+            if h_gltfs.is_empty() {
+                *state = AnimLoadState::Done;
+            }
+        }
+        AnimLoadState::Done => {}
     }
 }
 
@@ -188,7 +213,7 @@ fn broadcast_emote(
     mut subscribe_events: EventReader<RpcCall>,
 ) {
     // gather any event receivers
-    for sender in subscribe_events.iter().filter_map(|ev| match ev {
+    for sender in subscribe_events.read().filter_map(|ev| match ev {
         RpcCall::SubscribePlayerExpression { sender } => Some(sender),
         _ => None,
     }) {
@@ -232,7 +257,7 @@ fn broadcast_emote(
 
 fn receive_emotes(mut commands: Commands, mut chat_events: EventReader<ChatEvent>) {
     for ev in chat_events
-        .iter()
+        .read()
         .filter(|e| e.message.starts_with(chat_marker_things::EMOTE))
     {
         if let Some(emote_urn) = ev
@@ -280,7 +305,7 @@ fn animate(
                     if repeat {
                         player.repeat();
                     } else {
-                        player.stop_repeating();
+                        player.set_repeat(RepeatAnimation::Never);
                     }
                     playing.insert(ent, anim.to_owned());
                 }

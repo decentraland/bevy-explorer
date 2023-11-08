@@ -1,6 +1,6 @@
 use avatar::AvatarDynamicState;
 use bevy::{math::Vec3Swizzles, prelude::*};
-use common::{rpc::RpcCall, structs::PrimaryUser, util::TryInsertEx};
+use common::{rpc::RpcCall, structs::PrimaryUser};
 use comms::global_crdt::ForeignPlayer;
 use ethers_core::rand::{seq::SliceRandom, thread_rng, Rng};
 use scene_runner::{
@@ -18,7 +18,7 @@ pub fn teleport_player(
     player: Query<(Entity, &Transform), With<PrimaryUser>>,
     containing_scene: ContainingScene,
 ) {
-    for (root, parcel, response) in events.iter().filter_map(|ev| match ev {
+    for (root, parcel, response) in events.read().filter_map(|ev| match ev {
         RpcCall::TeleportPlayer {
             scene,
             to,
