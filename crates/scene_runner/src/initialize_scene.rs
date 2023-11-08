@@ -851,7 +851,7 @@ pub fn process_scene_lifecycle(
         })
     }
 
-    // add nothing to current location if all scenes are loaded and nothing is in the current parcel 
+    // add nothing to current location if all scenes are loaded and nothing is in the current parcel
     // (workaround for teleport.rs testing for Pointer::Nothing)
     if using_global_scene_list && !any_spawning && loading_scenes.is_empty() {
         let Ok(focus) = focus.get_single() else {
@@ -863,7 +863,9 @@ pub fn process_scene_lifecycle(
             .as_ivec2();
 
         if pointers.0.get(&parcel).is_none() {
-            pointers.0.insert(parcel, PointerResult::Nothing(parcel.x, parcel.y));
+            pointers
+                .0
+                .insert(parcel, PointerResult::Nothing(parcel.x, parcel.y));
         }
     }
 }
