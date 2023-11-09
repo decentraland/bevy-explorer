@@ -1,7 +1,7 @@
 use std::sync::{mpsc::SyncSender, Mutex};
 
 use bevy::{
-    prelude::{AssetServer, Entity},
+    prelude::Entity,
     utils::{HashMap, HashSet},
 };
 use common::rpc::RpcCall;
@@ -10,7 +10,7 @@ use once_cell::sync::Lazy;
 use tokio::sync::mpsc::Sender;
 
 use dcl_component::SceneEntityId;
-use ipfs::SceneJsFile;
+use ipfs::{IpfsResource, SceneJsFile};
 use wallet::Wallet;
 
 use self::{
@@ -85,7 +85,7 @@ pub fn spawn_scene(
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SyncSender<SceneResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    asset_server: AssetServer,
+    ipfs: IpfsResource,
     wallet: Wallet,
     id: SceneId,
     inspect: bool,
@@ -103,7 +103,7 @@ pub fn spawn_scene(
                 renderer_sender,
                 thread_rx,
                 global_update_receiver,
-                asset_server,
+                ipfs,
                 wallet,
                 inspect,
             )

@@ -9,7 +9,7 @@ use common::{
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{proto_components::sdk::components::PbAudioSource, SceneComponentId};
-use ipfs::IpfsLoaderExt;
+use ipfs::IpfsAssetServer;
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::AddCrdtInterfaceExt, ContainingScene,
     SceneEntity,
@@ -59,7 +59,7 @@ fn update_audio(
     >,
     scenes: Query<&RendererSceneContext>,
     audio: Res<bevy_kira_audio::Audio>,
-    asset_server: Res<AssetServer>,
+    ipfas: IpfsAssetServer,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
@@ -81,7 +81,7 @@ fn update_audio(
                 };
 
                 let Ok(handle) =
-                    asset_server.load_content_file(&audio_source.0.audio_clip_url, &scene.hash)
+                    ipfas.load_content_file(&audio_source.0.audio_clip_url, &scene.hash)
                 else {
                     warn!("failed to load content file");
                     continue;

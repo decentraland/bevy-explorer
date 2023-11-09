@@ -2,6 +2,7 @@ pub mod ipfs_path;
 
 use std::{
     io::ErrorKind,
+    marker::PhantomData,
     path::{Path, PathBuf},
     sync::{
         atomic::{self, AtomicU16},
@@ -18,8 +19,9 @@ use bevy::{
             file::FileAssetReader, AssetReader, AssetReaderError, AssetSource, AssetSourceId,
             Reader,
         },
-        Asset, AssetLoader,
+        Asset, AssetLoader, LoadState, UntypedAssetId,
     },
+    ecs::system::SystemParam,
     prelude::*,
     reflect::TypePath,
     tasks::{IoTaskPool, Task},
@@ -27,7 +29,6 @@ use bevy::{
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use bimap::BiMap;
-use downcast_rs::Downcast;
 use ipfs_path::IpfsAsset;
 use isahc::{http::StatusCode, prelude::Configurable, AsyncReadResponseExt, RequestExt};
 use serde::{Deserialize, Serialize};
@@ -200,28 +201,28 @@ pub enum SceneIpfsLocation {
     Urn(String),
 }
 
-pub trait IpfsLoaderExt {
-    fn load_content_file<T: Asset>(
-        &self,
-        file_path: &str,
-        content_hash: &str,
-    ) -> Result<Handle<T>, anyhow::Error>;
-
-    fn load_urn<T: IpfsAsset>(&self, urn: &str) -> Result<Handle<T>, anyhow::Error>;
-
-    fn load_url<T: IpfsAsset>(&self, urn: &str) -> Handle<T>;
-
-    fn load_hash<T: IpfsAsset>(&self, hash: &str) -> Handle<T>;
-
-    fn active_endpoint(&self) -> Option<String>;
-
-    fn ipfs(&self) -> &IpfsIo;
-
-    fn ipfs_cache_path(&self) -> &Path;
+#[derive(Resource, Clone)]
+pub struct IpfsResource {
+    inner: Arc<IpfsIo>,
 }
 
-impl IpfsLoaderExt for AssetServer {
-    fn load_content_file<T: Asset>(
+impl std::ops::Deref for IpfsResource {
+    type Target = IpfsIo;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+#[derive(SystemParam)]
+pub struct IpfsAssetServer<'w, 's> {
+    server: Res<'w, AssetServer>,
+    ipfs: Res<'w, IpfsResource>,
+    _p: PhantomData<&'s ()>,
+}
+
+impl<'w, 's> IpfsAssetServer<'w, 's> {
+    pub fn load_content_file<T: Asset>(
         &self,
         file_path: &str,
         content_hash: &str,
@@ -249,10 +250,10 @@ impl IpfsLoaderExt for AssetServer {
             content_hash.to_owned(),
             file_path.to_owned(),
         ));
-        Ok(self.load(PathBuf::from(&ipfs_path)))
+        Ok(self.server.load(PathBuf::from(&ipfs_path)))
     }
 
-    fn load_urn<T: IpfsAsset>(&self, urn: &str) -> Result<Handle<T>, anyhow::Error> {
+    pub fn load_urn<T: IpfsAsset>(&self, urn: &str) -> Result<Handle<T>, anyhow::Error> {
         let ext = T::ext();
         let ipfs_path = IpfsPath::new_from_urn::<T>(urn)?;
         let hash = ipfs_path
@@ -271,22 +272,22 @@ impl IpfsLoaderExt for AssetServer {
                 },
             );
         }
-        Ok(self.load(path))
+        Ok(self.server.load(path))
     }
 
-    fn load_url<T: IpfsAsset>(&self, url: &str) -> Handle<T> {
+    pub fn load_url<T: IpfsAsset>(&self, url: &str) -> Handle<T> {
         let ext = T::ext();
         let ipfs_path = IpfsPath::new_from_url(url, ext);
-        self.load(PathBuf::from(&ipfs_path))
+        self.server.load(PathBuf::from(&ipfs_path))
     }
 
-    fn load_hash<T: IpfsAsset>(&self, hash: &str) -> Handle<T> {
+    pub fn load_hash<T: IpfsAsset>(&self, hash: &str) -> Handle<T> {
         let ext = T::ext();
         let path = format!("$ipfs/$entity/{hash}.{ext}");
-        self.load(path)
+        self.server.load(path)
     }
 
-    fn active_endpoint(&self) -> Option<String> {
+    pub fn active_endpoint(&self) -> Option<String> {
         self.ipfs()
             .realm_config_receiver
             .borrow()
@@ -295,17 +296,20 @@ impl IpfsLoaderExt for AssetServer {
             .map(|content| format!("{}/entities/active", &content.public_url))
     }
 
-    fn ipfs(&self) -> &IpfsIo {
-        let reader = self.get_source(AssetSourceId::Default).unwrap().reader();
-        Downcast::as_any(reader)
-            .downcast_ref::<PassThroughReader>()
-            .unwrap()
-            .inner
-            .as_ref()
+    pub fn ipfs(&self) -> &Arc<IpfsIo> {
+        &self.ipfs.inner
     }
 
-    fn ipfs_cache_path(&self) -> &Path {
+    pub fn asset_server(&self) -> &AssetServer {
+        &self.server
+    }
+
+    pub fn ipfs_cache_path(&self) -> &Path {
         self.ipfs().cache_path()
+    }
+
+    pub fn load_state(&self, id: impl Into<UntypedAssetId>) -> LoadState {
+        self.server.load_state(id)
     }
 }
 
@@ -375,7 +379,11 @@ impl Plugin for IpfsIoPlugin {
         let static_paths = HashMap::from_iter([("genesis_tx.png", "images/genesis_tx.png")]);
         let ipfs_io = IpfsIo::new(Box::new(default_reader), cache_root, static_paths);
         let ipfs_io = Arc::new(ipfs_io);
-        let passthrough = PassThroughReader { inner: ipfs_io };
+        let passthrough = PassThroughReader {
+            inner: ipfs_io.clone(),
+        };
+
+        app.insert_resource(IpfsResource { inner: ipfs_io });
 
         app.register_asset_source(
             AssetSourceId::Default,
@@ -396,11 +404,11 @@ impl Plugin for IpfsIoPlugin {
             .init_asset_loader::<SceneJsLoader>();
 
         if let Some(realm) = &self.starting_realm {
-            let asset_server = app.world.resource::<AssetServer>().clone();
+            let ipfs = app.world.resource::<IpfsResource>().clone();
             let realm = realm.clone();
             IoTaskPool::get()
                 .spawn(async move {
-                    asset_server.ipfs().set_realm(realm).await;
+                    ipfs.set_realm(realm).await;
                 })
                 .detach();
         }
@@ -441,14 +449,13 @@ pub struct CurrentRealm {
 #[allow(clippy::type_complexity)]
 fn change_realm(
     mut change_realm_requests: EventReader<ChangeRealmEvent>,
-    asset_server: Res<AssetServer>,
+    ipfs: Res<IpfsResource>,
     mut realm_change: Local<Option<tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>>>,
     mut current_realm: ResMut<CurrentRealm>,
     mut print: EventWriter<PrintConsoleLine>,
 ) {
-    let ipfsio = asset_server.ipfs();
     match *realm_change {
-        None => *realm_change = Some(ipfsio.realm_config_receiver.clone()),
+        None => *realm_change = Some(ipfs.realm_config_receiver.clone()),
         Some(ref mut realm_change) => {
             if realm_change.has_changed().unwrap_or_default() {
                 if let Some((realm, about)) = &*realm_change.borrow_and_update() {
@@ -472,7 +479,7 @@ fn change_realm(
     }
 
     if !change_realm_requests.is_empty() {
-        let asset_server = asset_server.clone();
+        let ipfs = ipfs.clone();
         let new_realm = change_realm_requests
             .read()
             .last()
@@ -481,7 +488,7 @@ fn change_realm(
             .to_owned();
         IoTaskPool::get()
             .spawn(async move {
-                asset_server.ipfs().set_realm(new_realm).await;
+                ipfs.set_realm(new_realm).await;
             })
             .detach();
     }
@@ -934,7 +941,11 @@ impl AssetReader for PassThroughReader {
         &'a self,
         path: &'a Path,
     ) -> bevy::utils::BoxedFuture<'a, Result<Box<Reader<'a>>, AssetReaderError>> {
-        self.inner.read_meta(path)
+        if IpfsPath::new_from_path(path).is_ok() {
+            Box::pin(async move { Err(AssetReaderError::NotFound(path.to_owned())) })
+        } else {
+            self.inner.read_meta(path)
+        }
     }
 
     fn read_directory<'a>(

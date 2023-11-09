@@ -1,9 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
-use bevy::{
-    prelude::AssetServer,
-    utils::tracing::{debug, error, info_span},
-};
+use bevy::utils::tracing::{debug, error, info_span};
 use deno_core::{
     anyhow::anyhow,
     ascii_str,
@@ -13,7 +10,7 @@ use deno_core::{
 use deno_websocket::WebSocketPermissions;
 use tokio::sync::mpsc::Receiver;
 
-use ipfs::SceneJsFile;
+use ipfs::{IpfsResource, SceneJsFile};
 use wallet::Wallet;
 
 use crate::RpcCalls;
@@ -189,7 +186,7 @@ pub(crate) fn scene_thread(
     thread_sx: SyncSender<SceneResponse>,
     thread_rx: Receiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    asset_server: AssetServer,
+    ipfs: IpfsResource,
     wallet: Wallet,
     inspect: bool,
 ) {
@@ -217,7 +214,7 @@ pub(crate) fn scene_thread(
     state.borrow_mut().put(global_update_receiver);
 
     // store asset server and wallet
-    state.borrow_mut().put(asset_server);
+    state.borrow_mut().put(ipfs);
     state.borrow_mut().put(wallet);
 
     // store crdt outbound state and event queue

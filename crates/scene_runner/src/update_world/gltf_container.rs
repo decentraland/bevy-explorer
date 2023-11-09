@@ -27,7 +27,7 @@ use dcl_component::{
     },
     SceneComponentId, SceneEntityId,
 };
-use ipfs::{EntityDefinition, IpfsLoaderExt};
+use ipfs::{EntityDefinition, IpfsAssetServer};
 
 use super::{
     mesh_collider::{MeshCollider, MeshColliderShape},
@@ -106,10 +106,10 @@ fn update_gltf(
         Option<&SkinnedMesh>,
     )>,
     scene_def_handles: Query<&Handle<EntityDefinition>>,
-    (scene_defs, asset_server, gltfs): (
+    (scene_defs, gltfs, ipfas): (
         Res<Assets<EntityDefinition>>,
-        Res<AssetServer>,
         Res<Assets<Gltf>>,
+        IpfsAssetServer,
     ),
     mut scene_spawner: ResMut<SceneSpawner>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -182,7 +182,7 @@ fn update_gltf(
             continue;
         };
 
-        let h_gltf = match asset_server.load_content_file::<Gltf>(&gltf.0.src, &scene_def.id) {
+        let h_gltf = match ipfas.load_content_file::<Gltf>(&gltf.0.src, &scene_def.id) {
             Ok(h_gltf) => h_gltf,
             Err(e) => {
                 warn!("gltf content file not found: {e}");
@@ -200,7 +200,7 @@ fn update_gltf(
     }
 
     for (ent, scene_ent, h_gltf, def) in unprocessed_gltfs.iter() {
-        match asset_server.get_load_state(h_gltf).unwrap() {
+        match ipfas.load_state(h_gltf) {
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed => {
                 warn!("failed to process gltf: {}", def.0.src);

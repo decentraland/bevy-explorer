@@ -21,8 +21,8 @@ use dcl_component::{
     SceneEntityId,
 };
 use ipfs::{
-    ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsLoaderExt,
-    SceneIpfsLocation, SceneJsFile,
+    ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsAssetServer,
+    IpfsResource, SceneIpfsLocation, SceneJsFile,
 };
 use wallet::Wallet;
 
@@ -103,7 +103,7 @@ pub enum SceneLoading {
 pub(crate) fn load_scene_entity(
     mut commands: Commands,
     mut load_scene_events: EventReader<LoadSceneEvent>,
-    asset_server: Res<AssetServer>,
+    ipfas: IpfsAssetServer,
 ) {
     for event in load_scene_events.read() {
         let mut commands = match event.entity {
@@ -117,8 +117,8 @@ pub(crate) fn load_scene_entity(
         };
 
         let h_scene = match &event.location {
-            SceneIpfsLocation::Hash(hash) => asset_server.load_hash::<EntityDefinition>(hash),
-            SceneIpfsLocation::Urn(urn) => match asset_server.load_urn::<EntityDefinition>(urn) {
+            SceneIpfsLocation::Hash(hash) => ipfas.load_hash::<EntityDefinition>(hash),
+            SceneIpfsLocation::Urn(urn) => match ipfas.load_urn::<EntityDefinition>(urn) {
                 Ok(h_scene) => h_scene,
                 Err(e) => {
                     warn!("failed to parse urn: {e}");
@@ -136,7 +136,7 @@ pub(crate) fn load_scene_json(
     mut commands: Commands,
     mut loading_scenes: Query<(Entity, &mut SceneLoading, &Handle<EntityDefinition>)>,
     scene_definitions: Res<Assets<EntityDefinition>>,
-    asset_server: Res<AssetServer>,
+    ipfas: IpfsAssetServer,
 ) {
     for (entity, mut state, h_scene) in loading_scenes
         .iter_mut()
@@ -147,7 +147,7 @@ pub(crate) fn load_scene_json(
             commands.entity(entity).try_insert(SceneLoading::Failed);
         };
 
-        match asset_server.get_load_state(h_scene).unwrap() {
+        match ipfas.load_state(h_scene) {
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed => {
                 fail("Scene entity could not be loaded");
@@ -167,7 +167,7 @@ pub(crate) fn load_scene_json(
             continue;
         }
 
-        asset_server.ipfs().add_collection(
+        ipfas.ipfs().add_collection(
             definition.id.clone(),
             definition.content.clone(),
             None,
@@ -175,7 +175,7 @@ pub(crate) fn load_scene_json(
         );
 
         if definition.content.hash("main.crdt").is_some() {
-            let h_crdt: Handle<SerializedCrdtStore> = asset_server
+            let h_crdt: Handle<SerializedCrdtStore> = ipfas
                 .load_content_file("main.crdt", &definition.id)
                 .unwrap();
             *state = SceneLoading::MainCrdt(Some(h_crdt));
@@ -260,7 +260,7 @@ pub(crate) fn load_scene_javascript(
     loading_scenes: Query<(Entity, &SceneLoading, &Handle<EntityDefinition>)>,
     scene_definitions: Res<Assets<EntityDefinition>>,
     main_crdts: Res<Assets<SerializedCrdtStore>>,
-    asset_server: Res<AssetServer>,
+    ipfas: IpfsAssetServer,
     crdt_component_interfaces: Res<CrdtExtractors>,
     mut scene_updates: ResMut<SceneUpdates>,
     global_scene: Res<GlobalCrdtState>,
@@ -280,7 +280,7 @@ pub(crate) fn load_scene_javascript(
             panic!("wrong load state in load_scene_javascript")
         };
         if let Some(ref h_crdt) = maybe_h_crdt {
-            match asset_server.get_load_state(h_crdt).unwrap() {
+            match ipfas.load_state(h_crdt) {
                 bevy::asset::LoadState::Loaded => (),
                 bevy::asset::LoadState::Failed => {
                     fail("scene.json could not be loaded");
@@ -343,7 +343,7 @@ pub(crate) fn load_scene_javascript(
         };
 
         let h_code = if is_sdk7 {
-            match asset_server.load_content_file::<SceneJsFile>(&meta.main, &definition.id) {
+            match ipfas.load_content_file::<SceneJsFile>(&meta.main, &definition.id) {
                 Ok(h_code) => h_code,
                 Err(e) => {
                     fail(&format!("couldn't load javascript: {}", e));
@@ -351,7 +351,7 @@ pub(crate) fn load_scene_javascript(
                 }
             }
         } else {
-            asset_server.load_url(
+            ipfas.load_url(
                 "https://renderer-artifacts.decentraland.org/sdk7-adaption-layer/main/index.js",
             )
         };
@@ -489,6 +489,7 @@ pub(crate) fn initialize_scene(
     )>,
     scene_js_files: Res<Assets<SceneJsFile>>,
     asset_server: Res<AssetServer>,
+    ipfs: Res<IpfsResource>,
     wallet: Res<Wallet>,
     inspect: Res<InspectHash>,
 ) {
@@ -503,7 +504,7 @@ pub(crate) fn initialize_scene(
             commands.entity(root).try_insert(SceneLoading::Failed);
         };
 
-        match asset_server.get_load_state(h_code).unwrap() {
+        match asset_server.load_state(h_code) {
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed => {
                 fail("main js could not be loaded");
@@ -541,7 +542,7 @@ pub(crate) fn initialize_scene(
             crdt_component_interfaces,
             thread_sx,
             global_updates,
-            asset_server.clone(),
+            ipfs.clone(),
             wallet.clone(),
             scene_id,
             context.hash == inspect.0,
@@ -669,7 +670,7 @@ fn load_active_entities(
     range: Res<SceneLoadDistance>,
     mut pointers: ResMut<ScenePointers>,
     mut pointer_request: Local<Option<(HashSet<IVec2>, ActiveEntityTask)>>,
-    asset_server: Res<AssetServer>,
+    ipfas: IpfsAssetServer,
 ) {
     if realm.is_changed() {
         // drop current request
@@ -678,7 +679,7 @@ fn load_active_entities(
 
     if pointer_request.is_none() {
         let has_scene_urns = !realm.config.scenes_urn.as_ref().map_or(true, Vec::is_empty);
-        if !has_scene_urns && asset_server.active_endpoint().is_some() {
+        if !has_scene_urns && ipfas.active_endpoint().is_some() {
             // load required pointers
             let Ok(focus) = focus.get_single() else {
                 return;
@@ -695,10 +696,7 @@ fn load_active_entities(
                 .collect();
 
             if !parcels.is_empty() {
-                *pointer_request = Some((
-                    parcels,
-                    asset_server.ipfs().active_entities(&pointers, None),
-                ));
+                *pointer_request = Some((parcels, ipfas.ipfs().active_entities(&pointers, None)));
             }
         }
     } else if let Some(task_result) = pointer_request.as_mut().unwrap().1.complete() {

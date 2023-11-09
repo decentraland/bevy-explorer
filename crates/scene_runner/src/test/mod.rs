@@ -43,7 +43,7 @@ use dcl_component::{
     SceneCrdtTimestamp, SceneEntityId,
 };
 use input_manager::{AcceptInput, InputMap};
-use ipfs::{IpfsIoPlugin, IpfsLoaderExt, ServerAbout, ServerConfiguration};
+use ipfs::{IpfsIoPlugin, IpfsResource, ServerAbout, ServerConfiguration};
 use wallet::WalletPlugin;
 
 use super::{initialize_scene::SceneLoading, PrimaryUser};
@@ -123,7 +123,7 @@ fn init_test_app(entity_json: &str) -> App {
     test_path.push("test");
     test_path.push("test_assets");
 
-    let ipfs = app.world.resource::<AssetServer>().ipfs();
+    let ipfs = app.world.resource::<IpfsResource>();
     let urn = format!("urn:decentraland:entity:{entity_json}");
     ipfs.set_realm_about(ServerAbout {
         content: None,

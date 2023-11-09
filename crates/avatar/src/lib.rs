@@ -36,7 +36,7 @@ use dcl_component::{
     },
     SceneComponentId, SceneEntityId,
 };
-use ipfs::{ActiveEntityTask, IpfsLoaderExt, IpfsModifier};
+use ipfs::{ActiveEntityTask, IpfsAssetServer, IpfsModifier};
 use scene_runner::{update_world::AddCrdtInterfaceExt, ContainingScene, SceneEntity};
 use ui_core::TEXT_SHAPE_FONT;
 use wallet::Wallet;
@@ -133,9 +133,9 @@ fn load_base_wearables(
     mut task: Local<Option<ActiveEntityTask>>,
     mut wearable_pointers: ResMut<WearablePointers>,
     mut wearable_metas: ResMut<WearableMetas>,
-    asset_server: Res<AssetServer>,
+    ipfas: IpfsAssetServer,
 ) {
-    if *once || asset_server.active_endpoint().is_none() {
+    if *once || ipfas.active_endpoint().is_none() {
         return;
     }
 
@@ -143,7 +143,7 @@ fn load_base_wearables(
         None => {
             let pointers = base_wearables::base_wearables();
             *task = Some(
-                asset_server
+                ipfas
                     .ipfs()
                     .active_entities(&pointers, Some(base_wearables::BASE_URL)),
             );
@@ -154,7 +154,7 @@ fn load_base_wearables(
             Some(Ok(active_entities)) => {
                 debug!("first active entity: {:?}", active_entities.get(0));
                 for entity in active_entities {
-                    asset_server.ipfs().add_collection(
+                    ipfas.ipfs().add_collection(
                         entity.id.clone(),
                         entity.content,
                         Some(IpfsModifier {
@@ -595,7 +595,7 @@ pub struct WearableDefinition {
 impl WearableDefinition {
     pub fn new(
         meta: &WearableMeta,
-        asset_server: &AssetServer,
+        ipfas: &IpfsAssetServer,
         body_shape: &str,
         content_hash: &str,
     ) -> Option<WearableDefinition> {
@@ -642,20 +642,12 @@ impl WearableDefinition {
                 .find(|f| {
                     f.to_lowercase().ends_with(".png") && !f.to_lowercase().ends_with("_mask.png")
                 })
-                .and_then(|f| {
-                    asset_server
-                        .load_content_file::<Image>(f, content_hash)
-                        .ok()
-                });
+                .and_then(|f| ipfas.load_content_file::<Image>(f, content_hash).ok());
             let mask = representation
                 .contents
                 .iter()
                 .find(|f| f.to_lowercase().ends_with("_mask.png"))
-                .and_then(|f| {
-                    asset_server
-                        .load_content_file::<Image>(f, content_hash)
-                        .ok()
-                });
+                .and_then(|f| ipfas.load_content_file::<Image>(f, content_hash).ok());
 
             (None, texture, mask)
         } else {
@@ -667,14 +659,14 @@ impl WearableDefinition {
                 return None;
             }
 
-            let model = asset_server
+            let model = ipfas
                 .load_content_file::<Gltf>(&representation.main_file, content_hash)
                 .ok();
 
             (model, None, None)
         };
 
-        let thumbnail = asset_server
+        let thumbnail = ipfas
             .load_content_file::<Image>(&meta.thumbnail, content_hash)
             .ok();
 
@@ -716,7 +708,7 @@ fn update_render_avatar(
     avatar_render_entities: Query<(), With<AvatarDefinition>>,
     mut wearable_pointers: ResMut<WearablePointers>,
     mut wearable_metas: ResMut<WearableMetas>,
-    asset_server: Res<AssetServer>,
+    ipfas: IpfsAssetServer,
     mut wearable_task: Local<Option<(ActiveEntityTask, HashSet<Urn>)>>,
 ) {
     let mut missing_wearables = HashSet::default();
@@ -728,7 +720,7 @@ fn update_render_avatar(
                 debug!("got results: {:?}", entities.len());
 
                 for entity in entities {
-                    asset_server.ipfs().add_collection(
+                    ipfas.ipfs().add_collection(
                         entity.id.clone(),
                         entity.content,
                         Some(IpfsModifier {
@@ -883,7 +875,7 @@ fn update_render_avatar(
         }
 
         // load wearable gtlf/images
-        let body_wearable = match WearableDefinition::new(body_meta, &asset_server, "", hash) {
+        let body_wearable = match WearableDefinition::new(body_meta, &ipfas, "", hash) {
             Some(body) => body,
             None => {
                 warn!("failed to load body shape, can't render");
@@ -895,7 +887,7 @@ fn update_render_avatar(
             .into_iter()
             .flat_map(|hash| {
                 let meta = wearable_metas.0.get(hash).unwrap();
-                WearableDefinition::new(meta, &asset_server, body_shape, hash)
+                WearableDefinition::new(meta, &ipfas, body_shape, hash)
             })
             .collect::<Vec<_>>();
         let mut wearables = HashMap::from_iter(
@@ -914,7 +906,7 @@ fn update_render_avatar(
                     return None;
                 };
                 let meta = wearable_metas.0.get(hash).unwrap();
-                WearableDefinition::new(meta, &asset_server, body_shape, hash)
+                WearableDefinition::new(meta, &ipfas, body_shape, hash)
             })
             .collect();
 
@@ -983,7 +975,7 @@ fn update_render_avatar(
         if !pointers.is_empty() {
             debug!("requesting: {:?}", missing_wearables);
             *wearable_task = Some((
-                asset_server.ipfs().active_entities(&pointers, None),
+                ipfas.ipfs().active_entities(&pointers, None),
                 missing_wearables,
             ));
         }

@@ -14,6 +14,7 @@ use dcl_component::{
     proto_components::sdk::components::{PbAudioStream, PbVideoEvent, PbVideoPlayer},
     SceneComponentId,
 };
+use ipfs::IpfsResource;
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
@@ -146,7 +147,7 @@ pub fn update_video_players(
         Changed<AVPlayer>,
     >,
     mut images: ResMut<Assets<Image>>,
-    asset_server: Res<AssetServer>,
+    ipfs: Res<IpfsResource>,
     scenes: Query<&RendererSceneContext>,
 ) {
     for (ent, container, player, maybe_sink, maybe_texture) in video_players.iter() {
@@ -175,7 +176,7 @@ pub fn update_video_players(
             };
 
             let (video_sink, audio_sink) = av_sinks(
-                asset_server.clone(),
+                ipfs.clone(),
                 player.source.src.clone(),
                 context.hash.clone(),
                 image_handle,

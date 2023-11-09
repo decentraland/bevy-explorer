@@ -15,7 +15,7 @@ use console::DoAddConsoleCommand;
 use futures_lite::AsyncReadExt;
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},
-    EntityDefinition, IpfsLoaderExt,
+    EntityDefinition, IpfsAssetServer,
 };
 
 use crate::{renderer_context::RendererSceneContext, ContainingScene};
@@ -53,7 +53,7 @@ fn debug_dump_scene(
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
     scene: Query<&RendererSceneContext>,
-    asset_server: Res<AssetServer>,
+    ipfas: IpfsAssetServer,
     scene_definitions: Res<Assets<EntityDefinition>>,
     mut tasks: Local<Vec<Task<()>>>,
     console_relay: Res<ConsoleRelay>,
@@ -74,13 +74,13 @@ fn debug_dump_scene(
         };
 
         for scene in scenes {
-            let h_scene = asset_server.load_hash::<EntityDefinition>(&scene.hash);
+            let h_scene = ipfas.load_hash::<EntityDefinition>(&scene.hash);
             let Some(def) = scene_definitions.get(&h_scene) else {
                 input.reply_failed("can't resolve scene handle");
                 return;
             };
 
-            let dump_folder = asset_server
+            let dump_folder = ipfas
                 .ipfs()
                 .cache_path()
                 .to_owned()
@@ -100,7 +100,7 @@ fn debug_dump_scene(
 
                 let path = PathBuf::from(&ipfs_path);
 
-                let asset_server = asset_server.clone();
+                let ipfs = ipfas.ipfs().clone();
                 let content_file = content_file.clone();
                 let dump_folder = dump_folder.clone();
                 let count = count.clone();
@@ -127,7 +127,7 @@ fn debug_dump_scene(
                         }
                     };
 
-                    let Ok(mut reader) = asset_server.ipfs().read(&path).await else {
+                    let Ok(mut reader) = ipfs.read(&path).await else {
                         report(Some(format!(
                             "{content_file} failed: couldn't load bytes\n"
                         )));
