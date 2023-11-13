@@ -322,6 +322,8 @@ fn update_gltf(
                         continue;
                     };
 
+                    mesh_data.normalize_joint_weights();
+
                     let has_joints = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();
                     let has_weights = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
                     let has_skin = maybe_skin.is_some();
