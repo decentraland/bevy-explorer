@@ -101,7 +101,7 @@ fn daylight_cycle(
             let sun_up = atmosphere.sun_position.dot(Vec3::Y);
             let rgb = Vec3::new(0.4, 0.4, 0.2) * sun_up.clamp(0.0, 1.0)
                 + Vec3::new(0.0, 0.0, 0.0) * (8.0 * (0.125 - sun_up.clamp(0.0, 0.125)));
-            let rgb = rgb.powf(1.0/2.2);
+            let rgb = rgb.powf(1.0 / 2.2);
             fog.color = Color::rgb(rgb.x, rgb.y, rgb.z);
         }
     }
