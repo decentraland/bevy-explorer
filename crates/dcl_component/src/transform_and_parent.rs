@@ -1,4 +1,7 @@
-use std::ops::{Add, Sub};
+use std::{
+    f32::EPSILON,
+    ops::{Add, Sub},
+};
 
 use bevy::prelude::{Quat, Transform, Vec3};
 
@@ -110,10 +113,21 @@ impl DclTransformAndParent {
             bevy::prelude::Quat::IDENTITY
         };
 
+        let mut scale = self.scale;
+        if scale.x == 0.0 {
+            scale.x = EPSILON;
+        };
+        if scale.y == 0.0 {
+            scale.y = EPSILON;
+        };
+        if scale.z == 0.0 {
+            scale.z = EPSILON;
+        };
+
         Transform {
             translation: self.translation.to_bevy_translation(),
             rotation,
-            scale: self.scale,
+            scale,
         }
     }
 
