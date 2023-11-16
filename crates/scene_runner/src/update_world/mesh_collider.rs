@@ -22,7 +22,6 @@ use crate::{
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
     sets::SceneLoopSets,
-    util::TryInsertEx,
 };
 use console::DoAddConsoleCommand;
 use dcl::interface::ComponentPosition;
@@ -1079,11 +1078,7 @@ fn render_debug_colliders(
                 MeshColliderShape::Sphere => {
                     meshes.add(bevy::prelude::shape::UVSphere::default().into())
                 }
-                MeshColliderShape::Shape(_, h_mesh) => {
-                    let mut h_mesh = h_mesh.clone();
-                    h_mesh.make_strong(&meshes);
-                    h_mesh
-                }
+                MeshColliderShape::Shape(_, h_mesh) => h_mesh.clone(),
             };
 
             let debug_ent = commands

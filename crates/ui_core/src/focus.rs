@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use super::ui_actions::UiActionSet;
-use common::{sets::SceneSets, util::TryInsertEx};
+use common::sets::SceneSets;
 
 #[derive(Component)]
 pub struct Focus;

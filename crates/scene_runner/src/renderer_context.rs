@@ -1,6 +1,6 @@
 use bevy::{prelude::*, utils::HashSet};
 
-use common::util::{dcl_assert, RingBuffer, TryInsertEx};
+use common::util::{dcl_assert, RingBuffer};
 use dcl::{
     interface::{CrdtStore, CrdtType},
     SceneId, SceneLogMessage,

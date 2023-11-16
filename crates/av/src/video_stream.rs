@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use common::structs::AudioDecoderError;
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::format::input;
-use ipfs::IpfsLoaderExt;
+use ipfs::{IpfsIo, IpfsResource};
 use isahc::ReadResponseExt;
 use kira::sound::streaming::StreamingSoundData;
 
@@ -28,7 +28,7 @@ pub struct VideoSink {
 }
 
 pub fn av_sinks(
-    asset_server: AssetServer,
+    ipfs: IpfsResource,
     source: String,
     hash: String,
     image: Handle<Image>,
@@ -41,7 +41,7 @@ pub fn av_sinks(
     let (audio_sender, audio_receiver) = tokio::sync::mpsc::channel(10);
 
     spawn_av_thread(
-        asset_server,
+        ipfs,
         command_receiver,
         video_sender,
         audio_sender,
@@ -71,25 +71,25 @@ pub fn av_sinks(
 }
 
 pub fn spawn_av_thread(
-    asset_server: AssetServer,
+    ipfs: IpfsResource,
     commands: tokio::sync::mpsc::Receiver<AVCommand>,
     frames: tokio::sync::mpsc::Sender<VideoData>,
     audio: tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
     path: String,
     hash: String,
 ) {
-    std::thread::spawn(move || av_thread(asset_server, commands, frames, audio, path, hash));
+    std::thread::spawn(move || av_thread(ipfs, commands, frames, audio, path, hash));
 }
 
 fn av_thread(
-    asset_server: AssetServer,
+    ipfs: IpfsResource,
     commands: tokio::sync::mpsc::Receiver<AVCommand>,
     frames: tokio::sync::mpsc::Sender<VideoData>,
     audio: tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
     path: String,
     hash: String,
 ) {
-    if let Err(e) = av_thread_inner(asset_server, commands, frames.clone(), audio, path, hash) {
+    if let Err(e) = av_thread_inner(&ipfs, commands, frames.clone(), audio, path, hash) {
         let _ = frames.blocking_send(VideoData::State(VideoState::VsError));
         warn!("av error: {e}");
     } else {
@@ -98,7 +98,7 @@ fn av_thread(
 }
 
 pub fn av_thread_inner(
-    asset_server: AssetServer,
+    ipfas: &IpfsIo,
     commands: tokio::sync::mpsc::Receiver<AVCommand>,
     video: tokio::sync::mpsc::Sender<VideoData>,
     audio: tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
@@ -121,7 +121,7 @@ pub fn av_thread_inner(
     };
 
     // source might be a content map file or a url
-    if let Some(content_url) = asset_server.ipfs().content_url(&path, &hash) {
+    if let Some(content_url) = ipfas.content_url(&path, &hash) {
         // check if it changed as content_url will return Some(path) when not found and path is url-compliant.
         // if it is a raw url we don't want to download initially as some servers reject http get requests on videos.
         if content_url != path {

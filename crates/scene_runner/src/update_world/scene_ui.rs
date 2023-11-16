@@ -6,12 +6,13 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use input_manager::MouseInteractionComponent;
+use ipfs::IpfsAssetServer;
 
 use crate::{
     renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
     ContainingScene, SceneEntity, SceneSets,
 };
-use common::{structs::PrimaryUser, util::TryInsertEx};
+use common::structs::PrimaryUser;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
@@ -25,7 +26,6 @@ use dcl_component::{
     },
     SceneComponentId, SceneEntityId,
 };
-use ipfs::IpfsLoaderExt;
 use ui_core::{
     combo_box::ComboBox,
     nine_slice::{Ui9Slice, Ui9SliceSet},
@@ -489,7 +489,7 @@ fn layout_scene_ui(
         Option<&UiInput>,
         Option<&UiDropdown>,
     )>,
-    asset_server: Res<AssetServer>,
+    ipfas: IpfsAssetServer,
     mut ui_target: ResMut<UiPointerTarget>,
     current_uis: Query<(Entity, &SceneUiRoot)>,
     ui_input_state: Query<&UiInputPersistentState>,
@@ -642,7 +642,7 @@ fn layout_scene_ui(
                                     }
 
                                     if let Some(texture) = background.texture.as_ref() {
-                                        if let Ok(image) = asset_server.load_content_file::<Image>(
+                                        if let Ok(image) = ipfas.load_content_file::<Image>(
                                             &texture.source,
                                             &scene_context.hash,
                                         ) {

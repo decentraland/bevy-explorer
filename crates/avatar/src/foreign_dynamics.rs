@@ -1,9 +1,6 @@
 use bevy::prelude::*;
 
-use common::{
-    dynamics::MAX_FALL_SPEED,
-    util::{QuatNormalizeExt, TryInsertEx},
-};
+use common::{dynamics::MAX_FALL_SPEED, util::QuatNormalizeExt};
 
 use comms::global_crdt::{ForeignPlayer, PlayerPositionEvent};
 use dcl_component::{transform_and_parent::DclTransformAndParent, SceneEntityId};
@@ -42,7 +39,7 @@ fn update_foreign_user_target_position(
     mut move_events: EventReader<PlayerPositionEvent>,
     mut players: Query<(&ForeignPlayer, Option<&mut PlayerTargetPosition>)>,
 ) {
-    for ev in move_events.iter() {
+    for ev in move_events.read() {
         let dcl_transform = DclTransformAndParent {
             translation: ev.translation,
             rotation: ev.rotation,

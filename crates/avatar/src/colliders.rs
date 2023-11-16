@@ -115,7 +115,7 @@ fn update_avatar_collider_actions(
     mut subscribe_events: EventReader<RpcCall>,
 ) {
     // gather any event receivers
-    for sender in subscribe_events.iter().filter_map(|ev| match ev {
+    for sender in subscribe_events.read().filter_map(|ev| match ev {
         RpcCall::SubscribePlayerClicked { sender } => Some(sender),
         _ => None,
     }) {

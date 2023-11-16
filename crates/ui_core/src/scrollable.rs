@@ -1,7 +1,5 @@
 use bevy::{input::mouse::MouseWheel, prelude::*, utils::HashMap, window::PrimaryWindow};
 
-use common::util::TryInsertEx;
-
 use super::ui_builder::SpawnSpacer;
 
 pub struct ScrollablePlugin;
@@ -204,7 +202,7 @@ fn update_scrollables(
     let mut vertical_scrollers = HashMap::default();
     let mut horizontal_scrollers = HashMap::default();
 
-    let wheel_events = wheel.iter().collect::<Vec<_>>();
+    let wheel_events = wheel.read().collect::<Vec<_>>();
 
     // gather scrollable components that need scrollbars
     for (

@@ -7,7 +7,7 @@ use common::{
     dcl_assert,
     sets::SetupSets,
     structs::PrimaryUser,
-    util::{RingBuffer, RingBufferReceiver, TryInsertEx},
+    util::{RingBuffer, RingBufferReceiver},
 };
 use comms::{
     chat_marker_things, global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport,
@@ -260,7 +260,7 @@ fn append_chat_messages(
         return;
     };
 
-    for ev in chats.iter().filter(|ev| {
+    for ev in chats.read().filter(|ev| {
         !chat_marker_things::ALL
             .iter()
             .any(|marker| ev.message.starts_with(*marker))

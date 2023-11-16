@@ -1,8 +1,8 @@
-use bevy::asset::{AssetIo, AssetServer};
-use deno_core::{anyhow::anyhow, error::AnyError, op, Op, OpDecl, OpState};
+use bevy::asset::io::AssetReader;
+use deno_core::{anyhow::anyhow, error::AnyError, futures::AsyncReadExt, op, Op, OpDecl, OpState};
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},
-    IpfsLoaderExt,
+    IpfsResource,
 };
 use serde::Serialize;
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
@@ -30,20 +30,16 @@ async fn op_read_file(
     op_state: Rc<RefCell<OpState>>,
     filename: String,
 ) -> Result<ReadFileResponse, AnyError> {
-    let asset_server = op_state.borrow_mut().borrow::<AssetServer>().clone();
+    let ipfs = op_state.borrow_mut().borrow::<IpfsResource>().clone();
     let hash = op_state.borrow_mut().borrow::<CrdtContext>().hash.clone();
     let ipfs_path = IpfsPath::new(IpfsType::new_content_file(hash, filename));
+    let ipfs_pathbuf = PathBuf::from(&ipfs_path);
 
-    let content = asset_server
-        .ipfs()
-        .load_path(&PathBuf::from(&ipfs_path))
-        .await
-        .map_err(|e| anyhow!(e))?;
-    let hash = asset_server
-        .ipfs()
-        .ipfs_hash(&ipfs_path)
-        .await
-        .unwrap_or_default();
+    let mut reader = ipfs.read(&ipfs_pathbuf).await.map_err(|e| anyhow!(e))?;
+    let hash = ipfs.ipfs_hash(&ipfs_path).await.unwrap_or_default();
+
+    let mut content = Vec::default();
+    reader.read_to_end(&mut content).await?;
 
     Ok(ReadFileResponse { content, hash })
 }
@@ -69,10 +65,8 @@ async fn op_scene_information(
     op_state: Rc<RefCell<OpState>>,
 ) -> Result<SceneInfoResponse, AnyError> {
     let urn = op_state.borrow().borrow::<CrdtContext>().hash.clone();
-    let asset_server = op_state.borrow().borrow::<AssetServer>().clone();
-    asset_server
-        .ipfs()
-        .entity_definition(&urn)
+    let ipfs = op_state.borrow().borrow::<IpfsResource>().clone();
+    ipfs.entity_definition(&urn)
         .await
         .map(|(entity, base_url)| SceneInfoResponse {
             urn,
@@ -104,8 +98,8 @@ struct RealmInfoResponse {
 async fn op_realm_information(
     op_state: Rc<RefCell<OpState>>,
 ) -> Result<RealmInfoResponse, AnyError> {
-    let asset_server = op_state.borrow().borrow::<AssetServer>().clone();
-    let (base_url, info) = asset_server.ipfs().get_realm_info().await;
+    let ipfs = op_state.borrow().borrow::<IpfsResource>().clone();
+    let (base_url, info) = ipfs.get_realm_info().await;
 
     let info = info.ok_or_else(|| anyhow!("Not connected?"))?;
 

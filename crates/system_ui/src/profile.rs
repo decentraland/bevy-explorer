@@ -1,12 +1,12 @@
 use std::str::FromStr;
 
 use bevy::{prelude::*, ui::FocusPolicy, utils::HashMap};
+use ipfs::IpfsAssetServer;
 use urn::Urn;
 
 use avatar::{WearableCategory, WearableMetas, WearablePointerResult, WearablePointers};
-use common::{profile::AvatarColor, util::TryInsertEx};
+use common::profile::AvatarColor;
 use comms::profile::CurrentUserProfile;
-use ipfs::IpfsLoaderExt;
 use ui_core::{
     color_picker::ColorPicker,
     dialog::SpawnDialog,
@@ -76,7 +76,7 @@ fn toggle_profile_ui(
     current_profile: Res<CurrentUserProfile>,
     wearable_pointers: Res<WearablePointers>,
     wearable_metas: Res<WearableMetas>,
-    asset_server: Res<AssetServer>,
+    ipfas: IpfsAssetServer,
 ) {
     if let Ok((ent, edit)) = window.get_single() {
         if !edit.modified {
@@ -135,7 +135,7 @@ fn toggle_profile_ui(
                                 .iter()
                                 .any(|shape| shape.to_lowercase() == body_shape)
                         }) {
-                            asset_server
+                            ipfas
                                 .load_content_file::<Image>(&meta.thumbnail, hash)
                                 .ok()
                                 .map(|thumb| (thumb, meta.id.clone()))

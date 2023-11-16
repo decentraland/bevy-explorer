@@ -1,2 +1,190 @@
+   Compiling ipfs v0.1.0 (C:\Users\robfm\Documents\decentraland\bevy-explorer\crates\ipfs)
+   Compiling wallet v0.1.0 (C:\Users\robfm\Documents\decentraland\bevy-explorer\crates\wallet)
+   Compiling dcl v0.1.0 (C:\Users\robfm\Documents\decentraland\bevy-explorer\crates\dcl)
+   Compiling comms v0.1.0 (C:\Users\robfm\Documents\decentraland\bevy-explorer\crates\comms)
+   Compiling scene_runner v0.1.0 (C:\Users\robfm\Documents\decentraland\bevy-explorer\crates\scene_runner)
+   Compiling avatar v0.1.0 (C:\Users\robfm\Documents\decentraland\bevy-explorer\crates\avatar)
    Compiling av v0.1.0 (C:\Users\robfm\Documents\decentraland\bevy-explorer\crates\av)
-^C
+   Compiling system_ui v0.1.0 (C:\Users\robfm\Documents\decentraland\bevy-explorer\crates\system_ui)
+   Compiling restricted_actions v0.1.0 (C:\Users\robfm\Documents\decentraland\bevy-explorer\crates\restricted_actions)
+   Compiling user_input v0.1.0 (C:\Users\robfm\Documents\decentraland\bevy-explorer\crates\user_input)
+   Compiling decentra-bevy v0.1.0 (C:\Users\robfm\Documents\decentraland\bevy-explorer)
+    Finished release [optimized] target(s) in 37.12s
+     Running `target\release\decentra-bevy.exe --server https://peer.decentraland.org --location 0,0`
+[2m2023-11-09T11:55:04.098339Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.098381Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m waiting for scene to resolve
+[2m2023-11-09T11:55:04.201336Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.201408Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m waiting for scene to resolve
+[2m2023-11-09T11:55:04.418825Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.418858Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m waiting for scene to resolve
+[2m2023-11-09T11:55:04.430779Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.430805Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m waiting for scene to resolve
+[2m2023-11-09T11:55:04.448334Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.448362Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m waiting for scene to resolve
+[2m2023-11-09T11:55:04.462610Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.462639Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m waiting for scene to resolve
+[2m2023-11-09T11:55:04.486528Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.486562Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m waiting for scene to resolve
+[2m2023-11-09T11:55:04.508027Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.508052Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not loaded
+[2m2023-11-09T11:55:04.519468Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.519499Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.532905Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.532929Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.548232Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.548263Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.564935Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.564962Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.580577Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.580649Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.596737Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.596769Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.613522Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.613549Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.629813Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.629841Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.646358Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.646389Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.662918Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.662952Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.680522Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.680542Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.696794Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.696828Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.713265Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.713298Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.729703Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.729730Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.746295Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.746319Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.763025Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.763065Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.780281Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.780312Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.796673Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.796703Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.813166Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.813197Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.843437Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.843474Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.861400Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.861444Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.877963Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.877990Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.894474Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.894506Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.904250Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.904278Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.927784Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.927806Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.944434Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.944450Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.961116Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.961149Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.978151Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.978181Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:04.994542Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:04.994576Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.011124Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.011158Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.027976Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.028009Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.044482Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.044503Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.061122Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.061143Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.078105Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.078142Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.094452Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.094482Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.111609Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.111627Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.128109Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.128131Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.144475Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.144493Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.161088Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.161119Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.177942Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.177960Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.194463Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.194483Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.211210Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.211248Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.227925Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.227960Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.241153Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.241214Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.258046Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.258110Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.399769Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m encountered an io error while loading asset: w: file not found in content map: "models/core_building/interactiveitems/genesis_tx_transp.png" in bafkreieifr7pyaofncd6o7vdptvqgreqxxtcn3goycmiz4cnwz7yewjldq
+[2m2023-11-09T11:55:05.411684Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m encountered an io error while loading asset: w: file not found in content map: "models/genesis_tx_1.png" in bafkreieifr7pyaofncd6o7vdptvqgreqxxtcn3goycmiz4cnwz7yewjldq
+[2m2023-11-09T11:55:05.413391Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m encountered an io error while loading asset: w: file not found in content map: "models/genesis_tx_transp.png" in bafkreieifr7pyaofncd6o7vdptvqgreqxxtcn3goycmiz4cnwz7yewjldq
+[2m2023-11-09T11:55:05.440766Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m encountered an io error while loading asset: w: file not found in content map: "models/floor_wood01.png" in bafkreieifr7pyaofncd6o7vdptvqgreqxxtcn3goycmiz4cnwz7yewjldq
+[2m2023-11-09T11:55:05.461500Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.461574Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.523033Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.523073Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.652701Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:05.652748Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:05.673862Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m encountered an io error while loading asset: w: file not found in content map: "models/core_building/jukebox/genesis_tx_transp.png" in bafkreieifr7pyaofncd6o7vdptvqgreqxxtcn3goycmiz4cnwz7yewjldq
+[2m2023-11-09T11:55:06.329801Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:06.329852Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:06.541997Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:06.542041Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:07.575609Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:07.575645Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:07.623011Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:07.623047Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:07.675428Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:07.675447Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:07.689257Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m no `AssetLoader` found for the following extension: bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku
+[2m2023-11-09T11:55:07.706903Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:07.706932Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:07.723351Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m no `AssetLoader` found for the following extension: bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y
+[2m2023-11-09T11:55:07.723774Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:07.723789Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m scene not ready
+[2m2023-11-09T11:55:07.739314Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m out of world!
+[2m2023-11-09T11:55:07.739345Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m ready, returning to world (set spawn here) tick: 6
+[2m2023-11-09T11:55:07.739368Z[0m [34mDEBUG[0m [2mrestricted_actions::teleport[0m[2m:[0m chose [15.992096, 105.1, 4.3196564]
+[2m2023-11-09T11:55:07.764970Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m no `AssetLoader` found for the following extension: bafkreigqxm67dlimfk56cajjsjvvcreniks2utbiklqc22pji3cqh36qc4
+[2m2023-11-09T11:55:07.842381Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m encountered an io error while loading asset: w: file not found in content map: "models/console-artichoke/genesis_tx_1.png" in bafkreieifr7pyaofncd6o7vdptvqgreqxxtcn3goycmiz4cnwz7yewjldq
+[2m2023-11-09T11:55:08.048027Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m no `AssetLoader` found for the following extension: bafkreicjomlp7tkudql6qh3kdlwtitzw6ta5xepolczl5uwftgxukcvule
+[2m2023-11-09T11:55:08.071720Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m no `AssetLoader` found for the following extension: bafybeict4swshunh2llsxmfg2wjcvwtcois4lut3wkd4sw7pusfcvf5kjq
+[2m2023-11-09T11:55:08.236356Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m no `AssetLoader` found for the following extension: bafybeidkhcma6jhdvite2ztei4apjb6alsvxkls5nda5jxtv3ct4kujeui
+[2m2023-11-09T11:55:08.665729Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59953, url: "stun:164.90.181.219:3478", error_code: 701, error_text: "STUN server address is incompatible." }    
+[2m2023-11-09T11:55:08.665806Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59954, url: "stun:164.90.181.219:3478", error_code: 701, error_text: "STUN server address is incompatible." }    
+[2m2023-11-09T11:55:08.695493Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59953, url: "stun:ip-164-90-181-219.host.livekit.cloud:3478", error_code: 701, error_text: "STUN host lookup received error." }    
+[2m2023-11-09T11:55:08.695530Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59954, url: "stun:ip-164-90-181-219.host.livekit.cloud:3478", error_code: 701, error_text: "STUN host lookup received error." }    
+[2m2023-11-09T11:55:08.716086Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59953, url: "turn:ip-164-90-181-219.host.livekit.cloud:3478?transport=udp", error_code: 701, error_text: "TURN host lookup received error." }    
+[2m2023-11-09T11:55:08.716206Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59954, url: "turn:ip-164-90-181-219.host.livekit.cloud:3478?transport=udp", error_code: 701, error_text: "TURN host lookup received error." }    
+[2m2023-11-09T11:55:08.750865Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59412, url: "turns:dfra1a.turn.livekit.cloud:443?transport=tcp", error_code: 701, error_text: "" }    
+[2m2023-11-09T11:55:08.750900Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59411, url: "turns:dfra1a.turn.livekit.cloud:443?transport=tcp", error_code: 701, error_text: "" }    
+[2m2023-11-09T11:55:08.879376Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59962, url: "stun:164.90.181.219:3478", error_code: 701, error_text: "STUN server address is incompatible." }    
+[2m2023-11-09T11:55:08.879494Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59963, url: "stun:164.90.181.219:3478", error_code: 701, error_text: "STUN server address is incompatible." }    
+[2m2023-11-09T11:55:08.879710Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59965, url: "stun:164.90.181.219:3478", error_code: 701, error_text: "STUN server address is incompatible." }    
+[2m2023-11-09T11:55:08.879781Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59966, url: "stun:164.90.181.219:3478", error_code: 701, error_text: "STUN server address is incompatible." }    
+[2m2023-11-09T11:55:08.879800Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59962, url: "stun:ip-164-90-181-219.host.livekit.cloud:3478", error_code: 701, error_text: "STUN host lookup received error." }    
+[2m2023-11-09T11:55:08.879841Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59963, url: "stun:ip-164-90-181-219.host.livekit.cloud:3478", error_code: 701, error_text: "STUN host lookup received error." }    
+[2m2023-11-09T11:55:08.879962Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59965, url: "stun:ip-164-90-181-219.host.livekit.cloud:3478", error_code: 701, error_text: "STUN host lookup received error." }    
+[2m2023-11-09T11:55:08.879988Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59966, url: "stun:ip-164-90-181-219.host.livekit.cloud:3478", error_code: 701, error_text: "STUN host lookup received error." }    
+[2m2023-11-09T11:55:08.928921Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59962, url: "turn:ip-164-90-181-219.host.livekit.cloud:3478?transport=udp", error_code: 701, error_text: "TURN host lookup received error." }    
+[2m2023-11-09T11:55:08.929471Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59415, url: "turns:dfra1a.turn.livekit.cloud:443?transport=tcp", error_code: 701, error_text: "" }    
+[2m2023-11-09T11:55:08.929668Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59963, url: "turn:ip-164-90-181-219.host.livekit.cloud:3478?transport=udp", error_code: 701, error_text: "TURN host lookup received error." }    
+[2m2023-11-09T11:55:08.930041Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "[2a00:23c6:9e0e:x:x:x:x:x]", port: 59416, url: "turns:dfra1a.turn.livekit.cloud:443?transport=tcp", error_code: 701, error_text: "" }    
+[2m2023-11-09T11:55:08.976876Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m no `AssetLoader` found for the following extension: bafybeif7b6dxt6p4i6iwpjfaq7dy4ihjqrqlhsrx6swym6rl6l55kswzg4
+[2m2023-11-09T11:55:23.006024Z[0m [31mERROR[0m [2mscene_runner[0m[2m:[0m failed to send updates to scene 431v1 [IVec2(-9, -9)]: SendError { .. }
+[2m2023-11-09T11:55:23.006062Z[0m [31mERROR[0m [2mscene_runner[0m[2m:[0m [SceneId(431v1)] error: ReferenceError: XMLHttpRequest is not defined
+    at eval (eval at <anonymous> (file://${modulename}/:3258:22), <anonymous>:76:2212)
+    at new Promise (<anonymous>)
+    at Function.send (eval at <anonymous> (file://${modulename}/:3258:22), <anonymous>:76:2165)
+    at Client.eval (eval at <anonymous> (file://${modulename}/:3258:22), <anonymous>:91:57003)
+    at eval (eval at <anonymous> (file://${modulename}/:3258:22), <anonymous>:76:1909)
+    at Object.eval [as next] (eval at <anonymous> (file://${modulename}/:3258:22), <anonymous>:76:2014)
+    at eval (eval at <anonymous> (file://${modulename}/:3258:22), <anonymous>:76:929)
+    at new Promise (<anonymous>)
+    at __awaiter (eval at <anonymous> (file://${modulename}/:3258:22), <anonymous>:76:632)
+    at Client.createMatchMakeRequest (eval at <anonymous> (file://${modulename}/:3258:22), <anonymous>:91:56765)
+[2m2023-11-09T11:55:48.469521Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "192.168.1.x", port: 59952, url: "turn:164.90.181.219:3478?transport=udp", error_code: 701, error_text: "TURN allocate request timed out." }    
+[2m2023-11-09T11:55:48.681434Z[0m [31mERROR[0m [2mlivekit::rtc_engine::rtc_events[0m[2m:[0m IceCandidateError { address: "192.168.1.x", port: 59961, url: "turn:164.90.181.219:3478?transport=udp", error_code: 701, error_text: "TURN allocate request timed out." }    
+[2m2023-11-09T11:56:19.927893Z[0m [31mERROR[0m [2mlivekit_api::signal_client::signal_stream[0m[2m:[0m unhandled websocket message Err(Protocol(ResetWithoutClosingHandshake))    

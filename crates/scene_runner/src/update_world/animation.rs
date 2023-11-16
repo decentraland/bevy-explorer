@@ -1,8 +1,8 @@
 // TODO
 // - support blending animations
 // - suport morph targets
-use bevy::gltf::Gltf;
 use bevy::prelude::*;
+use bevy::{animation::RepeatAnimation, gltf::Gltf};
 
 use common::sets::SceneSets;
 use dcl::interface::ComponentPosition;
@@ -148,8 +148,8 @@ fn update_animations(
                     player.repeat();
                 } else {
                     // force restart if loop is false
-                    player.set_elapsed(0.0);
-                    player.stop_repeating();
+                    player.seek_to(0.0);
+                    player.set_repeat(RepeatAnimation::Never);
                 }
             }
 

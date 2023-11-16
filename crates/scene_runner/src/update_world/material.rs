@@ -1,7 +1,7 @@
 use bevy::{ecs::system::SystemParam, pbr::NotShadowCaster, prelude::*, render::primitives::Aabb};
+use ipfs::IpfsAssetServer;
 
 use crate::{renderer_context::RendererSceneContext, ContainerEntity, SceneSets};
-use common::util::TryInsertEx;
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::{
@@ -10,7 +10,6 @@ use dcl_component::{
     },
     SceneComponentId, SceneEntityId,
 };
-use ipfs::IpfsLoaderExt;
 
 use super::{mesh_renderer::update_mesh, AddCrdtInterfaceExt};
 
@@ -163,7 +162,7 @@ pub enum TextureResolveError {
 #[derive(SystemParam)]
 pub struct TextureResolver<'w, 's> {
     scenes: Query<'w, 's, &'static RendererSceneContext>,
-    asset_server: Res<'w, AssetServer>,
+    ipfas: IpfsAssetServer<'w, 's>,
     videos: Query<'w, 's, &'static VideoTextureOutput>,
 }
 
@@ -188,7 +187,7 @@ impl<'w, 's> TextureResolver<'w, 's> {
                 // TODO handle wrapmode and filtering once we have some asset processing pipeline in place (bevy 0.11-0.12)
                 Ok(ResolvedTexture {
                     image: self
-                        .asset_server
+                        .ipfas
                         .load_content_file::<Image>(&texture.src, &scene.hash)
                         .unwrap(),
                     touch: false,

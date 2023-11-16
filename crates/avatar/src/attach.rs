@@ -3,7 +3,6 @@ use bevy::prelude::*;
 use common::{
     sets::SceneSets,
     structs::{AttachPoints, PrimaryUser},
-    util::TryInsertEx,
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{
@@ -41,7 +40,7 @@ pub fn update_attached(
     mut removed_attachments: RemovedComponents<AvatarAttachment>,
     primary_user: Query<&AttachPoints, With<PrimaryUser>>,
 ) {
-    for removed in removed_attachments.iter() {
+    for removed in removed_attachments.read() {
         if let Some(mut commands) = commands.get_entity(removed) {
             commands.remove::<(ParentPositionSync, DisableCollisions)>();
         }

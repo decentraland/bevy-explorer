@@ -30,10 +30,10 @@ dcl_component = { path="crates/dcl_component" }
 restricted_actions = { path="crates/restricted_actions" }
 wallet = { path="crates/wallet" }
 
-bevy = { version = "0.11", features=["jpeg"] }
-bevy_console = "0.8.0"
-bevy_mod_billboard = "0.4"
-bevy_egui = "0.21"
+bevy = { version = "0.12", features=["jpeg"] }
+bevy_console = { git = "https://github.com/msklosak/bevy-console", branch = "bevy_0.12_update" }
+bevy_mod_billboard = { git = "https://github.com/robtfm/bevy_mod_billboard", branch = "bevy12" }
+bevy_egui = "0.23"
 
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
@@ -54,7 +54,7 @@ async-std = "1.12.0"
 # todo: use isahc 2.0 when it's released
 isahc = { git = "https://github.com/sagebind/isahc", rev="096aff7b13f4ff5bb474fdc27bc30b297a2968f6", default-features = false, features = ["json", "text-decoding", "http2", "rustls-tls-native-certs"] }
 kira = "0.8.4"
-bevy_kira_audio = { version= "0.16", features=["flac", "mp3", "ogg", "wav"] }
+bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "pub-mod-12", features=["flac", "mp3", "ogg", "wav"] }
 
 [dependencies]
 common = { workspace = true }
@@ -87,8 +87,8 @@ pico-args = "0.5.0"
 prost-build = "0.11.8"
 
 [patch.crates-io]
-bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.11.2-hotfix" }
-bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "pub-manager" }
+bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.12-hotfix2" }
+# bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "pub-manager" }
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0" }
 parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "try_convex" }
 rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }

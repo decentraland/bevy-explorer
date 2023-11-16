@@ -16,7 +16,7 @@ use futures_util::{pin_mut, select, stream::StreamExt, FutureExt, SinkExt};
 use prost::Message;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use common::util::{dcl_assert, AsH160, TryInsertEx};
+use common::util::{dcl_assert, AsH160};
 use dcl_component::proto_components::kernel::comms::{
     rfc4,
     rfc5::{
@@ -70,7 +70,7 @@ pub fn start_ws_room(
     mut room_events: EventReader<StartWsRoom>,
     current_profile: Res<CurrentUserProfile>,
 ) {
-    if let Some(ev) = room_events.iter().last() {
+    if let Some(ev) = room_events.read().last() {
         info!("starting ws-room protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
 

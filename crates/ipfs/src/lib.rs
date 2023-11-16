@@ -2,6 +2,7 @@ pub mod ipfs_path;
 
 use std::{
     io::ErrorKind,
+    marker::PhantomData,
     path::{Path, PathBuf},
     sync::{
         atomic::{self, AtomicU16},
@@ -11,10 +12,18 @@ use std::{
 };
 
 use anyhow::anyhow;
+use async_std::io::{Cursor, ReadExt};
 use bevy::{
-    asset::{Asset, AssetIo, AssetIoError, AssetLoader, FileAssetIo, LoadedAsset},
+    asset::{
+        io::{
+            file::FileAssetReader, AssetReader, AssetReaderError, AssetSource, AssetSourceId,
+            Reader,
+        },
+        Asset, AssetLoader, LoadState, UntypedAssetId,
+    },
+    ecs::system::SystemParam,
     prelude::*,
-    reflect::{TypePath, TypeUuid},
+    reflect::TypePath,
     tasks::{IoTaskPool, Task},
     utils::HashMap,
 };
@@ -45,8 +54,7 @@ pub struct EntityDefinitionJson {
     metadata: Option<serde_json::Value>,
 }
 
-#[derive(TypeUuid, Debug, Default, TypePath)]
-#[uuid = "d373738a-208e-4560-9e2e-020e5c64a852"]
+#[derive(Asset, Debug, Default, TypePath)]
 pub struct EntityDefinition {
     pub id: String,
     pub pointers: Vec<String>,
@@ -60,8 +68,7 @@ impl IpfsAsset for EntityDefinition {
     }
 }
 
-#[derive(TypeUuid, Debug, Clone, TypePath)]
-#[uuid = "f9f54e97-439f-4768-9ea0-f3e894049492"]
+#[derive(Asset, Debug, Clone, TypePath)]
 pub struct SceneJsFile(pub Arc<String>);
 
 impl IpfsAsset for SceneJsFile {
@@ -74,28 +81,35 @@ impl IpfsAsset for SceneJsFile {
 pub struct EntityDefinitionLoader;
 
 impl AssetLoader for EntityDefinitionLoader {
+    type Asset = EntityDefinition;
+    type Settings = ();
+    type Error = std::io::Error;
+
     fn load<'a>(
         &'a self,
-        bytes: &'a [u8],
+        reader: &'a mut Reader,
+        _settings: &'a Self::Settings,
         load_context: &'a mut bevy::asset::LoadContext,
-    ) -> bevy::utils::BoxedFuture<'a, Result<(), bevy::asset::Error>> {
+    ) -> bevy::utils::BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
+            let mut bytes = Vec::default();
+            reader.read_to_end(&mut bytes).await?;
+
             let maybe_definition_json = {
                 // try to parse as a vec
                 let definition_json_vec: Result<Vec<EntityDefinitionJson>, _> =
-                    serde_json::from_reader(bytes);
+                    serde_json::from_reader(bytes.as_slice());
                 match definition_json_vec {
                     Ok(mut vec) => vec.pop(),
                     Err(_) => {
                         // else try to parse as a single item
-                        Some(serde_json::from_reader(bytes)?)
+                        Some(serde_json::from_reader(bytes.as_slice())?)
                     }
                 }
             };
             let Some(definition_json) = maybe_definition_json else {
                 // if the source was an empty vec, we have loaded a pointer with no content, just set default
-                load_context.set_default_asset(LoadedAsset::new(EntityDefinition::default()));
-                return Ok(());
+                return Ok(EntityDefinition::default());
             };
             let content =
                 ContentMap(BiMap::from_iter(definition_json.content.into_iter().map(
@@ -121,8 +135,7 @@ impl AssetLoader for EntityDefinitionLoader {
                 content,
                 metadata: definition_json.metadata,
             };
-            load_context.set_default_asset(LoadedAsset::new(definition));
-            Ok(())
+            Ok(definition)
         })
     }
 
@@ -135,16 +148,22 @@ impl AssetLoader for EntityDefinitionLoader {
 pub struct SceneJsLoader;
 
 impl AssetLoader for SceneJsLoader {
+    type Asset = SceneJsFile;
+    type Settings = ();
+    type Error = std::io::Error;
+
     fn load<'a>(
         &'a self,
-        bytes: &'a [u8],
-        load_context: &'a mut bevy::asset::LoadContext,
-    ) -> bevy::utils::BoxedFuture<'a, Result<(), bevy::asset::Error>> {
+        reader: &'a mut Reader,
+        _settings: &'a Self::Settings,
+        _load_context: &'a mut bevy::asset::LoadContext,
+    ) -> bevy::utils::BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
-            load_context.set_default_asset(LoadedAsset::new(SceneJsFile(Arc::new(
-                String::from_utf8(bytes.to_vec())?,
-            ))));
-            Ok(())
+            let mut bytes = Vec::default();
+            reader.read_to_end(&mut bytes).await?;
+            Ok(SceneJsFile(Arc::new(String::from_utf8(bytes).map_err(
+                |e| std::io::Error::new(ErrorKind::InvalidData, e),
+            )?)))
         })
     }
 
@@ -182,28 +201,28 @@ pub enum SceneIpfsLocation {
     Urn(String),
 }
 
-pub trait IpfsLoaderExt {
-    fn load_content_file<T: Asset>(
-        &self,
-        file_path: &str,
-        content_hash: &str,
-    ) -> Result<Handle<T>, anyhow::Error>;
-
-    fn load_urn<T: IpfsAsset>(&self, urn: &str) -> Result<Handle<T>, anyhow::Error>;
-
-    fn load_url<T: IpfsAsset>(&self, urn: &str) -> Handle<T>;
-
-    fn load_hash<T: IpfsAsset>(&self, hash: &str) -> Handle<T>;
-
-    fn active_endpoint(&self) -> Option<String>;
-
-    fn ipfs(&self) -> &IpfsIo;
-
-    fn ipfs_cache_path(&self) -> &Path;
+#[derive(Resource, Clone)]
+pub struct IpfsResource {
+    inner: Arc<IpfsIo>,
 }
 
-impl IpfsLoaderExt for AssetServer {
-    fn load_content_file<T: Asset>(
+impl std::ops::Deref for IpfsResource {
+    type Target = IpfsIo;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+#[derive(SystemParam)]
+pub struct IpfsAssetServer<'w, 's> {
+    server: Res<'w, AssetServer>,
+    ipfs: Res<'w, IpfsResource>,
+    _p: PhantomData<&'s ()>,
+}
+
+impl<'w, 's> IpfsAssetServer<'w, 's> {
+    pub fn load_content_file<T: Asset>(
         &self,
         file_path: &str,
         content_hash: &str,
@@ -225,16 +244,16 @@ impl IpfsLoaderExt for AssetServer {
         // // TODO use registered loaders to extract extension
         // let file_path = Path::new(file_path);
         // let file_name = file_path.file_name().unwrap().to_str().unwrap();
-        // let path = format!("$ipfs//$entity//{hash}.{file_name}");
+        // let path = format!("$ipfs/$entity//{hash}.{file_name}");
         // Ok(self.load(path))
         let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
             content_hash.to_owned(),
             file_path.to_owned(),
         ));
-        Ok(self.load(PathBuf::from(&ipfs_path)))
+        Ok(self.server.load(PathBuf::from(&ipfs_path)))
     }
 
-    fn load_urn<T: IpfsAsset>(&self, urn: &str) -> Result<Handle<T>, anyhow::Error> {
+    pub fn load_urn<T: IpfsAsset>(&self, urn: &str) -> Result<Handle<T>, anyhow::Error> {
         let ext = T::ext();
         let ipfs_path = IpfsPath::new_from_urn::<T>(urn)?;
         let hash = ipfs_path
@@ -244,7 +263,7 @@ impl IpfsLoaderExt for AssetServer {
 
         if let Some(base_url) = ipfs_path.base_url() {
             // update the context
-            let ipfs_io = self.asset_io().downcast_ref::<IpfsIo>().unwrap();
+            let ipfs_io = self.ipfs();
             let mut context = ipfs_io.context.blocking_write();
             context.modifiers.insert(
                 hash,
@@ -253,24 +272,23 @@ impl IpfsLoaderExt for AssetServer {
                 },
             );
         }
-        Ok(self.load(path))
+        Ok(self.server.load(path))
     }
 
-    fn load_url<T: IpfsAsset>(&self, url: &str) -> Handle<T> {
+    pub fn load_url<T: IpfsAsset>(&self, url: &str) -> Handle<T> {
         let ext = T::ext();
         let ipfs_path = IpfsPath::new_from_url(url, ext);
-        self.load(PathBuf::from(&ipfs_path))
+        self.server.load(PathBuf::from(&ipfs_path))
     }
 
-    fn load_hash<T: IpfsAsset>(&self, hash: &str) -> Handle<T> {
+    pub fn load_hash<T: IpfsAsset>(&self, hash: &str) -> Handle<T> {
         let ext = T::ext();
         let path = format!("$ipfs/$entity/{hash}.{ext}");
-        self.load(path)
+        self.server.load(path)
     }
 
-    fn active_endpoint(&self) -> Option<String> {
-        let ipfs_io = self.asset_io().downcast_ref::<IpfsIo>().unwrap();
-        ipfs_io
+    pub fn active_endpoint(&self) -> Option<String> {
+        self.ipfs()
             .realm_config_receiver
             .borrow()
             .as_ref()
@@ -278,12 +296,20 @@ impl IpfsLoaderExt for AssetServer {
             .map(|content| format!("{}/entities/active", &content.public_url))
     }
 
-    fn ipfs(&self) -> &IpfsIo {
-        self.asset_io().downcast_ref().unwrap()
+    pub fn ipfs(&self) -> &Arc<IpfsIo> {
+        &self.ipfs.inner
     }
 
-    fn ipfs_cache_path(&self) -> &Path {
+    pub fn asset_server(&self) -> &AssetServer {
+        &self.server
+    }
+
+    pub fn ipfs_cache_path(&self) -> &Path {
         self.ipfs().cache_path()
+    }
+
+    pub fn load_state(&self, id: impl Into<UntypedAssetId>) -> LoadState {
+        self.server.load_state(id)
     }
 }
 
@@ -344,49 +370,48 @@ pub struct IpfsIoPlugin {
 
 impl Plugin for IpfsIoPlugin {
     fn build(&self, app: &mut App) {
-        let default_io = AssetPlugin {
-            asset_folder: self.cache_root.clone().unwrap_or("assets".to_owned()),
-            ..Default::default()
-        }
-        .create_platform_default_asset_io();
-
-        // TODO this will fail on android and wasm, investigate a caching solution there
-        let default_fs_path = default_io
-            .downcast_ref::<FileAssetIo>()
-            .unwrap()
-            .root_path()
-            .clone();
-
-        // create the custom asset io instance
         info!("remote server: {:?}", self.starting_realm);
 
+        let file_path = self.cache_root.clone().unwrap_or("assets".to_owned());
+        let default_reader = FileAssetReader::new(file_path);
+        let cache_root = default_reader.root_path().to_owned();
+
         let static_paths = HashMap::from_iter([("genesis_tx.png", "images/genesis_tx.png")]);
+        let ipfs_io = IpfsIo::new(Box::new(default_reader), cache_root, static_paths);
+        let ipfs_io = Arc::new(ipfs_io);
+        let passthrough = PassThroughReader {
+            inner: ipfs_io.clone(),
+        };
 
-        let ipfs_io = IpfsIo::new(default_io, default_fs_path, static_paths);
+        app.insert_resource(IpfsResource { inner: ipfs_io });
 
-        // the asset server is constructed and added the resource manager
-        app.insert_resource(AssetServer::new(ipfs_io))
-            .add_asset::<EntityDefinition>()
-            .add_asset::<SceneJsFile>()
-            .init_asset_loader::<EntityDefinitionLoader>()
-            .init_asset_loader::<SceneJsLoader>();
+        app.register_asset_source(
+            AssetSourceId::Default,
+            AssetSource::build().with_reader(move || Box::new(passthrough.clone())),
+        );
 
         app.add_event::<ChangeRealmEvent>();
         app.init_resource::<CurrentRealm>();
         app.add_systems(PostUpdate, change_realm);
 
+        app.add_console_command::<ChangeRealmCommand, _>(change_realm_command);
+    }
+
+    fn finish(&self, app: &mut App) {
+        app.init_asset::<EntityDefinition>()
+            .init_asset::<SceneJsFile>()
+            .init_asset_loader::<EntityDefinitionLoader>()
+            .init_asset_loader::<SceneJsLoader>();
+
         if let Some(realm) = &self.starting_realm {
-            let asset_server = app.world.resource::<AssetServer>().clone();
+            let ipfs = app.world.resource::<IpfsResource>().clone();
             let realm = realm.clone();
             IoTaskPool::get()
                 .spawn(async move {
-                    let ipfsio = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
-                    ipfsio.set_realm(realm).await;
+                    ipfs.set_realm(realm).await;
                 })
                 .detach();
         }
-
-        app.add_console_command::<ChangeRealmCommand, _>(change_realm_command);
     }
 }
 
@@ -424,14 +449,13 @@ pub struct CurrentRealm {
 #[allow(clippy::type_complexity)]
 fn change_realm(
     mut change_realm_requests: EventReader<ChangeRealmEvent>,
-    asset_server: Res<AssetServer>,
+    ipfs: Res<IpfsResource>,
     mut realm_change: Local<Option<tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>>>,
     mut current_realm: ResMut<CurrentRealm>,
     mut print: EventWriter<PrintConsoleLine>,
 ) {
-    let ipfsio = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
     match *realm_change {
-        None => *realm_change = Some(ipfsio.realm_config_receiver.clone()),
+        None => *realm_change = Some(ipfs.realm_config_receiver.clone()),
         Some(ref mut realm_change) => {
             if realm_change.has_changed().unwrap_or_default() {
                 if let Some((realm, about)) = &*realm_change.borrow_and_update() {
@@ -455,17 +479,16 @@ fn change_realm(
     }
 
     if !change_realm_requests.is_empty() {
-        let asset_server = asset_server.clone();
+        let ipfs = ipfs.clone();
         let new_realm = change_realm_requests
-            .iter()
+            .read()
             .last()
             .unwrap()
             .new_realm
             .to_owned();
         IoTaskPool::get()
             .spawn(async move {
-                let ipfsio = asset_server.asset_io().downcast_ref::<IpfsIo>().unwrap();
-                ipfsio.set_realm(new_realm).await;
+                ipfs.set_realm(new_realm).await;
             })
             .detach();
     }
@@ -490,7 +513,7 @@ pub struct IpfsContext {
 }
 
 pub struct IpfsIo {
-    default_io: Box<dyn AssetIo>,
+    default_io: Box<dyn AssetReader>,
     default_fs_path: PathBuf,
     pub realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>,
     realm_config_sender: tokio::sync::watch::Sender<Option<(String, ServerAbout)>>,
@@ -502,7 +525,7 @@ pub struct IpfsIo {
 
 impl IpfsIo {
     pub fn new(
-        default_io: Box<dyn AssetIo>,
+        default_io: Box<dyn AssetReader>,
         default_fs_path: PathBuf,
         static_paths: HashMap<&'static str, &'static str>,
     ) -> Self {
@@ -681,11 +704,7 @@ impl IpfsIo {
         client: Option<isahc::HttpClient>,
     ) -> Result<isahc::Response<isahc::AsyncBody>, anyhow::Error> {
         // get semaphore to limit concurrent requests
-        let _permit = self
-            .request_slots
-            .acquire()
-            .await
-            .map_err(|e| AssetIoError::Io(std::io::Error::new(ErrorKind::Other, e)))?;
+        let _permit = self.request_slots.acquire().await.map_err(|e| anyhow!(e))?;
 
         match client {
             Some(client) => client.send_async(request).await,
@@ -741,14 +760,15 @@ struct ActiveEntitiesRequest<'a> {
 #[derive(Deserialize, Debug)]
 pub struct ActiveEntitiesResponse(Vec<EntityDefinitionJson>);
 
-impl AssetIo for IpfsIo {
-    fn load_path<'a>(
+impl AssetReader for IpfsIo {
+    fn read<'a>(
         &'a self,
         path: &'a std::path::Path,
-    ) -> bevy::utils::BoxedFuture<'a, Result<Vec<u8>, bevy::asset::AssetIoError>> {
+    ) -> bevy::utils::BoxedFuture<'a, Result<Box<Reader<'a>>, bevy::asset::io::AssetReaderError>>
+    {
         Box::pin(async move {
             let wrap_err = |e| {
-                bevy::asset::AssetIoError::Io(std::io::Error::new(
+                bevy::asset::io::AssetReaderError::Io(std::io::Error::new(
                     ErrorKind::Other,
                     format!("w: {e}"),
                 ))
@@ -761,161 +781,185 @@ impl AssetIo for IpfsIo {
             let ipfs_path = match maybe_ipfs_path {
                 Some(ipfs_path) => ipfs_path,
                 // non-ipfs files are loaded as normal
-                None => return self.default_io.load_path(path).await,
+                None => return self.default_io.read(path).await,
             };
 
             let hash = ipfs_path.hash(&*self.context.read().await);
 
-            let file = match &hash {
-                None => None,
-                Some(hash) => {
-                    debug!("hash: {}", hash);
-                    self.default_io.load_path(Path::new(hash)).await.ok()
+            if let Some(hash) = &hash {
+                debug!("hash: {}", hash);
+                if let Ok(mut res) = self.default_io.read(Path::new(&hash)).await {
+                    let mut daft_buffer = Vec::default();
+                    res.read_to_end(&mut daft_buffer).await?;
+                    let reader: Box<Reader> = Box::new(Cursor::new(daft_buffer));
+                    return Ok(reader);
                 }
             };
 
-            if let Some(existing) = file {
-                debug!("existing");
-                Ok(existing)
-            } else {
-                debug!("remote");
+            debug!("remote");
 
-                // get semaphore to limit concurrent requests
-                let _permit = self
-                    .request_slots
-                    .acquire()
-                    .await
-                    .map_err(|e| AssetIoError::Io(std::io::Error::new(ErrorKind::Other, e)))?;
-                let token = self.reqno.fetch_add(1, atomic::Ordering::SeqCst);
+            // get semaphore to limit concurrent requests
+            let _permit = self.request_slots.acquire().await.map_err(|e| {
+                AssetReaderError::Io(std::io::Error::new(ErrorKind::Interrupted, e))
+            })?;
+            let token = self.reqno.fetch_add(1, atomic::Ordering::SeqCst);
 
-                // wait till connected
-                self.connected().await.map_err(wrap_err)?;
+            // wait till connected
+            self.connected().await.map_err(wrap_err)?;
 
-                let remote = ipfs_path
-                    .to_url(&*self.context.read().await)
-                    .map_err(wrap_err);
+            let remote = ipfs_path
+                .to_url(&*self.context.read().await)
+                .map_err(wrap_err);
 
-                if remote.is_err() {
-                    // check for default file
-                    if let Some(static_path) = ipfs_path
-                        .filename()
-                        .and_then(|file_path| self.static_files.get(file_path.as_ref()))
-                    {
-                        return self.default_io.load_path(Path::new(static_path)).await;
-                    }
+            if remote.is_err() {
+                // check for default file
+                if let Some(static_path) = ipfs_path
+                    .filename()
+                    .and_then(|file_path| self.static_files.get(file_path.as_ref()))
+                {
+                    return self.default_io.read(Path::new(static_path)).await;
                 }
-                let remote = remote?;
+            }
+            let remote = remote?;
 
-                debug!("[{token:?}]: remote url: `{remote}`");
+            debug!("[{token:?}]: remote url: `{remote}`");
 
-                let mut attempt = 0;
-                let data = loop {
-                    attempt += 1;
+            let mut attempt = 0;
+            let data = loop {
+                attempt += 1;
 
-                    let request = isahc::Request::get(&remote)
-                        .connect_timeout(Duration::from_secs(5 * attempt))
-                        .timeout(Duration::from_secs(30 * attempt))
-                        .body(())
-                        .map_err(|e| {
-                            AssetIoError::Io(std::io::Error::new(
-                                ErrorKind::Other,
-                                format!("[{token:?}]: {e}"),
-                            ))
-                        })?;
+                let request = isahc::Request::get(&remote)
+                    .connect_timeout(Duration::from_secs(5 * attempt))
+                    .timeout(Duration::from_secs(30 * attempt))
+                    .body(())
+                    .map_err(|e| {
+                        AssetReaderError::Io(std::io::Error::new(
+                            ErrorKind::Other,
+                            format!("[{token:?}]: {e}"),
+                        ))
+                    })?;
 
-                    let response = request.send_async().await;
+                let response = request.send_async().await;
 
-                    debug!(
-                        "[{token:?}]: attempt {attempt}: request: {remote}, response: {response:?}"
-                    );
+                debug!("[{token:?}]: attempt {attempt}: request: {remote}, response: {response:?}");
 
-                    let mut response = match response {
-                        Err(e) if e.is_timeout() && attempt <= 3 => continue,
-                        Err(e) => {
-                            return Err(AssetIoError::Io(std::io::Error::new(
-                                ErrorKind::Other,
-                                format!("[{token:?}]: {e}"),
-                            )))
-                        }
-                        Ok(response) if !matches!(response.status(), StatusCode::OK) => {
-                            return Err(AssetIoError::Io(std::io::Error::new(
-                                ErrorKind::Other,
-                                format!(
-                                    "[{token:?}]: server responded with status {} requesting `{}`",
-                                    response.status(),
-                                    remote,
-                                ),
-                            )))
-                        }
-                        Ok(response) => response,
-                    };
-
-                    let data = response.bytes().await;
-
-                    match data {
-                        Ok(data) => break data,
-                        Err(e) => {
-                            if matches!(e.kind(), std::io::ErrorKind::TimedOut) && attempt <= 3 {
-                                continue;
-                            }
-                            return Err(AssetIoError::Io(std::io::Error::new(
-                                ErrorKind::Other,
-                                format!("[{token:?}] {e}"),
-                            )));
-                        }
+                let mut response = match response {
+                    Err(e) if e.is_timeout() && attempt <= 3 => continue,
+                    Err(e) => {
+                        return Err(AssetReaderError::Io(std::io::Error::new(
+                            ErrorKind::Other,
+                            format!("[{token:?}]: {e}"),
+                        )))
                     }
+                    Ok(response) if !matches!(response.status(), StatusCode::OK) => {
+                        return Err(AssetReaderError::Io(std::io::Error::new(
+                            ErrorKind::Other,
+                            format!(
+                                "[{token:?}]: server responded with status {} requesting `{}`",
+                                response.status(),
+                                remote,
+                            ),
+                        )))
+                    }
+                    Ok(response) => response,
                 };
 
-                if let Some(hash) = hash {
-                    if ipfs_path.should_cache(&hash) {
-                        let mut cache_path = PathBuf::from(self.cache_path());
-                        cache_path.push(hash);
-                        let cache_path_str = cache_path.to_string_lossy().into_owned();
-                        // ignore errors trying to cache
-                        if let Err(e) = std::fs::write(cache_path, &data) {
-                            warn!("failed to cache `{cache_path_str}`: {e}");
-                        } else {
-                            debug!("cached ok `{cache_path_str}`");
+                let data = response.bytes().await;
+
+                match data {
+                    Ok(data) => break data,
+                    Err(e) => {
+                        if matches!(e.kind(), std::io::ErrorKind::TimedOut) && attempt <= 3 {
+                            continue;
                         }
+                        return Err(AssetReaderError::Io(std::io::Error::new(
+                            ErrorKind::Other,
+                            format!("[{token:?}] {e}"),
+                        )));
                     }
                 }
+            };
 
-                debug!("[{token:?}]: completed remote url: `{remote}`");
-                Ok(data)
+            if let Some(hash) = hash {
+                if ipfs_path.should_cache(&hash) {
+                    let mut cache_path = PathBuf::from(self.cache_path());
+                    cache_path.push(hash);
+                    let cache_path_str = cache_path.to_string_lossy().into_owned();
+                    // ignore errors trying to cache
+                    if let Err(e) = std::fs::write(cache_path, &data) {
+                        warn!("failed to cache `{cache_path_str}`: {e}");
+                    } else {
+                        debug!("cached ok `{cache_path_str}`");
+                    }
+                }
             }
+
+            debug!("[{token:?}]: completed remote url: `{remote}`");
+            let reader: Box<Reader> = Box::new(Cursor::new(data));
+            Ok(reader)
         })
     }
 
-    fn read_directory(
-        &self,
-        path: &std::path::Path,
-    ) -> Result<Box<dyn Iterator<Item = std::path::PathBuf>>, bevy::asset::AssetIoError> {
-        // we assume we are running for a default io path
+    fn read_meta<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> bevy::utils::BoxedFuture<'a, Result<Box<bevy::asset::io::Reader<'a>>, AssetReaderError>>
+    {
+        self.default_io.read_meta(path)
+    }
+
+    fn is_directory<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> bevy::utils::BoxedFuture<'a, Result<bool, AssetReaderError>> {
+        self.default_io.is_directory(path)
+    }
+
+    fn read_directory<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> bevy::utils::BoxedFuture<'a, Result<Box<bevy::asset::io::PathStream>, AssetReaderError>>
+    {
         self.default_io.read_directory(path)
     }
+}
 
-    fn get_metadata(
-        &self,
-        path: &std::path::Path,
-    ) -> Result<bevy::asset::Metadata, bevy::asset::AssetIoError> {
-        // we assume we are running for a default io path
-        self.default_io.get_metadata(path)
+#[derive(Clone)]
+pub struct PassThroughReader {
+    inner: Arc<IpfsIo>,
+}
+
+impl AssetReader for PassThroughReader {
+    fn read<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> bevy::utils::BoxedFuture<'a, Result<Box<Reader<'a>>, AssetReaderError>> {
+        self.inner.read(path)
     }
 
-    fn watch_path_for_changes(
-        &self,
-        _: &std::path::Path,
-        _: Option<std::path::PathBuf>,
-    ) -> Result<(), bevy::asset::AssetIoError> {
-        // do nothing
-        Ok(())
+    fn read_meta<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> bevy::utils::BoxedFuture<'a, Result<Box<Reader<'a>>, AssetReaderError>> {
+        if IpfsPath::new_from_path(path).is_ok() {
+            Box::pin(async move { Err(AssetReaderError::NotFound(path.to_owned())) })
+        } else {
+            self.inner.read_meta(path)
+        }
     }
 
-    fn watch_for_changes(
-        &self,
-        _: &bevy::asset::ChangeWatcher,
-    ) -> Result<(), bevy::asset::AssetIoError> {
-        // do nothing
-        Ok(())
+    fn read_directory<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> bevy::utils::BoxedFuture<'a, Result<Box<bevy::asset::io::PathStream>, AssetReaderError>>
+    {
+        self.inner.read_directory(path)
+    }
+
+    fn is_directory<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> bevy::utils::BoxedFuture<'a, Result<bool, AssetReaderError>> {
+        self.inner.is_directory(path)
     }
 }

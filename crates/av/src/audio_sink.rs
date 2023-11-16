@@ -1,8 +1,5 @@
 use bevy::prelude::*;
-use common::{
-    structs::{AudioDecoderError, PrimaryCamera, PrimaryUser},
-    util::TryInsertEx,
-};
+use common::structs::{AudioDecoderError, PrimaryCamera, PrimaryUser};
 use comms::global_crdt::ForeignAudioSource;
 use kira::{manager::backend::DefaultBackend, sound::streaming::StreamingSoundData, tween::Tween};
 use scene_runner::{ContainingScene, SceneEntity};

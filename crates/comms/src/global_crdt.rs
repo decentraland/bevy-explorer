@@ -214,7 +214,7 @@ pub fn process_transport_updates(
     mut subscribers: EventReader<RpcCall>,
 ) {
     // gather any event receivers
-    for (hash, sender) in subscribers.iter().filter_map(|ev| match ev {
+    for (hash, sender) in subscribers.read().filter_map(|ev| match ev {
         RpcCall::SubscribeMessageBus { sender, hash } => Some((hash, sender)),
         _ => None,
     }) {

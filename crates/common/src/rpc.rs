@@ -96,9 +96,14 @@ pub enum RpcCall {
         response: RpcResultSender<Vec<SpawnResponse>>,
     },
     GetUserData {
-        response: RpcResultSender<SerializedProfile>,
+        user: Option<String>,
+        response: RpcResultSender<Result<SerializedProfile, ()>>,
     },
     GetConnectedPlayers {
+        response: RpcResultSender<Vec<String>>,
+    },
+    GetPlayersInScene {
+        scene: Entity,
         response: RpcResultSender<Vec<String>>,
     },
     SubscribePlayerConnected {

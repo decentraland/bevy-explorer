@@ -1,7 +1,7 @@
 // https://github.com/decentraland/hammurabi/pull/33/files#diff-18afcd5f94e3688aad1ba36fa1db3e09b472b271d1e0cf5aeb59ebd32f43a328
 
 use super::{sign_request, SignedLoginMeta, Wallet};
-use bevy::prelude::warn;
+use bevy::utils::tracing::warn;
 use isahc::{
     http::{Method, StatusCode, Uri},
     AsyncReadResponseExt, RequestExt,

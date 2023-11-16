@@ -21,10 +21,7 @@ use livekit::{
 use prost::Message;
 use tokio::sync::mpsc::{error::TryRecvError, Receiver, Sender};
 
-use common::{
-    structs::AudioDecoderError,
-    util::{AsH160, TryInsertEx},
-};
+use common::{structs::AudioDecoderError, util::AsH160};
 use dcl_component::proto_components::kernel::comms::rfc4;
 
 use crate::{
@@ -68,7 +65,7 @@ pub fn start_livekit(
     mut room_events: EventReader<StartLivekit>,
     current_profile: Res<CurrentUserProfile>,
 ) {
-    if let Some(ev) = room_events.iter().last() {
+    if let Some(ev) = room_events.read().last() {
         info!("starting livekit protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
 

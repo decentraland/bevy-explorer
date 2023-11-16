@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 mod byte_stream;
 mod fetch_response_body_resource;
 
-use bevy::prelude::{debug, AssetServer};
+use bevy::prelude::debug;
 use deno_core::{
     anyhow,
     error::{type_error, AnyError},
@@ -16,7 +16,7 @@ use http::{
     header::{ACCEPT_ENCODING, CONTENT_LENGTH, HOST, RANGE},
     HeaderName, HeaderValue, Method, Uri,
 };
-use ipfs::IpfsLoaderExt;
+use ipfs::IpfsResource;
 use isahc::{
     config::{CaCertificate, ClientCertificate, PrivateKey},
     prelude::Configurable,
@@ -200,17 +200,17 @@ pub async fn op_fetch_send(
         .ok()
         .expect("multiple op_fetch_send ongoing");
 
-    let asset_server = state.borrow_mut().borrow_mut::<AssetServer>().clone();
+    let ipfs = state.borrow_mut().borrow_mut::<IpfsResource>().clone();
 
     let async_req = if let Some(body) = body_stream {
         let request = request.body(AsyncBody::from_reader(body.into_async_read()))?;
-        asset_server.ipfs().async_request(request, client).await
+        ipfs.async_request(request, client).await
     } else if let Some(body) = body_bytes {
         let request = request.body(body)?;
-        asset_server.ipfs().async_request(request, client).await
+        ipfs.async_request(request, client).await
     } else {
         let request = request.body(())?;
-        asset_server.ipfs().async_request(request, client).await
+        ipfs.async_request(request, client).await
     };
 
     let mut res = match async_req {
