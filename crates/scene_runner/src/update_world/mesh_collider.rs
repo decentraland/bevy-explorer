@@ -371,7 +371,7 @@ impl SceneColliderData {
                 true,
                 QueryFilter::default().groups(InteractionGroups::new(
                     Group::from_bits_truncate(collision_mask),
-                    Group::all(),
+                    Group::from_bits_truncate(collision_mask),
                 )),
             )
             .map(|(handle, intersection)| RaycastResult {
@@ -453,7 +453,7 @@ impl SceneColliderData {
             true,
             QueryFilter::default().groups(InteractionGroups::new(
                 Group::from_bits_truncate(collision_mask),
-                Group::all(),
+                Group::from_bits_truncate(collision_mask),
             )),
             |handle, intersection| {
                 results.push(RaycastResult {
@@ -618,7 +618,7 @@ fn update_colliders(
         }
         .collision_groups(InteractionGroups {
             memberships: Group::from_bits_truncate(collider_def.collision_mask),
-            filter: Group::all(),
+            filter: Group::from_bits_truncate(collider_def.collision_mask),
         })
         .build();
 
