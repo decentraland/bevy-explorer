@@ -35,7 +35,7 @@ async fn op_get_players_in_scene(state: Rc<RefCell<OpState>>) -> Vec<String> {
         let mut state = state.borrow_mut();
         let context = state.borrow::<CrdtContext>();
         let scene = context.scene_id.0;
-    
+
         state
             .borrow_mut::<RpcCalls>()
             .push(RpcCall::GetPlayersInScene {
