@@ -15,7 +15,11 @@ use common::{
     structs::{PrimaryCamera, PrimaryUser},
     util::TaskExt,
 };
-use comms::{global_crdt::ForeignPlayer, profile::CurrentUserProfile, NetworkMessage, Transport};
+use comms::{
+    global_crdt::ForeignPlayer,
+    profile::{CurrentUserProfile, UserProfile},
+    NetworkMessage, Transport,
+};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
 use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, ServerAbout};
@@ -50,6 +54,7 @@ impl Plugin for RestrictedActionsPlugin {
                 list_portables,
                 get_user_data,
                 get_connected_players,
+                get_players_in_scene,
                 event_player_connected,
                 event_player_disconnected,
                 event_player_moved_scene,
@@ -446,12 +451,34 @@ fn list_portables(
     }
 }
 
-fn get_user_data(profile: Res<CurrentUserProfile>, mut events: EventReader<RpcCall>) {
-    for response in events.read().filter_map(|ev| match ev {
-        RpcCall::GetUserData { response } => Some(response),
+fn get_user_data(
+    profile: Res<CurrentUserProfile>,
+    others: Query<(&ForeignPlayer, &UserProfile)>,
+    me: Res<Wallet>,
+    mut events: EventReader<RpcCall>,
+) {
+    for (user, response) in events.read().filter_map(|ev| match ev {
+        RpcCall::GetUserData { user, response } => Some((user, response)),
         _ => None,
     }) {
-        response.send(profile.0.content.clone());
+        match user {
+            None => response.send(Ok(profile.0.content.clone())),
+            Some(address) => {
+                if let Some((_, profile)) = others
+                    .iter()
+                    .find(|(fp, _)| *address == format!("{:#x}", fp.address))
+                {
+                    response.send(Ok(profile.content.clone()));
+                    return;
+                }
+
+                if *address == format!("{:#x}", me.address()) {
+                    response.send(Ok(profile.0.content.clone()));
+                } else {
+                    response.send(Err(()));
+                };
+            }
+        }
     }
 }
 
@@ -469,6 +496,34 @@ fn get_connected_players(
             .map(|f| format!("{:#x}", f.address))
             .chain(Some(format!("{:#x}", me.address())))
             .collect();
+        response.send(results);
+    }
+}
+
+fn get_players_in_scene(
+    me: Query<Entity, With<PrimaryUser>>,
+    wallet: Res<Wallet>,
+    others: Query<(Entity, &ForeignPlayer)>,
+    mut events: EventReader<RpcCall>,
+    containing_scene: ContainingScene,
+) {
+    for (scene, response) in events.read().filter_map(|ev| match ev {
+        RpcCall::GetPlayersInScene { scene, response } => Some((scene, response)),
+        _ => None,
+    }) {
+        let mut results = Vec::default();
+        if let Ok(player) = me.get_single() {
+            if containing_scene.get(player).contains(scene) {
+                results.push(format!("{:#x}", wallet.address()));
+            }
+        }
+
+        results.extend(
+            others
+                .iter()
+                .filter(|(e, _)| containing_scene.get(*e).contains(scene))
+                .map(|(_, f)| format!("{:#x}", f.address)),
+        );
         response.send(results);
     }
 }
