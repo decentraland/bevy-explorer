@@ -31,18 +31,18 @@ async fn op_get_connected_players(state: Rc<RefCell<OpState>>) -> Vec<String> {
 async fn op_get_players_in_scene(state: Rc<RefCell<OpState>>) -> Vec<String> {
     let (sx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();
 
-    let mut state = state.borrow_mut();
-    let context = state.borrow::<CrdtContext>();
-    let scene = context.scene_id.0;
-
-    state
-        .borrow_mut::<RpcCalls>()
-        .push(RpcCall::GetPlayersInScene {
-            scene,
-            response: sx.into(),
-        });
-
-    drop(state);
+    {
+        let mut state = state.borrow_mut();
+        let context = state.borrow::<CrdtContext>();
+        let scene = context.scene_id.0;
+    
+        state
+            .borrow_mut::<RpcCalls>()
+            .push(RpcCall::GetPlayersInScene {
+                scene,
+                response: sx.into(),
+            });
+    }
 
     rx.await.unwrap_or_default()
 }
