@@ -827,15 +827,19 @@ impl<'a> IntoDialogBody for NftDialog<'a> {
                     ..Default::default()
                 })
                 .with_children(|c| {
-                    let owner = if let Some(user) = &self.0.creator.user {
-                        format!("{} ({})", user.username, &self.0.creator.address)
-                    } else {
-                        self.0.creator.address.to_string()
-                    };
+                    let creator = self.0.creator.get_string();
                     c.spawn(TextBundle::from_section(
-                        format!("Owner: {owner}"),
+                        format!("Creator: {creator}"),
                         BODY_TEXT_STYLE.get().unwrap().clone(),
                     ));
+
+                    if let Some(owner) = self.0.top_ownerships.iter().next() {
+                        let owner = owner.owner.get_string();
+                        c.spawn(TextBundle::from_section(
+                            format!("Owner: {owner}"),
+                            BODY_TEXT_STYLE.get().unwrap().clone(),
+                        ));
+                    }
 
                     let last_sale = self
                         .0

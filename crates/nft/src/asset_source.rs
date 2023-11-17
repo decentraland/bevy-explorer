@@ -176,14 +176,27 @@ impl AssetReader for NftReader {
 
 #[derive(Deserialize)]
 pub struct NftUser {
-    pub username: String,
+    pub username: Option<String>,
 }
 
 #[derive(Deserialize)]
-pub struct NftCreator {
+pub struct NftIdent {
     pub user: Option<NftUser>,
     pub address: String,
 }
+
+impl NftIdent {
+    pub fn get_string(&self) -> String {
+        if let Some(user) = self.user.as_ref() {
+            if let Some(name) = user.username.as_ref() {
+                return format!("{} ({})", name, self.address);
+            }
+        }
+
+        return format!("{}", self.address);
+    }
+}
+
 
 #[derive(Deserialize)]
 pub struct NftPaymentToken {
@@ -215,14 +228,20 @@ impl NftLastSale {
     }
 }
 
+#[derive(Deserialize)]
+pub struct NftOwner {
+    pub owner: NftIdent,
+}
+
 #[derive(Asset, TypePath, Deserialize)]
 pub struct Nft {
     pub image_url: String,
     pub name: String,
     pub description: String,
     pub permalink: String,
-    pub creator: NftCreator,
+    pub creator: NftIdent,
     pub last_sale: Option<NftLastSale>,
+    pub top_ownerships: Vec<NftOwner>,
 }
 
 pub struct NftLoader;

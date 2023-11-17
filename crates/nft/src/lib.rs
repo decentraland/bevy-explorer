@@ -6,7 +6,7 @@ use asset_source::{Nft, NftLoader};
 use bevy::{
     gltf::Gltf,
     prelude::*,
-    utils::{HashMap, HashSet},
+    utils::{HashMap, HashSet}, asset::LoadState,
 };
 use common::{sets::SceneSets, util::TryPushChildrenEx};
 use dcl::interface::ComponentPosition;
@@ -156,7 +156,12 @@ fn load_nft(
 ) {
     for (ent, nft) in q.iter() {
         let Some(nft) = nfts.get(nft.0.id()) else {
-            println!("waiting for nft");
+            if asset_server.load_state(nft.0.id()) == LoadState::Failed {
+                println!("nft failed");
+                commands.entity(ent).remove::<NftLoading>();
+            } else {
+                println!("waiting for nft");
+            }
             continue;
         };
 
