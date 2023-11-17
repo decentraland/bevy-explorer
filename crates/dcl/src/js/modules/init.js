@@ -133,3 +133,8 @@ import * as _5 from "ext:deno_web/10_filereader.js"
 import * as _6 from "ext:deno_web/13_message_port.js"
 import * as _7 from "ext:deno_web/14_compression.js"
 import * as _8 from "ext:deno_web/15_performance.js"
+
+Deno.core.ops.op_set_promise_reject_callback((type, promise, reason) => {
+    console.error('Unhandled promise: ', reason)
+    Deno.core.ops.op_promise_reject();
+})
