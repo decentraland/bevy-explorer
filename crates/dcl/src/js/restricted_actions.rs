@@ -1,6 +1,6 @@
 use bevy::prelude::{Mat3, Quat, Vec3};
 use common::rpc::RpcCall;
-use deno_core::{op, Op, OpDecl, OpState};
+use deno_core::{anyhow::anyhow, error::AnyError, op, Op, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
@@ -26,6 +26,7 @@ pub fn ops() -> Vec<OpDecl> {
         op_change_realm::DECL,
         op_external_url::DECL,
         op_emote::DECL,
+        op_open_nft_dialog::DECL,
     ]
 }
 
@@ -188,4 +189,23 @@ fn op_emote(op_state: &mut OpState, emote: String) {
         SceneEntityId::PLAYER,
         Some(&mut DclReader::new(&buf)),
     );
+}
+
+#[op]
+async fn op_open_nft_dialog(op_state: Rc<RefCell<OpState>>, urn: String) -> Result<(), AnyError> {
+    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+
+    {
+        let mut state = op_state.borrow_mut();
+        let context = state.borrow::<CrdtContext>();
+        let scene = context.scene_id.0;
+
+        state.borrow_mut::<RpcCalls>().push(RpcCall::OpenNftDialog {
+            scene,
+            urn,
+            response: sx.into(),
+        });
+    }
+
+    rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
 }

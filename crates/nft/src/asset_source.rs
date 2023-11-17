@@ -9,6 +9,7 @@ use bevy::{
     prelude::*,
 };
 use isahc::{config::Configurable, http::StatusCode, AsyncReadResponseExt, RequestExt};
+use num::{BigInt, ToPrimitive};
 use serde::Deserialize;
 
 pub struct NftReaderPlugin;
@@ -173,9 +174,55 @@ impl AssetReader for NftReader {
     }
 }
 
+#[derive(Deserialize)]
+pub struct NftUser {
+    pub username: String,
+}
+
+#[derive(Deserialize)]
+pub struct NftCreator {
+    pub user: Option<NftUser>,
+    pub address: String,
+}
+
+#[derive(Deserialize)]
+pub struct NftPaymentToken {
+    pub symbol: String,
+    pub eth_price: String,
+    pub usd_price: String,
+}
+
+#[derive(Deserialize)]
+pub struct NftLastSale {
+    pub total_price: String,
+    pub payment_token: Option<NftPaymentToken>,
+}
+
+impl NftLastSale {
+    pub fn get_string(&self) -> Option<String> {
+        let token = self.payment_token.as_ref()?;
+        let big_price = BigInt::parse_bytes(self.total_price.as_bytes(), 10)?
+            / BigInt::parse_bytes("10000000000000000".as_bytes(), 10)?; // 1e16
+        let price = big_price.to_f32()? / 100.0; // ... 1e18 total, 2dp
+        let usd_price = token.usd_price.parse::<f32>().ok()?;
+        let eth_price = token.eth_price.parse::<f32>().ok()?;
+
+        Some(format!(
+            "ETH {:.2} (USD {:.2})",
+            eth_price * price,
+            usd_price * price
+        ))
+    }
+}
+
 #[derive(Asset, TypePath, Deserialize)]
 pub struct Nft {
     pub image_url: String,
+    pub name: String,
+    pub description: String,
+    pub permalink: String,
+    pub creator: NftCreator,
+    pub last_sale: Option<NftLastSale>,
 }
 
 pub struct NftLoader;

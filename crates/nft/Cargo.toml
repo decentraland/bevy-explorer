@@ -22,3 +22,5 @@ isahc = { workspace = true }
 once_cell = { workspace = true }
 async-std = { workspace = true }
 urlencoding = { workspace = true }
+
+num = "0.4.1"

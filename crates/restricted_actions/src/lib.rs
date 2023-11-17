@@ -1,16 +1,17 @@
 pub mod teleport;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use avatar::AvatarDynamicState;
 use bevy::{
+    asset::LoadState,
     math::Vec3Swizzles,
     prelude::*,
     tasks::{IoTaskPool, Task},
     utils::{HashMap, HashSet},
 };
 use common::{
-    rpc::{PortableLocation, RpcCall, RpcEventSender, SpawnResponse},
+    rpc::{PortableLocation, RpcCall, RpcEventSender, RpcResultSender, SpawnResponse},
     sets::SceneSets,
     structs::{PrimaryCamera, PrimaryUser},
     util::TaskExt,
@@ -24,6 +25,7 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
 use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, ServerAbout};
 use isahc::{http::StatusCode, AsyncReadResponseExt};
+use nft::asset_source::Nft;
 use scene_runner::{
     initialize_scene::{
         LiveScenes, PortableScenes, PortableSource, SceneHash, SceneLoading, PARCEL_SIZE,
@@ -34,7 +36,10 @@ use scene_runner::{
 };
 use serde_json::json;
 use teleport::{handle_out_of_world, teleport_player};
-use ui_core::dialog::SpawnDialog;
+use ui_core::{
+    dialog::{IntoDialogBody, SpawnDialog},
+    BODY_TEXT_STYLE,
+};
 use wallet::Wallet;
 
 pub struct RestrictedActionsPlugin;
@@ -62,6 +67,8 @@ impl Plugin for RestrictedActionsPlugin {
                 send_scene_messages,
                 teleport_player,
                 handle_out_of_world,
+                open_nft_dialog,
+                show_nft_dialog,
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -729,6 +736,165 @@ fn send_scene_messages(
             let _ = transport
                 .sender
                 .try_send(NetworkMessage::reliable(&message));
+        }
+    }
+}
+
+fn open_nft_dialog(
+    mut commands: Commands,
+    mut events: EventReader<RpcCall>,
+    containing_scene: ContainingScene,
+    primary_user: Query<Entity, With<PrimaryUser>>,
+    asset_server: Res<AssetServer>,
+) {
+    for (scene, urn, response) in events.read().filter_map(|c| match c {
+        RpcCall::OpenNftDialog {
+            scene,
+            urn,
+            response,
+        } => Some((scene, urn, response)),
+        _ => None,
+    }) {
+        let Ok(player) = primary_user.get_single() else {
+            response.send(Err("No player".to_owned()));
+            return;
+        };
+
+        if !containing_scene.get(player).contains(scene) {
+            response.send(Err("Not in scene".to_owned()));
+            return;
+        }
+
+        let h_nft = asset_server.load(format!("nft://{}.nft", urlencoding::encode(urn)));
+
+        commands.spawn(NftDialogSpawn {
+            h_nft,
+            response: response.clone(),
+        });
+    }
+}
+
+#[derive(Component)]
+pub struct NftDialogSpawn {
+    h_nft: Handle<Nft>,
+    response: RpcResultSender<Result<(), String>>,
+}
+
+pub struct NftDialog<'a>(&'a Nft, &'a AssetServer);
+
+impl<'a> IntoDialogBody for NftDialog<'a> {
+    fn body(self, commands: &mut ChildBuilder) {
+        commands
+            .spawn(NodeBundle {
+                style: Style {
+                    flex_direction: FlexDirection::Row,
+                    margin: UiRect::all(Val::Px(5.0)),
+                    justify_content: JustifyContent::SpaceBetween,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .with_children(|c| {
+                c.spawn(NodeBundle {
+                    style: Style {
+                        max_height: Val::Px(500.0),
+                        max_width: Val::Px(500.0),
+                        margin: UiRect::all(Val::Px(5.0)),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .with_children(|c| {
+                    let url = self.0.image_url.replace("auto=format", "format=png");
+                    let ipfs_path = IpfsPath::new_from_url(&url, "png");
+                    let h_image = self.1.load(PathBuf::from(&ipfs_path));
+
+                    c.spawn(ImageBundle {
+                        image: h_image.into(),
+                        ..Default::default()
+                    });
+                });
+
+                c.spawn(NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Column,
+                        justify_content: JustifyContent::SpaceAround,
+                        max_height: Val::Px(500.0),
+                        max_width: Val::Px(500.0),
+                        margin: UiRect::all(Val::Px(5.0)),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .with_children(|c| {
+                    let owner = if let Some(user) = &self.0.creator.user {
+                        format!("{} ({})", user.username, &self.0.creator.address)
+                    } else {
+                        self.0.creator.address.to_string()
+                    };
+                    c.spawn(TextBundle::from_section(
+                        format!("Owner: {owner}"),
+                        BODY_TEXT_STYLE.get().unwrap().clone(),
+                    ));
+
+                    let last_sale = self
+                        .0
+                        .last_sale
+                        .as_ref()
+                        .and_then(|ls| ls.get_string())
+                        .unwrap_or(String::from("???"));
+                    c.spawn(TextBundle::from_section(
+                        format!("Last Sale: {last_sale}"),
+                        BODY_TEXT_STYLE.get().unwrap().clone(),
+                    ));
+
+                    let description: String = if self.0.description.len() < 500 {
+                        self.0.description.clone()
+                    } else {
+                        self.0
+                            .description
+                            .chars()
+                            .take(500)
+                            .chain(std::iter::repeat('.').take(3))
+                            .collect()
+                    };
+                    c.spawn(TextBundle::from_section(
+                        format!("Description: {description}"),
+                        BODY_TEXT_STYLE.get().unwrap().clone(),
+                    ));
+                });
+            });
+    }
+}
+
+fn show_nft_dialog(
+    mut commands: Commands,
+    q: Query<(Entity, &NftDialogSpawn)>,
+    nfts: Res<Assets<Nft>>,
+    asset_server: Res<AssetServer>,
+) {
+    for (ent, nft_spawn) in q.iter() {
+        if let Some(nft) = nfts.get(nft_spawn.h_nft.id()) {
+            commands.entity(ent).remove::<NftDialogSpawn>();
+
+            nft_spawn.response.clone().send(Ok(()));
+            let link = nft.permalink.clone();
+
+            commands.spawn_dialog_two(
+                nft.name.clone(),
+                NftDialog(nft, &asset_server),
+                "Close",
+                move || {},
+                "View on Opensea",
+                move || {
+                    let _ = opener::open(link.clone());
+                },
+            )
+        } else if asset_server.load_state(nft_spawn.h_nft.id()) == LoadState::Failed {
+            commands.entity(ent).remove::<NftDialogSpawn>();
+            nft_spawn
+                .response
+                .send(Err("Failed to load nft".to_owned()));
         }
     }
 }
