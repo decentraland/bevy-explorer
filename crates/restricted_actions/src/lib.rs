@@ -436,7 +436,7 @@ fn list_portables(
         RpcCall::ListPortables { response } => Some(response),
         _ => None,
     }) {
-        println!("listing portables");
+        debug!("listing portables");
         let portables = portables
             .0
             .iter()

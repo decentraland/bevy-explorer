@@ -4,9 +4,10 @@ use std::{f32::consts::FRAC_PI_2, path::PathBuf};
 
 use asset_source::{Nft, NftLoader};
 use bevy::{
+    asset::LoadState,
     gltf::Gltf,
     prelude::*,
-    utils::{HashMap, HashSet}, asset::LoadState,
+    utils::{HashMap, HashSet},
 };
 use common::{sets::SceneSets, util::TryPushChildrenEx};
 use dcl::interface::ComponentPosition;
@@ -116,7 +117,7 @@ fn load_frame(
             .entry(frame.0)
             .or_insert_with(|| asset_server.load(*NFTSHAPE_LOOKUP.get(&frame.0).unwrap()));
         let Some(gltf) = gltfs.get(h_gltf.id()) else {
-            println!("waiting for frame");
+            debug!("waiting for frame");
             continue;
         };
 
@@ -157,10 +158,10 @@ fn load_nft(
     for (ent, nft) in q.iter() {
         let Some(nft) = nfts.get(nft.0.id()) else {
             if asset_server.load_state(nft.0.id()) == LoadState::Failed {
-                println!("nft failed");
+                debug!("nft failed");
                 commands.entity(ent).remove::<NftLoading>();
             } else {
-                println!("waiting for nft");
+                debug!("waiting for nft");
             }
             continue;
         };

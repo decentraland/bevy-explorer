@@ -36,7 +36,7 @@ impl AssetReader for NftReader {
     > {
         let path = path.to_owned();
         Box::pin(async move {
-            println!("getting nft raw data");
+            debug!("getting nft raw data");
 
             let path = path.to_string_lossy();
             let Some(encoded_urn) = path.split('.').next() else {
@@ -139,7 +139,7 @@ impl AssetReader for NftReader {
                 }
             };
 
-            println!("GOT nft RAW DATA!");
+            debug!("got nft raw data");
 
             let reader: Box<Reader> = Box::new(Cursor::new(data));
             Ok(reader)
@@ -196,7 +196,6 @@ impl NftIdent {
         return format!("{}", self.address);
     }
 }
-
 
 #[derive(Deserialize)]
 pub struct NftPaymentToken {
@@ -258,7 +257,7 @@ impl AssetLoader for NftLoader {
         _: &'a mut bevy::asset::LoadContext,
     ) -> bevy::utils::BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
-            println!("loading nft");
+            debug!("loading nft");
             let mut bytes = Vec::default();
             reader
                 .read_to_end(&mut bytes)
