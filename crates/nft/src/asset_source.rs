@@ -193,7 +193,7 @@ impl NftIdent {
             }
         }
 
-        return format!("{}", self.address);
+        self.address.clone()
     }
 }
 

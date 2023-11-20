@@ -833,7 +833,7 @@ impl<'a> IntoDialogBody for NftDialog<'a> {
                         BODY_TEXT_STYLE.get().unwrap().clone(),
                     ));
 
-                    if let Some(owner) = self.0.top_ownerships.iter().next() {
+                    if let Some(owner) = self.0.top_ownerships.first() {
                         let owner = owner.owner.get_string();
                         c.spawn(TextBundle::from_section(
                             format!("Owner: {owner}"),
