@@ -62,6 +62,7 @@ impl SceneComponentId {
     pub const AUDIO_STREAM: SceneComponentId = SceneComponentId(1021);
 
     pub const TEXT_SHAPE: SceneComponentId = SceneComponentId(1030);
+    pub const NFT_SHAPE: SceneComponentId = SceneComponentId(1040);
 
     pub const GLTF_CONTAINER: SceneComponentId = SceneComponentId(1041);
     pub const ANIMATOR: SceneComponentId = SceneComponentId(1042);

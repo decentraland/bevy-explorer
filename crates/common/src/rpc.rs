@@ -106,6 +106,11 @@ pub enum RpcCall {
         scene: Entity,
         response: RpcResultSender<Vec<String>>,
     },
+    OpenNftDialog {
+        scene: Entity,
+        urn: String,
+        response: RpcResultSender<Result<(), String>>,
+    },
     SubscribePlayerConnected {
         sender: RpcEventSender,
     },

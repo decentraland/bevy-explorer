@@ -1,5 +1,5 @@
 [package]
-name = "ipfs"
+name = "nft"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,19 +8,19 @@ edition = "2021"
 [dependencies]
 common = { workspace = true }
 console = { workspace = true }
+dcl = { workspace = true }
+dcl_component = { workspace = true }
+scene_runner = { workspace = true }
+ipfs = { workspace = true }
 
 bevy = { workspace = true }
 anyhow = { workspace = true }
-bevy_console = { workspace = true }
-bimap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
-clap = { workspace = true }
 urn = { workspace = true }
-async-std = { workspace = true }
 isahc = { workspace = true }
+once_cell = { workspace = true }
+async-std = { workspace = true }
 urlencoding = { workspace = true }
 
-url = "2.4.0"
-downcast-rs = "1.2"
+num = "0.4.1"

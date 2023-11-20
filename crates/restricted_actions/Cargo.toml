@@ -14,10 +14,12 @@ ui_core = { workspace = true }
 comms = { workspace = true }
 wallet = { workspace = true }
 dcl_component = { workspace = true }
+nft = { workspace = true }
 
 bevy = { workspace = true }
 tokio = { workspace = true }
 isahc = { workspace = true }
 serde_json = { workspace = true }
 ethers-core = { workspace = true }
+urlencoding = { workspace = true }
 opener = "0.6"

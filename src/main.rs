@@ -38,6 +38,7 @@ use comms::CommsPlugin;
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
 use ipfs::IpfsIoPlugin;
+use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use system_ui::SystemUiPlugin;
 use ui_core::UiCorePlugin;
 use user_input::UserInputPlugin;
@@ -211,7 +212,8 @@ fn main() {
             .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
                 starting_realm: Some(final_config.server.clone()),
                 cache_root: Default::default(),
-            }),
+            })
+            .add_before::<bevy::asset::AssetPlugin, _>(NftReaderPlugin),
     );
 
     if final_config.graphics.log_fps {
@@ -237,7 +239,8 @@ fn main() {
         .add_plugins(ConsolePlugin { add_egui: true })
         .add_plugins(VisualsPlugin { no_fog })
         .add_plugins(WalletPlugin)
-        .add_plugins(CommsPlugin);
+        .add_plugins(CommsPlugin)
+        .add_plugins(NftShapePlugin);
 
     if !no_avatar {
         app.add_plugins(AvatarPlugin);

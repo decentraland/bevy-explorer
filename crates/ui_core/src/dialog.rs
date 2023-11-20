@@ -15,10 +15,10 @@ pub trait SpawnDialog {
         button_one_action: impl IntoSystem<(), (), M>,
     );
 
-    fn spawn_dialog_two<M, N>(
+    fn spawn_dialog_two<M, N, B: IntoDialogBody>(
         &mut self,
         title: String,
-        body: String,
+        body: B,
         button_one_label: impl Into<String>,
         button_one_action: impl IntoSystem<(), (), M>,
         button_two_label: impl Into<String>,
@@ -128,10 +128,10 @@ impl<'w, 's> SpawnDialog for Commands<'w, 's> {
             });
     }
 
-    fn spawn_dialog_two<M, N>(
+    fn spawn_dialog_two<M, N, B: IntoDialogBody>(
         &mut self,
         title: String,
-        body: String,
+        body: B,
         button_one_label: impl Into<String>,
         button_one_action: impl IntoSystem<(), (), M>,
         button_two_label: impl Into<String>,
@@ -194,10 +194,7 @@ impl<'w, 's> SpawnDialog for Commands<'w, 's> {
                     TextBundle::from_section(title, TITLE_TEXT_STYLE.get().unwrap().clone())
                         .with_text_alignment(TextAlignment::Center),
                 );
-                commands.spawn(
-                    TextBundle::from_section(body, BODY_TEXT_STYLE.get().unwrap().clone())
-                        .with_text_alignment(TextAlignment::Center),
-                );
+                body.body(commands);
                 commands
                     .spawn(NodeBundle {
                         style: Style {
@@ -247,5 +244,18 @@ impl<'w, 's> SpawnDialog for Commands<'w, 's> {
                         ));
                     });
             });
+    }
+}
+
+pub trait IntoDialogBody {
+    fn body(self, commands: &mut ChildBuilder);
+}
+
+impl<T: Into<String>> IntoDialogBody for T {
+    fn body(self, commands: &mut ChildBuilder) {
+        commands.spawn(
+            TextBundle::from_section(self, BODY_TEXT_STYLE.get().unwrap().clone())
+                .with_text_alignment(TextAlignment::Center),
+        );
     }
 }

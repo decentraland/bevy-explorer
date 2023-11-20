@@ -1,6 +1,6 @@
 use bevy::{prelude::*, utils::HashSet};
 use bevy_mod_billboard::{text::BillboardTextBounds, BillboardLockAxis, BillboardTextBundle};
-use common::sets::SceneSets;
+use common::{sets::SceneSets, util::TryPushChildrenEx};
 use dcl::interface::ComponentPosition;
 use dcl_component::{proto_components::sdk::components::PbTextShape, SceneComponentId};
 use ui_core::TEXT_SHAPE_FONT;
@@ -48,8 +48,8 @@ fn update_text_shapes(
 
     // add new nodes
     for (ent, text_shape) in query.iter() {
-        commands.entity(ent).with_children(|c| {
-            c.spawn((
+        let child = commands
+            .spawn((
                 BillboardTextBundle {
                     text: Text::from_section(
                         text_shape.0.text.as_str(),
@@ -78,7 +78,9 @@ fn update_text_shapes(
                     y_axis: false,
                     rotation: true,
                 },
-            ));
-        });
+            ))
+            .id();
+
+        commands.entity(ent).try_push_children(&[child]);
     }
 }

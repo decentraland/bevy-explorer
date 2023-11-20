@@ -188,7 +188,7 @@ pub fn update_video_players(
             commands
                 .entity(ent)
                 .try_insert((video_sink, video_output, audio_sink));
-            println!("{ent:?} has {}", player.source.src);
+            debug!("{ent:?} has {}", player.source.src);
         } else {
             let sink = maybe_sink.as_ref().unwrap();
             if player.source.playing.unwrap_or(true) {

@@ -37,6 +37,7 @@ fn main() -> Result<()> {
         "video_event",
         "visibility_component",
         "avatar_modifier_area",
+        "nft_shape",
     ];
 
     let mut sources = components

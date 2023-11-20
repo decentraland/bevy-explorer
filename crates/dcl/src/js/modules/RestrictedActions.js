@@ -26,7 +26,9 @@ module.exports.openExternalUrl = async function (body) {
     return await Deno.core.ops.op_external_url(body.url);
 }
 
-module.exports.openNftDialog = async function (body) { return {} }
+module.exports.openNftDialog = async function (body) { 
+    return await Deno.core.ops.op_open_nft_dialog(body.urn) 
+}
 module.exports.setCommunicationsAdapter = async function (body) { 
     console.error("RestrictedActions::setCommunicationsAdapter not implemented");
     return {} 

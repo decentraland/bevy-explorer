@@ -93,6 +93,7 @@ impl DclProtoComponent for sdk::components::PbAudioStream {}
 impl DclProtoComponent for sdk::components::PbVideoEvent {}
 impl DclProtoComponent for sdk::components::PbVisibilityComponent {}
 impl DclProtoComponent for sdk::components::PbAvatarModifierArea {}
+impl DclProtoComponent for sdk::components::PbNftShape {}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}

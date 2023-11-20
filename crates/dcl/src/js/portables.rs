@@ -78,6 +78,6 @@ async fn op_portable_list(state: Rc<RefCell<OpState>>) -> Vec<SpawnResponse> {
         });
 
     let res = rx.await.unwrap_or_default();
-    println!("res: {res:?}");
+    bevy::utils::tracing::debug!("portable list res: {res:?}");
     res
 }
