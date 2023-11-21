@@ -1,9 +1,13 @@
 use bevy::{prelude::*, utils::HashSet};
-use bevy_mod_billboard::{text::BillboardTextBounds, BillboardLockAxis, BillboardTextBundle};
+use bevy_mod_billboard::{
+    text::BillboardTextBounds, BillboardLockAxis, BillboardSettings, BillboardTextBundle,
+};
 use common::{sets::SceneSets, util::TryPushChildrenEx};
 use dcl::interface::ComponentPosition;
 use dcl_component::{proto_components::sdk::components::PbTextShape, SceneComponentId};
 use ui_core::TEXT_SHAPE_FONT;
+
+use crate::{renderer_context::RendererSceneContext, SceneEntity};
 
 use super::AddCrdtInterfaceExt;
 
@@ -30,9 +34,10 @@ impl From<PbTextShape> for TextShape {
 
 fn update_text_shapes(
     mut commands: Commands,
-    query: Query<(Entity, &TextShape), Changed<TextShape>>,
+    query: Query<(Entity, &SceneEntity, &TextShape), Changed<TextShape>>,
     existing: Query<(Entity, &Parent), With<BillboardTextBounds>>,
     mut removed: RemovedComponents<TextShape>,
+    scenes: Query<&RendererSceneContext>,
 ) {
     // remove changed and deleted nodes
     let old_parents = query
@@ -47,7 +52,12 @@ fn update_text_shapes(
     }
 
     // add new nodes
-    for (ent, text_shape) in query.iter() {
+    for (ent, scene_ent, text_shape) in query.iter() {
+        let bounds = scenes
+            .get(scene_ent.root)
+            .map(|c| c.bounds)
+            .unwrap_or_default();
+
         let child = commands
             .spawn((
                 BillboardTextBundle {
@@ -72,6 +82,11 @@ fn update_text_shapes(
                     text_anchor: bevy::sprite::Anchor::BottomCenter,
                     transform: Transform::from_scale(Vec3::splat(0.01))
                         .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
+                    billboard_settings: BillboardSettings {
+                        depth: true,
+                        bounds,
+                        enable_bounds: true,
+                    },
                     ..Default::default()
                 },
                 BillboardLockAxis {

@@ -30,12 +30,6 @@ fn fragment(
         discard;
     }
 
-    // if world_position.x < bounds.bounds.x || world_position.x > bounds.bounds.z || 
-    //    world_position.z < bounds.bounds.y || world_position.z > bounds.bounds.w 
-    // {
-    //     discard;
-    // }
-
     // alpha discard
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
 
