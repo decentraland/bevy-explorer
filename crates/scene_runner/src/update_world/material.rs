@@ -11,7 +11,11 @@ use dcl_component::{
     SceneComponentId, SceneEntityId,
 };
 
-use super::{mesh_renderer::update_mesh, AddCrdtInterfaceExt};
+use super::{
+    mesh_renderer::update_mesh,
+    scene_material::{SceneBound, SceneMaterial},
+    AddCrdtInterfaceExt,
+};
 
 pub struct MaterialDefinitionPlugin;
 
@@ -224,9 +228,10 @@ fn update_materials(
         (Entity, &MaterialDefinition, &ContainerEntity),
         Or<(Changed<MaterialDefinition>, With<RetryMaterial>)>,
     >,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    touch: Query<&Handle<StandardMaterial>, With<TouchMaterial>>,
+    mut materials: ResMut<Assets<SceneMaterial>>,
+    touch: Query<&Handle<SceneMaterial>, With<TouchMaterial>>,
     resolver: TextureResolver,
+    scenes: Query<&RendererSceneContext>,
 ) {
     for (ent, defn, container) in new_materials.iter_mut() {
         let textures: Result<Vec<_>, _> = [
@@ -265,14 +270,22 @@ fn update_materials(
         let [base_color_texture, emissive_texture, normal_map_texture]: [Option<ResolvedTexture>;
             3] = textures.try_into().unwrap();
 
+        let bounds = scenes
+            .get(container.root)
+            .map(|c| c.bounds)
+            .unwrap_or_default();
+
         let mut commands = commands.entity(ent);
         commands
             .remove::<RetryMaterial>()
-            .try_insert(materials.add(StandardMaterial {
-                base_color_texture: base_color_texture.map(|t| t.image),
-                emissive_texture: emissive_texture.map(|t| t.image),
-                normal_map_texture: normal_map_texture.map(|t| t.image),
-                ..defn.material.clone()
+            .try_insert(materials.add(SceneMaterial {
+                base: StandardMaterial {
+                    base_color_texture: base_color_texture.map(|t| t.image),
+                    emissive_texture: emissive_texture.map(|t| t.image),
+                    normal_map_texture: normal_map_texture.map(|t| t.image),
+                    ..defn.material.clone()
+                },
+                extension: SceneBound { bounds },
             }));
         if defn.shadow_caster {
             commands.remove::<NotShadowCaster>();
@@ -288,18 +301,18 @@ fn update_materials(
 
 #[allow(clippy::type_complexity)]
 fn update_bias(
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<SceneMaterial>>,
     query: Query<
-        (&Aabb, &Handle<StandardMaterial>),
-        Or<(Changed<Handle<StandardMaterial>>, Changed<Aabb>)>,
+        (&Aabb, &Handle<SceneMaterial>),
+        Or<(Changed<Handle<SceneMaterial>>, Changed<Aabb>)>,
     >,
 ) {
     for (aabb, h_material) in query.iter() {
         if let Some(material) = materials.get_mut(h_material) {
-            if material.alpha_mode == AlphaMode::Blend {
+            if material.base.alpha_mode == AlphaMode::Blend {
                 // add a bias based on the aabb size, to force an explicit transparent order which is
                 // hopefully correct, but should be better than nothing even if not always perfect
-                material.depth_bias = aabb.half_extents.length() * 1e-5;
+                material.base.depth_bias = aabb.half_extents.length() * 1e-5;
             }
         }
     }

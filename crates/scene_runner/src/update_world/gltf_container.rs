@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use bevy::{
     core_pipeline::tonemapping::{DebandDither, Tonemapping},
     gltf::{Gltf, GltfExtras},
+    pbr::ExtendedMaterial,
     prelude::*,
     render::{
         camera::CameraRenderGraph,
@@ -14,7 +15,7 @@ use bevy::{
         view::{ColorGrading, NoFrustumCulling, VisibleEntities},
     },
     scene::InstanceId,
-    utils::{HashMap, HashSet}, pbr::ExtendedMaterial,
+    utils::{HashMap, HashSet},
 };
 use rapier3d_f64::prelude::*;
 use serde::Deserialize;
@@ -31,7 +32,8 @@ use ipfs::{EntityDefinition, IpfsAssetServer};
 
 use super::{
     mesh_collider::{MeshCollider, MeshColliderShape},
-    AddCrdtInterfaceExt, scene_material::{SceneBound, SceneBoundPlugin, SceneMaterial},
+    scene_material::{SceneBound, SceneBoundPlugin, SceneMaterial},
+    AddCrdtInterfaceExt,
 };
 
 pub struct GltfDefinitionPlugin;
@@ -244,7 +246,6 @@ fn update_gltf(
         }
         let instance = loaded.0.as_ref().unwrap();
         if scene_spawner.instance_is_ready(*instance) {
-
             let mut animation_roots = HashSet::default();
 
             // let graph = _node_graph(&_debug_query, bevy_scene_entity);
@@ -358,14 +359,14 @@ fn update_gltf(
                         let Some(base) = base_mats.get(h_material) else {
                             panic!();
                         };
-                        commands.entity(spawned_ent).insert(
-                            bound_mats.add(ExtendedMaterial {
+                        commands
+                            .entity(spawned_ent)
+                            .insert(bound_mats.add(ExtendedMaterial {
                                 base: base.clone(),
                                 extension: SceneBound {
                                     bounds: context.bounds,
-                                }
-                            })
-                        );
+                                },
+                            }));
                     }
 
                     // process collider

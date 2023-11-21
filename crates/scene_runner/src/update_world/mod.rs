@@ -34,11 +34,11 @@ pub mod mesh_collider;
 pub mod mesh_renderer;
 pub mod pointer_events;
 pub mod raycast;
+pub mod scene_material;
 pub mod scene_ui;
 pub mod text_shape;
 pub mod transform_and_parent;
 pub mod visibility;
-pub mod scene_material;
 
 #[derive(Component, Default)]
 pub struct CrdtStateComponent<C, T> {

@@ -1,4 +1,8 @@
-use bevy::{prelude::*, pbr::{ExtendedMaterial, MaterialExtension}, render::render_resource::{AsBindGroup, ShaderRef}};
+use bevy::{
+    pbr::{ExtendedMaterial, MaterialExtension},
+    prelude::*,
+    render::render_resource::{AsBindGroup, ShaderRef},
+};
 
 pub type SceneMaterial = ExtendedMaterial<StandardMaterial, SceneBound>;
 

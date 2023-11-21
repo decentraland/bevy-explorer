@@ -329,7 +329,8 @@ pub(crate) fn load_scene_javascript(
             -(extent_max.y + 1) * 16,
             (extent_max.x + 1) * 16,
             -extent_min.y * 16,
-        ).as_vec4();
+        )
+        .as_vec4();
 
         // get main.crdt
         let maybe_serialized_crdt = match maybe_h_crdt {

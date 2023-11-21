@@ -12,7 +12,10 @@ use crate::{renderer_context::RendererSceneContext, SceneEntity};
 
 use self::truncated_cone::TruncatedCone;
 
-use super::{AddCrdtInterfaceExt, scene_material::{SceneMaterial, SceneBound}};
+use super::{
+    scene_material::{SceneBound, SceneMaterial},
+    AddCrdtInterfaceExt,
+};
 
 pub mod truncated_cone;
 pub struct MeshDefinitionPlugin;
@@ -118,11 +121,16 @@ impl Plugin for MeshDefinitionPlugin {
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn update_mesh(
     mut commands: Commands,
     new_primitives: Query<
-        (Entity, &SceneEntity, &MeshDefinition, Option<&Handle<SceneMaterial>>),
+        (
+            Entity,
+            &SceneEntity,
+            &MeshDefinition,
+            Option<&Handle<SceneMaterial>>,
+        ),
         Changed<MeshDefinition>,
     >,
     mut removed_primitives: RemovedComponents<MeshDefinition>,
@@ -190,12 +198,13 @@ pub fn update_mesh(
 
         if maybe_material.is_none() {
             let mat = default_material.entry(scene_ent.root).or_insert_with(|| {
-                let bounds = scenes.get(scene_ent.root).map(|c| c.bounds).unwrap_or_default();
+                let bounds = scenes
+                    .get(scene_ent.root)
+                    .map(|c| c.bounds)
+                    .unwrap_or_default();
                 materials.add(SceneMaterial {
                     base: Default::default(),
-                    extension: SceneBound {
-                        bounds,
-                    },
+                    extension: SceneBound { bounds },
                 })
             });
 
@@ -209,7 +218,5 @@ pub fn update_mesh(
         }
     }
 
-    default_material.retain(|scene, _| {
-        scenes.get(*scene).is_ok()
-    });
+    default_material.retain(|scene, _| scenes.get(*scene).is_ok());
 }
