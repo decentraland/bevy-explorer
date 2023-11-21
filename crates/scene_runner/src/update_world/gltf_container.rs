@@ -14,7 +14,7 @@ use bevy::{
         view::{ColorGrading, NoFrustumCulling, VisibleEntities},
     },
     scene::InstanceId,
-    utils::{HashMap, HashSet},
+    utils::{HashMap, HashSet}, pbr::ExtendedMaterial,
 };
 use rapier3d_f64::prelude::*;
 use serde::Deserialize;
@@ -31,7 +31,7 @@ use ipfs::{EntityDefinition, IpfsAssetServer};
 
 use super::{
     mesh_collider::{MeshCollider, MeshColliderShape},
-    AddCrdtInterfaceExt,
+    AddCrdtInterfaceExt, scene_material::{SceneBound, SceneBoundPlugin, SceneMaterial},
 };
 
 pub struct GltfDefinitionPlugin;
@@ -54,6 +54,8 @@ impl Plugin for GltfDefinitionPlugin {
 
         app.add_systems(Update, update_gltf.in_set(SceneSets::PostLoop));
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
+
+        app.add_plugins(SceneBoundPlugin);
     }
 }
 
@@ -104,12 +106,15 @@ fn update_gltf(
         Option<&Handle<Mesh>>,
         Option<&GltfExtras>,
         Option<&SkinnedMesh>,
+        Option<&Handle<StandardMaterial>>,
     )>,
     scene_def_handles: Query<&Handle<EntityDefinition>>,
-    (scene_defs, gltfs, ipfas): (
+    (scene_defs, gltfs, ipfas, base_mats, mut bound_mats): (
         Res<Assets<EntityDefinition>>,
         Res<Assets<Gltf>>,
         IpfsAssetServer,
+        Res<Assets<StandardMaterial>>,
+        ResMut<Assets<SceneMaterial>>,
     ),
     mut scene_spawner: ResMut<SceneSpawner>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -239,6 +244,7 @@ fn update_gltf(
         }
         let instance = loaded.0.as_ref().unwrap();
         if scene_spawner.instance_is_ready(*instance) {
+
             let mut animation_roots = HashSet::default();
 
             // let graph = _node_graph(&_debug_query, bevy_scene_entity);
@@ -279,6 +285,7 @@ fn update_gltf(
                     Tonemapping,
                     DebandDither,
                     ColorGrading,
+                    Handle<StandardMaterial>,
                 )>();
 
                 // add a container node so other systems can reference the root
@@ -296,6 +303,7 @@ fn update_gltf(
                     maybe_h_mesh,
                     maybe_extras,
                     maybe_skin,
+                    maybe_material,
                 )) = gltf_spawned_entities.get(spawned_ent)
                 {
                     // children of root nodes -> rotate
@@ -322,6 +330,7 @@ fn update_gltf(
                         continue;
                     };
 
+                    // fix up mesh
                     mesh_data.normalize_joint_weights();
 
                     let has_joints = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();
@@ -344,6 +353,22 @@ fn update_gltf(
                         }
                     }
 
+                    // substitute material
+                    if let Some(h_material) = maybe_material {
+                        let Some(base) = base_mats.get(h_material) else {
+                            panic!();
+                        };
+                        commands.entity(spawned_ent).insert(
+                            bound_mats.add(ExtendedMaterial {
+                                base: base.clone(),
+                                extension: SceneBound {
+                                    bounds: context.bounds,
+                                }
+                            })
+                        );
+                    }
+
+                    // process collider
                     let mut collider_base_name =
                         maybe_name.and_then(|name| name.as_str().strip_suffix("_collider"));
 

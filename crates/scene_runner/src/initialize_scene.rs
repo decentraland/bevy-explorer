@@ -324,6 +324,12 @@ pub(crate) fn load_scene_javascript(
             extent_max = extent_max.max(parcel);
         }
         let size = (extent_max - extent_min).as_uvec2();
+        let bounds = IVec4::new(
+            extent_min.x * 16,
+            -(extent_max.y + 1) * 16,
+            (extent_max.x + 1) * 16,
+            -extent_min.y * 16,
+        ).as_vec4();
 
         // get main.crdt
         let maybe_serialized_crdt = match maybe_h_crdt {
@@ -383,6 +389,7 @@ pub(crate) fn load_scene_javascript(
             is_portable,
             title,
             base,
+            bounds,
             meta.spawn_points.clone().unwrap_or_default(),
             root,
             size,
