@@ -7,10 +7,10 @@ use super::{
 };
 
 pub trait SpawnDialog {
-    fn spawn_dialog<M>(
+    fn spawn_dialog<M, B: IntoDialogBody>(
         &mut self,
         title: String,
-        body: String,
+        body: B,
         button_one_label: impl Into<String>,
         button_one_action: impl IntoSystem<(), (), M>,
     );
@@ -27,10 +27,10 @@ pub trait SpawnDialog {
 }
 
 impl<'w, 's> SpawnDialog for Commands<'w, 's> {
-    fn spawn_dialog<M>(
+    fn spawn_dialog<M, B: IntoDialogBody>(
         &mut self,
         title: String,
-        body: String,
+        body: B,
         button_one_label: impl Into<String>,
         button_one_action: impl IntoSystem<(), (), M>,
     ) {
@@ -90,10 +90,7 @@ impl<'w, 's> SpawnDialog for Commands<'w, 's> {
                     TextBundle::from_section(title, TITLE_TEXT_STYLE.get().unwrap().clone())
                         .with_text_alignment(TextAlignment::Center),
                 );
-                commands.spawn(
-                    TextBundle::from_section(body, BODY_TEXT_STYLE.get().unwrap().clone())
-                        .with_text_alignment(TextAlignment::Center),
-                );
+                body.body(commands);
                 commands
                     .spawn(NodeBundle {
                         style: Style {
