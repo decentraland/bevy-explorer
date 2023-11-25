@@ -220,7 +220,7 @@ async fn livekit_handler_inner(
 
                     match incoming {
                         livekit::RoomEvent::DataReceived { payload, participant, .. } => {
-                            if let Some(address) = participant.and_then(|p| p.identity().0.as_str().as_h160()) {
+                            if let Some(address) = participant.identity().0.as_str().as_h160() {
                                 let packet = match rfc4::Packet::decode(payload.as_slice()) {
                                     Ok(packet) => packet,
                                     Err(e) => {
