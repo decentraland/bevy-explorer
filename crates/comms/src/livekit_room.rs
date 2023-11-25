@@ -201,8 +201,6 @@ async fn livekit_handler_inner(
                         noise_suppression: true,
                         auto_gain_control: true,
                     },
-                    frame.sample_rate,
-                    frame.num_channels,
                 );
                 let mic_track = LocalTrack::Audio(LocalAudioTrack::create_audio_track("mic", RtcAudioSource::Native(native_source.clone())));
                 let track = participant.publish_track(mic_track, TrackPublishOptions{ source: TrackSource::Microphone, ..Default::default() }).await.unwrap();
@@ -326,12 +324,12 @@ async fn livekit_handler_inner(
     Ok(())
 }
 
-struct LivekitKiraBridge<'a> {
+struct LivekitKiraBridge {
     sample_rate: u32,
-    receiver: tokio::sync::mpsc::Receiver<AudioFrame<'a>>,
+    receiver: tokio::sync::mpsc::Receiver<AudioFrame>,
 }
 
-impl<'a> kira::sound::streaming::Decoder for LivekitKiraBridge<'a> {
+impl kira::sound::streaming::Decoder for LivekitKiraBridge {
     type Error = AudioDecoderError;
 
     fn sample_rate(&self) -> u32 {
