@@ -185,7 +185,7 @@ async fn livekit_handler_inner(
                             sample_rate: frame.sample_rate,
                             num_channels: frame.num_channels,
                             samples_per_channel: frame.data.len() as u32,
-                        }).await.unwrap();
+                        });
 
                         continue;
                     }
