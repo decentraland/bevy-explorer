@@ -10,7 +10,6 @@ use bevy::{
 };
 use futures_lite::StreamExt;
 use livekit::{
-    id::TrackSid,
     options::TrackPublishOptions,
     track::{LocalAudioTrack, LocalTrack, TrackSource},
     webrtc::{
@@ -169,46 +168,27 @@ async fn livekit_handler_inner(
     let rt2 = rt.clone();
 
     let task = rt.spawn(async move {
-        let (room, mut network_rx) = livekit::prelude::Room::connect(&address, &token, RoomOptions{ auto_subscribe: true, adaptive_stream: false, dynacast: false, ..Default::default() }).await.unwrap();
+        let (room, mut network_rx) = livekit::prelude::Room::connect(&address, &token, RoomOptions{ auto_subscribe: true, adaptive_stream: false, dynacast: false }).await.unwrap();
+        let native_source = NativeAudioSource::new(AudioSourceOptions{
+            echo_cancellation: true,
+            noise_suppression: true,
+            auto_gain_control: true,
+        });
+        let mic_track = LocalTrack::Audio(LocalAudioTrack::create_audio_track("mic", RtcAudioSource::Native(native_source.clone())));
+        room.local_participant().publish_track(mic_track, TrackPublishOptions{ source: TrackSource::Microphone, ..Default::default() }).await.unwrap();
 
-        // mic handler
-        let participant = room.local_participant().clone();
         rt2.spawn(async move {
-            let mut current_track: Option<(TrackSid, NativeAudioSource, u32, u32)> = None;
-
             while let Ok(frame) = mic.recv().await {
-                if let Some((sid, native_source, sample_rate, num_channels)) = &current_track {
-                    if *sample_rate == frame.sample_rate && *num_channels == frame.num_channels {
-                        let data = frame.data.iter().map(|f| (f * i16::MAX as f32) as i16).collect();
-                        native_source.capture_frame(&AudioFrame {
-                            data,
-                            sample_rate: frame.sample_rate,
-                            num_channels: frame.num_channels,
-                            samples_per_channel: frame.data.len() as u32,
-                        });
-
-                        continue;
-                    }
-
-                    // drop old track
-                    participant.unpublish_track(sid).await.unwrap();
-                }
-
-                // publish new track
-                let native_source = NativeAudioSource::new(
-                    AudioSourceOptions{
-                        echo_cancellation: true,
-                        noise_suppression: true,
-                        auto_gain_control: true,
-                    },
-                );
-                let mic_track = LocalTrack::Audio(LocalAudioTrack::create_audio_track("mic", RtcAudioSource::Native(native_source.clone())));
-                let track = participant.publish_track(mic_track, TrackPublishOptions{ source: TrackSource::Microphone, ..Default::default() }).await.unwrap();
-                current_track = Some((track.sid(), native_source, frame.sample_rate, frame.num_channels));
+                let data = frame.data.iter().map(|f| (f * i16::MAX as f32) as i16).collect();
+                native_source.capture_frame(&AudioFrame {
+                    data,
+                    sample_rate: frame.sample_rate,
+                    num_channels: frame.num_channels,
+                    samples_per_channel: frame.data.len() as u32,
+                })
             }
         });
 
-        // message handler
         'stream: loop {
             tokio::select!(
                 incoming = network_rx.recv() => {
