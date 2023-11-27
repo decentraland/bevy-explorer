@@ -335,19 +335,6 @@ pub(crate) fn load_scene_javascript(
         let base_x = base_x.parse::<i32>().unwrap();
         let base_y = base_y.parse::<i32>().unwrap();
         let base = IVec2::new(base_x, base_y);
-        match pointers.0.get(&base) {
-            Some(PointerResult::Exists { hash, .. }) => {
-                if hash != &definition.id {
-                    fail("mismatched ids");
-                    continue;
-                }
-            }
-            Some(_) => {
-                fail("PointerResult is nothing?");
-                continue;
-            }
-            _ => (),
-        };
 
         // populate pointers
         let mut extent_min = IVec2::MAX;
