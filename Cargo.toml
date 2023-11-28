@@ -94,3 +94,4 @@ bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.12-hotfix2"
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0" }
 parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "try_convex" }
 rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }
+serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_204_hotfix" }
