@@ -49,7 +49,7 @@ async fn op_read_file(
 struct SceneInfoResponse {
     urn: String,
     content: Vec<ContentFileEntry>,
-    meta_data: String,
+    metadata_json: String,
     base_url: String,
 }
 
@@ -78,7 +78,7 @@ async fn op_scene_information(
                     hash: v.to_owned(),
                 })
                 .collect(),
-            meta_data: entity.metadata.unwrap_or_default(),
+            metadata_json: entity.metadata.unwrap_or_default(),
             base_url: format!("{}/contents/", base_url),
         })
         .ok_or_else(|| anyhow!("Scene hash not found?!"))
