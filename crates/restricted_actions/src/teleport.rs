@@ -137,7 +137,7 @@ pub fn handle_out_of_world(
                 rng.gen_range(0.0..PARCEL_SIZE),
                 rng.gen_range(0.0..PARCEL_SIZE),
                 rng.gen_range(0.0..PARCEL_SIZE),
-            );
+            ) + base_position;
             let mut count = 100;
 
             if !context.spawn_points.is_empty() {
