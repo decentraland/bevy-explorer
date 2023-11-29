@@ -44,6 +44,7 @@ jobs:
           override: true
 #      - uses: Swatinem/rust-cache@v2
       - name: Install protoc
+        if: matrix.os != 'self-hosted-windows'
         uses: arduino/setup-protoc@v1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -59,17 +60,17 @@ jobs:
       - name: install ffmpeg deps (macOs)
         if: runner.os == 'macos'
         run: brew install ffmpeg pkg-config          
-#      - name: install ffmpeg deps (windows)
-#        if: runner.os == 'windows'
-#        run: |
-#          $VCINSTALLDIR = $(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
-#          Add-Content $env:GITHUB_ENV "LIBCLANG_PATH=${VCINSTALLDIR}\VC\Tools\LLVM\x64\bin`n"
-#          Invoke-WebRequest "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-6.0-full_build-shared.7z" -OutFile ffmpeg-6.0-full_build-shared.7z
-#          7z x ffmpeg-6.0-full_build-shared.7z
-#          mkdir ffmpeg
-#          mv ffmpeg-*/* ffmpeg/
-#          Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
-#          Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"          
+      - name: install ffmpeg deps (windows)
+        if: runner.os == 'windows' && matrix.os != 'self-hosted-windows'
+        run: |
+          $VCINSTALLDIR = $(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
+          Add-Content $env:GITHUB_ENV "LIBCLANG_PATH=${VCINSTALLDIR}\VC\Tools\LLVM\x64\bin`n"
+          Invoke-WebRequest "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-6.0-full_build-shared.7z" -OutFile ffmpeg-6.0-full_build-shared.7z
+          7z x ffmpeg-6.0-full_build-shared.7z
+          mkdir ffmpeg
+          mv ffmpeg-*/* ffmpeg/
+          Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
+          Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"          
       - uses: actions-rs/cargo@v1
         if: runner.os == 'windows'
         with:
