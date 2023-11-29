@@ -4,15 +4,12 @@
 use std::collections::BTreeMap;
 
 use bevy::{
-    core_pipeline::tonemapping::{DebandDither, Tonemapping},
-    gltf::{Gltf, GltfExtras},
+    gltf::{Gltf, GltfExtras, GltfLoaderSettings},
     pbr::ExtendedMaterial,
     prelude::*,
     render::{
-        camera::CameraRenderGraph,
         mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
-        primitives::Frustum,
-        view::{ColorGrading, NoFrustumCulling, VisibleEntities},
+        view::NoFrustumCulling,
     },
     scene::InstanceId,
     utils::{HashMap, HashSet},
@@ -189,7 +186,7 @@ fn update_gltf(
             continue;
         };
 
-        let h_gltf = match ipfas.load_content_file::<Gltf>(&gltf.0.src, &scene_def.id) {
+        let h_gltf = match ipfas.load_content_file_with_settings::<Gltf, GltfLoaderSettings>(&gltf.0.src, &scene_def.id, |s| {s.load_cameras = false;}) {
             Ok(h_gltf) => h_gltf,
             Err(e) => {
                 warn!("gltf content file not found: {e}");
@@ -275,17 +272,8 @@ fn update_gltf(
             };
 
             for spawned_ent in scene_spawner.iter_instance_entities(*instance) {
-                // delete any cameras
+                // delete any base materials
                 commands.entity(spawned_ent).remove::<(
-                    Camera,
-                    CameraRenderGraph,
-                    Projection,
-                    VisibleEntities,
-                    Frustum,
-                    Camera3d,
-                    Tonemapping,
-                    DebandDither,
-                    ColorGrading,
                     Handle<StandardMaterial>,
                 )>();
 

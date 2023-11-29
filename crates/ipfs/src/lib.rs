@@ -19,7 +19,7 @@ use bevy::{
             file::FileAssetReader, AssetReader, AssetReaderError, AssetSource, AssetSourceId,
             Reader,
         },
-        Asset, AssetLoader, LoadState, UntypedAssetId,
+        Asset, AssetLoader, LoadState, UntypedAssetId, meta::Settings,
     },
     ecs::system::SystemParam,
     prelude::*,
@@ -251,6 +251,19 @@ impl<'w, 's> IpfsAssetServer<'w, 's> {
             file_path.to_owned(),
         ));
         Ok(self.server.load(PathBuf::from(&ipfs_path)))
+    }
+
+    pub fn load_content_file_with_settings<T: Asset, S: Settings>(
+        &self,
+        file_path: &str,
+        content_hash: &str,
+        settings: impl Fn(&mut S) + Send + Sync + 'static,
+    ) -> Result<Handle<T>, anyhow::Error> {
+        let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+            content_hash.to_owned(),
+            file_path.to_owned(),
+        ));
+        Ok(self.server.load_with_settings(PathBuf::from(&ipfs_path), settings))
     }
 
     pub fn load_urn<T: IpfsAsset>(&self, urn: &str) -> Result<Handle<T>, anyhow::Error> {
