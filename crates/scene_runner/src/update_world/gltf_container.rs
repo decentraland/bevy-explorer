@@ -186,7 +186,13 @@ fn update_gltf(
             continue;
         };
 
-        let h_gltf = match ipfas.load_content_file_with_settings::<Gltf, GltfLoaderSettings>(&gltf.0.src, &scene_def.id, |s| {s.load_cameras = false;}) {
+        let h_gltf = match ipfas.load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
+            &gltf.0.src,
+            &scene_def.id,
+            |s| {
+                s.load_cameras = false;
+            },
+        ) {
             Ok(h_gltf) => h_gltf,
             Err(e) => {
                 warn!("gltf content file not found: {e}");
@@ -273,9 +279,9 @@ fn update_gltf(
 
             for spawned_ent in scene_spawner.iter_instance_entities(*instance) {
                 // delete any base materials
-                commands.entity(spawned_ent).remove::<(
-                    Handle<StandardMaterial>,
-                )>();
+                commands
+                    .entity(spawned_ent)
+                    .remove::<(Handle<StandardMaterial>,)>();
 
                 // add a container node so other systems can reference the root
                 commands.entity(spawned_ent).try_insert(ContainerEntity {
