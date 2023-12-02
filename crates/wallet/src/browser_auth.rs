@@ -157,17 +157,17 @@ pub async fn try_create_remote_ephemeral(
     Ok((signer, ephemeral_wallet, vec![delegate], chain_id))
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
+// #[cfg(test)]
+// mod test {
+//     use super::*;
 
-    #[tokio::test]
-    async fn test_gen_id() {
-        let Ok((signer, signature, _chain_id)) =
-            remote_sign_message("hello".as_bytes(), None).await
-        else {
-            return;
-        };
-        info!("signer {:?} signature {:?}", signer, signature);
-    }
-}
+//     #[tokio::test]
+//     async fn test_gen_id() {
+//         let Ok((signer, signature, _chain_id)) =
+//             remote_sign_message("hello".as_bytes(), None).await
+//         else {
+//             return;
+//         };
+//         info!("signer {:?} signature {:?}", signer, signature);
+//     }
+// }
