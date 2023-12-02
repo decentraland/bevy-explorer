@@ -2,48 +2,86 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bevy::prelude::*;
+use common::structs::ChainLink;
 use ethers_core::types::{transaction::eip2718::TypedTransaction, Address, Signature};
 use ethers_signers::{LocalWallet, Signer, WalletError};
 use isahc::http::Uri;
 use serde::{Deserialize, Serialize};
 
+pub mod browser_auth;
 pub mod signed_login;
 
 pub struct WalletPlugin;
 
 impl Plugin for WalletPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(Wallet::new(LocalWallet::new(&mut rand::thread_rng())));
+        app.init_resource::<Wallet>();
     }
 }
 
-#[derive(Resource, Clone)]
+#[derive(Resource, Clone, Default)]
 pub struct Wallet {
-    pub(crate) inner: Arc<Box<dyn ObjSafeWalletSigner + 'static + Send + Sync>>,
+    pub(crate) inner: Option<Arc<Box<dyn ObjSafeWalletSigner + 'static + Send + Sync>>>,
+    pub(crate) root_address: Option<Address>,
+    pub(crate) delegates: Vec<ChainLink>,
 }
 
 impl Wallet {
-    pub fn new(local_wallet: LocalWallet) -> Self {
-        Self {
-            inner: Arc::new(Box::new(local_wallet)),
-        }
+    pub fn disconnect(&mut self) {
+        self.inner = None;
+        self.root_address = None;
+        self.delegates.clear();
     }
 
-    pub async fn sign_message<S: Send + Sync + AsRef<[u8]>>(
-        &self,
-        message: S,
-    ) -> Result<Signature, WalletError> {
-        self.inner.sign_message(message.as_ref()).await
+    pub fn finalize_as_guest(&mut self) {
+        let inner: Arc<Box<dyn ObjSafeWalletSigner + Send + Sync>> =
+            Arc::new(Box::new(LocalWallet::new(&mut rand::thread_rng())));
+        self.root_address = Some(inner.address());
+        self.delegates.clear();
+        self.inner = Some(inner);
     }
 
-    pub fn address(&self) -> Address {
-        self.inner.address()
+    pub fn finalize(
+        &mut self,
+        root_address: Address,
+        local_wallet: LocalWallet,
+        auth: Vec<ChainLink>,
+    ) {
+        self.root_address = Some(root_address);
+        self.delegates = auth;
+        self.inner = Some(Arc::new(Box::new(local_wallet)));
+    }
+
+    pub async fn sign_message(&self, message: String) -> Result<SimpleAuthChain, WalletError> {
+        self.inner
+            .as_ref()
+            .ok_or_else(|| {
+                WalletError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::NotConnected,
+                    "wallet not connected",
+                ))
+            })?
+            .sign_message(message, self.root_address.unwrap(), &self.delegates)
+            .await
+    }
+
+    pub fn address(&self) -> Option<Address> {
+        self.inner.as_ref().map(|i| i.address())
+    }
+
+    pub fn root_address(&self) -> Option<Address> {
+        self.root_address
     }
 }
 
 #[async_trait]
 pub(crate) trait ObjSafeWalletSigner {
-    async fn sign_message(&self, message: &[u8]) -> Result<Signature, WalletError>;
+    async fn sign_message(
+        &self,
+        message: String,
+        root_address: Address,
+        delegates: &[ChainLink],
+    ) -> Result<SimpleAuthChain, WalletError>;
 
     /// Signs the transaction
     async fn sign_transaction(&self, message: &TypedTransaction) -> Result<Signature, WalletError>;
@@ -57,8 +95,19 @@ pub(crate) trait ObjSafeWalletSigner {
 
 #[async_trait]
 impl ObjSafeWalletSigner for LocalWallet {
-    async fn sign_message(&self, message: &[u8]) -> Result<Signature, WalletError> {
-        Signer::sign_message(self, message).await
+    async fn sign_message(
+        &self,
+        message: String,
+        root_address: Address,
+        delegates: &[ChainLink],
+    ) -> Result<SimpleAuthChain, WalletError> {
+        let signature = Signer::sign_message(self, &message).await?;
+        Ok(SimpleAuthChain::new(
+            root_address,
+            delegates,
+            message,
+            signature,
+        ))
     }
 
     async fn sign_transaction(&self, message: &TypedTransaction) -> Result<Signature, WalletError> {
@@ -78,19 +127,25 @@ impl ObjSafeWalletSigner for LocalWallet {
 pub struct SimpleAuthChain(Vec<ChainLink>);
 
 impl SimpleAuthChain {
-    pub fn new(signer_address: Address, payload: String, signature: Signature) -> Self {
-        Self(vec![
-            ChainLink {
-                ty: "SIGNER".to_owned(),
-                payload: format!("{signer_address:#x}"),
-                signature: String::default(),
-            },
-            ChainLink {
-                ty: "ECDSA_SIGNED_ENTITY".to_owned(),
-                payload,
-                signature: format!("0x{signature}"),
-            },
-        ])
+    pub fn new(
+        signer_address: Address,
+        delegates: &[ChainLink],
+        payload: String,
+        signature: Signature,
+    ) -> Self {
+        let mut links = Vec::with_capacity(delegates.len() + 2);
+        links.push(ChainLink {
+            ty: "SIGNER".to_owned(),
+            payload: format!("{signer_address:#x}"),
+            signature: String::default(),
+        });
+        links.extend(delegates.iter().cloned());
+        links.push(ChainLink {
+            ty: "ECDSA_SIGNED_ENTITY".to_owned(),
+            payload,
+            signature: format!("0x{signature}"),
+        });
+        Self(links)
     }
 
     pub fn headers(&self) -> impl Iterator<Item = (String, String)> + '_ {
@@ -138,19 +193,10 @@ pub async fn sign_request<META: Serialize>(
 
     let meta = serde_json::to_string(&meta).unwrap();
     let payload = format!("{}:{}:{}:{}", method, uri.path(), unix_time, meta).to_lowercase();
-    let signature = wallet.sign_message(&payload).await.unwrap();
-    let auth_chain = SimpleAuthChain::new(wallet.address(), payload, signature);
+    let auth_chain = wallet.sign_message(payload).await.unwrap();
 
     let mut headers: Vec<_> = auth_chain.headers().collect();
     headers.push(("x-identity-timestamp".to_owned(), format!("{}", unix_time)));
     headers.push(("x-identity-metadata".to_owned(), meta));
     headers
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ChainLink {
-    #[serde(rename = "type")]
-    ty: String,
-    payload: String,
-    signature: String,
 }

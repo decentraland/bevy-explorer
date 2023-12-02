@@ -31,6 +31,11 @@ pub struct AvatarWireFormat {
     pub snapshots: Option<AvatarSnapshots>,
 }
 
+#[derive(Deserialize)]
+pub struct LambdaProfiles {
+    pub avatars: Vec<SerializedProfile>,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SerializedProfile {

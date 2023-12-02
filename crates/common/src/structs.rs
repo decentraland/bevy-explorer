@@ -1,6 +1,7 @@
 use std::f32::consts::PI;
 
 use bevy::{prelude::*, utils::HashMap};
+use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
 
 // main user entity
@@ -118,14 +119,29 @@ pub struct UiRoot;
 #[derive(Resource, Default)]
 pub struct ToolTips(pub HashMap<&'static str, Vec<(String, bool)>>);
 
+// web3 authorization chain link
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ChainLink {
+    #[serde(rename = "type")]
+    pub ty: String,
+    pub payload: String,
+    pub signature: String,
+}
+
+// ephemeral identity info
+#[derive(Serialize, Deserialize)]
+pub struct PreviousLogin {
+    pub root_address: Address,
+    pub ephemeral_key: Vec<u8>,
+    pub auth: Vec<ChainLink>,
+}
+
 // app configuration
 #[derive(Serialize, Deserialize, Resource)]
 pub struct AppConfig {
     pub server: String,
     pub location: IVec2,
-    pub profile_version: u32,
-    pub profile_content: String,
-    pub profile_base_url: String,
+    pub previous_login: Option<PreviousLogin>,
     pub graphics: GraphicsSettings,
     pub scene_threads: usize,
     pub scene_load_distance: f32,
@@ -136,9 +152,7 @@ impl Default for AppConfig {
         Self {
             server: "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-main".to_owned(),
             location: IVec2::new(78, -7),
-            profile_version: 1,
-            profile_content: Default::default(),
-            profile_base_url: "https://peer.decentraland.zone/content/contents/".to_owned(),
+            previous_login: None,
             graphics: Default::default(),
             scene_threads: 4,
             scene_load_distance: 100.0,

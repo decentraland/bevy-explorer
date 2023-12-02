@@ -107,9 +107,7 @@ fn main() {
             .ok()
             .map(|va| va.0)
             .unwrap_or(base_config.location),
-        profile_version: base_config.profile_version,
-        profile_content: base_config.profile_content,
-        profile_base_url: base_config.profile_base_url,
+        previous_login: base_config.previous_login,
         graphics: GraphicsSettings {
             vsync: args
                 .value_from_str("--vsync")

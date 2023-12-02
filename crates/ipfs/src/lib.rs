@@ -49,10 +49,10 @@ pub struct TypedIpfsRef {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct EntityDefinitionJson {
-    id: Option<String>,
-    pointers: Vec<String>,
-    content: Vec<TypedIpfsRef>,
-    metadata: Option<serde_json::Value>,
+    pub id: Option<String>,
+    pub pointers: Vec<String>,
+    pub content: Vec<TypedIpfsRef>,
+    pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Asset, Debug, Default, TypePath)]
@@ -357,6 +357,7 @@ pub struct ServerAbout {
     pub content: Option<EndpointConfig>,
     pub comms: Option<CommsConfig>,
     pub configurations: Option<ServerConfiguration>,
+    pub lambdas: Option<EndpointConfig>,
 }
 
 impl ServerAbout {
@@ -375,6 +376,7 @@ impl Default for ServerAbout {
                 fixed_adapter: Some("offline:offline".to_owned()),
             }),
             configurations: Default::default(),
+            lambdas: Default::default(),
         }
     }
 }
@@ -755,6 +757,14 @@ impl IpfsIo {
         ));
         let res = ipfs_path.to_url(&self.context.blocking_read()).ok();
         res
+    }
+
+    pub fn lambda_endpoint(&self) -> Option<String> {
+        self.realm_config_receiver
+            .borrow()
+            .as_ref()
+            .and_then(|(_, about)| about.lambdas.as_ref())
+            .map(|l| l.public_url.clone())
     }
 }
 

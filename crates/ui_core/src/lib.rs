@@ -27,6 +27,7 @@ pub static TEXT_SHAPE_FONT: OnceCell<Handle<Font>> = OnceCell::new();
 pub static TITLE_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
 pub static BODY_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
 pub static BUTTON_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
+pub static BUTTON_DISABLED_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
 pub static HOVER_TEXT_STYLE: OnceCell<[TextStyle; 10]> = OnceCell::new();
 
 pub struct UiCorePlugin;
@@ -71,6 +72,13 @@ fn setup(asset_server: Res<AssetServer>) {
             font: asset_server.load("fonts/FiraSans-Bold.ttf"),
             font_size: 20.0,
             color: Color::BLACK,
+        })
+        .unwrap();
+    BUTTON_DISABLED_TEXT_STYLE
+        .set(TextStyle {
+            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+            font_size: 20.0,
+            color: Color::GRAY,
         })
         .unwrap();
     HOVER_TEXT_STYLE

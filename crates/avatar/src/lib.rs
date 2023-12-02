@@ -255,7 +255,13 @@ fn update_base_avatar_shape(
     for (ent, maybe_player, profile) in &root_avatar_defs {
         let (id, address) = match maybe_player {
             Some(player) => (player.scene_id, player.address),
-            None => (SceneEntityId::PLAYER, current_user_wallet.address()),
+            None => {
+                if let Some(address) = current_user_wallet.address() {
+                    (SceneEntityId::PLAYER, address)
+                } else {
+                    continue;
+                }
+            }
         };
 
         debug!("updating default avatar for {id}");

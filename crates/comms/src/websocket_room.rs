@@ -24,7 +24,7 @@ use dcl_component::proto_components::kernel::comms::{
         WsSignedChallenge, WsWelcome,
     },
 };
-use wallet::{SimpleAuthChain, Wallet};
+use wallet::Wallet;
 
 use crate::{global_crdt::PlayerMessage, profile::CurrentUserProfile, Transport, TransportType};
 
@@ -74,11 +74,15 @@ pub fn start_ws_room(
         info!("starting ws-room protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
 
+        let Some(current_profile) = current_profile.0.as_ref() else {
+            return;
+        };
+
         // queue a profile version message
         let response = rfc4::Packet {
             message: Some(rfc4::packet::Message::ProfileVersion(
                 rfc4::AnnounceProfileVersion {
-                    profile_version: current_profile.0.version,
+                    profile_version: current_profile.version,
                 },
             )),
         };
@@ -199,7 +203,10 @@ async fn websocket_room_handler_inner(
     // send peer identification
     let ident = WsPacket {
         message: Some(ws_packet::Message::PeerIdentification(WsIdentification {
-            address: format!("{:#x}", wallet.address()),
+            address: format!(
+                "{:#x}",
+                wallet.address().ok_or(anyhow!("wallet not connected"))?
+            ),
         })),
     };
     stream.send(ident.encode_to_vec().into()).await?;
@@ -241,8 +248,7 @@ async fn websocket_room_handler_inner(
                 debug!("<< challenge received; {challenge_to_sign}");
 
                 // sign challenge
-                let signature = wallet.sign_message(challenge_to_sign.as_bytes()).await?;
-                let chain = SimpleAuthChain::new(wallet.address(), challenge_to_sign, signature);
+                let chain = wallet.sign_message(challenge_to_sign).await?;
                 let auth_chain_json = serde_json::to_string(&chain)?;
                 debug!(">> auth chain created: {auth_chain_json}");
 

@@ -469,7 +469,10 @@ fn get_user_data(
         _ => None,
     }) {
         match user {
-            None => response.send(Ok(profile.0.content.clone())),
+            None => match profile.0.as_ref() {
+                Some(profile) => response.send(Ok(profile.content.clone())),
+                None => response.send(Err(())),
+            },
             Some(address) => {
                 if let Some((_, profile)) = others
                     .iter()
@@ -479,11 +482,17 @@ fn get_user_data(
                     return;
                 }
 
-                if *address == format!("{:#x}", me.address()) {
-                    response.send(Ok(profile.0.content.clone()));
-                } else {
-                    response.send(Err(()));
-                };
+                if let Some(my_address) = me.address() {
+                    if *address == format!("{:#x}", my_address) {
+                        match profile.0.as_ref() {
+                            Some(profile) => response.send(Ok(profile.content.clone())),
+                            None => response.send(Err(())),
+                        }
+                        continue;
+                    }
+                }
+
+                response.send(Err(()));
             }
         }
     }
@@ -501,7 +510,7 @@ fn get_connected_players(
         let results = others
             .iter()
             .map(|f| format!("{:#x}", f.address))
-            .chain(Some(format!("{:#x}", me.address())))
+            .chain(me.address().map(|address| format!("{:#x}", address)))
             .collect();
         response.send(results);
     }
@@ -521,7 +530,9 @@ fn get_players_in_scene(
         let mut results = Vec::default();
         if let Ok(player) = me.get_single() {
             if containing_scene.get(player).contains(scene) {
-                results.push(format!("{:#x}", wallet.address()));
+                if let Some(address) = wallet.address() {
+                    results.push(format!("{:#x}", address));
+                }
             }
         }
 
@@ -628,9 +639,13 @@ fn event_player_moved_scene(
     let new_scene: HashMap<_, _> = players
         .iter()
         .flat_map(|(p, f)| {
-            containing_scene
-                .get_parcel(p)
-                .map(|parcel| (f.map(|f| f.address).unwrap_or(me.address()), parcel))
+            containing_scene.get_parcel(p).map(|parcel| {
+                (
+                    f.map(|f| f.address)
+                        .unwrap_or(me.address().unwrap_or_default()),
+                    parcel,
+                )
+            })
         })
         .collect();
 
@@ -897,14 +912,14 @@ fn show_nft_dialog(
                     move || {
                         let _ = opener::open(link.clone());
                     },
-                )
+                );
             } else {
                 commands.spawn_dialog(
                     nft.name.clone().unwrap_or("Unnamed Nft".to_owned()),
                     NftDialog(nft, &asset_server),
                     "Close",
                     move || {},
-                )
+                );
             }
         } else if asset_server.load_state(nft_spawn.h_nft.id()) == LoadState::Failed {
             commands.entity(ent).remove::<NftDialogSpawn>();

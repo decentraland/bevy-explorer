@@ -93,7 +93,12 @@ fn toggle_profile_ui(
             );
         }
     } else {
-        let content = &current_profile.0.content;
+        let Some(profile) = &current_profile.0.as_ref() else {
+            error!("can't edit missing profile");
+            return;
+        };
+
+        let content = &profile.content;
         let edit_window = EditWindow {
             name: content.name.to_owned(),
             bodyshape: content.avatar.body_shape.clone().unwrap(),
@@ -425,16 +430,20 @@ fn toggle_profile_ui(
                     commands.spacer();
 
                     commands.spawn_button("Apply", move |mut commands: Commands, q: Query<&EditWindow>, mut profile: ResMut<CurrentUserProfile>| {
+                        let Some(profile) = profile.0.as_mut() else {
+                            error!("can't amend missing profile");
+                            return;
+                        };
                         let edit = q.single();
                         if edit.modified {
-                            profile.0.content.name = edit.name.clone();
-                            profile.0.content.avatar.body_shape = Some(edit.bodyshape.clone());
-                            profile.0.content.avatar.hair = Some(AvatarColor{ color: edit.hair.into() });
-                            profile.0.content.avatar.eyes = Some(AvatarColor{ color: edit.eyes.into() });
-                            profile.0.content.avatar.skin = Some(AvatarColor{ color: edit.skin.into() });
-                            profile.0.content.avatar.wearables = edit.wearables.values().cloned().collect();
-                            profile.0.version += 1;
-                            profile.0.content.version = profile.0.version as i64;
+                            profile.content.name = edit.name.clone();
+                            profile.content.avatar.body_shape = Some(edit.bodyshape.clone());
+                            profile.content.avatar.hair = Some(AvatarColor{ color: edit.hair.into() });
+                            profile.content.avatar.eyes = Some(AvatarColor{ color: edit.eyes.into() });
+                            profile.content.avatar.skin = Some(AvatarColor{ color: edit.skin.into() });
+                            profile.content.avatar.wearables = edit.wearables.values().cloned().collect();
+                            profile.version += 1;
+                            profile.content.version = profile.version as i64;
                         }
                         commands.entity(window).despawn_recursive()
                     });

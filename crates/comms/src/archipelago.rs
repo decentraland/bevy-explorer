@@ -19,7 +19,7 @@ use serde_json::json;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use common::rpc::{RpcCall, RpcEventSender};
-use wallet::{SimpleAuthChain, Wallet};
+use wallet::Wallet;
 
 use crate::{AdapterManager, Transport, TransportType};
 
@@ -262,7 +262,10 @@ async fn archipelago_handler_inner(
     let ident = ClientPacket {
         message: Some(client_packet::Message::ChallengeRequest(
             ChallengeRequestMessage {
-                address: format!("{:#x}", wallet.address()),
+                address: format!(
+                    "{:#x}",
+                    wallet.address().ok_or(anyhow!("wallet not connected"))?
+                ),
             },
         )),
     };
@@ -293,8 +296,7 @@ async fn archipelago_handler_inner(
                 debug!("<< challenge received; {challenge_to_sign}");
 
                 // sign challenge
-                let signature = wallet.sign_message(challenge_to_sign.as_bytes()).await?;
-                let chain = SimpleAuthChain::new(wallet.address(), challenge_to_sign, signature);
+                let chain = wallet.sign_message(challenge_to_sign).await?;
                 let auth_chain_json = serde_json::to_string(&chain)?;
                 debug!(">> auth chain created: {auth_chain_json}");
 

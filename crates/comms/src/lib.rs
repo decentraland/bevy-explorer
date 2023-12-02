@@ -18,6 +18,7 @@ use tokio::sync::mpsc::Sender;
 
 use dcl_component::{DclWriter, ToDclWriter};
 use ipfs::CurrentRealm;
+use wallet::Wallet;
 
 use self::{
     archipelago::{ArchipelagoPlugin, StartArchipelago},
@@ -100,10 +101,16 @@ fn process_realm_change(
     realm: Res<CurrentRealm>,
     adapters: Query<Entity, With<Transport>>,
     mut manager: AdapterManager,
+    wallet: Res<Wallet>,
 ) {
     if realm.is_changed() {
         for adapter in adapters.iter() {
             commands.entity(adapter).despawn_recursive();
+        }
+
+        if wallet.address().is_none() {
+            info!("disconnecting comms, no identity");
+            return;
         }
 
         if let Some(comms) = realm.comms.as_ref() {

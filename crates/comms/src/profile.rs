@@ -6,11 +6,7 @@ use super::{
     global_crdt::{process_transport_updates, ForeignPlayer, ProfileEvent, ProfileEventType},
     NetworkMessage, Transport,
 };
-use common::{
-    profile::SerializedProfile,
-    rpc::RpcEventSender,
-    structs::{AppConfig, PrimaryUser},
-};
+use common::{profile::SerializedProfile, rpc::RpcEventSender, structs::PrimaryUser};
 use common::{rpc::RpcCall, util::AsH160};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use wallet::Wallet;
@@ -28,21 +24,20 @@ impl Plugin for UserProfilePlugin {
             )
                 .before(process_transport_updates), // .in_set(TODO)
         );
-        let wallet = app.world.resource::<Wallet>();
 
-        let config = &app.world.resource::<AppConfig>();
-        let current_content =
-            serde_json::from_str::<SerializedProfile>(&config.profile_content).unwrap_or_default();
+        // let config = &app.world.resource::<AppConfig>();
+        // let current_content =
+        //     serde_json::from_str::<SerializedProfile>(&config.profile_content).unwrap_or_default();
 
-        let user_profile = UserProfile {
-            version: config.profile_version,
-            content: SerializedProfile {
-                user_id: Some(format!("{:#x}", wallet.address())),
-                ..current_content
-            },
-            base_url: config.profile_base_url.clone(),
-        };
-        app.insert_resource(CurrentUserProfile(user_profile));
+        // let user_profile = UserProfile {
+        //     version: config.profile_version,
+        //     content: SerializedProfile {
+        //         user_id: Some(format!("{:#x}", Address::default())),
+        //         ..current_content
+        //     },
+        //     base_url: config.profile_base_url.clone(),
+        // };
+        app.insert_resource(CurrentUserProfile(None));
     }
 }
 
@@ -64,22 +59,22 @@ pub fn setup_primary_profile(
 
     if let Ok((player, maybe_profile)) = player.get_single() {
         if maybe_profile.is_none() || current_profile.is_changed() {
+            let Some(current_profile) = current_profile.0.as_ref() else {
+                commands.entity(player).remove::<UserProfile>();
+                return;
+            };
+
             // update component
-            commands
-                .entity(player)
-                .try_insert(current_profile.0.clone());
+            commands.entity(player).try_insert(current_profile.clone());
 
             // send over network
-            debug!(
-                "sending profile new version {:?}",
-                current_profile.0.version
-            );
+            debug!("sending profile new version {:?}", current_profile.version);
             let response = rfc4::Packet {
                 message: Some(rfc4::packet::Message::ProfileResponse(
                     rfc4::ProfileResponse {
-                        serialized_profile: serde_json::to_string(&current_profile.0.content)
+                        serialized_profile: serde_json::to_string(&current_profile.content)
                             .unwrap(),
-                        base_url: current_profile.0.base_url.clone(),
+                        base_url: current_profile.base_url.clone(),
                     },
                 )),
             };
@@ -89,24 +84,12 @@ pub fn setup_primary_profile(
                     .try_send(NetworkMessage::reliable(&response));
             }
 
-            // store to app config
-            let mut config: AppConfig = std::fs::read("config.json")
-                .ok()
-                .and_then(|f| serde_json::from_slice(&f).ok())
-                .unwrap_or_default();
-            config.profile_version = current_profile.0.version;
-            config.profile_content = serde_json::to_string(&current_profile.0.content).unwrap();
-            config.profile_base_url = current_profile.0.base_url.clone();
-            if let Err(e) = std::fs::write("config.json", serde_json::to_string(&config).unwrap()) {
-                warn!("failed to write to config: {e}");
-            }
-
             // send to event receivers
             senders.retain(|sender| {
                 let _ = sender.send(format!(
                     "{{ \"ethAddress\": \"{}\", \"version\": \"{}\" }}",
-                    current_profile.0.content.user_id.as_ref().unwrap(),
-                    current_profile.0.version
+                    current_profile.content.user_id.as_ref().unwrap(),
+                    current_profile.version
                 ));
                 !sender.is_closed()
             });
@@ -115,7 +98,7 @@ pub fn setup_primary_profile(
 }
 
 #[derive(Resource)]
-pub struct CurrentUserProfile(pub UserProfile);
+pub struct CurrentUserProfile(pub Option<UserProfile>);
 
 fn request_missing_profiles(
     missing_profiles: Query<&mut ForeignPlayer, Without<UserProfile>>,
@@ -179,7 +162,7 @@ pub fn process_profile_events(
         match &ev.event {
             ProfileEventType::Request(r) => {
                 if let Some(req_address) = r.address.as_h160() {
-                    if req_address == wallet.address() {
+                    if Some(req_address) == wallet.address() {
                         let Ok((player, _)) = players.get(ev.sender) else {
                             continue;
                         };
@@ -193,15 +176,19 @@ pub fn process_profile_events(
                             continue;
                         };
 
+                        let Some(current_profile) = current_profile.0.as_ref() else {
+                            return;
+                        };
+
                         debug!("sending my profile");
                         let response = rfc4::Packet {
                             message: Some(rfc4::packet::Message::ProfileResponse(
                                 rfc4::ProfileResponse {
                                     serialized_profile: serde_json::to_string(
-                                        &current_profile.0.content,
+                                        &current_profile.content,
                                     )
                                     .unwrap(),
-                                    base_url: current_profile.0.base_url.clone(),
+                                    base_url: current_profile.base_url.clone(),
                                 },
                             )),
                         };

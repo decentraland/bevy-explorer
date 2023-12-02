@@ -211,7 +211,7 @@ fn update_avatar_collider_actions(
                 ),
                 "Ok",
                 || {},
-            )
+            );
         }
     }
 
