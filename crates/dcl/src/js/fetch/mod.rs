@@ -337,7 +337,7 @@ pub async fn op_signed_fetch_headers(
 
     let meta = SignedFetchMeta {
         origin: Some("localhost".to_owned()),
-        is_guest: Some(true),
+        is_guest: Some(wallet.is_guest()),
         ..Default::default()
     };
 

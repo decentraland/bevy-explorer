@@ -69,7 +69,7 @@ pub fn start_livekit(
         info!("starting livekit protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
 
-        let Some(current_profile) = current_profile.0.as_ref() else {
+        let Some(current_profile) = current_profile.profile.as_ref() else {
             return;
         };
 

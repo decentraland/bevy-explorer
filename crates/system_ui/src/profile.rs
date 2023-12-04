@@ -93,7 +93,7 @@ fn toggle_profile_ui(
             );
         }
     } else {
-        let Some(profile) = &current_profile.0.as_ref() else {
+        let Some(profile) = &current_profile.profile.as_ref() else {
             error!("can't edit missing profile");
             return;
         };
@@ -429,8 +429,8 @@ fn toggle_profile_ui(
                 .with_children(move |commands| {
                     commands.spacer();
 
-                    commands.spawn_button("Apply", move |mut commands: Commands, q: Query<&EditWindow>, mut profile: ResMut<CurrentUserProfile>| {
-                        let Some(profile) = profile.0.as_mut() else {
+                    commands.spawn_button("Apply", move |mut commands: Commands, q: Query<&EditWindow>, mut current_profile: ResMut<CurrentUserProfile>| {
+                        let Some(profile) = current_profile.profile.as_mut() else {
                             error!("can't amend missing profile");
                             return;
                         };
@@ -444,6 +444,7 @@ fn toggle_profile_ui(
                             profile.content.avatar.wearables = edit.wearables.values().cloned().collect();
                             profile.version += 1;
                             profile.content.version = profile.version as i64;
+                            current_profile.is_deployed = false;
                         }
                         commands.entity(window).despawn_recursive()
                     });

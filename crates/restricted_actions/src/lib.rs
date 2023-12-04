@@ -469,7 +469,7 @@ fn get_user_data(
         _ => None,
     }) {
         match user {
-            None => match profile.0.as_ref() {
+            None => match profile.profile.as_ref() {
                 Some(profile) => response.send(Ok(profile.content.clone())),
                 None => response.send(Err(())),
             },
@@ -484,7 +484,7 @@ fn get_user_data(
 
                 if let Some(my_address) = me.address() {
                     if *address == format!("{:#x}", my_address) {
-                        match profile.0.as_ref() {
+                        match profile.profile.as_ref() {
                             Some(profile) => response.send(Ok(profile.content.clone())),
                             None => response.send(Err(())),
                         }

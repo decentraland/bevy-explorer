@@ -50,7 +50,7 @@ pub fn start_signed_login(
             return;
         };
 
-        let meta = SignedLoginMeta::new(true, origin);
+        let meta = SignedLoginMeta::new(wallet.is_guest(), origin);
         *task = Some(IoTaskPool::get().spawn(signed_login(uri, wallet, meta)));
     }
 

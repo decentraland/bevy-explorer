@@ -3,15 +3,14 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use common::{
-    profile::{LambdaProfiles, SerializedProfile},
+    profile::SerializedProfile,
     structs::{AppConfig, ChainLink, PreviousLogin},
     util::TaskExt,
 };
-use comms::profile::{CurrentUserProfile, UserProfile};
+use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
 use ethers_core::types::Address;
 use ethers_signers::LocalWallet;
 use ipfs::IpfsAssetServer;
-use isahc::ReadResponseExt;
 use scene_runner::Toaster;
 use ui_core::dialog::{ButtonDisabledText, ButtonText, IntoDialogBody, SpawnButton, SpawnDialog};
 use wallet::{browser_auth::try_create_remote_ephemeral, Wallet};
@@ -142,14 +141,19 @@ fn connect_wallet(
                 wallet.finalize(root_address, local_wallet, auth);
                 if let Some(profile) = profile {
                     toaster.add_toast("login profile", "Profile loaded");
-                    current_profile.0 = Some(profile);
+                    current_profile.profile = Some(profile);
+                    current_profile.is_deployed = true;
                 } else {
                     toaster.add_toast("login profile", "Failed to load profile, using default");
-                    current_profile.0 = Some(UserProfile {
+                    current_profile.profile = Some(UserProfile {
                         version: 0,
-                        content: SerializedProfile::default(),
+                        content: SerializedProfile {
+                            has_connected_web3: Some(true),
+                            ..Default::default()
+                        },
                         base_url: "https://peer.decentraland.org/content".to_owned(),
                     });
+                    current_profile.is_deployed = false;
                 }
             }
             Some(Err(e)) => {
@@ -185,18 +189,7 @@ fn connect_wallet(
                         auth,
                     } = previous_login;
 
-                    let profile = ipfs
-                        .lambda_endpoint()
-                        .and_then(|endpoint| {
-                            isahc::get(format!("{endpoint}/profiles/{root_address:#x}")).ok()
-                        })
-                        .and_then(|mut response| response.json::<LambdaProfiles>().ok())
-                        .and_then(|profiles| profiles.avatars.into_iter().next())
-                        .map(|content| UserProfile {
-                            version: content.version as u32,
-                            content,
-                            base_url: "https://peer.decentraland.org/content".to_owned(),
-                        });
+                    let profile = get_remote_profile(root_address, ipfs).await.ok();
 
                     let local_wallet = LocalWallet::from_bytes(&ephemeral_key).unwrap();
 
@@ -210,18 +203,7 @@ fn connect_wallet(
                     let (root_address, local_wallet, auth, _) =
                         try_create_remote_ephemeral().await?;
 
-                    let profile = ipfs
-                        .lambda_endpoint()
-                        .and_then(|endpoint| {
-                            isahc::get(format!("{endpoint}/profiles/{root_address:#x}")).ok()
-                        })
-                        .and_then(|mut response| response.json::<LambdaProfiles>().ok())
-                        .and_then(|profiles| profiles.avatars.into_iter().next())
-                        .map(|content| UserProfile {
-                            version: content.version as u32,
-                            content,
-                            base_url: "https://peer.decentraland.org/content".to_owned(),
-                        });
+                    let profile = get_remote_profile(root_address, ipfs).await.ok();
 
                     Ok((root_address, local_wallet, auth, profile))
                 }));
@@ -233,11 +215,12 @@ fn connect_wallet(
                     "Warning: Guest profile will not persist beyond the current session",
                 );
                 wallet.finalize_as_guest();
-                current_profile.0 = Some(UserProfile {
+                current_profile.profile = Some(UserProfile {
                     version: 0,
                     content: SerializedProfile::default(),
                     base_url: "https://peer.decentraland.org/content".to_owned(),
-                })
+                });
+                current_profile.is_deployed = true;
             }
         }
     }

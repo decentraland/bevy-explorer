@@ -1,14 +1,35 @@
-use bevy::{prelude::*, utils::HashMap};
+use std::io::Read;
+
+use anyhow::anyhow;
+use bevy::{
+    prelude::*,
+    tasks::{IoTaskPool, Task},
+    utils::HashMap,
+};
+use dcl::interface::CrdtType;
 use ethers_core::types::Address;
+use ipfs::IpfsIo;
+use isahc::{http::StatusCode, AsyncReadResponseExt, ReadResponseExt, RequestExt};
+use multihash_codetable::MultihashDigest;
 use serde::{Deserialize, Serialize};
+
+use crate::global_crdt::GlobalCrdtState;
 
 use super::{
     global_crdt::{process_transport_updates, ForeignPlayer, ProfileEvent, ProfileEventType},
     NetworkMessage, Transport,
 };
-use common::{profile::SerializedProfile, rpc::RpcEventSender, structs::PrimaryUser};
+use common::{
+    profile::{LambdaProfiles, SerializedProfile},
+    rpc::RpcEventSender,
+    structs::PrimaryUser,
+    util::TaskExt,
+};
 use common::{rpc::RpcCall, util::AsH160};
-use dcl_component::proto_components::kernel::comms::rfc4;
+use dcl_component::{
+    proto_components::{kernel::comms::rfc4, sdk::components::PbPlayerIdentityData},
+    SceneComponentId,
+};
 use wallet::Wallet;
 
 pub struct UserProfilePlugin;
@@ -25,29 +46,20 @@ impl Plugin for UserProfilePlugin {
                 .before(process_transport_updates), // .in_set(TODO)
         );
 
-        // let config = &app.world.resource::<AppConfig>();
-        // let current_content =
-        //     serde_json::from_str::<SerializedProfile>(&config.profile_content).unwrap_or_default();
-
-        // let user_profile = UserProfile {
-        //     version: config.profile_version,
-        //     content: SerializedProfile {
-        //         user_id: Some(format!("{:#x}", Address::default())),
-        //         ..current_content
-        //     },
-        //     base_url: config.profile_base_url.clone(),
-        // };
-        app.insert_resource(CurrentUserProfile(None));
+        app.insert_resource(CurrentUserProfile::default());
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn setup_primary_profile(
     mut commands: Commands,
     player: Query<(Entity, Option<&UserProfile>), With<PrimaryUser>>,
-    current_profile: Res<CurrentUserProfile>,
+    mut current_profile: ResMut<CurrentUserProfile>,
     transports: Query<&Transport>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
+    mut deploy_task: Local<Option<Task<Result<(), anyhow::Error>>>>,
+    wallet: Res<Wallet>,
 ) {
     // gather any event receivers
     for sender in subscribe_events.read().filter_map(|ev| match ev {
@@ -59,22 +71,21 @@ pub fn setup_primary_profile(
 
     if let Ok((player, maybe_profile)) = player.get_single() {
         if maybe_profile.is_none() || current_profile.is_changed() {
-            let Some(current_profile) = current_profile.0.as_ref() else {
+            let Some(profile) = current_profile.profile.as_ref() else {
                 commands.entity(player).remove::<UserProfile>();
                 return;
             };
 
             // update component
-            commands.entity(player).try_insert(current_profile.clone());
+            commands.entity(player).try_insert(profile.clone());
 
             // send over network
-            debug!("sending profile new version {:?}", current_profile.version);
+            debug!("sending profile new version {:?}", profile.version);
             let response = rfc4::Packet {
                 message: Some(rfc4::packet::Message::ProfileResponse(
                     rfc4::ProfileResponse {
-                        serialized_profile: serde_json::to_string(&current_profile.content)
-                            .unwrap(),
-                        base_url: current_profile.base_url.clone(),
+                        serialized_profile: serde_json::to_string(&profile.content).unwrap(),
+                        base_url: profile.base_url.clone(),
                     },
                 )),
             };
@@ -88,17 +99,42 @@ pub fn setup_primary_profile(
             senders.retain(|sender| {
                 let _ = sender.send(format!(
                     "{{ \"ethAddress\": \"{}\", \"version\": \"{}\" }}",
-                    current_profile.content.user_id.as_ref().unwrap(),
-                    current_profile.version
+                    profile.content.user_id.as_ref().unwrap(),
+                    profile.version
                 ));
                 !sender.is_closed()
             });
+
+            // deploy to server
+            if !current_profile.is_deployed {
+                debug!("deploying {:#?}", profile);
+                let profile = profile.clone();
+                let wallet = wallet.clone();
+                *deploy_task = Some(IoTaskPool::get().spawn(deploy_profile(wallet, profile)));
+                current_profile.is_deployed = true;
+            }
+        }
+    }
+
+    if let Some(mut task) = deploy_task.take() {
+        match task.complete() {
+            Some(Ok(())) => {
+                info!("deployed profile ok")
+            }
+            Some(Err(e)) => {
+                error!("failed to deploy profile: {e}");
+                // todo toast
+            }
+            None => *deploy_task = Some(task),
         }
     }
 }
 
-#[derive(Resource)]
-pub struct CurrentUserProfile(pub Option<UserProfile>);
+#[derive(Resource, Default)]
+pub struct CurrentUserProfile {
+    pub profile: Option<UserProfile>,
+    pub is_deployed: bool,
+}
 
 fn request_missing_profiles(
     missing_profiles: Query<&mut ForeignPlayer, Without<UserProfile>>,
@@ -157,6 +193,7 @@ pub fn process_profile_events(
     wallet: Res<Wallet>,
     transports: Query<&Transport>,
     current_profile: Res<CurrentUserProfile>,
+    mut global_crdt: ResMut<GlobalCrdtState>,
 ) {
     for ev in events.read() {
         match &ev.event {
@@ -176,7 +213,7 @@ pub fn process_profile_events(
                             continue;
                         };
 
-                        let Some(current_profile) = current_profile.0.as_ref() else {
+                        let Some(current_profile) = current_profile.profile.as_ref() else {
                             return;
                         };
 
@@ -232,6 +269,16 @@ pub fn process_profile_events(
                         base_url: r.base_url.clone(),
                     };
 
+                    global_crdt.update_crdt(
+                        SceneComponentId::PLAYER_IDENTITY_DATA,
+                        CrdtType::LWW_ANY,
+                        player.scene_id,
+                        &PbPlayerIdentityData {
+                            address: format!("{:#x}", player.address),
+                            is_guest: !(profile.content.has_connected_web3.unwrap_or(false)),
+                        },
+                    );
+
                     if let Some(mut existing_profile) = maybe_profile {
                         *existing_profile = profile;
                     } else {
@@ -247,7 +294,7 @@ pub fn process_profile_events(
     last_sent_request.retain(|_, req_time| *req_time > time.elapsed_seconds() - 10.0);
 }
 
-#[derive(Component, Serialize, Deserialize, Clone)]
+#[derive(Component, Serialize, Deserialize, Clone, Debug)]
 pub struct UserProfile {
     pub version: u32,
     pub content: SerializedProfile,
@@ -263,4 +310,134 @@ impl UserProfile {
             .and_then(|s| s.rsplit(':').next())
             .map_or(true, |shape| shape.to_lowercase() == "basefemale")
     }
+}
+
+async fn deploy_profile(wallet: Wallet, profile: UserProfile) -> Result<(), anyhow::Error> {
+    let unix_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+
+    let snapshots = profile.content.avatar.snapshots.as_ref().unwrap().clone();
+
+    let deployment = serde_json::json!({
+        "version": "v3",
+        "type": "profile",
+        "pointers": [ profile.content.eth_address ],
+        "timestamp": unix_time,
+        "content": [
+            {
+                "file": "body.png",
+                "hash": snapshots.body,
+            },
+            {
+                "file": "face256.png",
+                "hash": snapshots.face256,
+            },
+        ],
+        "metadata": {
+            "avatars": [
+                profile.content
+            ]
+        },
+    });
+
+    let hash = multihash_codetable::Code::Sha2_256.digest(deployment.to_string().as_bytes());
+    let cid = cid::Cid::new_v1(0x55, hash).to_string();
+    let profile_chain = wallet.sign_message(cid.clone()).await?;
+
+    let post = {
+        let mut form_data = multipart::client::lazy::Multipart::new();
+        form_data.add_text("entityId", cid.clone());
+        for (key, data) in profile_chain.formdata() {
+            form_data.add_text(key, data);
+        }
+        let no_file: Option<&str> = None;
+
+        let profile_payload = deployment.to_string();
+        let profile_payload_bytes = profile_payload.into_bytes();
+        let profile_cursor = std::io::Cursor::new(profile_payload_bytes);
+
+        form_data.add_stream(cid, profile_cursor, no_file, None);
+
+        // todo: add images
+
+        debug!("form data: {form_data:#?}");
+        let mut prepared = form_data.prepare().unwrap();
+        debug!("prepared boundary: {}", prepared.boundary());
+        debug!("prepared content len: {:?}", prepared.content_len());
+        let mut prepared_data = Vec::default();
+        prepared.read_to_end(&mut prepared_data).unwrap();
+        debug!("prepared data: {}", String::from_utf8_lossy(&prepared_data));
+        let boundary = prepared.boundary().to_owned();
+
+        let url = format!("{}/entities", profile.base_url);
+        debug!("deploying to {url}");
+        let post = isahc::Request::post(url)
+            .header(
+                "Content-Type",
+                format!("multipart/form-data; boundary={}", boundary),
+            )
+            .body(prepared_data)
+            .unwrap();
+
+        drop(prepared);
+
+        post
+    };
+
+    let mut response = post.send_async().await?;
+
+    if response.status() != StatusCode::OK {
+        anyhow::bail!(
+            "bad response: {}: {}",
+            response.status(),
+            String::from_utf8_lossy(response.bytes().await?.as_slice())
+        );
+    }
+
+    Ok(())
+}
+
+pub async fn get_remote_profile(
+    address: Address,
+    ipfs: std::sync::Arc<IpfsIo>,
+) -> Result<UserProfile, anyhow::Error> {
+    let endpoint = ipfs.lambda_endpoint().ok_or(anyhow!("not connected"))?;
+    debug!("requesting profile from {}", endpoint);
+
+    let mut response = isahc::get(format!("{endpoint}/profiles/{address:#x}"))?;
+    let mut content = response
+        .json::<LambdaProfiles>()?
+        .avatars
+        .into_iter()
+        .next()
+        .ok_or(anyhow!("not found"))?;
+
+    // clean up the lambda result
+    if let Some(snapshots) = content.avatar.snapshots.as_mut() {
+        if let Some(hash) = snapshots
+            .body
+            .rsplit_once('/')
+            .map(|(_, hash)| hash.to_owned())
+        {
+            snapshots.body = hash;
+        }
+        if let Some(hash) = snapshots
+            .face256
+            .rsplit_once('/')
+            .map(|(_, hash)| hash.to_owned())
+        {
+            snapshots.face256 = hash;
+        }
+    }
+
+    let profile = UserProfile {
+        version: content.version as u32,
+        content,
+        base_url: "https://peer.decentraland.org/content".to_owned(),
+    };
+
+    debug!("loaded profile: {profile:#?}");
+    Ok(profile)
 }

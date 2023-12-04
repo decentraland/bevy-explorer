@@ -66,11 +66,11 @@ impl Wallet {
     }
 
     pub fn address(&self) -> Option<Address> {
-        self.inner.as_ref().map(|i| i.address())
+        self.root_address
     }
 
-    pub fn root_address(&self) -> Option<Address> {
-        self.root_address
+    pub fn is_guest(&self) -> bool {
+        self.delegates.is_empty()
     }
 }
 
@@ -154,6 +154,19 @@ impl SimpleAuthChain {
                 format!("x-identity-auth-chain-{}", ix),
                 serde_json::to_string(&link).unwrap(),
             )
+        })
+    }
+
+    pub fn formdata(&self) -> impl Iterator<Item = (String, String)> + '_ {
+        self.0.iter().enumerate().flat_map(|(ix, link)| {
+            [
+                (format!("authChain[{ix}][type]"), link.ty.clone()),
+                (format!("authChain[{ix}][payload]"), link.payload.clone()),
+                (
+                    format!("authChain[{ix}][signature]"),
+                    link.signature.clone(),
+                ),
+            ]
         })
     }
 }
