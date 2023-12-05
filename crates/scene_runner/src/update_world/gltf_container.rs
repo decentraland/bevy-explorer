@@ -12,7 +12,7 @@ use bevy::{
         view::NoFrustumCulling,
     },
     scene::InstanceId,
-    utils::{HashMap, HashSet},
+    utils::{HashMap, HashSet}, asset::LoadState,
 };
 use rapier3d_f64::prelude::*;
 use serde::Deserialize;
@@ -108,11 +108,12 @@ fn update_gltf(
         Option<&Handle<StandardMaterial>>,
     )>,
     scene_def_handles: Query<&Handle<EntityDefinition>>,
-    (scene_defs, gltfs, ipfas, base_mats, mut bound_mats): (
+    (scene_defs, gltfs, images, ipfas, mut base_mats, mut bound_mats): (
         Res<Assets<EntityDefinition>>,
         Res<Assets<Gltf>>,
+        Res<Assets<Image>>,
         IpfsAssetServer,
-        Res<Assets<StandardMaterial>>,
+        ResMut<Assets<StandardMaterial>>,
         ResMut<Assets<SceneMaterial>>,
     ),
     mut scene_spawner: ResMut<SceneSpawner>,
@@ -223,6 +224,26 @@ fn update_gltf(
 
         let gltf = gltfs.get(h_gltf).unwrap();
         let gltf_scene_handle = gltf.default_scene.as_ref();
+
+        // validate texture types
+        for h_mat in gltf.materials.iter() {
+            let Some(mat) = base_mats.get_mut(h_mat) else {
+                continue;
+            };
+
+            if let Some(h_base) = mat.base_color_texture.as_ref() {
+                if ipfas.asset_server().get_load_state(h_base) == Some(LoadState::Loading) {
+                    continue;
+                }
+
+                if let Some(texture) = images.get(h_base) {
+                    if texture.texture_descriptor.format.sample_type(None) != Some(bevy::render::render_resource::TextureSampleType::Float { filterable: true }) {
+                        warn!("invalid format for base color texture, disabling");
+                        mat.base_color_texture = None;
+                    }
+                }
+            }
+        }
 
         match gltf_scene_handle {
             Some(gltf_scene_handle) => {

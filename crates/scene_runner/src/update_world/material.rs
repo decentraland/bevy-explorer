@@ -148,7 +148,7 @@ impl Plugin for MaterialDefinitionPlugin {
 }
 
 #[derive(Component)]
-pub struct RetryMaterial;
+pub struct RetryMaterial(Vec<Handle<Image>>);
 
 #[derive(Component)]
 pub struct TouchMaterial;
@@ -229,6 +229,7 @@ fn update_materials(
         Or<(Changed<MaterialDefinition>, With<RetryMaterial>)>,
     >,
     mut materials: ResMut<Assets<SceneMaterial>>,
+    images: Res<Assets<Image>>,
     touch: Query<&Handle<SceneMaterial>, With<TouchMaterial>>,
     resolver: TextureResolver,
     scenes: Query<&RendererSceneContext>,
@@ -255,7 +256,7 @@ fn update_materials(
         let textures = match textures {
             Ok(textures) => textures,
             _ => {
-                commands.entity(ent).insert(RetryMaterial);
+                commands.entity(ent).insert(RetryMaterial(Vec::default()));
                 continue;
             }
         };
@@ -267,8 +268,19 @@ fn update_materials(
             commands.entity(ent).insert(TouchMaterial);
         }
 
-        let [base_color_texture, emissive_texture, normal_map_texture]: [Option<ResolvedTexture>;
+        let [mut base_color_texture, emissive_texture, normal_map_texture]: [Option<ResolvedTexture>;
             3] = textures.try_into().unwrap();
+
+        if let Some(base) = base_color_texture.as_ref() {
+            let Some(texture) = images.get(base.image.id()) else {
+                commands.entity(ent).insert(RetryMaterial(vec![base.image.clone()]));
+                continue;
+            };
+            if texture.texture_descriptor.format.sample_type(None) != Some(bevy::render::render_resource::TextureSampleType::Float { filterable: true }) {
+                warn!("invalid format for base color texture, disabling");
+                base_color_texture = None;
+            }
+        }
 
         let bounds = scenes
             .get(container.root)
