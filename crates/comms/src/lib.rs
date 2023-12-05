@@ -103,7 +103,7 @@ fn process_realm_change(
     mut manager: AdapterManager,
     wallet: Res<Wallet>,
 ) {
-    if realm.is_changed() {
+    if realm.is_changed() || wallet.is_changed() {
         for adapter in adapters.iter() {
             commands.entity(adapter).despawn_recursive();
         }

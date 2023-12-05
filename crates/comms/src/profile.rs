@@ -8,7 +8,7 @@ use bevy::{
 };
 use dcl::interface::CrdtType;
 use ethers_core::types::Address;
-use ipfs::IpfsIo;
+use ipfs::{IpfsIo, TypedIpfsRef};
 use isahc::{http::StatusCode, AsyncReadResponseExt, ReadResponseExt, RequestExt};
 use multihash_codetable::MultihashDigest;
 use serde::{Deserialize, Serialize};
@@ -312,91 +312,97 @@ impl UserProfile {
     }
 }
 
+#[derive(Serialize)]
+pub struct Deployment<'a> {
+    version: &'a str,
+    #[serde(rename = "type")]
+    ty: &'a str,
+    pointers: Vec<String>,
+    timestamp: u128,
+    content: Vec<TypedIpfsRef>,
+    metadata: serde_json::Value,
+}
+
 async fn deploy_profile(wallet: Wallet, profile: UserProfile) -> Result<(), anyhow::Error> {
     let unix_time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_millis();
 
-    let snapshots = profile.content.avatar.snapshots.as_ref().unwrap().clone();
+    let snapshots = profile
+        .content
+        .avatar
+        .snapshots
+        .as_ref()
+        .ok_or(anyhow!("no snapshots"))?
+        .clone();
 
-    let deployment = serde_json::json!({
-        "version": "v3",
-        "type": "profile",
-        "pointers": [ profile.content.eth_address ],
-        "timestamp": unix_time,
-        "content": [
-            {
-                "file": "body.png",
-                "hash": snapshots.body,
+    let deployment = serde_json::to_string(&Deployment {
+        version: "v3",
+        ty: "profile",
+        pointers: vec![profile.content.eth_address.clone()],
+        timestamp: unix_time,
+        content: vec![
+            TypedIpfsRef {
+                file: "body.png".to_owned(),
+                hash: snapshots.body,
             },
-            {
-                "file": "face256.png",
-                "hash": snapshots.face256,
+            TypedIpfsRef {
+                file: "face256.png".to_owned(),
+                hash: snapshots.face256,
             },
         ],
-        "metadata": {
+        metadata: serde_json::json!({
             "avatars": [
                 profile.content
             ]
-        },
-    });
-
-    let hash = multihash_codetable::Code::Sha2_256.digest(deployment.to_string().as_bytes());
-    let cid = cid::Cid::new_v1(0x55, hash).to_string();
-    let profile_chain = wallet.sign_message(cid.clone()).await?;
+        }),
+    })?;
 
     let post = {
+        let hash = multihash_codetable::Code::Sha2_256.digest(deployment.as_bytes());
+        let cid = cid::Cid::new_v1(0x55, hash).to_string();
+        let profile_chain = wallet.sign_message(cid.clone()).await?;
+
         let mut form_data = multipart::client::lazy::Multipart::new();
         form_data.add_text("entityId", cid.clone());
         for (key, data) in profile_chain.formdata() {
             form_data.add_text(key, data);
         }
-        let no_file: Option<&str> = None;
-
-        let profile_payload = deployment.to_string();
-        let profile_payload_bytes = profile_payload.into_bytes();
-        let profile_cursor = std::io::Cursor::new(profile_payload_bytes);
-
-        form_data.add_stream(cid, profile_cursor, no_file, None);
+        form_data.add_stream(
+            cid,
+            std::io::Cursor::new(deployment.into_bytes()),
+            Option::<&str>::None,
+            None,
+        );
 
         // todo: add images
 
-        debug!("form data: {form_data:#?}");
-        let mut prepared = form_data.prepare().unwrap();
-        debug!("prepared boundary: {}", prepared.boundary());
-        debug!("prepared content len: {:?}", prepared.content_len());
+        let mut prepared = form_data.prepare()?;
         let mut prepared_data = Vec::default();
-        prepared.read_to_end(&mut prepared_data).unwrap();
-        debug!("prepared data: {}", String::from_utf8_lossy(&prepared_data));
-        let boundary = prepared.boundary().to_owned();
+        prepared.read_to_end(&mut prepared_data)?;
 
         let url = format!("{}/entities", profile.base_url);
         debug!("deploying to {url}");
-        let post = isahc::Request::post(url)
+
+        isahc::Request::post(url)
             .header(
                 "Content-Type",
-                format!("multipart/form-data; boundary={}", boundary),
+                format!("multipart/form-data; boundary={}", prepared.boundary()),
             )
-            .body(prepared_data)
-            .unwrap();
-
-        drop(prepared);
-
-        post
+            .body(prepared_data)?
     };
 
     let mut response = post.send_async().await?;
 
-    if response.status() != StatusCode::OK {
-        anyhow::bail!(
+    match response.status() {
+        StatusCode::OK => Ok(()),
+        _ => Err(anyhow!(
             "bad response: {}: {}",
             response.status(),
             String::from_utf8_lossy(response.bytes().await?.as_slice())
-        );
+        )),
     }
-
-    Ok(())
 }
 
 pub async fn get_remote_profile(
