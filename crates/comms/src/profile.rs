@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::{io::Read, sync::Arc};
 
 use anyhow::anyhow;
 use bevy::{
@@ -8,7 +8,7 @@ use bevy::{
 };
 use dcl::interface::CrdtType;
 use ethers_core::types::Address;
-use ipfs::{IpfsIo, TypedIpfsRef};
+use ipfs::{IpfsAssetServer, IpfsIo, TypedIpfsRef};
 use isahc::{http::StatusCode, AsyncReadResponseExt, ReadResponseExt, RequestExt};
 use multihash_codetable::MultihashDigest;
 use serde::{Deserialize, Serialize};
@@ -60,6 +60,7 @@ pub fn setup_primary_profile(
     mut subscribe_events: EventReader<RpcCall>,
     mut deploy_task: Local<Option<Task<Result<(), anyhow::Error>>>>,
     wallet: Res<Wallet>,
+    ipfas: IpfsAssetServer,
 ) {
     // gather any event receivers
     for sender in subscribe_events.read().filter_map(|ev| match ev {
@@ -108,9 +109,10 @@ pub fn setup_primary_profile(
             // deploy to server
             if !current_profile.is_deployed {
                 debug!("deploying {:#?}", profile);
+                let ipfs = ipfas.ipfs().clone();
                 let profile = profile.clone();
                 let wallet = wallet.clone();
-                *deploy_task = Some(IoTaskPool::get().spawn(deploy_profile(wallet, profile)));
+                *deploy_task = Some(IoTaskPool::get().spawn(deploy_profile(ipfs, wallet, profile)));
                 current_profile.is_deployed = true;
             }
         }
@@ -323,7 +325,11 @@ pub struct Deployment<'a> {
     metadata: serde_json::Value,
 }
 
-async fn deploy_profile(wallet: Wallet, profile: UserProfile) -> Result<(), anyhow::Error> {
+async fn deploy_profile(
+    ipfs: Arc<IpfsIo>,
+    wallet: Wallet,
+    profile: UserProfile,
+) -> Result<(), anyhow::Error> {
     let unix_time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -382,7 +388,9 @@ async fn deploy_profile(wallet: Wallet, profile: UserProfile) -> Result<(), anyh
         let mut prepared_data = Vec::default();
         prepared.read_to_end(&mut prepared_data)?;
 
-        let url = format!("{}/entities", profile.base_url);
+        let url = ipfs
+            .entities_endpoint()
+            .ok_or_else(|| anyhow!("no entities endpoint"))?;
         debug!("deploying to {url}");
 
         isahc::Request::post(url)
@@ -441,7 +449,7 @@ pub async fn get_remote_profile(
     let profile = UserProfile {
         version: content.version as u32,
         content,
-        base_url: "https://peer.decentraland.org/content".to_owned(),
+        base_url: ipfs.contents_endpoint().unwrap_or_default(),
     };
 
     debug!("loaded profile: {profile:#?}");

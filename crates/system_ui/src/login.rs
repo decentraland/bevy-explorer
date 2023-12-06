@@ -10,7 +10,7 @@ use common::{
 use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
 use ethers_core::types::Address;
 use ethers_signers::LocalWallet;
-use ipfs::IpfsAssetServer;
+use ipfs::{CurrentRealm, IpfsAssetServer};
 use scene_runner::Toaster;
 use ui_core::dialog::{ButtonDisabledText, ButtonText, IntoDialogBody, SpawnButton, SpawnDialog};
 use wallet::{browser_auth::try_create_remote_ephemeral, Wallet};
@@ -19,7 +19,7 @@ pub struct LoginPlugin;
 
 impl Plugin for LoginPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, connect_wallet);
+        app.add_systems(Update, (connect_wallet, update_profile_for_realm));
     }
 }
 
@@ -151,7 +151,7 @@ fn connect_wallet(
                             has_connected_web3: Some(true),
                             ..Default::default()
                         },
-                        base_url: "https://peer.decentraland.org/content".to_owned(),
+                        base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
                     });
                     current_profile.is_deployed = false;
                 }
@@ -218,10 +218,45 @@ fn connect_wallet(
                 current_profile.profile = Some(UserProfile {
                     version: 0,
                     content: SerializedProfile::default(),
-                    base_url: "https://peer.decentraland.org/content".to_owned(),
+                    base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
                 });
                 current_profile.is_deployed = true;
             }
+        }
+    }
+}
+
+fn update_profile_for_realm(
+    realm: Res<CurrentRealm>,
+    wallet: Res<Wallet>,
+    mut current_profile: ResMut<CurrentUserProfile>,
+    mut task: Local<Option<Task<Result<UserProfile, anyhow::Error>>>>,
+    ipfas: IpfsAssetServer,
+) {
+    if realm.is_changed() && !wallet.is_guest() {
+        if let Some(address) = wallet.address() {
+            *task =
+                Some(IoTaskPool::get().spawn(get_remote_profile(address, ipfas.ipfs().clone())));
+        }
+    }
+
+    if let Some(mut t) = task.take() {
+        match t.complete() {
+            Some(Ok(profile)) => {
+                current_profile.profile = Some(profile);
+                current_profile.is_deployed = true;
+            }
+            Some(Err(_)) => {
+                current_profile.profile = Some(UserProfile {
+                    version: 0,
+                    content: SerializedProfile {
+                        has_connected_web3: Some(true),
+                        ..Default::default()
+                    },
+                    base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
+                });
+            }
+            None => *task = Some(t),
         }
     }
 }

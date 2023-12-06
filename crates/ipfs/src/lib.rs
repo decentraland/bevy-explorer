@@ -766,6 +766,22 @@ impl IpfsIo {
             .and_then(|(_, about)| about.lambdas.as_ref())
             .map(|l| l.public_url.clone())
     }
+
+    pub fn contents_endpoint(&self) -> Option<String> {
+        self.realm_config_receiver
+            .borrow()
+            .as_ref()
+            .and_then(|(_, about)| about.content.as_ref())
+            .map(|content| format!("{}/contents/", &content.public_url))
+    }
+
+    pub fn entities_endpoint(&self) -> Option<String> {
+        self.realm_config_receiver
+            .borrow()
+            .as_ref()
+            .and_then(|(_, about)| about.content.as_ref())
+            .map(|content| format!("{}/entities/", &content.public_url))
+    }
 }
 
 pub type ActiveEntityTask = Task<Result<Vec<EntityDefinition>, anyhow::Error>>;
