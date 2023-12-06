@@ -123,7 +123,7 @@ pub fn handle_out_of_world(
     let (maybe_context, maybe_loadstate) = scenes.get(*scene).unwrap();
 
     if let Some(context) = maybe_context {
-        if context.tick_number <= 5 || !context.blocked.is_empty() {
+        if !context.broken && (context.tick_number <= 5 || !context.blocked.is_empty()) {
             debug!("scene not ready");
         } else {
             debug!(
