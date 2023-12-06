@@ -69,8 +69,8 @@ impl Default for SerializedProfile {
                     \"urn:decentraland:off-chain:base-avatars:f_mouth_00\"
                 ],
                 \"snapshots\": {
-                    \"face256\":\"QmSqZ2npVD4RLdqe17FzGCFcN29RfvmqmEd2FcQUctxaKk\",
-                    \"body\":\"QmSav1o6QK37Jj1yhbmhYk9MJc6c2H5DWbWzPVsg9JLYfF\"
+                    \"face256\":\"bafkreifxucgpg7w2rnnfevjzvlokojxnxqh7uvxhe2nwwyks4xr4unx4bu\",
+                    \"body\":\"bafkreicdr2mdferawy7bwl3vwitqg37sohjmkt6zsaqbhlmxwprcquaacy\"
                 },
                 \"eyes\":{
                     \"color\":{\"r\":0.3,\"g\":0.2235294133424759,\"b\":0.99,\"a\":1}
