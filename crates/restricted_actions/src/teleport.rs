@@ -11,6 +11,7 @@ use scene_runner::{
     ContainingScene, OutOfWorld,
 };
 use ui_core::dialog::SpawnDialog;
+use wallet::Wallet;
 
 pub fn teleport_player(
     mut commands: Commands,
@@ -82,12 +83,18 @@ pub fn handle_out_of_world(
     pointers: Res<ScenePointers>,
     live_scenes: Res<LiveScenes>,
     foreign_players: Query<&GlobalTransform, With<ForeignPlayer>>,
+    wallet: Res<Wallet>,
 ) {
     let Ok((player, mut t)) = player.get_single_mut() else {
         return;
     };
 
     debug!("out of world!");
+
+    if wallet.address().is_none() {
+        debug!("waiting for connection");
+        return;
+    }
 
     let parcel = (t.translation.xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
         .floor()
