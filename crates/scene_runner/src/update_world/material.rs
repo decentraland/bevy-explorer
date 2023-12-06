@@ -268,15 +268,22 @@ fn update_materials(
             commands.entity(ent).insert(TouchMaterial);
         }
 
-        let [mut base_color_texture, emissive_texture, normal_map_texture]: [Option<ResolvedTexture>;
-            3] = textures.try_into().unwrap();
+        let [mut base_color_texture, emissive_texture, normal_map_texture]: [Option<
+            ResolvedTexture,
+        >; 3] = textures.try_into().unwrap();
 
         if let Some(base) = base_color_texture.as_ref() {
             let Some(texture) = images.get(base.image.id()) else {
-                commands.entity(ent).insert(RetryMaterial(vec![base.image.clone()]));
+                commands
+                    .entity(ent)
+                    .insert(RetryMaterial(vec![base.image.clone()]));
                 continue;
             };
-            if texture.texture_descriptor.format.sample_type(None) != Some(bevy::render::render_resource::TextureSampleType::Float { filterable: true }) {
+            if texture.texture_descriptor.format.sample_type(None)
+                != Some(bevy::render::render_resource::TextureSampleType::Float {
+                    filterable: true,
+                })
+            {
                 warn!("invalid format for base color texture, disabling");
                 base_color_texture = None;
             }

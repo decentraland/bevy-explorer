@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use bevy::{
+    asset::LoadState,
     gltf::{Gltf, GltfExtras, GltfLoaderSettings},
     pbr::ExtendedMaterial,
     prelude::*,
@@ -12,7 +13,7 @@ use bevy::{
         view::NoFrustumCulling,
     },
     scene::InstanceId,
-    utils::{HashMap, HashSet}, asset::LoadState,
+    utils::{HashMap, HashSet},
 };
 use rapier3d_f64::prelude::*;
 use serde::Deserialize;
@@ -237,7 +238,11 @@ fn update_gltf(
                 }
 
                 if let Some(texture) = images.get(h_base) {
-                    if texture.texture_descriptor.format.sample_type(None) != Some(bevy::render::render_resource::TextureSampleType::Float { filterable: true }) {
+                    if texture.texture_descriptor.format.sample_type(None)
+                        != Some(bevy::render::render_resource::TextureSampleType::Float {
+                            filterable: true,
+                        })
+                    {
                         warn!("invalid format for base color texture, disabling");
                         mat.base_color_texture = None;
                     }
