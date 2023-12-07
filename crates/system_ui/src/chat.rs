@@ -1,4 +1,5 @@
 use bevy::{
+    core::FrameCount,
     prelude::*,
     ui::{self, FocusPolicy},
 };
@@ -12,9 +13,10 @@ use common::{
 use comms::{
     chat_marker_things, global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport,
 };
+use copypasta::{ClipboardContext, ClipboardProvider};
 use dcl::{SceneLogLevel, SceneLogMessage};
 use dcl_component::proto_components::kernel::comms::rfc4;
-use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
+use scene_runner::{renderer_context::RendererSceneContext, ContainingScene, Toaster};
 use ui_core::{
     focus::Focus,
     interact_style::{Active, InteractStyle, InteractStyles},
@@ -50,6 +52,8 @@ pub struct ChatboxContainer;
 #[derive(Component)]
 pub struct DisplayChatMessage {
     pub timestamp: f64,
+    pub sender: Option<String>,
+    pub message: String,
 }
 
 /// output widget
@@ -224,11 +228,11 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, root: Res<Syste
                 );
 
                 // chat entry line
-                commands.spawn((
-                    NodeBundle {
+                commands
+                    .spawn(NodeBundle {
                         style: ui::Style {
                             border: UiRect::all(Val::Px(5.0)),
-                            flex_direction: FlexDirection::Column,
+                            flex_direction: FlexDirection::Row,
                             justify_content: JustifyContent::FlexEnd,
                             width: Val::Percent(100.0),
                             height: Val::Px(20.0),
@@ -236,17 +240,80 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, root: Res<Syste
                         },
                         background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.2, 0.8)),
                         ..Default::default()
-                    },
-                    TextEntry {
-                        enabled: true,
-                        accept_line: true,
-                        ..Default::default()
-                    },
-                    ChatInput,
-                    ChatToggle,
-                    Interaction::default(),
-                    On::<Defocus>::new(update_chatbox_focus),
-                ));
+                    })
+                    .with_children(|commands| {
+                        commands.spawn((
+                            NodeBundle {
+                                style: ui::Style {
+                                    // border: UiRect::all(Val::Px(5.0)),
+                                    flex_direction: FlexDirection::Column,
+                                    justify_content: JustifyContent::FlexEnd,
+                                    align_content: AlignContent::Center,
+                                    width: Val::Percent(100.0),
+                                    height: Val::Px(20.0),
+                                    ..Default::default()
+                                },
+                                background_color: BackgroundColor(Color::rgba(0.0, 0.0, 0.2, 0.8)),
+                                ..Default::default()
+                            },
+                            TextEntry {
+                                enabled: true,
+                                accept_line: true,
+                                ..Default::default()
+                            },
+                            ChatInput,
+                            ChatToggle,
+                            Interaction::default(),
+                            On::<Defocus>::new(update_chatbox_focus),
+                        ));
+
+                        commands.spawn((
+                            ImageBundle {
+                                style: ui::Style {
+                                    top: Val::Px(-5.0),
+                                    width: Val::Px(20.0),
+                                    height: Val::Px(20.0),
+                                    ..Default::default()
+                                },
+                                image: asset_server.load("images/copy.png").into(),
+                                ..Default::default()
+                            },
+                            Interaction::default(),
+                            On::<Click>::new(
+                                |chatbox: Query<&Children, With<ChatBox>>,
+                                 msgs: Query<&DisplayChatMessage>,
+                                 mut toaster: Toaster,
+                                 frame: Res<FrameCount>| {
+                                    let mut copy = String::default();
+                                    let children = chatbox.single();
+                                    for ent in children.iter() {
+                                        if let Ok(msg) = msgs.get(*ent) {
+                                            copy.push_str(
+                                                format!(
+                                                    "[{}] {}\n",
+                                                    msg.sender.as_deref().unwrap_or("log"),
+                                                    msg.message
+                                                )
+                                                .as_str(),
+                                            );
+                                        }
+                                    }
+
+                                    let label = format!("chatcopy {}", frame.0);
+
+                                    if let Ok(mut ctx) = ClipboardContext::new() {
+                                        if ctx.set_contents(copy).is_ok() {
+                                            toaster
+                                                .add_toast(&label, "history copied to clipboard");
+                                            return;
+                                        }
+                                    }
+
+                                    toaster.add_toast("chat copy", "failed to set clipboard ...");
+                                },
+                            ),
+                        ));
+                    });
             });
     });
 }
@@ -285,7 +352,11 @@ fn make_chat(
 ) -> Entity {
     commands
         .spawn((
-            DisplayChatMessage { timestamp },
+            DisplayChatMessage {
+                timestamp,
+                sender: Some(sender.clone()),
+                message: message.clone(),
+            },
             TextBundle {
                 text: Text::from_sections([
                     TextSection::new(
@@ -319,7 +390,11 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
     } = log;
     commands
         .spawn((
-            DisplayChatMessage { timestamp },
+            DisplayChatMessage {
+                timestamp,
+                sender: None,
+                message: message.clone(),
+            },
             TextBundle {
                 text: Text::from_sections([TextSection::new(
                     message,

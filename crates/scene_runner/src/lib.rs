@@ -116,7 +116,7 @@ pub struct DebugInfo {
 
 // resource for adding toasts
 #[derive(Resource, Default, Debug)]
-pub struct Toasts(pub HashMap<&'static str, Toast>);
+pub struct Toasts(pub HashMap<String, Toast>);
 
 #[derive(SystemParam)]
 pub struct Toaster<'w, 's> {
@@ -127,10 +127,12 @@ pub struct Toaster<'w, 's> {
 }
 
 impl<'w, 's> Toaster<'w, 's> {
-    pub fn add_toast(&mut self, key: &'static str, message: impl Into<String>) {
+    pub fn add_toast(&mut self, key: impl Into<String>, message: impl Into<String>) {
+        let key = key.into();
         let message = message.into();
-        if let Some(existing) = self.toasts.0.get(key) {
+        if let Some(existing) = self.toasts.0.get_mut(&key) {
             if existing.message == message {
+                existing.last_update = self.time.elapsed_seconds();
                 return;
             }
         }
@@ -140,6 +142,7 @@ impl<'w, 's> Toaster<'w, 's> {
             Toast {
                 message,
                 time: self.time.elapsed_seconds(),
+                last_update: self.time.elapsed_seconds(),
             },
         );
     }
@@ -153,6 +156,7 @@ impl<'w, 's> Toaster<'w, 's> {
 pub struct Toast {
     pub message: String,
     pub time: f32,
+    pub last_update: f32,
 }
 
 // plugin which creates and runs scripts
