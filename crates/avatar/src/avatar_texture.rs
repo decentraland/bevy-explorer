@@ -15,6 +15,7 @@ use bevy::{
 use common::{sets::SetupSets, structs::PrimaryPlayerRes};
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
 use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
+use ui_core::ui_actions::{DragData, Dragged, On};
 
 use crate::{AvatarDynamicState, AvatarSelection, AvatarShape};
 
@@ -29,7 +30,7 @@ pub struct AvatarTexture(pub Handle<Image>);
 impl Plugin for AvatarTexturePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_primary_avatar_camera.in_set(SetupSets::Main));
-        app.add_systems(Update, load_foreign_textures);
+        app.add_systems(Update, (load_foreign_textures, update_booth_image));
     }
 }
 
@@ -115,6 +116,48 @@ impl<'w, 's> PhotoBooth<'w, 's> {
         } else {
             error!("no booth avatar to update?");
         }
+    }
+}
+
+impl BoothInstance {
+    pub fn image_bundle(&self) -> impl Bundle {
+        (
+            ImageBundle {
+                style: Style {
+                    width: Val::Percent(30.0),
+                    height: Val::Percent(100.0),
+                    ..Default::default()
+                },
+                image: self.avatar_texture.clone().into(),
+                ..Default::default()
+            },
+            Interaction::default(),
+            BoothImage,
+            self.clone(),
+            On::<Dragged>::new(
+                |mut transform: Query<&mut Transform>,
+                 q: Query<(&BoothInstance, &DragData), With<BoothImage>>| {
+                    let Ok((instance, drag)) = q.get_single() else {
+                        return;
+                    };
+                    let drag = drag.delta;
+                    let Ok(mut transform) = transform.get_mut(instance.camera) else {
+                        return;
+                    };
+
+                    let offset = transform.translation * Vec3::new(1.0, 0.0, 1.0);
+                    let new_offset = Quat::from_rotation_y(-drag.x / 50.0) * offset;
+
+                    let distance = offset.length();
+                    let distance = (distance * 1.0 + 0.01 * drag.y).clamp(0.75, 4.0);
+
+                    let height = 1.8 - 0.9 * (distance - 0.75) / 3.25;
+
+                    transform.translation = new_offset.normalize() * distance + Vec3::Y * height;
+                    transform.look_at(Vec3::Y * height, Vec3::Y);
+                },
+            ),
+        )
     }
 }
 
@@ -210,3 +253,25 @@ fn load_foreign_textures(
         }
     }
 }
+
+fn update_booth_image(
+    q: Query<(&Node, &UiImage), With<BoothImage>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    for (node, image) in q.iter() {
+        let node_size = node.size();
+        let Some(image) = images.get_mut(image.texture.id()) else {
+            continue;
+        };
+        if image.size() != node_size.as_uvec2() {
+            image.resize(Extent3d {
+                width: node_size.x as u32,
+                height: node_size.y as u32,
+                ..Default::default()
+            });
+        }
+    }
+}
+
+#[derive(Component)]
+pub struct BoothImage;

@@ -16,7 +16,7 @@ use ui_core::{
     interact_style::Active,
     scrollable::{ScrollDirection, Scrollable, SpawnScrollable, StartPosition},
     textentry::TextEntry,
-    ui_actions::{Click, DataChanged, DragData, Dragged, On},
+    ui_actions::{Click, DataChanged, On},
     ui_builder::{SpawnButton, SpawnSpacer},
     TITLE_TEXT_STYLE,
 };
@@ -26,7 +26,7 @@ pub struct ProfileEditPlugin;
 impl Plugin for ProfileEditPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup);
-        app.add_systems(Update, (update_booth, update_booth_image));
+        app.add_systems(Update, update_booth);
     }
 }
 
@@ -227,45 +227,7 @@ fn toggle_profile_ui(
                 ..Default::default()
             }).with_children(|commands| {
                 // preview tab
-                commands.spawn((
-                    ImageBundle {
-                        style: Style {
-                            width: Val::Percent(30.0),
-                            height: Val::Percent(100.0),
-                            ..Default::default()
-                        },
-                        image: instance.avatar_texture.clone().into(),
-                        ..Default::default()
-                    },
-                    Interaction::default(),
-                    PreviewImage,
-                    instance.clone(),
-                    On::<Dragged>::new(
-                        |
-                            mut transform: Query<&mut Transform>,
-                            q: Query<(&BoothInstance, &DragData), With<PreviewImage>>,
-                        | {
-                            let Ok((instance, drag)) = q.get_single() else {
-                                return;
-                            };
-                            let drag = drag.delta;
-                            let Ok(mut transform) = transform.get_mut(instance.camera) else {
-                                return;
-                            };
-
-                            let offset = transform.translation * Vec3::new(1.0, 0.0, 1.0);
-                            let new_offset = Quat::from_rotation_y(-drag.x / 50.0) * offset;
-
-                            let distance = offset.length();
-                            let distance = (distance * 1.0 + 0.01 * drag.y).clamp(0.75, 4.0);
-
-                            let height = 1.8 - 0.9 * (distance - 0.75) / 3.25;
-
-                            transform.translation = new_offset.normalize() * distance + Vec3::Y * height;
-                            transform.look_at(Vec3::Y * height, Vec3::Y);
-                        }
-                    ),
-                ));
+                commands.spawn(instance.image_bundle());
 
                 // content
                 commands.spawn_scrollable(
@@ -592,25 +554,3 @@ fn update_booth(
         }
     }
 }
-
-fn update_booth_image(
-    q: Query<(&Node, &UiImage), With<PreviewImage>>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    for (node, image) in q.iter() {
-        let node_size = node.size();
-        let Some(image) = images.get_mut(image.texture.id()) else {
-            continue;
-        };
-        if image.size() != node_size.as_uvec2() {
-            image.resize(Extent3d {
-                width: node_size.x as u32,
-                height: node_size.y as u32,
-                ..Default::default()
-            });
-        }
-    }
-}
-
-#[derive(Component)]
-pub struct PreviewImage;
