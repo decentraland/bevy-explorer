@@ -8,6 +8,7 @@ use bevy::{
         query::{ReadOnlyWorldQuery, WorldQuery},
         system::BoxedSystem,
     },
+    input::mouse::MouseMotion,
     prelude::*,
     utils::{HashMap, HashSet},
 };
@@ -27,15 +28,18 @@ impl Plugin for UiActionPlugin {
             .init_resource::<UiActions<Focus>>()
             .init_resource::<UiActions<Defocus>>()
             .init_resource::<UiActions<DataChanged>>()
+            .init_resource::<UiActions<Dragged>>()
             .add_systems(
                 Update,
                 (
+                    update_drag,
                     gather_actions::<HoverEnter>,
                     gather_actions::<Click>,
                     gather_actions::<HoverExit>,
                     gather_actions::<Focus>,
                     gather_actions::<Defocus>,
                     gather_actions::<DataChanged>,
+                    gather_actions::<Dragged>,
                     apply_deferred,
                     run_actions::<HoverEnter>,
                     run_actions::<Click>,
@@ -43,6 +47,7 @@ impl Plugin for UiActionPlugin {
                     run_actions::<Focus>,
                     run_actions::<Defocus>,
                     run_actions::<DataChanged>,
+                    run_actions::<Dragged>,
                 )
                     .chain()
                     .in_set(SceneSets::UiActions)
@@ -64,6 +69,9 @@ pub trait ActionMarker: Send + Sync + 'static {
     type Component: ReadOnlyWorldQuery;
 
     fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool;
+    fn repeat_activate() -> bool {
+        false
+    }
 }
 
 pub struct Click;
@@ -109,6 +117,27 @@ impl ActionMarker for DataChanged {
     fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
         param.unwrap_or(false)
     }
+}
+
+#[derive(Component)]
+pub struct Dragged;
+impl ActionMarker for Dragged {
+    type Component = Option<&'static DragData>;
+
+    fn activate(param: Option<&DragData>) -> bool {
+        param.map_or(false, |p| p.trigger)
+    }
+
+    fn repeat_activate() -> bool {
+        true
+    }
+}
+
+#[derive(Component, Default)]
+pub struct DragData {
+    was_pressed: bool,
+    pub trigger: bool,
+    pub delta: Vec2,
 }
 
 #[derive(Component)]
@@ -178,7 +207,7 @@ pub fn run_actions<M: ActionMarker>(world: &mut World) {
                 action.system.run((), world);
                 action.system.apply_deferred(world);
             }
-            action.run_already = *active;
+            action.run_already = *active && !M::repeat_activate();
 
             index += 1;
             true
@@ -192,5 +221,35 @@ pub fn run_actions<M: ActionMarker>(world: &mut World) {
             .for_each(|mut action_index| {
                 action_index.0 -= removed.iter().filter(|&r| *r < action_index.0).count();
             });
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn update_drag(
+    mut commands: Commands,
+    mut q: Query<(Entity, &Interaction, Option<&mut DragData>), With<ActionIndex<Dragged>>>,
+    mut mouse_events: EventReader<MouseMotion>,
+) {
+    let delta: Vec2 = mouse_events.read().map(|mme| mme.delta).sum();
+
+    for (ent, interaction, drag_data) in q.iter_mut() {
+        let Some(mut drag_data) = drag_data else {
+            commands.entity(ent).try_insert(DragData::default());
+            continue;
+        };
+
+        if interaction != &Interaction::Pressed {
+            drag_data.trigger = false;
+            drag_data.was_pressed = false;
+            continue;
+        }
+
+        if !drag_data.was_pressed {
+            drag_data.was_pressed = true;
+            continue;
+        }
+
+        drag_data.trigger = delta != Vec2::ZERO;
+        drag_data.delta = delta;
     }
 }

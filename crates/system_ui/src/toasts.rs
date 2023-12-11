@@ -52,8 +52,6 @@ fn update_toasts(
     time: Res<Time>,
     mut displays: Local<HashMap<String, Option<Entity>>>,
 ) {
-    println!("{:?}", toasts.0);
-
     let Ok(toaster_ent) = toast_display.get_single() else {
         return;
     };

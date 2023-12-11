@@ -110,6 +110,9 @@ impl Default for PrimaryCamera {
 }
 
 #[derive(Resource)]
+pub struct PrimaryPlayerRes(pub Entity);
+
+#[derive(Resource)]
 pub struct PrimaryCameraRes(pub Entity);
 
 // marker for the root ui component (full screen, used for checking pointer/mouse button events are not intercepted by any other ui component)

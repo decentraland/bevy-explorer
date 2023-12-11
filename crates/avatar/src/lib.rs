@@ -1,10 +1,14 @@
 use std::{f32::consts::PI, str::FromStr};
 
 use attach::AttachPlugin;
+use avatar_texture::AvatarTexturePlugin;
 use bevy::{
     gltf::Gltf,
     prelude::*,
-    render::{mesh::skinning::SkinnedMesh, view::NoFrustumCulling},
+    render::{
+        mesh::skinning::SkinnedMesh,
+        view::{NoFrustumCulling, RenderLayers},
+    },
     scene::InstanceId,
     utils::{HashMap, HashSet},
 };
@@ -15,6 +19,7 @@ use urn::Urn;
 
 pub mod animate;
 pub mod attach;
+pub mod avatar_texture;
 pub mod base_wearables;
 pub mod colliders;
 pub mod foreign_dynamics;
@@ -39,9 +44,8 @@ use dcl_component::{
 use ipfs::{ActiveEntityTask, IpfsAssetServer, IpfsModifier};
 use scene_runner::{update_world::AddCrdtInterfaceExt, ContainingScene, SceneEntity};
 use ui_core::TEXT_SHAPE_FONT;
-use wallet::Wallet;
 
-use crate::animate::AvatarAnimPlayer;
+use crate::{animate::AvatarAnimPlayer, avatar_texture::PRIMARY_AVATAR_RENDERLAYER};
 
 use self::{
     animate::AvatarAnimationPlugin,
@@ -58,6 +62,7 @@ impl Plugin for AvatarPlugin {
         app.add_plugins(AvatarAnimationPlugin);
         app.add_plugins(AttachPlugin);
         app.add_plugins(AvatarColliderPlugin);
+        app.add_plugins(AvatarTexturePlugin);
         app.init_resource::<WearablePointers>();
         app.init_resource::<WearableMetas>();
         app.add_systems(Update, load_base_wearables);
@@ -246,30 +251,12 @@ impl From<PbAvatarShape> for AvatarShape {
     }
 }
 
-// set (foreign) user's default avatar shape based on profile data
-fn update_base_avatar_shape(
-    mut commands: Commands,
-    root_avatar_defs: Query<(Entity, Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
-    current_user_wallet: Res<Wallet>,
-) {
-    for (ent, maybe_player, profile) in &root_avatar_defs {
-        let (id, address) = match maybe_player {
-            Some(player) => (player.scene_id, player.address),
-            None => {
-                if let Some(address) = current_user_wallet.address() {
-                    (SceneEntityId::PLAYER, address)
-                } else {
-                    continue;
-                }
-            }
-        };
-
-        debug!("updating default avatar for {id}");
-
-        commands.entity(ent).try_insert(AvatarShape(PbAvatarShape {
-            id: format!("{:#x}", address),
+impl From<&UserProfile> for AvatarShape {
+    fn from(profile: &UserProfile) -> Self {
+        AvatarShape(PbAvatarShape {
+            id: profile.content.eth_address.clone(),
             // add label only for foreign players
-            name: maybe_player.map(|_| profile.content.name.to_owned()),
+            name: Some(profile.content.name.to_owned()),
             body_shape: Some(
                 profile
                     .content
@@ -330,7 +317,31 @@ fn update_base_avatar_shape(
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default(),
-        }));
+        })
+    }
+}
+
+// set (foreign) user's default avatar shape based on profile data
+fn update_base_avatar_shape(
+    mut commands: Commands,
+    root_avatar_defs: Query<(Entity, Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
+) {
+    for (ent, maybe_player, profile) in &root_avatar_defs {
+        let id = match maybe_player {
+            Some(player) => player.scene_id,
+            None => SceneEntityId::PLAYER,
+        };
+
+        debug!("updating default avatar for {id}");
+
+        let mut avatar_shape = AvatarShape::from(profile);
+
+        // show label only for other players
+        if maybe_player.is_none() {
+            avatar_shape.0.name = None;
+        }
+
+        commands.entity(ent).try_insert(avatar_shape);
     }
 }
 
@@ -338,6 +349,8 @@ fn update_base_avatar_shape(
 pub struct AvatarSelection {
     scene: Option<Entity>,
     shape: PbAvatarShape,
+    render_layers: Option<RenderLayers>,
+    automatic_delete: bool,
 }
 
 // choose the avatar shape based on current scene of the player
@@ -355,7 +368,7 @@ fn select_avatar(
         Or<(With<ForeignPlayer>, With<PrimaryUser>)>,
     >,
     scene_avatar_defs: Query<(Entity, &SceneEntity, &AvatarShape, Changed<AvatarShape>)>,
-    orphaned_avatar_selections: Query<Entity, (With<AvatarSelection>, Without<AvatarShape>)>,
+    orphaned_avatar_selections: Query<(Entity, &AvatarSelection), Without<AvatarShape>>,
     containing_scene: ContainingScene,
 ) {
     struct AvatarUpdate {
@@ -405,6 +418,8 @@ fn select_avatar(
                         ),
                         ..scene_avatar_shape.0.clone()
                     },
+                    render_layers: None,
+                    automatic_delete: true,
                 });
 
                 debug!("npc avatar {:?}", scene_ent);
@@ -465,15 +480,23 @@ fn select_avatar(
                 commands.entity(entity).try_insert(AvatarSelection {
                     scene: update.current_source,
                     shape,
+                    render_layers: if maybe_player.is_none() {
+                        Some(PRIMARY_AVATAR_RENDERLAYER)
+                    } else {
+                        None
+                    },
+                    automatic_delete: true,
                 });
             }
         }
     }
 
     // remove any orphans
-    for entity in &orphaned_avatar_selections {
-        if let Some(mut commands) = commands.get_entity(entity) {
-            commands.remove::<AvatarSelection>();
+    for (entity, selection) in &orphaned_avatar_selections {
+        if selection.automatic_delete {
+            if let Some(mut commands) = commands.get_entity(entity) {
+                commands.remove::<AvatarSelection>();
+            }
         }
     }
 }
@@ -696,6 +719,7 @@ pub struct AvatarDefinition {
     eyes_color: Color,
     wearables: Vec<WearableDefinition>,
     hides: HashSet<WearableCategory>,
+    render_layer: Option<RenderLayers>,
 }
 
 #[derive(Component)]
@@ -706,7 +730,12 @@ pub struct RetryRenderAvatar;
 fn update_render_avatar(
     mut commands: Commands,
     query: Query<
-        (Entity, &AvatarSelection, Option<&Children>, &AttachPoints),
+        (
+            Entity,
+            &AvatarSelection,
+            Option<&Children>,
+            Option<&AttachPoints>,
+        ),
         Or<(Changed<AvatarSelection>, With<RetryRenderAvatar>)>,
     >,
     mut removed_selections: RemovedComponents<AvatarSelection>,
@@ -798,14 +827,16 @@ fn update_render_avatar(
         }
     }
 
-    for (entity, selection, maybe_children, attach_points) in &query {
+    for (entity, selection, maybe_children, maybe_attach_points) in &query {
         commands.entity(entity).remove::<RetryRenderAvatar>();
 
         debug!("updating render avatar");
-        // reparent attach points
-        commands
-            .entity(entity)
-            .try_push_children(&attach_points.entities());
+        if let Some(attach_points) = maybe_attach_points {
+            // reparent attach points
+            commands
+                .entity(entity)
+                .try_push_children(&attach_points.entities());
+        }
 
         // remove existing children
         if let Some(children) = maybe_children {
@@ -965,6 +996,7 @@ fn update_render_avatar(
                             b: 0.356,
                         })
                         .into(),
+                    render_layer: selection.render_layers,
                 },
             ));
         });
@@ -1158,6 +1190,11 @@ fn process_avatar(
 
         // hide and colour the base model
         for scene_ent in scene_spawner.iter_instance_entities(loaded_avatar.body_instance) {
+            if let Some(layer) = def.render_layer {
+                // set render layer for primary avatar
+                commands.entity(scene_ent).try_insert(layer);
+            }
+
             let Ok((mut vis, parent, maybe_h_mat, maybe_h_mesh)) = instance_ents.get_mut(scene_ent)
             else {
                 continue;
@@ -1352,6 +1389,11 @@ fn process_avatar(
             let mut armature_map = HashMap::default();
 
             for scene_ent in scene_spawner.iter_instance_entities(*instance) {
+                if let Some(layer) = def.render_layer {
+                    // set render layer for primary avatar
+                    commands.entity(scene_ent).try_insert(layer);
+                }
+
                 let Ok((_, parent, maybe_h_mat, maybe_h_mesh)) = instance_ents.get(scene_ent)
                 else {
                     continue;
