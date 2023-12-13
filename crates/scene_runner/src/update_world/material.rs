@@ -1,4 +1,6 @@
 use bevy::{ecs::system::SystemParam, pbr::NotShadowCaster, prelude::*, render::primitives::Aabb};
+use common::structs::AvatarTextureHandle;
+use comms::profile::UserProfile;
 use ipfs::IpfsAssetServer;
 
 use crate::{renderer_context::RendererSceneContext, ContainerEntity, SceneSets};
@@ -160,6 +162,7 @@ pub enum TextureResolveError {
     SourceNotAvailable,
     SourceNotReady,
     SceneNotFound,
+    AvatarNotFound,
     NotImplemented,
 }
 
@@ -168,6 +171,7 @@ pub struct TextureResolver<'w, 's> {
     scenes: Query<'w, 's, &'static RendererSceneContext>,
     ipfas: IpfsAssetServer<'w, 's>,
     videos: Query<'w, 's, &'static VideoTextureOutput>,
+    avatars: Query<'w, 's, (&'static UserProfile, &'static AvatarTextureHandle)>,
 }
 
 #[derive(Debug)]
@@ -197,7 +201,15 @@ impl<'w, 's> TextureResolver<'w, 's> {
                     touch: false,
                 })
             }
-            texture_union::Tex::AvatarTexture(_) => Err(TextureResolveError::NotImplemented),
+            texture_union::Tex::AvatarTexture(at) => self
+                .avatars
+                .iter()
+                .find(|(profile, _)| profile.content.eth_address == at.user_id)
+                .map(|(_, tex)| ResolvedTexture {
+                    image: tex.0.clone(),
+                    touch: false,
+                })
+                .ok_or(TextureResolveError::AvatarNotFound),
             texture_union::Tex::VideoTexture(vt) => {
                 let Some(video_entity) =
                     scene.bevy_entity(SceneEntityId::from_proto_u32(vt.video_player_entity))

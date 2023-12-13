@@ -67,6 +67,10 @@ impl AttachPoints {
     }
 }
 
+// component holding avatar texture (just the face currently)
+#[derive(Component, Default)]
+pub struct AvatarTextureHandle(pub Handle<Image>);
+
 // main camera entity
 #[derive(Component)]
 pub struct PrimaryCamera {

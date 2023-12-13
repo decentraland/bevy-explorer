@@ -217,7 +217,10 @@ fn connect_wallet(
                 wallet.finalize_as_guest();
                 current_profile.profile = Some(UserProfile {
                     version: 0,
-                    content: SerializedProfile::default(),
+                    content: SerializedProfile {
+                        eth_address: format!("{:#x}", wallet.address().unwrap()),
+                        ..Default::default()
+                    },
                     base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
                 });
                 current_profile.is_deployed = true;

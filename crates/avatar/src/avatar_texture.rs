@@ -14,7 +14,10 @@ use bevy::{
     },
     window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution},
 };
-use common::{sets::SetupSets, structs::PrimaryPlayerRes};
+use common::{
+    sets::SetupSets,
+    structs::{AvatarTextureHandle, PrimaryPlayerRes},
+};
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
 use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 use ui_core::ui_actions::{DragData, Dragged, On};
@@ -27,9 +30,6 @@ pub const PRIMARY_AVATAR_RENDERLAYER: RenderLayers = RenderLayers::layer(0).with
 pub const PROFILE_UI_RENDERLAYER: RenderLayers = RenderLayers::layer(2);
 
 const SNAPSHOT_FRAMES: u32 = 5;
-
-#[derive(Component)]
-pub struct AvatarTexture(pub Handle<Image>);
 
 impl Plugin for AvatarTexturePlugin {
     fn build(&self, app: &mut App) {
@@ -101,25 +101,6 @@ impl<'w, 's> PhotoBooth<'w, 's> {
             size,
             render_layers,
         );
-
-        self.commands.entity(avatar).with_children(|c| {
-            c.spawn((
-                SpotLightBundle {
-                    transform: Transform::from_xyz(1.0, 2.0, -1.0)
-                        .looking_at(Vec3::new(0.0, 1.8, 0.0), Vec3::Z),
-                    spot_light: SpotLight {
-                        intensity: 300.0,
-                        color: Color::WHITE,
-                        shadows_enabled: false,
-                        inner_angle: 0.6,
-                        outer_angle: 0.8,
-                        ..default()
-                    },
-                    ..default()
-                },
-                render_layers,
-            ));
-        });
 
         BoothInstance {
             avatar,
@@ -201,12 +182,12 @@ fn setup_primary_avatar_camera(
         &mut images,
         player.0,
         size,
-        PRIMARY_AVATAR_RENDERLAYER,
+        RenderLayers::layer(1),
     );
 
     commands
         .entity(player.0)
-        .insert(AvatarTexture(avatar_texture));
+        .insert(AvatarTextureHandle(avatar_texture));
 }
 
 fn add_booth_camera(
@@ -259,6 +240,23 @@ fn add_booth_camera(
             ))
             .id(),
         );
+
+        c.spawn((
+            SpotLightBundle {
+                transform: Transform::from_xyz(1.0, 2.0, -1.0)
+                    .looking_at(Vec3::new(0.0, 1.8, 0.0), Vec3::Z),
+                spot_light: SpotLight {
+                    intensity: 300.0,
+                    color: Color::WHITE,
+                    shadows_enabled: false,
+                    inner_angle: 0.6,
+                    outer_angle: 0.8,
+                    ..default()
+                },
+                ..default()
+            },
+            render_layers,
+        ));
     });
 
     (avatar_texture, camera.unwrap())
@@ -266,7 +264,10 @@ fn add_booth_camera(
 
 #[allow(clippy::type_complexity)]
 fn load_foreign_textures(
-    mut q: Query<(&mut AvatarTexture, &UserProfile), (With<ForeignPlayer>, Changed<UserProfile>)>,
+    mut q: Query<
+        (&mut AvatarTextureHandle, &UserProfile),
+        (With<ForeignPlayer>, Changed<UserProfile>),
+    >,
     ipfas: IpfsAssetServer,
 ) {
     for (mut texture, profile) in q.iter_mut() {
@@ -274,6 +275,10 @@ fn load_foreign_textures(
             let url = format!("{}{}", profile.base_url, snapshots.face256);
             let ipfs_path = IpfsPath::new_from_url(&url, "png");
             texture.0 = ipfas.asset_server().load(PathBuf::from(&ipfs_path));
+            debug!(
+                "loaded remote avatar texture ({}) for {}",
+                url, profile.content.eth_address
+            );
         }
     }
 }
