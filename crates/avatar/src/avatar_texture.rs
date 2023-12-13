@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use bevy::{
+    core::FrameCount,
     core_pipeline::clear_color::ClearColorConfig,
     ecs::system::SystemParam,
     prelude::*,
@@ -9,8 +10,9 @@ use bevy::{
         render_resource::{
             Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
         },
-        view::RenderLayers,
+        view::{screenshot::ScreenshotManager, RenderLayers},
     },
+    window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution},
 };
 use common::{sets::SetupSets, structs::PrimaryPlayerRes};
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
@@ -24,13 +26,18 @@ pub struct AvatarTexturePlugin;
 pub const PRIMARY_AVATAR_RENDERLAYER: RenderLayers = RenderLayers::layer(0).with(1);
 pub const PROFILE_UI_RENDERLAYER: RenderLayers = RenderLayers::layer(2);
 
+const SNAPSHOT_FRAMES: u32 = 5;
+
 #[derive(Component)]
 pub struct AvatarTexture(pub Handle<Image>);
 
 impl Plugin for AvatarTexturePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_primary_avatar_camera.in_set(SetupSets::Main));
-        app.add_systems(Update, (load_foreign_textures, update_booth_image));
+        app.add_systems(
+            Update,
+            (load_foreign_textures, update_booth_image, snapshot),
+        );
     }
 }
 
@@ -39,9 +46,10 @@ pub struct BoothAvatar;
 
 #[derive(SystemParam)]
 pub struct PhotoBooth<'w, 's> {
-    images: ResMut<'w, Assets<Image>>,
+    pub images: ResMut<'w, Assets<Image>>,
     commands: Commands<'w, 's>,
     selections: Query<'w, 's, &'static mut AvatarSelection, With<BoothAvatar>>,
+    frame: Res<'w, FrameCount>,
 }
 
 #[derive(Component, Clone)]
@@ -49,6 +57,7 @@ pub struct BoothInstance {
     pub avatar: Entity,
     pub avatar_texture: Handle<Image>,
     pub camera: Entity,
+    pub snapshot_target: Option<(Handle<Image>, Handle<Image>)>,
 }
 
 impl<'w, 's> PhotoBooth<'w, 's> {
@@ -57,6 +66,7 @@ impl<'w, 's> PhotoBooth<'w, 's> {
         render_layers: RenderLayers,
         shape: AvatarShape,
         size: Extent3d,
+        snapshot_target: Option<(Handle<Image>, Handle<Image>)>,
     ) -> BoothInstance {
         let avatar = self
             .commands
@@ -75,6 +85,14 @@ impl<'w, 's> PhotoBooth<'w, 's> {
                 BoothAvatar,
             ))
             .id();
+
+        if snapshot_target.is_some() {
+            self.commands.entity(avatar).try_insert(SnapshotTimer(
+                self.frame.0 + SNAPSHOT_FRAMES,
+                None,
+                None,
+            ));
+        }
 
         let (avatar_texture, camera) = add_booth_camera(
             &mut self.commands,
@@ -107,12 +125,18 @@ impl<'w, 's> PhotoBooth<'w, 's> {
             avatar,
             avatar_texture,
             camera,
+            snapshot_target,
         }
     }
 
     pub fn update_shape(&mut self, instance: &BoothInstance, new_shape: AvatarShape) {
         if let Ok(mut selection) = self.selections.get_mut(instance.avatar) {
             selection.shape = new_shape.0;
+            if instance.snapshot_target.is_some() {
+                self.commands
+                    .entity(instance.avatar)
+                    .try_insert(SnapshotTimer(self.frame.0 + SNAPSHOT_FRAMES, None, None));
+            }
         } else {
             error!("no booth avatar to update?");
         }
@@ -273,5 +297,158 @@ fn update_booth_image(
     }
 }
 
+struct SnapshotResult {
+    image: Image,
+    window: Entity,
+    camera: Entity,
+    target: Handle<Image>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn snapshot(
+    mut commands: Commands,
+    booths: Query<&BoothInstance>,
+    mut avatars: Query<(Entity, &mut SnapshotTimer, &AvatarSelection)>,
+    frame: Res<FrameCount>,
+    mut screenshotter: ResMut<ScreenshotManager>,
+    mut local_sender: Local<Option<tokio::sync::mpsc::Sender<SnapshotResult>>>,
+    mut local_receiver: Local<Option<tokio::sync::mpsc::Receiver<SnapshotResult>>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    if local_sender.is_none() {
+        let (sx, rx) = tokio::sync::mpsc::channel(10);
+        *local_sender = Some(sx);
+        *local_receiver = Some(rx);
+    }
+
+    // take any pending shots
+    for (ent, mut timer, selection) in avatars.iter_mut() {
+        if frame.0 >= timer.0 {
+            if timer.1.is_none() {
+                // Spawn secondary windows
+                let mut window = || {
+                    commands
+                        .spawn(Window {
+                            title: "snapshot window".to_owned(),
+                            resolution: WindowResolution::new(256.0, 256.0),
+                            resizable: false,
+                            enabled_buttons: EnabledButtons {
+                                minimize: false,
+                                maximize: false,
+                                close: false,
+                            },
+                            decorations: false,
+                            focused: false,
+                            prevent_default_event_handling: true,
+                            ime_enabled: false,
+                            visible: false,
+                            window_level: WindowLevel::AlwaysOnBottom,
+                            ..Default::default()
+                        })
+                        .id()
+                };
+
+                let face_window = window();
+                let body_window = window();
+
+                timer.1 = Some(face_window);
+                timer.2 = Some(body_window);
+                // wait a frame after spawning, else it fails
+                continue;
+            }
+
+            let mut cam = |window: Entity, transform: Transform| {
+                commands
+                    .spawn((
+                        Camera3dBundle {
+                            transform,
+                            camera: Camera {
+                                target: RenderTarget::Window(WindowRef::Entity(window)),
+                                ..default()
+                            },
+
+                            camera_3d: Camera3d {
+                                clear_color: ClearColorConfig::Custom(Color::NONE),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        selection.render_layers.unwrap_or_default(),
+                        UiCameraConfig { show_ui: false },
+                    ))
+                    .id()
+            };
+
+            // second window cameras
+            let face_window = timer.1.take().unwrap();
+            let face_cam = cam(
+                face_window,
+                Transform::from_translation(Vec3::new(0.0, 1.8, -1.0))
+                    .looking_at(Vec3::Y * 1.8, Vec3::Y),
+            );
+
+            let body_window = timer.2.take().unwrap();
+            let body_cam = cam(
+                body_window,
+                Transform::from_translation(Vec3::new(0.0, 0.9, -3.0))
+                    .looking_at(Vec3::Y * 0.9, Vec3::Y),
+            );
+
+            // find matching instance
+            if let Some(instance) = booths.iter().find(|b| b.avatar == ent) {
+                // snap face
+                let sender = local_sender.as_ref().unwrap().clone();
+                let target = instance.snapshot_target.as_ref().unwrap().0.clone();
+                let _ = screenshotter.take_screenshot(face_window, move |image| {
+                    let _ = sender.blocking_send(SnapshotResult {
+                        image,
+                        window: face_window,
+                        camera: face_cam,
+                        target,
+                    });
+                });
+
+                // snap body
+                let sender = local_sender.as_ref().unwrap().clone();
+                let target = instance.snapshot_target.as_ref().unwrap().1.clone();
+                let _ = screenshotter.take_screenshot(body_window, move |image| {
+                    let _ = sender.blocking_send(SnapshotResult {
+                        image,
+                        window: body_window,
+                        camera: body_cam,
+                        target,
+                    });
+                });
+            } else {
+                error!("no matching instance for timed snapshot");
+            }
+
+            commands.entity(ent).remove::<SnapshotTimer>();
+        }
+    }
+
+    // process taken shots
+    while let Ok(SnapshotResult {
+        image,
+        window,
+        camera,
+        target,
+    }) = local_receiver.as_mut().unwrap().try_recv()
+    {
+        commands.entity(window).despawn_recursive();
+        commands.entity(camera).despawn_recursive();
+
+        let Some(target) = images.get_mut(target) else {
+            error!("target not found");
+            continue;
+        };
+
+        *target = image;
+    }
+}
+
 #[derive(Component)]
 pub struct BoothImage;
+
+#[derive(Component)]
+pub struct SnapshotTimer(u32, Option<Entity>, Option<Entity>);

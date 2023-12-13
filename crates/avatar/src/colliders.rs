@@ -214,6 +214,7 @@ fn update_avatar_collider_actions(
                 PROFILE_UI_RENDERLAYER,
                 AvatarShape::from(profile),
                 Extent3d::default(),
+                None,
             );
             commands.spawn_dialog(
                 format!("{} profile", profile.content.name),

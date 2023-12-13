@@ -8,6 +8,7 @@ use bevy::{
 };
 use dcl::interface::CrdtType;
 use ethers_core::types::Address;
+use image::ImageOutputFormat;
 use ipfs::{IpfsAssetServer, IpfsIo, TypedIpfsRef};
 use isahc::{http::StatusCode, AsyncReadResponseExt, ReadResponseExt, RequestExt};
 use multihash_codetable::MultihashDigest;
@@ -20,7 +21,7 @@ use super::{
     NetworkMessage, Transport,
 };
 use common::{
-    profile::{LambdaProfiles, SerializedProfile},
+    profile::{AvatarSnapshots, LambdaProfiles, SerializedProfile},
     rpc::RpcEventSender,
     structs::PrimaryUser,
     util::TaskExt,
@@ -61,6 +62,7 @@ pub fn setup_primary_profile(
     mut deploy_task: Local<Option<Task<Result<(), anyhow::Error>>>>,
     wallet: Res<Wallet>,
     ipfas: IpfsAssetServer,
+    images: Res<Assets<Image>>,
 ) {
     // gather any event receivers
     for sender in subscribe_events.read().filter_map(|ev| match ev {
@@ -112,7 +114,21 @@ pub fn setup_primary_profile(
                 let ipfs = ipfas.ipfs().clone();
                 let profile = profile.clone();
                 let wallet = wallet.clone();
-                *deploy_task = Some(IoTaskPool::get().spawn(deploy_profile(ipfs, wallet, profile)));
+                *deploy_task = Some(IoTaskPool::get().spawn(deploy_profile(
+                    ipfs,
+                    wallet,
+                    profile,
+                    current_profile.snapshots.as_ref().and_then(|sn| {
+                        if let (Some(face), Some(body)) = (
+                            images.get(sn.0.id()).cloned(),
+                            images.get(sn.1.id()).cloned(),
+                        ) {
+                            Some((face, body))
+                        } else {
+                            None
+                        }
+                    }),
+                )));
                 current_profile.is_deployed = true;
             }
         }
@@ -135,6 +151,7 @@ pub fn setup_primary_profile(
 #[derive(Resource, Default)]
 pub struct CurrentUserProfile {
     pub profile: Option<UserProfile>,
+    pub snapshots: Option<(Handle<Image>, Handle<Image>)>,
     pub is_deployed: bool,
 }
 
@@ -328,8 +345,32 @@ pub struct Deployment<'a> {
 async fn deploy_profile(
     ipfs: Arc<IpfsIo>,
     wallet: Wallet,
-    profile: UserProfile,
+    mut profile: UserProfile,
+    snapshots: Option<(Image, Image)>,
 ) -> Result<(), anyhow::Error> {
+    let snap_details = if let Some((face, body)) = snapshots {
+        let process = |img: Image| -> Result<_, anyhow::Error> {
+            let img = img.clone().try_into_dynamic()?;
+            let mut cursor = std::io::Cursor::new(Vec::default());
+            img.write_to(&mut cursor, ImageOutputFormat::Png)?;
+            let bytes = cursor.into_inner();
+            let hash = multihash_codetable::Code::Sha2_256.digest(bytes.as_slice());
+            let cid = cid::Cid::new_v1(0x55, hash).to_string();
+            Ok((bytes, cid))
+        };
+
+        let (face_bytes, face_cid) = process(face)?;
+        let (body_bytes, body_cid) = process(body)?;
+
+        profile.content.avatar.snapshots = Some(AvatarSnapshots {
+            face256: face_cid.clone(),
+            body: body_cid.clone(),
+        });
+        Some((face_bytes, face_cid, body_bytes, body_cid))
+    } else {
+        None
+    };
+
     let unix_time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -382,7 +423,22 @@ async fn deploy_profile(
             None,
         );
 
-        // todo: add images
+        if let Some((face_bytes, face_cid, body_bytes, body_cid)) = snap_details {
+            debug!("deplying profile face: {face_cid}");
+            form_data.add_stream(
+                face_cid,
+                std::io::Cursor::new(face_bytes),
+                Option::<&str>::None,
+                None,
+            );
+            debug!("deplying profile body: {body_cid}");
+            form_data.add_stream(
+                body_cid,
+                std::io::Cursor::new(body_bytes),
+                Option::<&str>::None,
+                None,
+            );
+        }
 
         let mut prepared = form_data.prepare()?;
         let mut prepared_data = Vec::default();

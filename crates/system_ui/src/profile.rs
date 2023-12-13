@@ -59,6 +59,7 @@ pub struct EditWindow {
     skin: Color,
     modified: bool,
     avatar_updated: bool,
+    snapshots: (Handle<Image>, Handle<Image>),
 }
 
 #[derive(Component)]
@@ -134,6 +135,10 @@ fn toggle_profile_ui(
             skin: content.avatar.skin.unwrap().color.into(),
             modified: false,
             avatar_updated: true,
+            snapshots: (
+                booth.images.add(Image::default()),
+                booth.images.add(Image::default()),
+            ),
         };
 
         let build_copy = edit_window.clone();
@@ -181,6 +186,7 @@ fn toggle_profile_ui(
                 height: 1,
                 ..Default::default()
             },
+            Some(edit_window.snapshots.clone()),
         );
 
         let window = root_commands
@@ -479,7 +485,11 @@ fn toggle_profile_ui(
                 .with_children(move |commands| {
                     commands.spacer();
 
-                    commands.spawn_button("Apply", move |mut commands: Commands, q: Query<(&EditWindow, &BoothInstance)>, mut current_profile: ResMut<CurrentUserProfile>| {
+                    commands.spawn_button("Apply", move |
+                        mut commands: Commands,
+                        q: Query<(&EditWindow, &BoothInstance)>,
+                        mut current_profile: ResMut<CurrentUserProfile>,
+                    | {
                         let Some(profile) = current_profile.profile.as_mut() else {
                             error!("can't amend missing profile");
                             return;
@@ -494,8 +504,10 @@ fn toggle_profile_ui(
                             profile.content.avatar.wearables = edit.wearables.values().cloned().collect();
                             profile.version += 1;
                             profile.content.version = profile.version as i64;
+                            current_profile.snapshots = Some(edit.snapshots.clone());
                             current_profile.is_deployed = false;
                         }
+
                         commands.entity(window).despawn_recursive();
                         commands.entity(booth.avatar).despawn_recursive();
                     });
