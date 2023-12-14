@@ -106,7 +106,12 @@ jobs:
               mv ffmpeg-*/* ffmpeg/
               Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
               Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"          
-  
+          - name: install ffmpeg deps (windows)
+            if: runner.os == 'windows' && matrix.os == 'self-hosted-windows'
+            run: |
+              Add-Content $env:GITHUB_ENV "FFMPEG_DIR=c:\ffmpeg-6.0`n"
+    
+              
           - name: Cargo build
             run: cargo build --release
 #            run: cargo build --release ${{ matrix.target && '--target' }} ${{ matrix.target }}
@@ -123,7 +128,7 @@ jobs:
             continue-on-error: true
             run: |
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy.exe package/decentra-bevy.exe
-                cp ./ffmpeg/bin/*.dll package
+                cp ${{ env.FFMPEG_DIR }}/bin/*.dll package
                 7z a ${{ env.PACKAGE_FILE }} ./package/*
 
           - name: Package Linux
