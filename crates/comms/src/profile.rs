@@ -118,7 +118,7 @@ pub fn setup_primary_profile(
                     ipfs,
                     wallet,
                     profile,
-                    current_profile.snapshots.as_ref().and_then(|sn| {
+                    current_profile.snapshots.take().and_then(|sn| {
                         if let (Some(face), Some(body)) = (
                             images.get(sn.0.id()).cloned(),
                             images.get(sn.1.id()).cloned(),
