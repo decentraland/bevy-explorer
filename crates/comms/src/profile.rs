@@ -51,7 +51,7 @@ impl Plugin for UserProfilePlugin {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn setup_primary_profile(
     mut commands: Commands,
     player: Query<(Entity, Option<&UserProfile>), With<PrimaryUser>>,
@@ -59,7 +59,7 @@ pub fn setup_primary_profile(
     transports: Query<&Transport>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
-    mut deploy_task: Local<Option<Task<Result<(), anyhow::Error>>>>,
+    mut deploy_task: Local<Option<Task<Result<Option<(String, String)>, anyhow::Error>>>>,
     wallet: Res<Wallet>,
     ipfas: IpfsAssetServer,
     images: Res<Assets<Image>>,
@@ -118,7 +118,7 @@ pub fn setup_primary_profile(
                     ipfs,
                     wallet,
                     profile,
-                    current_profile.snapshots.take().and_then(|sn| {
+                    current_profile.snapshots.as_ref().and_then(|sn| {
                         if let (Some(face), Some(body)) = (
                             images.get(sn.0.id()).cloned(),
                             images.get(sn.1.id()).cloned(),
@@ -136,8 +136,19 @@ pub fn setup_primary_profile(
 
     if let Some(mut task) = deploy_task.take() {
         match task.complete() {
-            Some(Ok(())) => {
-                info!("deployed profile ok")
+            Some(Ok(None)) => {
+                info!("deployed profile ok");
+            }
+            Some(Ok(Some((face256, body)))) => {
+                info!("deployed profile ok (with snapshots)");
+                current_profile
+                    .profile
+                    .as_mut()
+                    .unwrap()
+                    .content
+                    .avatar
+                    .snapshots = Some(AvatarSnapshots { face256, body });
+                current_profile.snapshots = None;
             }
             Some(Err(e)) => {
                 error!("failed to deploy profile: {e}");
@@ -347,7 +358,7 @@ async fn deploy_profile(
     wallet: Wallet,
     mut profile: UserProfile,
     snapshots: Option<(Image, Image)>,
-) -> Result<(), anyhow::Error> {
+) -> Result<Option<(String, String)>, anyhow::Error> {
     let snap_details = if let Some((face, body)) = snapshots {
         let process = |img: Image| -> Result<_, anyhow::Error> {
             let img = img.clone().try_into_dynamic()?;
@@ -423,7 +434,7 @@ async fn deploy_profile(
             None,
         );
 
-        if let Some((face_bytes, face_cid, body_bytes, body_cid)) = snap_details {
+        if let Some((face_bytes, face_cid, body_bytes, body_cid)) = snap_details.clone() {
             debug!("deplying profile face: {face_cid}");
             form_data.add_stream(
                 face_cid,
@@ -460,7 +471,7 @@ async fn deploy_profile(
     let mut response = post.send_async().await?;
 
     match response.status() {
-        StatusCode::OK => Ok(()),
+        StatusCode::OK => Ok(snap_details.map(|(_, face_cid, _, body_cid)| (face_cid, body_cid))),
         _ => Err(anyhow!(
             "bad response: {}: {}",
             response.status(),
