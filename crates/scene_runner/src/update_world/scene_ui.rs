@@ -16,7 +16,7 @@ use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
         self,
-        common::{BorderRect, TextureUnion},
+        common::{texture_union, BorderRect, TextureUnion},
         sdk::components::{
             self, PbUiBackground, PbUiDropdown, PbUiDropdownResult, PbUiInput, PbUiInputResult,
             PbUiText, PbUiTransform, YgAlign, YgDisplay, YgFlexDirection, YgJustify, YgOverflow,
@@ -231,7 +231,7 @@ impl From<PbUiTransform> for UiTransform {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum BackgroundTextureMode {
     NineSlices(BorderRect),
     Stretch(BorderRect),
@@ -628,8 +628,13 @@ fn layout_scene_ui(
                                     if let Some(texture) = background.texture.as_ref() {
                                         let image = texture.tex.tex.as_ref().and_then(|tex| resolver.resolve_texture(ent, tex).ok());
 
+                                        let texture_mode = match texture.tex.tex {
+                                            Some(texture_union::Tex::Texture(_)) => texture.mode,
+                                            _ => BackgroundTextureMode::Stretch(BorderRect::default()),
+                                        };
+
                                         if let Some(image) = image {
-                                            match texture.mode {
+                                            match texture_mode {
                                                 BackgroundTextureMode::NineSlices(rect) => {
                                                     ent_cmds.insert(Ui9Slice{
                                                         image: image.image,
