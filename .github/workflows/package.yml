@@ -55,7 +55,7 @@ jobs:
 #                    target: aarch64-apple-darwin
 
                   - build_name: windows-x86_64
-                    os: windows-latest
+                    os: self-hosted-windows
 #                    target: x86_64-pc-windows-msvc
 
         env:
@@ -78,6 +78,7 @@ jobs:
             run: rustup target add aarch64-apple-darwin
 
           - name: Install protoc
+            if: matrix.os != 'self-hosted-windows'
             uses: arduino/setup-protoc@v1
             with:
                 repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -94,7 +95,7 @@ jobs:
           - name: install ffmpeg deps (macOs)
             if: runner.os == 'macos'
             run: brew install ffmpeg pkg-config          
-          - name: install ffmpeg deps (windows)
+          - name: install ffmpeg deps (windows) && matrix.os != 'self-hosted-windows'
             if: runner.os == 'windows'
             run: |
               $VCINSTALLDIR = $(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
