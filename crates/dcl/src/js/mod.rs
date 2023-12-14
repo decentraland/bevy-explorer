@@ -380,6 +380,7 @@ fn op_require(
         "~system/CommunicationsController" => {
             Ok(include_str!("modules/CommunicationsController.js").to_owned())
         }
+        "~system/CommsApi" => Ok(include_str!("modules/CommsApi.js").to_owned()),
         "~system/EngineApi" => Ok(include_str!("modules/EngineApi.js").to_owned()),
         "~system/EnvironmentApi" => Ok(include_str!("modules/EnvironmentApi.js").to_owned()),
         "~system/EthereumController" => {

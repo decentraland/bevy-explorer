@@ -85,6 +85,7 @@ pub struct SceneThreadHandle {
 // event which can be sent from anywhere to trigger replacing the current scene with the one specified
 #[derive(Event)]
 pub struct LoadSceneEvent {
+    pub realm: String,
     pub entity: Option<Entity>,
     pub location: SceneIpfsLocation,
 }
@@ -115,7 +116,7 @@ pub struct DebugInfo {
 
 // resource for adding toasts
 #[derive(Resource, Default, Debug)]
-pub struct Toasts(pub HashMap<&'static str, Toast>);
+pub struct Toasts(pub HashMap<String, Toast>);
 
 #[derive(SystemParam)]
 pub struct Toaster<'w, 's> {
@@ -126,10 +127,12 @@ pub struct Toaster<'w, 's> {
 }
 
 impl<'w, 's> Toaster<'w, 's> {
-    pub fn add_toast(&mut self, key: &'static str, message: impl Into<String>) {
+    pub fn add_toast(&mut self, key: impl Into<String>, message: impl Into<String>) {
+        let key = key.into();
         let message = message.into();
-        if let Some(existing) = self.toasts.0.get(key) {
+        if let Some(existing) = self.toasts.0.get_mut(&key) {
             if existing.message == message {
+                existing.last_update = self.time.elapsed_seconds();
                 return;
             }
         }
@@ -139,6 +142,7 @@ impl<'w, 's> Toaster<'w, 's> {
             Toast {
                 message,
                 time: self.time.elapsed_seconds(),
+                last_update: self.time.elapsed_seconds(),
             },
         );
     }
@@ -152,6 +156,7 @@ impl<'w, 's> Toaster<'w, 's> {
 pub struct Toast {
     pub message: String,
     pub time: f32,
+    pub last_update: f32,
 }
 
 // plugin which creates and runs scripts
@@ -425,7 +430,7 @@ impl<'w, 's> ContainingScene<'w, 's> {
             .floor()
             .as_ivec2();
 
-        if let Some(PointerResult::Exists(hash)) = self.pointers.0.get(&parcel) {
+        if let Some(PointerResult::Exists { hash, .. }) = self.pointers.0.get(&parcel) {
             self.live_scenes.0.get(hash).copied()
         } else {
             None
@@ -459,7 +464,7 @@ impl<'w, 's> ContainingScene<'w, 's> {
 
         let mut results = HashSet::default();
 
-        if let Some(PointerResult::Exists(hash)) = self.pointers.0.get(&parcel) {
+        if let Some(PointerResult::Exists { hash, .. }) = self.pointers.0.get(&parcel) {
             if let Some(scene) = self.live_scenes.0.get(hash) {
                 results.insert(*scene);
             }
@@ -511,7 +516,7 @@ impl<'w, 's> ContainingScene<'w, 's> {
 
         for parcel_x in min_parcel.x..=max_parcel.x {
             for parcel_y in min_parcel.y..=max_parcel.y {
-                if let Some(PointerResult::Exists(hash)) =
+                if let Some(PointerResult::Exists { hash, .. }) =
                     self.pointers.0.get(&IVec2::new(parcel_x, parcel_y))
                 {
                     if let Some(scene) = self.live_scenes.0.get(hash).copied() {

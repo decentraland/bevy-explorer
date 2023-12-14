@@ -19,6 +19,7 @@ use bevy::{
             file::FileAssetReader, AssetReader, AssetReaderError, AssetSource, AssetSourceId,
             Reader,
         },
+        meta::Settings,
         Asset, AssetLoader, LoadState, UntypedAssetId,
     },
     ecs::system::SystemParam,
@@ -42,16 +43,16 @@ const MAX_CONCURRENT_REQUESTS: usize = 8;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TypedIpfsRef {
-    file: String,
-    hash: String,
+    pub file: String,
+    pub hash: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct EntityDefinitionJson {
-    id: Option<String>,
-    pointers: Vec<String>,
-    content: Vec<TypedIpfsRef>,
-    metadata: Option<serde_json::Value>,
+    pub id: Option<String>,
+    pub pointers: Vec<String>,
+    pub content: Vec<TypedIpfsRef>,
+    pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Asset, Debug, Default, TypePath)]
@@ -253,6 +254,21 @@ impl<'w, 's> IpfsAssetServer<'w, 's> {
         Ok(self.server.load(PathBuf::from(&ipfs_path)))
     }
 
+    pub fn load_content_file_with_settings<T: Asset, S: Settings>(
+        &self,
+        file_path: &str,
+        content_hash: &str,
+        settings: impl Fn(&mut S) + Send + Sync + 'static,
+    ) -> Result<Handle<T>, anyhow::Error> {
+        let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+            content_hash.to_owned(),
+            file_path.to_owned(),
+        ));
+        Ok(self
+            .server
+            .load_with_settings(PathBuf::from(&ipfs_path), settings))
+    }
+
     pub fn load_urn<T: IpfsAsset>(&self, urn: &str) -> Result<Handle<T>, anyhow::Error> {
         let ext = T::ext();
         let ipfs_path = IpfsPath::new_from_urn::<T>(urn)?;
@@ -341,6 +357,7 @@ pub struct ServerAbout {
     pub content: Option<EndpointConfig>,
     pub comms: Option<CommsConfig>,
     pub configurations: Option<ServerConfiguration>,
+    pub lambdas: Option<EndpointConfig>,
 }
 
 impl ServerAbout {
@@ -359,6 +376,7 @@ impl Default for ServerAbout {
                 fixed_adapter: Some("offline:offline".to_owned()),
             }),
             configurations: Default::default(),
+            lambdas: Default::default(),
         }
     }
 }
@@ -739,6 +757,30 @@ impl IpfsIo {
         ));
         let res = ipfs_path.to_url(&self.context.blocking_read()).ok();
         res
+    }
+
+    pub fn lambda_endpoint(&self) -> Option<String> {
+        self.realm_config_receiver
+            .borrow()
+            .as_ref()
+            .and_then(|(_, about)| about.lambdas.as_ref())
+            .map(|l| l.public_url.clone())
+    }
+
+    pub fn contents_endpoint(&self) -> Option<String> {
+        self.realm_config_receiver
+            .borrow()
+            .as_ref()
+            .and_then(|(_, about)| about.content.as_ref())
+            .map(|content| format!("{}/contents/", &content.public_url))
+    }
+
+    pub fn entities_endpoint(&self) -> Option<String> {
+        self.realm_config_receiver
+            .borrow()
+            .as_ref()
+            .and_then(|(_, about)| about.content.as_ref())
+            .map(|content| format!("{}/entities/", &content.public_url))
     }
 }
 

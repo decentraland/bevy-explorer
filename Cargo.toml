@@ -33,7 +33,7 @@ nft = { path="crates/nft" }
 
 bevy = { version = "0.12", features=["jpeg"] }
 bevy_console = { git = "https://github.com/msklosak/bevy-console", branch = "bevy_0.12_update" }
-bevy_mod_billboard = { git = "https://github.com/robtfm/bevy_mod_billboard", branch = "bevy12" }
+bevy_mod_billboard = { git = "https://github.com/robtfm/bevy_mod_billboard", branch = "scene_bound" }
 bevy_egui = "0.23"
 
 serde = "1.0.152"
@@ -56,6 +56,9 @@ async-std = "1.12.0"
 isahc = { git = "https://github.com/sagebind/isahc", rev="096aff7b13f4ff5bb474fdc27bc30b297a2968f6", default-features = false, features = ["json", "text-decoding", "http2", "rustls-tls-native-certs"] }
 kira = "0.8.4"
 bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "pub-mod-12", features=["flac", "mp3", "ogg", "wav"] }
+data-encoding = "2.5"
+opener = "0.6"
+chrono = "0.4.31"
 
 [dependencies]
 common = { workspace = true }
@@ -94,3 +97,4 @@ bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.12-hotfix2"
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0" }
 parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "try_convex" }
 rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }
+serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_204_hotfix" }

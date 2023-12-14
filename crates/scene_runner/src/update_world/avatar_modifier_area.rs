@@ -93,7 +93,7 @@ fn update_avatar_modifier_area(
             maybe_foreign
                 .as_ref()
                 .map(|f| f.address)
-                .unwrap_or(me.address())
+                .unwrap_or(me.address().unwrap_or_default())
         );
 
         // for each scene they're in

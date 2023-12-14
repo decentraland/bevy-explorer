@@ -22,4 +22,4 @@ isahc = { workspace = true }
 serde_json = { workspace = true }
 ethers-core = { workspace = true }
 urlencoding = { workspace = true }
-opener = "0.6"
+opener = { workspace = true }

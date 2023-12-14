@@ -1,4 +1,5 @@
 pub mod chat;
+pub mod login;
 pub mod mic;
 pub mod profile;
 pub mod sysinfo;
@@ -9,6 +10,7 @@ use bevy::prelude::*;
 
 use common::{sets::SetupSets, structs::UiRoot};
 use input_manager::MouseInteractionComponent;
+use login::LoginPlugin;
 use mic::MicUiPlugin;
 use toasts::ToastsPlugin;
 use tooltip::ToolTipPlugin;
@@ -31,6 +33,7 @@ impl Plugin for SystemUiPlugin {
         app.add_plugins(ToastsPlugin);
         app.add_plugins(MicUiPlugin);
         app.add_plugins(ToolTipPlugin);
+        app.add_plugins(LoginPlugin);
     }
 }
 

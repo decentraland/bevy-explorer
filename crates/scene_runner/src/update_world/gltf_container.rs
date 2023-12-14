@@ -4,14 +4,13 @@
 use std::collections::BTreeMap;
 
 use bevy::{
-    core_pipeline::tonemapping::{DebandDither, Tonemapping},
-    gltf::{Gltf, GltfExtras},
+    asset::LoadState,
+    gltf::{Gltf, GltfExtras, GltfLoaderSettings},
+    pbr::ExtendedMaterial,
     prelude::*,
     render::{
-        camera::CameraRenderGraph,
         mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
-        primitives::Frustum,
-        view::{ColorGrading, NoFrustumCulling, VisibleEntities},
+        view::NoFrustumCulling,
     },
     scene::InstanceId,
     utils::{HashMap, HashSet},
@@ -31,6 +30,7 @@ use ipfs::{EntityDefinition, IpfsAssetServer};
 
 use super::{
     mesh_collider::{MeshCollider, MeshColliderShape},
+    scene_material::{SceneBound, SceneBoundPlugin, SceneMaterial},
     AddCrdtInterfaceExt,
 };
 
@@ -54,6 +54,8 @@ impl Plugin for GltfDefinitionPlugin {
 
         app.add_systems(Update, update_gltf.in_set(SceneSets::PostLoop));
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
+
+        app.add_plugins(SceneBoundPlugin);
     }
 }
 
@@ -104,12 +106,16 @@ fn update_gltf(
         Option<&Handle<Mesh>>,
         Option<&GltfExtras>,
         Option<&SkinnedMesh>,
+        Option<&Handle<StandardMaterial>>,
     )>,
     scene_def_handles: Query<&Handle<EntityDefinition>>,
-    (scene_defs, gltfs, ipfas): (
+    (scene_defs, gltfs, images, ipfas, mut base_mats, mut bound_mats): (
         Res<Assets<EntityDefinition>>,
         Res<Assets<Gltf>>,
+        Res<Assets<Image>>,
         IpfsAssetServer,
+        ResMut<Assets<StandardMaterial>>,
+        ResMut<Assets<SceneMaterial>>,
     ),
     mut scene_spawner: ResMut<SceneSpawner>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -182,7 +188,13 @@ fn update_gltf(
             continue;
         };
 
-        let h_gltf = match ipfas.load_content_file::<Gltf>(&gltf.0.src, &scene_def.id) {
+        let h_gltf = match ipfas.load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
+            &gltf.0.src,
+            &scene_def.id,
+            |s| {
+                s.load_cameras = false;
+            },
+        ) {
             Ok(h_gltf) => h_gltf,
             Err(e) => {
                 warn!("gltf content file not found: {e}");
@@ -213,6 +225,30 @@ fn update_gltf(
 
         let gltf = gltfs.get(h_gltf).unwrap();
         let gltf_scene_handle = gltf.default_scene.as_ref();
+
+        // validate texture types
+        for h_mat in gltf.materials.iter() {
+            let Some(mat) = base_mats.get_mut(h_mat) else {
+                continue;
+            };
+
+            if let Some(h_base) = mat.base_color_texture.as_ref() {
+                if ipfas.asset_server().get_load_state(h_base) == Some(LoadState::Loading) {
+                    continue;
+                }
+
+                if let Some(texture) = images.get(h_base) {
+                    if texture.texture_descriptor.format.sample_type(None)
+                        != Some(bevy::render::render_resource::TextureSampleType::Float {
+                            filterable: true,
+                        })
+                    {
+                        warn!("invalid format for base color texture, disabling");
+                        mat.base_color_texture = None;
+                    }
+                }
+            }
+        }
 
         match gltf_scene_handle {
             Some(gltf_scene_handle) => {
@@ -268,18 +304,10 @@ fn update_gltf(
             };
 
             for spawned_ent in scene_spawner.iter_instance_entities(*instance) {
-                // delete any cameras
-                commands.entity(spawned_ent).remove::<(
-                    Camera,
-                    CameraRenderGraph,
-                    Projection,
-                    VisibleEntities,
-                    Frustum,
-                    Camera3d,
-                    Tonemapping,
-                    DebandDither,
-                    ColorGrading,
-                )>();
+                // delete any base materials
+                commands
+                    .entity(spawned_ent)
+                    .remove::<(Handle<StandardMaterial>,)>();
 
                 // add a container node so other systems can reference the root
                 commands.entity(spawned_ent).try_insert(ContainerEntity {
@@ -296,6 +324,7 @@ fn update_gltf(
                     maybe_h_mesh,
                     maybe_extras,
                     maybe_skin,
+                    maybe_material,
                 )) = gltf_spawned_entities.get(spawned_ent)
                 {
                     // children of root nodes -> rotate
@@ -322,6 +351,7 @@ fn update_gltf(
                         continue;
                     };
 
+                    // fix up mesh
                     mesh_data.normalize_joint_weights();
 
                     let has_joints = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();
@@ -344,6 +374,22 @@ fn update_gltf(
                         }
                     }
 
+                    // substitute material
+                    if let Some(h_material) = maybe_material {
+                        let Some(base) = base_mats.get(h_material) else {
+                            panic!();
+                        };
+                        commands
+                            .entity(spawned_ent)
+                            .insert(bound_mats.add(ExtendedMaterial {
+                                base: base.clone(),
+                                extension: SceneBound {
+                                    bounds: context.bounds,
+                                },
+                            }));
+                    }
+
+                    // process collider
                     let mut collider_base_name =
                         maybe_name.and_then(|name| name.as_str().strip_suffix("_collider"));
 

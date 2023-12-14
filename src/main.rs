@@ -21,8 +21,8 @@ use bevy_console::ConsoleCommand;
 use common::{
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, GraphicsSettings, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
-        SceneLoadDistance,
+        AppConfig, AttachPoints, GraphicsSettings, PrimaryCamera, PrimaryCameraRes,
+        PrimaryPlayerRes, PrimaryUser, SceneLoadDistance,
     },
 };
 use restricted_actions::RestrictedActionsPlugin;
@@ -107,9 +107,7 @@ fn main() {
             .ok()
             .map(|va| va.0)
             .unwrap_or(base_config.location),
-        profile_version: base_config.profile_version,
-        profile_content: base_config.profile_content,
-        profile_base_url: base_config.profile_base_url,
+        previous_login: base_config.previous_login,
         graphics: GraphicsSettings {
             vsync: args
                 .value_from_str("--vsync")
@@ -248,6 +246,7 @@ fn main() {
 
     app.add_plugins(AudioPlugin)
         .add_plugins(RestrictedActionsPlugin)
+        .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
         .add_systems(Startup, setup.in_set(SetupSets::Init))
         .insert_resource(AmbientLight {
@@ -274,13 +273,14 @@ fn main() {
 
 fn setup(
     mut commands: Commands,
+    mut player_resource: ResMut<PrimaryPlayerRes>,
     mut cam_resource: ResMut<PrimaryCameraRes>,
     config: Res<AppConfig>,
 ) {
     info!("main::setup");
     // create the main player
     let attach_points = AttachPoints::new(&mut commands);
-    commands
+    let player_id = commands
         .spawn((
             SpatialBundle {
                 transform: Transform::from_translation(Vec3::new(
@@ -296,7 +296,8 @@ fn setup(
             GroundCollider::default(),
         ))
         .push_children(&attach_points.entities())
-        .insert(attach_points);
+        .insert(attach_points)
+        .id();
 
     // add a camera
     let camera_id = commands
@@ -324,6 +325,7 @@ fn setup(
         ))
         .id();
 
+    player_resource.0 = player_id;
     cam_resource.0 = camera_id;
 
     // add a directional light so it looks nicer

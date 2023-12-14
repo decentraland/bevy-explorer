@@ -18,7 +18,11 @@ use ipfs::{
     EntityDefinition, IpfsAssetServer,
 };
 
-use crate::{renderer_context::RendererSceneContext, ContainingScene};
+use crate::{
+    initialize_scene::{LiveScenes, PortableScenes},
+    renderer_context::RendererSceneContext,
+    ContainingScene,
+};
 
 pub struct SceneUtilPlugin;
 
@@ -27,6 +31,7 @@ impl Plugin for SceneUtilPlugin {
         let (send, recv) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(ConsoleRelay { send, recv });
         app.add_console_command::<DebugDumpScene, _>(debug_dump_scene);
+        app.add_console_command::<ReloadCommand, _>(reload_command);
         app.add_systems(Update, console_relay);
     }
 }
@@ -166,4 +171,19 @@ fn debug_dump_scene(
     }
 
     tasks.retain_mut(|t| !t.is_finished());
+}
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/reload")]
+struct ReloadCommand;
+
+fn reload_command(
+    mut input: ConsoleCommand<ReloadCommand>,
+    mut live_scenes: ResMut<LiveScenes>,
+    mut portables: ResMut<PortableScenes>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        live_scenes.0.clear();
+        portables.0.clear();
+    }
 }

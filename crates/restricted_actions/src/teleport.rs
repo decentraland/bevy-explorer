@@ -11,6 +11,7 @@ use scene_runner::{
     ContainingScene, OutOfWorld,
 };
 use ui_core::dialog::SpawnDialog;
+use wallet::Wallet;
 
 pub fn teleport_player(
     mut commands: Commands,
@@ -82,6 +83,7 @@ pub fn handle_out_of_world(
     pointers: Res<ScenePointers>,
     live_scenes: Res<LiveScenes>,
     foreign_players: Query<&GlobalTransform, With<ForeignPlayer>>,
+    wallet: Res<Wallet>,
 ) {
     let Ok((player, mut t)) = player.get_single_mut() else {
         return;
@@ -89,13 +91,18 @@ pub fn handle_out_of_world(
 
     debug!("out of world!");
 
+    if wallet.address().is_none() {
+        debug!("waiting for connection");
+        return;
+    }
+
     let parcel = (t.translation.xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
         .floor()
         .as_ivec2();
 
     let hash = match pointers.0.get(&parcel) {
-        Some(PointerResult::Exists(hash)) => hash,
-        Some(PointerResult::Nothing(_, _)) => {
+        Some(PointerResult::Exists { hash, .. }) => hash,
+        Some(PointerResult::Nothing { .. }) => {
             debug!("scene {parcel} doesn't exist, returning to world");
             debug!("everything: {:?}", pointers.0);
             commands.entity(player).remove::<OutOfWorld>();
@@ -116,7 +123,7 @@ pub fn handle_out_of_world(
     let (maybe_context, maybe_loadstate) = scenes.get(*scene).unwrap();
 
     if let Some(context) = maybe_context {
-        if context.tick_number <= 5 || !context.blocked.is_empty() {
+        if !context.broken && (context.tick_number <= 5 || !context.blocked.is_empty()) {
             debug!("scene not ready");
         } else {
             debug!(
@@ -137,7 +144,7 @@ pub fn handle_out_of_world(
                 rng.gen_range(0.0..PARCEL_SIZE),
                 rng.gen_range(0.0..PARCEL_SIZE),
                 rng.gen_range(0.0..PARCEL_SIZE),
-            );
+            ) + base_position;
             let mut count = 100;
 
             if !context.spawn_points.is_empty() {

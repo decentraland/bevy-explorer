@@ -6,7 +6,6 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use input_manager::MouseInteractionComponent;
-use ipfs::IpfsAssetServer;
 
 use crate::{
     renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
@@ -35,7 +34,7 @@ use ui_core::{
     TITLE_TEXT_STYLE,
 };
 
-use super::{pointer_events::PointerEvents, AddCrdtInterfaceExt};
+use super::{material::TextureResolver, pointer_events::PointerEvents, AddCrdtInterfaceExt};
 
 pub struct SceneUiPlugin;
 
@@ -232,16 +231,16 @@ impl From<PbUiTransform> for UiTransform {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum BackgroundTextureMode {
     NineSlices(BorderRect),
     Stretch(BorderRect),
     Center,
 }
 
-#[derive(Component, Clone)]
+#[derive(Component, Clone, Debug)]
 pub struct BackgroundTexture {
-    source: String,
+    tex: TextureUnion,
     mode: BackgroundTextureMode,
 }
 
@@ -253,60 +252,45 @@ pub struct UiBackground {
 
 impl From<PbUiBackground> for UiBackground {
     fn from(value: PbUiBackground) -> Self {
+        let texture_mode = value.texture_mode();
         Self {
             color: value.color.map(Into::into),
-            texture: value.texture.as_ref().and_then(|tex| {
-                if let TextureUnion {
-                    tex: Some(texture_union::Tex::Texture(texture)),
-                } = tex
-                {
-                    if texture.src.is_empty() {
-                        return None;
+            texture: value.texture.map(|tex| {
+                let mode = match texture_mode {
+                    components::BackgroundTextureMode::NineSlices => {
+                        BackgroundTextureMode::NineSlices(value.texture_slices.unwrap_or(
+                            BorderRect {
+                                top: 1.0 / 3.0,
+                                bottom: 1.0 / 3.0,
+                                left: 1.0 / 3.0,
+                                right: 1.0 / 3.0,
+                            },
+                        ))
                     }
+                    components::BackgroundTextureMode::Center => BackgroundTextureMode::Center,
+                    components::BackgroundTextureMode::Stretch => {
+                        // the uvs array seems to contain [x-, y-, x-, y+, x+, y+, x+, y-]
+                        // let's pick ... [1 - 4]              ^^^^^^^^^^^^^^
+                        let mut uvs = BorderRect::default();
+                        let mut iter = value.uvs.iter().skip(1);
+                        if let Some(ymin) = iter.next() {
+                            uvs.bottom = ymin.clamp(0.0, 1.0);
+                        }
+                        if let Some(xmin) = iter.next() {
+                            uvs.left = xmin.clamp(0.0, 1.0);
+                        }
+                        if let Some(ymax) = iter.next() {
+                            uvs.top = 1.0 - ymax.clamp(uvs.bottom, 1.0);
+                        }
+                        if let Some(xmax) = iter.next() {
+                            uvs.right = 1.0 - xmax.clamp(uvs.left, 1.0);
+                        }
 
-                    // TODO handle wrapmode and filtering once we have some asset processing pipeline in place (bevy 0.11-0.12)
-                    Some(BackgroundTexture {
-                        source: texture.src.clone(),
-                        mode: match value.texture_mode() {
-                            components::BackgroundTextureMode::NineSlices => {
-                                BackgroundTextureMode::NineSlices(value.texture_slices.unwrap_or(
-                                    BorderRect {
-                                        top: 1.0 / 3.0,
-                                        bottom: 1.0 / 3.0,
-                                        left: 1.0 / 3.0,
-                                        right: 1.0 / 3.0,
-                                    },
-                                ))
-                            }
-                            components::BackgroundTextureMode::Center => {
-                                BackgroundTextureMode::Center
-                            }
-                            components::BackgroundTextureMode::Stretch => {
-                                // the uvs array seems to contain [x-, y-, x-, y+, x+, y+, x+, y-]
-                                // let's pick ... [1 - 4]              ^^^^^^^^^^^^^^
-                                let mut uvs = BorderRect::default();
-                                let mut iter = value.uvs.iter().skip(1);
-                                if let Some(ymin) = iter.next() {
-                                    uvs.bottom = ymin.clamp(0.0, 1.0);
-                                }
-                                if let Some(xmin) = iter.next() {
-                                    uvs.left = xmin.clamp(0.0, 1.0);
-                                }
-                                if let Some(ymax) = iter.next() {
-                                    uvs.top = 1.0 - ymax.clamp(uvs.bottom, 1.0);
-                                }
-                                if let Some(xmax) = iter.next() {
-                                    uvs.right = 1.0 - xmax.clamp(uvs.left, 1.0);
-                                }
+                        BackgroundTextureMode::Stretch(uvs)
+                    }
+                };
 
-                                BackgroundTextureMode::Stretch(uvs)
-                            }
-                        },
-                    })
-                } else {
-                    warn!("{:?} unsupported", tex);
-                    None
-                }
+                BackgroundTexture { tex, mode }
             }),
         }
     }
@@ -477,7 +461,7 @@ pub struct SceneUiRoot(Entity);
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn layout_scene_ui(
     mut commands: Commands,
-    mut scene_uis: Query<(Entity, &mut SceneUiData, &RendererSceneContext)>,
+    mut scene_uis: Query<(Entity, &mut SceneUiData)>,
     player: Query<Entity, With<PrimaryUser>>,
     containing_scene: ContainingScene,
     ui_nodes: Query<(
@@ -489,11 +473,11 @@ fn layout_scene_ui(
         Option<&UiInput>,
         Option<&UiDropdown>,
     )>,
-    ipfas: IpfsAssetServer,
     mut ui_target: ResMut<UiPointerTarget>,
     current_uis: Query<(Entity, &SceneUiRoot)>,
     ui_input_state: Query<&UiInputPersistentState>,
     ui_dropdown_state: Query<&UiDropdownPersistentState>,
+    resolver: TextureResolver,
 ) {
     let current_scenes = player
         .get_single()
@@ -508,7 +492,7 @@ fn layout_scene_ui(
         }
     }
 
-    for (ent, mut ui_data, scene_context) in scene_uis.iter_mut() {
+    for (ent, mut ui_data) in scene_uis.iter_mut() {
         if current_scenes.contains(&ent) {
             if ui_data.relayout || ui_data.current_node.is_none() {
                 // clear any existing ui target
@@ -642,14 +626,18 @@ fn layout_scene_ui(
                                     }
 
                                     if let Some(texture) = background.texture.as_ref() {
-                                        if let Ok(image) = ipfas.load_content_file::<Image>(
-                                            &texture.source,
-                                            &scene_context.hash,
-                                        ) {
-                                            match texture.mode {
+                                        let image = texture.tex.tex.as_ref().and_then(|tex| resolver.resolve_texture(ent, tex).ok());
+
+                                        let texture_mode = match texture.tex.tex {
+                                            Some(texture_union::Tex::Texture(_)) => texture.mode,
+                                            _ => BackgroundTextureMode::Stretch(BorderRect::default()),
+                                        };
+
+                                        if let Some(image) = image {
+                                            match texture_mode {
                                                 BackgroundTextureMode::NineSlices(rect) => {
                                                     ent_cmds.insert(Ui9Slice{
-                                                        image,
+                                                        image: image.image,
                                                         center_region: rect.into(),
                                                     });
                                                 },
@@ -678,7 +666,7 @@ fn layout_scene_ui(
                                                                     ..Default::default()
                                                                 },
                                                                 image: UiImage {
-                                                                    texture: image,
+                                                                    texture: image.image,
                                                                     flip_x: false,
                                                                     flip_y: false,
                                                                 },
@@ -726,7 +714,7 @@ fn layout_scene_ui(
                                                                         ..Default::default()
                                                                     },
                                                                     image: UiImage {
-                                                                        texture: image,
+                                                                        texture: image.image,
                                                                         flip_x: false,
                                                                         flip_y: false,
                                                                     },
@@ -741,8 +729,8 @@ fn layout_scene_ui(
                                             }
                                         } else {
                                             warn!(
-                                                "failed to load ui image from content map: {}",
-                                                texture.source
+                                                "failed to load ui image from content map: {:?}",
+                                                texture
                                             );
                                         }
                                     }

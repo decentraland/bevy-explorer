@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [self-hosted-windows, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
@@ -44,6 +44,7 @@ jobs:
           override: true
 #      - uses: Swatinem/rust-cache@v2
       - name: Install protoc
+        if: matrix.os != 'self-hosted-windows'
         uses: arduino/setup-protoc@v1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -60,7 +61,7 @@ jobs:
         if: runner.os == 'macos'
         run: brew install ffmpeg pkg-config          
       - name: install ffmpeg deps (windows)
-        if: runner.os == 'windows'
+        if: runner.os == 'windows' && matrix.os != 'self-hosted-windows'
         run: |
           $VCINSTALLDIR = $(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
           Add-Content $env:GITHUB_ENV "LIBCLANG_PATH=${VCINSTALLDIR}\VC\Tools\LLVM\x64\bin`n"

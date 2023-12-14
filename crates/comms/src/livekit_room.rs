@@ -69,11 +69,15 @@ pub fn start_livekit(
         info!("starting livekit protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
 
+        let Some(current_profile) = current_profile.profile.as_ref() else {
+            return;
+        };
+
         // queue a profile version message
         let response = rfc4::Packet {
             message: Some(rfc4::packet::Message::ProfileVersion(
                 rfc4::AnnounceProfileVersion {
-                    profile_version: current_profile.0.version,
+                    profile_version: current_profile.version,
                 },
             )),
         };

@@ -139,7 +139,10 @@ fn update_animations(
             }
 
             for (player_ent, _) in target {
-                let mut player = players.get_mut(*player_ent).unwrap();
+                let Ok(mut player) = players.get_mut(*player_ent) else {
+                    error!("failed to get animation player");
+                    continue;
+                };
 
                 player.play(h_clip.clone_weak());
 

@@ -1,4 +1,6 @@
 use bevy::{ecs::system::SystemParam, pbr::NotShadowCaster, prelude::*, render::primitives::Aabb};
+use common::structs::AvatarTextureHandle;
+use comms::profile::UserProfile;
 use ipfs::IpfsAssetServer;
 
 use crate::{renderer_context::RendererSceneContext, ContainerEntity, SceneSets};
@@ -11,7 +13,11 @@ use dcl_component::{
     SceneComponentId, SceneEntityId,
 };
 
-use super::{mesh_renderer::update_mesh, AddCrdtInterfaceExt};
+use super::{
+    mesh_renderer::update_mesh,
+    scene_material::{SceneBound, SceneMaterial},
+    AddCrdtInterfaceExt,
+};
 
 pub struct MaterialDefinitionPlugin;
 
@@ -144,7 +150,7 @@ impl Plugin for MaterialDefinitionPlugin {
 }
 
 #[derive(Component)]
-pub struct RetryMaterial;
+pub struct RetryMaterial(Vec<Handle<Image>>);
 
 #[derive(Component)]
 pub struct TouchMaterial;
@@ -156,6 +162,7 @@ pub enum TextureResolveError {
     SourceNotAvailable,
     SourceNotReady,
     SceneNotFound,
+    AvatarNotFound,
     NotImplemented,
 }
 
@@ -164,6 +171,7 @@ pub struct TextureResolver<'w, 's> {
     scenes: Query<'w, 's, &'static RendererSceneContext>,
     ipfas: IpfsAssetServer<'w, 's>,
     videos: Query<'w, 's, &'static VideoTextureOutput>,
+    avatars: Query<'w, 's, (&'static UserProfile, &'static AvatarTextureHandle)>,
 }
 
 #[derive(Debug)]
@@ -193,7 +201,15 @@ impl<'w, 's> TextureResolver<'w, 's> {
                     touch: false,
                 })
             }
-            texture_union::Tex::AvatarTexture(_) => Err(TextureResolveError::NotImplemented),
+            texture_union::Tex::AvatarTexture(at) => self
+                .avatars
+                .iter()
+                .find(|(profile, _)| profile.content.eth_address == at.user_id)
+                .map(|(_, tex)| ResolvedTexture {
+                    image: tex.0.clone(),
+                    touch: false,
+                })
+                .ok_or(TextureResolveError::AvatarNotFound),
             texture_union::Tex::VideoTexture(vt) => {
                 let Some(video_entity) =
                     scene.bevy_entity(SceneEntityId::from_proto_u32(vt.video_player_entity))
@@ -224,9 +240,11 @@ fn update_materials(
         (Entity, &MaterialDefinition, &ContainerEntity),
         Or<(Changed<MaterialDefinition>, With<RetryMaterial>)>,
     >,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    touch: Query<&Handle<StandardMaterial>, With<TouchMaterial>>,
+    mut materials: ResMut<Assets<SceneMaterial>>,
+    images: Res<Assets<Image>>,
+    touch: Query<&Handle<SceneMaterial>, With<TouchMaterial>>,
     resolver: TextureResolver,
+    scenes: Query<&RendererSceneContext>,
 ) {
     for (ent, defn, container) in new_materials.iter_mut() {
         let textures: Result<Vec<_>, _> = [
@@ -250,7 +268,7 @@ fn update_materials(
         let textures = match textures {
             Ok(textures) => textures,
             _ => {
-                commands.entity(ent).insert(RetryMaterial);
+                commands.entity(ent).insert(RetryMaterial(Vec::default()));
                 continue;
             }
         };
@@ -262,17 +280,43 @@ fn update_materials(
             commands.entity(ent).insert(TouchMaterial);
         }
 
-        let [base_color_texture, emissive_texture, normal_map_texture]: [Option<ResolvedTexture>;
-            3] = textures.try_into().unwrap();
+        let [mut base_color_texture, emissive_texture, normal_map_texture]: [Option<
+            ResolvedTexture,
+        >; 3] = textures.try_into().unwrap();
+
+        if let Some(base) = base_color_texture.as_ref() {
+            let Some(texture) = images.get(base.image.id()) else {
+                commands
+                    .entity(ent)
+                    .insert(RetryMaterial(vec![base.image.clone()]));
+                continue;
+            };
+            if texture.texture_descriptor.format.sample_type(None)
+                != Some(bevy::render::render_resource::TextureSampleType::Float {
+                    filterable: true,
+                })
+            {
+                warn!("invalid format for base color texture, disabling");
+                base_color_texture = None;
+            }
+        }
+
+        let bounds = scenes
+            .get(container.root)
+            .map(|c| c.bounds)
+            .unwrap_or_default();
 
         let mut commands = commands.entity(ent);
         commands
             .remove::<RetryMaterial>()
-            .try_insert(materials.add(StandardMaterial {
-                base_color_texture: base_color_texture.map(|t| t.image),
-                emissive_texture: emissive_texture.map(|t| t.image),
-                normal_map_texture: normal_map_texture.map(|t| t.image),
-                ..defn.material.clone()
+            .try_insert(materials.add(SceneMaterial {
+                base: StandardMaterial {
+                    base_color_texture: base_color_texture.map(|t| t.image),
+                    emissive_texture: emissive_texture.map(|t| t.image),
+                    normal_map_texture: normal_map_texture.map(|t| t.image),
+                    ..defn.material.clone()
+                },
+                extension: SceneBound { bounds },
             }));
         if defn.shadow_caster {
             commands.remove::<NotShadowCaster>();
@@ -288,18 +332,18 @@ fn update_materials(
 
 #[allow(clippy::type_complexity)]
 fn update_bias(
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<SceneMaterial>>,
     query: Query<
-        (&Aabb, &Handle<StandardMaterial>),
-        Or<(Changed<Handle<StandardMaterial>>, Changed<Aabb>)>,
+        (&Aabb, &Handle<SceneMaterial>),
+        Or<(Changed<Handle<SceneMaterial>>, Changed<Aabb>)>,
     >,
 ) {
     for (aabb, h_material) in query.iter() {
         if let Some(material) = materials.get_mut(h_material) {
-            if material.alpha_mode == AlphaMode::Blend {
+            if material.base.alpha_mode == AlphaMode::Blend {
                 // add a bias based on the aabb size, to force an explicit transparent order which is
                 // hopefully correct, but should be better than nothing even if not always perfect
-                material.depth_bias = aabb.half_extents.length() * 1e-5;
+                material.base.depth_bias = aabb.half_extents.length() * 1e-5;
             }
         }
     }

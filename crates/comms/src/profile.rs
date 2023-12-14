@@ -1,18 +1,36 @@
-use bevy::{prelude::*, utils::HashMap};
+use std::{io::Read, sync::Arc};
+
+use anyhow::anyhow;
+use bevy::{
+    prelude::*,
+    tasks::{IoTaskPool, Task},
+    utils::HashMap,
+};
+use dcl::interface::CrdtType;
 use ethers_core::types::Address;
+use image::ImageOutputFormat;
+use ipfs::{IpfsAssetServer, IpfsIo, TypedIpfsRef};
+use isahc::{http::StatusCode, AsyncReadResponseExt, ReadResponseExt, RequestExt};
+use multihash_codetable::MultihashDigest;
 use serde::{Deserialize, Serialize};
+
+use crate::global_crdt::GlobalCrdtState;
 
 use super::{
     global_crdt::{process_transport_updates, ForeignPlayer, ProfileEvent, ProfileEventType},
     NetworkMessage, Transport,
 };
 use common::{
-    profile::SerializedProfile,
+    profile::{AvatarSnapshots, LambdaProfiles, SerializedProfile},
     rpc::RpcEventSender,
-    structs::{AppConfig, PrimaryUser},
+    structs::PrimaryUser,
+    util::TaskExt,
 };
 use common::{rpc::RpcCall, util::AsH160};
-use dcl_component::proto_components::kernel::comms::rfc4;
+use dcl_component::{
+    proto_components::{kernel::comms::rfc4, sdk::components::PbPlayerIdentityData},
+    SceneComponentId,
+};
 use wallet::Wallet;
 
 pub struct UserProfilePlugin;
@@ -28,31 +46,23 @@ impl Plugin for UserProfilePlugin {
             )
                 .before(process_transport_updates), // .in_set(TODO)
         );
-        let wallet = app.world.resource::<Wallet>();
 
-        let config = &app.world.resource::<AppConfig>();
-        let current_content =
-            serde_json::from_str::<SerializedProfile>(&config.profile_content).unwrap_or_default();
-
-        let user_profile = UserProfile {
-            version: config.profile_version,
-            content: SerializedProfile {
-                user_id: Some(format!("{:#x}", wallet.address())),
-                ..current_content
-            },
-            base_url: config.profile_base_url.clone(),
-        };
-        app.insert_resource(CurrentUserProfile(user_profile));
+        app.insert_resource(CurrentUserProfile::default());
     }
 }
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn setup_primary_profile(
     mut commands: Commands,
     player: Query<(Entity, Option<&UserProfile>), With<PrimaryUser>>,
-    current_profile: Res<CurrentUserProfile>,
+    mut current_profile: ResMut<CurrentUserProfile>,
     transports: Query<&Transport>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
+    mut deploy_task: Local<Option<Task<Result<Option<(String, String)>, anyhow::Error>>>>,
+    wallet: Res<Wallet>,
+    ipfas: IpfsAssetServer,
+    images: Res<Assets<Image>>,
 ) {
     // gather any event receivers
     for sender in subscribe_events.read().filter_map(|ev| match ev {
@@ -64,22 +74,21 @@ pub fn setup_primary_profile(
 
     if let Ok((player, maybe_profile)) = player.get_single() {
         if maybe_profile.is_none() || current_profile.is_changed() {
+            let Some(profile) = current_profile.profile.as_ref() else {
+                commands.entity(player).remove::<UserProfile>();
+                return;
+            };
+
             // update component
-            commands
-                .entity(player)
-                .try_insert(current_profile.0.clone());
+            commands.entity(player).try_insert(profile.clone());
 
             // send over network
-            debug!(
-                "sending profile new version {:?}",
-                current_profile.0.version
-            );
+            debug!("sending profile new version {:?}", profile.version);
             let response = rfc4::Packet {
                 message: Some(rfc4::packet::Message::ProfileResponse(
                     rfc4::ProfileResponse {
-                        serialized_profile: serde_json::to_string(&current_profile.0.content)
-                            .unwrap(),
-                        base_url: current_profile.0.base_url.clone(),
+                        serialized_profile: serde_json::to_string(&profile.content).unwrap(),
+                        base_url: profile.base_url.clone(),
                     },
                 )),
             };
@@ -89,33 +98,73 @@ pub fn setup_primary_profile(
                     .try_send(NetworkMessage::reliable(&response));
             }
 
-            // store to app config
-            let mut config: AppConfig = std::fs::read("config.json")
-                .ok()
-                .and_then(|f| serde_json::from_slice(&f).ok())
-                .unwrap_or_default();
-            config.profile_version = current_profile.0.version;
-            config.profile_content = serde_json::to_string(&current_profile.0.content).unwrap();
-            config.profile_base_url = current_profile.0.base_url.clone();
-            if let Err(e) = std::fs::write("config.json", serde_json::to_string(&config).unwrap()) {
-                warn!("failed to write to config: {e}");
-            }
-
             // send to event receivers
             senders.retain(|sender| {
                 let _ = sender.send(format!(
                     "{{ \"ethAddress\": \"{}\", \"version\": \"{}\" }}",
-                    current_profile.0.content.user_id.as_ref().unwrap(),
-                    current_profile.0.version
+                    profile.content.user_id.as_ref().unwrap(),
+                    profile.version
                 ));
                 !sender.is_closed()
             });
+
+            // deploy to server
+            if !current_profile.is_deployed {
+                debug!("deploying {:#?}", profile);
+                let ipfs = ipfas.ipfs().clone();
+                let profile = profile.clone();
+                let wallet = wallet.clone();
+                *deploy_task = Some(IoTaskPool::get().spawn(deploy_profile(
+                    ipfs,
+                    wallet,
+                    profile,
+                    current_profile.snapshots.as_ref().and_then(|sn| {
+                        if let (Some(face), Some(body)) = (
+                            images.get(sn.0.id()).cloned(),
+                            images.get(sn.1.id()).cloned(),
+                        ) {
+                            Some((face, body))
+                        } else {
+                            None
+                        }
+                    }),
+                )));
+                current_profile.is_deployed = true;
+            }
+        }
+    }
+
+    if let Some(mut task) = deploy_task.take() {
+        match task.complete() {
+            Some(Ok(None)) => {
+                info!("deployed profile ok");
+            }
+            Some(Ok(Some((face256, body)))) => {
+                info!("deployed profile ok (with snapshots)");
+                current_profile
+                    .profile
+                    .as_mut()
+                    .unwrap()
+                    .content
+                    .avatar
+                    .snapshots = Some(AvatarSnapshots { face256, body });
+                current_profile.snapshots = None;
+            }
+            Some(Err(e)) => {
+                error!("failed to deploy profile: {e}");
+                // todo toast
+            }
+            None => *deploy_task = Some(task),
         }
     }
 }
 
-#[derive(Resource)]
-pub struct CurrentUserProfile(pub UserProfile);
+#[derive(Resource, Default)]
+pub struct CurrentUserProfile {
+    pub profile: Option<UserProfile>,
+    pub snapshots: Option<(Handle<Image>, Handle<Image>)>,
+    pub is_deployed: bool,
+}
 
 fn request_missing_profiles(
     missing_profiles: Query<&mut ForeignPlayer, Without<UserProfile>>,
@@ -174,12 +223,13 @@ pub fn process_profile_events(
     wallet: Res<Wallet>,
     transports: Query<&Transport>,
     current_profile: Res<CurrentUserProfile>,
+    mut global_crdt: ResMut<GlobalCrdtState>,
 ) {
     for ev in events.read() {
         match &ev.event {
             ProfileEventType::Request(r) => {
                 if let Some(req_address) = r.address.as_h160() {
-                    if req_address == wallet.address() {
+                    if Some(req_address) == wallet.address() {
                         let Ok((player, _)) = players.get(ev.sender) else {
                             continue;
                         };
@@ -193,15 +243,19 @@ pub fn process_profile_events(
                             continue;
                         };
 
+                        let Some(current_profile) = current_profile.profile.as_ref() else {
+                            return;
+                        };
+
                         debug!("sending my profile");
                         let response = rfc4::Packet {
                             message: Some(rfc4::packet::Message::ProfileResponse(
                                 rfc4::ProfileResponse {
                                     serialized_profile: serde_json::to_string(
-                                        &current_profile.0.content,
+                                        &current_profile.content,
                                     )
                                     .unwrap(),
-                                    base_url: current_profile.0.base_url.clone(),
+                                    base_url: current_profile.base_url.clone(),
                                 },
                             )),
                         };
@@ -245,6 +299,16 @@ pub fn process_profile_events(
                         base_url: r.base_url.clone(),
                     };
 
+                    global_crdt.update_crdt(
+                        SceneComponentId::PLAYER_IDENTITY_DATA,
+                        CrdtType::LWW_ANY,
+                        player.scene_id,
+                        &PbPlayerIdentityData {
+                            address: format!("{:#x}", player.address),
+                            is_guest: !(profile.content.has_connected_web3.unwrap_or(false)),
+                        },
+                    );
+
                     if let Some(mut existing_profile) = maybe_profile {
                         *existing_profile = profile;
                     } else {
@@ -260,7 +324,7 @@ pub fn process_profile_events(
     last_sent_request.retain(|_, req_time| *req_time > time.elapsed_seconds() - 10.0);
 }
 
-#[derive(Component, Serialize, Deserialize, Clone)]
+#[derive(Component, Serialize, Deserialize, Clone, Debug)]
 pub struct UserProfile {
     pub version: u32,
     pub content: SerializedProfile,
@@ -276,4 +340,185 @@ impl UserProfile {
             .and_then(|s| s.rsplit(':').next())
             .map_or(true, |shape| shape.to_lowercase() == "basefemale")
     }
+}
+
+#[derive(Serialize)]
+pub struct Deployment<'a> {
+    version: &'a str,
+    #[serde(rename = "type")]
+    ty: &'a str,
+    pointers: Vec<String>,
+    timestamp: u128,
+    content: Vec<TypedIpfsRef>,
+    metadata: serde_json::Value,
+}
+
+async fn deploy_profile(
+    ipfs: Arc<IpfsIo>,
+    wallet: Wallet,
+    mut profile: UserProfile,
+    snapshots: Option<(Image, Image)>,
+) -> Result<Option<(String, String)>, anyhow::Error> {
+    let snap_details = if let Some((face, body)) = snapshots {
+        let process = |img: Image| -> Result<_, anyhow::Error> {
+            let img = img.clone().try_into_dynamic()?;
+            let mut cursor = std::io::Cursor::new(Vec::default());
+            img.write_to(&mut cursor, ImageOutputFormat::Png)?;
+            let bytes = cursor.into_inner();
+            let hash = multihash_codetable::Code::Sha2_256.digest(bytes.as_slice());
+            let cid = cid::Cid::new_v1(0x55, hash).to_string();
+            Ok((bytes, cid))
+        };
+
+        let (face_bytes, face_cid) = process(face)?;
+        let (body_bytes, body_cid) = process(body)?;
+
+        profile.content.avatar.snapshots = Some(AvatarSnapshots {
+            face256: face_cid.clone(),
+            body: body_cid.clone(),
+        });
+        Some((face_bytes, face_cid, body_bytes, body_cid))
+    } else {
+        None
+    };
+
+    let unix_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+
+    let snapshots = profile
+        .content
+        .avatar
+        .snapshots
+        .as_ref()
+        .ok_or(anyhow!("no snapshots"))?
+        .clone();
+
+    let deployment = serde_json::to_string(&Deployment {
+        version: "v3",
+        ty: "profile",
+        pointers: vec![profile.content.eth_address.clone()],
+        timestamp: unix_time,
+        content: vec![
+            TypedIpfsRef {
+                file: "body.png".to_owned(),
+                hash: snapshots.body,
+            },
+            TypedIpfsRef {
+                file: "face256.png".to_owned(),
+                hash: snapshots.face256,
+            },
+        ],
+        metadata: serde_json::json!({
+            "avatars": [
+                profile.content
+            ]
+        }),
+    })?;
+
+    let post = {
+        let hash = multihash_codetable::Code::Sha2_256.digest(deployment.as_bytes());
+        let cid = cid::Cid::new_v1(0x55, hash).to_string();
+        let profile_chain = wallet.sign_message(cid.clone()).await?;
+
+        let mut form_data = multipart::client::lazy::Multipart::new();
+        form_data.add_text("entityId", cid.clone());
+        for (key, data) in profile_chain.formdata() {
+            form_data.add_text(key, data);
+        }
+        form_data.add_stream(
+            cid,
+            std::io::Cursor::new(deployment.into_bytes()),
+            Option::<&str>::None,
+            None,
+        );
+
+        if let Some((face_bytes, face_cid, body_bytes, body_cid)) = snap_details.clone() {
+            debug!("deplying profile face: {face_cid}");
+            form_data.add_stream(
+                face_cid,
+                std::io::Cursor::new(face_bytes),
+                Option::<&str>::None,
+                None,
+            );
+            debug!("deplying profile body: {body_cid}");
+            form_data.add_stream(
+                body_cid,
+                std::io::Cursor::new(body_bytes),
+                Option::<&str>::None,
+                None,
+            );
+        }
+
+        let mut prepared = form_data.prepare()?;
+        let mut prepared_data = Vec::default();
+        prepared.read_to_end(&mut prepared_data)?;
+
+        let url = ipfs
+            .entities_endpoint()
+            .ok_or_else(|| anyhow!("no entities endpoint"))?;
+        debug!("deploying to {url}");
+
+        isahc::Request::post(url)
+            .header(
+                "Content-Type",
+                format!("multipart/form-data; boundary={}", prepared.boundary()),
+            )
+            .body(prepared_data)?
+    };
+
+    let mut response = post.send_async().await?;
+
+    match response.status() {
+        StatusCode::OK => Ok(snap_details.map(|(_, face_cid, _, body_cid)| (face_cid, body_cid))),
+        _ => Err(anyhow!(
+            "bad response: {}: {}",
+            response.status(),
+            String::from_utf8_lossy(response.bytes().await?.as_slice())
+        )),
+    }
+}
+
+pub async fn get_remote_profile(
+    address: Address,
+    ipfs: std::sync::Arc<IpfsIo>,
+) -> Result<UserProfile, anyhow::Error> {
+    let endpoint = ipfs.lambda_endpoint().ok_or(anyhow!("not connected"))?;
+    debug!("requesting profile from {}", endpoint);
+
+    let mut response = isahc::get(format!("{endpoint}/profiles/{address:#x}"))?;
+    let mut content = response
+        .json::<LambdaProfiles>()?
+        .avatars
+        .into_iter()
+        .next()
+        .ok_or(anyhow!("not found"))?;
+
+    // clean up the lambda result
+    if let Some(snapshots) = content.avatar.snapshots.as_mut() {
+        if let Some(hash) = snapshots
+            .body
+            .rsplit_once('/')
+            .map(|(_, hash)| hash.to_owned())
+        {
+            snapshots.body = hash;
+        }
+        if let Some(hash) = snapshots
+            .face256
+            .rsplit_once('/')
+            .map(|(_, hash)| hash.to_owned())
+        {
+            snapshots.face256 = hash;
+        }
+    }
+
+    let profile = UserProfile {
+        version: content.version as u32,
+        content,
+        base_url: ipfs.contents_endpoint().unwrap_or_default(),
+    };
+
+    debug!("loaded profile: {profile:#?}");
+    Ok(profile)
 }

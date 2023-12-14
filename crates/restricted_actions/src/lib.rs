@@ -25,7 +25,7 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
 use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, ServerAbout};
 use isahc::{http::StatusCode, AsyncReadResponseExt};
-use nft::asset_source::Nft;
+use nft::asset_source::{Nft, NftIdent};
 use scene_runner::{
     initialize_scene::{
         LiveScenes, PortableScenes, PortableSource, SceneHash, SceneLoading, PARCEL_SIZE,
@@ -469,7 +469,10 @@ fn get_user_data(
         _ => None,
     }) {
         match user {
-            None => response.send(Ok(profile.0.content.clone())),
+            None => match profile.profile.as_ref() {
+                Some(profile) => response.send(Ok(profile.content.clone())),
+                None => response.send(Err(())),
+            },
             Some(address) => {
                 if let Some((_, profile)) = others
                     .iter()
@@ -479,11 +482,17 @@ fn get_user_data(
                     return;
                 }
 
-                if *address == format!("{:#x}", me.address()) {
-                    response.send(Ok(profile.0.content.clone()));
-                } else {
-                    response.send(Err(()));
-                };
+                if let Some(my_address) = me.address() {
+                    if *address == format!("{:#x}", my_address) {
+                        match profile.profile.as_ref() {
+                            Some(profile) => response.send(Ok(profile.content.clone())),
+                            None => response.send(Err(())),
+                        }
+                        continue;
+                    }
+                }
+
+                response.send(Err(()));
             }
         }
     }
@@ -501,7 +510,7 @@ fn get_connected_players(
         let results = others
             .iter()
             .map(|f| format!("{:#x}", f.address))
-            .chain(Some(format!("{:#x}", me.address())))
+            .chain(me.address().map(|address| format!("{:#x}", address)))
             .collect();
         response.send(results);
     }
@@ -521,7 +530,9 @@ fn get_players_in_scene(
         let mut results = Vec::default();
         if let Ok(player) = me.get_single() {
             if containing_scene.get(player).contains(scene) {
-                results.push(format!("{:#x}", wallet.address()));
+                if let Some(address) = wallet.address() {
+                    results.push(format!("{:#x}", address));
+                }
             }
         }
 
@@ -628,9 +639,13 @@ fn event_player_moved_scene(
     let new_scene: HashMap<_, _> = players
         .iter()
         .flat_map(|(p, f)| {
-            containing_scene
-                .get_parcel(p)
-                .map(|parcel| (f.map(|f| f.address).unwrap_or(me.address()), parcel))
+            containing_scene.get_parcel(p).map(|parcel| {
+                (
+                    f.map(|f| f.address)
+                        .unwrap_or(me.address().unwrap_or_default()),
+                    parcel,
+                )
+            })
         })
         .collect();
 
@@ -827,13 +842,18 @@ impl<'a> IntoDialogBody for NftDialog<'a> {
                     ..Default::default()
                 })
                 .with_children(|c| {
-                    let creator = self.0.creator.get_string();
+                    let creator = self
+                        .0
+                        .creator
+                        .as_ref()
+                        .map(NftIdent::get_string)
+                        .unwrap_or("???".to_owned());
                     c.spawn(TextBundle::from_section(
                         format!("Creator: {creator}"),
                         BODY_TEXT_STYLE.get().unwrap().clone(),
                     ));
 
-                    if let Some(owner) = self.0.top_ownerships.first() {
+                    if let Some(owner) = self.0.top_ownerships.as_ref().and_then(|v| v.first()) {
                         let owner = owner.owner.get_string();
                         c.spawn(TextBundle::from_section(
                             format!("Owner: {owner}"),
@@ -852,11 +872,9 @@ impl<'a> IntoDialogBody for NftDialog<'a> {
                         BODY_TEXT_STYLE.get().unwrap().clone(),
                     ));
 
-                    let description: String = if self.0.description.len() < 500 {
-                        self.0.description.clone()
-                    } else {
-                        self.0
-                            .description
+                    let mut description = self.0.description.clone().unwrap_or("???".to_owned());
+                    if description.len() > 500 {
+                        description = description
                             .chars()
                             .take(500)
                             .chain(std::iter::repeat('.').take(3))
@@ -884,16 +902,25 @@ fn show_nft_dialog(
             nft_spawn.response.clone().send(Ok(()));
             let link = nft.permalink.clone();
 
-            commands.spawn_dialog_two(
-                nft.name.clone(),
-                NftDialog(nft, &asset_server),
-                "Close",
-                move || {},
-                "View on Opensea",
-                move || {
-                    let _ = opener::open(link.clone());
-                },
-            )
+            if let Some(link) = link {
+                commands.spawn_dialog_two(
+                    nft.name.clone().unwrap_or("Unnamed Nft".to_owned()),
+                    NftDialog(nft, &asset_server),
+                    "Close",
+                    move || {},
+                    "View on Opensea",
+                    move || {
+                        let _ = opener::open(link.clone());
+                    },
+                );
+            } else {
+                commands.spawn_dialog(
+                    nft.name.clone().unwrap_or("Unnamed Nft".to_owned()),
+                    NftDialog(nft, &asset_server),
+                    "Close",
+                    move || {},
+                );
+            }
         } else if asset_server.load_state(nft_spawn.h_nft.id()) == LoadState::Failed {
             commands.entity(ent).remove::<NftDialogSpawn>();
             nft_spawn

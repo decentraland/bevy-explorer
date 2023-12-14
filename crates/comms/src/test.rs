@@ -7,7 +7,6 @@ use async_tungstenite::tungstenite::{
     client::IntoClientRequest,
     http::{HeaderValue, Uri},
 };
-use ethers_signers::LocalWallet;
 use livekit::{
     options::TrackPublishOptions,
     track::{LocalAudioTrack, LocalTrack, TrackSource},
@@ -26,7 +25,9 @@ fn test_tls() {
 
 #[test]
 fn test_livekit() {
-    let wallet = Wallet::new(LocalWallet::new(&mut rand::thread_rng()));
+    let mut wallet = Wallet::default();
+    wallet.finalize_as_guest();
+
     let meta = SignedLoginMeta::new(
         true,
         Uri::try_from("https://worlds-content-server.decentraland.org/world/shibu.dcl.eth")

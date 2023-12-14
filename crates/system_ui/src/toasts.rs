@@ -48,9 +48,9 @@ fn setup(mut commands: Commands) {
 fn update_toasts(
     mut commands: Commands,
     toast_display: Query<Entity, With<ToastMarker>>,
-    toasts: Res<Toasts>,
+    mut toasts: ResMut<Toasts>,
     time: Res<Time>,
-    mut displays: Local<HashMap<&'static str, Option<Entity>>>,
+    mut displays: Local<HashMap<String, Option<Entity>>>,
 ) {
     let Ok(toaster_ent) = toast_display.get_single() else {
         return;
@@ -72,7 +72,7 @@ fn update_toasts(
                         ..Default::default()
                     })
                     .id();
-                displays.insert(key, Some(id));
+                displays.insert(key.clone(), Some(id));
             });
             continue;
         };
@@ -80,19 +80,22 @@ fn update_toasts(
         if let Some(ent) = maybe_ent {
             if toast.time < time.elapsed_seconds() - 5.0 {
                 commands.entity(ent).despawn_recursive();
-                displays.insert(key, None);
                 continue;
             }
         }
 
-        displays.insert(key, maybe_ent);
+        displays.insert(key.clone(), maybe_ent);
     }
 
     for (key, ent) in prev_displays {
-        if !displays.contains_key(key) {
+        if !displays.contains_key(&key) {
             if let Some(ent) = ent {
                 commands.entity(ent).despawn_recursive();
             }
         }
     }
+
+    toasts
+        .0
+        .retain(|_, toast| toast.last_update > time.elapsed_seconds() - 5.0);
 }

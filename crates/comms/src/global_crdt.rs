@@ -7,7 +7,7 @@ use bevy::{
 use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender},
-    structs::{AttachPoints, AudioDecoderError},
+    structs::{AttachPoints, AudioDecoderError, AvatarTextureHandle},
 };
 use ethers_core::types::Address;
 use kira::sound::streaming::StreamingSoundData;
@@ -277,6 +277,7 @@ pub fn process_transport_updates(
                             audio_sender: audio_sender.clone(),
                         },
                         ForeignAudioSource(audio_receiver),
+                        AvatarTextureHandle::default(),
                     ))
                     .push_children(&attach_points.entities())
                     .insert(attach_points)

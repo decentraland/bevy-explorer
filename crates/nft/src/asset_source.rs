@@ -235,12 +235,12 @@ pub struct NftOwner {
 #[derive(Asset, TypePath, Deserialize)]
 pub struct Nft {
     pub image_url: String,
-    pub name: String,
-    pub description: String,
-    pub permalink: String,
-    pub creator: NftIdent,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub permalink: Option<String>,
+    pub creator: Option<NftIdent>,
     pub last_sale: Option<NftLastSale>,
-    pub top_ownerships: Vec<NftOwner>,
+    pub top_ownerships: Option<Vec<NftOwner>>,
 }
 
 pub struct NftLoader;
@@ -263,8 +263,13 @@ impl AssetLoader for NftLoader {
                 .read_to_end(&mut bytes)
                 .await
                 .map_err(|e| std::io::Error::new(e.kind(), e))?;
-            serde_json::from_reader(bytes.as_slice())
-                .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))
+
+            let res = serde_json::from_reader(bytes.as_slice())
+                .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e));
+            if res.is_err() {
+                debug!("errored nft bytes: {}", String::from_utf8(bytes).unwrap());
+            }
+            res
         })
     }
 

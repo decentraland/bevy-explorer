@@ -1,4 +1,4 @@
-use bevy::{prelude::*, render::mesh::VertexAttributeValues};
+use bevy::{prelude::*, render::mesh::VertexAttributeValues, utils::HashMap};
 
 use common::sets::SceneSets;
 
@@ -8,9 +8,14 @@ use dcl_component::{
     SceneComponentId,
 };
 
+use crate::{renderer_context::RendererSceneContext, SceneEntity};
+
 use self::truncated_cone::TruncatedCone;
 
-use super::AddCrdtInterfaceExt;
+use super::{
+    scene_material::{SceneBound, SceneMaterial},
+    AddCrdtInterfaceExt,
+};
 
 pub mod truncated_cone;
 pub struct MeshDefinitionPlugin;
@@ -116,24 +121,26 @@ impl Plugin for MeshDefinitionPlugin {
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn update_mesh(
     mut commands: Commands,
     new_primitives: Query<
-        (Entity, &MeshDefinition, Option<&Handle<StandardMaterial>>),
+        (
+            Entity,
+            &SceneEntity,
+            &MeshDefinition,
+            Option<&Handle<SceneMaterial>>,
+        ),
         Changed<MeshDefinition>,
     >,
     mut removed_primitives: RemovedComponents<MeshDefinition>,
     mut meshes: ResMut<Assets<Mesh>>,
     defaults: Res<MeshPrimitiveDefaults>,
-    mut default_material: Local<Handle<StandardMaterial>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut default_material: Local<HashMap<Entity, Handle<SceneMaterial>>>,
+    mut materials: ResMut<Assets<SceneMaterial>>,
+    scenes: Query<&RendererSceneContext>,
 ) {
-    if default_material.is_weak() {
-        *default_material = materials.add(StandardMaterial::default());
-    }
-
-    for (ent, prim, maybe_material) in new_primitives.iter() {
+    for (ent, scene_ent, prim, maybe_material) in new_primitives.iter() {
         let handle = match prim {
             MeshDefinition::Box { uvs } => {
                 if uvs.is_empty() {
@@ -190,13 +197,26 @@ pub fn update_mesh(
         commands.entity(ent).try_insert(handle);
 
         if maybe_material.is_none() {
-            commands.entity(ent).try_insert(default_material.clone());
+            let mat = default_material.entry(scene_ent.root).or_insert_with(|| {
+                let bounds = scenes
+                    .get(scene_ent.root)
+                    .map(|c| c.bounds)
+                    .unwrap_or_default();
+                materials.add(SceneMaterial {
+                    base: Default::default(),
+                    extension: SceneBound { bounds },
+                })
+            });
+
+            commands.entity(ent).try_insert(mat.clone());
         }
     }
 
     for ent in removed_primitives.read() {
         if let Some(mut e) = commands.get_entity(ent) {
-            e.remove::<Handle<Mesh>>();
+            e.remove::<(Handle<Mesh>, Handle<SceneMaterial>)>();
         }
     }
+
+    default_material.retain(|scene, _| scenes.get(*scene).is_ok());
 }
