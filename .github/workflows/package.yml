@@ -5,41 +5,41 @@ name: Build Release
 on: [push, pull_request]
 
 jobs:
-    create-release:
-        name: Create Release
-        runs-on: ubuntu-22.04
-        outputs:
-            package_prefix: bevy-explorer-${{ steps.current_time_underscores.outputs.formattedTime }}
-            tag_name: alpha-${{ steps.current_time_dashes.outputs.formattedTime }}
-        if: github.repository == 'decentraland/bevy-explorer' || github.event_name == 'workflow_dispatch'
-        steps:
-          - name: Clone repo
-            uses: actions/checkout@v3
+    # create-release:
+    #     name: Create Release
+    #     runs-on: ubuntu-22.04
+    #     outputs:
+    #         package_prefix: bevy-explorer-${{ steps.current_time_underscores.outputs.formattedTime }}
+    #         tag_name: alpha-${{ steps.current_time_dashes.outputs.formattedTime }}
+    #     if: github.repository == 'decentraland/bevy-explorer' || github.event_name == 'workflow_dispatch'
+    #     steps:
+    #       - name: Clone repo
+    #         uses: actions/checkout@v3
 
-          - name: Get current time with underscores
-            uses: 1466587594/get-current-time@v2.1.1
-            id: current_time_underscores
-            with:
-                format: YYYY-MM-DD-HH-mm-ss
+    #       - name: Get current time with underscores
+    #         uses: 1466587594/get-current-time@v2.1.1
+    #         id: current_time_underscores
+    #         with:
+    #             format: YYYY-MM-DD-HH-mm-ss
 
-          - name: Get current time with dashes
-            uses: 1466587594/get-current-time@v2.1.1
-            id: current_time_dashes
-            with:
-                format: YYYY-MM-DD-HH-mm-ss
+    #       - name: Get current time with dashes
+    #         uses: 1466587594/get-current-time@v2.1.1
+    #         id: current_time_dashes
+    #         with:
+    #             format: YYYY-MM-DD-HH-mm-ss
     
-          - name: Create release
-            id: create_release
-            run: |
-                tag_name="alpha-${{ steps.current_time_dashes.outputs.formattedTime }}"
-                release_name="Release ${{ steps.current_time_dashes.outputs.formattedTime }}"
-                gh release create "$tag_name" --title "$release_name" --generate-notes --prerelease
-            env:
-                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    #       - name: Create release
+    #         id: create_release
+    #         run: |
+    #             tag_name="alpha-${{ steps.current_time_dashes.outputs.formattedTime }}"
+    #             release_name="Release ${{ steps.current_time_dashes.outputs.formattedTime }}"
+    #             gh release create "$tag_name" --title "$release_name" --generate-notes --prerelease
+    #         env:
+    #             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     build:
         name: Build ${{ matrix.build_name }}
-        needs: create-release
+        # needs: create-release
         strategy:
             matrix:
                 include:
