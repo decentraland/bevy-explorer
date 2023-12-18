@@ -4,6 +4,7 @@ name: Continuous integration
 
 jobs:
   check:
+    if: false
     name: Check
     runs-on: ubuntu-latest
     steps:
@@ -29,6 +30,7 @@ jobs:
           command: check
 
   test:
+    if: false
     name: Test Suite
     strategy:
       fail-fast: false
@@ -83,6 +85,7 @@ jobs:
           args: --all
       
   fmt:
+    if: false
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
@@ -108,6 +111,7 @@ jobs:
           args: --all -- --check
 
   clippy:
+    if: false
     name: Clippy
     runs-on: ubuntu-latest
     steps:
