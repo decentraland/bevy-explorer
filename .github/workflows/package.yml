@@ -59,9 +59,9 @@ jobs:
                     os: self-hosted-windows
 #                    target: x86_64-pc-windows-msvc
 
-        env:
-            PACKAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.${{ startsWith(matrix.build_name, 'win') && 'zip' || 'tar.gz' }}
-            CARGO_BUILD_DIR: target/release
+        # env:
+        #     PACKAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.${{ startsWith(matrix.build_name, 'win') && 'zip' || 'tar.gz' }}
+        #     CARGO_BUILD_DIR: target/release
 
         runs-on: ${{ matrix.os }}
         steps:
@@ -73,76 +73,76 @@ jobs:
                 profile: minimal
                 toolchain: 1.71
                 override: true
-          - uses: Swatinem/rust-cache@v2
-          - name: add darwin target
-            if: runner.os == 'macos'
-            run: rustup target add aarch64-apple-darwin
+#           - uses: Swatinem/rust-cache@v2
+#           - name: add darwin target
+#             if: runner.os == 'macos'
+#             run: rustup target add aarch64-apple-darwin
 
-          - name: Install protoc
-            if: matrix.os != 'self-hosted-windows'
-            uses: arduino/setup-protoc@v1
-            with:
-                repo-token: ${{ secrets.GITHUB_TOKEN }}
+#           - name: Install protoc
+#             if: matrix.os != 'self-hosted-windows'
+#             uses: arduino/setup-protoc@v1
+#             with:
+#                 repo-token: ${{ secrets.GITHUB_TOKEN }}
     
-          - name: Install alsa and udev
-            if: runner.os == 'linux'
-            run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
-          - name: install livekit deps
-            if: runner.os == 'linux'
-            run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev
-          - name: install ffmpeg deps (linux)
-            run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
-            if: runner.os == 'linux'
-          - name: install ffmpeg deps (macOs)
-            if: runner.os == 'macos'
-            run: brew install ffmpeg pkg-config          
-          - name: install ffmpeg deps (windows)
-            if: runner.os == 'windows' && matrix.os != 'self-hosted-windows'
-            run: |
-              $VCINSTALLDIR = $(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
-              Add-Content $env:GITHUB_ENV "LIBCLANG_PATH=${VCINSTALLDIR}\VC\Tools\LLVM\x64\bin`n"
-              Invoke-WebRequest "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-6.0-full_build-shared.7z" -OutFile ffmpeg-6.0-full_build-shared.7z
-              7z x ffmpeg-6.0-full_build-shared.7z
-              mkdir ffmpeg
-              mv ffmpeg-*/* ffmpeg/
-              Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
-              Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"          
-          - name: install ffmpeg deps (windows)
-            if: runner.os == 'windows' && matrix.os == 'self-hosted-windows'
-            run: |
-              Add-Content $env:GITHUB_ENV "FFMPEG_DIR=c:\ffmpeg-6.0`n"
+#           - name: Install alsa and udev
+#             if: runner.os == 'linux'
+#             run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+#           - name: install livekit deps
+#             if: runner.os == 'linux'
+#             run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev
+#           - name: install ffmpeg deps (linux)
+#             run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
+#             if: runner.os == 'linux'
+#           - name: install ffmpeg deps (macOs)
+#             if: runner.os == 'macos'
+#             run: brew install ffmpeg pkg-config          
+#           - name: install ffmpeg deps (windows)
+#             if: runner.os == 'windows' && matrix.os != 'self-hosted-windows'
+#             run: |
+#               $VCINSTALLDIR = $(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
+#               Add-Content $env:GITHUB_ENV "LIBCLANG_PATH=${VCINSTALLDIR}\VC\Tools\LLVM\x64\bin`n"
+#               Invoke-WebRequest "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-6.0-full_build-shared.7z" -OutFile ffmpeg-6.0-full_build-shared.7z
+#               7z x ffmpeg-6.0-full_build-shared.7z
+#               mkdir ffmpeg
+#               mv ffmpeg-*/* ffmpeg/
+#               Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
+#               Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"          
+#           - name: install ffmpeg deps (windows)
+#             if: runner.os == 'windows' && matrix.os == 'self-hosted-windows'
+#             run: |
+#               Add-Content $env:GITHUB_ENV "FFMPEG_DIR=c:\ffmpeg-6.0`n"
     
               
-          - name: Cargo build
-            run: cargo build --release
-#            run: cargo build --release ${{ matrix.target && '--target' }} ${{ matrix.target }}
+#           - name: Cargo build
+#             run: cargo build --release
+# #            run: cargo build --release ${{ matrix.target && '--target' }} ${{ matrix.target }}
 
-          - name: Package common
-            run: |
-                mkdir package
-                cp readme.md package/README.md
-                cp LICENSE package/LICENSE
-                cp -r assets package
+#           - name: Package common
+#             run: |
+#                 mkdir package
+#                 cp readme.md package/README.md
+#                 cp LICENSE package/LICENSE
+#                 cp -r assets package
             
-          - name: Package Windows
-            if: runner.os == 'Windows'
-            continue-on-error: true
-            run: |
-                cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy.exe package/decentra-bevy.exe
-                cp ${{ env.FFMPEG_DIR }}/bin/*.dll package
-                7z a ${{ env.PACKAGE_FILE }} ./package/*
+#           - name: Package Windows
+#             if: runner.os == 'Windows'
+#             continue-on-error: true
+#             run: |
+#                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy.exe package/decentra-bevy.exe
+#                 cp ${{ env.FFMPEG_DIR }}/bin/*.dll package
+#                 7z a ${{ env.PACKAGE_FILE }} ./package/*
 
-          - name: Package Linux
-            if: runner.os != 'Windows'
-            continue-on-error: true
-            run: |
-                cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy package/decentra-bevy
-                # We must enter the package/ directory in order to create a flat tarball (i.e. without a directory in it).
-                cd package
-                tar -czvf ../${{ env.PACKAGE_FILE }} *            
+#           - name: Package Linux
+#             if: runner.os != 'Windows'
+#             continue-on-error: true
+#             run: |
+#                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy package/decentra-bevy
+#                 # We must enter the package/ directory in order to create a flat tarball (i.e. without a directory in it).
+#                 cd package
+#                 tar -czvf ../${{ env.PACKAGE_FILE }} *            
 
-          - name: Upload package
-            continue-on-error: true
-            run: gh release upload "${{ needs.create-release.outputs.tag_name }}" "${{ env.PACKAGE_FILE }}"
-            env:
-                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#           - name: Upload package
+#             continue-on-error: true
+#             run: gh release upload "${{ needs.create-release.outputs.tag_name }}" "${{ env.PACKAGE_FILE }}"
+#             env:
+#                 GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
