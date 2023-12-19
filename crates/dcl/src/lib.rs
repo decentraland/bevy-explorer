@@ -4,7 +4,7 @@ use bevy::{
     prelude::Entity,
     utils::{HashMap, HashSet},
 };
-use common::rpc::RpcCall;
+use common::rpc::{CompareSnapshot, RpcCall};
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use tokio::sync::mpsc::Sender;
@@ -59,6 +59,7 @@ pub enum SceneResponse {
         RpcCalls,
     ),
     WaitingForInspector,
+    CompareSnapshot(CompareSnapshot),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -89,6 +90,7 @@ pub fn spawn_scene(
     wallet: Wallet,
     id: SceneId,
     inspect: bool,
+    testing: bool,
 ) -> Sender<RendererResponse> {
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
 
@@ -106,6 +108,7 @@ pub fn spawn_scene(
                 ipfs,
                 wallet,
                 inspect,
+                testing,
             )
         })
         .unwrap();

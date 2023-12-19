@@ -2,8 +2,6 @@
 // - separate js crate
 // - budget -> deadline is just last end + frame time
 
-use std::{num::ParseIntError, str::FromStr};
-
 use avatar::AvatarDynamicState;
 use bevy::{
     core::TaskPoolThreadAssignmentPolicy,
@@ -21,13 +19,14 @@ use bevy_console::ConsoleCommand;
 use common::{
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, GraphicsSettings, PrimaryCamera, PrimaryCameraRes,
+        AppConfig, AttachPoints, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes,
         PrimaryPlayerRes, PrimaryUser, SceneLoadDistance,
     },
 };
 use restricted_actions::RestrictedActionsPlugin;
 use scene_runner::{
-    initialize_scene::InspectHash,
+    automatic_testing::AutomaticTestingPlugin,
+    initialize_scene::TestingData,
     update_world::{mesh_collider::GroundCollider, NoGltf},
     OutOfWorld, SceneRunnerPlugin,
 };
@@ -45,43 +44,6 @@ use user_input::UserInputPlugin;
 use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
 
-#[derive(Debug)]
-struct IVec2Arg(IVec2);
-
-impl FromStr for IVec2Arg {
-    type Err = ParseIntError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut chars = s.chars().peekable();
-
-        let skip = |chars: &mut std::iter::Peekable<std::str::Chars>, numeric: bool| {
-            while numeric
-                == chars
-                    .peek()
-                    .map_or(!numeric, |c| c.is_numeric() || *c == '-')
-            {
-                chars.next();
-            }
-        };
-
-        let parse = |chars: &std::iter::Peekable<std::str::Chars>| {
-            chars
-                .clone()
-                .take_while(|c| c.is_numeric() || *c == '-')
-                .collect::<String>()
-                .parse::<i32>()
-        };
-
-        skip(&mut chars, false);
-        let x = parse(&chars)?;
-        skip(&mut chars, true);
-        skip(&mut chars, false);
-        let y = parse(&chars)?;
-
-        Ok(IVec2Arg(IVec2::new(x, y)))
-    }
-}
-
 fn main() {
     // warnings before log init must be stored and replayed later
     let mut warnings = Vec::default();
@@ -97,7 +59,7 @@ fn main() {
         .unwrap_or_default();
     let mut args = pico_args::Arguments::from_env();
 
-    let final_config = AppConfig {
+    let mut final_config = AppConfig {
         server: args
             .value_from_str("--server")
             .ok()
@@ -134,11 +96,21 @@ fn main() {
             .value_from_str("--distance")
             .ok()
             .unwrap_or(base_config.scene_load_distance),
+        sysinfo_visible: true,
     };
 
-    if let Ok(inspect) = args.value_from_str("--inspect") {
-        app.insert_resource(InspectHash(inspect));
+    let test_scenes = args.value_from_str("--test_scenes").ok();
+    let test_mode = args.contains("--testing") || test_scenes.is_some();
+
+    if test_mode {
+        final_config.sysinfo_visible = false;
     }
+
+    app.insert_resource(TestingData {
+        inspect_hash: args.value_from_str("--inspect").ok(),
+        test_mode,
+        test_scenes: test_scenes.clone(),
+    });
 
     let no_avatar = args.contains("--no_avatar");
     let no_gltf = args.contains("--no_gltf");
@@ -242,6 +214,10 @@ fn main() {
 
     if !no_avatar {
         app.add_plugins(AvatarPlugin);
+    }
+
+    if test_scenes.is_some() {
+        app.add_plugins(AutomaticTestingPlugin);
     }
 
     app.add_plugins(AudioPlugin)

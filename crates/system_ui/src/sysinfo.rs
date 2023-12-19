@@ -44,6 +44,11 @@ pub(crate) fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res
                     border: UiRect::all(Val::Px(5.)),
                     ..default()
                 },
+                visibility: if config.sysinfo_visible {
+                    Visibility::Visible
+                } else {
+                    Visibility::Hidden
+                },
                 background_color: Color::rgba(0.8, 0.8, 1.0, 0.8).into(),
                 focus_policy: FocusPolicy::Block,
                 ..default()

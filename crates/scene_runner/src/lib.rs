@@ -30,7 +30,7 @@ use dcl_component::{
     transform_and_parent::DclTransformAndParent,
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
-use initialize_scene::{InspectHash, PortableScenes};
+use initialize_scene::{PortableScenes, TestingData};
 use ipfs::SceneIpfsLocation;
 use primary_entities::PrimaryEntities;
 use spin_sleep::SpinSleeper;
@@ -45,6 +45,7 @@ use self::{
     update_world::{CrdtExtractors, SceneOutputPlugin},
 };
 
+pub mod automatic_testing;
 pub mod initialize_scene;
 pub mod primary_entities;
 pub mod renderer_context;
@@ -178,7 +179,7 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<CrdtExtractors>();
         app.init_resource::<DebugInfo>();
         app.init_resource::<Toasts>();
-        app.init_resource::<InspectHash>();
+        app.init_resource::<TestingData>();
 
         let (sender, receiver) = sync_channel(1000);
         app.insert_resource(SceneUpdates {
@@ -698,6 +699,12 @@ fn receive_scene_updates(
             Ok(response) => match response {
                 SceneResponse::WaitingForInspector => {
                     toaster.add_toast("inspector", "Scene paused waiting for inspector session");
+                    None
+                }
+                SceneResponse::CompareSnapshot(compare) => {
+                    let scene = compare.scene;
+                    debug!("[{scene:?}] requested snapshot");
+                    rpc_call_events.send(RpcCall::TestSnapshot(compare.clone()));
                     None
                 }
                 SceneResponse::Error(scene_id, message) => {

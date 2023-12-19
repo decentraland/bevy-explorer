@@ -20,3 +20,11 @@ module.exports.readFile = async function (body) {
 module.exports.getSceneInformation = async function (body) { 
     return await Deno.core.ops.op_scene_information();
 }
+
+module.exports.getExplorerInformation = async function (body) {
+    return {
+        agent: 'bevy',
+        platform: 'desktop',
+        configurations: {}
+    }
+}

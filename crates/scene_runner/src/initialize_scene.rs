@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{collections::VecDeque, num::ParseIntError, ops::Range, str::FromStr};
 
 use bevy::{
     asset::{io::Reader, AssetLoader, LoadContext},
@@ -10,7 +10,10 @@ use bevy::{
 use futures_lite::AsyncReadExt;
 use serde::Deserialize;
 
-use common::{structs::SceneLoadDistance, util::TaskExt};
+use common::{
+    structs::{IVec2Arg, SceneLoadDistance},
+    util::TaskExt,
+};
 use comms::global_crdt::GlobalCrdtState;
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
@@ -448,7 +451,7 @@ pub(crate) fn load_scene_javascript(
 
         if let Some(serialized_crdt) = maybe_serialized_crdt {
             // add main.crdt
-            let mut context = CrdtContext::new(scene_id, renderer_context.hash.clone());
+            let mut context = CrdtContext::new(scene_id, renderer_context.hash.clone(), false);
             let mut stream = DclReader::new(&serialized_crdt);
             initial_crdt.process_message_stream(
                 &mut context,
@@ -511,8 +514,28 @@ pub(crate) fn load_scene_javascript(
     }
 }
 
+#[derive(Clone)]
+pub struct TestScenes(pub VecDeque<IVec2>);
+
+impl FromStr for TestScenes {
+    type Err = anyhow::Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let scenes: Result<VecDeque<IVec2>, ParseIntError> = value
+            .split(';')
+            .map(|scene| Ok(IVec2Arg::from_str(scene)?.0))
+            .collect();
+
+        Ok(Self(scenes?))
+    }
+}
+
 #[derive(Default, Resource)]
-pub struct InspectHash(pub String);
+pub struct TestingData {
+    pub test_mode: bool,
+    pub inspect_hash: Option<String>,
+    pub test_scenes: Option<TestScenes>,
+}
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub(crate) fn initialize_scene(
@@ -529,7 +552,7 @@ pub(crate) fn initialize_scene(
     asset_server: Res<AssetServer>,
     ipfs: Res<IpfsResource>,
     wallet: Res<Wallet>,
-    inspect: Res<InspectHash>,
+    testing_data: Res<TestingData>,
 ) {
     for (root, mut state, h_code, context) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
@@ -583,7 +606,11 @@ pub(crate) fn initialize_scene(
             ipfs.clone(),
             wallet.clone(),
             scene_id,
-            context.hash == inspect.0,
+            testing_data
+                .inspect_hash
+                .as_ref()
+                .map_or(false, |inspect_hash| inspect_hash == &context.hash),
+            testing_data.test_mode,
         );
 
         commands

@@ -121,7 +121,7 @@ async fn op_teleport_to(state: Rc<RefCell<OpState>>, position: [i32; 2]) -> bool
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::TeleportPlayer {
-            scene,
+            scene: Some(scene),
             to: position.into(),
             response: sx.into(),
         });
