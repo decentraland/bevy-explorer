@@ -77,42 +77,55 @@ fn update_camera_mode_area(
         player_relative_position.clamp(-area, area) == player_relative_position
     };
 
-    // check any new areas
+    // check areas
     for (ent, scene_ent, area, transform) in areas.iter() {
-        // scene is active, area not already active, player in the area
-        // TODO check scene perms
-        if scenes.contains(&scene_ent.root)
-            && !current_areas.iter().any(|e| ent == *e)
-            && player_in_area(area, transform)
-        {
-            current_areas.push(ent);
-        }
-    }
+        let current_index = current_areas
+            .iter()
+            .enumerate()
+            .find(|(_, e)| ent == **e)
+            .map(|(ix, _)| ix);
+        let in_area = scenes.contains(&scene_ent.root) && player_in_area(area, transform);
 
-    // check existing areas, removing invalids
-    while let Some(area_ent) = current_areas.pop() {
-        if let Ok((_, scene_ent, area, transform)) = areas.get(area_ent) {
-            if scenes.contains(&scene_ent.root) && player_in_area(area, transform) {
-                match area.0.mode() {
-                    CameraType::CtFirstPerson => {
-                        camera.scene_override = Some(CameraOverride::Distance(0.0))
-                    }
-                    CameraType::CtThirdPerson => {
-                        camera.scene_override = Some(CameraOverride::Distance(1.0))
-                    }
-                    CameraType::CtCinematic => {
-                        warn!("cinematic camera not supported");
-                        camera.scene_override = None;
-                    }
-                }
-                toaster.add_toast("camera_mode_area", "The scene has enforced the camera view");
-                current_areas.push(area_ent);
-                return;
+        if in_area == current_index.is_some() {
+            continue;
+        }
+
+        match current_index {
+            // remove if no longer in area
+            Some(index) => {
+                current_areas.remove(index);
             }
+            // add at end if newly entered
+            None => current_areas.push(ent),
         }
     }
 
-    // no camera areas
-    camera.scene_override = None;
-    toaster.clear_toast("camera_mode_area");
+    // remove destroyed areas
+    current_areas.retain(|area_ent| areas.get(*area_ent).is_ok());
+
+    // apply last-entered
+    match current_areas.last() {
+        Some(area_ent) => {
+            let area = areas.get_component::<CameraModeArea>(*area_ent).unwrap();
+
+            match area.0.mode() {
+                CameraType::CtFirstPerson => {
+                    camera.scene_override = Some(CameraOverride::Distance(0.0))
+                }
+                CameraType::CtThirdPerson => {
+                    camera.scene_override = Some(CameraOverride::Distance(1.0))
+                }
+                CameraType::CtCinematic => {
+                    warn!("cinematic camera not supported");
+                    camera.scene_override = None;
+                }
+            }
+            toaster.add_toast("camera_mode_area", "The scene has enforced the camera view");
+        }
+        None => {
+            // no camera areas
+            camera.scene_override = None;
+            toaster.clear_toast("camera_mode_area");
+        }
+    }
 }
