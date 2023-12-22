@@ -1,4 +1,7 @@
-use bevy::prelude::{Mat3, Quat, Vec3};
+use bevy::{
+    log::debug,
+    prelude::{Mat3, Quat, Vec3},
+};
 use common::rpc::RpcCall;
 use deno_core::{anyhow::anyhow, error::AnyError, op, Op, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
@@ -37,6 +40,8 @@ fn op_move_player_to(
     position: [f32; 3],
     maybe_camera: Option<[f32; 3]>,
 ) {
+    debug!("move player to {:?}", position);
+
     // get current
     let inbound = &op_state.borrow::<RendererStore>().0;
     let get_transform = |id: SceneEntityId| -> DclTransformAndParent {

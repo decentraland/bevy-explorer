@@ -515,15 +515,40 @@ pub(crate) fn load_scene_javascript(
 }
 
 #[derive(Clone)]
-pub struct TestScenes(pub VecDeque<IVec2>);
+pub struct TestScenes(pub VecDeque<TestScene>);
+
+#[derive(Clone)]
+pub struct TestScene {
+    pub location: IVec2,
+    pub allow_failures: Vec<String>,
+}
 
 impl FromStr for TestScenes {
     type Err = anyhow::Error;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let scenes: Result<VecDeque<IVec2>, ParseIntError> = value
+        let scenes: Result<VecDeque<TestScene>, ParseIntError> = value
             .split(';')
-            .map(|scene| Ok(IVec2Arg::from_str(scene)?.0))
+            .map(|scene| {
+                println!("parsing test scenes scene {}", scene);
+                if let Some((parcel, fails)) = scene.split_once('/') {
+                    let allow_failures = fails.split('/').map(ToOwned::to_owned).collect();
+                    println!("allowed failures: {allow_failures:?}");
+                    Ok(
+                        TestScene {
+                            location: IVec2Arg::from_str(parcel)?.0,
+                            allow_failures,
+                        }
+                    )
+                } else {
+                    Ok(
+                        TestScene {
+                            location: IVec2Arg::from_str(scene)?.0,
+                            allow_failures: Default::default(),
+                        }
+                    )
+                }
+            })
             .collect();
 
         Ok(Self(scenes?))
@@ -750,7 +775,8 @@ fn load_active_entities(
             .scenes_urn
             .as_ref()
             .map_or(true, Vec::is_empty);
-        if !has_scene_urns && ipfas.active_endpoint().is_some() {
+
+        if !has_scene_urns && !current_realm.address.is_empty() && ipfas.active_endpoint().is_some() {
             // load required pointers
             let Ok(focus) = focus.get_single() else {
                 return;

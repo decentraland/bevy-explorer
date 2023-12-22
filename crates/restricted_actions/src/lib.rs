@@ -116,6 +116,7 @@ fn move_player(
                 transform.rotation * player_transform.rotation.inverse() * dynamics.velocity;
 
             *player_transform = target_transform;
+            debug!("player transform to {:?}", target_transform);
         }
     }
 }

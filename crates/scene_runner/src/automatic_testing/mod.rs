@@ -49,14 +49,15 @@ fn automatic_testing(
     mut current_profile: ResMut<CurrentUserProfile>,
     ipfas: IpfsAssetServer,
     scenes: Query<&RendererSceneContext>,
-    mut fails: Local<Vec<(String, String)>>,
+    mut fails: Local<Vec<(String, String, bool)>>,
     mut rpcs: EventReader<RpcCall>,
     mut plans: Local<HashMap<Entity, HashSet<String>>>,
     mut snapshot_in_progress: Local<Option<(CompareSnapshot, Entity)>>,
-    (mut local_sender, mut local_receiver, mut screenshots): (
+    (mut local_sender, mut local_receiver, mut screenshots, mut screenshot_in_progress): (
         Local<Option<tokio::sync::mpsc::Sender<SnapshotResult>>>,
         Local<Option<tokio::sync::mpsc::Receiver<SnapshotResult>>>,
         Local<Handle<LoadedFolder>>,
+        Local<bool>,
     ),
     (folders, images): (Res<Assets<LoadedFolder>>, Res<Assets<Image>>),
     mut screenshotter: ResMut<ScreenshotManager>,
@@ -200,6 +201,7 @@ fn automatic_testing(
 
         commands.entity(result.window).despawn_recursive();
         commands.entity(result.camera).despawn_recursive();
+        *screenshot_in_progress = false;
     }
 
     // process events
@@ -226,17 +228,38 @@ fn automatic_testing(
                 info!("test {}: {} [{} remaining]", name, success, plan.len());
 
                 if !success {
-                    let location = scenes
+                    if let Some(location) = scenes
                         .get(*scene)
-                        .map(|ctx| format!("({},{})", ctx.base.x, ctx.base.y))
-                        .unwrap_or("(?,?)".to_owned());
-                    fails.push((
-                        format!("[{location} : {name}]"),
-                        error.clone().unwrap_or_default(),
-                    ));
+                        .ok()
+                        .map(|ctx| ctx.base) 
+                    {
+                        if let Some(scene) = testing_data.test_scenes.as_ref().unwrap().0.iter().find(|ts| ts.location == location) {
+                            let expected = scene.allow_failures.contains(name);
+                            let location = format!("({},{})", location.x, location.y);
+                            fails.push((
+                                format!("[{location} : {name}]"),
+                                error.clone().unwrap_or_default(),
+                                expected,
+                            ));
+                        } else {
+                            warn!("location {location} wasn't part of the required set, ignoring this failure");
+                        }
+                    } else {
+                        warn!("scene entity {scene:?} not found(?), ignoring this failure");
+
+                    }
                 }
             }
             RpcCall::TestSnapshot(snapshot) => {
+                if *screenshot_in_progress {
+                    snapshot.response.send(CompareSnapshotResult {
+                        error: Some("snapshot already in progress".to_owned()),
+                        found: false,
+                        similarity: 0.0,
+                    });                    
+                    continue;
+                }
+                *screenshot_in_progress = true;
                 let snapshot_window = commands
                     .spawn(Window {
                         title: "snapshot window".to_owned(),
@@ -293,18 +316,24 @@ fn automatic_testing(
             std::process::exit(0);
         } else {
             info!("some tests failed:\n {:#?}", *fails);
-            std::process::exit(1);
+
+            if fails.iter().all(|(_, _, expected)| *expected) {
+                info!("all failures were allowed");
+                std::process::exit(0);
+            } else {
+                std::process::exit(1);
+            }
         }
     };
 
     let Some(current_scene) = containing_scene.get(player_ent).into_iter().find(|scene| {
         scenes
             .get(*scene)
-            .map(|ctx| &ctx.base == next_test_scene)
+            .map(|ctx| &ctx.base == &next_test_scene.location)
             .unwrap_or(false)
     }) else {
-        info!("moving to next scene {:?}", next_test_scene);
-        let to = *next_test_scene;
+        info!("moving to next scene {:?}", next_test_scene.location);
+        let to = next_test_scene.location;
         commands.add(move |w: &mut World| {
             w.send_event(RpcCall::TeleportPlayer {
                 scene: None,

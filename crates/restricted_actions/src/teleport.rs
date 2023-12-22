@@ -62,6 +62,7 @@ pub fn teleport_player(
             }
 
             response.send(Ok(()));
+            info!("teleported to {parcel}");
         };
 
         if requester.is_some() {
