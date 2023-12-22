@@ -294,6 +294,7 @@ fn automatic_testing(
             version: 0,
             content: SerializedProfile {
                 eth_address: format!("{:#x}", wallet.address().unwrap()),
+                user_id: Some(format!("{:#x}", wallet.address().unwrap())),
                 ..Default::default()
             },
             base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
