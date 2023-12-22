@@ -260,7 +260,9 @@ pub(crate) fn scene_thread(
         .unwrap();
 
     // load module
-    let script = rt.block_on(async { runtime.execute_script("<loader>", ascii_str!("require (\"~scene.js\")")) });
+    let script = rt.block_on(async {
+        runtime.execute_script("<loader>", ascii_str!("require (\"~scene.js\")"))
+    });
 
     let script = match script {
         Err(e) => {

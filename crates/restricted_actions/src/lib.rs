@@ -11,10 +11,11 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use common::{
+    profile::SerializedProfile,
     rpc::{PortableLocation, RpcCall, RpcEventSender, RpcResultSender, SpawnResponse},
     sets::SceneSets,
     structs::{PrimaryCamera, PrimaryUser},
-    util::TaskExt, profile::SerializedProfile,
+    util::TaskExt,
 };
 use comms::{
     global_crdt::ForeignPlayer,

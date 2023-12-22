@@ -685,17 +685,17 @@ impl IpfsIo {
             ActiveEntitiesRequest::Pointers(pointers) => {
                 IoTaskPool::get().spawn(async move {
                     let active_url = active_url.ok_or(anyhow!("not connected"))?;
-                    let body = serde_json::to_string(&ActiveEntitiesPointersRequest { pointers })?; 
+                    let body = serde_json::to_string(&ActiveEntitiesPointersRequest { pointers })?;
                     let mut response = isahc::Request::post(active_url)
                         .header("content-type", "application/json")
                         .body(body)?
                         .send_async()
                         .await?;
-        
+
                     if response.status() != StatusCode::OK {
                         return Err(anyhow::anyhow!("status: {}", response.status()));
                     }
-        
+
                     let active_entities = response
                         .json::<ActiveEntitiesResponse>()
                         .await
@@ -705,33 +705,30 @@ impl IpfsIo {
                         let id = entity.id.as_ref().unwrap();
                         // cache to file system
                         let cache_path = cache_path.join(id);
-        
+
                         if id.starts_with("b64-") || !cache_path.exists() {
                             let file = std::fs::File::create(&cache_path)?;
                             serde_json::to_writer(file, &entity)?;
                         }
-        
+
                         // return active entity struct
                         res.push(EntityDefinition {
                             id: entity.id.unwrap(),
                             pointers: entity.pointers,
                             metadata: entity.metadata,
-                            content: ContentMap(BiMap::from_iter(
-                                entity
-                                    .content
-                                    .into_iter()
-                                    .map(|ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash)),
-                            )),
+                            content: ContentMap(BiMap::from_iter(entity.content.into_iter().map(
+                                |ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash),
+                            ))),
                         });
                     }
-        
+
                     Ok(res)
-                })                
-            },
+                })
+            }
             ActiveEntitiesRequest::Urns(paths) => {
                 // we simulate the active entities functionality we want here (load all scenes from a set of urns)
                 let ipfs = self.clone();
-                IoTaskPool::get().spawn(async move { 
+                IoTaskPool::get().spawn(async move {
                     let mut results = Vec::default();
                     let loader = EntityDefinitionLoader::default();
 
@@ -749,7 +746,7 @@ impl IpfsIo {
 
                     Ok(results)
                 })
-            },
+            }
         }
     }
 

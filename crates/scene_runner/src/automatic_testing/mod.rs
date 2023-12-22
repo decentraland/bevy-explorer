@@ -228,12 +228,15 @@ fn automatic_testing(
                 info!("test {}: {} [{} remaining]", name, success, plan.len());
 
                 if !success {
-                    if let Some(location) = scenes
-                        .get(*scene)
-                        .ok()
-                        .map(|ctx| ctx.base) 
-                    {
-                        if let Some(scene) = testing_data.test_scenes.as_ref().unwrap().0.iter().find(|ts| ts.location == location) {
+                    if let Some(location) = scenes.get(*scene).ok().map(|ctx| ctx.base) {
+                        if let Some(scene) = testing_data
+                            .test_scenes
+                            .as_ref()
+                            .unwrap()
+                            .0
+                            .iter()
+                            .find(|ts| ts.location == location)
+                        {
                             let expected = scene.allow_failures.contains(name);
                             let location = format!("({},{})", location.x, location.y);
                             fails.push((
@@ -246,7 +249,6 @@ fn automatic_testing(
                         }
                     } else {
                         warn!("scene entity {scene:?} not found(?), ignoring this failure");
-
                     }
                 }
             }
@@ -256,7 +258,7 @@ fn automatic_testing(
                         error: Some("snapshot already in progress".to_owned()),
                         found: false,
                         similarity: 0.0,
-                    });                    
+                    });
                     continue;
                 }
                 *screenshot_in_progress = true;

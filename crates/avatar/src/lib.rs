@@ -147,11 +147,10 @@ fn load_base_wearables(
     match *task {
         None => {
             let pointers = base_wearables::base_wearables();
-            *task = Some(
-                ipfas
-                    .ipfs()
-                    .active_entities(ipfs::ActiveEntitiesRequest::Pointers(pointers), Some(base_wearables::BASE_URL)),
-            );
+            *task = Some(ipfas.ipfs().active_entities(
+                ipfs::ActiveEntitiesRequest::Pointers(pointers),
+                Some(base_wearables::BASE_URL),
+            ));
         }
         Some(ref mut active_task) => match active_task.complete() {
             None => (),
@@ -1013,7 +1012,9 @@ fn update_render_avatar(
         if !pointers.is_empty() {
             debug!("requesting: {:?}", missing_wearables);
             *wearable_task = Some((
-                ipfas.ipfs().active_entities(ipfs::ActiveEntitiesRequest::Pointers(pointers), None),
+                ipfas
+                    .ipfs()
+                    .active_entities(ipfs::ActiveEntitiesRequest::Pointers(pointers), None),
                 missing_wearables,
             ));
         }

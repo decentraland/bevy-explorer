@@ -191,9 +191,7 @@ pub(crate) fn load_scene_json(
                 .load_content_file("main.crdt", &definition.id)
                 .unwrap()
         });
-        *state = SceneLoading::MainCrdt {
-            crdt,
-        };
+        *state = SceneLoading::MainCrdt { crdt };
     }
 }
 
@@ -632,8 +630,16 @@ pub struct ScenePointers(pub HashMap<IVec2, PointerResult>);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone)]
 pub enum PointerResult {
-    Nothing { realm: String, x: i32, y: i32 },
-    Exists { realm: String, hash: String, urn: Option<String> },
+    Nothing {
+        realm: String,
+        x: i32,
+        y: i32,
+    },
+    Exists {
+        realm: String,
+        hash: String,
+        urn: Option<String>,
+    },
 }
 
 impl PointerResult {
@@ -811,8 +817,15 @@ fn load_active_entities(
                 .filter(|(hash, ..)| !available_hashes.contains(hash))
                 .collect::<Vec<_>>();
 
-            let required_paths = required_hashes_and_urns.iter().map(|(_, path, _)| path.clone()).collect::<Vec<_>>();
-            let lookup = HashMap::from_iter(required_hashes_and_urns.into_iter().map(|(hash, _, urn)| (hash, urn.clone())));
+            let required_paths = required_hashes_and_urns
+                .iter()
+                .map(|(_, path, _)| path.clone())
+                .collect::<Vec<_>>();
+            let lookup = HashMap::from_iter(
+                required_hashes_and_urns
+                    .into_iter()
+                    .map(|(hash, _, urn)| (hash, urn.clone())),
+            );
 
             // issue request if either parcels or urns are non-empty, so that we populate `PointerResult::Nothing`s
             if !required_paths.is_empty() || !parcels.is_empty() {
@@ -823,7 +836,7 @@ fn load_active_entities(
                     ipfas
                         .ipfs()
                         .active_entities(ipfs::ActiveEntitiesRequest::Urns(required_paths), None),
-                ));    
+                ));
             }
         }
     } else if let Some(task_result) = pointer_request.as_mut().and_then(|req| req.2.complete()) {
@@ -844,13 +857,16 @@ fn load_active_entities(
         for active_entity in retrieved_parcels {
             // TODO check for portables
 
-            let Some(meta) = active_entity.metadata.and_then(|meta| serde_json::from_value::<SceneMeta>(meta).ok()) else {
+            let Some(meta) = active_entity
+                .metadata
+                .and_then(|meta| serde_json::from_value::<SceneMeta>(meta).ok())
+            else {
                 warn!("active entity scene.json did not resolve to expected format");
                 continue;
             };
 
             let urn = urn_lookup.remove(&active_entity.id);
-    
+
             for pointer in meta.scene.parcels {
                 let (x, y) = pointer.split_once(',').unwrap();
                 let x = x.parse::<i32>().unwrap();
