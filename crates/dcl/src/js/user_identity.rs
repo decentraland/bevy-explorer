@@ -1,5 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
+use bevy::log::debug;
 use common::{profile::SerializedProfile, rpc::RpcCall};
 use deno_core::{anyhow, error::AnyError, op, Op, OpDecl, OpState};
 use serde::Serialize;
@@ -11,14 +12,14 @@ pub fn ops() -> Vec<OpDecl> {
     vec![op_get_user_data::DECL, op_get_player_data::DECL]
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct Snapshots {
     face256: String,
     body: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct AvatarForUserData {
     body_shape: String,
@@ -29,7 +30,7 @@ struct AvatarForUserData {
     snapshots: Option<Snapshots>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct UserData {
     display_name: String,
@@ -55,6 +56,10 @@ async fn op_get_user_data(state: Rc<RefCell<OpState>>) -> Result<UserData, AnyEr
     rx.await
         .map_err(|e| anyhow::anyhow!(e))?
         .map(Into::into)
+        .map(|data| {
+            debug!("op_get_user_data: {:?}", data);
+            data
+        })
         .map_err(|_| anyhow::anyhow!("Not found"))
 }
 

@@ -253,8 +253,14 @@ pub(crate) fn scene_thread(
             .wait_for_session_and_break_on_next_statement();
     }
 
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .enable_io()
+        .build()
+        .unwrap();
+
     // load module
-    let script = runtime.execute_script("<loader>", ascii_str!("require (\"~scene.js\")"));
+    let script = rt.block_on(async { runtime.execute_script("<loader>", ascii_str!("require (\"~scene.js\")")) });
 
     let script = match script {
         Err(e) => {
@@ -267,12 +273,6 @@ pub(crate) fn scene_thread(
         }
         Ok(script) => script,
     };
-
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_time()
-        .enable_io()
-        .build()
-        .unwrap();
 
     // run startup function
     let result =
