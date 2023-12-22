@@ -806,7 +806,7 @@ fn load_active_entities(
                 .unwrap()
                 .iter()
                 .flat_map(|urn| {
-                    IpfsPath::new_from_urn::<EntityDefinition>(&urn)
+                    IpfsPath::new_from_urn::<EntityDefinition>(urn)
                         .ok()
                         .and_then(|path| {
                             path.context_free_hash()

@@ -730,7 +730,7 @@ impl IpfsIo {
                 let ipfs = self.clone();
                 IoTaskPool::get().spawn(async move {
                     let mut results = Vec::default();
-                    let loader = EntityDefinitionLoader::default();
+                    let loader = EntityDefinitionLoader;
 
                     for path in paths.iter() {
                         let hash = path.context_free_hash().unwrap().unwrap();

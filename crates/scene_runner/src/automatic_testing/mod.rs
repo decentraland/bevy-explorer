@@ -332,7 +332,7 @@ fn automatic_testing(
     let Some(current_scene) = containing_scene.get(player_ent).into_iter().find(|scene| {
         scenes
             .get(*scene)
-            .map(|ctx| &ctx.base == &next_test_scene.location)
+            .map(|ctx| ctx.base == next_test_scene.location)
             .unwrap_or(false)
     }) else {
         info!("moving to next scene {:?}", next_test_scene.location);
