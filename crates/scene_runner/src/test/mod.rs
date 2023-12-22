@@ -20,6 +20,7 @@ use once_cell::sync::Lazy;
 use spin_sleep::SpinSleeper;
 
 use crate::{
+    initialize_scene::{PointerResult, ScenePointers},
     process_scene_entity_lifecycle, receive_scene_updates, send_scene_updates,
     update_scene_priority,
     update_world::{
@@ -128,11 +129,20 @@ fn init_test_app(entity_json: &str) -> App {
     ipfs.set_realm_about(ServerAbout {
         content: None,
         configurations: Some(ServerConfiguration {
-            scenes_urn: Some(vec![urn]),
+            scenes_urn: Some(vec![urn.clone()]),
             ..Default::default()
         }),
         ..Default::default()
     });
+
+    app.world.resource_mut::<ScenePointers>().0.insert(
+        IVec2::ZERO,
+        PointerResult::Exists {
+            realm: "manual value".to_owned(),
+            hash: "whatever".to_owned(),
+            urn: Some(urn),
+        },
+    );
 
     // startup system to create camera and fire load event
     app.add_systems(Startup, move |mut commands: Commands| {
