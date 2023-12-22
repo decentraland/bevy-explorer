@@ -81,17 +81,13 @@ impl IpfsAsset for SceneJsFile {
 #[derive(Default)]
 pub struct EntityDefinitionLoader;
 
-impl AssetLoader for EntityDefinitionLoader {
-    type Asset = EntityDefinition;
-    type Settings = ();
-    type Error = std::io::Error;
-
-    fn load<'a>(
+impl EntityDefinitionLoader {
+    fn load_internal<'a>(
         &'a self,
         reader: &'a mut Reader,
-        _settings: &'a Self::Settings,
-        load_context: &'a mut bevy::asset::LoadContext,
-    ) -> bevy::utils::BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+        _settings: &'a (),
+        id_fn: impl FnOnce() -> String + Send + Sync + 'a,
+    ) -> bevy::utils::BoxedFuture<'a, Result<EntityDefinition, std::io::Error>> {
         Box::pin(async move {
             let mut bytes = Vec::default();
             reader.read_to_end(&mut bytes).await?;
@@ -116,19 +112,7 @@ impl AssetLoader for EntityDefinitionLoader {
                 ContentMap(BiMap::from_iter(definition_json.content.into_iter().map(
                     |ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash),
                 )));
-            let id = definition_json.id.unwrap_or_else(|| {
-                // we must have been loaded as an entity with the format "$ipfs/$entity/{hash}.entity_type" - use the ipfs path to resolve the id
-                load_context
-                    .path()
-                    .file_name()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .split_once('.')
-                    .unwrap()
-                    .0
-                    .to_owned()
-            });
+            let id = definition_json.id.unwrap_or_else(id_fn);
 
             let definition = EntityDefinition {
                 id,
@@ -138,6 +122,35 @@ impl AssetLoader for EntityDefinitionLoader {
             };
             Ok(definition)
         })
+    }
+}
+
+impl AssetLoader for EntityDefinitionLoader {
+    type Asset = EntityDefinition;
+    type Settings = ();
+    type Error = std::io::Error;
+
+    fn load<'a>(
+        &'a self,
+        reader: &'a mut Reader,
+        settings: &'a Self::Settings,
+        load_context: &'a mut bevy::asset::LoadContext,
+    ) -> bevy::utils::BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+        let id_fn = || {
+            // we must have been loaded as an entity with the format "$ipfs/$entity/{hash}.entity_type" - use the ipfs path to resolve the id
+            load_context
+                .path()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .split_once('.')
+                .unwrap()
+                .0
+                .to_owned()
+        };
+
+        self.load_internal(reader, settings, id_fn)
     }
 
     fn extensions(&self) -> &[&str] {
@@ -651,8 +664,8 @@ impl IpfsIo {
 
     // load entities from pointers and cache urls
     pub fn active_entities(
-        &self,
-        pointers: &Vec<String>,
+        self: &Arc<Self>,
+        request: ActiveEntitiesRequest,
         endpoint: Option<&str>,
     ) -> ActiveEntityTask {
         let active_url = match endpoint {
@@ -666,54 +679,78 @@ impl IpfsIo {
         }
         .map(|url| format!("{url}/entities/active"));
 
-        let body = serde_json::to_string(&ActiveEntitiesRequest { pointers });
         let cache_path = self.cache_path().to_owned();
 
-        IoTaskPool::get().spawn(async move {
-            let active_url = active_url.ok_or(anyhow!("not connected"))?;
+        match request {
+            ActiveEntitiesRequest::Pointers(pointers) => {
+                IoTaskPool::get().spawn(async move {
+                    let active_url = active_url.ok_or(anyhow!("not connected"))?;
+                    let body = serde_json::to_string(&ActiveEntitiesPointersRequest { pointers })?; 
+                    let mut response = isahc::Request::post(active_url)
+                        .header("content-type", "application/json")
+                        .body(body)?
+                        .send_async()
+                        .await?;
+        
+                    if response.status() != StatusCode::OK {
+                        return Err(anyhow::anyhow!("status: {}", response.status()));
+                    }
+        
+                    let active_entities = response
+                        .json::<ActiveEntitiesResponse>()
+                        .await
+                        .map_err(|e| anyhow::anyhow!(e))?;
+                    let mut res = Vec::default();
+                    for entity in active_entities.0 {
+                        let id = entity.id.as_ref().unwrap();
+                        // cache to file system
+                        let cache_path = cache_path.join(id);
+        
+                        if id.starts_with("b64-") || !cache_path.exists() {
+                            let file = std::fs::File::create(&cache_path)?;
+                            serde_json::to_writer(file, &entity)?;
+                        }
+        
+                        // return active entity struct
+                        res.push(EntityDefinition {
+                            id: entity.id.unwrap(),
+                            pointers: entity.pointers,
+                            metadata: entity.metadata,
+                            content: ContentMap(BiMap::from_iter(
+                                entity
+                                    .content
+                                    .into_iter()
+                                    .map(|ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash)),
+                            )),
+                        });
+                    }
+        
+                    Ok(res)
+                })                
+            },
+            ActiveEntitiesRequest::Urns(paths) => {
+                // we simulate the active entities functionality we want here (load all scenes from a set of urns)
+                let ipfs = self.clone();
+                IoTaskPool::get().spawn(async move { 
+                    let mut results = Vec::default();
+                    let loader = EntityDefinitionLoader::default();
 
-            let body = body?;
-            let mut response = isahc::Request::post(active_url)
-                .header("content-type", "application/json")
-                .body(body)?
-                .send_async()
-                .await?;
+                    for path in paths.iter() {
+                        let hash = path.context_free_hash().unwrap().unwrap();
+                        let pathbuf = std::path::PathBuf::from(path);
+                        let Ok(mut reader) = ipfs.read(&pathbuf).await else {
+                            continue;
+                        };
 
-            if response.status() != StatusCode::OK {
-                return Err(anyhow::anyhow!("status: {}", response.status()));
-            }
+                        if let Ok(ent) = loader.load_internal(&mut reader, &(), || hash).await {
+                            results.push(ent)
+                        }
+                    }
 
-            let active_entities = response
-                .json::<ActiveEntitiesResponse>()
-                .await
-                .map_err(|e| anyhow::anyhow!(e))?;
-            let mut res = Vec::default();
-            for entity in active_entities.0 {
-                let id = entity.id.as_ref().unwrap();
-                // cache to file system
-                let cache_path = cache_path.join(id);
-
-                if id.starts_with("b64-") || !cache_path.exists() {
-                    let file = std::fs::File::create(&cache_path)?;
-                    serde_json::to_writer(file, &entity)?;
-                }
-
-                // return active entity struct
-                res.push(EntityDefinition {
-                    id: entity.id.unwrap(),
-                    pointers: entity.pointers,
-                    metadata: entity.metadata,
-                    content: ContentMap(BiMap::from_iter(
-                        entity
-                            .content
-                            .into_iter()
-                            .map(|ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash)),
-                    )),
-                });
-            }
-
-            Ok(res)
-        })
+                    Ok(results)
+                })
+            },
+        }
     }
 
     pub async fn async_request<T: Into<isahc::AsyncBody>>(
@@ -795,8 +832,13 @@ pub struct ActiveEntity {
 }
 
 #[derive(Serialize)]
-struct ActiveEntitiesRequest<'a> {
-    pointers: &'a Vec<String>,
+struct ActiveEntitiesPointersRequest {
+    pointers: Vec<String>,
+}
+
+pub enum ActiveEntitiesRequest {
+    Pointers(Vec<String>),
+    Urns(Vec<IpfsPath>),
 }
 
 #[derive(Deserialize, Debug)]

@@ -101,22 +101,10 @@ pub enum SceneLoading {
         realm: String,
     },
     MainCrdt {
-        realm: String,
         crdt: Option<Handle<SerializedCrdtStore>>,
     },
     Javascript(Option<tokio::sync::broadcast::Receiver<Vec<u8>>>),
     Failed,
-}
-
-impl SceneLoading {
-    fn realm(&self) -> &String {
-        match self {
-            SceneLoading::Javascript(_) | SceneLoading::Failed | SceneLoading::SceneSpawned => {
-                panic!("invalid state")
-            }
-            SceneLoading::SceneEntity { realm } | SceneLoading::MainCrdt { realm, .. } => realm,
-        }
-    }
 }
 
 pub(crate) fn load_scene_entity(
@@ -204,7 +192,6 @@ pub(crate) fn load_scene_json(
                 .unwrap()
         });
         *state = SceneLoading::MainCrdt {
-            realm: state.realm().clone(),
             crdt,
         };
     }
@@ -289,7 +276,6 @@ pub(crate) fn load_scene_javascript(
     crdt_component_interfaces: Res<CrdtExtractors>,
     mut scene_updates: ResMut<SceneUpdates>,
     global_scene: Res<GlobalCrdtState>,
-    mut pointers: ResMut<ScenePointers>,
     portable_scenes: Res<PortableScenes>,
 ) {
     for (root, state, h_scene) in loading_scenes
@@ -301,11 +287,7 @@ pub(crate) fn load_scene_javascript(
             commands.entity(root).try_insert(SceneLoading::Failed);
         };
 
-        let SceneLoading::MainCrdt {
-            ref realm,
-            ref crdt,
-        } = state
-        else {
+        let SceneLoading::MainCrdt { ref crdt } = state else {
             panic!("wrong load state in load_scene_javascript")
         };
         if let Some(ref h_crdt) = crdt {
@@ -347,16 +329,6 @@ pub(crate) fn load_scene_javascript(
             let x = x.parse::<i32>().unwrap();
             let y = y.parse::<i32>().unwrap();
             let parcel = IVec2::new(x, y);
-
-            if !is_portable {
-                pointers.0.insert(
-                    parcel,
-                    PointerResult::Exists {
-                        realm: realm.clone(),
-                        hash: definition.id.clone(),
-                    },
-                );
-            }
 
             extent_min = extent_min.min(parcel);
             extent_max = extent_max.max(parcel);
@@ -534,19 +506,15 @@ impl FromStr for TestScenes {
                 if let Some((parcel, fails)) = scene.split_once('/') {
                     let allow_failures = fails.split('/').map(ToOwned::to_owned).collect();
                     println!("allowed failures: {allow_failures:?}");
-                    Ok(
-                        TestScene {
-                            location: IVec2Arg::from_str(parcel)?.0,
-                            allow_failures,
-                        }
-                    )
+                    Ok(TestScene {
+                        location: IVec2Arg::from_str(parcel)?.0,
+                        allow_failures,
+                    })
                 } else {
-                    Ok(
-                        TestScene {
-                            location: IVec2Arg::from_str(scene)?.0,
-                            allow_failures: Default::default(),
-                        }
-                    )
+                    Ok(TestScene {
+                        location: IVec2Arg::from_str(scene)?.0,
+                        allow_failures: Default::default(),
+                    })
                 }
             })
             .collect();
@@ -665,14 +633,14 @@ pub struct ScenePointers(pub HashMap<IVec2, PointerResult>);
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone)]
 pub enum PointerResult {
     Nothing { realm: String, x: i32, y: i32 },
-    Exists { realm: String, hash: String },
+    Exists { realm: String, hash: String, urn: Option<String> },
 }
 
 impl PointerResult {
-    fn hash(&self) -> Option<&String> {
+    fn hash_and_urn(&self) -> Option<(String, Option<String>)> {
         match self {
             PointerResult::Nothing { .. } => None,
-            PointerResult::Exists { hash, .. } => Some(hash),
+            PointerResult::Exists { hash, urn, .. } => Some((hash.clone(), urn.clone())),
         }
     }
 }
@@ -761,7 +729,7 @@ fn load_active_entities(
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
     range: Res<SceneLoadDistance>,
     mut pointers: ResMut<ScenePointers>,
-    mut pointer_request: Local<Option<(HashSet<IVec2>, ActiveEntityTask)>>,
+    mut pointer_request: Local<Option<(HashSet<IVec2>, HashMap<String, String>, ActiveEntityTask)>>,
     ipfas: IpfsAssetServer,
 ) {
     if current_realm.is_changed() {
@@ -769,40 +737,98 @@ fn load_active_entities(
         *pointer_request = None;
     }
 
-    if pointer_request.is_none() {
+    if pointer_request.is_none()
+        && !current_realm.address.is_empty()
+        && ipfas.active_endpoint().is_some()
+    {
         let has_scene_urns = !current_realm
             .config
             .scenes_urn
             .as_ref()
             .map_or(true, Vec::is_empty);
 
-        if !has_scene_urns && !current_realm.address.is_empty() && ipfas.active_endpoint().is_some() {
+        let Ok(focus) = focus.get_single() else {
+            return;
+        };
+
+        let parcels: HashSet<_> = parcels_in_range(focus, range.0)
+            .into_iter()
+            .filter(|parcel| match pointers.0.get(parcel) {
+                Some(PointerResult::Exists { realm, .. })
+                | Some(PointerResult::Nothing { realm, .. }) => realm != &current_realm.address,
+                _ => true,
+            })
+            .collect();
+
+        if !has_scene_urns {
             // load required pointers
-            let Ok(focus) = focus.get_single() else {
-                return;
-            };
-
-            let parcels: HashSet<_> = parcels_in_range(focus, range.0)
-                .into_iter()
-                .filter(|parcel| match pointers.0.get(parcel) {
-                    Some(PointerResult::Exists { realm, .. })
-                    | Some(PointerResult::Nothing { realm, .. }) => realm != &current_realm.address,
-                    _ => true,
-                })
-                .collect();
-
             let pointers = parcels
                 .iter()
                 .map(|parcel| format!("{},{}", parcel.x, parcel.y))
                 .collect();
 
             if !parcels.is_empty() {
-                *pointer_request = Some((parcels, ipfas.ipfs().active_entities(&pointers, None)));
+                *pointer_request = Some((
+                    parcels,
+                    HashMap::default(),
+                    ipfas
+                        .ipfs()
+                        .active_entities(ipfs::ActiveEntitiesRequest::Pointers(pointers), None),
+                ));
+            }
+        } else {
+            // TODO perf might be worth caching available and required
+            let available_hashes = pointers
+                .0
+                .iter()
+                .flat_map(|(_, ptr)| match ptr {
+                    PointerResult::Nothing { .. } => None,
+                    PointerResult::Exists { realm, hash, .. } => {
+                        if realm == &current_realm.address {
+                            Some(hash)
+                        } else {
+                            None
+                        }
+                    }
+                })
+                .collect::<HashSet<_>>();
+
+            let required_hashes_and_urns = current_realm
+                .config
+                .scenes_urn
+                .as_ref()
+                .unwrap()
+                .iter()
+                .flat_map(|urn| {
+                    IpfsPath::new_from_urn::<EntityDefinition>(&urn)
+                        .ok()
+                        .and_then(|path| {
+                            path.context_free_hash()
+                                .unwrap_or_default()
+                                .map(|hash| (hash, path, urn))
+                        })
+                })
+                .filter(|(hash, ..)| !available_hashes.contains(hash))
+                .collect::<Vec<_>>();
+
+            let required_paths = required_hashes_and_urns.iter().map(|(_, path, _)| path.clone()).collect::<Vec<_>>();
+            let lookup = HashMap::from_iter(required_hashes_and_urns.into_iter().map(|(hash, _, urn)| (hash, urn.clone())));
+
+            // issue request if either parcels or urns are non-empty, so that we populate `PointerResult::Nothing`s
+            if !required_paths.is_empty() || !parcels.is_empty() {
+                debug!("requesting {} urns", required_paths.len());
+                *pointer_request = Some((
+                    parcels,
+                    lookup,
+                    ipfas
+                        .ipfs()
+                        .active_entities(ipfs::ActiveEntitiesRequest::Urns(required_paths), None),
+                ));    
             }
         }
-    } else if let Some(task_result) = pointer_request.as_mut().unwrap().1.complete() {
+    } else if let Some(task_result) = pointer_request.as_mut().and_then(|req| req.2.complete()) {
         // process active scenes in the requested set
-        let (mut requested_parcels, _) = pointer_request.take().unwrap();
+        let (mut requested_parcels, mut urn_lookup, _) = pointer_request.take().unwrap();
 
         let Ok(retrieved_parcels) = task_result else {
             warn!("failed to retrieve active scenes, will retry");
@@ -816,7 +842,16 @@ fn load_active_entities(
         );
 
         for active_entity in retrieved_parcels {
-            for pointer in active_entity.pointers {
+            // TODO check for portables
+
+            let Some(meta) = active_entity.metadata.and_then(|meta| serde_json::from_value::<SceneMeta>(meta).ok()) else {
+                warn!("active entity scene.json did not resolve to expected format");
+                continue;
+            };
+
+            let urn = urn_lookup.remove(&active_entity.id);
+    
+            for pointer in meta.scene.parcels {
                 let (x, y) = pointer.split_once(',').unwrap();
                 let x = x.parse::<i32>().unwrap();
                 let y = y.parse::<i32>().unwrap();
@@ -828,6 +863,7 @@ fn load_active_entities(
                     PointerResult::Exists {
                         realm: current_realm.address.clone(),
                         hash: active_entity.id.clone(),
+                        urn: urn.clone(),
                     },
                 );
             }
@@ -860,26 +896,11 @@ pub fn process_scene_lifecycle(
     range: Res<SceneLoadDistance>,
     mut live_scenes: ResMut<LiveScenes>,
     mut spawn: EventWriter<LoadSceneEvent>,
-    mut pointers: ResMut<ScenePointers>,
-    loading_scenes: Query<&SceneLoading>,
+    pointers: Res<ScenePointers>,
 ) {
     let mut required_scene_ids: HashSet<(String, Option<String>)> = HashSet::default();
 
-    // add realm-defined scenes to requirements
-    if let Some(scenes) = current_realm.config.scenes_urn.as_ref() {
-        required_scene_ids.extend(scenes.iter().flat_map(|urn| {
-            let hacked_urn = urn.replace('?', "?=&");
-            IpfsPath::new_from_urn::<EntityDefinition>(&hacked_urn)
-                .ok()?
-                .context_free_hash()
-                .ok()?
-                .map(|hash| (hash, Some(hacked_urn)))
-        }))
-    }
-
-    let using_global_scene_list = !required_scene_ids.is_empty();
-
-    // otherwise add nearby scenes to requirements
+    // add nearby scenes to requirements
     if required_scene_ids.is_empty() {
         let Ok(focus) = focus.get_single() else {
             return;
@@ -889,9 +910,7 @@ pub fn process_scene_lifecycle(
                 pointers
                     .0
                     .get(&parcel)
-                    .and_then(PointerResult::hash)
-                    .map(ToOwned::to_owned)
-                    .map(|hash| (hash, None))
+                    .and_then(PointerResult::hash_and_urn)
             },
         ));
     }
@@ -935,12 +954,10 @@ pub fn process_scene_lifecycle(
     }
 
     // spawn any newly required scenes
-    let mut any_spawning = false;
     for (required_scene_hash, maybe_urn) in required_scene_ids
         .iter()
         .filter(|(hash, _)| !existing_ids.contains(hash))
     {
-        any_spawning = true;
         let entity = commands
             .spawn((
                 SceneHash(required_scene_hash.clone()),
@@ -957,29 +974,6 @@ pub fn process_scene_lifecycle(
                 None => SceneIpfsLocation::Hash(required_scene_hash.to_owned()),
             },
         })
-    }
-
-    // add nothing to current location if all scenes are loaded and nothing is in the current parcel
-    // (workaround for teleport.rs testing for Pointer::Nothing)
-    if using_global_scene_list && !any_spawning && loading_scenes.is_empty() {
-        let Ok(focus) = focus.get_single() else {
-            return;
-        };
-
-        let parcel = (focus.translation().xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
-            .floor()
-            .as_ivec2();
-
-        if pointers.0.get(&parcel).is_none() {
-            pointers.0.insert(
-                parcel,
-                PointerResult::Nothing {
-                    realm: current_realm.address.clone(),
-                    x: parcel.x,
-                    y: parcel.y,
-                },
-            );
-        }
     }
 }
 

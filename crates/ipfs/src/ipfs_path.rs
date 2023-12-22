@@ -342,6 +342,8 @@ impl IpfsPath {
             let key: IpfsKey = components.next().unwrap().try_into()?;
             let value = components
                 .next()
+                .and_then(|value| urlencoding::decode(value).ok())
+                .map(|value| value.into_owned())
                 .ok_or(anyhow::anyhow!("missing value for {key:?}"))?;
             key_values.insert(key, value.to_owned());
         }
