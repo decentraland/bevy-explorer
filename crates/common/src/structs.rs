@@ -34,13 +34,7 @@ pub struct AttachPoints {
 impl AttachPoints {
     pub fn new(commands: &mut Commands) -> Self {
         Self {
-            position: commands
-                .spawn(SpatialBundle {
-                    // TODO this is weird and must be wrong
-                    transform: Transform::from_translation(Vec3::Y * -0.7),
-                    ..default()
-                })
-                .id(),
+            position: commands.spawn(SpatialBundle::default()).id(),
             nametag: commands
                 .spawn(SpatialBundle {
                     transform: Transform::from_translation(Vec3::Y * 2.2),
