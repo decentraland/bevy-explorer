@@ -327,10 +327,7 @@ impl FfmpegContext for AudioContext {
         self.start_frame = self.current_frame;
     }
 
-    fn reset_start_frame(&mut self) {
-        self.start_frame = 0;
-        self.current_frame = 0;
-    }
+    fn reset_start_frame(&mut self) {}
 
     fn seconds_till_next_frame(&self) -> f64 {
         (self.current_frame - self.start_frame + 1) as f64 / self.rate
