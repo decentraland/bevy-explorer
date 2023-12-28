@@ -246,9 +246,15 @@ impl RendererSceneContext {
     pub fn log(&mut self, log: SceneLogMessage) {
         if self.log_to_stdout {
             match log.level {
-                dcl::SceneLogLevel::Log => info!("[{} {}] {}", self.base, log.timestamp, log.message),
-                dcl::SceneLogLevel::SceneError => warn!("[{} {}] {}", self.base, log.timestamp, log.message),
-                dcl::SceneLogLevel::SystemError => error!("[{} {}] {}", self.base, log.timestamp, log.message),
+                dcl::SceneLogLevel::Log => {
+                    info!("[{} {}] {}", self.base, log.timestamp, log.message)
+                }
+                dcl::SceneLogLevel::SceneError => {
+                    warn!("[{} {}] {}", self.base, log.timestamp, log.message)
+                }
+                dcl::SceneLogLevel::SystemError => {
+                    error!("[{} {}] {}", self.base, log.timestamp, log.message)
+                }
             }
         }
 

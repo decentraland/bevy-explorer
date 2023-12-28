@@ -114,9 +114,9 @@ fn play_videos(
         }
 
         const VIDEO_REPORT_FREQUENCY: f64 = 1.0;
-        if new_state.is_none() && 
-            (sink.current_time > sink.last_reported_time + VIDEO_REPORT_FREQUENCY 
-                || sink.current_time < sink.last_reported_time) 
+        if new_state.is_none()
+            && (sink.current_time > sink.last_reported_time + VIDEO_REPORT_FREQUENCY
+                || sink.current_time < sink.last_reported_time)
         {
             new_state = Some(VideoState::VsPlaying);
         }

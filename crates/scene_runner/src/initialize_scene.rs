@@ -11,7 +11,7 @@ use futures_lite::AsyncReadExt;
 use serde::Deserialize;
 
 use common::{
-    structs::{IVec2Arg, SceneLoadDistance, AppConfig},
+    structs::{AppConfig, IVec2Arg, SceneLoadDistance},
     util::TaskExt,
 };
 use comms::global_crdt::GlobalCrdtState;

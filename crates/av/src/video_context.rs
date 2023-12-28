@@ -163,10 +163,9 @@ impl FfmpegContext for VideoContext {
             self.buffer.len()
         );
         if let Some((index, frame)) = self.buffer.pop_front() {
-            let _ = self.sink.blocking_send(VideoData::Frame(
-                frame,
-                index as f64 / self.rate,
-            ));
+            let _ = self
+                .sink
+                .blocking_send(VideoData::Frame(frame, index as f64 / self.rate));
             self.current_frame += 1;
         }
     }
