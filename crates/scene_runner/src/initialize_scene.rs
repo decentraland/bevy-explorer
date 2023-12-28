@@ -11,7 +11,7 @@ use futures_lite::AsyncReadExt;
 use serde::Deserialize;
 
 use common::{
-    structs::{IVec2Arg, SceneLoadDistance},
+    structs::{IVec2Arg, SceneLoadDistance, AppConfig},
     util::TaskExt,
 };
 use comms::global_crdt::GlobalCrdtState;
@@ -267,6 +267,7 @@ pub struct SerializedCrdtStore(pub Vec<u8>);
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn load_scene_javascript(
     mut commands: Commands,
+    config: Res<AppConfig>,
     loading_scenes: Query<(Entity, &SceneLoading, &Handle<EntityDefinition>)>,
     scene_definitions: Res<Assets<EntityDefinition>>,
     main_crdts: Res<Assets<SerializedCrdtStore>>,
@@ -398,6 +399,7 @@ pub(crate) fn load_scene_javascript(
             root,
             size,
             1.0,
+            config.scene_log_to_console,
         );
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?})");
 

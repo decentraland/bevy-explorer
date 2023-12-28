@@ -147,6 +147,7 @@ pub struct AppConfig {
     pub scene_threads: usize,
     pub scene_load_distance: f32,
     pub sysinfo_visible: bool,
+    pub scene_log_to_console: bool,
 }
 
 impl Default for AppConfig {
@@ -159,6 +160,7 @@ impl Default for AppConfig {
             scene_threads: 4,
             scene_load_distance: 100.0,
             sysinfo_visible: true,
+            scene_log_to_console: false,
         }
     }
 }

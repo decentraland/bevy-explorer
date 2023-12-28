@@ -73,6 +73,7 @@ pub struct RendererSceneContext {
 
     // message buffer
     pub logs: RingBuffer<SceneLogMessage>,
+    log_to_stdout: bool,
 }
 
 pub const SCENE_LOG_BUFFER_SIZE: usize = 100;
@@ -90,6 +91,7 @@ impl RendererSceneContext {
         root: Entity,
         size: UVec2,
         priority: f32,
+        log_to_stdout: bool,
     ) -> Self {
         let mut new_context = Self {
             scene_id,
@@ -116,6 +118,7 @@ impl RendererSceneContext {
             tick_number: 0,
             last_update_dt: 0.0,
             logs: RingBuffer::new(1000, 100),
+            log_to_stdout,
         };
 
         new_context.live_entities[SceneEntityId::ROOT.id as usize] =
@@ -238,5 +241,17 @@ impl RendererSceneContext {
     ) {
         self.crdt_store
             .force_update(component_id, crdt_type, id, None);
+    }
+
+    pub fn log(&mut self, log: SceneLogMessage) {
+        if self.log_to_stdout {
+            match log.level {
+                dcl::SceneLogLevel::Log => info!("[{} {}] {}", self.base, log.timestamp, log.message),
+                dcl::SceneLogLevel::SceneError => warn!("[{} {}] {}", self.base, log.timestamp, log.message),
+                dcl::SceneLogLevel::SystemError => error!("[{} {}] {}", self.base, log.timestamp, log.message),
+            }
+        }
+
+        self.logs.send(log);
     }
 }
