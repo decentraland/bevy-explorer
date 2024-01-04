@@ -1,0 +1,47 @@
+version: v1
+breaking:
+  use:
+    - WIRE_JSON
+  ignore:
+    - google
+lint:
+  use:
+    - DIRECTORY_SAME_PACKAGE
+    - PACKAGE_DEFINED
+    - PACKAGE_DIRECTORY_MATCH
+    - PACKAGE_SAME_DIRECTORY
+    - ENUM_PASCAL_CASE
+    - ENUM_VALUE_UPPER_SNAKE_CASE
+    - FIELD_LOWER_SNAKE_CASE
+    - MESSAGE_PASCAL_CASE
+    - ONEOF_LOWER_SNAKE_CASE
+    - PACKAGE_LOWER_SNAKE_CASE
+    - RPC_PASCAL_CASE
+    - SERVICE_PASCAL_CASE
+    - PACKAGE_SAME_CSHARP_NAMESPACE
+    - PACKAGE_SAME_GO_PACKAGE
+    - PACKAGE_SAME_JAVA_MULTIPLE_FILES
+    - PACKAGE_SAME_JAVA_PACKAGE
+    - PACKAGE_SAME_PHP_NAMESPACE
+    - PACKAGE_SAME_RUBY_PACKAGE
+    - PACKAGE_SAME_SWIFT_PREFIX
+    - ENUM_FIRST_VALUE_ZERO
+    - ENUM_NO_ALLOW_ALIAS
+    - IMPORT_NO_WEAK
+    - IMPORT_NO_PUBLIC
+    - IMPORT_USED
+    - FILE_LOWER_SNAKE_CASE
+    # Ignored:the default value is used
+    # - ENUM_ZERO_VALUE_SUFFIX
+    # Ignored: if a prefix is needed in the target language, implement a preprocessor
+    # - ENUM_VALUE_PREFIX
+    # Not wished
+    # - PACKAGE_VERSION_SUFFIX
+    # TODO: See if this needs to be added
+    # - RPC_REQUEST_RESPONSE_UNIQUE
+    # - RPC_REQUEST_STANDARD_NAME
+    # - RPC_RESPONSE_STANDARD_NAME
+    # - SERVICE_SUFFIX
+  ignore:
+    - google
+    - decentraland/renderer/engine_interface.proto

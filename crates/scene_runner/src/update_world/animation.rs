@@ -127,7 +127,7 @@ fn update_animations(
                 .partition::<Vec<_>, _>(|(_, name)| clip.compatible_with(name));
 
             if target.is_empty() {
-                warn!("invalid root node for animation: {:?}", state.name);
+                warn!("invalid root node for animation: (there is no name field any more)");
                 warn!(
                     "available root nodes: {:?}",
                     gltf_processed

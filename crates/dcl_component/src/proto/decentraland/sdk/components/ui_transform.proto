@@ -74,6 +74,11 @@ enum YGEdge {
   YGE_ALL = 8;
 }
 
+enum PointerFilterMode {
+  PFM_NONE = 0;
+  PFM_BLOCK = 1;
+}
+
 message PBUiTransform {
   int32 parent = 1;
   int32 right_of = 2;
@@ -138,4 +143,6 @@ message PBUiTransform {
   float padding_right = 49;
   YGUnit padding_bottom_unit = 50; // YGUnit.YGU_UNDEFINED
   float padding_bottom = 51;
+  
+  optional PointerFilterMode pointer_filter = 52; // default: PointerFilterMode.PFM_NONE
 }
