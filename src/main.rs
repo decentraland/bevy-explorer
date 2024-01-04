@@ -39,6 +39,7 @@ use input_manager::InputManagerPlugin;
 use ipfs::IpfsIoPlugin;
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use system_ui::SystemUiPlugin;
+use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
 use user_input::UserInputPlugin;
 use visuals::VisualsPlugin;
@@ -211,7 +212,8 @@ fn main() {
         .add_plugins(VisualsPlugin { no_fog })
         .add_plugins(WalletPlugin)
         .add_plugins(CommsPlugin)
-        .add_plugins(NftShapePlugin);
+        .add_plugins(NftShapePlugin)
+        .add_plugins(TweenPlugin);
 
     if !no_avatar {
         app.add_plugins(AvatarPlugin);

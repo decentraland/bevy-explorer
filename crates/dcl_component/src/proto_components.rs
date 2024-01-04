@@ -94,6 +94,8 @@ impl DclProtoComponent for sdk::components::PbVideoEvent {}
 impl DclProtoComponent for sdk::components::PbVisibilityComponent {}
 impl DclProtoComponent for sdk::components::PbAvatarModifierArea {}
 impl DclProtoComponent for sdk::components::PbNftShape {}
+impl DclProtoComponent for sdk::components::PbTween {}
+impl DclProtoComponent for sdk::components::PbTweenState {}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}
@@ -135,6 +137,14 @@ impl common::Vector3 {
     }
     pub fn abs_vec_to_vec3(&self) -> bevy::prelude::Vec3 {
         bevy::prelude::Vec3::new(self.x, self.y, self.z)
+    }
+}
+
+// QUATERNION conversions
+impl Copy for common::Quaternion {}
+impl From<common::Quaternion> for bevy::math::Quat {
+    fn from(q: common::Quaternion) -> Self {
+        bevy::math::Quat::from_xyzw(q.x, q.y, -q.z, -q.w)
     }
 }
 

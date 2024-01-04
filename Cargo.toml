@@ -30,6 +30,7 @@ dcl_component = { path="crates/dcl_component" }
 restricted_actions = { path="crates/restricted_actions" }
 wallet = { path="crates/wallet" }
 nft = { path="crates/nft" }
+tween = { path="crates/tween" }
 
 bevy = { version = "0.12", features=["jpeg"] }
 bevy_console = { git = "https://github.com/msklosak/bevy-console", branch = "bevy_0.12_update" }
@@ -77,6 +78,7 @@ restricted_actions = { workspace = true }
 wallet = { workspace = true }
 dcl = { workspace = true }
 nft = { workspace = true }
+tween = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }
