@@ -912,6 +912,7 @@ fn update_collider_transforms(
                 }
             }
 
+            #[allow(clippy::map_identity)]
             if Some((&container.root, &collider.0)) == parent_collider.as_ref().map(|(a, b)| (a, b))
             {
                 let player_transform = player_transform.as_deref_mut().unwrap();

@@ -208,7 +208,7 @@ impl SpawnPosition {
             if let Some(val) = v.as_f64() {
                 Some(val as f32..val as f32)
             } else if let Some(array) = v.as_array() {
-                if let Some(mut start) = array.get(0).and_then(|s| s.as_f64()) {
+                if let Some(mut start) = array.first().and_then(|s| s.as_f64()) {
                     let mut end = array.get(1).and_then(|e| e.as_f64()).unwrap_or(start);
                     if end < start {
                         (start, end) = (end, start);

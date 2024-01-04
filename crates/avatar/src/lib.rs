@@ -156,7 +156,7 @@ fn load_base_wearables(
             None => (),
             Some(Err(e)) => warn!("failed to acquire base wearables: {e}"),
             Some(Ok(active_entities)) => {
-                debug!("first active entity: {:?}", active_entities.get(0));
+                debug!("first active entity: {:?}", active_entities.first());
                 for entity in active_entities {
                     ipfas.ipfs().add_collection(
                         entity.id.clone(),

@@ -309,7 +309,7 @@ fn spawn_portable(
                         let Some(scenes) = config.scenes_urn else {
                             return Err("No scenesUrn on server/about/configurations".to_owned());
                         };
-                        let Some(urn) = scenes.get(0) else {
+                        let Some(urn) = scenes.first() else {
                             return Err("Empty scenesUrn on server/about/configurations".to_owned());
                         };
                         let hacked_urn = urn.replace('?', "?=&");
