@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+
+option (common.ecs_component_id) = 1103;
+
+message PBTweenState {
+  TweenStateStatus state = 1;
+  float current_time = 2; // between 0 and 1
+}
+
+enum TweenStateStatus {
+  TS_ACTIVE = 0;
+  TS_COMPLETED = 1;
+  TS_PAUSED= 2;
+}

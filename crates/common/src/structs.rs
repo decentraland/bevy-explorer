@@ -1,4 +1,4 @@
-use std::f32::consts::PI;
+use std::{f32::consts::PI, num::ParseIntError, str::FromStr};
 
 use bevy::{prelude::*, utils::HashMap};
 use ethers_core::abi::Address;
@@ -34,13 +34,7 @@ pub struct AttachPoints {
 impl AttachPoints {
     pub fn new(commands: &mut Commands) -> Self {
         Self {
-            position: commands
-                .spawn(SpatialBundle {
-                    // TODO this is weird and must be wrong
-                    transform: Transform::from_translation(Vec3::Y * -0.7),
-                    ..default()
-                })
-                .id(),
+            position: commands.spawn(SpatialBundle::default()).id(),
             nametag: commands
                 .spawn(SpatialBundle {
                     transform: Transform::from_translation(Vec3::Y * 2.2),
@@ -152,6 +146,8 @@ pub struct AppConfig {
     pub graphics: GraphicsSettings,
     pub scene_threads: usize,
     pub scene_load_distance: f32,
+    pub sysinfo_visible: bool,
+    pub scene_log_to_console: bool,
 }
 
 impl Default for AppConfig {
@@ -163,6 +159,8 @@ impl Default for AppConfig {
             graphics: Default::default(),
             scene_threads: 4,
             scene_load_distance: 100.0,
+            sysinfo_visible: true,
+            scene_log_to_console: false,
         }
     }
 }
@@ -194,3 +192,40 @@ pub enum AudioDecoderError {
 
 #[derive(Resource)]
 pub struct SceneLoadDistance(pub f32);
+
+#[derive(Debug)]
+pub struct IVec2Arg(pub IVec2);
+
+impl FromStr for IVec2Arg {
+    type Err = ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut chars = s.chars().peekable();
+
+        let skip = |chars: &mut std::iter::Peekable<std::str::Chars>, numeric: bool| {
+            while numeric
+                == chars
+                    .peek()
+                    .map_or(!numeric, |c| c.is_numeric() || *c == '-')
+            {
+                chars.next();
+            }
+        };
+
+        let parse = |chars: &std::iter::Peekable<std::str::Chars>| {
+            chars
+                .clone()
+                .take_while(|c| c.is_numeric() || *c == '-')
+                .collect::<String>()
+                .parse::<i32>()
+        };
+
+        skip(&mut chars, false);
+        let x = parse(&chars)?;
+        skip(&mut chars, true);
+        skip(&mut chars, false);
+        let y = parse(&chars)?;
+
+        Ok(IVec2Arg(IVec2::new(x, y)))
+    }
+}

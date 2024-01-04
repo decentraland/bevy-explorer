@@ -147,17 +147,16 @@ fn load_base_wearables(
     match *task {
         None => {
             let pointers = base_wearables::base_wearables();
-            *task = Some(
-                ipfas
-                    .ipfs()
-                    .active_entities(&pointers, Some(base_wearables::BASE_URL)),
-            );
+            *task = Some(ipfas.ipfs().active_entities(
+                ipfs::ActiveEntitiesRequest::Pointers(pointers),
+                Some(base_wearables::BASE_URL),
+            ));
         }
         Some(ref mut active_task) => match active_task.complete() {
             None => (),
             Some(Err(e)) => warn!("failed to acquire base wearables: {e}"),
             Some(Ok(active_entities)) => {
-                debug!("first active entity: {:?}", active_entities.get(0));
+                debug!("first active entity: {:?}", active_entities.first());
                 for entity in active_entities {
                     ipfas.ipfs().add_collection(
                         entity.id.clone(),
@@ -1013,7 +1012,9 @@ fn update_render_avatar(
         if !pointers.is_empty() {
             debug!("requesting: {:?}", missing_wearables);
             *wearable_task = Some((
-                ipfas.ipfs().active_entities(&pointers, None),
+                ipfas
+                    .ipfs()
+                    .active_entities(ipfs::ActiveEntitiesRequest::Pointers(pointers), None),
                 missing_wearables,
             ));
         }

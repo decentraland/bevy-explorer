@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/common/vectors.proto";
+import "decentraland/sdk/components/common/id.proto";
+
+option (common.ecs_component_id) = 1102;
+
+message PBTween {
+  float duration = 1; // in milliseconds
+  EasingFunction easing_function = 2;
+
+  oneof mode {
+    Move move = 3;
+    Rotate rotate = 4;
+    Scale scale = 5;
+  }
+
+  optional bool playing = 6; // default true (pause or running)
+  optional float current_time = 7; // between 0 and 1
+}
+
+message Move {
+  decentraland.common.Vector3 start = 1;
+  decentraland.common.Vector3 end = 2;
+  optional bool face_direction = 3;
+}
+
+message Rotate {
+  decentraland.common.Quaternion start = 1;
+  decentraland.common.Quaternion end = 2;
+}
+
+message Scale {
+  decentraland.common.Vector3 start = 1;
+  decentraland.common.Vector3 end = 2;
+}
+
+// Implementation guidelines for these easing functions can be found
+// at https://github.com/ai/easings.net/blob/6fcd5f852a470bf1a7890e8178afa0f471d5f2ec/src/easings/easingsFunctions.ts
+enum EasingFunction {
+  EF_LINEAR = 0; // default
+  EF_EASEINQUAD = 1;
+  EF_EASEOUTQUAD = 2;
+  EF_EASEQUAD = 3;
+  EF_EASEINSINE = 4;
+  EF_EASEOUTSINE = 5;
+  EF_EASESINE = 6;
+  EF_EASEINEXPO = 7;
+  EF_EASEOUTEXPO = 8;
+  EF_EASEEXPO = 9;
+  EF_EASEINELASTIC = 10;
+  EF_EASEOUTELASTIC = 11;
+  EF_EASEELASTIC = 12;
+  EF_EASEINBOUNCE = 13;
+  EF_EASEOUTBOUNCE = 14;
+  EF_EASEBOUNCE = 15;
+  EF_EASEINCUBIC = 16;
+  EF_EASEOUTCUBIC = 17;
+  EF_EASECUBIC = 18;
+  EF_EASEINQUART = 19;
+  EF_EASEOUTQUART = 20;
+  EF_EASEQUART = 21;
+  EF_EASEINQUINT = 22;
+  EF_EASEOUTQUINT = 23;
+  EF_EASEQUINT = 24;
+  EF_EASEINCIRC = 25;
+  EF_EASEOUTCIRC = 26;
+  EF_EASECIRC = 27;
+  EF_EASEINBACK = 28;
+  EF_EASEOUTBACK = 29;
+  EF_EASEBACK = 30;
+}

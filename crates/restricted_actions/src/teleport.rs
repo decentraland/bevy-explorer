@@ -1,5 +1,5 @@
 use avatar::AvatarDynamicState;
-use bevy::{math::Vec3Swizzles, prelude::*};
+use bevy::{ecs::system::RunSystemOnce, math::Vec3Swizzles, prelude::*};
 use common::{rpc::RpcCall, structs::PrimaryUser};
 use comms::global_crdt::ForeignPlayer;
 use ethers_core::rand::{seq::SliceRandom, thread_rng, Rng};
@@ -19,7 +19,7 @@ pub fn teleport_player(
     player: Query<(Entity, &Transform), With<PrimaryUser>>,
     containing_scene: ContainingScene,
 ) {
-    for (root, parcel, response) in events.read().filter_map(|ev| match ev {
+    for (requester, parcel, response) in events.read().filter_map(|ev| match ev {
         RpcCall::TeleportPlayer {
             scene,
             to,
@@ -27,51 +27,58 @@ pub fn teleport_player(
         } => Some((*scene, *to, response.clone())),
         _ => None,
     }) {
-        if !player
-            .get_single()
-            .ok()
-            .map_or(false, |(e, ..)| containing_scene.get(e).contains(&root))
-        {
-            warn!("invalid teleport request from non-containing scene");
-            warn!("request from {root:?}");
-            warn!(
-                "containing scenes {:?}",
-                player.get_single().map(|p| containing_scene.get(p.0))
-            );
-            return;
+        if let Some(requester) = requester {
+            if !player.get_single().ok().map_or(false, |(e, ..)| {
+                containing_scene.get(e).contains(&requester)
+            }) {
+                warn!("invalid teleport request from non-containing scene");
+                warn!("request from {requester:?}");
+                warn!(
+                    "containing scenes {:?}",
+                    player.get_single().map(|p| containing_scene.get(p.0))
+                );
+                return;
+            }
         }
 
         let response_fail = response.clone();
 
-        commands.spawn_dialog_two(
-            "Teleport".into(),
-            format!("The scene wants to teleport you to another location: {},{}\ntodo: put scene name and thumbnail here", parcel.x, parcel.y),
-            "Let's go!",
-            move |mut commands: Commands,
-                  mut player: Query<
-                (Entity, &mut Transform, &mut AvatarDynamicState),
-                With<PrimaryUser>,
-            >| {
-                let Ok((ent, mut transform, mut dynamic_state)) = player.get_single_mut() else {
-                    warn!("player doesn't exist?!");
-                    response.send(Err("Something went wrong".into()));
-                    return;
-                };
+        let do_teleport = move |mut commands: Commands,
+                                mut player: Query<
+            (Entity, &mut Transform, &mut AvatarDynamicState),
+            With<PrimaryUser>,
+        >| {
+            let Ok((ent, mut transform, mut dynamic_state)) = player.get_single_mut() else {
+                warn!("player doesn't exist?!");
+                response.send(Err("Something went wrong".into()));
+                return;
+            };
 
-                transform.translation.x = parcel.x as f32 * 16.0 + 8.0;
-                transform.translation.z = -parcel.y as f32 * 16.0 - 8.0;
-                dynamic_state.velocity = Vec3::ZERO;
-                if let Some(mut commands) = commands.get_entity(ent) {
-                    commands.try_insert(OutOfWorld);
-                }
+            transform.translation.x = parcel.x as f32 * 16.0 + 8.0;
+            transform.translation.z = -parcel.y as f32 * 16.0 - 8.0;
+            dynamic_state.velocity = Vec3::ZERO;
+            if let Some(mut commands) = commands.get_entity(ent) {
+                commands.try_insert(OutOfWorld);
+            }
 
-                response.send(Ok(()));
-            },
-            "No thanks",
-            move || {
-                response_fail.send(Err("User said no thanks".into()));
-            },
-        );
+            response.send(Ok(()));
+            info!("teleported to {parcel}");
+        };
+
+        if requester.is_some() {
+            commands.spawn_dialog_two(
+                "Teleport".into(),
+                format!("The scene wants to teleport you to another location: {},{}\ntodo: put scene name and thumbnail here", parcel.x, parcel.y),
+                "Let's go!",
+                do_teleport,
+                "No thanks",
+                move || {
+                    response_fail.send(Err("User said no thanks".into()));
+                },
+            );
+        } else {
+            commands.add(|w: &mut World| w.run_system_once(do_teleport))
+        }
     }
 }
 

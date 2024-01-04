@@ -857,6 +857,7 @@ fn layout_scene_ui(
 
                                             context.update_crdt(SceneComponentId::UI_INPUT_RESULT, CrdtType::LWW_ENT, scene_id, &PbUiInputResult {
                                                 value: entry.content.clone(),
+                                                is_submit: None,
                                             });
                                             // store persistent state to the scene entity
                                             commands.entity(node).try_insert(UiInputPersistentState{content: entry.content.clone()});

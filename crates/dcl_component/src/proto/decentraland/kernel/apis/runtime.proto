@@ -49,6 +49,16 @@ message CurrentSceneEntityResponse {
   string base_url = 4;
 }
 
+message GetExplorerInformationRequest {}
+message GetExplorerInformationResponse {
+  // the agent that current explorer is identified as
+  string agent = 1;
+  // options: "desktop", "mobile", "vr", "web"
+  string platform = 2;
+  // custom configurations set in the explorer
+  map<string, string> configurations = 3;
+}
+
 service RuntimeService {
   // Provides information about the current realm
   rpc GetRealm(GetRealmRequest) returns (GetRealmResponse) {}
@@ -62,4 +72,7 @@ service RuntimeService {
   rpc ReadFile(ReadFileRequest) returns (ReadFileResponse) {}
   // Returns information about the current scene. This is the replacement of GetBootstrapData
   rpc GetSceneInformation(CurrentSceneEntityRequest) returns (CurrentSceneEntityResponse) {}
+  
+  // Provides information about the explorer 
+  rpc GetExplorerInformation(GetExplorerInformationRequest) returns (GetExplorerInformationResponse) {}
 }

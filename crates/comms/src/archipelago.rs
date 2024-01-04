@@ -122,7 +122,7 @@ fn manage_islands(
     mut manager: AdapterManager,
     mut channel: ResMut<IslandChannel>,
     mut current_island: Local<HashMap<Entity, Entity>>,
-    current_realm: ResMut<CurrentRealm>,
+    current_realm: Res<CurrentRealm>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut events: EventReader<RpcCall>,
 ) {

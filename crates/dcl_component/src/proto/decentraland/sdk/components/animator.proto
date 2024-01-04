@@ -16,7 +16,7 @@ message PBAnimator {
 
 // AnimationState indicates the status and configuration of one available animation.
 message PBAnimationState {
-  string name = 1;                // the identifier for this animation, to use in scene code
+  reserved 1;                     // deprecated `name` prop
   string clip = 2;                // the animation path in the `files` array of the scene manifest
   optional bool playing = 3;      // whether this animation is currently playing
   optional float weight = 4;      // the "weight" of this animation (see below, default: 1.0)

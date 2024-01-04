@@ -23,6 +23,7 @@ pub struct VideoSink {
     pub video_receiver: tokio::sync::mpsc::Receiver<VideoData>,
     pub image: Handle<Image>,
     pub current_time: f64,
+    pub last_reported_time: f64,
     pub length: Option<f64>,
     pub rate: Option<f64>,
 }
@@ -63,6 +64,7 @@ pub fn av_sinks(
             video_receiver,
             image,
             current_time: -1.0,
+            last_reported_time: -1.0,
             length: None,
             rate: None,
         },

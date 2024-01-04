@@ -211,13 +211,16 @@ fn run_raycasts(
                     else {
                         continue;
                     };
-                    if let Some(result) = colliders.cast_ray_nearest(
-                        context.last_update_frame,
-                        origin,
-                        direction,
-                        raycast.max_distance,
-                        mask,
-                    ) {
+                    for result in colliders
+                        .cast_ray_all(
+                            context.last_update_frame,
+                            origin,
+                            direction,
+                            raycast.max_distance,
+                            mask,
+                        )
+                        .into_iter()
+                    {
                         results.push((scene, result));
                     }
                 }

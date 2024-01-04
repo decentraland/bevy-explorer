@@ -149,6 +149,8 @@ fn connect_wallet(
                         version: 0,
                         content: SerializedProfile {
                             has_connected_web3: Some(true),
+                            eth_address: format!("{:#x}", wallet.address().unwrap()),
+                            user_id: Some(format!("{:#x}", wallet.address().unwrap())),
                             ..Default::default()
                         },
                         base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
@@ -219,6 +221,7 @@ fn connect_wallet(
                     version: 0,
                     content: SerializedProfile {
                         eth_address: format!("{:#x}", wallet.address().unwrap()),
+                        user_id: Some(format!("{:#x}", wallet.address().unwrap())),
                         ..Default::default()
                     },
                     base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),

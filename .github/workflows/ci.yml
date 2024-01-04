@@ -28,6 +28,38 @@ jobs:
         with:
           command: check
 
+  hardcore-test:
+    name: Test Scenes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - uses: Swatinem/rust-cache@v2
+      - name: Install protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install alsa, udev and xkb
+        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libxkbcommon-x11-0
+      - name: install xvfb, llvmpipe and lavapipe
+        run: |
+          sudo apt-get update -y -qq
+          sudo add-apt-repository ppa:kisak/kisak-mesa -y
+          sudo apt-get update
+          sudo apt install -y xvfb libegl1-mesa libgl1-mesa-dri libxcb-xfixes0-dev mesa-vulkan-drivers
+      - name: install ffmpeg deps
+        run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
+      - name: install livekit deps
+        run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev
+      - uses: actions/checkout@v2
+      - name: Test Scenes
+        continue-on-error: true
+        run: |
+          xvfb-run -s "-screen 0 320x240x24" cargo run --release -- --server https://decentraland.github.io/scene-explorer-tests/scene-explorer-tests --test_scenes "52,-52;52,-54;52,-56;52,-58;52,-60;52,-62;52,-64;52,-66;52,-68;54,-52;54,-54;54,-56;54,-58;54,-60" --no_fog --distance 1 --scene_log_to_console
+
   test:
     name: Test Suite
     strategy:

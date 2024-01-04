@@ -42,6 +42,7 @@ pub mod events;
 #[cfg(feature = "inspect")]
 pub mod inspector;
 pub mod player;
+pub mod testing;
 
 // marker to indicate shutdown has been triggered
 pub struct ShuttingDown;
@@ -85,7 +86,7 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
 
     let mut ops = vec![op_require::DECL, op_log::DECL, op_error::DECL];
 
-    let op_sets: [Vec<deno_core::OpDecl>; 9] = [
+    let op_sets: [Vec<deno_core::OpDecl>; 10] = [
         engine::ops(),
         restricted_actions::ops(),
         runtime::ops(),
@@ -95,6 +96,7 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
         player::ops(),
         events::ops(),
         comms::ops(),
+        testing::ops(),
     ];
 
     // add plugin registrations
@@ -189,8 +191,9 @@ pub(crate) fn scene_thread(
     ipfs: IpfsResource,
     wallet: Wallet,
     inspect: bool,
+    testing: bool,
 ) {
-    let scene_context = CrdtContext::new(scene_id, scene_hash);
+    let scene_context = CrdtContext::new(scene_id, scene_hash, testing);
     let (mut runtime, inspector) = create_runtime(false, inspect);
 
     // store handle
@@ -250,8 +253,16 @@ pub(crate) fn scene_thread(
             .wait_for_session_and_break_on_next_statement();
     }
 
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .enable_io()
+        .build()
+        .unwrap();
+
     // load module
-    let script = runtime.execute_script("<loader>", ascii_str!("require (\"~scene.js\")"));
+    let script = rt.block_on(async {
+        runtime.execute_script("<loader>", ascii_str!("require (\"~scene.js\")"))
+    });
 
     let script = match script {
         Err(e) => {
@@ -264,12 +275,6 @@ pub(crate) fn scene_thread(
         }
         Ok(script) => script,
     };
-
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_time()
-        .enable_io()
-        .build()
-        .unwrap();
 
     // run startup function
     let result =

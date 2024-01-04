@@ -88,6 +88,11 @@ message CrdtMessageFromRendererResponse {
   repeated bytes data = 1;
 }
 
+message IsServerRequest {}
+message IsServerResponse {
+  bool is_server = 1;
+}
+
 service EngineApiService {
   // support for legacy SDK events.
 
@@ -108,4 +113,6 @@ service EngineApiService {
 
   // @deprecated, this response was merged into CrdtSendToResponse
   rpc CrdtGetMessageFromRenderer(CrdtMessageFromRendererRequest) returns (CrdtMessageFromRendererResponse) {}
+
+  rpc IsServer(IsServerRequest) returns (IsServerResponse) {}
 }

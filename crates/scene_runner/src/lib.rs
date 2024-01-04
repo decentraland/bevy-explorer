@@ -30,7 +30,7 @@ use dcl_component::{
     transform_and_parent::DclTransformAndParent,
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
-use initialize_scene::{InspectHash, PortableScenes};
+use initialize_scene::{PortableScenes, TestingData};
 use ipfs::SceneIpfsLocation;
 use primary_entities::PrimaryEntities;
 use spin_sleep::SpinSleeper;
@@ -45,6 +45,7 @@ use self::{
     update_world::{CrdtExtractors, SceneOutputPlugin},
 };
 
+pub mod automatic_testing;
 pub mod initialize_scene;
 pub mod primary_entities;
 pub mod renderer_context;
@@ -178,7 +179,7 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<CrdtExtractors>();
         app.init_resource::<DebugInfo>();
         app.init_resource::<Toasts>();
-        app.init_resource::<InspectHash>();
+        app.init_resource::<TestingData>();
 
         let (sender, receiver) = sync_channel(1000);
         app.insert_resource(SceneUpdates {
@@ -700,6 +701,12 @@ fn receive_scene_updates(
                     toaster.add_toast("inspector", "Scene paused waiting for inspector session");
                     None
                 }
+                SceneResponse::CompareSnapshot(compare) => {
+                    let scene = compare.scene;
+                    debug!("[{scene:?}] requested snapshot");
+                    rpc_call_events.send(RpcCall::TestSnapshot(compare.clone()));
+                    None
+                }
                 SceneResponse::Error(scene_id, message) => {
                     error!("[{scene_id:?}] error: {message}");
                     if let Some(root) = updates.scene_ids.get(&scene_id) {
@@ -707,7 +714,7 @@ fn receive_scene_updates(
                             context.broken = true;
                             context.in_flight = false;
                             let timestamp = context.total_runtime as f64 + 1.0;
-                            context.logs.send(SceneLogMessage {
+                            context.log(SceneLogMessage {
                                 timestamp,
                                 level: SceneLogLevel::SystemError,
                                 message,
@@ -736,7 +743,7 @@ fn receive_scene_updates(
                         context.nascent = census.born;
                         context.death_row = census.died;
                         for message in messages.into_iter() {
-                            context.logs.send(message);
+                            context.log(message);
                         }
                         let mut commands = commands.entity(*root);
                         for (component_id, interface) in crdt_interfaces.0.iter() {

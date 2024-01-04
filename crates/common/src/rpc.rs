@@ -14,6 +14,12 @@ pub trait DynRpcResult: std::any::Any + std::fmt::Debug + Send + Sync + 'static 
 #[derive(Debug, Clone)]
 pub struct RpcResultSender<T>(Arc<RwLock<Option<tokio::sync::oneshot::Sender<T>>>>);
 
+impl<T: 'static> Default for RpcResultSender<T> {
+    fn default() -> Self {
+        Self(Arc::new(RwLock::new(None)))
+    }
+}
+
 impl<T: 'static> RpcResultSender<T> {
     pub fn new(sender: tokio::sync::oneshot::Sender<T>) -> Self {
         Self(Arc::new(RwLock::new(Some(sender))))
@@ -58,6 +64,23 @@ pub struct SpawnResponse {
     pub ens: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct CompareSnapshot {
+    pub scene: Entity,
+    pub camera_position: [f32; 3],
+    pub camera_target: [f32; 3],
+    pub snapshot_size: [u32; 2],
+    pub name: String,
+    pub response: RpcResultSender<CompareSnapshotResult>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CompareSnapshotResult {
+    pub error: Option<String>,
+    pub found: bool,
+    pub similarity: f64,
+}
+
 pub type RpcEventSender = tokio::sync::mpsc::UnboundedSender<String>;
 
 #[derive(Event, Debug)]
@@ -78,7 +101,7 @@ pub enum RpcCall {
         to: Transform,
     },
     TeleportPlayer {
-        scene: Entity,
+        scene: Option<Entity>,
         to: IVec2,
         response: RpcResultSender<Result<(), String>>,
     },
@@ -149,4 +172,15 @@ pub enum RpcCall {
         hash: String,
         sender: RpcEventSender,
     },
+    TestPlan {
+        scene: Entity,
+        plan: Vec<String>,
+    },
+    TestResult {
+        scene: Entity,
+        name: String,
+        success: bool,
+        error: Option<String>,
+    },
+    TestSnapshot(CompareSnapshot),
 }

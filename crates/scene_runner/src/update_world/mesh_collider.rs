@@ -711,7 +711,7 @@ fn update_collider_transforms(
     changed_colliders: Query<
         (&ContainerEntity, &HasCollider, &GlobalTransform),
         (
-            Or<(Changed<GlobalTransform>, Added<HasCollider>)>, // needs updating
+            Or<(Changed<GlobalTransform>, Changed<HasCollider>)>, // needs updating
         ),
     >,
     mut scene_data: Query<&mut SceneColliderData>,
@@ -912,6 +912,7 @@ fn update_collider_transforms(
                 }
             }
 
+            #[allow(clippy::map_identity)]
             if Some((&container.root, &collider.0)) == parent_collider.as_ref().map(|(a, b)| (a, b))
             {
                 let player_transform = player_transform.as_deref_mut().unwrap();

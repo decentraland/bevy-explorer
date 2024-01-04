@@ -38,6 +38,8 @@ fn main() -> Result<()> {
         "visibility_component",
         "avatar_modifier_area",
         "nft_shape",
+        "tween",
+        "tween_state",
     ];
 
     let mut sources = components

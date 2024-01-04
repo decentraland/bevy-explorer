@@ -11,7 +11,7 @@ use bevy::{
 use common::sets::SceneSets;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
-    proto_components::sdk::components::{PbAudioStream, PbVideoEvent, PbVideoPlayer},
+    proto_components::sdk::components::{PbAudioStream, PbVideoEvent, PbVideoPlayer, VideoState},
     SceneComponentId,
 };
 use ipfs::IpfsResource;
@@ -113,8 +113,17 @@ fn play_videos(
                 .copy_from_slice(frame.data(0));
         }
 
+        const VIDEO_REPORT_FREQUENCY: f64 = 1.0;
+        if new_state.is_none()
+            && (sink.current_time > sink.last_reported_time + VIDEO_REPORT_FREQUENCY
+                || sink.current_time < sink.last_reported_time)
+        {
+            new_state = Some(VideoState::VsPlaying);
+        }
+
         if let Some(state) = new_state {
             if let Ok(mut context) = scenes.get_mut(container.root) {
+                debug!("send current time = {}", sink.current_time);
                 let event = PbVideoEvent {
                     timestamp: frame.0,
                     tick_number: context.tick_number,
@@ -128,6 +137,7 @@ fn play_videos(
                     container.container_id,
                     &event,
                 );
+                sink.last_reported_time = sink.current_time;
             }
         }
     }

@@ -11,6 +11,7 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use common::{
+    profile::SerializedProfile,
     rpc::{PortableLocation, RpcCall, RpcEventSender, RpcResultSender, SpawnResponse},
     sets::SceneSets,
     structs::{PrimaryCamera, PrimaryUser},
@@ -116,6 +117,7 @@ fn move_player(
                 transform.rotation * player_transform.rotation.inverse() * dynamics.velocity;
 
             *player_transform = target_transform;
+            debug!("player transform to {:?}", target_transform);
         }
     }
 }
@@ -307,7 +309,7 @@ fn spawn_portable(
                         let Some(scenes) = config.scenes_urn else {
                             return Err("No scenesUrn on server/about/configurations".to_owned());
                         };
-                        let Some(urn) = scenes.get(0) else {
+                        let Some(urn) = scenes.first() else {
                             return Err("Empty scenesUrn on server/about/configurations".to_owned());
                         };
                         let hacked_urn = urn.replace('?', "?=&");
@@ -463,6 +465,7 @@ fn get_user_data(
     others: Query<(&ForeignPlayer, &UserProfile)>,
     me: Res<Wallet>,
     mut events: EventReader<RpcCall>,
+    mut pending_primary_requests: Local<Vec<RpcResultSender<Result<SerializedProfile, ()>>>>,
 ) {
     for (user, response) in events.read().filter_map(|ev| match ev {
         RpcCall::GetUserData { user, response } => Some((user, response)),
@@ -471,7 +474,7 @@ fn get_user_data(
         match user {
             None => match profile.profile.as_ref() {
                 Some(profile) => response.send(Ok(profile.content.clone())),
-                None => response.send(Err(())),
+                None => pending_primary_requests.push(response.clone()),
             },
             Some(address) => {
                 if let Some((_, profile)) = others
@@ -493,6 +496,14 @@ fn get_user_data(
                 }
 
                 response.send(Err(()));
+            }
+        }
+    }
+
+    if !pending_primary_requests.is_empty() {
+        if let Some(profile) = profile.profile.as_ref() {
+            for sender in pending_primary_requests.drain(..) {
+                sender.send(Ok(profile.content.clone()));
             }
         }
     }

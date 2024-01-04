@@ -28,10 +28,11 @@ pub struct VideoContext {
     decoder: decoder::Video,
     scaler_context: Context,
     rate: f64,
-    buffer: VecDeque<frame::video::Video>,
+    buffer: VecDeque<(usize, frame::video::Video)>,
     sink: tokio::sync::mpsc::Sender<VideoData>,
     current_frame: usize,
     start_frame: usize,
+    next_store_frame: usize,
 }
 
 #[derive(Debug, Error)]
@@ -124,6 +125,7 @@ impl VideoContext {
             sink,
             current_frame: 0,
             start_frame: 0,
+            next_store_frame: 0,
         })
     }
 }
@@ -140,7 +142,8 @@ impl FfmpegContext for VideoContext {
             let mut rgb_frame = frame::Video::empty();
             // run frame through scaler for color space conversion
             self.scaler_context.run(&decoded, &mut rgb_frame)?;
-            self.buffer.push_back(rgb_frame);
+            self.buffer.push_back((self.next_store_frame, rgb_frame));
+            self.next_store_frame += 1;
         }
         Ok(())
     }
@@ -159,11 +162,10 @@ impl FfmpegContext for VideoContext {
             self.current_frame,
             self.buffer.len()
         );
-        if let Some(frame) = self.buffer.pop_front() {
-            let _ = self.sink.blocking_send(VideoData::Frame(
-                frame,
-                self.current_frame as f64 / self.rate,
-            ));
+        if let Some((index, frame)) = self.buffer.pop_front() {
+            let _ = self
+                .sink
+                .blocking_send(VideoData::Frame(frame, index as f64 / self.rate));
             self.current_frame += 1;
         }
     }
@@ -173,8 +175,7 @@ impl FfmpegContext for VideoContext {
     }
 
     fn reset_start_frame(&mut self) {
-        self.start_frame = 0;
-        self.current_frame = 0;
+        self.next_store_frame = 0;
     }
 
     fn seconds_till_next_frame(&self) -> f64 {

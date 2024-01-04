@@ -74,9 +74,6 @@ pub fn process_streams(
                 for stream in streams.iter_mut() {
                     stream.reset_start_frame();
                 }
-                if start_instant.is_some() {
-                    start_instant = Some(Instant::now());
-                }
                 continue;
             } else if streams.iter().all(|ctx| ctx.buffered_time() == 0.0) {
                 info!("eof");

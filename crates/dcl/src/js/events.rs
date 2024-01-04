@@ -156,7 +156,11 @@ fn op_send_batch(state: &mut OpState) -> Vec<Event> {
         ($state: expr, $marker: ty, $id: expr) => {{
             if let Some(receiver) = state.try_borrow_mut::<EventReceiver<$marker>>() {
                 while let Ok(event_data) = receiver.inner.try_recv() {
-                    debug!("received {} event", <$marker as EventType>::label());
+                    debug!(
+                        "received {} event [{}]",
+                        <$marker as EventType>::label(),
+                        event_data
+                    );
                     results.push(Event {
                         generic: EventGeneric {
                             event_id: $id.to_owned(),
