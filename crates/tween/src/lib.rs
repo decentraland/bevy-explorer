@@ -145,7 +145,7 @@ pub fn update_tween(
                 .min(1.0)
         };
 
-        let updated_status = if playing && updated_time >= 1.0 {
+        let updated_status = if playing && updated_time == 1.0 {
             TweenStateStatus::TsCompleted
         } else if playing {
             TweenStateStatus::TsActive
