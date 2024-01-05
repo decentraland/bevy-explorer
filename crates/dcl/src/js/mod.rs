@@ -205,6 +205,9 @@ pub(crate) fn scene_thread(
 
     let state = runtime.op_state();
 
+    // store deno permission objects
+    state.borrow_mut().put(TP);
+
     // store scene detail in the runtime state
     state.borrow_mut().put(scene_context);
     state.borrow_mut().put(scene_js);
