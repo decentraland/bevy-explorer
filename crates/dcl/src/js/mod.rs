@@ -38,6 +38,7 @@ pub mod runtime;
 pub mod user_identity;
 
 pub mod comms;
+pub mod ethereum_controller;
 pub mod events;
 #[cfg(feature = "inspect")]
 pub mod inspector;

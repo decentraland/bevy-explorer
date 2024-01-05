@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use bevy::prelude::*;
-use common::{structs::ChainLink, util::AsH160};
+use common::{rpc::RPCSendableMessage, structs::ChainLink, util::AsH160};
 use ethers_core::types::{Signature, H160};
 use ethers_signers::{LocalWallet, Signer};
 use isahc::{config::Configurable, http::StatusCode, AsyncReadResponseExt, RequestExt};
@@ -22,14 +22,6 @@ pub struct SignResponseData {
     pub account: String,
     pub signature: String,
     pub chain_id: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RPCSendableMessage {
-    pub jsonrpc: String,
-    pub id: u64,
-    pub method: String,
-    pub params: Vec<serde_json::Value>, // Using serde_json::Value for unknown[]
 }
 
 #[derive(Debug, Serialize, Deserialize)]
