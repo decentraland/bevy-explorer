@@ -10,11 +10,18 @@ use rand::{thread_rng, Rng};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[derive(Deserialize, Debug)]
+pub struct RemoteWalletResponse<T> {
+    pub ok: bool,
+    pub reason: Option<String>,
+    pub response: Option<T>,
+}
+
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-struct SignResponseData {
-    account: String,
-    signature: String,
-    chain_id: u64,
+pub struct SignResponseData {
+    pub account: String,
+    pub signature: String,
+    pub chain_id: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -43,9 +50,9 @@ pub enum RemoteWalletRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct RegisterRequestBody {
-    id: String,
-    request: RemoteWalletRequest,
+pub struct RegisterRequestBody {
+    pub id: String,
+    pub request: RemoteWalletRequest,
 }
 
 const AUTH_FRONT_URL: &str = "https://auth.dclexplorer.com/";
@@ -69,7 +76,7 @@ pub fn gen_id() -> String {
 
 async fn fetch_server<T>(req_id: String) -> Result<T, anyhow::Error>
 where
-    T: DeserializeOwned + Unpin,
+    T: DeserializeOwned + Unpin + std::fmt::Debug,
 {
     let start_time = std::time::Instant::now();
     let mut attempt = 0;
@@ -94,13 +101,13 @@ where
         match response {
             Ok(mut response) => {
                 if response.status().is_success() {
-                    match response.json::<T>().await {
-                        Ok(response_data) => {
-                            return Ok(response_data);
-                        }
-                        Err(error) => {
-                            anyhow::bail!("error while parsing a task {:?}", error);
-                        }
+                    match response.json::<RemoteWalletResponse<T>>().await {
+                        Ok(rwr) => match (rwr.response, rwr.reason) {
+                            (Some(t), _) => return Ok(t),
+                            (_, Some(r)) => anyhow::bail!("remote server returned error: {}", r),
+                            _ => anyhow::bail!("invalid response (no response or reason)"),
+                        },
+                        Err(e) => anyhow::bail!("error parsing json as RemoteWalletResponse: {:?}", e),
                     }
                 } else {
                     if response.status() == StatusCode::NOT_FOUND {
