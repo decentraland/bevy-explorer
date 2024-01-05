@@ -107,7 +107,9 @@ where
                             (_, Some(r)) => anyhow::bail!("remote server returned error: {}", r),
                             _ => anyhow::bail!("invalid response (no response or reason)"),
                         },
-                        Err(e) => anyhow::bail!("error parsing json as RemoteWalletResponse: {:?}", e),
+                        Err(e) => {
+                            anyhow::bail!("error parsing json as RemoteWalletResponse: {:?}", e)
+                        }
                     }
                 } else {
                     if response.status() == StatusCode::NOT_FOUND {

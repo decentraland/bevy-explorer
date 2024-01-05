@@ -12,7 +12,10 @@ use ethers_core::types::Address;
 use ethers_signers::LocalWallet;
 use ipfs::{CurrentRealm, IpfsAssetServer};
 use scene_runner::Toaster;
-use ui_core::{dialog::{ButtonDisabledText, ButtonText, IntoDialogBody, SpawnButton, SpawnDialog}, BODY_TEXT_STYLE};
+use ui_core::{
+    dialog::{ButtonDisabledText, ButtonText, IntoDialogBody, SpawnButton, SpawnDialog},
+    BODY_TEXT_STYLE,
+};
 use wallet::{browser_auth::try_create_remote_ephemeral, Wallet};
 
 pub struct LoginPlugin;
@@ -73,8 +76,11 @@ impl IntoDialogBody for CancelLoginDialog {
         let sender = self.sender.clone();
 
         commands.spawn(
-            TextBundle::from_section("Please follow the directions in your browser to connect your account", BODY_TEXT_STYLE.get().unwrap().clone())
-                .with_text_alignment(TextAlignment::Center),
+            TextBundle::from_section(
+                "Please follow the directions in your browser to connect your account",
+                BODY_TEXT_STYLE.get().unwrap().clone(),
+            )
+            .with_text_alignment(TextAlignment::Center),
         );
 
         commands.spawn_empty().spawn_button("Cancel", move || {
@@ -230,15 +236,13 @@ fn connect_wallet(
                 *receiver = Some(rx);
                 *dialog = Some(commands.spawn_dialog(
                     "Login".to_string(),
-                    CancelLoginDialog {
-                        sender: sx,
-                    },
+                    CancelLoginDialog { sender: sx },
                     "Quit",
                     || {
                         std::process::exit(0);
                     },
                 ));
-        
+
                 let ipfs = ipfas.ipfs().clone();
                 *task = Some(IoTaskPool::get().spawn(async move {
                     let (root_address, local_wallet, auth, _) =
