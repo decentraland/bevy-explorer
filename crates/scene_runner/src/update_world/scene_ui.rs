@@ -296,7 +296,7 @@ impl From<PbUiBackground> for UiBackground {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum VAlign {
     Top,
     Middle,
@@ -738,31 +738,12 @@ fn layout_scene_ui(
 
                                 if let Some(text) = maybe_text {
                                     ent_cmds = ent_cmds.with_children(|c| {
-                                        c.spawn(NodeBundle {
-                                            style: Style {
-                                                position_type: PositionType::Absolute,
-                                                left: Val::Px(0.0),
-                                                right: Val::Px(0.0),
-                                                top: Val::Px(0.0),
-                                                bottom: Val::Px(0.0),
-                                                justify_content: match text.h_align {
-                                                    TextAlignment::Left => {
-                                                        JustifyContent::FlexStart
-                                                    }
-                                                    TextAlignment::Center => JustifyContent::Center,
-                                                    TextAlignment::Right => JustifyContent::FlexEnd,
-                                                },
-                                                align_items: match text.v_align {
-                                                    VAlign::Top => AlignItems::FlexStart,
-                                                    VAlign::Middle => AlignItems::Center,
-                                                    VAlign::Bottom => AlignItems::FlexEnd,
-                                                },
-                                                ..Default::default()
-                                            },
-                                            ..Default::default()
-                                        })
-                                        .with_children(
-                                            |c| {
+                                        c.spawn(NodeBundle::default())
+                                            .with_children(|c| {
+                                                if text.v_align != VAlign::Top {
+                                                    c.spacer();
+                                                }
+
                                                 c.spawn(TextBundle {
                                                     text: Text {
                                                         sections: vec![TextSection::new(
@@ -784,6 +765,10 @@ fn layout_scene_ui(
                                                     z_index: ZIndex::Local(1),
                                                     ..Default::default()
                                                 });
+
+                                                if text.v_align != VAlign::Bottom {
+                                                    c.spacer();
+                                                }
                                             },
                                         );
                                     });
