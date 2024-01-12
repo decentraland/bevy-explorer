@@ -198,7 +198,14 @@ fn update_world_ui(
             commands.insert(TargetCamera(camera));
         }
 
-        wui.lookup.insert(ent, WorldUiEntitySet { camera, quad, ui: ui.dispose_ui.then_some(ui.ui_root) });
+        wui.lookup.insert(
+            ent,
+            WorldUiEntitySet {
+                camera,
+                quad,
+                ui: ui.dispose_ui.then_some(ui.ui_root),
+            },
+        );
     }
 }
 

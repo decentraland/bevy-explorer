@@ -41,7 +41,10 @@ use dcl_component::{
     SceneComponentId, SceneEntityId,
 };
 use ipfs::{ActiveEntityTask, IpfsAssetServer, IpfsModifier};
-use scene_runner::{update_world::{AddCrdtInterfaceExt, billboard::Billboard}, ContainingScene, SceneEntity};
+use scene_runner::{
+    update_world::{billboard::Billboard, AddCrdtInterfaceExt},
+    ContainingScene, SceneEntity,
+};
 use ui_core::TEXT_SHAPE_FONT;
 use world_ui::WorldUi;
 
@@ -1496,40 +1499,46 @@ fn process_avatar(
             wearable_models, wearable_texs, def.hides, loaded_avatar.skin_materials.len(), loaded_avatar.hair_materials.len(), colored_materials.len()
         );
 
-        commands
-            .entity(avatar_ent)
-            .try_insert(AvatarProcessed);
+        commands.entity(avatar_ent).try_insert(AvatarProcessed);
 
         if let Some(label) = def.label.as_ref() {
-            let label_ui = commands.spawn(TextBundle::from_section(label, TextStyle {
-                font_size: 25.0,
-                color: Color::WHITE,
-                font: TEXT_SHAPE_FONT.get().unwrap().clone(),
-            })).id();
+            let label_ui = commands
+                .spawn(TextBundle::from_section(
+                    label,
+                    TextStyle {
+                        font_size: 25.0,
+                        color: Color::WHITE,
+                        font: TEXT_SHAPE_FONT.get().unwrap().clone(),
+                    },
+                ))
+                .id();
 
-            commands
-                .entity(avatar_ent)
-                .with_children(|commands| {
-                    commands.spawn((
-                        SpatialBundle {
-                            transform: Transform::from_translation(Vec3::Y * 2.2),
-                            ..Default::default()
-                        },
-                        WorldUi {
-                            width: 1024,
-                            height: 25,
-                            resize_width: Some(ResizeAxis::MaxContent),
-                            resize_height: None,
-                            pix_per_m: 100.0,
-                            valign: 0.0,
-                            add_y_pix: 0.0,
-                            bounds: Vec4::new(std::f32::MIN, std::f32::MIN, std::f32::MAX, std::f32::MAX),
-                            ui_root: label_ui,
-                            dispose_ui: true,                                            
-                        }, 
-                        Billboard::Y,
-                    ));
-                });
+            commands.entity(avatar_ent).with_children(|commands| {
+                commands.spawn((
+                    SpatialBundle {
+                        transform: Transform::from_translation(Vec3::Y * 2.2),
+                        ..Default::default()
+                    },
+                    WorldUi {
+                        width: 1024,
+                        height: 25,
+                        resize_width: Some(ResizeAxis::MaxContent),
+                        resize_height: None,
+                        pix_per_m: 100.0,
+                        valign: 0.0,
+                        add_y_pix: 0.0,
+                        bounds: Vec4::new(
+                            std::f32::MIN,
+                            std::f32::MIN,
+                            std::f32::MAX,
+                            std::f32::MAX,
+                        ),
+                        ui_root: label_ui,
+                        dispose_ui: true,
+                    },
+                    Billboard::Y,
+                ));
+            });
         }
     }
 }
