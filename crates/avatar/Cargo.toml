@@ -16,6 +16,7 @@ scene_runner = { workspace = true }
 ui_core = { workspace = true }
 wallet = { workspace = true }
 input_manager = { workspace = true }
+world_ui = { workspace = true }
 
 bevy = { workspace = true }
 bevy_mod_billboard = { workspace = true }
