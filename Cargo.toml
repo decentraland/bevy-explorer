@@ -22,6 +22,7 @@ system_ui = { path="crates/system_ui" }
 user_input = { path="crates/user_input" }
 visuals = { path="crates/visuals" }
 ui_core = { path="crates/ui_core" }
+scene_material = { path="crates/scene_material" }
 scene_runner = { path="crates/scene_runner" }
 console = { path="crates/console" }
 av = { path="crates/av" }
@@ -31,6 +32,7 @@ restricted_actions = { path="crates/restricted_actions" }
 wallet = { path="crates/wallet" }
 nft = { path="crates/nft" }
 tween = { path="crates/tween" }
+world_ui = { path="crates/world_ui" }
 
 bevy = { version = "0.12", features=["jpeg"] }
 bevy_console = { git = "https://github.com/msklosak/bevy-console", branch = "bevy_0.12_update" }
@@ -79,6 +81,8 @@ wallet = { workspace = true }
 dcl = { workspace = true }
 nft = { workspace = true }
 tween = { workspace = true }
+scene_material = { workspace = true }
+world_ui = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }

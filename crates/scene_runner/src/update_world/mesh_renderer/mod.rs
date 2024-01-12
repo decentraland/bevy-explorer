@@ -7,15 +7,13 @@ use dcl_component::{
     proto_components::sdk::components::{pb_mesh_renderer, PbMeshRenderer},
     SceneComponentId,
 };
+use scene_material::{SceneBound, SceneMaterial};
 
 use crate::{renderer_context::RendererSceneContext, SceneEntity};
 
 use self::truncated_cone::TruncatedCone;
 
-use super::{
-    scene_material::{SceneBound, SceneMaterial},
-    AddCrdtInterfaceExt,
-};
+use super::AddCrdtInterfaceExt;
 
 pub mod truncated_cone;
 pub struct MeshDefinitionPlugin;

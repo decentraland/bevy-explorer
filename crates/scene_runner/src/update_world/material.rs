@@ -12,12 +12,9 @@ use dcl_component::{
     },
     SceneComponentId, SceneEntityId,
 };
+use scene_material::{SceneBound, SceneMaterial};
 
-use super::{
-    mesh_renderer::update_mesh,
-    scene_material::{SceneBound, SceneMaterial},
-    AddCrdtInterfaceExt,
-};
+use super::{mesh_renderer::update_mesh, AddCrdtInterfaceExt};
 
 pub struct MaterialDefinitionPlugin;
 

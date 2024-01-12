@@ -24,6 +24,7 @@ use common::{
     },
 };
 use restricted_actions::RestrictedActionsPlugin;
+use scene_material::SceneBoundPlugin;
 use scene_runner::{
     automatic_testing::AutomaticTestingPlugin,
     initialize_scene::TestingData,
@@ -44,6 +45,7 @@ use ui_core::UiCorePlugin;
 use user_input::UserInputPlugin;
 use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
+use world_ui::WorldUiPlugin;
 
 fn main() {
     // warnings before log init must be stored and replayed later
@@ -213,7 +215,9 @@ fn main() {
         .add_plugins(WalletPlugin)
         .add_plugins(CommsPlugin)
         .add_plugins(NftShapePlugin)
-        .add_plugins(TweenPlugin);
+        .add_plugins(TweenPlugin)
+        .add_plugins(SceneBoundPlugin)
+        .add_plugins(WorldUiPlugin);
 
     if !no_avatar {
         app.add_plugins(AvatarPlugin);

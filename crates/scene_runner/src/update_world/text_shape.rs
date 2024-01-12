@@ -87,29 +87,19 @@ bevy: not implemented
 
 */
 
-use bevy::{
-    pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster},
-    prelude::*,
-    render::render_resource::{
-        AsBindGroup, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
-        TextureUsages,
-    },
-    utils::HashMap,
-};
-use common::{sets::SceneSets, util::TryPushChildrenEx};
+use bevy::{prelude::*, utils::HashMap};
+use common::sets::SceneLoopSets;
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::sdk::components::{common::TextAlignMode, PbTextShape},
     SceneComponentId,
 };
 use ui_core::TEXT_SHAPE_FONT;
+use world_ui::WorldUi;
 
 use crate::{renderer_context::RendererSceneContext, SceneEntity};
 
-use super::{
-    scene_material::{SceneBound, SceneMaterial},
-    AddCrdtInterfaceExt,
-};
+use super::AddCrdtInterfaceExt;
 
 pub struct TextShapePlugin;
 
@@ -119,8 +109,10 @@ impl Plugin for TextShapePlugin {
             SceneComponentId::TEXT_SHAPE,
             ComponentPosition::EntityOnly,
         );
-        app.add_systems(Update, update_text_shapes.in_set(SceneSets::PostLoop));
-        app.add_plugins(MaterialPlugin::<TextShapeMaterial>::default());
+        app.add_systems(
+            Update,
+            update_text_shapes.in_set(SceneLoopSets::UpdateWorld),
+        );
     }
 }
 
@@ -135,21 +127,15 @@ impl From<PbTextShape> for TextShape {
 
 const PIX_PER_M: f32 = 100.0;
 
-#[allow(clippy::too_many_arguments)]
 fn update_text_shapes(
     mut commands: Commands,
     query: Query<(Entity, &SceneEntity, &TextShape), Changed<TextShape>>,
     mut removed: RemovedComponents<TextShape>,
     scenes: Query<&RendererSceneContext>,
-    mut images: ResMut<Assets<Image>>,
-    mut old_items: Local<HashMap<Entity, Vec<Entity>>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<TextShapeMaterial>>,
-    mut camera_query: Query<&mut ResizeTarget>,
-    quad_query: Query<&Handle<TextShapeMaterial>>,
+    mut old_ui: Local<HashMap<Entity, Entity>>,
 ) {
-    // remove deleted nodes
-    for e in removed.read().flat_map(|r| old_items.remove(&r)).flatten() {
+    // remove deleted ui nodes
+    for e in removed.read().flat_map(|r| old_ui.remove(&r)) {
         if let Some(commands) = commands.get_entity(e) {
             commands.despawn_recursive();
         }
@@ -162,7 +148,7 @@ fn update_text_shapes(
             .map(|c| c.bounds)
             .unwrap_or_default();
 
-        println!("ts: {:?}", text_shape.0);
+        debug!("ts: {:?}", text_shape.0);
 
         let text_align = text_shape
             .0
@@ -173,13 +159,13 @@ fn update_text_shapes(
         let valign = match text_align {
             TextAlignMode::TamTopLeft
             | TextAlignMode::TamTopCenter
-            | TextAlignMode::TamTopRight => 0.5,
+            | TextAlignMode::TamTopRight => -0.5,
             TextAlignMode::TamMiddleLeft
             | TextAlignMode::TamMiddleCenter
             | TextAlignMode::TamMiddleRight => 0.0,
             TextAlignMode::TamBottomLeft
             | TextAlignMode::TamBottomCenter
-            | TextAlignMode::TamBottomRight => -0.5,
+            | TextAlignMode::TamBottomRight => 0.5,
         };
 
         let halign = match text_align {
@@ -202,123 +188,18 @@ fn update_text_shapes(
 
         let resize_width =
             (text_shape.0.width.is_none() || !wrapping).then_some(ResizeAxis::MaxContent);
-        
+
         let max_height = match text_shape.0.line_count {
             Some(lines) => lines as u32 * font_size as u32,
             None => 4096,
         };
-        
-        let image_size = Extent3d {
-            width: (text_shape.0.width.unwrap_or(1.0) * PIX_PER_M) as u32,
-            height: max_height,
-            depth_or_array_layers: 1,
-        };
 
-        // create or update camera and quad
-        let (camera, quad) = if let Some(prev_items) = old_items.get(&ent) {
-            let mut prev_items = prev_items.iter();
-            let (camera, ui, quad) = (
-                prev_items.next().unwrap(),
-                prev_items.next().unwrap(),
-                prev_items.next().unwrap(),
-            );
-
-            // update camera
-            if let Ok(mut target) = camera_query.get_mut(*camera) {
-                target.width = resize_width;
-            }
-
-            if let Ok(quad) = quad_query.get(*quad) {
-                if let Some(mat) = materials.get_mut(quad) {
-                    // update valign
-                    mat.extension.data.valign = valign;
-
-                    // update image
-                    if let Some(image) =
-                        images.get_mut(mat.base.base.base_color_texture.clone().unwrap())
-                    {
-                        image.resize(image_size)
-                    }
-                }
-            }
-
-            // remove previous ui node
-            if let Some(commands) = commands.get_entity(*ui) {
+        // remove old ui nodes
+        if let Some(old_ui) = old_ui.remove(&ent) {
+            if let Some(commands) = commands.get_entity(old_ui) {
                 commands.despawn_recursive();
             }
-            (*camera, *quad)
-        } else {
-            // create render target image (it'll be resized)
-            let mut image = Image::new_fill(
-                image_size,
-                TextureDimension::D2,
-                &[0, 0, 0, 0],
-                TextureFormat::Bgra8UnormSrgb,
-            );
-            image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
-            let image = images.add(image);
-
-            let camera = commands
-                .spawn((
-                    Camera2dBundle {
-                        camera: Camera {
-                            order: -1,
-                            target: bevy::render::camera::RenderTarget::Image(image.clone()),
-                            ..Default::default()
-                        },
-                        camera_2d: Camera2d {
-                            clear_color: bevy::core_pipeline::clear_color::ClearColorConfig::Custom(
-                                Color::NONE,
-                            ),
-                        },
-                        ..Default::default()
-                    },
-                    ResizeTarget {
-                        width: resize_width,
-                        height: Some(ResizeAxis::MaxContent),
-                        info: ResizeInfo {
-                            min_width: None,
-                            max_width: Some(4096),
-                            min_height: None,
-                            max_height: Some(max_height),
-                            viewport_reference_size: UVec2::new(1024, 1024),
-                        },
-                    },
-                ))
-                .id();
-
-            let quad = commands
-                .spawn((
-                    MaterialMeshBundle {
-                        mesh: meshes.add(shape::Quad::default().into()),
-                        material: materials.add(TextShapeMaterial {
-                            base: SceneMaterial {
-                                base: StandardMaterial {
-                                    base_color_texture: Some(image),
-                                    unlit: true,
-                                    alpha_mode: AlphaMode::Blend,
-                                    ..Default::default()
-                                },
-                                extension: SceneBound { bounds },
-                            },
-                            extension: TextQuad {
-                                data: TextQuadData {
-                                    valign,
-                                    pix_per_m: PIX_PER_M,
-                                    add_y_pix,
-                                },
-                            },
-                        }),
-                        ..Default::default()
-                    },
-                    NotShadowCaster,
-                ))
-                .id();
-
-            commands.entity(ent).try_push_children(&[quad]);
-
-            (camera, quad)
-        };
+        }
 
         // create ui layout
         let mut text = Text::from_section(
@@ -339,20 +220,17 @@ fn update_text_shapes(
             text = text.with_no_wrap();
         }
 
-        let ui = commands
-            .spawn((
-                NodeBundle {
-                    style: Style {
-                        flex_direction: FlexDirection::Row,
-                        width: Val::Percent(100.0),
-                        height: Val::Percent(100.0),
-                        ..Default::default()
-                    },
-                    // background_color: Color::rgba(1.0, 0.0, 0.0, 0.25).into(),
+        let ui_root = commands
+            .spawn((NodeBundle {
+                style: Style {
+                    flex_direction: FlexDirection::Row,
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
                     ..Default::default()
                 },
-                TargetCamera(camera),
-            ))
+                // background_color: Color::rgba(1.0, 0.0, 0.0, 0.25).into(),
+                ..Default::default()
+            },))
             .with_children(|c| {
                 if text_shape.0.padding_left.is_some() {
                     c.spawn(NodeBundle {
@@ -366,13 +244,12 @@ fn update_text_shapes(
                     });
                 }
 
-                c.spawn((NodeBundle::default(), TargetCamera(camera)))
-                    .with_children(|c| {
-                        c.spawn(TextBundle {
-                            text,
-                            ..Default::default()
-                        });
+                c.spawn(NodeBundle::default()).with_children(|c| {
+                    c.spawn(TextBundle {
+                        text,
+                        ..Default::default()
                     });
+                });
 
                 if text_shape.0.padding_right.is_some() {
                     c.spawn(NodeBundle {
@@ -388,31 +265,17 @@ fn update_text_shapes(
             })
             .id();
 
-        old_items.insert(ent, vec![camera, ui, quad]);
-    }
-}
-
-pub type TextShapeMaterial = ExtendedMaterial<SceneMaterial, TextQuad>;
-
-#[derive(Asset, TypePath, Clone, AsBindGroup)]
-pub struct TextQuad {
-    #[uniform(200)]
-    pub data: TextQuadData,
-}
-
-#[derive(Clone, ShaderType)]
-pub struct TextQuadData {
-    pub valign: f32,
-    pub pix_per_m: f32,
-    pub add_y_pix: f32,
-}
-
-impl MaterialExtension for TextQuad {
-    fn vertex_shader() -> bevy::render::render_resource::ShaderRef {
-        ShaderRef::Path("shaders/text_quad_vertex.wgsl".into())
-    }
-
-    fn prepass_vertex_shader() -> ShaderRef {
-        ShaderRef::Path("shaders/text_quad_vertex.wgsl".into())
+        old_ui.insert(ent, ui_root);
+        commands.entity(ent).try_insert(WorldUi {
+            width: (text_shape.0.width.unwrap_or(1.0) * PIX_PER_M) as u32,
+            height: max_height,
+            resize_width,
+            resize_height: Some(ResizeAxis::MaxContent),
+            pix_per_m: PIX_PER_M,
+            valign,
+            add_y_pix,
+            bounds,
+            ui_root,
+        });
     }
 }

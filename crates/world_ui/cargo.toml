@@ -1,0 +1,13 @@
+[package]
+name = "world_ui"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { workspace = true }
+ui_core = { workspace = true }
+scene_material = { workspace = true }
+
+bevy = { workspace = true }
