@@ -19,7 +19,6 @@ input_manager = { workspace = true }
 world_ui = { workspace = true }
 
 bevy = { workspace = true }
-bevy_mod_billboard = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 urn = { workspace = true }

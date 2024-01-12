@@ -204,7 +204,7 @@ fn main() {
 
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
 
-    app.add_plugins(bevy_mod_billboard::prelude::BillboardPlugin)
+    app
         .add_plugins(InputManagerPlugin)
         .add_plugins(SceneRunnerPlugin)
         .add_plugins(UserInputPlugin)

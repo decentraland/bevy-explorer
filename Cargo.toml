@@ -36,7 +36,6 @@ world_ui = { path="crates/world_ui" }
 
 bevy = { version = "0.12", features=["jpeg"] }
 bevy_console = { git = "https://github.com/msklosak/bevy-console", branch = "bevy_0.12_update" }
-bevy_mod_billboard = { git = "https://github.com/robtfm/bevy_mod_billboard", branch = "scene_bound" }
 bevy_egui = "0.23"
 
 serde = "1.0.152"
@@ -86,7 +85,6 @@ world_ui = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }
-bevy_mod_billboard = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
