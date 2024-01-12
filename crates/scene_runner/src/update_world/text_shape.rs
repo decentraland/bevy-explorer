@@ -87,7 +87,7 @@ bevy: not implemented
 
 */
 
-use bevy::{prelude::*, utils::HashMap};
+use bevy::prelude::*;
 use common::sets::SceneLoopSets;
 use dcl::interface::ComponentPosition;
 use dcl_component::{
@@ -132,12 +132,11 @@ fn update_text_shapes(
     query: Query<(Entity, &SceneEntity, &TextShape), Changed<TextShape>>,
     mut removed: RemovedComponents<TextShape>,
     scenes: Query<&RendererSceneContext>,
-    mut old_ui: Local<HashMap<Entity, Entity>>,
 ) {
     // remove deleted ui nodes
-    for e in removed.read().flat_map(|r| old_ui.remove(&r)) {
-        if let Some(commands) = commands.get_entity(e) {
-            commands.despawn_recursive();
+    for e in removed.read() {
+        if let Some(mut commands) = commands.get_entity(e) {
+            commands.remove::<WorldUi>();
         }
     }
 
@@ -193,13 +192,6 @@ fn update_text_shapes(
             Some(lines) => lines as u32 * font_size as u32,
             None => 4096,
         };
-
-        // remove old ui nodes
-        if let Some(old_ui) = old_ui.remove(&ent) {
-            if let Some(commands) = commands.get_entity(old_ui) {
-                commands.despawn_recursive();
-            }
-        }
 
         // create ui layout
         let mut text = Text::from_section(
@@ -265,7 +257,6 @@ fn update_text_shapes(
             })
             .id();
 
-        old_ui.insert(ent, ui_root);
         commands.entity(ent).try_insert(WorldUi {
             width: (text_shape.0.width.unwrap_or(1.0) * PIX_PER_M) as u32,
             height: max_height,
@@ -276,6 +267,7 @@ fn update_text_shapes(
             add_y_pix,
             bounds,
             ui_root,
+            dispose_ui: true,
         });
     }
 }

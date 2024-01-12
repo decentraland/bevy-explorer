@@ -27,6 +27,7 @@ impl Plugin for WorldUiPlugin {
 struct WorldUiEntitySet {
     camera: Entity,
     quad: Entity,
+    ui: Option<Entity>,
 }
 
 #[derive(Resource, Default)]
@@ -45,6 +46,7 @@ pub struct WorldUi {
     pub add_y_pix: f32,
     pub bounds: Vec4,
     pub ui_root: Entity,
+    pub dispose_ui: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -66,6 +68,9 @@ fn update_world_ui(
                 commands.despawn_recursive();
             }
             if let Some(commands) = commands.get_entity(entities.quad) {
+                commands.despawn_recursive();
+            }
+            if let Some(commands) = entities.ui.and_then(|ui| commands.get_entity(ui)) {
                 commands.despawn_recursive();
             }
         }
@@ -112,6 +117,11 @@ fn update_world_ui(
                 }
             }
 
+            // dispose of previous ui if required
+            if let Some(commands) = prev_items.ui.and_then(|e| commands.get_entity(e)) {
+                commands.despawn_recursive();
+            }
+
             (prev_items.camera, prev_items.quad)
         } else {
             // create render target image (it'll be resized)
@@ -134,7 +144,7 @@ fn update_world_ui(
                         },
                         camera_2d: Camera2d {
                             clear_color: bevy::core_pipeline::clear_color::ClearColorConfig::Custom(
-                                Color::BLUE,
+                                Color::NONE,
                             ),
                         },
                         ..Default::default()
@@ -162,6 +172,8 @@ fn update_world_ui(
                                 base: StandardMaterial {
                                     base_color_texture: Some(image),
                                     unlit: true,
+                                    double_sided: true,
+                                    cull_mode: None,
                                     alpha_mode: AlphaMode::Blend,
                                     ..Default::default()
                                 },
@@ -186,7 +198,7 @@ fn update_world_ui(
             commands.insert(TargetCamera(camera));
         }
 
-        wui.lookup.insert(ent, WorldUiEntitySet { camera, quad });
+        wui.lookup.insert(ent, WorldUiEntitySet { camera, quad, ui: ui.dispose_ui.then_some(ui.ui_root) });
     }
 }
 
