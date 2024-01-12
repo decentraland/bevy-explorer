@@ -738,32 +738,57 @@ fn layout_scene_ui(
 
                                 if let Some(text) = maybe_text {
                                     ent_cmds = ent_cmds.with_children(|c| {
-                                        c.spawn(NodeBundle::default())
+                                        c.spawn(NodeBundle {
+                                            style: Style {
+                                                flex_direction: FlexDirection::Column,
+                                                width: Val::Percent(100.0),
+                                                height: Val::Percent(100.0),
+                                                ..Default::default()
+                                            },
+                                            ..Default::default()
+                                        })
                                             .with_children(|c| {
                                                 if text.v_align != VAlign::Top {
                                                     c.spacer();
                                                 }
 
-                                                c.spawn(TextBundle {
-                                                    text: Text {
-                                                        sections: vec![TextSection::new(
-                                                            text.text.clone(),
-                                                            TextStyle {
-                                                                font: TITLE_TEXT_STYLE
-                                                                    .get()
-                                                                    .unwrap()
-                                                                    .clone()
-                                                                    .font, // TODO fix this
-                                                                font_size: text.font_size,
-                                                                color: text.color,
-                                                            },
-                                                        )],
-                                                        alignment: text.h_align,
-                                                        linebreak_behavior:
-                                                            bevy::text::BreakLineOn::NoWrap,
+                                                c.spawn(NodeBundle {
+                                                    style: Style {
+                                                        flex_direction: FlexDirection::Row,
+                                                        width: Val::Percent(100.0),
+                                                        ..Default::default()
                                                     },
-                                                    z_index: ZIndex::Local(1),
                                                     ..Default::default()
+                                                }).with_children(|c| {
+                                                    if text.h_align != TextAlignment::Left {
+                                                        c.spacer();
+                                                    }
+
+                                                    c.spawn(TextBundle {
+                                                        text: Text {
+                                                            sections: vec![TextSection::new(
+                                                                text.text.clone(),
+                                                                TextStyle {
+                                                                    font: TITLE_TEXT_STYLE
+                                                                        .get()
+                                                                        .unwrap()
+                                                                        .clone()
+                                                                        .font, // TODO fix this
+                                                                    font_size: text.font_size,
+                                                                    color: text.color,
+                                                                },
+                                                            )],
+                                                            alignment: text.h_align,
+                                                            linebreak_behavior:
+                                                                bevy::text::BreakLineOn::NoWrap,
+                                                        },
+                                                        z_index: ZIndex::Local(1),
+                                                        ..Default::default()
+                                                    });
+
+                                                    if text.h_align != TextAlignment::Right {
+                                                        c.spacer();
+                                                    }
                                                 });
 
                                                 if text.v_align != VAlign::Bottom {
