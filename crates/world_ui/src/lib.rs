@@ -83,8 +83,8 @@ fn update_world_ui(
 
     for (ent, ui) in q.iter() {
         let image_size = Extent3d {
-            width: ui.width,
-            height: ui.height,
+            width: ui.width.max(16),
+            height: ui.height.max(16),
             depth_or_array_layers: 1,
         };
 
@@ -101,6 +101,8 @@ fn update_world_ui(
                 cam.is_active = true;
                 target.width = ui.resize_width;
                 target.height = ui.resize_height;
+                target.info.max_width = Some(ui.width);
+                target.info.max_height = Some(ui.height);
             }
 
             if let Ok(quad) = quad_query.get(prev_items.quad) {

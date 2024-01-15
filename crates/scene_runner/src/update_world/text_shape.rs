@@ -94,7 +94,7 @@ use dcl_component::{
     proto_components::sdk::components::{common::TextAlignMode, PbTextShape},
     SceneComponentId,
 };
-use ui_core::TEXT_SHAPE_FONT;
+use ui_core::{TEXT_SHAPE_FONT, ui_builder::SpawnSpacer};
 use world_ui::WorldUi;
 
 use crate::{renderer_context::RendererSceneContext, SceneEntity};
@@ -116,7 +116,7 @@ impl Plugin for TextShapePlugin {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Clone, PartialEq)]
 pub struct TextShape(pub PbTextShape);
 
 impl From<PbTextShape> for TextShape {
@@ -185,12 +185,17 @@ fn update_text_shapes(
 
         let wrapping = text_shape.0.text_wrapping() && !text_shape.0.font_auto_size();
 
+        let width = if wrapping {
+            (text_shape.0.width.unwrap_or(1.0) * PIX_PER_M) as u32
+        } else {
+            4096
+        };
         let resize_width =
             (text_shape.0.width.is_none() || !wrapping).then_some(ResizeAxis::MaxContent);
 
-        let max_height = match text_shape.0.line_count {
-            Some(lines) => lines as u32 * font_size as u32,
-            None => 4096,
+        let max_height = match text_shape.0.line_count() {
+            0 => 4096,
+            lines => lines as u32 * font_size as u32,
         };
 
         // create ui layout
@@ -236,12 +241,31 @@ fn update_text_shapes(
                     });
                 }
 
-                c.spawn(NodeBundle::default()).with_children(|c| {
+                if halign != TextAlignment::Left {
+                    c.spacer();
+                }
+
+                c.spawn(NodeBundle{
+                    background_color: Color::rgba(0.0, 0.0, 1.0, 0.25).into(),
+                    ..Default::default()
+                }).with_children(|c| {
                     c.spawn(TextBundle {
                         text,
+                        style: Style {
+                            align_self: match halign {
+                                TextAlignment::Left => AlignSelf::FlexStart,
+                                TextAlignment::Center => AlignSelf::Center,
+                                TextAlignment::Right => AlignSelf::FlexEnd,
+                            },
+                            ..Default::default()
+                        },
                         ..Default::default()
                     });
                 });
+
+                if halign != TextAlignment::Right {
+                    c.spacer();
+                }
 
                 if text_shape.0.padding_right.is_some() {
                     c.spawn(NodeBundle {
@@ -258,7 +282,7 @@ fn update_text_shapes(
             .id();
 
         commands.entity(ent).try_insert(WorldUi {
-            width: (text_shape.0.width.unwrap_or(1.0) * PIX_PER_M) as u32,
+            width,
             height: max_height,
             resize_width,
             resize_height: Some(ResizeAxis::MaxContent),
