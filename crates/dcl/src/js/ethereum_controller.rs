@@ -8,6 +8,8 @@ use ethers_providers::{Provider, Ws};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 use tokio::sync::Mutex;
 
+use crate::interface::crdt_context::CrdtContext;
+
 const PROVIDER_URL: &str = "wss://rpc.decentraland.org/mainnet?project=kernel-local";
 
 // list of op declarations
@@ -27,6 +29,8 @@ async fn op_send_async(
         "eth_sendTransaction" | "eth_signTypedData_v4" => {
             let (sx, rx) = tokio::sync::oneshot::channel::<Result<serde_json::Value, String>>();
 
+            let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
+
             state
                 .borrow_mut()
                 .borrow_mut::<Vec<RpcCall>>()
@@ -37,6 +41,7 @@ async fn op_send_async(
                         method,
                         params,
                     },
+                    scene,
                     response: sx.into(),
                 });
 

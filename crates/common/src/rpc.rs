@@ -81,7 +81,7 @@ pub struct CompareSnapshotResult {
     pub similarity: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RPCSendableMessage {
     pub jsonrpc: String,
     pub id: u64,
@@ -193,6 +193,7 @@ pub enum RpcCall {
     TestSnapshot(CompareSnapshot),
     SendAsync {
         body: RPCSendableMessage,
+        scene: Entity,
         response: RpcResultSender<Result<serde_json::Value, String>>,
     },
 }

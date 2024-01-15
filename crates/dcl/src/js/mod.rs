@@ -87,7 +87,7 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
 
     let mut ops = vec![op_require::DECL, op_log::DECL, op_error::DECL];
 
-    let op_sets: [Vec<deno_core::OpDecl>; 10] = [
+    let op_sets: [Vec<deno_core::OpDecl>; 11] = [
         engine::ops(),
         restricted_actions::ops(),
         runtime::ops(),
@@ -98,6 +98,7 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
         events::ops(),
         comms::ops(),
         testing::ops(),
+        ethereum_controller::ops(),
     ];
 
     // add plugin registrations

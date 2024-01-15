@@ -855,6 +855,7 @@ fn layout_scene_ui(
                                             mut commands: Commands,
                                             entry: Query<&TextEntry>,
                                             mut context: Query<&mut RendererSceneContext>,
+                                            time: Res<Time>,
                                         | {
                                             let Ok(entry) = entry.get(ui_node) else {
                                                 warn!("failed to get text node on UiInput update");
@@ -869,6 +870,7 @@ fn layout_scene_ui(
                                                 value: entry.content.clone(),
                                                 is_submit: None,
                                             });
+                                            context.last_action_event = Some(time.elapsed_seconds());
                                             // store persistent state to the scene entity
                                             commands.entity(node).try_insert(UiInputPersistentState{content: entry.content.clone()});
                                         }),
@@ -892,6 +894,7 @@ fn layout_scene_ui(
                                             mut commands: Commands,
                                             combo: Query<(Entity, &ComboBox)>,
                                             mut context: Query<&mut RendererSceneContext>,
+                                            time: Res<Time>,
                                         | {
                                             let Ok((_, combo)) = combo.get(ui_node) else {
                                                 warn!("failed to get combo node on UiDropdown update");
@@ -905,6 +908,7 @@ fn layout_scene_ui(
                                             context.update_crdt(SceneComponentId::UI_DROPDOWN_RESULT, CrdtType::LWW_ENT, scene_id, &PbUiDropdownResult {
                                                 value: combo.selected as i32,
                                             });
+                                            context.last_action_event = Some(time.elapsed_seconds());
                                             // store persistent state to the scene entity
                                             commands.entity(node).try_insert(UiDropdownPersistentState(combo.selected));
                                         }),
