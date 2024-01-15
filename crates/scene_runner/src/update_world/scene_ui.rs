@@ -884,7 +884,7 @@ fn layout_scene_ui(
 
                                     let initial_selection = match (ui_dropdown_state.get(node), dropdown.0.accept_empty) {
                                         (Ok(state), _) => Some(state.0),
-                                        (_, false) => Some(0),
+                                        (_, false) => Some(dropdown.0.selected_index.unwrap_or(0) as isize),
                                         (_, true) => None,
                                     };
 
