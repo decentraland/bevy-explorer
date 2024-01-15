@@ -374,7 +374,7 @@ impl From<PbUiDropdown> for UiDropdown {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct UiDropdownPersistentState(isize);
 
 impl Plugin for SceneUiPlugin {
@@ -885,8 +885,18 @@ fn layout_scene_ui(
                                     let initial_selection = match (ui_dropdown_state.get(node), dropdown.0.accept_empty) {
                                         (Ok(state), _) => Some(state.0),
                                         (_, false) => Some(dropdown.0.selected_index.unwrap_or(0) as isize),
-                                        (_, true) => None,
+                                        (_, true) => dropdown.0.selected_index.map(|ix| ix as isize),
                                     };
+
+                                    //ensure we use max width if not given
+                                    if style.width == Val::Px(0.0) || style.width == Val::Auto {
+                                        style.width = Val::Percent(100.0);
+                                    } else {
+                                    }
+                                    //and some size if not given
+                                    if style.height == Val::Px(0.0) || style.height == Val::Auto {
+                                        style.height = Val::Px(16.0);
+                                    }
 
                                     ent_cmds.insert((
                                         ComboBox::new(dropdown.0.empty_label.clone().unwrap_or_default(), &dropdown.0.options, dropdown.0.accept_empty, dropdown.0.disabled, initial_selection),
