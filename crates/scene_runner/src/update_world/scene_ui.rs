@@ -891,7 +891,6 @@ fn layout_scene_ui(
                                     //ensure we use max width if not given
                                     if style.width == Val::Px(0.0) || style.width == Val::Auto {
                                         style.width = Val::Percent(100.0);
-                                    } else {
                                     }
                                     //and some size if not given
                                     if style.height == Val::Px(0.0) || style.height == Val::Auto {

@@ -41,7 +41,7 @@ use ui_core::{
     dialog::{IntoDialogBody, SpawnDialog},
     BODY_TEXT_STYLE,
 };
-use wallet::{Wallet, browser_auth::remote_send_async};
+use wallet::{browser_auth::remote_send_async, Wallet};
 
 pub struct RestrictedActionsPlugin;
 
@@ -942,6 +942,7 @@ fn show_nft_dialog(
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn handle_eth_async(
     mut events: EventReader<RpcCall>,
     containing_scene: ContainingScene,
@@ -949,20 +950,40 @@ pub fn handle_eth_async(
     scenes: Query<&RendererSceneContext>,
     wallet: Res<Wallet>,
     time: Res<Time>,
-    mut tasks: Local<Vec<(RpcResultSender<Result<serde_json::Value, String>>, Task<Result<serde_json::Value, anyhow::Error>>)>>,
+    mut tasks: Local<
+        Vec<(
+            RpcResultSender<Result<serde_json::Value, String>>,
+            Task<Result<serde_json::Value, anyhow::Error>>,
+        )>,
+    >,
 ) {
     for (body, scene, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::SendAsync { body, scene, response } => Some((body, scene, response)),
+        RpcCall::SendAsync {
+            body,
+            scene,
+            response,
+        } => Some((body, scene, response)),
         _ => None,
     }) {
-        if primary_user.get_single().map_or(true, |player| !containing_scene.get(player).contains(scene)) {
+        if primary_user
+            .get_single()
+            .map_or(true, |player| !containing_scene.get(player).contains(scene))
+        {
             response.send(Err("player not in scene.".to_owned()));
             continue;
         }
 
-        let last_action_time = scenes.get(*scene).ok().and_then(|scene| scene.last_action_event).unwrap_or_default();
+        let last_action_time = scenes
+            .get(*scene)
+            .ok()
+            .and_then(|scene| scene.last_action_event)
+            .unwrap_or_default();
         if last_action_time < time.elapsed_seconds() - 5.0 {
-            response.send(Err(format!("no recent user activity (last action {}, time {}).", last_action_time, time.elapsed_seconds())));
+            response.send(Err(format!(
+                "no recent user activity (last action {}, time {}).",
+                last_action_time,
+                time.elapsed_seconds()
+            )));
             continue;
         }
 
@@ -971,7 +992,10 @@ pub fn handle_eth_async(
             continue;
         }
 
-        tasks.push((response.clone(), IoTaskPool::get().spawn(remote_send_async(body.clone(), wallet.address()))));
+        tasks.push((
+            response.clone(),
+            IoTaskPool::get().spawn(remote_send_async(body.clone(), wallet.address())),
+        ));
     }
 
     tasks.retain_mut(|(response, task)| {

@@ -94,7 +94,7 @@ use dcl_component::{
     proto_components::sdk::components::{common::TextAlignMode, PbTextShape},
     SceneComponentId,
 };
-use ui_core::{TEXT_SHAPE_FONT, ui_builder::SpawnSpacer};
+use ui_core::{ui_builder::SpawnSpacer, TEXT_SHAPE_FONT};
 use world_ui::WorldUi;
 
 use crate::{renderer_context::RendererSceneContext, SceneEntity};
@@ -245,10 +245,11 @@ fn update_text_shapes(
                     c.spacer();
                 }
 
-                c.spawn(NodeBundle{
+                c.spawn(NodeBundle {
                     background_color: Color::rgba(0.0, 0.0, 1.0, 0.25).into(),
                     ..Default::default()
-                }).with_children(|c| {
+                })
+                .with_children(|c| {
                     c.spawn(TextBundle {
                         text,
                         style: Style {

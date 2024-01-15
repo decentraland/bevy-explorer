@@ -64,9 +64,12 @@ pub fn update_comboboxen(
                     };
 
                     let style = ui.style_mut();
-                    style.visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgba_unmultiplied(255, 255, 255, 25);
-                    style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgba_unmultiplied(255, 255, 255, 50);
-                    style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgba_unmultiplied(255, 255, 255, 128);
+                    style.visuals.widgets.active.weak_bg_fill =
+                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 25);
+                    style.visuals.widgets.hovered.weak_bg_fill =
+                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 50);
+                    style.visuals.widgets.inactive.weak_bg_fill =
+                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 128);
 
                     egui::ComboBox::from_id_source(entity)
                         .selected_text(selected_text)
