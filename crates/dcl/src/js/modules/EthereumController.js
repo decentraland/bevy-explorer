@@ -32,7 +32,17 @@ module.exports.sendAsync = async function (message) {
         throw new Error(`The Ethereum method "${message.method}" is not allowed on Decentraland Provider`)
     }
 
-    return Deno.core.ops.op_send_async(message.method, message.jsonParams)
+    const resValue = await Deno.core.ops.op_send_async(message.method, message.jsonParams)
+
+    const result = {
+        id: message.id,
+        jsonrpc: "2.0",
+        result: resValue
+    }
+
+    return {
+        jsonAnyResponse: JSON.stringify(result)
+    }
 }
 
 module.exports.requirePayment = async function (body) {
