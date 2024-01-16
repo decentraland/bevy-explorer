@@ -44,7 +44,6 @@ fn automatic_testing(
     mut testing_data: ResMut<TestingData>,
     player: Query<(Entity, Option<&OutOfWorld>), With<PrimaryUser>>,
     containing_scene: ContainingScene,
-    mut wallet: ResMut<Wallet>,
     mut toaster: Toaster,
     mut current_profile: ResMut<CurrentUserProfile>,
     ipfas: IpfsAssetServer,
@@ -59,8 +58,13 @@ fn automatic_testing(
         Local<Handle<LoadedFolder>>,
         Local<bool>,
     ),
-    (folders, images): (Res<Assets<LoadedFolder>>, Res<Assets<Image>>),
-    mut screenshotter: ResMut<ScreenshotManager>,
+    (mut wallet, folders, images, mut screenshotter): (
+        ResMut<Wallet>,
+        Res<Assets<LoadedFolder>>,
+        Res<Assets<Image>>,
+        ResMut<ScreenshotManager>,
+    ),
+    ui_roots: Query<(Entity, Option<&mut TargetCamera>), (With<Node>, Without<Parent>)>,
 ) {
     // load screenshots before entering any scenes (to ensure we don't have to async wait later)
     if screenshots.is_weak() {
@@ -125,6 +129,14 @@ fn automatic_testing(
                     Vec3::Y,
                 ),
             );
+
+            // set ui to render to the snapshot camera
+            for (ent, target) in ui_roots.iter() {
+                if target.is_none() {
+                    debug!("added {snapshot_cam:?} on {ent:?}");
+                    commands.entity(ent).insert(TargetCamera(snapshot_cam));
+                }
+            }
 
             let sender = local_sender.as_ref().unwrap().clone();
             let _ = screenshotter.take_screenshot(window, move |image| {
@@ -201,6 +213,17 @@ fn automatic_testing(
 
         commands.entity(result.window).despawn_recursive();
         commands.entity(result.camera).despawn_recursive();
+
+        // set ui to render to the snapshot camera
+        for (ent, target) in ui_roots.iter() {
+            if target == Some(&TargetCamera(result.camera)) {
+                debug!("removed {:?} from {ent:?}", result.camera);
+                commands.entity(ent).remove::<TargetCamera>();
+            } else {
+                debug!("skipping remove from {ent:?}, {:?} != {:?}", result.camera, target);
+            }
+        }
+
         *screenshot_in_progress = false;
     }
 
