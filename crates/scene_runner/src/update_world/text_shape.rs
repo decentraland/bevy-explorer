@@ -246,7 +246,7 @@ fn update_text_shapes(
                 }
 
                 c.spawn(NodeBundle {
-                    background_color: Color::rgba(0.0, 0.0, 1.0, 0.25).into(),
+                    // background_color: Color::rgba(0.0, 0.0, 1.0, 0.25).into(),
                     ..Default::default()
                 })
                 .with_children(|c| {
