@@ -1,10 +1,13 @@
 use bevy::{
     pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster},
     prelude::*,
-    render::{render_resource::{
-        AsBindGroup, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
-        TextureUsages,
-    }, camera::RenderTarget},
+    render::{
+        camera::RenderTarget,
+        render_resource::{
+            AsBindGroup, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
+            TextureUsages,
+        },
+    },
     utils::HashMap,
 };
 use common::{sets::SceneSets, util::TryPushChildrenEx};
@@ -55,7 +58,7 @@ struct ProcessedWorldUi;
 #[derive(Component)]
 struct WorldUiCamera;
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_world_ui(
     mut commands: Commands,
     q: Query<(Entity, &WorldUi), Or<(Changed<WorldUi>, Without<ProcessedWorldUi>)>>,
@@ -125,14 +128,22 @@ fn update_world_ui(
                 *vis = Visibility::Hidden;
             }
         }
-    
+
         if let Ok(mut vis) = uis.get_mut(ui.ui_root) {
             *vis = Visibility::Visible;
         }
 
         let image_size = Extent3d {
-            width: if ui.resize_width.is_some() { 16 } else { ui.width.max(16) },
-            height: if ui.resize_height.is_some() { 16 } else { ui.height.max(16) },
+            width: if ui.resize_width.is_some() {
+                16
+            } else {
+                ui.width.max(16)
+            },
+            height: if ui.resize_height.is_some() {
+                16
+            } else {
+                ui.height.max(16)
+            },
             depth_or_array_layers: 1,
         };
 
@@ -162,8 +173,10 @@ fn update_world_ui(
                     {
                         let current_size = image.size();
 
-                        let width_ok = ui.resize_width.is_some() || image_size.width == current_size.x;
-                        let height_ok = ui.resize_height.is_some() || image_size.height == current_size.y;
+                        let width_ok =
+                            ui.resize_width.is_some() || image_size.width == current_size.x;
+                        let height_ok =
+                            ui.resize_height.is_some() || image_size.height == current_size.y;
                         if !width_ok || !height_ok {
                             image.resize(image_size);
                         }
@@ -221,7 +234,7 @@ fn update_world_ui(
 
         if let Some(mut commands) = commands.get_entity(ui.ui_root) {
             cam.target = RenderTarget::Image(image.clone());
-            cam.is_active = true;    
+            cam.is_active = true;
             commands.insert(TargetCamera(cam_ent));
             *current_rendered_ui = Some(ui.ui_root);
         }

@@ -220,7 +220,10 @@ fn automatic_testing(
                 debug!("removed {:?} from {ent:?}", result.camera);
                 commands.entity(ent).remove::<TargetCamera>();
             } else {
-                debug!("skipping remove from {ent:?}, {:?} != {:?}", result.camera, target);
+                debug!(
+                    "skipping remove from {ent:?}, {:?} != {:?}",
+                    result.camera, target
+                );
             }
         }
 
