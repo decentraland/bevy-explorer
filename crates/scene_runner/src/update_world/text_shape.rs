@@ -94,7 +94,9 @@ use dcl_component::{
     proto_components::sdk::components::{common::TextAlignMode, PbTextShape},
     SceneComponentId,
 };
-use ui_core::{ui_builder::SpawnSpacer, TEXT_SHAPE_FONT};
+use ui_core::{
+    ui_builder::SpawnSpacer, TEXT_SHAPE_FONT_MONO, TEXT_SHAPE_FONT_SANS, TEXT_SHAPE_FONT_SERIF,
+};
 use world_ui::WorldUi;
 
 use crate::{renderer_context::RendererSceneContext, SceneEntity};
@@ -208,7 +210,20 @@ fn update_text_shapes(
                     .text_color
                     .map(Into::into)
                     .unwrap_or(Color::WHITE),
-                font: TEXT_SHAPE_FONT.get().unwrap().clone(),
+                font: match text_shape.0.font() {
+                    dcl_component::proto_components::sdk::components::common::Font::FSansSerif => {
+                        &TEXT_SHAPE_FONT_SANS
+                    }
+                    dcl_component::proto_components::sdk::components::common::Font::FSerif => {
+                        &TEXT_SHAPE_FONT_SERIF
+                    }
+                    dcl_component::proto_components::sdk::components::common::Font::FMonospace => {
+                        &TEXT_SHAPE_FONT_MONO
+                    }
+                }
+                .get()
+                .unwrap()
+                .clone(),
             },
         )
         .with_alignment(halign);

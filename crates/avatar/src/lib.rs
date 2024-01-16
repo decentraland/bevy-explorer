@@ -45,7 +45,7 @@ use scene_runner::{
     update_world::{billboard::Billboard, AddCrdtInterfaceExt},
     ContainingScene, SceneEntity,
 };
-use ui_core::TEXT_SHAPE_FONT;
+use ui_core::TEXT_SHAPE_FONT_SANS;
 use world_ui::WorldUi;
 
 use crate::{animate::AvatarAnimPlayer, avatar_texture::PRIMARY_AVATAR_RENDERLAYER};
@@ -1508,7 +1508,7 @@ fn process_avatar(
                     TextStyle {
                         font_size: 25.0,
                         color: Color::WHITE,
-                        font: TEXT_SHAPE_FONT.get().unwrap().clone(),
+                        font: TEXT_SHAPE_FONT_SANS.get().unwrap().clone(),
                     },
                 ))
                 .id();
