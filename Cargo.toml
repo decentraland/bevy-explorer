@@ -22,6 +22,7 @@ system_ui = { path="crates/system_ui" }
 user_input = { path="crates/user_input" }
 visuals = { path="crates/visuals" }
 ui_core = { path="crates/ui_core" }
+scene_material = { path="crates/scene_material" }
 scene_runner = { path="crates/scene_runner" }
 console = { path="crates/console" }
 av = { path="crates/av" }
@@ -31,10 +32,10 @@ restricted_actions = { path="crates/restricted_actions" }
 wallet = { path="crates/wallet" }
 nft = { path="crates/nft" }
 tween = { path="crates/tween" }
+world_ui = { path="crates/world_ui" }
 
 bevy = { version = "0.12", features=["jpeg"] }
 bevy_console = { git = "https://github.com/msklosak/bevy-console", branch = "bevy_0.12_update" }
-bevy_mod_billboard = { git = "https://github.com/robtfm/bevy_mod_billboard", branch = "scene_bound" }
 bevy_egui = "0.23"
 
 serde = "1.0.152"
@@ -79,10 +80,11 @@ wallet = { workspace = true }
 dcl = { workspace = true }
 nft = { workspace = true }
 tween = { workspace = true }
+scene_material = { workspace = true }
+world_ui = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }
-bevy_mod_billboard = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -94,9 +96,9 @@ pico-args = "0.5.0"
 prost-build = "0.11.8"
 
 [patch.crates-io]
-bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.12-hotfix2" }
+bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.12-inc-wsui" }
 # bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "pub-manager" }
-ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0" }
+ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
 parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "try_convex" }
 rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }
 serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_204_hotfix" }

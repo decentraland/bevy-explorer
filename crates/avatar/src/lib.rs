@@ -12,7 +12,6 @@ use bevy::{
     scene::InstanceId,
     utils::{HashMap, HashSet},
 };
-use bevy_mod_billboard::BillboardTextBundle;
 use colliders::AvatarColliderPlugin;
 use serde::Deserialize;
 use urn::Urn;
@@ -42,8 +41,12 @@ use dcl_component::{
     SceneComponentId, SceneEntityId,
 };
 use ipfs::{ActiveEntityTask, IpfsAssetServer, IpfsModifier};
-use scene_runner::{update_world::AddCrdtInterfaceExt, ContainingScene, SceneEntity};
-use ui_core::TEXT_SHAPE_FONT;
+use scene_runner::{
+    update_world::{billboard::Billboard, AddCrdtInterfaceExt},
+    ContainingScene, SceneEntity,
+};
+use ui_core::TEXT_SHAPE_FONT_SANS;
+use world_ui::WorldUi;
 
 use crate::{animate::AvatarAnimPlayer, avatar_texture::PRIMARY_AVATAR_RENDERLAYER};
 
@@ -1495,28 +1498,48 @@ fn process_avatar(
             "avatar processed, 1+{} models, {} textures. hides: {:?}, skin mats: {:?}, hair mats: {:?}, used mats: {:?}",
             wearable_models, wearable_texs, def.hides, loaded_avatar.skin_materials.len(), loaded_avatar.hair_materials.len(), colored_materials.len()
         );
-        commands
-            .entity(avatar_ent)
-            .try_insert(AvatarProcessed)
-            .with_children(|commands| {
-                // add a name tag
-                if let Some(label) = def.label.as_ref() {
-                    commands.spawn(BillboardTextBundle {
-                        text: Text::from_section(
-                            label,
-                            TextStyle {
-                                font_size: 50.0,
-                                color: Color::WHITE,
-                                font: TEXT_SHAPE_FONT.get().unwrap().clone(),
-                            },
-                        )
-                        .with_alignment(TextAlignment::Center),
-                        transform: Transform::from_translation(Vec3::Y * 2.2)
-                            .with_scale(Vec3::splat(0.003)),
+
+        commands.entity(avatar_ent).try_insert(AvatarProcessed);
+
+        if let Some(label) = def.label.as_ref() {
+            let label_ui = commands
+                .spawn(TextBundle::from_section(
+                    label,
+                    TextStyle {
+                        font_size: 25.0,
+                        color: Color::WHITE,
+                        font: TEXT_SHAPE_FONT_SANS.get().unwrap().clone(),
+                    },
+                ))
+                .id();
+
+            commands.entity(avatar_ent).with_children(|commands| {
+                commands.spawn((
+                    SpatialBundle {
+                        transform: Transform::from_translation(Vec3::Y * 2.2),
                         ..Default::default()
-                    });
-                }
+                    },
+                    WorldUi {
+                        width: 1024,
+                        height: 25,
+                        resize_width: Some(ResizeAxis::MaxContent),
+                        resize_height: None,
+                        pix_per_m: 100.0,
+                        valign: 0.0,
+                        add_y_pix: 0.0,
+                        bounds: Vec4::new(
+                            std::f32::MIN,
+                            std::f32::MIN,
+                            std::f32::MAX,
+                            std::f32::MAX,
+                        ),
+                        ui_root: label_ui,
+                        dispose_ui: true,
+                    },
+                    Billboard::Y,
+                ));
             });
+        }
     }
 }
 

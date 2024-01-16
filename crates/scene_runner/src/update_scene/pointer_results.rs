@@ -341,6 +341,7 @@ fn send_action_events(
     mut scenes: Query<(Entity, &mut RendererSceneContext, &GlobalTransform)>,
     input_mgr: InputManager,
     frame: Res<FrameCount>,
+    time: Res<Time>,
 ) {
     let mut send_event =
         |info: &PointerTargetInfo, ev_type: PointerEventType, action: InputAction| {
@@ -401,6 +402,7 @@ fn send_action_events(
                                         tick_number,
                                     },
                                 );
+                                context.last_action_event = Some(time.elapsed_seconds());
                             }
                         }
                     }

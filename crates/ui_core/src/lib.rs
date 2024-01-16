@@ -23,7 +23,9 @@ use self::{
     textentry::update_text_entry_components, ui_actions::UiActionPlugin,
 };
 
-pub static TEXT_SHAPE_FONT: OnceCell<Handle<Font>> = OnceCell::new();
+pub static TEXT_SHAPE_FONT_SANS: OnceCell<Handle<Font>> = OnceCell::new();
+pub static TEXT_SHAPE_FONT_SERIF: OnceCell<Handle<Font>> = OnceCell::new();
+pub static TEXT_SHAPE_FONT_MONO: OnceCell<Handle<Font>> = OnceCell::new();
 pub static TITLE_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
 pub static BODY_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
 pub static BUTTON_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
@@ -50,8 +52,14 @@ impl Plugin for UiCorePlugin {
 
 #[allow(clippy::type_complexity)]
 fn setup(asset_server: Res<AssetServer>) {
-    TEXT_SHAPE_FONT
-        .set(asset_server.load("fonts/FiraSans-Bold_shapecopy.ttf"))
+    TEXT_SHAPE_FONT_SANS
+        .set(asset_server.load("fonts/NotoSans-Regular.ttf"))
+        .unwrap();
+    TEXT_SHAPE_FONT_SERIF
+        .set(asset_server.load("fonts/NotoSerif-Regular.ttf"))
+        .unwrap();
+    TEXT_SHAPE_FONT_MONO
+        .set(asset_server.load("fonts/NotoMono-Regular.ttf"))
         .unwrap();
     TITLE_TEXT_STYLE
         .set(TextStyle {
@@ -62,7 +70,7 @@ fn setup(asset_server: Res<AssetServer>) {
         .unwrap();
     BODY_TEXT_STYLE
         .set(TextStyle {
-            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+            font: asset_server.load("fonts/NotoSans-Regular.ttf"),
             font_size: 15.0,
             color: Color::BLACK,
         })

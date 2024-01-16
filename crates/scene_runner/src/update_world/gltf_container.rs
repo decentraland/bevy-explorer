@@ -27,10 +27,10 @@ use dcl_component::{
     SceneComponentId, SceneEntityId,
 };
 use ipfs::{EntityDefinition, IpfsAssetServer};
+use scene_material::{SceneBound, SceneMaterial};
 
 use super::{
     mesh_collider::{MeshCollider, MeshColliderShape},
-    scene_material::{SceneBound, SceneBoundPlugin, SceneMaterial},
     AddCrdtInterfaceExt,
 };
 
@@ -54,8 +54,6 @@ impl Plugin for GltfDefinitionPlugin {
 
         app.add_systems(Update, update_gltf.in_set(SceneSets::PostLoop));
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
-
-        app.add_plugins(SceneBoundPlugin);
     }
 }
 

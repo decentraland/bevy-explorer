@@ -296,7 +296,7 @@ impl From<PbUiBackground> for UiBackground {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum VAlign {
     Top,
     Middle,
@@ -374,7 +374,7 @@ impl From<PbUiDropdown> for UiDropdown {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct UiDropdownPersistentState(isize);
 
 impl Plugin for SceneUiPlugin {
@@ -740,50 +740,60 @@ fn layout_scene_ui(
                                     ent_cmds = ent_cmds.with_children(|c| {
                                         c.spawn(NodeBundle {
                                             style: Style {
-                                                position_type: PositionType::Absolute,
-                                                left: Val::Px(0.0),
-                                                right: Val::Px(0.0),
-                                                top: Val::Px(0.0),
-                                                bottom: Val::Px(0.0),
-                                                justify_content: match text.h_align {
-                                                    TextAlignment::Left => {
-                                                        JustifyContent::FlexStart
-                                                    }
-                                                    TextAlignment::Center => JustifyContent::Center,
-                                                    TextAlignment::Right => JustifyContent::FlexEnd,
-                                                },
-                                                align_items: match text.v_align {
-                                                    VAlign::Top => AlignItems::FlexStart,
-                                                    VAlign::Middle => AlignItems::Center,
-                                                    VAlign::Bottom => AlignItems::FlexEnd,
-                                                },
+                                                flex_direction: FlexDirection::Column,
+                                                width: Val::Percent(100.0),
+                                                height: Val::Percent(100.0),
                                                 ..Default::default()
                                             },
                                             ..Default::default()
                                         })
-                                        .with_children(
-                                            |c| {
-                                                c.spawn(TextBundle {
-                                                    text: Text {
-                                                        sections: vec![TextSection::new(
-                                                            text.text.clone(),
-                                                            TextStyle {
-                                                                font: TITLE_TEXT_STYLE
-                                                                    .get()
-                                                                    .unwrap()
-                                                                    .clone()
-                                                                    .font, // TODO fix this
-                                                                font_size: text.font_size,
-                                                                color: text.color,
-                                                            },
-                                                        )],
-                                                        alignment: text.h_align,
-                                                        linebreak_behavior:
-                                                            bevy::text::BreakLineOn::NoWrap,
+                                            .with_children(|c| {
+                                                if text.v_align != VAlign::Top {
+                                                    c.spacer();
+                                                }
+
+                                                c.spawn(NodeBundle {
+                                                    style: Style {
+                                                        flex_direction: FlexDirection::Row,
+                                                        width: Val::Percent(100.0),
+                                                        ..Default::default()
                                                     },
-                                                    z_index: ZIndex::Local(1),
                                                     ..Default::default()
+                                                }).with_children(|c| {
+                                                    if text.h_align != TextAlignment::Left {
+                                                        c.spacer();
+                                                    }
+
+                                                    c.spawn(TextBundle {
+                                                        text: Text {
+                                                            sections: vec![TextSection::new(
+                                                                text.text.clone(),
+                                                                TextStyle {
+                                                                    font: TITLE_TEXT_STYLE
+                                                                        .get()
+                                                                        .unwrap()
+                                                                        .clone()
+                                                                        .font, // TODO fix this
+                                                                    font_size: text.font_size,
+                                                                    color: text.color,
+                                                                },
+                                                            )],
+                                                            alignment: text.h_align,
+                                                            linebreak_behavior:
+                                                                bevy::text::BreakLineOn::NoWrap,
+                                                        },
+                                                        z_index: ZIndex::Local(1),
+                                                        ..Default::default()
+                                                    });
+
+                                                    if text.h_align != TextAlignment::Right {
+                                                        c.spacer();
+                                                    }
                                                 });
+
+                                                if text.v_align != VAlign::Bottom {
+                                                    c.spacer();
+                                                }
                                             },
                                         );
                                     });
@@ -845,6 +855,7 @@ fn layout_scene_ui(
                                             mut commands: Commands,
                                             entry: Query<&TextEntry>,
                                             mut context: Query<&mut RendererSceneContext>,
+                                            time: Res<Time>,
                                         | {
                                             let Ok(entry) = entry.get(ui_node) else {
                                                 warn!("failed to get text node on UiInput update");
@@ -859,6 +870,7 @@ fn layout_scene_ui(
                                                 value: entry.content.clone(),
                                                 is_submit: None,
                                             });
+                                            context.last_action_event = Some(time.elapsed_seconds());
                                             // store persistent state to the scene entity
                                             commands.entity(node).try_insert(UiInputPersistentState{content: entry.content.clone()});
                                         }),
@@ -872,9 +884,18 @@ fn layout_scene_ui(
 
                                     let initial_selection = match (ui_dropdown_state.get(node), dropdown.0.accept_empty) {
                                         (Ok(state), _) => Some(state.0),
-                                        (_, false) => Some(0),
-                                        (_, true) => None,
+                                        (_, false) => Some(dropdown.0.selected_index.unwrap_or(0) as isize),
+                                        (_, true) => dropdown.0.selected_index.map(|ix| ix as isize),
                                     };
+
+                                    //ensure we use max width if not given
+                                    if style.width == Val::Px(0.0) || style.width == Val::Auto {
+                                        style.width = Val::Percent(100.0);
+                                    }
+                                    //and some size if not given
+                                    if style.height == Val::Px(0.0) || style.height == Val::Auto {
+                                        style.height = Val::Px(16.0);
+                                    }
 
                                     ent_cmds.insert((
                                         ComboBox::new(dropdown.0.empty_label.clone().unwrap_or_default(), &dropdown.0.options, dropdown.0.accept_empty, dropdown.0.disabled, initial_selection),
@@ -882,6 +903,7 @@ fn layout_scene_ui(
                                             mut commands: Commands,
                                             combo: Query<(Entity, &ComboBox)>,
                                             mut context: Query<&mut RendererSceneContext>,
+                                            time: Res<Time>,
                                         | {
                                             let Ok((_, combo)) = combo.get(ui_node) else {
                                                 warn!("failed to get combo node on UiDropdown update");
@@ -895,6 +917,7 @@ fn layout_scene_ui(
                                             context.update_crdt(SceneComponentId::UI_DROPDOWN_RESULT, CrdtType::LWW_ENT, scene_id, &PbUiDropdownResult {
                                                 value: combo.selected as i32,
                                             });
+                                            context.last_action_event = Some(time.elapsed_seconds());
                                             // store persistent state to the scene entity
                                             commands.entity(node).try_insert(UiDropdownPersistentState(combo.selected));
                                         }),

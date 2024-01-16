@@ -17,6 +17,7 @@ use bevy::{
 };
 use itertools::Itertools;
 use once_cell::sync::Lazy;
+use scene_material::SceneBoundPlugin;
 use spin_sleep::SpinSleeper;
 
 use crate::{
@@ -112,6 +113,7 @@ fn init_test_app(entity_json: &str) -> App {
     app.add_plugins(MaterialPlugin::<StandardMaterial>::default());
     app.add_plugins(GizmoPlugin);
     app.add_plugins(SceneRunnerPlugin);
+    app.add_plugins(SceneBoundPlugin);
     app.init_resource::<InputMap>();
     app.init_resource::<AcceptInput>();
     app.init_resource::<ToolTips>();

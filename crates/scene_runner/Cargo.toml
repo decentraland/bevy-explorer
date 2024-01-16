@@ -15,13 +15,14 @@ ui_core = { workspace = true }
 console = { workspace = true }
 input_manager = { workspace = true }
 wallet = { workspace = true }
+scene_material = { workspace = true }
+world_ui = { workspace = true }
 
 bevy = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
-bevy_mod_billboard = { workspace = true }
 bevy_console = { workspace = true }
 clap = { workspace = true }
 bimap = { workspace = true }

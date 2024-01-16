@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     any::Any,
     sync::{Arc, RwLock},
@@ -79,6 +79,14 @@ pub struct CompareSnapshotResult {
     pub error: Option<String>,
     pub found: bool,
     pub similarity: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RPCSendableMessage {
+    pub jsonrpc: String,
+    pub id: u64,
+    pub method: String,
+    pub params: Vec<serde_json::Value>, // Using serde_json::Value for unknown[]
 }
 
 pub type RpcEventSender = tokio::sync::mpsc::UnboundedSender<String>;
@@ -183,4 +191,9 @@ pub enum RpcCall {
         error: Option<String>,
     },
     TestSnapshot(CompareSnapshot),
+    SendAsync {
+        body: RPCSendableMessage,
+        scene: Entity,
+        response: RpcResultSender<Result<serde_json::Value, String>>,
+    },
 }

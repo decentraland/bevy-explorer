@@ -12,7 +12,10 @@ use ethers_core::types::Address;
 use ethers_signers::LocalWallet;
 use ipfs::{CurrentRealm, IpfsAssetServer};
 use scene_runner::Toaster;
-use ui_core::dialog::{ButtonDisabledText, ButtonText, IntoDialogBody, SpawnButton, SpawnDialog};
+use ui_core::{
+    dialog::{ButtonDisabledText, ButtonText, IntoDialogBody, SpawnButton, SpawnDialog},
+    BODY_TEXT_STYLE,
+};
 use wallet::{browser_auth::try_create_remote_ephemeral, Wallet};
 
 pub struct LoginPlugin;
@@ -27,6 +30,7 @@ enum LoginType {
     ExistingRemote,
     NewRemote,
     Guest,
+    Cancel,
 }
 
 struct LoginDialog {
@@ -60,6 +64,28 @@ impl IntoDialogBody for LoginDialog {
             .spawn_button(ButtonText("Play as Guest"), move || {
                 let _ = sender.blocking_send(LoginType::Guest);
             });
+    }
+}
+
+struct CancelLoginDialog {
+    sender: tokio::sync::mpsc::Sender<LoginType>,
+}
+
+impl IntoDialogBody for CancelLoginDialog {
+    fn body(self, commands: &mut ChildBuilder) {
+        let sender = self.sender.clone();
+
+        commands.spawn(
+            TextBundle::from_section(
+                "Please follow the directions in your browser to connect your account",
+                BODY_TEXT_STYLE.get().unwrap().clone(),
+            )
+            .with_text_alignment(TextAlignment::Center),
+        );
+
+        commands.spawn_empty().spawn_button("Cancel", move || {
+            let _ = sender.blocking_send(LoginType::Cancel);
+        });
     }
 }
 
@@ -160,6 +186,11 @@ fn connect_wallet(
             }
             Some(Err(e)) => {
                 error!("{e}");
+                toaster.add_toast("login profile", format!("Login failed: {}", e));
+                if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
+                    commands.despawn_recursive();
+                }
+                *dialog = None;
             }
             None => {
                 *task = Some(t);
@@ -200,6 +231,18 @@ fn connect_wallet(
             }
             LoginType::NewRemote => {
                 info!("new remote");
+
+                let (sx, rx) = tokio::sync::mpsc::channel(1);
+                *receiver = Some(rx);
+                *dialog = Some(commands.spawn_dialog(
+                    "Login".to_string(),
+                    CancelLoginDialog { sender: sx },
+                    "Quit",
+                    || {
+                        std::process::exit(0);
+                    },
+                ));
+
                 let ipfs = ipfas.ipfs().clone();
                 *task = Some(IoTaskPool::get().spawn(async move {
                     let (root_address, local_wallet, auth, _) =
@@ -227,6 +270,10 @@ fn connect_wallet(
                     base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
                 });
                 current_profile.is_deployed = true;
+            }
+            LoginType::Cancel => {
+                *task = None;
+                *dialog = None;
             }
         }
     }
