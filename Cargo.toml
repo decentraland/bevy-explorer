@@ -33,6 +33,7 @@ wallet = { path="crates/wallet" }
 nft = { path="crates/nft" }
 tween = { path="crates/tween" }
 world_ui = { path="crates/world_ui" }
+emotes = { path="crates/emotes" }
 
 bevy = { version = "0.12", features=["jpeg"] }
 bevy_console = { git = "https://github.com/msklosak/bevy-console", branch = "bevy_0.12_update" }
@@ -82,6 +83,7 @@ nft = { workspace = true }
 tween = { workspace = true }
 scene_material = { workspace = true }
 world_ui = { workspace = true }
+emotes = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }

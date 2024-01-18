@@ -7,7 +7,7 @@ pub struct AvatarSnapshots {
     pub body: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct AvatarEmote {
     pub slot: u32,
     pub urn: String,

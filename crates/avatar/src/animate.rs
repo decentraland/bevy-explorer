@@ -15,7 +15,7 @@ use common::{
     structs::PrimaryUser,
 };
 use comms::{
-    chat_marker_things, global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport,
+    chat_marker_things, global_crdt::ChatEvent, profile::{UserProfile, CurrentUserProfile}, NetworkMessage, Transport,
 };
 use console::DoAddConsoleCommand;
 use dcl::interface::ComponentPosition;
@@ -26,6 +26,7 @@ use dcl_component::{
     },
     SceneComponentId,
 };
+use emotes::{AvatarAnimations, AvatarAnimation};
 use scene_runner::{
     update_world::{transform_and_parent::ParentPositionSync, AddCrdtInterfaceExt},
     ContainerEntity, ContainingScene,
@@ -85,9 +86,6 @@ static DEFAULT_ANIMATION_LOOKUP: Lazy<HashMap<&str, DefaultAnim>> = Lazy::new(||
     ])
 });
 
-#[derive(Resource, Default)]
-pub struct AvatarAnimations(pub HashMap<String, Handle<AnimationClip>>);
-
 #[derive(Component)]
 pub struct AvatarAnimPlayer(pub Entity);
 
@@ -122,7 +120,6 @@ impl Plugin for AvatarAnimationPlugin {
             )
                 .in_set(SceneSets::PostLoop),
         );
-        app.init_resource::<AvatarAnimations>();
         app.add_console_command::<EmoteConsoleCommand, _>(emote_console_command);
     }
 }
@@ -161,7 +158,12 @@ fn load_animations(
                 |h_gltf| match gltfs.get(h_gltf).map(|gltf| &gltf.named_animations) {
                     Some(anims) => {
                         for (name, h_clip) in anims {
-                            animations.0.insert(name.clone(), h_clip.clone());
+                            animations.0.insert(name.clone(), AvatarAnimation {
+                                name: name.clone(),
+                                description: name.clone(),
+                                clip: h_clip.clone(),
+                                thumbnail: asset_server.load("images/emote_button.png"),
+                            });
                             debug!("added animation {name}");
                         }
                         false
@@ -299,9 +301,9 @@ fn animate(
         if let Some(clip) = animations.0.get(anim) {
             if let Ok(mut player) = players.get_mut(ent) {
                 if restart && player.elapsed() == 0.75 {
-                    player.start(clip.clone()).repeat();
+                    player.start(clip.clip.clone()).repeat();
                 } else if Some(anim) != prior_playing.get(&ent).map(String::as_str) || restart {
-                    player.play_with_transition(clip.clone(), Duration::from_millis(100));
+                    player.play_with_transition(clip.clip.clone(), Duration::from_millis(100));
                     if repeat {
                         player.repeat();
                     } else {
@@ -317,7 +319,7 @@ fn animate(
                 }
 
                 player.set_speed(speed);
-                return player.elapsed() > anim_assets.get(clip).map_or(f32::MAX, |c| c.duration());
+                return player.elapsed() > anim_assets.get(&clip.clip).map_or(f32::MAX, |c| c.duration());
             }
         }
 
@@ -418,12 +420,22 @@ fn emote_console_command(
     mut commands: Commands,
     mut input: ConsoleCommand<EmoteConsoleCommand>,
     player: Query<Entity, With<PrimaryUser>>,
+    profile: Res<CurrentUserProfile>,
 ) {
     if let Some(Ok(command)) = input.take() {
         if let Ok(player) = player.get_single() {
+            let mut urn = &command.urn;
+            if let Ok(slot) = command.urn.parse::<u32>() {
+                if let Some(emote) = profile.profile.as_ref().and_then(|p| p.content.avatar.emotes.as_ref()).and_then(|es| es.iter().find(|e| e.slot == slot)) {
+                    urn = &emote.urn;
+                }
+            }
+            
+            info!("anim {} -> {}", command.urn, urn);
+
             commands
                 .entity(player)
-                .try_insert(EmoteList::new(command.urn));
+                .try_insert(EmoteList::new(urn.clone()));
         };
         input.ok();
     }

@@ -17,6 +17,7 @@ ui_core = { workspace = true }
 wallet = { workspace = true }
 input_manager = { workspace = true }
 world_ui = { workspace = true }
+emotes = { workspace = true }
 
 bevy = { workspace = true }
 serde = { workspace = true }

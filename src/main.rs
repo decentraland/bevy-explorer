@@ -23,6 +23,7 @@ use common::{
         PrimaryPlayerRes, PrimaryUser, SceneLoadDistance,
     },
 };
+use emotes::EmotesPlugin;
 use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
@@ -216,6 +217,7 @@ fn main() {
         .add_plugins(NftShapePlugin)
         .add_plugins(TweenPlugin)
         .add_plugins(SceneBoundPlugin)
+        .add_plugins(EmotesPlugin)
         .add_plugins(WorldUiPlugin);
 
     if !no_avatar {
