@@ -405,7 +405,8 @@ impl Plugin for IpfsIoPlugin {
 
         let file_path = self.cache_root.clone().unwrap_or("assets".to_owned());
         let default_reader = FileAssetReader::new(file_path);
-        let cache_root = default_reader.root_path().to_owned();
+        let cache_root = default_reader.root_path().to_owned().join("cache/");
+        std::fs::create_dir_all(&cache_root).expect("failed to write to assets folder");
 
         let static_paths = HashMap::from_iter([("genesis_tx.png", "images/genesis_tx.png")]);
         let ipfs_io = IpfsIo::new(Box::new(default_reader), cache_root, static_paths);

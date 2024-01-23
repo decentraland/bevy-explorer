@@ -72,7 +72,7 @@ impl Tween {
                     let direction = end - start;
                     if direction == Vec3::ZERO {
                         // can't look nowhere
-                    } else if Vec3::new(1.0, 0.0, 1.0) != Vec3::ZERO {
+                    } else if direction * Vec3::new(1.0, 0.0, 1.0) != Vec3::ZERO {
                         // randomly assume +z is up for a vertical movement
                         transform.look_at(end - start, Vec3::Z);
                     } else {
