@@ -5,10 +5,12 @@ pub mod profile;
 pub mod sysinfo;
 pub mod toasts;
 pub mod tooltip;
+pub mod emote;
 
 use bevy::prelude::*;
 
 use common::{sets::SetupSets, structs::UiRoot};
+use emote::EmoteUiPlugin;
 use input_manager::MouseInteractionComponent;
 use login::LoginPlugin;
 use mic::MicUiPlugin;
@@ -34,6 +36,7 @@ impl Plugin for SystemUiPlugin {
         app.add_plugins(MicUiPlugin);
         app.add_plugins(ToolTipPlugin);
         app.add_plugins(LoginPlugin);
+        app.add_plugins(EmoteUiPlugin);
     }
 }
 
