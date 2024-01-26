@@ -9,6 +9,7 @@ pub mod scrollable;
 pub mod textentry;
 pub mod ui_actions;
 pub mod ui_builder;
+pub mod spinner;
 
 use std::{any::type_name, marker::PhantomData};
 
@@ -26,6 +27,7 @@ use nine_slice::Ui9SlicePlugin;
 use once_cell::sync::OnceCell;
 
 use common::sets::SetupSets;
+use spinner::{DuiSpinnerTemplate, spin_spinners};
 
 use self::{
     color_picker::update_color_picker_components, focus::FocusPlugin,
@@ -56,6 +58,7 @@ impl Plugin for UiCorePlugin {
         app.add_systems(Update, update_text_entry_components);
         app.add_systems(Update, update_color_picker_components);
         app.add_systems(Update, update_comboboxen);
+        app.add_systems(Update, spin_spinners);
 
         app.add_state::<State>();
         app.init_resource::<StateTracker<State>>();
@@ -79,6 +82,7 @@ fn setup(
 
     dui.register_template("button", DuiButtonTemplate);
     dui.register_template("button-set", DuiButtonSetTemplate);
+    dui.register_template("spinner", DuiSpinnerTemplate);
 
     TEXT_SHAPE_FONT_SANS
         .set(asset_server.load("fonts/NotoSans-Regular.ttf"))

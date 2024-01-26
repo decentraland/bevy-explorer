@@ -9,20 +9,26 @@
 
 <define-template id="dialog-content">
     <div style="
-        left: auto;
-        right: auto;
-        top: auto;
-        bottom: auto;
         flex-direction: column;
         overflow-x: hidden;
         overflow-y: hidden;
         align-items: center;
         border: 4px;
         border-color: #2222aa;
-        background-color: #8888cc55;
+        padding: 0px 20px 10px 20px;
+        background-color: #8888ccaa;
     ">
-        <div style="font-size: 30px; font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; text-align: center; color: black;" text="@title" />
+        <div style="font-size: 30px; font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; text-align: center; color: white;" text="@title" />
+        <component template="hr" />
         <component template="@body" passthrough="true" />
+        <component template="hr" />
         <component template="button-set" buttons="@buttons" />
+    </div>
+</define-template>
+
+<!-- horizontal rule -->
+<define-template id="hr">
+    <div style="width: 100%; height: 20px; min-height: 20px; border: 8px 0px 8px 0px;">
+        <div style="width: 100%; height: 100%; background-color: #2222aa;" />
     </div>
 </define-template>

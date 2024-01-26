@@ -136,15 +136,24 @@ impl DuiTemplate for DuiButtonSetTemplate {
             .ok_or(anyhow!("no buttons in set"))?;
         let mut results = NodeMap::default();
 
-        commands.insert(NodeBundle::default()).with_children(|c| {
-            c.spawn(NodeBundle {
+        commands
+            .insert(NodeBundle {
                 style: Style {
-                    flex_grow: 1.0,
+                    width: Val::Percent(100.0),
+                    margin: UiRect::horizontal(Val::Px(20.0)),
                     ..Default::default()
                 },
                 ..Default::default()
+            })
+            .with_children(|c| {
+                c.spawn(NodeBundle {
+                    style: Style {
+                        flex_grow: 1.0,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                });
             });
-        });
 
         let mut children = Vec::default();
         for (i, button) in buttons.into_iter().enumerate() {

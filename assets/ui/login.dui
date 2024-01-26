@@ -10,13 +10,14 @@
     <div style="
         border: 4px;
         border-color: #2222aa;
+        padding: 0px 0px 10px 0px;
         flex-direction: column;
         height: 80%;
         max-height: 800px;
         min-height: 400px;
         width: 80%;
         max-width: 500px;
-        background-color: #8888cc55;
+        background-color: #8888ccaa;
         overflow-x: hidden;
         overflow-y: hidden;
         align-items: center;
@@ -37,9 +38,22 @@
 - @buttons: Vec<Button>
 -->
 <define-template id="cancel-login">
-    <component template="dialog" title="Connecting ..." body="cancel-login-content" passthrough="true" />
+    <component template="dialog" title="Waiting for Signature" body="cancel-login-content" passthrough="true" />
 </define-template>
 
 <define-template id="cancel-login-content">
-    <div style="font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; width: 200px; height: 100px;">Loggin in naa mate</div>
+    <div style="flex-direction: column; align-items: center;">
+        <div style="flex-direction: column; width: 100%;">
+            <div style="
+                font: 'fonts/NotoSans-Regular.ttf'; 
+                font-size: 24px; 
+                color: black;
+                text-align: center;
+                margin: 20px;
+                "
+                text="Please follow the instructions in your browser to connect your wallet to your Decentraland account"
+            />
+        </div>
+        <component template="spinner" />
+    </div>
 </define-template>

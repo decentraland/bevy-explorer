@@ -1,0 +1,3 @@
+<define-template id="spinner-base">
+    <div id="spinner" image="images/spinner.png" style="width: 34px; height: 34px; margin: 40px;" />
+</define-template>

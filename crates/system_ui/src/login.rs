@@ -27,7 +27,8 @@ impl Plugin for LoginPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<LoginType>().add_systems(
             Update,
-            (login, update_profile_for_realm).run_if(in_state(ui_core::State::Ready)),
+            (login, update_profile_for_realm)
+                .run_if(in_state(ui_core::State::Ready)),
         );
     }
 }
@@ -230,22 +231,21 @@ fn login(
                     Ok((root_address, local_wallet, auth, profile))
                 }));
 
-                *dialog = Some(
-                    commands
-                        .spawn_template(
-                            &dui,
-                            "cancel-login",
-                            DuiProps::new().with_prop(
-                                "buttons",
-                                vec![DuiButton::new_enabled(
-                                    "Cancel",
-                                    |mut e: EventWriter<LoginType>| e.send(LoginType::Cancel),
-                                )],
-                            ),
-                        )
-                        .unwrap()
-                        .root,
-                );
+                let components = commands
+                    .spawn_template(
+                        &dui,
+                        "cancel-login",
+                        DuiProps::new().with_prop(
+                            "buttons",
+                            vec![DuiButton::new_enabled(
+                                "Cancel",
+                                |mut e: EventWriter<LoginType>| e.send(LoginType::Cancel),
+                            )],
+                        ),
+                    )
+                    .unwrap();
+
+                *dialog = Some(components.root);
             }
             LoginType::Guest => {
                 info!("guest");
