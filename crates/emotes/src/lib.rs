@@ -61,7 +61,7 @@ fn fetch_emotes(
         match result {
             Ok(res) => {
                 for def in res.iter() {
-                    println!("found emote: {:#?}", def);
+                    debug!("found emote: {:#?}", def);
                 }
 
                 defs.loaded.extend(

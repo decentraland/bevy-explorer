@@ -331,7 +331,7 @@ impl DuiTemplate for Ui9SliceTemplate {
             None
         };
 
-        println!("border rect: {center_region:?}");
+        debug!("border rect: {center_region:?}");
 
         commands.insert((
             NodeBundle {

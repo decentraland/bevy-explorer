@@ -224,7 +224,7 @@ fn update_avatar_collider_actions(
                 },
                 "Ok",
                 move |mut commands: Commands| {
-                    println!("despawning");
+                    debug!("despawning");
                     commands.entity(instance.avatar).despawn_recursive();
                 },
             );

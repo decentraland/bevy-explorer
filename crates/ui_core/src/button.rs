@@ -53,7 +53,7 @@ impl DuiTemplate for DuiButtonTemplate {
         props: &mut bevy_dui::DuiProps,
         dui_registry: &bevy_dui::DuiRegistry,
     ) -> Result<NodeMap, anyhow::Error> {
-        println!("props: {props:?}");
+        debug!("props: {props:?}");
 
         let data = if let Some(button) = props.take::<DuiButton>("button-data")? {
             button
@@ -80,7 +80,7 @@ impl DuiTemplate for DuiButtonTemplate {
             FocusPolicy::Block,
         ));
         if let Some(onclick) = data.onclick {
-            println!("add on click");
+            debug!("add on click");
             button.insert(onclick);
         }
 
@@ -88,7 +88,6 @@ impl DuiTemplate for DuiButtonTemplate {
             button.insert((
                 On::<HoverEnter>::new(move |mut q: Query<&mut Ui9Slice>| {
                     if let Ok(mut slice) = q.get_mut(background_id) {
-                        println!("ok set tint");
                         slice.tint = Some(Color::rgb(1.0, 1.0, 1.0).into());
                     } else {
                         panic!();
@@ -96,7 +95,6 @@ impl DuiTemplate for DuiButtonTemplate {
                 }),
                 On::<HoverExit>::new(move |mut q: Query<&mut Ui9Slice>| {
                     if let Ok(mut slice) = q.get_mut(background_id) {
-                        println!("ok set low tint");
                         slice.tint = Some(Color::rgb(0.7, 0.7, 1.0).into());
                     } else {
                         panic!();
