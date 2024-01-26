@@ -15,7 +15,10 @@ use common::{
     structs::PrimaryUser,
 };
 use comms::{
-    chat_marker_things, global_crdt::ChatEvent, profile::{UserProfile, CurrentUserProfile}, NetworkMessage, Transport,
+    chat_marker_things,
+    global_crdt::ChatEvent,
+    profile::{CurrentUserProfile, UserProfile},
+    NetworkMessage, Transport,
 };
 use console::DoAddConsoleCommand;
 use dcl::interface::ComponentPosition;
@@ -26,7 +29,7 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use emotes::{AvatarAnimations, AvatarAnimation};
+use emotes::{AvatarAnimation, AvatarAnimations};
 use scene_runner::{
     update_world::{transform_and_parent::ParentPositionSync, AddCrdtInterfaceExt},
     ContainerEntity, ContainingScene,
@@ -158,12 +161,15 @@ fn load_animations(
                 |h_gltf| match gltfs.get(h_gltf).map(|gltf| &gltf.named_animations) {
                     Some(anims) => {
                         for (name, h_clip) in anims {
-                            animations.0.insert(name.clone(), AvatarAnimation {
-                                name: name.clone(),
-                                description: name.clone(),
-                                clip: h_clip.clone(),
-                                thumbnail: asset_server.load("images/emote_button.png"),
-                            });
+                            animations.0.insert(
+                                name.clone(),
+                                AvatarAnimation {
+                                    name: name.clone(),
+                                    description: name.clone(),
+                                    clip: h_clip.clone(),
+                                    thumbnail: asset_server.load("images/emote_button.png"),
+                                },
+                            );
                             debug!("added animation {name}");
                         }
                         false
@@ -319,7 +325,10 @@ fn animate(
                 }
 
                 player.set_speed(speed);
-                return player.elapsed() > anim_assets.get(&clip.clip).map_or(f32::MAX, |c| c.duration());
+                return player.elapsed()
+                    > anim_assets
+                        .get(&clip.clip)
+                        .map_or(f32::MAX, |c| c.duration());
             }
         }
 
@@ -426,11 +435,16 @@ fn emote_console_command(
         if let Ok(player) = player.get_single() {
             let mut urn = &command.urn;
             if let Ok(slot) = command.urn.parse::<u32>() {
-                if let Some(emote) = profile.profile.as_ref().and_then(|p| p.content.avatar.emotes.as_ref()).and_then(|es| es.iter().find(|e| e.slot == slot)) {
+                if let Some(emote) = profile
+                    .profile
+                    .as_ref()
+                    .and_then(|p| p.content.avatar.emotes.as_ref())
+                    .and_then(|es| es.iter().find(|e| e.slot == slot))
+                {
                     urn = &emote.urn;
                 }
             }
-            
+
             info!("anim {} -> {}", command.urn, urn);
 
             commands

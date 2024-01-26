@@ -46,4 +46,3 @@ fn show_emote_ui(mut commands: Commands, existing: Query<Entity, With<EmoteDialo
         }
     }
 }
-

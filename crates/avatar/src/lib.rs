@@ -13,6 +13,7 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use colliders::AvatarColliderPlugin;
+use itertools::Itertools;
 use serde::Deserialize;
 use urn::Urn;
 
@@ -891,20 +892,28 @@ fn update_render_avatar(
             .wearables
             .iter()
             .flat_map(|wearable| {
-                let wearable = Urn::from_str(wearable).unwrap();
-                match wearable_pointers.0.get(&wearable) {
-                    Some(WearablePointerResult::Exists(hash)) => Some(hash),
-                    Some(WearablePointerResult::Missing) => {
-                        debug!("skipping failed wearable {wearable}");
-                        None
+                // wearables need to be stripped down to at most 6 segments. we don't know why,
+                // there is no spec, it is just how it is.
+                // TODO justify with ADR-244
+                let wearable = wearable.splitn(7, ':').take(6).join(":");
+
+                if let Ok(wearable) = Urn::from_str(&wearable) {
+                    match wearable_pointers.0.get(&wearable) {
+                        Some(WearablePointerResult::Exists(hash)) => Some(hash),
+                        Some(WearablePointerResult::Missing) => {
+                            debug!("skipping failed wearable {wearable:?}");
+                            None
+                        }
+                        None => {
+                            commands.entity(entity).try_insert(RetryRenderAvatar);
+                            debug!("waiting for hash from wearable {wearable:?}");
+                            all_loaded = false;
+                            missing_wearables.insert(wearable);
+                            None
+                        }
                     }
-                    None => {
-                        commands.entity(entity).try_insert(RetryRenderAvatar);
-                        debug!("waiting for hash from wearable {wearable}");
-                        all_loaded = false;
-                        missing_wearables.insert(wearable);
-                        None
-                    }
+                } else {
+                    None
                 }
             })
             .collect();

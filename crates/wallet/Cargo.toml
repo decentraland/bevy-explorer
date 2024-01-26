@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 common = { workspace = true }
 ipfs = { workspace = true }
-ui_core = { workspace = true }
 
 bevy = { workspace = true }
 bimap = { workspace = true }
