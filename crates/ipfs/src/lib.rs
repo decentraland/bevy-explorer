@@ -29,7 +29,6 @@ use bevy::{
     utils::HashMap,
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
-use bimap::BiMap;
 use ipfs_path::IpfsAsset;
 use isahc::{http::StatusCode, prelude::Configurable, AsyncReadResponseExt, RequestExt};
 use serde::{Deserialize, Serialize};
@@ -109,7 +108,7 @@ impl EntityDefinitionLoader {
                 return Ok(EntityDefinition::default());
             };
             let content =
-                ContentMap(BiMap::from_iter(definition_json.content.into_iter().map(
+                ContentMap(HashMap::from_iter(definition_json.content.into_iter().map(
                     |ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash),
                 )));
             let id = definition_json.id.unwrap_or_else(id_fn);
@@ -187,21 +186,15 @@ impl AssetLoader for SceneJsLoader {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ContentMap(BiMap<String, String>);
+pub struct ContentMap(HashMap<String, String>);
 
 impl ContentMap {
-    pub fn file(&self, hash: &str) -> Option<&str> {
-        self.0.get_by_right(hash).map(String::as_str)
-    }
-
     pub fn hash(&self, file: &str) -> Option<&str> {
-        self.0
-            .get_by_left(file.to_lowercase().as_str())
-            .map(String::as_str)
+        self.0.get(file.to_lowercase().as_str()).map(String::as_str)
     }
 
     pub fn files(&self) -> impl Iterator<Item = &String> {
-        self.0.left_values()
+        self.0.keys()
     }
 
     pub fn values(&self) -> impl Iterator<Item = (&String, &String)> {
@@ -728,9 +721,11 @@ impl IpfsIo {
                             id: entity.id.unwrap(),
                             pointers: entity.pointers,
                             metadata: entity.metadata,
-                            content: ContentMap(BiMap::from_iter(entity.content.into_iter().map(
-                                |ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash),
-                            ))),
+                            content: ContentMap(HashMap::from_iter(
+                                entity.content.into_iter().map(|ipfs| {
+                                    (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash)
+                                }),
+                            )),
                         });
                     }
 
