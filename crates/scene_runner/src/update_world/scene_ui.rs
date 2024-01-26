@@ -639,6 +639,7 @@ fn layout_scene_ui(
                                                     ent_cmds.insert(Ui9Slice{
                                                         image: image.image,
                                                         center_region: rect.into(),
+                                                        tint: None,
                                                     });
                                                 },
                                                 BackgroundTextureMode::Stretch(ref uvs) => {

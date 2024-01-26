@@ -17,6 +17,9 @@ use common::sets::SceneSets;
 
 use super::focus::Focus;
 
+#[derive(Component)]
+pub struct Enabled(pub bool);
+
 #[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
 pub struct UiActionSet;
 
@@ -76,24 +79,24 @@ pub trait ActionMarker: Send + Sync + 'static {
 
 pub struct Click;
 impl ActionMarker for Click {
-    type Component = &'static Interaction;
-    fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
-        matches!(param, Interaction::Pressed)
+    type Component = (&'static Interaction, Option<&'static Enabled>);
+    fn activate((interact, enabled): <Self::Component as WorldQuery>::Item<'_>) -> bool {
+        matches!(interact, Interaction::Pressed) && enabled.map_or(true, |a| a.0)
     }
 }
 
 pub struct HoverEnter;
 impl ActionMarker for HoverEnter {
-    type Component = &'static Interaction;
-    fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
-        !matches!(param, Interaction::None)
+    type Component = (&'static Interaction, Option<&'static Enabled>);
+    fn activate((interact, enabled): <Self::Component as WorldQuery>::Item<'_>) -> bool {
+        !matches!(interact, Interaction::None) && enabled.map_or(true, |a| a.0)
     }
 }
 pub struct HoverExit;
 impl ActionMarker for HoverExit {
-    type Component = &'static Interaction;
-    fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
-        matches!(param, Interaction::None)
+    type Component = (&'static Interaction, Option<&'static Enabled>);
+    fn activate((interact, enabled): <Self::Component as WorldQuery>::Item<'_>) -> bool {
+        matches!(interact, Interaction::None) && enabled.map_or(true, |a| a.0)
     }
 }
 impl ActionMarker for Focus {

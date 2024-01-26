@@ -1,0 +1,28 @@
+<!-- generic dialog
+- @title: String
+- @body: template id
+- @buttons: Vec<Button>
+-->
+<define-template id="dialog">
+    <component template="fullscreen-block" content="dialog-content" passthrough="true"/>
+</define-template>
+
+<define-template id="dialog-content">
+    <div style="
+        left: auto;
+        right: auto;
+        top: auto;
+        bottom: auto;
+        flex-direction: column;
+        overflow-x: hidden;
+        overflow-y: hidden;
+        align-items: center;
+        border: 4px;
+        border-color: #2222aa;
+        background-color: #8888cc55;
+    ">
+        <div style="font-size: 30px; font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; text-align: center; color: black;" text="@title" />
+        <component template="@body" passthrough="true" />
+        <component template="button-set" buttons="@buttons" />
+    </div>
+</define-template>

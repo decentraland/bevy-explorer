@@ -3,7 +3,7 @@
 // todo: add more components (maybe make the component generic and change to InteractStylePlugin<T> ?)
 use bevy::prelude::*;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct InteractStyle {
     pub background: Option<Color>,
 }

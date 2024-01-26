@@ -1,11 +1,11 @@
 pub mod chat;
+pub mod emote;
 pub mod login;
 pub mod mic;
 pub mod profile;
 pub mod sysinfo;
 pub mod toasts;
 pub mod tooltip;
-pub mod emote;
 
 use bevy::prelude::*;
 

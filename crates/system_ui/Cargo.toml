@@ -20,6 +20,7 @@ wallet = { workspace = true }
 
 bevy = { workspace = true }
 bevy_egui = { workspace = true }
+bevy_dui = { workspace = true }
 urn = { workspace = true }
 ethers-core = { workspace = true }
 ethers-signers = { workspace = true }

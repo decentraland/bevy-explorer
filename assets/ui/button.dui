@@ -1,0 +1,24 @@
+<define-template id="button-base">
+    <div id="button-node" style="
+        flex-direction: column;
+        align-self: stretch;
+        align-items: center;
+        justify-content: center;
+        margin: 5px 20px 5px 20px;
+    ">
+        <component id="button-background" template="nineslice" slice-image="images/button.png" slice-border="37.5% 18.75% 37.5% 18.75%" slice-color="#aaaaaa" content="button-content" />
+        <div style="
+            margin: 10px;
+            align-self: stretch;
+            align-items: center;
+            justify-content: center;
+        ">
+            <div id="label" text="@label" style="
+                font-size: 20px;
+                font: 'fonts/FiraSans-Bold.ttf';
+                text-align: center;
+                color: black;
+            " />
+        </div>
+    </div>
+</define-template>

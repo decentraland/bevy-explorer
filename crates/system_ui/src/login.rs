@@ -2,6 +2,7 @@ use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
+use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
     structs::{AppConfig, ChainLink, PreviousLogin},
@@ -13,7 +14,9 @@ use ethers_signers::LocalWallet;
 use ipfs::{CurrentRealm, IpfsAssetServer};
 use scene_runner::Toaster;
 use ui_core::{
-    dialog::{ButtonDisabledText, ButtonText, IntoDialogBody, SpawnButton, SpawnDialog},
+    button::DuiButton,
+    dialog::{IntoDialogBody, SpawnButton},
+    ui_actions::{Click, On},
     BODY_TEXT_STYLE,
 };
 use wallet::{browser_auth::try_create_remote_ephemeral, Wallet};
@@ -22,49 +25,19 @@ pub struct LoginPlugin;
 
 impl Plugin for LoginPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (connect_wallet, update_profile_for_realm));
+        app.add_event::<LoginType>().add_systems(
+            Update,
+            (login, update_profile_for_realm).run_if(in_state(ui_core::State::Ready)),
+        );
     }
 }
 
+#[derive(Event)]
 enum LoginType {
     ExistingRemote,
     NewRemote,
     Guest,
     Cancel,
-}
-
-struct LoginDialog {
-    sender: tokio::sync::mpsc::Sender<LoginType>,
-    previous_login: Option<PreviousLogin>,
-}
-
-impl IntoDialogBody for LoginDialog {
-    fn body(self, commands: &mut ChildBuilder) {
-        let sender = self.sender.clone();
-        if self.previous_login.is_some() {
-            commands
-                .spawn_empty()
-                .spawn_button(ButtonText("Reuse Last Login"), move || {
-                    let _ = sender.blocking_send(LoginType::ExistingRemote);
-                });
-        } else {
-            commands
-                .spawn_empty()
-                .spawn_button(ButtonDisabledText("Reuse Last Login"), move || {});
-        }
-        let sender = self.sender.clone();
-        commands
-            .spawn_empty()
-            .spawn_button(ButtonText("Connect External Wallet"), move || {
-                let _ = sender.blocking_send(LoginType::NewRemote);
-            });
-        let sender = self.sender.clone();
-        commands
-            .spawn_empty()
-            .spawn_button(ButtonText("Play as Guest"), move || {
-                let _ = sender.blocking_send(LoginType::Guest);
-            });
-    }
 }
 
 struct CancelLoginDialog {
@@ -90,7 +63,7 @@ impl IntoDialogBody for CancelLoginDialog {
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
-fn connect_wallet(
+fn login(
     mut commands: Commands,
     ipfas: IpfsAssetServer,
     mut wallet: ResMut<Wallet>,
@@ -102,9 +75,10 @@ fn connect_wallet(
             >,
         >,
     >,
-    mut receiver: Local<Option<tokio::sync::mpsc::Receiver<LoginType>>>,
+    mut logins: EventReader<LoginType>,
     mut dialog: Local<Option<Entity>>,
     mut toaster: Toaster,
+    dui: Res<DuiRegistry>,
 ) {
     // cleanup if we're done
     if wallet.address().is_some() {
@@ -112,33 +86,47 @@ fn connect_wallet(
             commands.despawn_recursive();
         }
         *dialog = None;
-        *receiver = None;
         *task = None;
         return;
     }
 
     // create dialog
     if dialog.is_none() && task.is_none() {
-        let (sx, rx) = tokio::sync::mpsc::channel(1);
-        *receiver = Some(rx);
-
         let previous_login = std::fs::read("config.json")
             .ok()
             .and_then(|f| serde_json::from_slice::<AppConfig>(&f).ok())
             .unwrap_or_default()
             .previous_login;
 
-        *dialog = Some(commands.spawn_dialog(
-            "Login".to_string(),
-            LoginDialog {
-                sender: sx,
-                previous_login,
-            },
-            "Quit",
-            || {
-                std::process::exit(0);
-            },
-        ));
+        let mut dlg = commands.spawn_empty();
+        *dialog = Some(dlg.id());
+        dlg.apply_template(
+            &dui,
+            "login",
+            DuiProps::new()
+                .with_prop("allow-reuse", previous_login.is_some())
+                .with_prop(
+                    "reuse",
+                    On::<Click>::new(move |mut e: EventWriter<LoginType>| {
+                        e.send(LoginType::ExistingRemote);
+                    }),
+                )
+                .with_prop(
+                    "connect",
+                    On::<Click>::new(move |mut e: EventWriter<LoginType>| {
+                        e.send(LoginType::NewRemote);
+                    }),
+                )
+                .with_prop(
+                    "guest",
+                    On::<Click>::new(move |mut e: EventWriter<LoginType>| {
+                        e.send(LoginType::Guest);
+                    }),
+                )
+                .with_prop("quit", On::<Click>::new(move || std::process::exit(0))),
+        )
+        .unwrap();
+
         return;
     }
 
@@ -199,7 +187,7 @@ fn connect_wallet(
     }
 
     // handle click
-    if let Ok(login) = receiver.as_mut().unwrap().try_recv() {
+    if let Some(login) = logins.read().last() {
         if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
             commands.despawn_recursive();
         }
@@ -232,17 +220,6 @@ fn connect_wallet(
             LoginType::NewRemote => {
                 info!("new remote");
 
-                let (sx, rx) = tokio::sync::mpsc::channel(1);
-                *receiver = Some(rx);
-                *dialog = Some(commands.spawn_dialog(
-                    "Login".to_string(),
-                    CancelLoginDialog { sender: sx },
-                    "Quit",
-                    || {
-                        std::process::exit(0);
-                    },
-                ));
-
                 let ipfs = ipfas.ipfs().clone();
                 *task = Some(IoTaskPool::get().spawn(async move {
                     let (root_address, local_wallet, auth, _) =
@@ -252,6 +229,23 @@ fn connect_wallet(
 
                     Ok((root_address, local_wallet, auth, profile))
                 }));
+
+                *dialog = Some(
+                    commands
+                        .spawn_template(
+                            &dui,
+                            "cancel-login",
+                            DuiProps::new().with_prop(
+                                "buttons",
+                                vec![DuiButton::new_enabled(
+                                    "Cancel",
+                                    |mut e: EventWriter<LoginType>| e.send(LoginType::Cancel),
+                                )],
+                            ),
+                        )
+                        .unwrap()
+                        .root,
+                );
             }
             LoginType::Guest => {
                 info!("guest");
