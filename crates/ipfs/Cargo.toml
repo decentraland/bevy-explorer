@@ -5,6 +5,9 @@ edition = "2021"
 
 [lib]
 
+[features]
+hot_reload = []
+
 [dependencies]
 common = { workspace = true }
 console = { workspace = true }

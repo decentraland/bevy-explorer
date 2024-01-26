@@ -8,6 +8,7 @@ dcl-assert = []
 gen-tests = []
 tracy = ["bevy/trace_tracy"]
 inspect = ["dcl/inspect"]
+hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
 
 [workspace]
 members = ["crates/*"]

@@ -404,7 +404,7 @@ impl Plugin for IpfsIoPlugin {
         info!("remote server: {:?}", self.starting_realm);
 
         let file_path = self.cache_root.clone().unwrap_or("assets".to_owned());
-        let default_reader = FileAssetReader::new(file_path);
+        let default_reader = FileAssetReader::new(file_path.clone());
         let cache_root = default_reader.root_path().to_owned().join("cache/");
         std::fs::create_dir_all(&cache_root).expect("failed to write to assets folder");
 
@@ -417,6 +417,17 @@ impl Plugin for IpfsIoPlugin {
 
         app.insert_resource(IpfsResource { inner: ipfs_io });
 
+        #[cfg(feature = "hot_reload")]
+        app.register_asset_source(
+            AssetSourceId::Default,
+            AssetSource::build()
+                .with_reader(move || Box::new(passthrough.clone()))
+                .with_watcher(AssetSource::get_default_watcher(
+                    file_path,
+                    Duration::from_millis(300),
+                )),
+        );
+        #[cfg(not(feature = "hot_reload"))]
         app.register_asset_source(
             AssetSourceId::Default,
             AssetSource::build().with_reader(move || Box::new(passthrough.clone())),
