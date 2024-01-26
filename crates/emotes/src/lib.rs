@@ -6,6 +6,7 @@ use bevy::{
 use common::util::TaskExt;
 use comms::profile::UserProfile;
 use ipfs::{ActiveEntityTask, EntityDefinition, IpfsAssetServer};
+use itertools::Itertools;
 use serde::Deserialize;
 
 pub struct EmotesPlugin;
@@ -67,7 +68,7 @@ fn fetch_emotes(
                     res.iter()
                         .map(|def| def.pointers.first().cloned().unwrap_or_default()),
                 );
-                defs.unprocessed.extend(res.into_iter());
+                defs.unprocessed.extend(res);
             }
             Err(e) => warn!("active entities task failed: {e}"),
         }
@@ -77,8 +78,7 @@ fn fetch_emotes(
     if task.is_none() {
         let missing_urns = required_emote_urns
             .into_iter()
-            .filter(|urn| urn.contains(':') && !defs.loaded.contains(*urn))
-            .cloned()
+            .filter(|urn| urn.contains(':') && !defs.loaded.contains(urn))
             .collect::<Vec<_>>();
         if !missing_urns.is_empty() {
             *task = Some(
@@ -142,7 +142,7 @@ fn fetch_emote_details(
                     }
                     if let Some(anim) = not_starting_pose_anims.first() {
                         avatar_anims.0.insert(
-                            def.pointers.get(0).cloned().unwrap_or_default(),
+                            def.pointers.first().cloned().unwrap_or_default(),
                             AvatarAnimation {
                                 name: metadata.name,
                                 description: metadata.description,
