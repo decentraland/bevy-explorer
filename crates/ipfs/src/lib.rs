@@ -352,6 +352,7 @@ pub struct CommsConfig {
     pub healthy: bool,
     pub protocol: String,
     pub fixed_adapter: Option<String>,
+    pub adapter: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -384,6 +385,7 @@ impl Default for ServerAbout {
                 healthy: true,
                 protocol: "v3".to_owned(),
                 fixed_adapter: Some("offline:offline".to_owned()),
+                adapter: None,
             }),
             configurations: Default::default(),
             lambdas: Default::default(),
@@ -555,7 +557,7 @@ pub struct IpfsContext {
 pub struct IpfsIo {
     default_io: Box<dyn AssetReader>,
     default_fs_path: PathBuf,
-    pub realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>,
+    realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>,
     realm_config_sender: tokio::sync::watch::Sender<Option<(String, ServerAbout)>>,
     context: RwLock<IpfsContext>,
     request_slots: tokio::sync::Semaphore,

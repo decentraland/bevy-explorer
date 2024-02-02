@@ -1,0 +1,29 @@
+<define-template id="profile">
+    <component id="fullscreen content="profile-content">
+</define-template>
+
+<define-template id="profile-content">
+    <div style="
+        border: 4px;
+        border-color: #2222aa;
+        padding: 0px 0px 10px 0px;
+        flex-direction: column;
+        height: 80%;
+        width: 80%;
+        background-color: #8888ccaa;
+        overflow-x: hidden;
+        overflow-y: hidden;
+        align-items: center;
+        justify-content: space-around;
+    ">
+        <div style="font-size: 30px; font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; text-align: center; color: white;" text="@title" />
+        <component template="hr" />
+        <div style="
+            flex-direction: row; 
+            align-items: center;
+            justify-content: space-around;
+        ">
+            <component id="photobooth">
+        </div>
+    </div>
+</define-template>

@@ -110,7 +110,7 @@ async fn op_realm_information(
         base_url: base_url.to_owned(),
         realm_name: config.realm_name.unwrap_or_default(),
         network_id: config.network_id.unwrap_or_default(),
-        comms_adapter: info.comms.and_then(|c| c.fixed_adapter).unwrap_or_default(),
+        comms_adapter: info.comms.and_then(|c| c.adapter.or(c.fixed_adapter)).unwrap_or_default(),
         is_preview: false,
     })
 }
