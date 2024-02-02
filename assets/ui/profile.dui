@@ -1,5 +1,5 @@
 <define-template id="profile">
-    <component id="fullscreen content="profile-content">
+    <component template="fullscreen" content="profile-content" />
 </define-template>
 
 <define-template id="profile-content">
@@ -23,7 +23,7 @@
             align-items: center;
             justify-content: space-around;
         ">
-            <component id="photobooth">
+            <component template="photobooth" />
         </div>
     </div>
 </define-template>
