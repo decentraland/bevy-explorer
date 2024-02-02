@@ -882,7 +882,7 @@ impl AssetReader for IpfsIo {
 
             if let Some(hash) = &hash {
                 debug!("hash: {}", hash);
-                if let Ok(mut res) = self.default_io.read(&self.cache_path().join(&hash)).await {
+                if let Ok(mut res) = self.default_io.read(&self.cache_path().join(hash)).await {
                     let mut daft_buffer = Vec::default();
                     res.read_to_end(&mut daft_buffer).await?;
                     let reader: Box<Reader> = Box::new(Cursor::new(daft_buffer));

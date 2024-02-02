@@ -169,25 +169,38 @@ fn load_animations(
                             let (name, repeat, is_male, is_female) = DEFAULT_ANIMATION_LOOKUP
                                 .iter()
                                 .find(|(_, anim)| anim.male == name || anim.female == name)
-                                .map(|(urn, anim)| (urn.to_string(), anim.repeat, anim.male == name, anim.female == name))
+                                .map(|(urn, anim)| {
+                                    (
+                                        urn.to_string(),
+                                        anim.repeat,
+                                        anim.male == name,
+                                        anim.female == name,
+                                    )
+                                })
                                 .unwrap_or((name.to_owned(), false, false, false));
 
-                            let anim = animations.0.entry(name.clone()).or_insert_with(||
+                            let anim = animations.0.entry(name.clone()).or_insert_with(|| {
                                 AvatarAnimation {
                                     name: name.clone(),
                                     description: name.clone(),
-                                    clips: HashMap::from_iter(base_bodyshapes().into_iter().map(|body| (body, h_clip.clone()))),
+                                    clips: HashMap::from_iter(
+                                        base_bodyshapes()
+                                            .into_iter()
+                                            .map(|body| (body, h_clip.clone())),
+                                    ),
                                     thumbnail: asset_server
                                         .load(format!("animations/thumbnails/{name}_256.png")),
                                     repeat,
-                                },
-                            );
+                                }
+                            });
 
                             if is_female {
-                                anim.clips.insert(base_bodyshapes().remove(0), h_clip.clone());
+                                anim.clips
+                                    .insert(base_bodyshapes().remove(0), h_clip.clone());
                             }
                             if is_male {
-                                anim.clips.insert(base_bodyshapes().remove(1), h_clip.clone());
+                                anim.clips
+                                    .insert(base_bodyshapes().remove(1), h_clip.clone());
                             }
                             debug!("added animation {name}: {anim:?} from {:?}", h_clip.path());
                         }
@@ -322,8 +335,18 @@ fn animate(
     let prior_velocities = std::mem::take(&mut *velocities);
     let prior_playing = std::mem::take(&mut *playing);
 
-    let mut play = |anim: &str, speed: f32, ent: Entity, restart: bool, repeat: bool, bodyshape: &str| -> bool {
-        if let Some(clip) = animations.0.get(anim).and_then(|anim| anim.clips.get(bodyshape)) {
+    let mut play = |anim: &str,
+                    speed: f32,
+                    ent: Entity,
+                    restart: bool,
+                    repeat: bool,
+                    bodyshape: &str|
+     -> bool {
+        if let Some(clip) = animations
+            .0
+            .get(anim)
+            .and_then(|anim| anim.clips.get(bodyshape))
+        {
             if let Ok(mut player) = players.get_mut(ent) {
                 if restart && player.elapsed() == 0.75 {
                     player.start(clip.clone()).repeat();
@@ -344,10 +367,7 @@ fn animate(
                 }
 
                 player.set_speed(speed);
-                return player.elapsed()
-                    > anim_assets
-                        .get(clip)
-                        .map_or(f32::MAX, |c| c.duration());
+                return player.elapsed() > anim_assets.get(clip).map_or(f32::MAX, |c| c.duration());
             }
         }
 
@@ -385,7 +405,11 @@ fn animate(
             }
         }
 
-        let bodyshape = base_bodyshapes().remove(if profile.map_or(true, UserProfile::is_female) { 0 } else { 1 });
+        let bodyshape = base_bodyshapes().remove(if profile.map_or(true, UserProfile::is_female) {
+            0
+        } else {
+            1
+        });
 
         if let Some(PbAvatarEmoteCommand {
             emote_command: Some(EmoteCommand { emote_urn, r#loop }),
@@ -411,7 +435,7 @@ fn animate(
                 animplayer_ent.0,
                 dynamic_state.velocity.y > 0.0,
                 true,
-                &bodyshape, 
+                &bodyshape,
             );
             continue;
         }
@@ -424,7 +448,7 @@ fn animate(
                     animplayer_ent.0,
                     false,
                     true,
-                    &bodyshape, 
+                    &bodyshape,
                 );
             } else {
                 play(
@@ -433,7 +457,7 @@ fn animate(
                     animplayer_ent.0,
                     false,
                     true,
-                    &bodyshape, 
+                    &bodyshape,
                 );
             }
         } else {

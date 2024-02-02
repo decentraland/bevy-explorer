@@ -27,8 +27,7 @@ impl Plugin for LoginPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<LoginType>().add_systems(
             Update,
-            (login, update_profile_for_realm)
-                .run_if(in_state(ui_core::State::Ready)),
+            (login, update_profile_for_realm).run_if(in_state(ui_core::State::Ready)),
         );
     }
 }

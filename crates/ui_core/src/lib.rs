@@ -6,10 +6,10 @@ pub mod focus;
 pub mod interact_style;
 pub mod nine_slice;
 pub mod scrollable;
+pub mod spinner;
 pub mod textentry;
 pub mod ui_actions;
 pub mod ui_builder;
-pub mod spinner;
 
 use std::{any::type_name, marker::PhantomData};
 
@@ -27,7 +27,7 @@ use nine_slice::Ui9SlicePlugin;
 use once_cell::sync::OnceCell;
 
 use common::sets::SetupSets;
-use spinner::{DuiSpinnerTemplate, spin_spinners};
+use spinner::{spin_spinners, DuiSpinnerTemplate};
 
 use self::{
     color_picker::update_color_picker_components, focus::FocusPlugin,

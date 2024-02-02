@@ -55,6 +55,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     ));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_emote_key(
     mut commands: Commands,
     player: Query<Entity, With<PrimaryUser>>,
@@ -87,7 +88,18 @@ fn handle_emote_key(
         w.send(EmoteUiEvent::Hide);
     }
 
-    const EMOTE_KEYS: [(KeyCode, u32); 10] = [(KeyCode::Key0, 0), (KeyCode::Key1, 1), (KeyCode::Key2, 2), (KeyCode::Key3, 3), (KeyCode::Key4, 4), (KeyCode::Key5, 5), (KeyCode::Key6, 6), (KeyCode::Key7, 7), (KeyCode::Key8, 8), (KeyCode::Key9, 9)];
+    const EMOTE_KEYS: [(KeyCode, u32); 10] = [
+        (KeyCode::Key0, 0),
+        (KeyCode::Key1, 1),
+        (KeyCode::Key2, 2),
+        (KeyCode::Key3, 3),
+        (KeyCode::Key4, 4),
+        (KeyCode::Key5, 5),
+        (KeyCode::Key6, 6),
+        (KeyCode::Key7, 7),
+        (KeyCode::Key8, 8),
+        (KeyCode::Key9, 9),
+    ];
     if !existing.is_empty() {
         for (emote_key, slot) in EMOTE_KEYS {
             if key_input.just_pressed(emote_key) {
@@ -98,7 +110,7 @@ fn handle_emote_key(
                     w.send(EmoteUiEvent::Hide);
                 }
             }
-        }    
+        }
     }
 }
 
@@ -114,10 +126,7 @@ pub enum EmoteUiEvent {
     Hide,
 }
 
-fn update_dui_props(
-    mut dui: ResMut<DuiRegistry>,
-    window: Query<&Window, With<PrimaryWindow>>,
-) {
+fn update_dui_props(mut dui: ResMut<DuiRegistry>, window: Query<&Window, With<PrimaryWindow>>) {
     let window = window.single();
     let aspect_size = window.width().min(window.height());
     dui.set_default_prop("font-large", format!("{}px", (aspect_size * 0.05) as u32));
@@ -139,7 +148,8 @@ impl LayoutPropsEx for Window {
             base_width / w_div_h * viewport_ratio.min(1.0),
         );
 
-        let center = (center.unwrap_or(viewport / 2.0) / viewport).clamp(size_pct / 2.0, Vec2::ONE - size_pct / 2.0);
+        let center = (center.unwrap_or(viewport / 2.0) / viewport)
+            .clamp(size_pct / 2.0, Vec2::ONE - size_pct / 2.0);
         let Vec2 { x: left, y: top } = (center - size_pct / 2.0) * 100.0;
         let Vec2 {
             x: width,
@@ -154,6 +164,7 @@ impl LayoutPropsEx for Window {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 // panel shows until button released or any click
 fn show_emote_ui(
     mut commands: Commands,
@@ -196,7 +207,10 @@ fn show_emote_ui(
 
         for i in 0..=9 {
             // we will remove the empty slots later
-            props.insert_prop(format!("image_{}", i), asset_server.load::<Image>("images/redx.png"));
+            props.insert_prop(
+                format!("image_{}", i),
+                asset_server.load::<Image>("images/redx.png"),
+            );
         }
 
         for emote in player_emotes {
@@ -209,7 +223,7 @@ fn show_emote_ui(
                     anim.thumbnail.clone()
                 })
                 .unwrap_or_else(|| {
-                    debug!("didn't find {} in {:?}", emote.urn, (*emotes).0);
+                    debug!("didn't find {} in {:?}", emote.urn, emotes.0);
                     asset_server.load("images/redx.png")
                 });
             props.insert_prop(format!("image_{}", emote.slot), h_thumb.clone())

@@ -4,10 +4,16 @@
 
 use avatar::AvatarDynamicState;
 use bevy::{
-    core::TaskPoolThreadAssignmentPolicy, core_pipeline::{
+    core::TaskPoolThreadAssignmentPolicy,
+    core_pipeline::{
         bloom::BloomSettings,
         tonemapping::{DebandDither, Tonemapping},
-    }, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, pbr::CascadeShadowConfigBuilder, prelude::*, render::view::ColorGrading, text::TextSettings
+    },
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    pbr::CascadeShadowConfigBuilder,
+    prelude::*,
+    render::view::ColorGrading,
+    text::TextSettings,
 };
 use bevy_console::ConsoleCommand;
 
@@ -154,9 +160,11 @@ fn main() {
         }
     };
 
-    app
-        .insert_resource(msaa)
-        .insert_resource(TextSettings{ soft_max_font_atlases: 4.try_into().unwrap(), allow_dynamic_font_size: true })
+    app.insert_resource(msaa)
+        .insert_resource(TextSettings {
+            soft_max_font_atlases: 4.try_into().unwrap(),
+            allow_dynamic_font_size: true,
+        })
         .add_plugins(
             DefaultPlugins
                 .set(TaskPoolPlugin {

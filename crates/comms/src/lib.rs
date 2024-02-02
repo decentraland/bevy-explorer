@@ -168,8 +168,9 @@ impl<'w, 's> AdapterManager<'w, 's> {
                     return None;
                 };
                 debug!("arch starting: {address} -> {ws_url}");
-                self.archipelago_events
-                    .send(StartArchipelago { address: ws_url.to_owned() });
+                self.archipelago_events.send(StartArchipelago {
+                    address: ws_url.to_owned(),
+                });
             }
             _ => {
                 warn!("unrecognised adapter protocol: {protocol}");

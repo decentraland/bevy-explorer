@@ -137,17 +137,20 @@ struct ShadowConsoleCommand {
 
 fn shadow_console_command(
     mut input: ConsoleCommand<ShadowConsoleCommand>,
-    mut lights: Query<&mut DirectionalLight>
+    mut lights: Query<&mut DirectionalLight>,
 ) {
     if let Some(Ok(command)) = input.take() {
         for mut light in lights.iter_mut() {
             light.shadows_enabled = command.on.unwrap_or(!light.shadows_enabled);
         }
 
-        input.reply_ok(format!("shadows {}", match command.on {
-            None => "toggled",
-            Some(true) => "enabled",
-            Some(false) => "disabled",
-        }));
+        input.reply_ok(format!(
+            "shadows {}",
+            match command.on {
+                None => "toggled",
+                Some(true) => "enabled",
+                Some(false) => "disabled",
+            }
+        ));
     }
 }

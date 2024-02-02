@@ -166,7 +166,11 @@ fn fetch_emote_details(
                             AvatarAnimation {
                                 name: metadata.name,
                                 description: metadata.description,
-                                clips: HashMap::from_iter(base_bodyshapes().into_iter().map(|body| (body, anim.1.clone()))),
+                                clips: HashMap::from_iter(
+                                    base_bodyshapes()
+                                        .into_iter()
+                                        .map(|body| (body, anim.1.clone())),
+                                ),
                                 thumbnail: ipfas
                                     .load_content_file(&metadata.thumbnail, &def.id)
                                     .unwrap(),
