@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, time::Duration};
+use std::{any::TypeId, collections::VecDeque, time::Duration};
 
 use bevy::{
     animation::RepeatAnimation,
@@ -29,7 +29,7 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use emotes::{AvatarAnimation, AvatarAnimations};
+use emotes::{base_bodyshapes, AvatarAnimation, AvatarAnimations};
 use scene_runner::{
     update_world::{transform_and_parent::ParentPositionSync, AddCrdtInterfaceExt},
     ContainerEntity, ContainingScene,
@@ -152,7 +152,12 @@ fn load_animations(
             if asset_server.load_state(h_folder.id()) == LoadState::Loaded {
                 let folder = folders.get(h_folder.id()).unwrap();
                 *state = AnimLoadState::WaitingForGltfs(
-                    folder.handles.iter().map(|h| h.clone().typed()).collect(),
+                    folder
+                        .handles
+                        .iter()
+                        .filter(|h| h.type_id() == TypeId::of::<Gltf>())
+                        .map(|h| h.clone().typed())
+                        .collect(),
                 )
             }
         }
@@ -161,16 +166,30 @@ fn load_animations(
                 |h_gltf| match gltfs.get(h_gltf).map(|gltf| &gltf.named_animations) {
                     Some(anims) => {
                         for (name, h_clip) in anims {
-                            animations.0.insert(
-                                name.clone(),
+                            let (name, repeat, is_male, is_female) = DEFAULT_ANIMATION_LOOKUP
+                                .iter()
+                                .find(|(_, anim)| anim.male == name || anim.female == name)
+                                .map(|(urn, anim)| (urn.to_string(), anim.repeat, anim.male == name, anim.female == name))
+                                .unwrap_or((name.to_owned(), false, false, false));
+
+                            let anim = animations.0.entry(name.clone()).or_insert_with(||
                                 AvatarAnimation {
                                     name: name.clone(),
                                     description: name.clone(),
-                                    clip: h_clip.clone(),
-                                    thumbnail: asset_server.load("images/emote_button.png"),
+                                    clips: HashMap::from_iter(base_bodyshapes().into_iter().map(|body| (body, h_clip.clone()))),
+                                    thumbnail: asset_server
+                                        .load(format!("animations/thumbnails/{name}_256.png")),
+                                    repeat,
                                 },
                             );
-                            debug!("added animation {name}");
+
+                            if is_female {
+                                anim.clips.insert(base_bodyshapes().remove(0), h_clip.clone());
+                            }
+                            if is_male {
+                                anim.clips.insert(base_bodyshapes().remove(1), h_clip.clone());
+                            }
+                            debug!("added animation {name}: {anim:?} from {:?}", h_clip.path());
                         }
                         false
                     }
@@ -303,13 +322,13 @@ fn animate(
     let prior_velocities = std::mem::take(&mut *velocities);
     let prior_playing = std::mem::take(&mut *playing);
 
-    let mut play = |anim: &str, speed: f32, ent: Entity, restart: bool, repeat: bool| -> bool {
-        if let Some(clip) = animations.0.get(anim) {
+    let mut play = |anim: &str, speed: f32, ent: Entity, restart: bool, repeat: bool, bodyshape: &str| -> bool {
+        if let Some(clip) = animations.0.get(anim).and_then(|anim| anim.clips.get(bodyshape)) {
             if let Ok(mut player) = players.get_mut(ent) {
                 if restart && player.elapsed() == 0.75 {
-                    player.start(clip.clip.clone()).repeat();
+                    player.start(clip.clone()).repeat();
                 } else if Some(anim) != prior_playing.get(&ent).map(String::as_str) || restart {
-                    player.play_with_transition(clip.clip.clone(), Duration::from_millis(100));
+                    player.play_with_transition(clip.clone(), Duration::from_millis(100));
                     if repeat {
                         player.repeat();
                     } else {
@@ -327,7 +346,7 @@ fn animate(
                 player.set_speed(speed);
                 return player.elapsed()
                     > anim_assets
-                        .get(&clip.clip)
+                        .get(clip)
                         .map_or(f32::MAX, |c| c.duration());
             }
         }
@@ -366,17 +385,19 @@ fn animate(
             }
         }
 
+        let bodyshape = base_bodyshapes().remove(if profile.map_or(true, UserProfile::is_female) { 0 } else { 1 });
+
         if let Some(PbAvatarEmoteCommand {
             emote_command: Some(EmoteCommand { emote_urn, r#loop }),
         }) = emote
         {
-            let is_female = profile.map_or(true, UserProfile::is_female);
-            let (emote_urn, repeat) = DEFAULT_ANIMATION_LOOKUP
-                .get(emote_urn.as_str())
-                .map(|anim| (if is_female { anim.female } else { anim.male }, anim.repeat))
-                .unwrap_or((emote_urn.as_str(), r#loop));
+            let (emote_urn, repeat) = (emote_urn.as_str(), r#loop);
+            // let (emote_urn, repeat) = DEFAULT_ANIMATION_LOOKUP
+            //     .get(emote_urn.as_str())
+            //     .map(|anim| (if is_female { anim.female } else { anim.male }, anim.repeat))
+            //     .unwrap_or((emote_urn.as_str(), r#loop));
 
-            if play(emote_urn, 1.0, animplayer_ent.0, false, repeat) && !repeat {
+            if play(emote_urn, 1.0, animplayer_ent.0, false, repeat, &bodyshape) && !repeat {
                 // emote has finished, remove from the set so will resume default anim after
                 emotes.as_mut().unwrap().clear();
             };
@@ -390,6 +411,7 @@ fn animate(
                 animplayer_ent.0,
                 dynamic_state.velocity.y > 0.0,
                 true,
+                &bodyshape, 
             );
             continue;
         }
@@ -402,6 +424,7 @@ fn animate(
                     animplayer_ent.0,
                     false,
                     true,
+                    &bodyshape, 
                 );
             } else {
                 play(
@@ -410,10 +433,11 @@ fn animate(
                     animplayer_ent.0,
                     false,
                     true,
+                    &bodyshape, 
                 );
             }
         } else {
-            play("Idle_Male", 1.0, animplayer_ent.0, false, true);
+            play("Idle_Male", 1.0, animplayer_ent.0, false, true, &bodyshape);
         }
     }
 }

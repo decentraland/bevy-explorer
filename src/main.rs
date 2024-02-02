@@ -4,15 +4,10 @@
 
 use avatar::AvatarDynamicState;
 use bevy::{
-    core::TaskPoolThreadAssignmentPolicy,
-    core_pipeline::{
+    core::TaskPoolThreadAssignmentPolicy, core_pipeline::{
         bloom::BloomSettings,
         tonemapping::{DebandDither, Tonemapping},
-    },
-    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    pbr::CascadeShadowConfigBuilder,
-    prelude::*,
-    render::view::ColorGrading,
+    }, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, pbr::CascadeShadowConfigBuilder, prelude::*, render::view::ColorGrading, text::TextSettings
 };
 use bevy_console::ConsoleCommand;
 
@@ -159,37 +154,40 @@ fn main() {
         }
     };
 
-    app.insert_resource(msaa).add_plugins(
-        DefaultPlugins
-            .set(TaskPoolPlugin {
-                task_pool_options: TaskPoolOptions {
-                    async_compute: TaskPoolThreadAssignmentPolicy {
-                        min_threads: 1,
-                        max_threads: 8,
-                        percent: 0.25,
+    app
+        .insert_resource(msaa)
+        .insert_resource(TextSettings{ soft_max_font_atlases: 4.try_into().unwrap(), allow_dynamic_font_size: true })
+        .add_plugins(
+            DefaultPlugins
+                .set(TaskPoolPlugin {
+                    task_pool_options: TaskPoolOptions {
+                        async_compute: TaskPoolThreadAssignmentPolicy {
+                            min_threads: 1,
+                            max_threads: 8,
+                            percent: 0.25,
+                        },
+                        ..Default::default()
                     },
+                })
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Decentraland Bevy Explorer".to_owned(),
+                        present_mode,
+                        ..Default::default()
+                    }),
                     ..Default::default()
-                },
-            })
-            .set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: "Decentraland Bevy Explorer".to_owned(),
-                    present_mode,
-                    ..Default::default()
-                }),
-                ..Default::default()
-            })
-            .set(bevy::log::LogPlugin {
-                filter: "wgpu=error,naga=error".to_string(),
-                ..default()
-            })
-            .build()
-            .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
-                starting_realm: Some(final_config.server.clone()),
-                cache_root: Default::default(),
-            })
-            .add_before::<bevy::asset::AssetPlugin, _>(NftReaderPlugin),
-    );
+                })
+                .set(bevy::log::LogPlugin {
+                    filter: "wgpu=error,naga=error".to_string(),
+                    ..default()
+                })
+                .build()
+                .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
+                    starting_realm: Some(final_config.server.clone()),
+                    cache_root: Default::default(),
+                })
+                .add_before::<IpfsIoPlugin, _>(NftReaderPlugin),
+        );
 
     if final_config.graphics.log_fps {
         app.add_plugins(FrameTimeDiagnosticsPlugin)

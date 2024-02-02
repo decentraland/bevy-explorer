@@ -17,6 +17,8 @@
         border-color: #2222aa;
         padding: 0px 20px 10px 20px;
         background-color: #8888ccaa;
+        width: 80%;
+        max-width: 500px;
     ">
         <div style="font-size: 30px; font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; text-align: center; color: white;" text="@title" />
         <component template="hr" />

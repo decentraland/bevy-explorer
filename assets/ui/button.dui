@@ -22,3 +22,19 @@
         </div>
     </div>
 </define-template>
+
+<define-template id="image-button-base">
+    <div id="button-node" style="
+        flex-direction: column;
+        align-self: stretch;
+        align-items: center;
+        justify-content: center;
+    ">
+        <component id="button-background" template="nineslice" slice-image="images/button.png" slice-border="37.5% 18.75% 37.5% 18.75%" slice-color="#aaaaaa" content="button-content" />
+        <div style="
+            width: 100%;
+            height: 100%;
+        " image="@label" />
+    </div>
+</define-template>
+

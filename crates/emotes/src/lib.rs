@@ -9,6 +9,13 @@ use ipfs::{ActiveEntityTask, EntityDefinition, IpfsAssetServer};
 use itertools::Itertools;
 use serde::Deserialize;
 
+pub fn base_bodyshapes() -> Vec<String> {
+    vec![
+        format!("urn:decentraland:off-chain:base-avatars:{}", "baseFemale").to_lowercase(),
+        format!("urn:decentraland:off-chain:base-avatars:{}", "baseMale").to_lowercase(),
+    ]
+}
+
 pub struct EmotesPlugin;
 
 impl Plugin for EmotesPlugin {
@@ -19,11 +26,13 @@ impl Plugin for EmotesPlugin {
     }
 }
 
+#[derive(Debug)]
 pub struct AvatarAnimation {
     pub name: String,
     pub description: String,
-    pub clip: Handle<AnimationClip>,
+    pub clips: HashMap<String, Handle<AnimationClip>>,
     pub thumbnail: Handle<Image>,
+    pub repeat: bool,
 }
 
 #[derive(Resource, Default)]
@@ -49,6 +58,10 @@ fn fetch_emotes(
     ipfas: IpfsAssetServer,
     mut task: Local<Option<ActiveEntityTask>>,
 ) {
+    if !ipfas.is_connected() {
+        return;
+    }
+
     let required_emote_urns = profiles
         .iter()
         .flat_map(|p| p.content.avatar.emotes.as_ref())
@@ -70,7 +83,7 @@ fn fetch_emotes(
                 );
                 defs.unprocessed.extend(res);
             }
-            Err(e) => warn!("active entities task failed: {e}"),
+            Err(e) => warn!("emote active entities task failed: {e}"),
         }
         *task = None;
     }
@@ -81,6 +94,7 @@ fn fetch_emotes(
             .filter(|urn| urn.contains(':') && !defs.loaded.contains(urn))
             .collect::<Vec<_>>();
         if !missing_urns.is_empty() {
+            debug!("fetching emotes: {missing_urns:?}");
             *task = Some(
                 ipfas
                     .ipfs()
@@ -94,10 +108,16 @@ fn fetch_emote_details(
     mut defs: ResMut<EmoteLoadData>,
     mut avatar_anims: ResMut<AvatarAnimations>,
     mut loading_gltf: Local<Vec<(EntityDefinition, Handle<Gltf>)>>,
+    // mut loading_gltf: Local<Vec<(EntityDefinition, HashMap<String, Handle<Gltf>>)>>,
     ipfas: IpfsAssetServer,
     gltfs: Res<Assets<Gltf>>,
 ) {
     for def in defs.unprocessed.drain(..) {
+        // let metadata: EmoteMeta = def
+        //     .metadata
+        //     .and_then(|m| serde_json::from_value(m).ok())
+        //     .unwrap_or_default();
+
         let Some(first_glb) = def
             .content
             .files()
@@ -146,10 +166,11 @@ fn fetch_emote_details(
                             AvatarAnimation {
                                 name: metadata.name,
                                 description: metadata.description,
-                                clip: anim.1.clone(),
+                                clips: HashMap::from_iter(base_bodyshapes().into_iter().map(|body| (body, anim.1.clone()))),
                                 thumbnail: ipfas
                                     .load_content_file(&metadata.thumbnail, &def.id)
                                     .unwrap(),
+                                repeat: false, // TODO: parse extended data
                             },
                         );
                     }

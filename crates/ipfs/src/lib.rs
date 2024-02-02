@@ -333,6 +333,10 @@ impl<'w, 's> IpfsAssetServer<'w, 's> {
     pub fn load_state(&self, id: impl Into<UntypedAssetId>) -> LoadState {
         self.server.load_state(id)
     }
+
+    pub fn is_connected(&self) -> bool {
+        self.ipfs.realm_config_receiver.borrow().is_some()
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -876,7 +880,7 @@ impl AssetReader for IpfsIo {
 
             if let Some(hash) = &hash {
                 debug!("hash: {}", hash);
-                if let Ok(mut res) = self.default_io.read(Path::new(&hash)).await {
+                if let Ok(mut res) = self.default_io.read(&self.cache_path().join(&hash)).await {
                     let mut daft_buffer = Vec::default();
                     res.read_to_end(&mut daft_buffer).await?;
                     let reader: Box<Reader> = Box::new(Cursor::new(daft_buffer));

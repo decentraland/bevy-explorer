@@ -285,7 +285,9 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, root: Res<Syste
                                  mut toaster: Toaster,
                                  frame: Res<FrameCount>| {
                                     let mut copy = String::default();
-                                    let children = chatbox.single();
+                                    let Ok(children) = chatbox.get_single() else {
+                                        return;
+                                    };
                                     for ent in children.iter() {
                                         if let Ok(msg) = msgs.get(*ent) {
                                             copy.push_str(
