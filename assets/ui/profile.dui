@@ -1,5 +1,5 @@
 <define-template id="profile">
-    <component template="fullscreen" content="profile-content" />
+    <fullscreen content="profile-content" />
 </define-template>
 
 <define-template id="profile-content">
@@ -17,13 +17,13 @@
         justify-content: space-around;
     ">
         <div style="font-size: 30px; font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; text-align: center; color: white;" text="@title" />
-        <component template="hr" />
+        <hr />
         <div style="
             flex-direction: row; 
             align-items: center;
             justify-content: space-around;
         ">
-            <component template="photobooth" />
+            <photobooth />
         </div>
     </div>
 </define-template>

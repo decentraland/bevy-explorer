@@ -1,6 +1,6 @@
 use avatar::animate::EmoteList;
-use bevy::{prelude::*, text::BreakLineOn, ui::FocusPolicy, utils::HashSet, window::PrimaryWindow};
-use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
+use bevy::{prelude::*, text::BreakLineOn, ui::FocusPolicy, utils::HashSet, window::{PrimaryWindow, WindowResized}};
+use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::structs::PrimaryUser;
 use comms::profile::CurrentUserProfile;
 use emotes::AvatarAnimations;
@@ -21,6 +21,7 @@ impl Plugin for EmoteUiPlugin {
                 (
                     update_dui_props,
                     handle_emote_key,
+                    apply_layout,
                     show_emote_ui
                         .run_if(|profile: Res<CurrentUserProfile>| profile.profile.is_some()),
                 ),
@@ -28,7 +29,7 @@ impl Plugin for EmoteUiPlugin {
     }
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut dui: ResMut<DuiRegistry>) {
     // emote button
     commands.spawn((
         ImageBundle {
@@ -53,6 +54,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             },
         ),
     ));
+
+    dui.register_template("popup-layout", DuiComponentFromClone::<DuiLayout>::new("layout"));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -139,29 +142,58 @@ pub trait LayoutPropsEx {
 }
 
 impl LayoutPropsEx for Window {
-    fn get_layout_props(&self, w_div_h: f32, base_width: f32, center: Option<Vec2>) -> DuiProps {
+    fn get_layout_props(&self, w_div_h: f32, width: f32, center: Option<Vec2>) -> DuiProps {
         let viewport = Vec2::new(self.width(), self.height());
         let viewport_ratio = viewport.x / viewport.y;
 
         let size_pct = Vec2::new(
-            base_width * (1.0 / viewport_ratio).min(1.0),
-            base_width / w_div_h * viewport_ratio.min(1.0),
+            width * (1.0 / viewport_ratio).min(1.0),
+            width / w_div_h * viewport_ratio.min(1.0),
         );
 
         let center = (center.unwrap_or(viewport / 2.0) / viewport)
             .clamp(size_pct / 2.0, Vec2::ONE - size_pct / 2.0);
         let Vec2 { x: left, y: top } = (center - size_pct / 2.0) * 100.0;
-        let Vec2 {
-            x: width,
-            y: height,
-        } = size_pct * viewport;
 
         DuiProps::new()
             .with_prop("left", format!("{left}%"))
             .with_prop("top", format!("{top}%"))
-            .with_prop("width", format!("{width}px"))
-            .with_prop("height", format!("{height}px"))
+            .with_prop("layout", DuiLayout { width, w_div_h })
     }
+}
+
+fn apply_layout(
+    mut q: Query<(&mut Style, Ref<DuiLayout>)>,
+    mut resized: EventReader<WindowResized>,
+    window: Query<&Window, With<PrimaryWindow>>,
+) {
+    let resized = resized.read().last().is_some();
+    let window = window.single();
+    let viewport = Vec2::new(window.width(), window.height());
+    let viewport_ratio = viewport.x / viewport.y;
+
+    for (mut style, layout) in q.iter_mut() {
+        if layout.is_added() || layout.is_changed() || resized {
+            let size_pct = Vec2::new(
+                layout.width * (1.0 / viewport_ratio).min(1.0),
+                layout.width / layout.w_div_h * viewport_ratio.min(1.0),
+            );
+
+            let Vec2 {
+                x: width,
+                y: height,
+            } = size_pct * viewport;
+
+            style.width = Val::Px(width);
+            style.height = Val::Px(height);
+        }
+    }
+}
+
+#[derive(Component, Clone, Copy)]
+pub struct DuiLayout {
+    pub width: f32,
+    pub w_div_h: f32,
 }
 
 #[allow(clippy::too_many_arguments)]

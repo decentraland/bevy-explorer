@@ -4,7 +4,8 @@
 - @buttons: Vec<Button>
 -->
 <define-template id="dialog">
-    <component template="fullscreen-block" content="dialog-content" passthrough="true"/>
+    <fullscreen-block passthrough="true">
+    </fullscreen-block>
 </define-template>
 
 <define-template id="dialog-content">
@@ -21,10 +22,10 @@
         max-width: 500px;
     ">
         <div style="font-size: 30px; font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; text-align: center; color: white;" text="@title" />
-        <component template="hr" />
-        <component template="@body" passthrough="true" />
-        <component template="hr" />
-        <component template="button-set" buttons="@buttons" />
+        <hr />
+        <@body passthrough="true" />
+        <hr />
+        <button-set buttons="@buttons" />
     </div>
 </define-template>
 

@@ -7,6 +7,6 @@
         justify-content: center;
         background-color: #00000044;
     ">
-        <component template="@content" passthrough="true" />
+        <@content passthrough="true" />
     </div>
 </define-template>
