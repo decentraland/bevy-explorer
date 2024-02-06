@@ -3,57 +3,53 @@
 - @reuse, @connect, @guest, @quit: On::<Click> functions
 -->
 <define-template id="login">
-    <fullscreen-block content="login-content" passthrough="true"/>
-</define-template>
-
-<define-template id="login-content">
-    <div style="
-        border: 4px;
-        border-color: #2222aa;
-        padding: 0px 0px 10px 0px;
-        flex-direction: column;
-        height: 80%;
-        max-height: 800px;
-        min-height: 400px;
-        width: 80%;
-        max-width: 500px;
-        background-color: #8888ccaa;
-        overflow-x: hidden;
-        overflow-y: hidden;
-        align-items: center;
-        justify-content: space-around;
-    ">
-        <div style="font-size: 50px; font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; text-align: center; color: black;">Bevy Explorer</div>
-        <div style="align-self: center; height: 100%; min-height: 1%, background-color: #00ff00;"><div image="images/dcl-godot-bevy.png" /></div>
-        <div style="font-size: 17px; font: 'fonts/FiraSans-Bold.ttf'; text-align: center; color: black;">Powered by</div>
-        <div image="images/dao_small.png" style="width: 200px; height: 30px; align-self: center;" />
-        <button id="reuse" label="Reuse Last Login" onclick="@reuse" enabled="@allow-reuse" />
-        <button id="connect" label="Connect External Wallet" onclick="@connect" />
-        <button id="guest" label="Play as Guest" onclick="@guest" />
-        <button id="quit" label="Quit" onclick="@quit" />
-    </div>
+    <fullscreen-block>
+        <div style="
+            border: 4px;
+            border-color: #2222aa;
+            padding: 0px 0px 10px 0px;
+            flex-direction: column;
+            height: 80%;
+            max-height: 800px;
+            min-height: 400px;
+            width: 80%;
+            max-width: 500px;
+            background-color: #8888ccaa;
+            overflow-x: hidden;
+            overflow-y: hidden;
+            align-items: center;
+            justify-content: space-around;
+        ">
+            <div style="font-size: 50px; font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; text-align: center; color: black;">Bevy Explorer</div>
+            <div style="align-self: center; height: 100%; min-height: 1%, background-color: #00ff00;"><div image="images/dcl-godot-bevy.png" /></div>
+            <div style="font-size: 17px; font: 'fonts/FiraSans-Bold.ttf'; text-align: center; color: black;">Powered by</div>
+            <div image="images/dao_small.png" style="width: 200px; height: 30px; align-self: center;" />
+            <button id="reuse" label="Reuse Last Login" onclick="@reuse" enabled="@allow-reuse" />
+            <button id="connect" label="Connect External Wallet" onclick="@connect" />
+            <button id="guest" label="Play as Guest" onclick="@guest" />
+            <button id="quit" label="Quit" onclick="@quit" />
+        </div>
+    </fullscreen-block>
 </define-template>
 
 <!-- cancel login dialog
 - @buttons: Vec<Button>
 -->
 <define-template id="cancel-login">
-    <dialog title="Waiting for Signature" body="cancel-login-content" passthrough="true" />
-</define-template>
-
-<define-template id="cancel-login-content">
-    <div style="flex-direction: column; align-items: center;">
-        <div style="flex-direction: column; width: 100%;">
-            <div style="
-                font: 'fonts/NotoSans-Regular.ttf'; 
-                font-size: 24px; 
-                color: black;
-                text-align: center;
-                margin: 20px;
-                "
-                text="Please follow the instructions in your browser to connect your wallet to your Decentraland account"
-            />
+    <dialog title="Waiting for Signature" buttons="@buttons">
+        <div style="flex-direction: column; align-items: center;">
+            <div style="flex-direction: column; width: 100%;">
+                <div style="
+                    font: 'fonts/NotoSans-Regular.ttf'; 
+                    font-size: 24px; 
+                    color: black;
+                    text-align: center;
+                    margin: 20px;
+                    "
+                    text="Please follow the instructions in your browser to connect your wallet to your Decentraland account"
+                />
+            </div>
+            <spinner />
         </div>
-        <spinner />
-    </div>
+    </dialog>
 </define-template>

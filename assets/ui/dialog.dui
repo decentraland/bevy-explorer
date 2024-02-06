@@ -1,32 +1,40 @@
-<!-- generic dialog
+<!-- dialog
 - @title: String
-- @body: template id
 - @buttons: Vec<Button>
 -->
 <define-template id="dialog">
-    <fullscreen-block passthrough="true">
+    <fullscreen-block>
+        <div style="
+            flex-direction: column;
+            overflow-x: hidden;
+            overflow-y: hidden;
+            align-items: center;
+            border: 4px;
+            border-color: #2222aa;
+            padding: 0px 20px 10px 20px;
+            background-color: #8888ccaa;
+            width: 80%;
+            max-width: 500px;
+        ">
+            <div style="font-size: 30px; font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; text-align: center; color: white;" text="@title" />
+            <hr />
+            <apply-children />
+            <hr />
+            <button-set buttons="@buttons" />
+        </div>
     </fullscreen-block>
 </define-template>
 
-<define-template id="dialog-content">
-    <div style="
-        flex-direction: column;
-        overflow-x: hidden;
-        overflow-y: hidden;
-        align-items: center;
-        border: 4px;
-        border-color: #2222aa;
-        padding: 0px 20px 10px 20px;
-        background-color: #8888ccaa;
-        width: 80%;
-        max-width: 500px;
-    ">
-        <div style="font-size: 30px; font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; text-align: center; color: white;" text="@title" />
-        <hr />
-        <@body passthrough="true" />
-        <hr />
-        <button-set buttons="@buttons" />
-    </div>
+
+<!-- text dialog
+- @title: String
+- @body: String
+- @buttons: Vec<Button>
+-->
+<define-template id="text-dialog">
+    <dialog>
+        <div text="@body" />
+    </dialog>
 </define-template>
 
 <!-- horizontal rule -->

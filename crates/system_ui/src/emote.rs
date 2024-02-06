@@ -1,5 +1,11 @@
 use avatar::animate::EmoteList;
-use bevy::{prelude::*, text::BreakLineOn, ui::FocusPolicy, utils::HashSet, window::{PrimaryWindow, WindowResized}};
+use bevy::{
+    prelude::*,
+    text::BreakLineOn,
+    ui::FocusPolicy,
+    utils::HashSet,
+    window::{PrimaryWindow, WindowResized},
+};
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::structs::PrimaryUser;
 use comms::profile::CurrentUserProfile;
@@ -55,7 +61,10 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut dui: ResMut
         ),
     ));
 
-    dui.register_template("popup-layout", DuiComponentFromClone::<DuiLayout>::new("layout"));
+    dui.register_template(
+        "popup-layout",
+        DuiComponentFromClone::<DuiLayout>::new("layout"),
+    );
 }
 
 #[allow(clippy::too_many_arguments)]

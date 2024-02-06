@@ -6,7 +6,7 @@ use bevy::{
     prelude::*,
     ui::FocusPolicy,
 };
-use bevy_dui::{DuiCommandsExt, DuiProps, DuiTemplate, NodeMap};
+use bevy_dui::{DuiContext, DuiProps, DuiTemplate, NodeMap};
 
 use crate::{
     nine_slice::Ui9Slice,
@@ -50,8 +50,8 @@ impl DuiTemplate for DuiButtonTemplate {
     fn render(
         &self,
         commands: &mut bevy::ecs::system::EntityCommands,
-        props: &mut bevy_dui::DuiProps,
-        dui_registry: &bevy_dui::DuiRegistry,
+        mut props: bevy_dui::DuiProps,
+        ctx: &mut DuiContext,
     ) -> Result<NodeMap, anyhow::Error> {
         debug!("props: {props:?}");
 
@@ -67,12 +67,12 @@ impl DuiTemplate for DuiButtonTemplate {
             }
         };
 
-        let base_props = DuiProps::new().with_prop("label", data.label);
-        let components = dui_registry.apply_template(commands, "button-base", base_props)?;
+        let button_props = DuiProps::new().with_prop("label", data.label);
+        let components = ctx.render_template(commands, "button-base", button_props)?;
 
-        let mut button = commands.commands().entity(components.named("button-node"));
+        let mut button = commands.commands().entity(components["button-node"]);
 
-        let background_id = components.named("button-background");
+        let background_id = components["button-background"];
 
         button.insert((
             Enabled(data.enabled),
@@ -111,7 +111,7 @@ impl DuiTemplate for DuiButtonTemplate {
             // delayed modification
             commands
                 .commands()
-                .entity(components.named("label"))
+                .entity(components["label"])
                 .modify_component(|text: &mut Text| {
                     for section in text.sections.iter_mut() {
                         section.style.color = Color::rgb(0.5, 0.5, 0.5);
@@ -119,7 +119,7 @@ impl DuiTemplate for DuiButtonTemplate {
                 });
         }
 
-        Ok(components.named_nodes)
+        Ok(components)
     }
 }
 
@@ -128,13 +128,14 @@ impl DuiTemplate for DuiButtonSetTemplate {
     fn render(
         &self,
         commands: &mut EntityCommands,
-        props: &mut DuiProps,
-        dui_registry: &bevy_dui::DuiRegistry,
+        mut props: DuiProps,
+        ctx: &mut DuiContext,
     ) -> Result<NodeMap, anyhow::Error> {
         let buttons = props
             .take::<Vec<DuiButton>>("buttons")?
             .ok_or(anyhow!("no buttons in set"))?;
         let mut results = NodeMap::default();
+        let mut err = None;
 
         commands
             .insert(NodeBundle {
@@ -153,20 +154,21 @@ impl DuiTemplate for DuiButtonSetTemplate {
                     },
                     ..Default::default()
                 });
+
+                for (i, button) in buttons.into_iter().enumerate() {
+                    let button_props = DuiProps::new().with_prop("button-data", button);
+                    match ctx.spawn_template("button", c, button_props) {
+                        Ok(nodes) => {
+                            results.insert(format!("button {i}"), nodes["root"]);
+                        }
+                        Err(e) => err = Some(e),
+                    }
+                }
             });
 
-        let mut children = Vec::default();
-        for (i, button) in buttons.into_iter().enumerate() {
-            let props = DuiProps::new().with_prop("button-data", button);
-            let entities = commands
-                .commands()
-                .spawn_template(dui_registry, "button", props)?;
-            results.insert(format!("button {i}"), entities.root);
-            children.push(entities.root);
+        if let Some(err) = err {
+            return Err(err);
         }
-
-        commands.push_children(&children);
-
         Ok(results)
     }
 }

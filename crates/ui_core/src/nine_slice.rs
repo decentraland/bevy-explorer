@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use bevy::prelude::*;
-use bevy_dui::{DuiRegistry, DuiTemplate, NodeMap};
+use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate, NodeMap};
 use bevy_ecss::StyleSheetAsset;
 // use common::util::TryInsertEx;
 
@@ -292,8 +292,8 @@ impl DuiTemplate for Ui9SliceTemplate {
     fn render(
         &self,
         commands: &mut bevy::ecs::system::EntityCommands,
-        props: &mut bevy_dui::DuiProps,
-        dui_registry: &bevy_dui::DuiRegistry,
+        mut props: DuiProps,
+        ctx: &mut DuiContext,
     ) -> Result<NodeMap, anyhow::Error> {
         let border = props
             .take::<String>("slice-border")?
@@ -344,7 +344,7 @@ impl DuiTemplate for Ui9SliceTemplate {
                 ..Default::default()
             },
             Ui9Slice {
-                image: dui_registry.asset_server().load(img),
+                image: ctx.asset_server().load(img),
                 center_region,
                 tint,
             },

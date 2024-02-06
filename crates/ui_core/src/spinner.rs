@@ -15,10 +15,10 @@ impl DuiTemplate for DuiSpinnerTemplate {
     fn render(
         &self,
         commands: &mut bevy::ecs::system::EntityCommands,
-        _: &mut DuiProps,
-        dui_registry: &DuiRegistry,
+        _: DuiProps,
+        ctx: &mut DuiContext,
     ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
-        commands.apply_template(dui_registry, "spinner-base", DuiProps::new())?;
+        ctx.render_template(commands, "spinner-base", DuiProps::new())?;
         commands.insert(Spinner);
         Ok(Default::default())
     }

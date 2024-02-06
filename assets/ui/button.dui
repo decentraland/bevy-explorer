@@ -30,7 +30,6 @@
         align-items: center;
         justify-content: center;
     ">
-        <nineslice id="button-background" slice-image="images/button.png" slice-border="37.5% 18.75% 37.5% 18.75%" slice-color="#aaaaaa" content="button-content" />
         <div style="
             width: 100%;
             height: 100%;

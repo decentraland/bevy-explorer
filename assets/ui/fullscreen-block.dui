@@ -5,8 +5,8 @@
         height: 100%;
         align-items: center;
         justify-content: center;
-        background-color: #00000044;
+        background-color: #00000088;
     ">
-        <@content passthrough="true" />
+        <apply-children />
     </div>
 </define-template>
