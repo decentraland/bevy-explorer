@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use anyhow::anyhow;
 use bevy::{
     core::FrameCount,
     core_pipeline::clear_color::ClearColorConfig,
@@ -14,6 +15,7 @@ use bevy::{
     },
     window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution},
 };
+use bevy_dui::{DuiRegistry, DuiTemplate};
 use common::{
     sets::SetupSets,
     structs::{AvatarTextureHandle, PrimaryPlayerRes},
@@ -170,6 +172,7 @@ fn setup_primary_avatar_camera(
     mut commands: Commands,
     player: Res<PrimaryPlayerRes>,
     mut images: ResMut<Assets<Image>>,
+    mut dui: ResMut<DuiRegistry>,
 ) {
     let size = Extent3d {
         width: 512,
@@ -188,6 +191,8 @@ fn setup_primary_avatar_camera(
     commands
         .entity(player.0)
         .insert(AvatarTextureHandle(avatar_texture));
+
+    dui.register_template("photobooth", DuiBooth);
 }
 
 fn add_booth_camera(
@@ -457,3 +462,47 @@ pub struct BoothImage;
 
 #[derive(Component)]
 pub struct SnapshotTimer(u32, Option<Entity>, Option<Entity>);
+
+pub struct DuiBooth;
+impl DuiTemplate for DuiBooth {
+    fn render(
+        &self,
+        commands: &mut bevy::ecs::system::EntityCommands,
+        mut props: bevy_dui::DuiProps,
+        _: &mut bevy_dui::DuiContext,
+    ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
+        let booth = props.take::<BoothInstance>("booth-instance")?.ok_or(anyhow!("no booth provided"))?;
+
+        commands.insert((
+            UiImage::new(booth.avatar_texture.clone()),
+            Interaction::default(),
+            BoothImage,
+            booth,
+            On::<Dragged>::new(
+                |mut transform: Query<&mut Transform>,
+                q: Query<(&BoothInstance, &DragData), With<BoothImage>>| {
+                    let Ok((instance, drag)) = q.get_single() else {
+                        return;
+                    };
+                    let drag = drag.delta;
+                    let Ok(mut transform) = transform.get_mut(instance.camera) else {
+                        return;
+                    };
+
+                    let offset = transform.translation * Vec3::new(1.0, 0.0, 1.0);
+                    let new_offset = Quat::from_rotation_y(-drag.x / 50.0) * offset;
+
+                    let distance = offset.length();
+                    let distance = (distance * 1.0 + 0.01 * drag.y).clamp(0.75, 4.0);
+
+                    let height = 1.8 - 0.9 * (distance - 0.75) / 3.25;
+
+                    transform.translation = new_offset.normalize() * distance + Vec3::Y * height;
+                    transform.look_at(Vec3::Y * height, Vec3::Y);
+                },
+            )
+        ));
+
+        Ok(default())
+    }
+}
