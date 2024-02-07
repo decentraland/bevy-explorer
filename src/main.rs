@@ -192,7 +192,7 @@ fn main() {
                 .build()
                 .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
                     starting_realm: Some(final_config.server.clone()),
-                    cache_root: Default::default(),
+                    assets_root: Default::default(),
                 })
                 .add_before::<IpfsIoPlugin, _>(NftReaderPlugin),
         );

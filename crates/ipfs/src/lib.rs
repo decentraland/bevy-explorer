@@ -394,7 +394,7 @@ impl Default for ServerAbout {
 }
 
 pub struct IpfsIoPlugin {
-    pub cache_root: Option<String>,
+    pub assets_root: Option<String>,
     pub starting_realm: Option<String>,
 }
 
@@ -403,15 +403,14 @@ impl Plugin for IpfsIoPlugin {
         info!("remote server: {:?}", self.starting_realm);
 
         let file_path = self
-            .cache_root
+            .assets_root
             .clone()
-            .unwrap_or("assets/cache/".to_owned());
+            .unwrap_or("assets".to_owned());
         let default_reader = FileAssetReader::new(file_path.clone());
-        let cache_root = default_reader.root_path().to_owned();
+        let cache_root = default_reader.root_path().join("cache");
         std::fs::create_dir_all(&cache_root).expect("failed to write to assets folder");
 
-        let static_paths = HashMap::from_iter([("genesis_tx.png", "images/genesis_tx.png")]);
-        let ipfs_io = IpfsIo::new(Box::new(default_reader), cache_root, static_paths);
+        let ipfs_io = IpfsIo::new(Box::new(default_reader), cache_root, HashMap::default());
         let ipfs_io = Arc::new(ipfs_io);
         let passthrough = PassThroughReader {
             inner: ipfs_io.clone(),
