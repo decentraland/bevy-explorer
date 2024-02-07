@@ -1,0 +1,28 @@
+<define-template id="change-realm">
+    <dialog title="Select a new realm" buttons="@buttons">
+        <div style="flex-direction: column">
+            <div>
+                <div style="font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-large'; color: black;" text="Current realm: " />
+                <div style="font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-large'; color: black;" id="current-realm" text="@realm" />
+            </div>
+        </div>
+        <hr />
+        <div style="flex-direction: row; width: 100%; justify-content: space-between;">
+            <div text="Realm" style="margin: 10px; font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-med'; color: black; width: 33%" />
+            <div text="Users Online" style="margin: 10px; font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-med'; color: black; width: 33%" />
+            <div style="flex-grow: 1;" />
+        </div>
+        <div id="server-list" style="flex-direction: column; width: 100%">
+            <div style="align-items: center; justify-content: center;"><spinner /></div>
+        </div>
+    </dialog>
+</define-template>
+
+<define-template id="server-item">
+    <div style="flex-direction: row; width: 100%; justify-content: space-between; align-items: center; border: 0px 0px 0px 0px; border-color: blue;">
+        <nineslice id="button-background" slice-image="images/button.png" slice-border="37.5% 18.75% 37.5% 18.75%" slice-color="#8888cc" />
+        <div text="@name" style="margin: 10px; border: 0px 1px 0px 0px; border-color: blue; font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-med'; color: black; width: 33%" />
+        <div text="@users" style="margin: 10px; border: 0px 1px 0px 0px; border-color: blue; font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-med'; color: black; width: 33%" />
+        <button label="warp in" onclick="@onclick" enabled="@enabled" style="flex-grow: 1;" />
+    </div>
+</define-template>
