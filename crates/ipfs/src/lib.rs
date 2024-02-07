@@ -402,10 +402,7 @@ impl Plugin for IpfsIoPlugin {
     fn build(&self, app: &mut App) {
         info!("remote server: {:?}", self.starting_realm);
 
-        let file_path = self
-            .assets_root
-            .clone()
-            .unwrap_or("assets".to_owned());
+        let file_path = self.assets_root.clone().unwrap_or("assets".to_owned());
         let default_reader = FileAssetReader::new(file_path.clone());
         let cache_root = default_reader.root_path().join("cache");
         std::fs::create_dir_all(&cache_root).expect("failed to write to assets folder");
