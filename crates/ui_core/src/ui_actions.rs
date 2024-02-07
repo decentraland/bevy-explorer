@@ -256,3 +256,41 @@ fn update_drag(
         drag_data.delta = delta;
     }
 }
+
+
+pub trait EventDefaultExt {
+    fn default_on<A: ActionMarker>() -> On::<A>;
+}
+
+impl<E: Event + Default> EventDefaultExt for E {
+    fn default_on<A: ActionMarker>() -> On::<A> {
+        On::<A>::new(|mut e: EventWriter<Self>| {
+            e.send_default();
+        })
+    }
+}
+
+pub trait EventCloneExt {
+    fn value_on<A: ActionMarker>(value: Self) -> On::<A>;
+}
+
+impl<E: Event + Clone> EventCloneExt for E {
+    fn value_on<A: ActionMarker>(value: Self) -> On::<A> {
+        On::<A>::new(move |mut e: EventWriter<Self>| {
+            e.send(value.clone());
+        })
+    }
+}
+
+pub trait EntityActionExt {
+    fn despawn_recursive_on<A: ActionMarker>(&self) -> On::<A>;
+}
+
+impl EntityActionExt for Entity {
+    fn despawn_recursive_on<A: ActionMarker>(&self) -> On::<A> {
+        let ent = *self;
+        On::<A>::new(move |mut commands: Commands| {
+            commands.entity(ent).despawn_recursive();
+        })
+    }
+}
