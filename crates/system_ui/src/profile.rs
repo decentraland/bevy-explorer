@@ -1,3 +1,4 @@
+/*
 use std::str::FromStr;
 
 use bevy::{prelude::*, render::render_resource::Extent3d, ui::FocusPolicy, utils::HashMap};
@@ -566,3 +567,4 @@ fn update_booth(
         }
     }
 }
+ */

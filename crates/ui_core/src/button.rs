@@ -32,6 +32,14 @@ impl DuiButton {
         Self::new(label, true, onclick)
     }
 
+    pub fn cancel(label: impl Into<String>, root: Entity) -> Self {
+        Self::new(label, true, move |mut commands: Commands| {
+            if let Some(commands) = commands.get_entity(root) {
+                commands.despawn_recursive();
+            }
+        })
+    }
+
     pub fn new<M, S: IntoSystem<(), (), M>>(
         label: impl Into<String>,
         enabled: bool,
@@ -68,7 +76,7 @@ impl DuiTemplate for DuiButtonTemplate {
         };
 
         let button_props = DuiProps::new().with_prop("label", data.label);
-        let components = ctx.render_template(commands, "button-base", button_props)?;
+        let mut components = ctx.render_template(commands, "button-base", button_props)?;
 
         let mut button = commands.commands().entity(components["button-node"]);
 
@@ -119,6 +127,10 @@ impl DuiTemplate for DuiButtonTemplate {
                 });
         }
 
+        if let Some(text_label) = props.take::<String>("label-name")? {
+            components.insert(text_label, components["label"]);
+        }
+
         Ok(components)
     }
 }
@@ -141,7 +153,7 @@ impl DuiTemplate for DuiButtonSetTemplate {
             .insert(NodeBundle {
                 style: Style {
                     width: Val::Percent(100.0),
-                    margin: UiRect::horizontal(Val::Px(20.0)),
+                    margin: UiRect::horizontal(Val::Px(10.0)),
                     ..Default::default()
                 },
                 ..Default::default()

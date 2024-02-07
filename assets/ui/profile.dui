@@ -1,29 +1,68 @@
-<define-template id="profile">
-    <fullscreen content="profile-content" />
-</define-template>
-
-<define-template id="profile-content">
+<define-template id="settings">
     <div style="
-        border: 4px;
-        border-color: #2222aa;
-        padding: 0px 0px 10px 0px;
         flex-direction: column;
-        height: 80%;
-        width: 80%;
-        background-color: #8888ccaa;
-        overflow-x: hidden;
-        overflow-y: hidden;
+        height: 100%;
+        width: 100%;
+        background-color: #8888ccff;
         align-items: center;
         justify-content: space-around;
     ">
-        <div style="font-size: 30px; font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; text-align: center; color: white;" text="@title" />
+        <div id="title-bar" style="width: 100%; justify-content: space-between;">
+            <button label-name="change-realm-button" label="@realm" onclick="@change-realm" />
+            <space />
+            <div id="title-pages">
+                <button label="discover" onclick="@discover" />
+                <button label="wearables" onclick="@wearables" />
+                <button label="emotes" onclick="@emotes" />
+                <button label="map" onclick="@map" />                
+                <button label="settings" onclick="@settings" />
+            </div>
+            <space />
+            <div id="wallet">
+                <button id="connect-wallet-button" label="Connect wallet" onclick="@connect-wallet" />
+                <button id="profile-settings-button" label="@profile-name" onclick="@profile-settings" />
+                <button id="close-settings-button" label="X" onclick="@close-settings" />
+            </div>
+        </div>
         <hr />
-        <div style="
-            flex-direction: row; 
-            align-items: center;
-            justify-content: space-around;
-        ">
-            <photobooth />
+        <div id="settings-content" style="width: 100%; height: 100%;" />
+    </div>
+</define-template>
+
+<define-template id="wearables">
+    <div style="width: 100%; height: 100%; flex-direction: row;">
+        <photobooth style="width: 30%; height: 100%;" instance="@booth-instance" />
+        <div style="flex-direction: column">
+            <!-- wearables tool bar -->
+            <div id="tools" style="background-color: #110000ff">
+                <toggle label="Only Collectibles" ontoggle="@only-collectibles" />
+                <space />
+                <dropdown label="Collection" onchange="@collection" />
+                <dropdown label="Sort by" onchange="@sort-by" />
+                <space />
+                <textbox onchange="@search" />
+            </div>
+            <!-- body -->
+            <div style="width: 100%; height: 100%; flex-direction: column;">
+                <!-- categories -->
+                <div style="width: 100%; height: 100%; flex-direction: row;">
+                    <vscroll style="width: 100%; height: 100%">
+                        <wearable-categories />
+                    </vscroll>
+                </div>
+                <!-- content -->
+                <div style="flex-direction: row; width: 100%; height: 100%">
+                    <!-- content tools -->
+                    <div id="content-tools" />
+                    <!-- content items -->
+                    <div id="content-items" />
+                    <!-- selected item -->
+                    <div id="selected-item" />
+                </div>
+            </div>
+            <!-- buttons -->
+            <button-set buttons="@buttons" />
         </div>
     </div>
 </define-template>
+

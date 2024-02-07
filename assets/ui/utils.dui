@@ -1,0 +1,12 @@
+<!-- add some space -->
+<define-template id="space">
+    <div style="flex-grow: 1;" />
+</define-template>
+
+<!-- horizontal rule -->
+<define-template id="hr">
+    <div style="width: 100%; height: 20px; min-height: 20px; border: 8px 0px 8px 0px;">
+        <div style="width: 100%; height: 100%; background-color: #2222aa;" />
+    </div>
+</define-template>
+

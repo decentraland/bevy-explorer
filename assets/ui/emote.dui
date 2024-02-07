@@ -33,7 +33,7 @@
 
             <div style="width: 50%; max-width: 50%; align-items: center; flex-direction: row; flex-grow: 1;">
                 <div style="flex-grow: 1;" />
-                <div style="font: 'fonts/NotoSans-Regular.ttf'; font-size: 30px; color: white; text-align: center;" id="output" text="" />
+                <div style="font: 'fonts/NotoSans-Regular.ttf'; font-size: '@font-large'; color: white; text-align: center;" id="output" text="" />
                 <div style="flex-grow: 1;" />
             </div>
         </div>

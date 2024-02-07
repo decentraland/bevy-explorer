@@ -1,14 +1,17 @@
+pub mod change_realm;
 pub mod chat;
 pub mod emote;
 pub mod login;
 pub mod mic;
 pub mod profile;
+pub mod profile2;
 pub mod sysinfo;
 pub mod toasts;
 pub mod tooltip;
 
 use bevy::prelude::*;
 
+use change_realm::ChangeRealmPlugin;
 use common::{sets::SetupSets, structs::UiRoot};
 use emote::EmoteUiPlugin;
 use input_manager::MouseInteractionComponent;
@@ -29,14 +32,17 @@ impl Plugin for SystemUiPlugin {
             setup.in_set(SetupSets::Init).before(SetupSets::Main),
         );
 
-        app.add_plugins(SysInfoPanelPlugin);
-        app.add_plugins(ChatPanelPlugin);
-        app.add_plugins(ProfileEditPlugin);
-        app.add_plugins(ToastsPlugin);
-        app.add_plugins(MicUiPlugin);
-        app.add_plugins(ToolTipPlugin);
-        app.add_plugins(LoginPlugin);
-        app.add_plugins(EmoteUiPlugin);
+        app.add_plugins((
+            SysInfoPanelPlugin,
+            ChatPanelPlugin,
+            ProfileEditPlugin,
+            ToastsPlugin,
+            MicUiPlugin,
+            ToolTipPlugin,
+            LoginPlugin,
+            EmoteUiPlugin,
+            ChangeRealmPlugin,
+        ));
     }
 }
 

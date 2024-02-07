@@ -16,7 +16,7 @@
             width: 80%;
             max-width: 500px;
         ">
-            <div style="font-size: 30px; font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; text-align: center; color: white;" text="@title" />
+            <div style="font-size: '@font-large'; font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; text-align: center; color: white;" text="@title" />
             <hr />
             <apply-children />
             <hr />
@@ -25,21 +25,13 @@
     </fullscreen-block>
 </define-template>
 
-
 <!-- text dialog
 - @title: String
 - @body: String
 - @buttons: Vec<Button>
 -->
 <define-template id="text-dialog">
-    <dialog>
+    <dialog title="@title" buttons="@buttons">
         <div text="@body" />
     </dialog>
-</define-template>
-
-<!-- horizontal rule -->
-<define-template id="hr">
-    <div style="width: 100%; height: 20px; min-height: 20px; border: 8px 0px 8px 0px;">
-        <div style="width: 100%; height: 100%; background-color: #2222aa;" />
-    </div>
 </define-template>

@@ -4,9 +4,9 @@
         align-self: stretch;
         align-items: center;
         justify-content: center;
-        margin: 5px 20px 5px 20px;
+        margin: 5px 10px 5px 10px;
     ">
-        <nineslice id="button-background" slice-image="images/button.png" slice-border="37.5% 18.75% 37.5% 18.75%" slice-color="#aaaaaa" content="button-content" />
+        <nineslice id="button-background" slice-image="images/button.png" slice-border="37.5% 18.75% 37.5% 18.75%" slice-color="#aaaaaa" />
         <div style="
             margin: 10px;
             align-self: stretch;
@@ -14,7 +14,7 @@
             justify-content: center;
         ">
             <div id="label" text="@label" style="
-                font-size: 20px;
+                font-size: '@font-med';
                 font: 'fonts/FiraSans-Bold.ttf';
                 text-align: center;
                 color: black;
@@ -36,4 +36,3 @@
         " image="@label" />
     </div>
 </define-template>
-
