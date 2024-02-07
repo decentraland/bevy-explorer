@@ -32,6 +32,7 @@ impl Plugin for VisualsPlugin {
             .add_systems(Startup, setup.in_set(SetupSets::Main));
 
         app.add_console_command::<ShadowConsoleCommand, _>(shadow_console_command);
+        app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
     }
 }
 
@@ -150,6 +151,43 @@ fn shadow_console_command(
                 None => "toggled",
                 Some(true) => "enabled",
                 Some(false) => "disabled",
+            }
+        ));
+    }
+}
+
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/fog")]
+struct FogConsoleCommand {
+    on: Option<bool>,
+}
+
+fn fog_console_command(
+    mut commands: Commands,
+    mut input: ConsoleCommand<FogConsoleCommand>,
+    camera: Res<PrimaryCameraRes>,
+    fogs: Query<(), With<FogSettings>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let activate = command.on.unwrap_or(fogs.is_empty());
+
+        if activate {
+            commands.entity(camera.0).try_insert(FogSettings {
+                color: Color::rgb(0.3, 0.2, 0.1),
+                directional_light_color: Color::rgb(1.0, 1.0, 0.7),
+                directional_light_exponent: 10.0,
+                falloff: FogFalloff::ExponentialSquared { density: 0.01 },
+            });
+        } else {
+            commands.entity(camera.0).remove::<FogSettings>();
+        }
+
+        input.reply_ok(format!(
+            "fog {}",
+            match activate {
+                true => "enabled",
+                false => "disabled",
             }
         ));
     }
