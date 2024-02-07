@@ -471,7 +471,9 @@ impl DuiTemplate for DuiBooth {
         mut props: bevy_dui::DuiProps,
         _: &mut bevy_dui::DuiContext,
     ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
-        let booth = props.take::<BoothInstance>("booth-instance")?.ok_or(anyhow!("no booth provided"))?;
+        let booth = props
+            .take::<BoothInstance>("booth-instance")?
+            .ok_or(anyhow!("no booth provided"))?;
 
         commands.insert((
             UiImage::new(booth.avatar_texture.clone()),
@@ -480,7 +482,7 @@ impl DuiTemplate for DuiBooth {
             booth,
             On::<Dragged>::new(
                 |mut transform: Query<&mut Transform>,
-                q: Query<(&BoothInstance, &DragData), With<BoothImage>>| {
+                 q: Query<(&BoothInstance, &DragData), With<BoothImage>>| {
                     let Ok((instance, drag)) = q.get_single() else {
                         return;
                     };
@@ -500,7 +502,7 @@ impl DuiTemplate for DuiBooth {
                     transform.translation = new_offset.normalize() * distance + Vec3::Y * height;
                     transform.look_at(Vec3::Y * height, Vec3::Y);
                 },
-            )
+            ),
         ));
 
         Ok(default())

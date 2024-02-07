@@ -8,14 +8,17 @@ use common::util::TaskExt;
 use ipfs::{ChangeRealmEvent, CurrentRealm, IpfsAssetServer};
 use isahc::ReadResponseExt;
 use serde::Deserialize;
-use ui_core::{button::DuiButton, ui_actions::{Click, On}};
+use ui_core::{
+    button::DuiButton,
+    ui_actions::{Click, On},
+};
 
 #[derive(Event, Default)]
 pub struct ChangeRealmDialog;
 
 #[derive(Component)]
-pub struct ServerList{
-    task: Task<Result<std::vec::Vec<ServerDesc>, anyhow::Error>>, 
+pub struct ServerList {
+    task: Task<Result<std::vec::Vec<ServerDesc>, anyhow::Error>>,
     root_id: Entity,
 }
 
@@ -49,7 +52,14 @@ fn change_realm_dialog(
 ) {
     if realm.is_changed() {
         for mut text in q.iter_mut() {
-            text.sections[0].value = format!("Realm: {}", realm.config.realm_name.clone().unwrap_or_else(|| String::from("<none>")));
+            text.sections[0].value = format!(
+                "Realm: {}",
+                realm
+                    .config
+                    .realm_name
+                    .clone()
+                    .unwrap_or_else(|| String::from("<none>"))
+            );
         }
     }
 
@@ -75,19 +85,21 @@ fn change_realm_dialog(
         .apply_template(
             &mut root,
             "change-realm",
-            DuiProps::new().with_prop(
-                "realm",
-                realm
-                    .config
-                    .realm_name
-                    .clone()
-                    .unwrap_or(String::from("<none>")),
-            ).with_prop("buttons", vec![DuiButton::cancel("cancel", root_id)]),
+            DuiProps::new()
+                .with_prop(
+                    "realm",
+                    realm
+                        .config
+                        .realm_name
+                        .clone()
+                        .unwrap_or(String::from("<none>")),
+                )
+                .with_prop("buttons", vec![DuiButton::cancel("cancel", root_id)]),
         )
         .unwrap();
     commands
         .entity(components.named("server-list"))
-        .insert(ServerList{ task, root_id });
+        .insert(ServerList { task, root_id });
 }
 
 fn update_server_list(

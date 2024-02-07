@@ -1,11 +1,10 @@
 use bevy::prelude::*;
-use bevy_dui::{
-    DuiEntityCommandsExt, DuiProps, DuiRegistry,
-};
+use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use comms::profile::CurrentUserProfile;
 use ipfs::CurrentRealm;
 use ui_core::{
-    button::DuiButton, ui_actions::{Click, EntityActionExt, EventDefaultExt, On}
+    button::DuiButton,
+    ui_actions::{Click, EntityActionExt, EventDefaultExt, On},
 };
 
 use crate::change_realm::{ChangeRealmDialog, UpdateRealmText};
@@ -15,7 +14,7 @@ pub struct ProfileEditPlugin;
 impl Plugin for ProfileEditPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup);
-        // app.add_systems(Update, update_booth);
+        app.add_systems(Update, update_settings_content);
     }
 }
 
@@ -62,31 +61,60 @@ impl InfoDialog {
     }
 }
 
-pub fn show_settings(mut commands: Commands, dui: Res<DuiRegistry>, realm: Res<CurrentRealm>, profile: Res<CurrentUserProfile>) {
+pub fn show_settings(
+    mut commands: Commands,
+    dui: Res<DuiRegistry>,
+    realm: Res<CurrentRealm>,
+    profile: Res<CurrentUserProfile>,
+) {
     let mut root = commands.spawn_empty();
     let root_id = root.id();
 
     let mut props = DuiProps::new();
 
-    for prop in ["discover", "wearables", "emotes", "map", "settings", "connect-wallet", "profile-settings"] {
+    for prop in [
+        "discover",
+        "wearables",
+        "emotes",
+        "map",
+        "settings",
+        "connect-wallet",
+        "profile-settings",
+    ] {
         props.insert_prop(
             prop,
             InfoDialog::click("Not implemented".to_owned(), "Not implemented".to_owned()),
         );
     }
 
-    props.insert_prop("realm", format!("Realm: {}", realm.config.realm_name.clone().unwrap_or_else(|| String::from("<none>"))));
+    props.insert_prop(
+        "realm",
+        format!(
+            "Realm: {}",
+            realm
+                .config
+                .realm_name
+                .clone()
+                .unwrap_or_else(|| String::from("<none>"))
+        ),
+    );
     props.insert_prop("change-realm", ChangeRealmDialog::default_on::<Click>());
-    props.insert_prop("profile-name", profile.profile.as_ref().unwrap().content.name.clone());
+    props.insert_prop(
+        "profile-name",
+        profile.profile.as_ref().unwrap().content.name.clone(),
+    );
     props.insert_prop("close-settings", root_id.despawn_recursive_on::<Click>());
 
     let components = root.apply_template(&dui, "settings", props).unwrap();
 
-    commands.entity(components.named("change-realm-button")).insert(UpdateRealmText);
-    commands.entity(components.named("settings-content")).insert(SettingsContent(SettingsTab::Wearables));
+    commands
+        .entity(components.named("change-realm-button"))
+        .insert(UpdateRealmText);
+    commands
+        .entity(components.named("settings-content"))
+        .insert(SettingsContent(SettingsTab::Wearables));
 
     //start on the wearables tab
-    
 }
 
 #[derive(Default)]
@@ -105,7 +133,7 @@ pub struct SettingsContent(SettingsTab);
 fn update_settings_content(
     mut commands: Commands,
     q: Query<(Entity, &SettingsContent), Changed<SettingsContent>>,
-    dui: Res<DuiRegistry>,
+    _dui: Res<DuiRegistry>,
 ) {
     for (ent, settings) in q.iter() {
         commands.entity(ent).despawn_descendants();
@@ -113,7 +141,7 @@ fn update_settings_content(
         match settings.0 {
             SettingsTab::Wearables => {
                 // commands.entity(ent).apply_template(&dui, "wearables", props)
-            },
+            }
             SettingsTab::Emotes => todo!(),
             SettingsTab::Map => todo!(),
             SettingsTab::Discover => todo!(),

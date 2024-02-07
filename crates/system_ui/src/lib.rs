@@ -20,7 +20,7 @@ use mic::MicUiPlugin;
 use toasts::ToastsPlugin;
 use tooltip::ToolTipPlugin;
 
-use self::{chat::ChatPanelPlugin, profile::ProfileEditPlugin, sysinfo::SysInfoPanelPlugin};
+use self::{chat::ChatPanelPlugin, profile2::ProfileEditPlugin, sysinfo::SysInfoPanelPlugin};
 
 pub struct SystemUiPlugin;
 

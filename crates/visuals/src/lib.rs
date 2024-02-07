@@ -156,7 +156,6 @@ fn shadow_console_command(
     }
 }
 
-
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/fog")]
 struct FogConsoleCommand {
