@@ -115,7 +115,8 @@ fn process_realm_change(
 
         if let Some(comms) = realm.comms.as_ref() {
             if let Some(adapter) = comms.adapter.as_ref() {
-                manager.connect(adapter);
+                let real_adapter = adapter.split_once(':').map(|(_, tail)| tail).unwrap_or(adapter.as_str());
+                manager.connect(real_adapter);
             } else if let Some(adapter) = comms.fixed_adapter.as_ref() {
                 manager.connect(adapter);
             }
@@ -163,13 +164,9 @@ impl<'w, 's> AdapterManager<'w, 's> {
                 info!("comms offline");
             }
             "archipelago" => {
-                let Some(ws_url) = address.split_once(':').map(|(_, addr)| addr) else {
-                    warn!("no address found in archipelago adapter string: {adapter}");
-                    return None;
-                };
-                debug!("arch starting: {address} -> {ws_url}");
+                debug!("arch starting: {address}");
                 self.archipelago_events.send(StartArchipelago {
-                    address: ws_url.to_owned(),
+                    address: address.to_owned(),
                 });
             }
             _ => {

@@ -459,7 +459,7 @@ fn get_owned_wearables(
         match t.complete() {
             Some(Ok(wearable_data)) => {
                 if let Ok(mut settings) = q.get_single_mut() {
-                    warn!("wearable task ok");
+                    debug!("wearable task ok");
                     settings.owned_wearables = wearable_data.elements;
 
                     let owned = settings
@@ -474,7 +474,7 @@ fn get_owned_wearables(
                         .filter_map(|c| match collections.0.get(c) {
                             Some(name) => Some(name.clone()),
                             None => {
-                                println!("collection not found: {c} not in {:?}", collections.0);
+                                debug!("collection not found: {c} not in {:?}", collections.0);
                                 None
                             }
                         })
@@ -590,14 +590,6 @@ impl WearableEntry {
         match self {
             WearableEntry::Base(..) => "Decentraland",
             WearableEntry::Owned(o) => {
-                println!(
-                    "{} -> {}",
-                    o.urn,
-                    o.urn
-                        .rsplit_once(':')
-                        .map(|(init, _)| init)
-                        .unwrap_or_default()
-                );
                 o.urn
                     .rsplit_once(':')
                     .map(|(init, _)| init)
