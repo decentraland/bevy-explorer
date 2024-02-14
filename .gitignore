@@ -1,6 +1,7 @@
 /target
 Cargo.lock
 /assets/cache
+/assets/video_downloads
 /assets/scene_dump
 .vscode/settings.json
 config.json
