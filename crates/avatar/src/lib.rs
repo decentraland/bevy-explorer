@@ -1,5 +1,6 @@
 use std::{f32::consts::PI, str::FromStr};
 
+use anyhow::anyhow;
 use attach::AttachPlugin;
 use avatar_texture::AvatarTexturePlugin;
 use bevy::{
@@ -10,9 +11,11 @@ use bevy::{
         view::{NoFrustumCulling, RenderLayers},
     },
     scene::InstanceId,
+    tasks::{IoTaskPool, Task},
     utils::{HashMap, HashSet},
 };
 use colliders::AvatarColliderPlugin;
+use isahc::AsyncReadResponseExt;
 use itertools::Itertools;
 use serde::Deserialize;
 use urn::Urn;
@@ -57,6 +60,9 @@ use self::{
     mask_material::{MaskMaterial, MaskMaterialPlugin},
 };
 
+#[derive(Resource, Default)]
+pub struct WearableCollections(pub HashMap<String, String>);
+
 pub struct AvatarPlugin;
 
 impl Plugin for AvatarPlugin {
@@ -70,7 +76,8 @@ impl Plugin for AvatarPlugin {
         app.init_resource::<WearablePointers>();
         app.init_resource::<WearableMetas>();
         app.init_resource::<RequestedWearables>();
-        app.add_systems(Update, load_base_wearables);
+        app.init_resource::<WearableCollections>();
+        app.add_systems(Update, (load_base_wearables, load_collections));
         app.add_systems(Update, load_wearables);
         app.add_systems(Update, update_avatar_info);
         app.add_systems(Update, update_base_avatar_shape);
@@ -161,7 +168,11 @@ fn load_base_wearables(
         }
         Some(ref mut active_task) => match active_task.complete() {
             None => (),
-            Some(Err(e)) => warn!("failed to acquire base wearables: {e}"),
+            Some(Err(e)) => {
+                warn!("failed to acquire base wearables: {e}");
+                *task = None;
+                *once = true;
+            }
             Some(Ok(active_entities)) => {
                 debug!("first active entity: {:?}", active_entities.first());
                 for entity in active_entities {
@@ -200,6 +211,58 @@ fn load_base_wearables(
 
                     wearable_metas.0.insert(entity.id, wearable_data);
                 }
+                *task = None;
+                *once = true;
+            }
+        },
+    }
+}
+
+#[derive(Deserialize)]
+struct Collection {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Deserialize)]
+struct Collections {
+    collections: Vec<Collection>,
+}
+
+fn load_collections(
+    mut once: Local<bool>,
+    mut collections: ResMut<WearableCollections>,
+    mut task: Local<Option<Task<Result<Collections, anyhow::Error>>>>,
+) {
+    if *once {
+        return;
+    }
+
+    match *task {
+        None => {
+            let t: Task<Result<Collections, anyhow::Error>> = IoTaskPool::get().spawn(async move {
+                let mut response =
+                    isahc::get_async("https://realm-provider.decentraland.org/lambdas/collections")
+                        .await
+                        .map_err(|e| anyhow!(e))?;
+                response.json::<Collections>().await.map_err(|e| anyhow!(e))
+            });
+            *task = Some(t)
+        }
+        Some(ref mut active_task) => match active_task.complete() {
+            None => (),
+            Some(Err(e)) => {
+                warn!("failed to acquire collections: {e}");
+                *task = None;
+                *once = true;
+            }
+            Some(Ok(collections_result)) => {
+                collections.0 = HashMap::from_iter(
+                    collections_result
+                        .collections
+                        .into_iter()
+                        .map(|c| (c.id, c.name)),
+                );
                 *task = None;
                 *once = true;
             }

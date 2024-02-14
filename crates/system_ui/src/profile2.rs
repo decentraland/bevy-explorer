@@ -235,7 +235,7 @@ pub fn show_settings(
         ),
     );
     props.insert_prop("title-tabs", tabs);
-    props.insert_prop("title-initial", Some(1usize));
+    props.insert_prop("title-initial", Some(0usize));
     props.insert_prop(
         "title-onchanged",
         On::<DataChanged>::new(

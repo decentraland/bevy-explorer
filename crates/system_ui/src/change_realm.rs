@@ -6,7 +6,7 @@ use bevy::{
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::util::TaskExt;
 use ipfs::{ChangeRealmEvent, CurrentRealm};
-use isahc::ReadResponseExt;
+use isahc::AsyncReadResponseExt;
 use serde::Deserialize;
 use ui_core::{
     button::DuiButton,
@@ -77,8 +77,11 @@ fn change_realm_dialog(
     let target_url = "https://realm-provider.decentraland.org/realms";
 
     let task: Task<Result<Vec<ServerDesc>, anyhow::Error>> = IoTaskPool::get().spawn(async move {
-        let mut response = isahc::get(target_url).map_err(|e| anyhow!(e))?;
-        response.json::<Vec<ServerDesc>>().map_err(|e| anyhow!(e))
+        let mut response = isahc::get_async(target_url).await.map_err(|e| anyhow!(e))?;
+        response
+            .json::<Vec<ServerDesc>>()
+            .await
+            .map_err(|e| anyhow!(e))
     });
 
     let mut root = commands.spawn_empty();

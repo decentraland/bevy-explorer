@@ -4,8 +4,8 @@ use anyhow::anyhow;
 use avatar::{
     avatar_texture::{BoothInstance, PhotoBooth, PROFILE_UI_RENDERLAYER},
     base_wearables::base_wearables,
-    AvatarShape, RequestedWearables, WearableCategory, WearableMeta, WearableMetas,
-    WearablePointerResult, WearablePointers,
+    AvatarShape, RequestedWearables, WearableCategory, WearableCollections, WearableMeta,
+    WearableMetas, WearablePointerResult, WearablePointers,
 };
 use bevy::{
     prelude::*,
@@ -450,6 +450,8 @@ fn get_owned_wearables(
     mut q: Query<&mut WearablesSettings>,
     ipfas: IpfsAssetServer,
     current_profile: Res<CurrentUserProfile>,
+    collections: Res<WearableCollections>,
+    mut collections_box: Query<(&mut ComboBox, &Name)>,
 ) {
     let ev = e.read().last().is_some();
 
@@ -459,6 +461,39 @@ fn get_owned_wearables(
                 if let Ok(mut settings) = q.get_single_mut() {
                     warn!("wearable task ok");
                     settings.owned_wearables = wearable_data.elements;
+
+                    let owned = settings
+                        .owned_wearables
+                        .iter()
+                        .map(|w| WearableEntry::Owned(w.clone()))
+                        .collect::<Vec<_>>();
+                    // let mut collection_names = owned.iter().map(WearableEntry::collection).filter_map(|c| collections.0.get(c).cloned()).collect::<HashSet<_>>();
+                    let mut collection_names = owned
+                        .iter()
+                        .map(WearableEntry::collection)
+                        .filter_map(|c| match collections.0.get(c) {
+                            Some(name) => Some(name.clone()),
+                            None => {
+                                println!("collection not found: {c} not in {:?}", collections.0);
+                                None
+                            }
+                        })
+                        .collect::<HashSet<_>>();
+
+                    collection_names.insert("Base Wearables".to_owned());
+                    let mut collections_box = collections_box
+                        .iter_mut()
+                        .filter(|(_, name)| name.as_str() == "collections")
+                        .map(|(cb, _)| cb)
+                        .next()
+                        .unwrap();
+                    let current_selection = collections_box.selected().cloned();
+                    collections_box.options = collection_names.into_iter().collect::<Vec<_>>();
+                    collections_box.options.sort();
+                    collections_box.selected = current_selection
+                        .and_then(|sel| collections_box.options.iter().position(|i| i == &sel))
+                        .map(|ix| ix as isize)
+                        .unwrap_or(-1);
                 }
             }
             Some(Err(e)) => {
@@ -551,15 +586,25 @@ impl WearableEntry {
         }
     }
 
-    // fn collection(&self) -> &str {
-    //     match self {
-    //         WearableEntry::Base(..) => "Decentraland",
-    //         WearableEntry::Owned(o) => {
-    //             println!("{} -> {}", o.urn, o.urn.split(':').nth(4).unwrap_or_default());
-    //             o.urn.split(':').nth(4).unwrap_or_default()
-    //         },
-    //     }
-    // }
+    fn collection(&self) -> &str {
+        match self {
+            WearableEntry::Base(..) => "Decentraland",
+            WearableEntry::Owned(o) => {
+                println!(
+                    "{} -> {}",
+                    o.urn,
+                    o.urn
+                        .rsplit_once(':')
+                        .map(|(init, _)| init)
+                        .unwrap_or_default()
+                );
+                o.urn
+                    .rsplit_once(':')
+                    .map(|(init, _)| init)
+                    .unwrap_or_default()
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
@@ -625,6 +670,7 @@ impl Rarity {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_wearables_list(
     mut commands: Commands,
     dialog: Query<Ref<SettingsDialog>>,
@@ -633,7 +679,7 @@ fn update_wearables_list(
     wearable_pointers: Res<WearablePointers>,
     wearable_metas: Res<WearableMetas>,
     asset_server: Res<AssetServer>,
-    // mut collections_box: Query<&mut ComboBox>,
+    collections: Res<WearableCollections>,
 ) {
     let Ok((mut settings, components, selected)) = q.get_single_mut() else {
         return;
@@ -667,7 +713,7 @@ fn update_wearables_list(
     }
 
     if let Some(collection) = &settings.collection {
-        wearables.retain(|w| w.id().contains(collection));
+        wearables.retain(|w| collections.0.get(w.id()) == Some(collection));
     }
 
     if let Some(search) = &settings.search_filter {
@@ -709,16 +755,6 @@ fn update_wearables_list(
     }
 
     settings.current_list = wearables.clone();
-
-    // let collections = wearables.iter().map(WearableEntry::collection).map(ToOwned::to_owned).collect::<HashSet<_>>();
-    // if settings.all_collections != collections {
-    //     let mut collections_box = collections_box.single_mut();
-    //     let current_selection = collections_box.selected().cloned();
-    //     collections_box.options = collections.iter().cloned().collect::<Vec<_>>();
-    //     collections_box.options.sort();
-    //     collections_box.selected = current_selection.and_then(|sel| collections_box.options.iter().position(|i| i == &sel)).map(|ix| ix as isize).unwrap_or(-1);
-    //     settings.all_collections = collections;
-    // }
 
     let worn = settings
         .current_wearables

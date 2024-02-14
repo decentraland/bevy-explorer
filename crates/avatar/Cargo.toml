@@ -31,3 +31,4 @@ once_cell = { workspace = true }
 tokio = { workspace = true }
 rapier3d-f64 = { workspace = true }
 bevy_dui = { workspace = true }
+isahc = { workspace = true }
