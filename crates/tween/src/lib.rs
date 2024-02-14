@@ -109,6 +109,7 @@ impl Plugin for TweenPlugin {
             ComponentPosition::EntityOnly,
         );
         app.add_systems(Update, update_tween.in_set(SceneSets::PostLoop));
+        app.add_systems(Update, update_system_tween);
     }
 }
 
@@ -189,6 +190,54 @@ pub fn update_tween(
                 scene_ent.container_id,
                 &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent.id),
             );
+        }
+    }
+}
+
+#[derive(Component)]
+pub struct SystemTween {
+    pub target: Transform,
+    pub time: f32,
+}
+
+#[derive(Component)]
+pub struct SystemTweenData {
+    start_pos: Transform,
+    start_time: f32,
+}
+
+fn update_system_tween(
+    mut commands: Commands,
+    mut q: Query<(
+        Entity,
+        &mut Transform,
+        Ref<SystemTween>,
+        Option<&SystemTweenData>,
+    )>,
+    time: Res<Time>,
+) {
+    for (ent, mut transform, tween, data) in q.iter_mut() {
+        if tween.is_changed() || data.is_none() {
+            commands.entity(ent).try_insert(SystemTweenData {
+                start_pos: *transform,
+                start_time: time.elapsed_seconds(),
+            });
+        } else {
+            let data = data.unwrap();
+            let elapsed = time.elapsed_seconds() - data.start_time;
+            if elapsed >= tween.time {
+                *transform = tween.target;
+                commands
+                    .entity(ent)
+                    .remove::<SystemTween>()
+                    .remove::<SystemTweenData>();
+            } else {
+                let ratio = simple_easing::quad_in_out(elapsed / tween.time);
+                transform.translation =
+                    (1.0 - ratio) * data.start_pos.translation + ratio * tween.target.translation;
+                transform.scale = (1.0 - ratio) * data.start_pos.scale + ratio * tween.target.scale;
+                transform.rotation = data.start_pos.rotation.slerp(tween.target.rotation, ratio);
+            }
         }
     }
 }

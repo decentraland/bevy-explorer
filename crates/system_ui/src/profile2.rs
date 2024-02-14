@@ -1,20 +1,32 @@
+// kuruk 0x481bed8645804714Efd1dE3f25467f78E7Ba07d6
+
+use std::io::Write;
+
+use avatar::{avatar_texture::BoothInstance, AvatarShape};
 use bevy::prelude::*;
-use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
+use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
+use common::profile::{AvatarColor, SerializedProfile};
 use comms::profile::CurrentUserProfile;
 use ipfs::CurrentRealm;
 use ui_core::{
-    button::DuiButton,
-    ui_actions::{Click, EntityActionExt, EventDefaultExt, On},
+    button::{DuiButton, TabSelection},
+    ui_actions::{Click, DataChanged, EntityActionExt, EventDefaultExt, On, UiCaller},
 };
 
-use crate::change_realm::{ChangeRealmDialog, UpdateRealmText};
+use crate::{
+    change_realm::{ChangeRealmDialog, UpdateRealmText},
+    emotes::EmotesSettingsPlugin,
+    wearables::WearableSettingsPlugin,
+};
 
 pub struct ProfileEditPlugin;
 
 impl Plugin for ProfileEditPlugin {
     fn build(&self, app: &mut App) {
+        app.add_event::<SerializeUi>();
         app.add_systems(Startup, setup);
-        app.add_systems(Update, update_settings_content);
+        app.add_systems(Update, dump);
+        app.add_plugins((WearableSettingsPlugin, EmotesSettingsPlugin));
     }
 }
 
@@ -45,36 +57,83 @@ pub struct InfoDialog;
 impl InfoDialog {
     pub fn click(title: String, body: String) -> On<Click> {
         On::<Click>::new(move |mut commands: Commands, dui: Res<DuiRegistry>| {
-            let mut commands = commands.spawn_empty();
-            let id = commands.id();
             commands
-                .apply_template(
+                .spawn_template(
                     &dui,
                     "text-dialog",
                     DuiProps::new()
                         .with_prop("title", title.clone())
                         .with_prop("body", body.clone())
-                        .with_prop("buttons", vec![DuiButton::cancel("Ok", id)]),
+                        .with_prop("buttons", vec![DuiButton::close("Ok")]),
                 )
                 .unwrap();
         })
     }
 }
 
+#[derive(Component)]
+pub struct SettingsDialog {
+    pub modified: bool,
+    pub profile: SerializedProfile,
+}
+
+#[allow(clippy::type_complexity)]
+fn save_settings(
+    mut commands: Commands,
+    mut current_profile: ResMut<CurrentUserProfile>,
+    modified: Query<(Entity, Option<&AvatarShape>, Option<&BoothInstance>), With<SettingsDialog>>,
+) {
+    let Some(profile) = current_profile.profile.as_mut() else {
+        error!("can't amend missing profile");
+        return;
+    };
+
+    let Ok((dialog_ent, maybe_avatar, maybe_booth)) = modified.get_single() else {
+        error!("no dialog");
+        return;
+    };
+
+    if let Some(avatar) = maybe_avatar {
+        profile.content.avatar.body_shape = avatar.0.body_shape.to_owned();
+        profile.content.avatar.hair = avatar.0.hair_color.map(AvatarColor::new);
+        profile.content.avatar.eyes = avatar.0.eye_color.map(AvatarColor::new);
+        profile.content.avatar.skin = avatar.0.skin_color.map(AvatarColor::new);
+        profile.content.avatar.wearables = avatar.0.wearables.to_vec();
+    }
+
+    profile.version += 1;
+    profile.content.version = profile.version as i64;
+
+    if let Some(booth) = maybe_booth {
+        current_profile.snapshots = booth.snapshot_target.clone();
+    }
+
+    current_profile.is_deployed = false;
+
+    commands.entity(dialog_ent).despawn_recursive();
+}
+
 pub fn show_settings(
     mut commands: Commands,
     dui: Res<DuiRegistry>,
     realm: Res<CurrentRealm>,
-    profile: Res<CurrentUserProfile>,
+    current_profile: Res<CurrentUserProfile>,
 ) {
-    let mut root = commands.spawn_empty();
-    let root_id = root.id();
+    let Some(profile) = &current_profile.profile.as_ref() else {
+        error!("can't edit missing profile");
+        return;
+    };
+
+    let mut root = commands.spawn(SettingsDialog {
+        modified: false,
+        profile: profile.content.clone(),
+    });
+    // let root_id = root.id();
 
     let mut props = DuiProps::new();
 
     for prop in [
         "discover",
-        "wearables",
         "emotes",
         "map",
         "settings",
@@ -87,6 +146,32 @@ pub fn show_settings(
         );
     }
 
+    let tabs = vec![
+        DuiButton {
+            label: Some("Discover".to_owned()),
+            enabled: false,
+            ..Default::default()
+        },
+        DuiButton {
+            label: Some("Wearables".to_owned()),
+            ..Default::default()
+        },
+        DuiButton {
+            label: Some("Emotes".to_owned()),
+            ..Default::default()
+        },
+        DuiButton {
+            label: Some("Map".to_owned()),
+            enabled: false,
+            ..Default::default()
+        },
+        DuiButton {
+            label: Some("Settings".to_owned()),
+            enabled: false,
+            ..Default::default()
+        },
+    ];
+
     props.insert_prop(
         "realm",
         format!(
@@ -98,12 +183,80 @@ pub fn show_settings(
                 .unwrap_or_else(|| String::from("<none>"))
         ),
     );
-    props.insert_prop("change-realm", ChangeRealmDialog::default_on::<Click>());
     props.insert_prop(
-        "profile-name",
-        profile.profile.as_ref().unwrap().content.name.clone(),
+        "change-realm",
+        ChangeRealmDialog::send_default_on::<Click>(),
     );
-    props.insert_prop("close-settings", root_id.despawn_recursive_on::<Click>());
+    props.insert_prop("profile-name", profile.content.name.clone());
+    props.insert_prop(
+        "close-settings",
+        On::<Click>::new(
+            |mut commands: Commands, q: Query<(Entity, &SettingsDialog)>, dui: Res<DuiRegistry>| {
+                let Ok((settings_ent, settings)) = q.get_single() else {
+                    warn!("no settings dialog");
+                    return;
+                };
+
+                if settings.modified {
+                    commands
+                        .spawn_template(
+                            &dui,
+                            "text-dialog",
+                            DuiProps::new()
+                                .with_prop("title", "Unsaved Changes".to_owned())
+                                .with_prop(
+                                    "body",
+                                    "You have unsaved changes, do you want to save them?"
+                                        .to_owned(),
+                                )
+                                .with_prop(
+                                    "buttons",
+                                    vec![
+                                        DuiButton::new_enabled_and_close(
+                                            "Save Changes",
+                                            save_settings,
+                                        ),
+                                        DuiButton {
+                                            label: Some("Discard".to_owned()),
+                                            onclick: Some(
+                                                settings_ent.despawn_recursive_and_close_on(),
+                                            ),
+                                            ..default()
+                                        },
+                                        DuiButton::close("Cancel"),
+                                    ],
+                                ),
+                        )
+                        .unwrap();
+                } else {
+                    commands.entity(settings_ent).despawn_recursive();
+                }
+            },
+        ),
+    );
+    props.insert_prop("title-tabs", tabs);
+    props.insert_prop("title-initial", Some(1usize));
+    props.insert_prop(
+        "title-onchanged",
+        On::<DataChanged>::new(
+            |caller: Res<UiCaller>,
+             selected: Query<&TabSelection>,
+             mut content: Query<&mut SettingsTab>| {
+                *content.single_mut() = match selected.get(caller.0).unwrap().selected.unwrap() {
+                    0 => SettingsTab::Discover,
+                    1 => SettingsTab::Wearables,
+                    2 => SettingsTab::Emotes,
+                    3 => SettingsTab::Map,
+                    4 => SettingsTab::Settings,
+                    _ => panic!(),
+                }
+            },
+        ),
+    );
+
+    // props.insert_prop("wearables", On::<Click>::new(|mut commands: Commands, q: Query<Entity, With<SettingsTab>>| {commands.entity(q.single()).insert(SettingsTab::Wearables);}));
+    // props.insert_prop("emotes", On::<Click>::new(|mut commands: Commands, q: Query<Entity, With<SettingsTab>>| {commands.entity(q.single()).insert(SettingsTab::Emotes);}));
+    // props.insert_prop("settings", SerializeUi::default_on::<Click>());
 
     let components = root.apply_template(&dui, "settings", props).unwrap();
 
@@ -112,12 +265,12 @@ pub fn show_settings(
         .insert(UpdateRealmText);
     commands
         .entity(components.named("settings-content"))
-        .insert(SettingsContent(SettingsTab::Wearables));
+        .insert(SettingsTab::Discover);
 
     //start on the wearables tab
 }
 
-#[derive(Default)]
+#[derive(Component, Default, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
     #[default]
     Wearables,
@@ -127,25 +280,18 @@ pub enum SettingsTab {
     Settings,
 }
 
-#[derive(Component, Default)]
-pub struct SettingsContent(SettingsTab);
+#[derive(Event, Default)]
+pub struct SerializeUi;
 
-fn update_settings_content(
-    mut commands: Commands,
-    q: Query<(Entity, &SettingsContent), Changed<SettingsContent>>,
-    _dui: Res<DuiRegistry>,
-) {
-    for (ent, settings) in q.iter() {
-        commands.entity(ent).despawn_descendants();
-
-        match settings.0 {
-            SettingsTab::Wearables => {
-                // commands.entity(ent).apply_template(&dui, "wearables", props)
-            }
-            SettingsTab::Emotes => todo!(),
-            SettingsTab::Map => todo!(),
-            SettingsTab::Discover => todo!(),
-            SettingsTab::Settings => todo!(),
-        };
+fn dump(world: &World, mut ev: EventReader<SerializeUi>) {
+    if ev.read().last().is_none() {
+        return;
     }
+
+    let scene = DynamicScene::from_world(world);
+    let mut file = std::fs::File::create("dump.ron").unwrap();
+    let type_registry = world.resource::<AppTypeRegistry>();
+
+    file.write_all(scene.serialize_ron(&type_registry.0).unwrap().as_bytes())
+        .unwrap();
 }

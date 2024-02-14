@@ -11,9 +11,9 @@ use common::structs::PrimaryUser;
 use comms::profile::CurrentUserProfile;
 use emotes::AvatarAnimations;
 use ui_core::{
-    button::ModifyComponentExt,
     focus::Focus,
     ui_actions::{Click, Defocus, HoverEnter, HoverExit, On},
+    ModifyComponentExt,
 };
 
 pub struct EmoteUiPlugin;
@@ -180,6 +180,10 @@ fn apply_layout(
     let window = window.single();
     let viewport = Vec2::new(window.width(), window.height());
     let viewport_ratio = viewport.x / viewport.y;
+
+    if resized {
+        debug!("resized: {viewport}");
+    }
 
     for (mut style, layout) in q.iter_mut() {
         if layout.is_added() || layout.is_changed() || resized {

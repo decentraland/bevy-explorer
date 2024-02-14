@@ -65,7 +65,6 @@ data-encoding = "2.5"
 opener = "0.6"
 chrono = "0.4.31"
 bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "master" }
-# bevy_dui = { path="../bevy_dui" }
 bevy_ecss = { git = "https://github.com/robtfm/bevy_ecss", branch = "main" }
 
 [dependencies]

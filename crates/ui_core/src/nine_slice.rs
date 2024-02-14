@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use bevy::prelude::*;
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate, NodeMap};
 use bevy_ecss::StyleSheetAsset;
@@ -298,9 +298,16 @@ impl DuiTemplate for Ui9SliceTemplate {
         let border = props
             .take::<String>("slice-border")?
             .ok_or(anyhow!("no slice-border specified"))?;
-        let img = props
-            .take::<String>("slice-image")?
-            .ok_or(anyhow!("no slice-image specified"))?;
+
+        let image = match (
+            props.borrow::<String>("slice-image", ctx),
+            props.borrow::<Handle<Image>>("slice-image", ctx),
+        ) {
+            (Ok(Some(img)), _) => ctx.asset_server().load(img),
+            (_, Ok(Some(handle))) => handle.clone(),
+            _ => bail!("no slice-image specified"),
+        };
+
         let tint = props.take::<String>("slice-color")?;
 
         let border_sheet = if let Some(tint) = tint.as_ref() {
@@ -344,7 +351,7 @@ impl DuiTemplate for Ui9SliceTemplate {
                 ..Default::default()
             },
             Ui9Slice {
-                image: ctx.asset_server().load(img),
+                image,
                 center_region,
                 tint,
             },

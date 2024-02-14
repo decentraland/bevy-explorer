@@ -18,6 +18,12 @@ pub struct AvatarColor {
     pub color: Color3,
 }
 
+impl AvatarColor {
+    pub fn new(color: Color3) -> Self {
+        Self { color }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct AvatarWireFormat {

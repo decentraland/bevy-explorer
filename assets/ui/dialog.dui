@@ -9,18 +9,21 @@
             overflow-x: hidden;
             overflow-y: hidden;
             align-items: center;
-            border: 4px;
+            border: 0.7vmin;
             border-color: #2222aa;
-            padding: 0px 20px 10px 20px;
-            background-color: #8888ccaa;
-            width: 80%;
-            max-width: 500px;
+            padding: 0vmin 2.8vmin 1.4vmin 2.8vmin;
+            background-color: #8888cccc;
+            width: 50%;
+            max-width: 80%;
         ">
-            <div style="font-size: '@font-large'; font: 'fonts/NotoSans-Regular.ttf'; margin: 20px; text-align: center; color: white;" text="@title" />
+            <large-text style="margin: 2.8vmin; text-align: center; color: white;" text="@title" />
             <hr />
             <apply-children />
             <hr />
-            <button-set buttons="@buttons" />
+            <div style="width: 100%">
+                <space />
+                <button-set buttons="@buttons" />
+            </div>
         </div>
     </fullscreen-block>
 </define-template>
@@ -32,6 +35,6 @@
 -->
 <define-template id="text-dialog">
     <dialog title="@title" buttons="@buttons">
-        <div text="@body" />
+        <med-text text="@body" />
     </dialog>
 </define-template>

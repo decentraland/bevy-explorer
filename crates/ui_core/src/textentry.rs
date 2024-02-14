@@ -1,5 +1,9 @@
-use crate::ui_actions::DataChanged;
+use crate::{
+    combo_box::PropsExt,
+    ui_actions::{DataChanged, On},
+};
 use bevy::{math::Vec3Swizzles, prelude::*, utils::HashSet, window::PrimaryWindow};
+use bevy_dui::{DuiRegistry, DuiTemplate};
 use bevy_egui::{
     egui::{self, TextEdit},
     EguiContext,
@@ -32,6 +36,15 @@ impl Default for TextEntry {
     }
 }
 
+pub struct TextEntryPlugin;
+
+impl Plugin for TextEntryPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Startup, setup)
+            .add_systems(Update, update_text_entry_components);
+    }
+}
+
 #[allow(clippy::type_complexity)]
 pub fn update_text_entry_components(
     mut commands: Commands,
@@ -57,8 +70,8 @@ pub fn update_text_entry_components(
     for (entity, mut textbox, style, node, transform, maybe_interaction, maybe_focus) in
         text_entries.iter_mut()
     {
-        let center = transform.translation().xy();
-        let size = node.size();
+        let center = transform.translation().xy() / ctx.zoom_factor();
+        let size = node.size() / ctx.zoom_factor();
         let topleft = center - size / 2.0;
 
         if matches!(style.display, Display::Flex) {
@@ -77,6 +90,14 @@ pub fn update_text_entry_components(
                         ..
                     } = &mut *textbox;
                     let enabled = *enabled;
+
+                    let style = ui.style_mut();
+                    style.visuals.widgets.active.weak_bg_fill =
+                        egui::Color32::from_rgba_unmultiplied(0, 0, 0, 25);
+                    style.visuals.widgets.hovered.weak_bg_fill =
+                        egui::Color32::from_rgba_unmultiplied(0, 0, 0, 50);
+                    style.visuals.widgets.inactive.weak_bg_fill =
+                        egui::Color32::from_rgba_unmultiplied(0, 0, 0, 128);
 
                     let response = ui.add_enabled(
                         enabled,
@@ -132,5 +153,34 @@ pub fn update_text_entry_components(
                     }
                 });
         }
+    }
+}
+
+fn setup(mut dui: ResMut<DuiRegistry>) {
+    dui.register_template("text-entry", DuiTextEntryTemplate);
+}
+
+pub struct DuiTextEntryTemplate;
+
+impl DuiTemplate for DuiTextEntryTemplate {
+    fn render(
+        &self,
+        commands: &mut bevy::ecs::system::EntityCommands,
+        mut props: bevy_dui::DuiProps,
+        _: &mut bevy_dui::DuiContext,
+    ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
+        let textentry = TextEntry {
+            hint_text: props.take::<String>("hint-text")?.unwrap_or_default(),
+            content: props.take::<String>("initial-text")?.unwrap_or_default(),
+            accept_line: props.take_bool_like("disabled")?.unwrap_or(false),
+            ..Default::default()
+        };
+        commands.insert(textentry);
+
+        if let Some(onchanged) = props.take::<On<DataChanged>>("onchanged")? {
+            commands.insert(onchanged);
+        }
+
+        Ok(Default::default())
     }
 }

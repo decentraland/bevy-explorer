@@ -1,0 +1,68 @@
+use bevy::{
+    prelude::*,
+    window::{PrimaryWindow, WindowResized},
+};
+use bevy_dui::{DuiRegistry, DuiTemplate};
+use bevy_egui::EguiSettings;
+
+use crate::ModifyComponentExt;
+
+pub struct TextSizePlugin;
+
+impl Plugin for TextSizePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Startup, setup)
+            .add_systems(PostUpdate, update_fontsize);
+    }
+}
+
+fn setup(mut dui: ResMut<DuiRegistry>) {
+    dui.register_template("small-text", TextTemplate(0.0125));
+    dui.register_template("med-text", TextTemplate(0.025));
+    dui.register_template("large-text", TextTemplate(0.05));
+}
+
+pub struct TextTemplate(f32);
+
+impl DuiTemplate for TextTemplate {
+    fn render(
+        &self,
+        commands: &mut bevy::ecs::system::EntityCommands,
+        _: bevy_dui::DuiProps,
+        ctx: &mut bevy_dui::DuiContext,
+    ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
+        commands.insert(FontSize(self.0));
+        let font = ctx.asset_server().load("fonts/FiraSans-Bold.ttf");
+        commands.modify_component(move |text: &mut Text| {
+            for section in &mut text.sections {
+                section.style.font = font.clone();
+            }
+        });
+
+        Ok(Default::default())
+    }
+}
+
+#[derive(Component)]
+pub struct FontSize(f32);
+
+fn update_fontsize(
+    mut q: Query<(&mut Text, Ref<FontSize>)>,
+    mut resized: EventReader<WindowResized>,
+    window: Query<&Window, With<PrimaryWindow>>,
+    mut egui_settings: ResMut<EguiSettings>,
+) {
+    let resized = resized.read().last().is_some();
+    let Ok(window) = window.get_single() else {
+        return;
+    };
+    let win_size = window.width().min(window.height());
+    for (mut text, size) in q.iter_mut().filter(|(_, sz)| resized || sz.is_changed()) {
+        for section in &mut text.sections {
+            section.style.font_size = win_size * size.0;
+        }
+    }
+    if resized {
+        egui_settings.scale_factor = win_size as f64 / 720.0;
+    }
+}

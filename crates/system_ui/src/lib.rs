@@ -1,6 +1,7 @@
 pub mod change_realm;
 pub mod chat;
-pub mod emote;
+pub mod emote_select;
+pub mod emotes;
 pub mod login;
 pub mod mic;
 pub mod profile;
@@ -8,12 +9,13 @@ pub mod profile2;
 pub mod sysinfo;
 pub mod toasts;
 pub mod tooltip;
+pub mod wearables;
 
 use bevy::prelude::*;
 
 use change_realm::ChangeRealmPlugin;
 use common::{sets::SetupSets, structs::UiRoot};
-use emote::EmoteUiPlugin;
+use emote_select::EmoteUiPlugin;
 use input_manager::MouseInteractionComponent;
 use login::LoginPlugin;
 use mic::MicUiPlugin;

@@ -23,7 +23,7 @@ use serde_json::json;
 use ui_core::dialog::{IntoDialogBody, SpawnDialog};
 
 use crate::{
-    avatar_texture::{BoothInstance, PhotoBooth, PROFILE_UI_RENDERLAYER},
+    avatar_texture::{BoothInstance, LiveBooths, PhotoBooth, PROFILE_UI_RENDERLAYER},
     AvatarShape,
 };
 
@@ -33,6 +33,7 @@ impl Plugin for AvatarColliderPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<AvatarColliders>();
         app.init_resource::<AvatarHoverTarget>();
+        app.init_resource::<LiveBooths>();
         app.add_systems(
             Update,
             (
@@ -214,7 +215,7 @@ fn update_avatar_collider_actions(
                 PROFILE_UI_RENDERLAYER,
                 AvatarShape::from(profile),
                 Extent3d::default(),
-                None,
+                false,
             );
             commands.spawn_dialog(
                 format!("{} profile", profile.content.name),
@@ -223,10 +224,7 @@ fn update_avatar_collider_actions(
                     booth: &instance,
                 },
                 "Ok",
-                move |mut commands: Commands| {
-                    debug!("despawning");
-                    commands.entity(instance.avatar).despawn_recursive();
-                },
+                || {},
             );
         }
     }

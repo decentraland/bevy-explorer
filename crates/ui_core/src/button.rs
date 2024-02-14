@@ -1,30 +1,45 @@
-use std::marker::PhantomData;
-
 use anyhow::anyhow;
-use bevy::{
-    ecs::system::{EntityCommand, EntityCommands},
-    prelude::*,
-    ui::FocusPolicy,
-};
+use bevy::{ecs::system::EntityCommands, prelude::*, ui::FocusPolicy};
 use bevy_dui::{DuiContext, DuiProps, DuiTemplate, NodeMap};
 
 use crate::{
-    nine_slice::Ui9Slice,
-    ui_actions::{Click, Enabled, HoverEnter, HoverExit, On},
+    combo_box::PropsExt,
+    interact_style::{Active, InteractStyle, InteractStyles},
+    ui_actions::{close_ui, Click, DataChanged, Enabled, On, UiCaller},
+    ModifyComponentExt,
 };
 
 pub struct DuiButton {
-    pub label: String,
+    pub label: Option<String>,
     pub onclick: Option<On<Click>>,
     pub enabled: bool,
+    pub styles: Option<InteractStyles>,
+    pub children: Option<Entity>,
+    pub image: Option<Handle<Image>>,
+}
+
+impl Default for DuiButton {
+    fn default() -> Self {
+        Self {
+            label: Default::default(),
+            onclick: Default::default(),
+            enabled: true,
+            styles: Default::default(),
+            children: Default::default(),
+            image: None,
+        }
+    }
 }
 
 impl DuiButton {
     pub fn new_disabled(label: impl Into<String>) -> Self {
         Self {
-            label: label.into(),
+            label: Some(label.into()),
             onclick: None,
             enabled: false,
+            styles: None,
+            children: None,
+            image: None,
         }
     }
 
@@ -32,12 +47,37 @@ impl DuiButton {
         Self::new(label, true, onclick)
     }
 
-    pub fn cancel(label: impl Into<String>, root: Entity) -> Self {
-        Self::new(label, true, move |mut commands: Commands| {
-            if let Some(commands) = commands.get_entity(root) {
-                commands.despawn_recursive();
-            }
-        })
+    pub fn new_enabled_and_close<M, S: IntoSystem<(), (), M>>(
+        label: impl Into<String>,
+        onclick: S,
+    ) -> Self {
+        Self::new(label, true, onclick.pipe(close_ui))
+    }
+
+    pub fn close(label: impl Into<String>) -> Self {
+        Self::new(
+            label,
+            true,
+            move |mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller>| {
+                let mut ent = c.0;
+                while let Ok(p) = parents.get(ent) {
+                    ent = **p;
+                }
+                if let Some(commands) = commands.get_entity(ent) {
+                    commands.despawn_recursive();
+                }
+            },
+        )
+    }
+
+    pub fn close_dialog(mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller>) {
+        let mut ent = c.0;
+        while let Ok(p) = parents.get(ent) {
+            ent = **p;
+        }
+        if let Some(commands) = commands.get_entity(ent) {
+            commands.despawn_recursive();
+        }
     }
 
     pub fn new<M, S: IntoSystem<(), (), M>>(
@@ -46,9 +86,12 @@ impl DuiButton {
         onclick: S,
     ) -> Self {
         Self {
-            label: label.into(),
+            label: Some(label.into()),
             onclick: Some(On::<Click>::new(onclick)),
             enabled,
+            styles: None,
+            children: None,
+            image: None,
         }
     }
 }
@@ -63,59 +106,82 @@ impl DuiTemplate for DuiButtonTemplate {
     ) -> Result<NodeMap, anyhow::Error> {
         debug!("props: {props:?}");
 
-        let data = if let Some(button) = props.take::<DuiButton>("button-data")? {
-            button
-        } else {
-            DuiButton {
-                label: props
-                    .take::<String>("label")?
-                    .unwrap_or("lorem ipsum".to_owned()),
-                onclick: props.take::<On<Click>>("onclick")?,
-                enabled: props.take::<bool>("enabled")?.unwrap_or(true),
-            }
+        let mut data = props.take::<DuiButton>("button-data")?.unwrap_or_default();
+
+        if let Some(label) = props.take::<String>("label")? {
+            data.label = Some(label)
+        }
+        if let Some(onclick) = props.take::<On<Click>>("onclick")? {
+            data.onclick = Some(onclick);
+        }
+        if let Some(enabled) = props.take::<bool>("enabled")? {
+            data.enabled = enabled;
+        }
+        if let Some(styles) = props.take::<InteractStyles>("styles")? {
+            data.styles = Some(styles);
+        }
+        if let Some(children) = props.take::<Entity>("children")? {
+            data.children = Some(children);
+        }
+        if let Some(image) = props.take::<Handle<Image>>("image")? {
+            data.image = Some(image)
         };
 
-        let button_props = DuiProps::new().with_prop("label", data.label);
-        let mut components = ctx.render_template(commands, "button-base", button_props)?;
+        let styles = data.styles.unwrap_or(InteractStyles {
+            active: Some(InteractStyle {
+                background: Some(Color::WHITE),
+                ..Default::default()
+            }),
+            hover: Some(InteractStyle {
+                background: Some(Color::rgb(0.9, 0.9, 1.0)),
+                ..Default::default()
+            }),
+            inactive: Some(InteractStyle {
+                background: Some(Color::rgb(0.7, 0.7, 1.0)),
+                ..Default::default()
+            }),
+            disabled: Some(InteractStyle {
+                background: Some(Color::rgb(0.4, 0.4, 0.4)),
+                ..Default::default()
+            }),
+        });
 
-        let mut button = commands.commands().entity(components["button-node"]);
+        let mut components = match (data.label, data.image) {
+            (Some(label), _) => ctx.render_template(
+                commands,
+                "button-base-text",
+                DuiProps::new().with_prop("label", label),
+            ),
+            (None, Some(img)) => ctx.render_template(
+                commands,
+                "button-base-image",
+                DuiProps::new().with_prop("image", img),
+            ),
+            (None, None) => ctx.render_template(commands, "button-base-notext", DuiProps::new()),
+        }?;
 
-        let background_id = components["button-background"];
+        let mut button = commands.commands().entity(components["button-background"]);
 
         button.insert((
             Enabled(data.enabled),
             Interaction::default(),
             FocusPolicy::Block,
+            styles,
         ));
         if let Some(onclick) = data.onclick {
             debug!("add on click");
             button.insert(onclick);
         }
 
-        if data.enabled {
-            button.insert((
-                On::<HoverEnter>::new(move |mut q: Query<&mut Ui9Slice>| {
-                    if let Ok(mut slice) = q.get_mut(background_id) {
-                        slice.tint = Some(Color::rgb(1.0, 1.0, 1.0).into());
-                    } else {
-                        panic!();
-                    }
-                }),
-                On::<HoverExit>::new(move |mut q: Query<&mut Ui9Slice>| {
-                    if let Ok(mut slice) = q.get_mut(background_id) {
-                        slice.tint = Some(Color::rgb(0.7, 0.7, 1.0).into());
-                    } else {
-                        panic!();
-                    }
-                }),
-            ));
+        if let Some(entity) = data.children {
             commands
                 .commands()
-                .entity(background_id)
-                .modify_component(|slice: &mut Ui9Slice| {
-                    slice.tint = Some(Color::rgb(0.7, 0.7, 1.0).into());
-                });
-        } else {
+                .entity(components["button-node"])
+                .push_children(&[entity]);
+            components.insert("label".to_owned(), entity);
+        }
+
+        if !data.enabled {
             // delayed modification
             commands
                 .commands()
@@ -146,81 +212,124 @@ impl DuiTemplate for DuiButtonSetTemplate {
         let buttons = props
             .take::<Vec<DuiButton>>("buttons")?
             .ok_or(anyhow!("no buttons in set"))?;
-        let mut results = NodeMap::default();
-        let mut err = None;
 
-        commands
-            .insert(NodeBundle {
-                style: Style {
-                    width: Val::Percent(100.0),
-                    margin: UiRect::horizontal(Val::Px(10.0)),
-                    ..Default::default()
-                },
-                ..Default::default()
+        let children = buttons
+            .into_iter()
+            .map(|button| {
+                ctx.render_template(
+                    &mut commands.commands().spawn_empty(),
+                    "button",
+                    DuiProps::new().with_prop("button-data", button),
+                )
+                .map(|nodes| nodes["root"])
             })
-            .with_children(|c| {
-                c.spawn(NodeBundle {
-                    style: Style {
-                        flex_grow: 1.0,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                });
+            .collect::<Result<Vec<_>, _>>()?;
 
-                for (i, button) in buttons.into_iter().enumerate() {
-                    let button_props = DuiProps::new().with_prop("button-data", button);
-                    match ctx.spawn_template("button", c, button_props) {
-                        Ok(nodes) => {
-                            results.insert(format!("button {i}"), nodes["root"]);
-                        }
-                        Err(e) => err = Some(e),
-                    }
-                }
-            });
+        commands.push_children(&children);
 
-        if let Some(err) = err {
-            return Err(err);
-        }
-        Ok(results)
+        Ok(NodeMap::from_iter(
+            children
+                .into_iter()
+                .enumerate()
+                .map(|(i, c)| (format!("button {i}"), c)),
+        ))
     }
 }
 
-pub struct ModifyComponent<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> {
-    func: F,
-    _p: PhantomData<fn() -> C>,
+#[derive(Component)]
+pub struct TabSelection {
+    pub selected: Option<usize>,
+    active_entities: Vec<NodeMap>,
 }
 
-impl<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> EntityCommand
-    for ModifyComponent<C, F>
-{
-    fn apply(self, id: Entity, world: &mut World) {
-        if let Some(mut c) = world.get_mut::<C>(id) {
-            (self.func)(&mut *c)
-        }
+impl TabSelection {
+    pub fn selected_entity(&self) -> Option<&NodeMap> {
+        self.selected.and_then(|ix| self.active_entities.get(ix))
+    }
+
+    pub fn nth_entity(&self, ix: usize) -> Option<&NodeMap> {
+        self.active_entities.get(ix)
     }
 }
 
-impl<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> ModifyComponent<C, F> {
-    fn new(func: F) -> Self {
-        Self {
-            func,
-            _p: PhantomData,
-        }
-    }
-}
+pub(crate) struct DuiTabGroupTemplate;
+impl DuiTemplate for DuiTabGroupTemplate {
+    fn render(
+        &self,
+        commands: &mut EntityCommands,
+        mut props: DuiProps,
+        ctx: &mut DuiContext,
+    ) -> Result<NodeMap, anyhow::Error> {
+        let id = commands.id();
 
-pub trait ModifyComponentExt {
-    fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
-        &mut self,
-        func: F,
-    ) -> &mut Self;
-}
+        let buttons = props
+            .take::<Vec<DuiButton>>("tabs")?
+            .ok_or(anyhow!("no tabs in set"))?;
+        let start_index = props.take::<Option<usize>>("initial")?.unwrap_or_default();
+        let on_changed = props
+            .take::<On<DataChanged>>("onchanged")?
+            .ok_or(anyhow!("no action for tabgroup"))?;
+        let toggle = props.take_bool_like("toggle")?.unwrap_or(false);
 
-impl<'w, 's, 'a> ModifyComponentExt for EntityCommands<'w, 's, 'a> {
-    fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
-        &mut self,
-        func: F,
-    ) -> &mut Self {
-        self.add(ModifyComponent::new(func))
+        let mut active_entities = Vec::default();
+
+        let children = buttons
+            .into_iter()
+            .enumerate()
+            .map(|(ix, button)| {
+                ctx.render_template(
+                    &mut commands.commands().spawn_empty(),
+                    "button",
+                    DuiProps::new().with_prop("button-data", button).with_prop(
+                        "onclick",
+                        On::<Click>::new(
+                            move |mut commands: Commands,
+                                  mut q: Query<&mut TabSelection>,
+                                  mut active: Query<&mut Active>| {
+                                if let Ok(mut sel) = q.get_mut(id) {
+                                    if toggle && sel.selected == Some(ix) {
+                                        sel.selected = None;
+                                    } else {
+                                        sel.selected = Some(ix);
+                                    }
+                                    for (i, child) in sel.active_entities.iter().enumerate() {
+                                        active.get_mut(child["button-background"]).unwrap().0 =
+                                            Some(i) == sel.selected;
+                                    }
+                                }
+
+                                if let Some(mut cmd) = commands.get_entity(id) {
+                                    cmd.insert(DataChanged);
+                                }
+                            },
+                        ),
+                    ),
+                )
+                .map(|nodes| {
+                    commands
+                        .commands()
+                        .entity(nodes["button-background"])
+                        .insert(Active(Some(ix) == start_index));
+                    active_entities.push(nodes.clone());
+                    nodes["root"]
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        commands.push_children(&children);
+        commands.insert((
+            on_changed,
+            TabSelection {
+                selected: start_index,
+                active_entities,
+            },
+        ));
+
+        Ok(NodeMap::from_iter(
+            children
+                .into_iter()
+                .enumerate()
+                .map(|(i, c)| (format!("tab {i}"), c)),
+        ))
     }
 }

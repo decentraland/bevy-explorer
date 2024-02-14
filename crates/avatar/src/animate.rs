@@ -35,6 +35,8 @@ use scene_runner::{
     ContainerEntity, ContainingScene,
 };
 
+use crate::process_avatar;
+
 use super::AvatarDynamicState;
 
 use once_cell::sync::Lazy;
@@ -119,7 +121,7 @@ impl Plugin for AvatarAnimationPlugin {
             (
                 load_animations,
                 (read_player_emotes, broadcast_emote, receive_emotes).before(animate),
-                animate,
+                animate.after(process_avatar),
             )
                 .in_set(SceneSets::PostLoop),
         );

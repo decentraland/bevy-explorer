@@ -555,31 +555,43 @@ impl DuiTemplate for ScrollableTemplate {
         let mut content = Entity::PLACEHOLDER;
         let mut results = Ok(Default::default());
 
-        commands.with_children(|c| {
-            c.spawn(NodeBundle {
+        commands
+            .insert(NodeBundle {
                 style: Style {
-                    width: panel_size.0,
-                    height: panel_size.1,
-                    // TODO this should be set based on direction
-                    flex_direction: FlexDirection::Column,
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    max_width: Val::Percent(100.0),
+                    max_height: Val::Percent(100.0),
+                    overflow: Overflow::clip(),
                     ..Default::default()
                 },
                 ..Default::default()
             })
-            .with_children(|commands| {
-                // TODO need one more layer for bidirectional scrolling
-                let mut content_cmds = commands.spawn(NodeBundle {
+            .with_children(|c| {
+                c.spawn(NodeBundle {
                     style: Style {
+                        width: panel_size.0,
+                        height: panel_size.1,
+                        // TODO this should be set based on direction
+                        flex_direction: FlexDirection::Column,
                         ..Default::default()
                     },
                     ..Default::default()
-                });
+                })
+                .with_children(|commands| {
+                    // TODO need one more layer for bidirectional scrolling
+                    let mut content_cmds = commands.spawn(NodeBundle {
+                        style: Style {
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    });
 
-                results = ctx.apply_children(&mut content_cmds);
-                content = content_cmds.id();
-                commands.spacer();
+                    results = ctx.apply_children(&mut content_cmds);
+                    content = content_cmds.id();
+                    commands.spacer();
+                });
             });
-        });
 
         commands.try_insert((Interaction::default(), scrollable, ScrollContent(content)));
         results

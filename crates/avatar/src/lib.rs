@@ -69,7 +69,9 @@ impl Plugin for AvatarPlugin {
         app.add_plugins(AvatarTexturePlugin);
         app.init_resource::<WearablePointers>();
         app.init_resource::<WearableMetas>();
+        app.init_resource::<RequestedWearables>();
         app.add_systems(Update, load_base_wearables);
+        app.add_systems(Update, load_wearables);
         app.add_systems(Update, update_avatar_info);
         app.add_systems(Update, update_base_avatar_shape);
         app.add_systems(Update, select_avatar);
@@ -114,6 +116,7 @@ pub struct WearableMetas(pub HashMap<String, WearableMeta>);
 #[derive(Deserialize, Debug, Component, Clone)]
 pub struct WearableMeta {
     pub id: String,
+    pub name: String,
     pub description: String,
     pub thumbnail: String,
     pub rarity: Option<String>,
@@ -523,25 +526,25 @@ impl<'de> serde::Deserialize<'de> for WearableCategory {
 impl WearableCategory {
     const UNKNOWN: WearableCategory = WearableCategory::texture("unknown");
 
-    const EYES: WearableCategory = WearableCategory::texture("eyes");
-    const EYEBROWS: WearableCategory = WearableCategory::texture("eyebrows");
-    const MOUTH: WearableCategory = WearableCategory::texture("mouth");
+    pub const EYES: WearableCategory = WearableCategory::texture("eyes");
+    pub const EYEBROWS: WearableCategory = WearableCategory::texture("eyebrows");
+    pub const MOUTH: WearableCategory = WearableCategory::texture("mouth");
 
-    const FACIAL_HAIR: WearableCategory = WearableCategory::model("facial_hair");
-    const HAIR: WearableCategory = WearableCategory::model("hair");
-    const HEAD: WearableCategory = WearableCategory::model("head");
-    const BODY_SHAPE: WearableCategory = WearableCategory::model("body_shape");
-    const UPPER_BODY: WearableCategory = WearableCategory::model("upper_body");
-    const LOWER_BODY: WearableCategory = WearableCategory::model("lower_body");
-    const FEET: WearableCategory = WearableCategory::model("feet");
-    const EARRING: WearableCategory = WearableCategory::model("earring");
-    const EYEWEAR: WearableCategory = WearableCategory::model("eyewear");
-    const HAT: WearableCategory = WearableCategory::model("hat");
-    const HELMET: WearableCategory = WearableCategory::model("helmet");
-    const MASK: WearableCategory = WearableCategory::model("mask");
-    const TIARA: WearableCategory = WearableCategory::model("tiara");
-    const TOP_HEAD: WearableCategory = WearableCategory::model("top_head");
-    const SKIN: WearableCategory = WearableCategory::model("skin");
+    pub const FACIAL_HAIR: WearableCategory = WearableCategory::model("facial_hair");
+    pub const HAIR: WearableCategory = WearableCategory::model("hair");
+    pub const HAND_WEAR: WearableCategory = WearableCategory::model("gloves");
+    pub const BODY_SHAPE: WearableCategory = WearableCategory::model("body_shape");
+    pub const UPPER_BODY: WearableCategory = WearableCategory::model("upper_body");
+    pub const LOWER_BODY: WearableCategory = WearableCategory::model("lower_body");
+    pub const FEET: WearableCategory = WearableCategory::model("feet");
+    pub const EARRING: WearableCategory = WearableCategory::model("earring");
+    pub const EYEWEAR: WearableCategory = WearableCategory::model("eyewear");
+    pub const HAT: WearableCategory = WearableCategory::model("hat");
+    pub const HELMET: WearableCategory = WearableCategory::model("helmet");
+    pub const MASK: WearableCategory = WearableCategory::model("mask");
+    pub const TIARA: WearableCategory = WearableCategory::model("tiara");
+    pub const TOP_HEAD: WearableCategory = WearableCategory::model("top_head");
+    pub const SKIN: WearableCategory = WearableCategory::model("skin");
 
     const fn model(slot: &'static str) -> Self {
         Self {
@@ -563,24 +566,28 @@ impl FromStr for WearableCategory {
 
     fn from_str(slot: &str) -> Result<WearableCategory, Self::Err> {
         match slot {
+            "body_shape" => Ok(Self::BODY_SHAPE),
+
+            "hair" => Ok(Self::HAIR),
             "eyebrows" => Ok(Self::EYEBROWS),
             "eyes" => Ok(Self::EYES),
-            "facial_hair" => Ok(Self::FACIAL_HAIR),
-            "hair" => Ok(Self::HAIR),
-            "head" => Ok(Self::HEAD),
-            "body_shape" => Ok(Self::BODY_SHAPE),
             "mouth" => Ok(Self::MOUTH),
+            "facial_hair" => Ok(Self::FACIAL_HAIR),
+
             "upper_body" => Ok(Self::UPPER_BODY),
+            "hands_wear" => Ok(Self::HAND_WEAR),
             "lower_body" => Ok(Self::LOWER_BODY),
             "feet" => Ok(Self::FEET),
-            "earring" => Ok(Self::EARRING),
-            "eyewear" => Ok(Self::EYEWEAR),
+
             "hat" => Ok(Self::HAT),
-            "helmet" => Ok(Self::HELMET),
+            "eyewear" => Ok(Self::EYEWEAR),
+            "earring" => Ok(Self::EARRING),
             "mask" => Ok(Self::MASK),
-            "tiara" => Ok(Self::TIARA),
             "top_head" => Ok(Self::TOP_HEAD),
+            "tiara" => Ok(Self::TIARA),
+            "helmet" => Ok(Self::HELMET),
             "skin" => Ok(Self::SKIN),
+
             _ => {
                 warn!("unrecognised wearable category: {slot}");
                 Err(anyhow::anyhow!("unrecognised wearable category: {slot}"))
@@ -592,25 +599,30 @@ impl FromStr for WearableCategory {
 impl WearableCategory {
     pub fn iter() -> impl Iterator<Item = &'static WearableCategory> {
         [
-            Self::EYES,
+            Self::BODY_SHAPE,
+            Self::HAIR,
             Self::EYEBROWS,
+            Self::EYES,
             Self::MOUTH,
             Self::FACIAL_HAIR,
-            Self::HAIR,
-            Self::HEAD,
             Self::UPPER_BODY,
+            Self::HAND_WEAR,
             Self::LOWER_BODY,
             Self::FEET,
-            Self::EARRING,
-            Self::EYEWEAR,
             Self::HAT,
-            Self::HELMET,
+            Self::EYEWEAR,
+            Self::EARRING,
             Self::MASK,
-            Self::TIARA,
             Self::TOP_HEAD,
+            Self::TIARA,
+            Self::HELMET,
             Self::SKIN,
         ]
         .iter()
+    }
+
+    pub fn index(&self) -> Option<usize> {
+        Self::iter().position(|w| w == self)
     }
 }
 
@@ -713,45 +725,16 @@ impl WearableDefinition {
     }
 }
 
-#[derive(Component)]
-pub struct AvatarDefinition {
-    label: Option<String>,
-    body: WearableDefinition,
-    skin_color: Color,
-    hair_color: Color,
-    eyes_color: Color,
-    wearables: Vec<WearableDefinition>,
-    hides: HashSet<WearableCategory>,
-    render_layer: Option<RenderLayers>,
-}
+#[derive(Resource, Default)]
+pub struct RequestedWearables(pub HashSet<Urn>);
 
-#[derive(Component)]
-pub struct RetryRenderAvatar;
-
-// load wearables and create renderable avatar entity once all loaded
-#[allow(clippy::type_complexity, clippy::too_many_arguments)]
-fn update_render_avatar(
-    mut commands: Commands,
-    query: Query<
-        (
-            Entity,
-            &AvatarSelection,
-            Option<&Children>,
-            Option<&AttachPoints>,
-        ),
-        Or<(Changed<AvatarSelection>, With<RetryRenderAvatar>)>,
-    >,
-    mut removed_selections: RemovedComponents<AvatarSelection>,
-    children: Query<(&Children, &AttachPoints)>,
-    avatar_render_entities: Query<(), With<AvatarDefinition>>,
+fn load_wearables(
+    mut requested_wearables: ResMut<RequestedWearables>,
+    mut wearable_task: Local<Option<(ActiveEntityTask, HashSet<Urn>)>>,
     mut wearable_pointers: ResMut<WearablePointers>,
     mut wearable_metas: ResMut<WearableMetas>,
     ipfas: IpfsAssetServer,
-    mut wearable_task: Local<Option<(ActiveEntityTask, HashSet<Urn>)>>,
 ) {
-    let mut missing_wearables = HashSet::default();
-
-    // update resources with active entity results
     if let Some((mut task, mut wearables)) = wearable_task.take() {
         match task.complete() {
             Some(Ok(entities)) => {
@@ -812,7 +795,68 @@ fn update_render_avatar(
                 *wearable_task = Some((task, wearables));
             }
         }
+    } else {
+        let requested = requested_wearables
+            .0
+            .drain()
+            .filter(|r| !wearable_pointers.0.contains_key(r))
+            .collect::<HashSet<_>>();
+        let base_wearables = HashSet::from_iter(base_wearables::base_wearables());
+        let pointers = requested
+            .iter()
+            .map(ToString::to_string)
+            .filter(|urn| !base_wearables.contains(urn))
+            .collect::<Vec<_>>();
+
+        if !requested.is_empty() {
+            debug!("requesting: {:?}", requested);
+            *wearable_task = Some((
+                ipfas
+                    .ipfs()
+                    .active_entities(ipfs::ActiveEntitiesRequest::Pointers(pointers), None),
+                requested,
+            ));
+        }
     }
+}
+
+#[derive(Component)]
+pub struct AvatarDefinition {
+    label: Option<String>,
+    body: WearableDefinition,
+    skin_color: Color,
+    hair_color: Color,
+    eyes_color: Color,
+    wearables: Vec<WearableDefinition>,
+    hides: HashSet<WearableCategory>,
+    render_layer: Option<RenderLayers>,
+}
+
+#[derive(Component)]
+pub struct RetryRenderAvatar;
+
+// load wearables and create renderable avatar entity once all loaded
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn update_render_avatar(
+    mut commands: Commands,
+    query: Query<
+        (
+            Entity,
+            &AvatarSelection,
+            Option<&Children>,
+            Option<&AttachPoints>,
+        ),
+        Or<(Changed<AvatarSelection>, With<RetryRenderAvatar>)>,
+    >,
+    mut removed_selections: RemovedComponents<AvatarSelection>,
+    children: Query<(&Children, &AttachPoints)>,
+    avatar_render_entities: Query<(), With<AvatarDefinition>>,
+    wearable_pointers: Res<WearablePointers>,
+    wearable_metas: Res<WearableMetas>,
+    ipfas: IpfsAssetServer,
+    mut requested_wearables: ResMut<RequestedWearables>,
+) {
+    let mut missing_wearables = HashSet::default();
 
     // remove renderable entities when avatar selection is removed
     for entity in removed_selections.read() {
@@ -1013,24 +1057,7 @@ fn update_render_avatar(
         });
     }
 
-    if wearable_task.is_none() && !missing_wearables.is_empty() {
-        let base_wearables = HashSet::from_iter(base_wearables::base_wearables());
-        let pointers = missing_wearables
-            .iter()
-            .map(ToString::to_string)
-            .filter(|urn| !base_wearables.contains(urn))
-            .collect::<Vec<_>>();
-
-        if !pointers.is_empty() {
-            debug!("requesting: {:?}", missing_wearables);
-            *wearable_task = Some((
-                ipfas
-                    .ipfs()
-                    .active_entities(ipfs::ActiveEntitiesRequest::Pointers(pointers), None),
-                missing_wearables,
-            ));
-        }
-    }
+    requested_wearables.0.extend(missing_wearables);
 }
 
 #[derive(Component)]
@@ -1335,11 +1362,11 @@ fn process_avatar(
                 ("ubody_basemesh", WearableCategory::UPPER_BODY),
                 ("lbody_basemesh", WearableCategory::LOWER_BODY),
                 ("feet_basemesh", WearableCategory::FEET),
-                ("head", WearableCategory::HEAD),
-                ("head_basemesh", WearableCategory::HEAD),
-                ("mask_eyes", WearableCategory::HEAD),
-                ("mask_eyebrows", WearableCategory::HEAD),
-                ("mask_mouth", WearableCategory::HEAD),
+                // ("head", WearableCategory::HEAD),
+                // ("head_basemesh", WearableCategory::HEAD),
+                // ("mask_eyes", WearableCategory::HEAD),
+                // ("mask_eyebrows", WearableCategory::HEAD),
+                // ("mask_mouth", WearableCategory::HEAD),
             ];
 
             for (hidename, category) in hiders {

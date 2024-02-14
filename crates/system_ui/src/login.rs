@@ -16,7 +16,7 @@ use scene_runner::Toaster;
 use ui_core::{
     button::DuiButton,
     dialog::{IntoDialogBody, SpawnButton},
-    ui_actions::{Click, On},
+    ui_actions::{Click, EventCloneExt, On},
     BODY_TEXT_STYLE,
 };
 use wallet::{browser_auth::try_create_remote_ephemeral, Wallet};
@@ -32,7 +32,7 @@ impl Plugin for LoginPlugin {
     }
 }
 
-#[derive(Event)]
+#[derive(Event, Clone)]
 enum LoginType {
     ExistingRemote,
     NewRemote,
@@ -105,24 +105,9 @@ fn login(
             "login",
             DuiProps::new()
                 .with_prop("allow-reuse", previous_login.is_some())
-                .with_prop(
-                    "reuse",
-                    On::<Click>::new(move |mut e: EventWriter<LoginType>| {
-                        e.send(LoginType::ExistingRemote);
-                    }),
-                )
-                .with_prop(
-                    "connect",
-                    On::<Click>::new(move |mut e: EventWriter<LoginType>| {
-                        e.send(LoginType::NewRemote);
-                    }),
-                )
-                .with_prop(
-                    "guest",
-                    On::<Click>::new(move |mut e: EventWriter<LoginType>| {
-                        e.send(LoginType::Guest);
-                    }),
-                )
+                .with_prop("reuse", LoginType::ExistingRemote.send_value_on::<Click>())
+                .with_prop("connect", LoginType::NewRemote.send_value_on::<Click>())
+                .with_prop("guest", LoginType::Guest.send_value_on::<Click>())
                 .with_prop("quit", On::<Click>::new(move || std::process::exit(0))),
         )
         .unwrap();

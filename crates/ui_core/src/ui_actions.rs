@@ -23,9 +23,13 @@ pub struct Enabled(pub bool);
 #[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
 pub struct UiActionSet;
 
+#[derive(Resource, Deref)]
+pub struct UiCaller(pub Entity);
+
 impl Plugin for UiActionPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<UiActions<HoverEnter>>()
+        app.insert_resource(UiCaller(Entity::PLACEHOLDER))
+            .init_resource::<UiActions<HoverEnter>>()
             .init_resource::<UiActions<Click>>()
             .init_resource::<UiActions<HoverExit>>()
             .init_resource::<UiActions<Focus>>()
@@ -65,6 +69,23 @@ pub struct On<M: ActionMarker>(Option<ActionImpl>, PhantomData<M>);
 impl<M: ActionMarker> On<M> {
     pub fn new<S>(system: impl IntoSystem<(), (), S>) -> Self {
         Self(Some(ActionImpl::new(system)), Default::default())
+    }
+
+    pub fn close_and<S>(system: impl IntoSystem<(), (), S>) -> Self {
+        Self(
+            Some(ActionImpl::new(close_ui.pipe(system))),
+            Default::default(),
+        )
+    }
+}
+
+pub fn close_ui(mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller>) {
+    let mut ent = c.0;
+    while let Ok(p) = parents.get(ent) {
+        ent = **p;
+    }
+    if let Some(commands) = commands.get_entity(ent) {
+        commands.despawn_recursive();
     }
 }
 
@@ -150,6 +171,7 @@ struct ActionImpl {
     system: BoxedSystem,
     initialized: bool,
     run_already: bool,
+    entity: Entity,
 }
 
 impl ActionImpl {
@@ -158,6 +180,7 @@ impl ActionImpl {
             system: Box::new(IntoSystem::into_system(system)),
             initialized: false,
             run_already: false,
+            entity: Entity::PLACEHOLDER,
         }
     }
 }
@@ -180,7 +203,9 @@ fn gather_actions<M: ActionMarker>(
         commands
             .entity(ent)
             .try_insert(ActionIndex::<M>(ui_actions.0.len(), Default::default()));
-        ui_actions.0.push(action.0.take().unwrap());
+        let mut action = action.0.take().unwrap();
+        action.entity = ent;
+        ui_actions.0.push(action);
     }
 }
 
@@ -207,8 +232,10 @@ pub fn run_actions<M: ActionMarker>(world: &mut World) {
                     action.system.initialize(world);
                     action.initialized = true;
                 }
+                world.resource_mut::<UiCaller>().0 = action.entity;
                 action.system.run((), world);
                 action.system.apply_deferred(world);
+                world.resource_mut::<UiCaller>().0 = Entity::PLACEHOLDER;
             }
             action.run_already = *active && !M::repeat_activate();
 
@@ -258,11 +285,11 @@ fn update_drag(
 }
 
 pub trait EventDefaultExt {
-    fn default_on<A: ActionMarker>() -> On<A>;
+    fn send_default_on<A: ActionMarker>() -> On<A>;
 }
 
 impl<E: Event + Default> EventDefaultExt for E {
-    fn default_on<A: ActionMarker>() -> On<A> {
+    fn send_default_on<A: ActionMarker>() -> On<A> {
         On::<A>::new(|mut e: EventWriter<Self>| {
             e.send_default();
         })
@@ -270,19 +297,20 @@ impl<E: Event + Default> EventDefaultExt for E {
 }
 
 pub trait EventCloneExt {
-    fn value_on<A: ActionMarker>(value: Self) -> On<A>;
+    fn send_value_on<A: ActionMarker>(self) -> On<A>;
 }
 
 impl<E: Event + Clone> EventCloneExt for E {
-    fn value_on<A: ActionMarker>(value: Self) -> On<A> {
+    fn send_value_on<A: ActionMarker>(self) -> On<A> {
         On::<A>::new(move |mut e: EventWriter<Self>| {
-            e.send(value.clone());
+            e.send(self.clone());
         })
     }
 }
 
 pub trait EntityActionExt {
     fn despawn_recursive_on<A: ActionMarker>(&self) -> On<A>;
+    fn despawn_recursive_and_close_on<A: ActionMarker>(&self) -> On<A>;
 }
 
 impl EntityActionExt for Entity {
@@ -291,5 +319,12 @@ impl EntityActionExt for Entity {
         On::<A>::new(move |mut commands: Commands| {
             commands.entity(ent).despawn_recursive();
         })
+    }
+
+    fn despawn_recursive_and_close_on<A: ActionMarker>(&self) -> On<A> {
+        let ent = *self;
+        On::<A>::new(close_ui.pipe(move |mut commands: Commands| {
+            commands.entity(ent).despawn_recursive();
+        }))
     }
 }

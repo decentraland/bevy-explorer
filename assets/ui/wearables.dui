@@ -1,0 +1,134 @@
+<define-template id="wearables">
+    <div style="width: 100%; flex-grow: 1; flex-direction: row;">
+        <div id="background" style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%; background-color: #cccccc;" image="images/backpack/Background.jpeg" />
+        <div style="position-type: absolute; left: -20%, width: 70%; min-width: 70%; max-width: 70%; height: 100%;">
+            <photobooth booth-instance="@booth-instance" />
+            <!-- <div style="width: 100%; height: 100%; background-color: white; flex-grow: 1;" /> -->
+        </div>
+        <div style="position-type: absolute; width: 70%; left: 30%; height: 100%; flex-grow: 1; flex-direction: column; background-color: #00000066;">
+            <!-- wearables tool bar -->
+            <div id="tools" style="width: 100%;">
+                <div style="align-items: center; flex-direction: column; width: 25%; flex-grow: 1; margin: 1vmin;">
+                    <med-text style="align-self: center;" text="show only collectibles" />
+                    <div style="width: 4.2vmin; height: 2.8vmin;"><toggle ontoggle="@only-collectibles" toggled="@only-collectibles-set" /></div>
+                </div>
+                <div style="align-items: center; flex-direction: column; width: 25%; flex-grow: 1; margin: 1vmin;">
+                    <med-text style="align-self: center;" text="collection" />
+                    <combo-box id="collections" style="align-self: center; height: 2vmin; width: 100%;" empty-text="choose a collection" options="@collections" selected="@initial-collection" allow-null="true" disabled="true" />
+                </div>
+                <space />
+                <div style="align-items: center; flex-direction: column; width: 25%; flex-grow: 1; margin: 1vmin;">
+                    <med-text style="align-self: center;" text="sort by" />
+                    <combo-box style="align-self: center; height: 2vmin; width: 100%;" options="@sort-by" selected="@initial-sort-by" onchanged="@sort-by-changed" allow-null="false" disabled="false" />
+                </div>
+                <div style="align-items: center; flex-direction: column; width: 25%; flex-grow: 1; margin: 1vmin;">
+                    <med-text style="align-self: center;" text="filter" />
+                    <text-entry style="align-self: center; height: 2vmin; width: 100%;" hint-text="🔍" initial-text="@initial-filter" onchanged="@filter-changed" />
+                </div>
+    
+            </div>
+            <hr-thin />
+            <!-- body -->
+            <div style="width: 100%; max-width: 100%; height: 10%; flex-grow: 1; flex-direction: row;">
+                <!-- categories -->
+                <div style="width: 30%; height: 100%; max-width: 30%;">
+                    <vscroll>
+                        <tab-group id="category-tabs" style="justify-content: center; flex-direction: row; flex-wrap: wrap" tabs="@category-tabs" onchanged="@category-changed" initial="@initial-category" toggle="true" />
+                    </vscroll>
+                </div>
+                <!-- content -->
+                <div style="width: 70%; flex-grow: 1;">
+                    <div style="width: 100%; height: 100%; flex-direction: column">
+                        <!-- items -->
+                        <div style="width: 100%; height: 70%">
+                            <vscroll>
+                                <div id="items" style="width: 100%; flex-wrap: wrap;"/>
+                            </vscroll>
+                        </div>
+                        <hr />
+                        <!-- selected -->
+                        <div id="selected-item" style="width: 100%; height: 30%;" /> 
+                    </div>
+                </div>
+            </div>
+            <!-- buttons -->
+            <!-- <div style="width: 100%; background-color: #0000ff44;">
+                <space />
+                <button-set buttons="@buttons" />
+            </div> -->
+        </div>
+    </div>
+</define-template>
+
+<define-template id="wearable-category">
+    <div style="width: 100%; height: 100%; flex-direction: row; border: 1vmin;">
+        <div style="width: 6vmin; height: 6vmin; min-width: 6vmin; min-height: 6vmin; ">
+            <div image="@category-img" />
+        </div>
+        <div style="width: 6vmin; height: 6vmin; min-width: 6vmin; min-height: 6vmin">
+            <nineslice id="button-background" slice-image="images/button.png" slice-border="37.5%" slice-color="#aaaaff" />
+            <div id="item-image" image="@wearable-img" />
+        </div>
+    </div>
+</define-template>
+
+<define-template id="wearable-items">
+    <tab-group style="justify-content: center; flex-direction: row; flex-wrap: wrap" tabs="@tabs" onchanged="@onchanged" initial="@initial" />
+</define-template>
+
+<define-template id="wearable-item">
+    <div style="width: 14vmin; height: 14vmin; min-width: 14vmin; min-height: 14vmin; padding: 0.2vmin; ">
+        <div id="rarity" style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%; background-color: '@rarity-color';" image="images/backpack/wearable_item_bg.png" />
+        <div image="@image" style="background-color: '@image-color'" />
+    </div>
+</define-template>
+
+<define-template id="wearable-item-pending">
+    <div style="width: 14vmin; height: 14vmin; min-width: 14vmin; min-height: 14vmin; margin: 0.6vmin;">
+        <div id="background" style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%;" image="images/backpack/wearable_item_bg.png" />
+        <spinner />
+    </div>
+</define-template>
+
+<define-template id="wearable-selection">
+    <div style="width: 100%; height: 100%; flex-grow: 1;" interact="true" focus="block">
+        <div style="margin: 0.5vmin; position-type: absolute; top: -1vmin; right: 1vmin; left: 1vmin; bottom: 1vmin;"> 
+            <nineslice slice-image="images/button.png" slice-border="37.5%" slice-color="#bbbbbb" />
+            <div style="flex-direction: row; flex-grow: 1; margin: 2vmin; ">
+                <div style="height: 100%; max-width: 10vmin; aspect-ratio: 1;">
+                    <div style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%; background-color: '@rarity-color';" image="images/backpack/wearable_item_bg.png" />
+                    <div image="@selection-image" />
+                </div>
+                <div style="flex-direction: column; height: 100%; flex-grow: 1;">
+                    <vscroll>
+                        <div style="flex-direction: column; flex-grow: 1;">
+                            <div style="flex-direction: column; width: 100%; height: auto; margin: 0vmin 1vmin 1vmin 1vmin; flex-grow: 1;">
+                                <large-text style="color: black; margin: 0vmin 1vmin 1vmin 1vmin;" text="@title" />
+                            </div>
+                            <div style="width: 100%; height: auto; margin: 1vmin; flex-grow: 1;">
+                                <med-text style="color: black; flex-grow: 1; width: 100%; margin: 1vmin;" text="@body" />
+                            </div>
+                            <div style="flex-direction: row; margin: 1vmin;">
+                                <med-text style="color: black;" text=" Hides: " />
+                                <div id="hides" style="flex-direction: row;" />
+                            </div>
+                        </div>
+                    </vscroll>
+                </div>
+                <div style="flex-direction: column; align-items: center;">
+                    <button label="@label" onclick="@onclick" enabled="@enabled" />
+                    <div style="display: '@color-picker-display'; flex-direction: column; margin: 2vmin">
+                        <med-text style="color: black;" text="Color" />
+                        <color-picker style="display: '@color-picker-display';" color="@color" onchanged="@color-changed" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</define-template>
+
+<define-template id="wearable-hides">
+    <div style="width: 2vmin; aspect-ratio: 1;">
+        <div image="@image" />
+    </div>
+</define-template>

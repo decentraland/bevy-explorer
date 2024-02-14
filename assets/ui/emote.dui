@@ -20,20 +20,20 @@
             <div style="position-type: absolute; width:16%; height: 24%; left:81.72%; top:54.33%;"> <emote-button id="emote_9" /><div image="@image_9" id="image_9" /></div>
             <div style="position-type: absolute; width:16%; height: 24%; left:74.36%; top:78%;"> <emote-button id="emote_0" /><div image="@image_0" id="image_0" /></div>
 
-            <div style="position-type: absolute; left:10.88%; top:78.17%;"><div style="font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-med'; color: black;" text="1" /></div>
-            <div style="position-type: absolute; left:3.52%; top:54.5%;"><div style="font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-med'; color: black;" text="2" /></div>
-            <div style="position-type: absolute; left:5.8%; top:30.8%;"><div style="font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-med'; color: black;" text="3" /></div>
-            <div style="position-type: absolute; left:19.19%; top:8.29%;"><div style="font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-med'; color: black;" text="4" /></div>
-            <div style="position-type: absolute; left:35.51%; top:-0.88%;"><div style="font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-med'; color: black;" text="5" /></div>
-            <div style="position-type: absolute; left:50.97%; top:-0.88%;"><div style="font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-med'; color: black;" text="6" /></div>
-            <div style="position-type: absolute; left:67.29%; top:8.29%;"><div style="font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-med'; color: black;" text="7" /></div>
-            <div style="position-type: absolute; left:80.67%; top:30.8%;"><div style="font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-med'; color: black;" text="8" /></div>
-            <div style="position-type: absolute; left:82.96%; top:54.5%;"><div style="font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-med'; color: black;" text="9" /></div>
-            <div style="position-type: absolute; left:75.6%; top:78.17%;"><div style="font: 'fonts/FiraSans-Bold.ttf'; font-size: '@font-med'; color: black;" text="0" /></div>
+            <div style="position-type: absolute; left:10.88%; top:78.17%;"><med-text style="color: black;" text="1" /></div>
+            <div style="position-type: absolute; left:3.52%; top:54.5%;"><med-text style="color: black;" text="2" /></div>
+            <div style="position-type: absolute; left:5.8%; top:30.8%;"><med-text style="color: black;" text="3" /></div>
+            <div style="position-type: absolute; left:19.19%; top:8.29%;"><med-text style="color: black;" text="4" /></div>
+            <div style="position-type: absolute; left:35.51%; top:-0.88%;"><med-text style="color: black;" text="5" /></div>
+            <div style="position-type: absolute; left:50.97%; top:-0.88%;"><med-text style="color: black;" text="6" /></div>
+            <div style="position-type: absolute; left:67.29%; top:8.29%;"><med-text style="color: black;" text="7" /></div>
+            <div style="position-type: absolute; left:80.67%; top:30.8%;"><med-text style="color: black;" text="8" /></div>
+            <div style="position-type: absolute; left:82.96%; top:54.5%;"><med-text style="color: black;" text="9" /></div>
+            <div style="position-type: absolute; left:75.6%; top:78.17%;"><med-text style="color: black;" text="0" /></div>
 
             <div style="width: 50%; max-width: 50%; align-items: center; flex-direction: row; flex-grow: 1;">
                 <div style="flex-grow: 1;" />
-                <div style="font: 'fonts/NotoSans-Regular.ttf'; font-size: '@font-large'; color: white; text-align: center;" id="output" text="" />
+                <large-text style="color: white; text-align: center;" id="output" text="" />
                 <div style="flex-grow: 1;" />
             </div>
         </div>

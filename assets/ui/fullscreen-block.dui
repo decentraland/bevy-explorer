@@ -5,7 +5,7 @@
         height: 100%;
         align-items: center;
         justify-content: center;
-        background-color: #00000088;
+        background-color: #000000ee;
     ">
         <apply-children />
     </div>

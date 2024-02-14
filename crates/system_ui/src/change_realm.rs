@@ -5,7 +5,7 @@ use bevy::{
 };
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::util::TaskExt;
-use ipfs::{ChangeRealmEvent, CurrentRealm, IpfsAssetServer};
+use ipfs::{ChangeRealmEvent, CurrentRealm};
 use isahc::ReadResponseExt;
 use serde::Deserialize;
 use ui_core::{
@@ -47,7 +47,7 @@ fn change_realm_dialog(
     mut events: EventReader<ChangeRealmDialog>,
     dui: ResMut<DuiRegistry>,
     realm: Res<CurrentRealm>,
-    ipfas: IpfsAssetServer,
+    // _ipfas: IpfsAssetServer,
     mut q: Query<&mut Text, With<UpdateRealmText>>,
 ) {
     if realm.is_changed() {
@@ -67,14 +67,17 @@ fn change_realm_dialog(
         return;
     }
 
-    let endpoint = ipfas
-        .ipfs()
-        .lambda_endpoint()
-        .unwrap_or_else(|| String::from("https://realm-provider.decentraland.org/lambdas"));
+    // let endpoint = ipfas
+    //     .ipfs()
+    //     .lambda_endpoint()
+    //     .unwrap_or_else(|| String::from("https://realm-provider.decentraland.org/lambdas"));
+    // let target_url = format!("{endpoint}/explore/realms");
+
+    // hard coded since the other doesn't list main
+    let target_url = "https://realm-provider.decentraland.org/realms";
 
     let task: Task<Result<Vec<ServerDesc>, anyhow::Error>> = IoTaskPool::get().spawn(async move {
-        let mut response =
-            isahc::get(format!("{endpoint}/explore/realms")).map_err(|e| anyhow!(e))?;
+        let mut response = isahc::get(target_url).map_err(|e| anyhow!(e))?;
         response.json::<Vec<ServerDesc>>().map_err(|e| anyhow!(e))
     });
 
@@ -94,7 +97,7 @@ fn change_realm_dialog(
                         .clone()
                         .unwrap_or(String::from("<none>")),
                 )
-                .with_prop("buttons", vec![DuiButton::cancel("cancel", root_id)]),
+                .with_prop("buttons", vec![DuiButton::close("cancel")]),
         )
         .unwrap();
     commands

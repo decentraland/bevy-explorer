@@ -18,6 +18,7 @@ input_manager = { workspace = true }
 av = { workspace = true }
 wallet = { workspace = true }
 emotes = { workspace = true }
+tween = { workspace = true }
 
 bevy = { workspace = true }
 bevy_egui = { workspace = true }
