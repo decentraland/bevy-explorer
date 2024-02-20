@@ -19,7 +19,7 @@ pub async fn signed_login(
     wallet: Wallet,
     meta: SignedLoginMeta,
 ) -> Result<SignedLoginResponse, anyhow::Error> {
-    let auth_chain = sign_request("post", &uri, &wallet, meta).await;
+    let auth_chain = sign_request("post", &uri, &wallet, meta).await?;
 
     let mut builder = isahc::Request::builder().method(Method::POST).uri(uri);
 
