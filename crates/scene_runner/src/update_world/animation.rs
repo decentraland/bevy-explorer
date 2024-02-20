@@ -154,8 +154,8 @@ fn update_animations(
                     if player.is_finished() {
                         // force restart if loop is false
                         player.replay();
-                    } 
-                
+                    }
+
                     player.set_repeat(RepeatAnimation::Never);
                 }
 

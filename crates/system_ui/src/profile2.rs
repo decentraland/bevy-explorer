@@ -5,16 +5,20 @@ use std::io::Write;
 use avatar::{avatar_texture::BoothInstance, AvatarShape};
 use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use common::profile::{AvatarColor, SerializedProfile};
+use common::{
+    profile::{AvatarColor, SerializedProfile},
+    rpc::RpcCall,
+};
 use comms::profile::CurrentUserProfile;
-use ipfs::CurrentRealm;
+use ipfs::{ChangeRealmEvent, CurrentRealm};
 use ui_core::{
     button::{DuiButton, TabSelection},
-    ui_actions::{Click, DataChanged, EntityActionExt, EventDefaultExt, On, UiCaller},
+    ui_actions::{Click, DataChanged, EventDefaultExt, On, UiCaller},
 };
 
 use crate::{
     change_realm::{ChangeRealmDialog, UpdateRealmText},
+    discover::DiscoverSettingsPlugin,
     emotes::EmotesSettingsPlugin,
     wearables::WearableSettingsPlugin,
 };
@@ -26,7 +30,11 @@ impl Plugin for ProfileEditPlugin {
         app.add_event::<SerializeUi>();
         app.add_systems(Startup, setup);
         app.add_systems(Update, dump);
-        app.add_plugins((WearableSettingsPlugin, EmotesSettingsPlugin));
+        app.add_plugins((
+            DiscoverSettingsPlugin,
+            WearableSettingsPlugin,
+            EmotesSettingsPlugin,
+        ));
     }
 }
 
@@ -75,6 +83,13 @@ impl InfoDialog {
 pub struct SettingsDialog {
     pub modified: bool,
     pub profile: SerializedProfile,
+    pub on_close: Option<OnCloseEvent>,
+}
+
+#[derive(Clone)]
+pub enum OnCloseEvent {
+    ChangeRealm(ChangeRealmEvent, RpcCall),
+    SomethingElse,
 }
 
 #[allow(clippy::type_complexity)]
@@ -113,6 +128,85 @@ fn save_settings(
     commands.entity(dialog_ent).despawn_recursive();
 }
 
+fn really_close_settings(mut commands: Commands, modified: Query<Entity, With<SettingsDialog>>) {
+    let Ok(dialog_ent) = modified.get_single() else {
+        error!("no dialog");
+        return;
+    };
+
+    commands.entity(dialog_ent).despawn_recursive();
+}
+
+pub fn close_settings(
+    mut commands: Commands,
+    mut q: Query<(Entity, &mut SettingsDialog)>,
+    dui: Res<DuiRegistry>,
+    mut cr: EventWriter<ChangeRealmEvent>,
+    mut rpc: EventWriter<RpcCall>,
+) {
+    let Ok((settings_ent, mut settings)) = q.get_single_mut() else {
+        warn!("no settings dialog");
+        return;
+    };
+
+    let ev = settings.on_close.take();
+    if settings.modified {
+        let send_onclose =
+            move |mut cr: EventWriter<ChangeRealmEvent>, mut rpc: EventWriter<RpcCall>| match &ev {
+                Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
+                    cr.send(cr_ev.clone());
+                    rpc.send(rpc_ev.clone());
+                }
+                Some(OnCloseEvent::SomethingElse) => (),
+                _ => (),
+            };
+
+        commands
+            .spawn_template(
+                &dui,
+                "text-dialog",
+                DuiProps::new()
+                    .with_prop("title", "Unsaved Changes".to_owned())
+                    .with_prop(
+                        "body",
+                        "You have unsaved changes, do you want to save them?".to_owned(),
+                    )
+                    .with_prop(
+                        "buttons",
+                        vec![
+                            DuiButton::new_enabled_and_close(
+                                "Save Changes",
+                                save_settings.pipe(send_onclose.clone()),
+                            ),
+                            DuiButton::new_enabled_and_close(
+                                "Discard",
+                                really_close_settings.pipe(send_onclose),
+                            ),
+                            DuiButton::new_enabled_and_close(
+                                "Cancel",
+                                |mut q: Query<&mut SettingsDialog>| {
+                                    if let Ok(mut settings) = q.get_single_mut() {
+                                        settings.on_close = None;
+                                    }
+                                },
+                            ),
+                        ],
+                    ),
+            )
+            .unwrap();
+    } else {
+        commands.entity(settings_ent).despawn_recursive();
+        match &ev {
+            Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
+                cr.send(cr_ev.clone());
+                rpc.send(rpc_ev.clone());
+            }
+            Some(OnCloseEvent::SomethingElse) => (),
+            _ => (),
+        }
+    }
+}
+
 pub fn show_settings(
     mut commands: Commands,
     dui: Res<DuiRegistry>,
@@ -127,6 +221,7 @@ pub fn show_settings(
     let mut root = commands.spawn(SettingsDialog {
         modified: false,
         profile: profile.content.clone(),
+        on_close: None,
     });
     // let root_id = root.id();
 
@@ -149,7 +244,7 @@ pub fn show_settings(
     let tabs = vec![
         DuiButton {
             label: Some("Discover".to_owned()),
-            enabled: false,
+            enabled: true,
             ..Default::default()
         },
         DuiButton {
@@ -188,52 +283,7 @@ pub fn show_settings(
         ChangeRealmDialog::send_default_on::<Click>(),
     );
     props.insert_prop("profile-name", profile.content.name.clone());
-    props.insert_prop(
-        "close-settings",
-        On::<Click>::new(
-            |mut commands: Commands, q: Query<(Entity, &SettingsDialog)>, dui: Res<DuiRegistry>| {
-                let Ok((settings_ent, settings)) = q.get_single() else {
-                    warn!("no settings dialog");
-                    return;
-                };
-
-                if settings.modified {
-                    commands
-                        .spawn_template(
-                            &dui,
-                            "text-dialog",
-                            DuiProps::new()
-                                .with_prop("title", "Unsaved Changes".to_owned())
-                                .with_prop(
-                                    "body",
-                                    "You have unsaved changes, do you want to save them?"
-                                        .to_owned(),
-                                )
-                                .with_prop(
-                                    "buttons",
-                                    vec![
-                                        DuiButton::new_enabled_and_close(
-                                            "Save Changes",
-                                            save_settings,
-                                        ),
-                                        DuiButton {
-                                            label: Some("Discard".to_owned()),
-                                            onclick: Some(
-                                                settings_ent.despawn_recursive_and_close_on(),
-                                            ),
-                                            ..default()
-                                        },
-                                        DuiButton::close("Cancel"),
-                                    ],
-                                ),
-                        )
-                        .unwrap();
-                } else {
-                    commands.entity(settings_ent).despawn_recursive();
-                }
-            },
-        ),
-    );
+    props.insert_prop("close-settings", On::<Click>::new(close_settings));
     props.insert_prop("title-tabs", tabs);
     props.insert_prop("title-initial", Some(0usize));
     props.insert_prop(

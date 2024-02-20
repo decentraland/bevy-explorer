@@ -475,7 +475,7 @@ fn change_realm_command(
     }
 }
 
-#[derive(Event)]
+#[derive(Event, Clone)]
 pub struct ChangeRealmEvent {
     pub new_realm: String,
 }

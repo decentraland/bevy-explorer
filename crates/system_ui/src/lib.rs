@@ -1,5 +1,6 @@
 pub mod change_realm;
 pub mod chat;
+pub mod discover;
 pub mod emote_select;
 pub mod emotes;
 pub mod login;

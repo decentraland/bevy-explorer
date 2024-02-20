@@ -49,13 +49,13 @@ impl<T: 'static> From<tokio::sync::oneshot::Sender<T>> for RpcResultSender<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PortableLocation {
     Urn(String),
     Ens(String),
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SpawnResponse {
     pub pid: String,
@@ -91,7 +91,7 @@ pub struct RPCSendableMessage {
 
 pub type RpcEventSender = tokio::sync::mpsc::UnboundedSender<String>;
 
-#[derive(Event, Debug)]
+#[derive(Event, Debug, Clone)]
 pub enum RpcCall {
     ChangeRealm {
         scene: Entity,

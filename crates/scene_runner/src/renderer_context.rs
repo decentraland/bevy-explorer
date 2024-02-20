@@ -8,9 +8,10 @@ use dcl::{
 use dcl_component::{DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter};
 
 use crate::{
-    initialize_scene::SpawnPoint, primary_entities::PrimaryEntities,
-    update_world::{mesh_collider::DisableCollisions, transform_and_parent::ParentPositionSync}, ContainerEntity, SceneEntity,
-    TargetParent,
+    initialize_scene::SpawnPoint,
+    primary_entities::PrimaryEntities,
+    update_world::{mesh_collider::DisableCollisions, transform_and_parent::ParentPositionSync},
+    ContainerEntity, SceneEntity, TargetParent,
 };
 
 // contains a list of (SceneEntityId.generation, bevy entity) indexed by SceneEntityId.id

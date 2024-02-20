@@ -1,0 +1,124 @@
+<define-template id="discover">
+    <div style="width: 100%; flex-grow: 1; flex-direction: row;">
+        <!-- <div id="background" style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%; background-color: #cccccc;" image="images/backpack/Background.jpeg" /> -->
+        <div style="position-type: absolute; width: 100%; height: 100%; flex-grow: 1; flex-direction: column;">
+            <div style="width: 100%; align-items: center;" focus="block" interact="true" z-index="1">
+                <!-- categories -->
+                <div style="width: 80%">
+                    <button-set style="width: 100%; flex-wrap: wrap; align-content: center; align-items: center; justify-content: center;" buttons="@category-buttons" />
+                </div>
+                <div style="flex-direction: column; width: 10%; align-items: center;">
+                    <med-text text="sort by" />
+                    <combo-box style="width: 80%; height: 2.8vmin;" options="@sort-options" selected="@initial-sort" onchanged="@sort-by-changed"/>
+                </div>
+                <div style="flex-direction: column; width: 10%; align-items: center;">
+                    <med-text text="worlds" />
+                    <div style="width: 4.2vmin; height: 2.8vmin;"><toggle ontoggle="@world-toggle" /></div>
+                </div>
+            </div>
+            <hr-thin />
+            <div style="width: 100%; max-width: 100%; height: 10%; flex-grow: 1; flex-direction: row;">
+                <div style="flex-grow: 1;">
+                    <div style="width: 100%; height: 100%; flex-direction: column">
+                        <!-- items -->
+                        <div style="width: 100%; height: 100%">
+                            <vscroll>
+                                <div id="items" style="width: 100%; height: auto; flex-direction: row; align-content: center; justify-content: center; flex-wrap: wrap;" />
+                            </vscroll>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</define-template>
+
+<define-template id="discover-category-button">
+    <div>
+        <div style="width: 5vmin; height: 5vmin;" image="@image" />
+        <med-text style="color: black; align-self: center; margin: 1vmin;" text="@text" />
+    </div>
+</define-template>
+
+<define-template id="discover-page">
+    <div style="width: 30vmin; height: 25vmin; margin: 1.5vmin; overflow-x: hidden; overflow-y: hidden;">
+        <div style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 5vmin;" image="@image" />
+        <div style="position-type: absolute; left: 0px; right: 0px; top: 20vmin; bottom: 0vmin; background-color: white; flex-direction: column; padding: 0.5vmin;">
+            <med-text style="color: black;" text="@label" />
+            <small-text style="color: black;" text="@author" />
+        </div>
+        <div style="position-type: absolute; bottom: 5vmin; right: 0vmin; background-color: #000000aa;">
+            <div style="flex-direction: row; align-items: center;">
+                <div style="width: 2vmin; height: 2vmin; margin: 0px 0.1vmin 0px 1vmin;" image="images/discover/eye.png" />
+                <med-text text="@views" />
+                <div style="width: 2vmin; height: 2vmin; margin: 0px 0.1vmin 0px 1vmin;" image="images/discover/thumbsup.png" />
+                <med-text text="@likes" />
+                <div style="margin: 0px 0.1vmin 0px 1vmin;" />
+            </div>
+        </div>
+    </div>
+</define-template>
+
+<define-template id="discover-popup">
+    <fullscreen-block>
+        <div style="
+            flex-direction: column;
+            align-self: center;
+            border: 0.7vmin;
+            border-color: #2222aa;
+            padding: 1vmin;
+            background-color: #8888cccc;
+        ">
+            <div style="justify-content: flex-end;">
+                <button label="X" onclick="@close" />
+            </div>
+            <div style="justify-content: space-around;">
+                <div style="width: 30vmin; height: 20vmin; margin: 1vmin;" image="@image" />
+                <div style="flex-direction: column">
+                    <large-text style="color: black" text="@title" />
+                    <div>
+                        <med-text style="color: black; margin: 1vmin" text="created by:" />
+                        <med-text style="color: black; margin: 1vmin" text="@author" />
+                    </div>
+                    <div>
+                        <div style="width: 2vmin; height: 2vmin; margin: 0.5vmin" image="images/discover/thumbsup.png" />
+                        <med-text text="@likes" />
+                    </div>
+                    <button label="Jump In" onclick="@jump-in" />
+                </div>
+            </div>
+            <hr />
+            <med-text text="Description" />
+            <med-text text="@description" />
+            <hr />
+            <med-text text="Location" />
+            <med-text text="@location" />
+            <hr />
+            <med-text text="Categories" />
+            <button-set buttons="@categories" />
+            <hr />
+            <div style="justify-content: space-around;">
+                <div style="flex-direction: column; justify-content: center; align-items: center; margin: 1vmin">
+                    <med-text text="Age Rating" />
+                    <med-text text="@rating" />
+                </div>
+                <div style="flex-direction: column; justify-content: center; align-items: center; margin: 1vmin">
+                    <med-text text="Active" />
+                    <med-text text="@active" />
+                </div>
+                <div style="flex-direction: column; justify-content: center; align-items: center; margin: 1vmin">
+                    <med-text text="Favorites" />
+                    <med-text text="@favorites" />
+                </div>
+                <div style="flex-direction: column; justify-content: center; align-items: center; margin: 1vmin">
+                    <med-text text="Visits (last 30d)" />
+                    <med-text text="@visits" />
+                </div>
+                <div style="flex-direction: column; justify-content: center; align-items: center; margin: 1vmin">
+                    <med-text text="Updated" />
+                    <med-text text="@updated" />
+                </div>
+            </div>
+        </div>
+    </fullscreen-block>
+</define-template>

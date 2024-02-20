@@ -115,7 +115,10 @@ fn process_realm_change(
 
         if let Some(comms) = realm.comms.as_ref() {
             if let Some(adapter) = comms.adapter.as_ref() {
-                let real_adapter = adapter.split_once(':').map(|(_, tail)| tail).unwrap_or(adapter.as_str());
+                let real_adapter = adapter
+                    .split_once(':')
+                    .map(|(_, tail)| tail)
+                    .unwrap_or(adapter.as_str());
                 manager.connect(real_adapter);
             } else if let Some(adapter) = comms.fixed_adapter.as_ref() {
                 manager.connect(adapter);

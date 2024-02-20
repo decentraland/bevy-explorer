@@ -63,7 +63,7 @@ kira = "0.8.4"
 bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "pub-mod-12", features=["flac", "mp3", "ogg", "wav"] }
 data-encoding = "2.5"
 opener = "0.6"
-chrono = "0.4.31"
+chrono = { version = "0.4.31", features = ["serde"] }
 bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "master" }
 bevy_ecss = { git = "https://github.com/robtfm/bevy_ecss", branch = "main" }
 
@@ -103,6 +103,7 @@ prost-build = "0.11.8"
 
 [patch.crates-io]
 bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.12-inc-wsui" }
+# bevy = { path="../bevy" }
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
 parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "try_convex" }
 rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }

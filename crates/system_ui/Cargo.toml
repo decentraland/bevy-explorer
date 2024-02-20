@@ -31,5 +31,6 @@ serde_json = { workspace = true }
 isahc = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
+chrono = { workspace = true }
 
 copypasta = "0.10"

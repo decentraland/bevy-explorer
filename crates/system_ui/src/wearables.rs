@@ -589,12 +589,11 @@ impl WearableEntry {
     fn collection(&self) -> &str {
         match self {
             WearableEntry::Base(..) => "Decentraland",
-            WearableEntry::Owned(o) => {
-                o.urn
-                    .rsplit_once(':')
-                    .map(|(init, _)| init)
-                    .unwrap_or_default()
-            }
+            WearableEntry::Owned(o) => o
+                .urn
+                .rsplit_once(':')
+                .map(|(init, _)| init)
+                .unwrap_or_default(),
         }
     }
 }
