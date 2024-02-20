@@ -6,7 +6,6 @@ pub mod emotes;
 pub mod login;
 pub mod mic;
 pub mod profile;
-pub mod profile2;
 pub mod sysinfo;
 pub mod toasts;
 pub mod tooltip;
@@ -23,7 +22,7 @@ use mic::MicUiPlugin;
 use toasts::ToastsPlugin;
 use tooltip::ToolTipPlugin;
 
-use self::{chat::ChatPanelPlugin, profile2::ProfileEditPlugin, sysinfo::SysInfoPanelPlugin};
+use self::{chat::ChatPanelPlugin, profile::ProfileEditPlugin, sysinfo::SysInfoPanelPlugin};
 
 pub struct SystemUiPlugin;
 

@@ -5,7 +5,7 @@ use avatar::{
 use bevy::{prelude::*, render::render_resource::Extent3d};
 use common::structs::PrimaryUser;
 
-use crate::profile2::{SettingsDialog, SettingsTab};
+use crate::profile::{SettingsDialog, SettingsTab};
 
 pub struct EmotesSettingsPlugin;
 

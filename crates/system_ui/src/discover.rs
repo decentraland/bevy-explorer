@@ -20,7 +20,7 @@ use ui_core::{
     ModifyComponentExt,
 };
 
-use crate::profile2::{close_settings, OnCloseEvent, SettingsDialog, SettingsTab};
+use crate::profile::{close_settings, OnCloseEvent, SettingsDialog, SettingsTab};
 
 pub struct DiscoverSettingsPlugin;
 

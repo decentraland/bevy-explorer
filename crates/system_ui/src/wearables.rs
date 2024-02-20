@@ -33,7 +33,7 @@ use ui_core::{
 };
 use urn::Urn;
 
-use crate::profile2::{SettingsDialog, SettingsTab};
+use crate::profile::{SettingsDialog, SettingsTab};
 
 pub struct WearableSettingsPlugin;
 
