@@ -1,5 +1,6 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
+use anyhow::anyhow;
 use bevy::{
     core::FrameCount,
     core_pipeline::clear_color::ClearColorConfig,
@@ -14,6 +15,7 @@ use bevy::{
     },
     window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution},
 };
+use bevy_dui::{DuiRegistry, DuiTemplate};
 use common::{
     sets::SetupSets,
     structs::{AvatarTextureHandle, PrimaryPlayerRes},
@@ -36,7 +38,12 @@ impl Plugin for AvatarTexturePlugin {
         app.add_systems(Startup, setup_primary_avatar_camera.in_set(SetupSets::Main));
         app.add_systems(
             Update,
-            (load_foreign_textures, update_booth_image, snapshot),
+            (
+                load_foreign_textures,
+                update_booth_image,
+                snapshot,
+                clean_booths,
+            ),
         );
     }
 }
@@ -50,15 +57,19 @@ pub struct PhotoBooth<'w, 's> {
     commands: Commands<'w, 's>,
     selections: Query<'w, 's, &'static mut AvatarSelection, With<BoothAvatar>>,
     frame: Res<'w, FrameCount>,
+    live_booths: ResMut<'w, LiveBooths>,
 }
 
 #[derive(Component, Clone)]
 pub struct BoothInstance {
-    pub avatar: Entity,
+    pub avatar: Arc<Entity>,
     pub avatar_texture: Handle<Image>,
     pub camera: Entity,
     pub snapshot_target: Option<(Handle<Image>, Handle<Image>)>,
 }
+
+#[derive(Resource, Default)]
+pub struct LiveBooths(Vec<Arc<Entity>>);
 
 impl<'w, 's> PhotoBooth<'w, 's> {
     pub fn spawn_booth(
@@ -66,7 +77,7 @@ impl<'w, 's> PhotoBooth<'w, 's> {
         render_layers: RenderLayers,
         shape: AvatarShape,
         size: Extent3d,
-        snapshot_target: Option<(Handle<Image>, Handle<Image>)>,
+        snapshot: bool,
     ) -> BoothInstance {
         let avatar = self
             .commands
@@ -86,13 +97,19 @@ impl<'w, 's> PhotoBooth<'w, 's> {
             ))
             .id();
 
-        if snapshot_target.is_some() {
+        let snapshot_target = if snapshot {
             self.commands.entity(avatar).try_insert(SnapshotTimer(
                 self.frame.0 + SNAPSHOT_FRAMES,
                 None,
                 None,
             ));
-        }
+            Some((
+                self.images.add(Image::default()),
+                self.images.add(Image::default()),
+            ))
+        } else {
+            None
+        };
 
         let (avatar_texture, camera) = add_booth_camera(
             &mut self.commands,
@@ -101,6 +118,9 @@ impl<'w, 's> PhotoBooth<'w, 's> {
             size,
             render_layers,
         );
+
+        let avatar = Arc::new(avatar);
+        self.live_booths.0.push(avatar.clone());
 
         BoothInstance {
             avatar,
@@ -111,11 +131,11 @@ impl<'w, 's> PhotoBooth<'w, 's> {
     }
 
     pub fn update_shape(&mut self, instance: &BoothInstance, new_shape: AvatarShape) {
-        if let Ok(mut selection) = self.selections.get_mut(instance.avatar) {
+        if let Ok(mut selection) = self.selections.get_mut(*instance.avatar) {
             selection.shape = new_shape.0;
             if instance.snapshot_target.is_some() {
                 self.commands
-                    .entity(instance.avatar)
+                    .entity(*instance.avatar)
                     .try_insert(SnapshotTimer(self.frame.0 + SNAPSHOT_FRAMES, None, None));
             }
         } else {
@@ -139,30 +159,53 @@ impl BoothInstance {
             Interaction::default(),
             BoothImage,
             self.clone(),
-            On::<Dragged>::new(
-                |mut transform: Query<&mut Transform>,
-                 q: Query<(&BoothInstance, &DragData), With<BoothImage>>| {
-                    let Ok((instance, drag)) = q.get_single() else {
-                        return;
-                    };
-                    let drag = drag.delta;
-                    let Ok(mut transform) = transform.get_mut(instance.camera) else {
-                        return;
-                    };
-
-                    let offset = transform.translation * Vec3::new(1.0, 0.0, 1.0);
-                    let new_offset = Quat::from_rotation_y(-drag.x / 50.0) * offset;
-
-                    let distance = offset.length();
-                    let distance = (distance * 1.0 + 0.01 * drag.y).clamp(0.75, 4.0);
-
-                    let height = 1.8 - 0.9 * (distance - 0.75) / 3.25;
-
-                    transform.translation = new_offset.normalize() * distance + Vec3::Y * height;
-                    transform.look_at(Vec3::Y * height, Vec3::Y);
-                },
-            ),
+            On::<Dragged>::new(Self::drag_system),
         )
+    }
+
+    pub fn set_transform_for_distance(transform: &mut Transform, distance: f32) {
+        let height = 1.8 - 0.9 * (distance - 0.75) / 3.25;
+        transform.translation = (transform.translation * Vec3::new(1.0, 0.0, 1.0)).normalize()
+            * distance
+            + Vec3::Y * height;
+        transform.look_at(Vec3::Y * height, Vec3::Y);
+    }
+
+    fn drag_system(
+        mut transform: Query<&mut Transform>,
+        q: Query<(&BoothInstance, &DragData), With<BoothImage>>,
+    ) {
+        let Ok((instance, drag)) = q.get_single() else {
+            return;
+        };
+        let drag = drag.delta;
+        let Ok(mut transform) = transform.get_mut(instance.camera) else {
+            return;
+        };
+
+        let offset = transform.translation * Vec3::new(1.0, 0.0, 1.0);
+        let new_offset = Quat::from_rotation_y(-drag.x / 50.0) * offset;
+
+        let initial_distance = offset.length();
+        let distance = (initial_distance * 1.0 + 0.01 * drag.y).clamp(0.75, 4.0);
+
+        let target_height = 1.8 - 0.9 * (distance - 0.75) / 3.25;
+
+        let expected_start_height = 1.8 - 0.9 * (initial_distance - 0.75) / 3.25;
+        let height_error = transform.translation.y - expected_start_height;
+        let height = if height_error.abs() > 0.02 {
+            if distance > 3.0 {
+                target_height
+                    + height_error * (1.0 - ((initial_distance - distance).abs() * 2.0).min(1.0))
+            } else {
+                transform.translation.y
+            }
+        } else {
+            target_height
+        };
+
+        transform.translation = new_offset.normalize() * distance + Vec3::Y * height;
+        transform.look_at(Vec3::Y * height, Vec3::Y);
     }
 }
 
@@ -170,6 +213,7 @@ fn setup_primary_avatar_camera(
     mut commands: Commands,
     player: Res<PrimaryPlayerRes>,
     mut images: ResMut<Assets<Image>>,
+    mut dui: ResMut<DuiRegistry>,
 ) {
     let size = Extent3d {
         width: 512,
@@ -188,6 +232,8 @@ fn setup_primary_avatar_camera(
     commands
         .entity(player.0)
         .insert(AvatarTextureHandle(avatar_texture));
+
+    dui.register_template("photobooth", DuiBooth);
 }
 
 fn add_booth_camera(
@@ -294,8 +340,8 @@ fn update_booth_image(
         };
         if image.size() != node_size.as_uvec2() {
             image.resize(Extent3d {
-                width: node_size.x as u32,
-                height: node_size.y as u32,
+                width: (node_size.x as u32).max(1),
+                height: (node_size.y as u32).max(1),
                 ..Default::default()
             });
         }
@@ -400,7 +446,7 @@ fn snapshot(
             );
 
             // find matching instance
-            if let Some(instance) = booths.iter().find(|b| b.avatar == ent) {
+            if let Some(instance) = booths.iter().find(|b| *b.avatar == ent) {
                 // snap face
                 let sender = local_sender.as_ref().unwrap().clone();
                 let target = instance.snapshot_target.as_ref().unwrap().0.clone();
@@ -457,3 +503,48 @@ pub struct BoothImage;
 
 #[derive(Component)]
 pub struct SnapshotTimer(u32, Option<Entity>, Option<Entity>);
+
+pub struct DuiBooth;
+impl DuiTemplate for DuiBooth {
+    fn render(
+        &self,
+        commands: &mut bevy::ecs::system::EntityCommands,
+        mut props: bevy_dui::DuiProps,
+        _: &mut bevy_dui::DuiContext,
+    ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
+        let booth = props
+            .take::<BoothInstance>("booth-instance")?
+            .ok_or(anyhow!("no booth provided"))?;
+
+        commands.insert((
+            ImageBundle {
+                style: Style {
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    ..Default::default()
+                },
+                image: booth.avatar_texture.clone().into(),
+                ..Default::default()
+            },
+            Interaction::default(),
+            BoothImage,
+            booth,
+            On::<Dragged>::new(BoothInstance::drag_system),
+        ));
+
+        Ok(default())
+    }
+}
+
+fn clean_booths(mut commands: Commands, mut live: ResMut<LiveBooths>) {
+    let booths = std::mem::take(&mut live.0);
+    for booth in booths {
+        match Arc::try_unwrap(booth) {
+            Ok(ent) => {
+                commands.entity(ent).despawn_recursive();
+                debug!("cleaning booth");
+            }
+            Err(arc) => live.0.push(arc),
+        }
+    }
+}

@@ -1,0 +1,3 @@
+<define-template id="spinner-base">
+    <div id="spinner" style="width: 4.7vmin; height: 4.7vmin; margin: 4.7vmin;" />
+</define-template>

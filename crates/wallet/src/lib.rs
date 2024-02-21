@@ -198,7 +198,7 @@ pub async fn sign_request<META: Serialize>(
     uri: &Uri,
     wallet: &Wallet,
     meta: META,
-) -> Vec<(String, String)> {
+) -> Result<Vec<(String, String)>, anyhow::Error> {
     let unix_time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -206,10 +206,10 @@ pub async fn sign_request<META: Serialize>(
 
     let meta = serde_json::to_string(&meta).unwrap();
     let payload = format!("{}:{}:{}:{}", method, uri.path(), unix_time, meta).to_lowercase();
-    let auth_chain = wallet.sign_message(payload).await.unwrap();
+    let auth_chain = wallet.sign_message(payload).await?;
 
     let mut headers: Vec<_> = auth_chain.headers().collect();
     headers.push(("x-identity-timestamp".to_owned(), format!("{}", unix_time)));
     headers.push(("x-identity-metadata".to_owned(), meta));
-    headers
+    Ok(headers)
 }

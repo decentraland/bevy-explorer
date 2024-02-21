@@ -212,7 +212,7 @@ fn update_world_ui(
                                     unlit: true,
                                     double_sided: true,
                                     cull_mode: None,
-                                    alpha_mode: AlphaMode::Blend,
+                                    alpha_mode: AlphaMode::Mask(0.5),
                                     ..Default::default()
                                 },
                                 extension: SceneBound { bounds: ui.bounds },

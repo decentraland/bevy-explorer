@@ -152,15 +152,19 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, root: Res<Syste
                                         ..Default::default()
                                     },
                                     InteractStyles {
-                                        active: InteractStyle {
+                                        active: Some(InteractStyle {
                                             background: Some(Color::rgba(1.0, 1.0, 1.0, 1.0)),
-                                        },
-                                        hover: InteractStyle {
+                                            ..Default::default()
+                                        }),
+                                        hover: Some(InteractStyle {
                                             background: Some(Color::rgba(0.7, 0.7, 0.7, 1.0)),
-                                        },
-                                        inactive: InteractStyle {
+                                            ..Default::default()
+                                        }),
+                                        inactive: Some(InteractStyle {
                                             background: Some(Color::rgba(0.4, 0.4, 0.4, 1.0)),
-                                        },
+                                            ..Default::default()
+                                        }),
+                                        ..Default::default()
                                     },
                                     On::<Click>::new((move || label).pipe(select_chat_tab)),
                                     ChatButton(label),
@@ -285,7 +289,9 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, root: Res<Syste
                                  mut toaster: Toaster,
                                  frame: Res<FrameCount>| {
                                     let mut copy = String::default();
-                                    let children = chatbox.single();
+                                    let Ok(children) = chatbox.get_single() else {
+                                        return;
+                                    };
                                     for ent in children.iter() {
                                         if let Ok(msg) = msgs.get(*ent) {
                                             copy.push_str(

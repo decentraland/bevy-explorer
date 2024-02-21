@@ -114,11 +114,14 @@ fn process_realm_change(
         }
 
         if let Some(comms) = realm.comms.as_ref() {
-            if let Some(fixed_adapter) = comms.fixed_adapter.as_ref() {
-                manager.connect(fixed_adapter);
-            } else {
-                // must be archipelago
-                manager.connect(&format!("archipelago:{}", realm.address));
+            if let Some(adapter) = comms.adapter.as_ref() {
+                let real_adapter = adapter
+                    .split_once(':')
+                    .map(|(_, tail)| tail)
+                    .unwrap_or(adapter.as_str());
+                manager.connect(real_adapter);
+            } else if let Some(adapter) = comms.fixed_adapter.as_ref() {
+                manager.connect(adapter);
             }
         } else {
             debug!("missing comms!");
@@ -141,7 +144,7 @@ pub struct AdapterManager<'w, 's> {
 impl<'w, 's> AdapterManager<'w, 's> {
     pub fn connect(&mut self, adapter: &str) -> Option<Entity> {
         let Some((protocol, address)) = adapter.split_once(':') else {
-            warn!("unrecognised fixed adapter string: {adapter}");
+            warn!("unrecognised adapter string: {adapter}");
             return None;
         };
 
@@ -164,16 +167,10 @@ impl<'w, 's> AdapterManager<'w, 's> {
                 info!("comms offline");
             }
             "archipelago" => {
-                let ws_url = format!(
-                    "{}/archipelago/ws",
-                    address
-                        .strip_prefix("http")
-                        .map(|stripped| format!("ws{stripped}"))
-                        .unwrap_or(address.to_owned())
-                );
-                debug!("arch starting: {ws_url}");
-                self.archipelago_events
-                    .send(StartArchipelago { address: ws_url });
+                debug!("arch starting: {address}");
+                self.archipelago_events.send(StartArchipelago {
+                    address: address.to_owned(),
+                });
             }
             _ => {
                 warn!("unrecognised adapter protocol: {protocol}");

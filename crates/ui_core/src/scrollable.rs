@@ -1,4 +1,5 @@
 use bevy::{input::mouse::MouseWheel, prelude::*, utils::HashMap, window::PrimaryWindow};
+use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
 
 use super::ui_builder::SpawnSpacer;
 
@@ -6,8 +7,16 @@ pub struct ScrollablePlugin;
 
 impl Plugin for ScrollablePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, update_scrollables);
+        app.add_systems(Startup, setup)
+            .add_systems(Update, update_scrollables);
     }
+}
+
+fn setup(mut dui: ResMut<DuiRegistry>) {
+    dui.register_template("scrollable-base", ScrollableTemplate);
+    dui.register_template("vscroll", VerticalScrollTemplate);
+    dui.register_template("hscroll", HorizontalScrollTemplate);
+    dui.register_template("scroll", TwoWayScrollTemplate);
 }
 
 pub trait SpawnScrollable {
@@ -522,5 +531,159 @@ fn update_scrollables(
 
     for (entity, info) in horizontal_scrollers.drain() {
         init_bar(entity, info, false);
+    }
+}
+
+pub struct ScrollableTemplate;
+impl DuiTemplate for ScrollableTemplate {
+    fn render(
+        &self,
+        commands: &mut bevy::ecs::system::EntityCommands,
+        mut props: DuiProps,
+        ctx: &mut DuiContext,
+    ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
+        let scrollable = props
+            .take::<Scrollable>("scroll-settings")?
+            .unwrap_or_default();
+
+        let panel_size = match scrollable.direction {
+            ScrollDirection::Vertical(_) => (Val::Auto, Val::Px(100000.0)),
+            ScrollDirection::Horizontal(_) => (Val::Px(100000.0), Val::Auto),
+            ScrollDirection::Both(_, _) => (Val::Px(100000.0), Val::Px(100000.0)),
+        };
+
+        let mut content = Entity::PLACEHOLDER;
+        let mut results = Ok(Default::default());
+
+        commands
+            .insert(NodeBundle {
+                style: Style {
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    max_width: Val::Percent(100.0),
+                    max_height: Val::Percent(100.0),
+                    overflow: Overflow::clip(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .with_children(|c| {
+                c.spawn(NodeBundle {
+                    style: Style {
+                        width: panel_size.0,
+                        height: panel_size.1,
+                        // TODO this should be set based on direction
+                        flex_direction: FlexDirection::Column,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .with_children(|commands| {
+                    // TODO need one more layer for bidirectional scrolling
+                    let mut content_cmds = commands.spawn(NodeBundle {
+                        style: Style {
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    });
+
+                    results = ctx.apply_children(&mut content_cmds);
+                    content = content_cmds.id();
+                    commands.spacer();
+                });
+            });
+
+        commands.try_insert((Interaction::default(), scrollable, ScrollContent(content)));
+        results
+    }
+}
+
+fn get_position(s: Option<&String>) -> Result<StartPosition, anyhow::Error> {
+    Ok(match s.map(String::as_str) {
+        Some("start") | None => StartPosition::Start,
+        Some("end") => StartPosition::End,
+        Some("center") => StartPosition::Center,
+        _ => anyhow::bail!("unrecognised start-position"),
+    })
+}
+
+fn get_bool(s: Option<&String>) -> Result<bool, anyhow::Error> {
+    Ok(match s.map(String::as_str) {
+        Some("true") | None => true,
+        Some("false") => false,
+        _ => anyhow::bail!("unrecognised bool"),
+    })
+}
+
+pub struct VerticalScrollTemplate;
+impl DuiTemplate for VerticalScrollTemplate {
+    fn render(
+        &self,
+        commands: &mut bevy::ecs::system::EntityCommands,
+        mut props: DuiProps,
+        ctx: &mut DuiContext,
+    ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
+        let pos = get_position(props.borrow::<String>("start-position", ctx)?)?;
+        let drag = get_bool(props.borrow::<String>("drag", ctx)?)?;
+        let wheel = get_bool(props.borrow::<String>("wheel", ctx)?)?;
+
+        props.insert_prop(
+            "scroll-settings",
+            Scrollable::new()
+                .with_direction(ScrollDirection::Vertical(pos))
+                .with_drag(drag)
+                .with_wheel(wheel),
+        );
+
+        ctx.render_template(commands, "scrollable-base", props)
+    }
+}
+
+pub struct HorizontalScrollTemplate;
+impl DuiTemplate for HorizontalScrollTemplate {
+    fn render(
+        &self,
+        commands: &mut bevy::ecs::system::EntityCommands,
+        mut props: DuiProps,
+        ctx: &mut DuiContext,
+    ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
+        let pos = get_position(props.borrow::<String>("start-position", ctx)?)?;
+        let drag = get_bool(props.borrow::<String>("drag", ctx)?)?;
+        let wheel = get_bool(props.borrow::<String>("wheel", ctx)?)?;
+
+        props.insert_prop(
+            "scroll-settings",
+            Scrollable::new()
+                .with_direction(ScrollDirection::Horizontal(pos))
+                .with_drag(drag)
+                .with_wheel(wheel),
+        );
+
+        ctx.render_template(commands, "scrollable-base", props)
+    }
+}
+
+pub struct TwoWayScrollTemplate;
+impl DuiTemplate for TwoWayScrollTemplate {
+    fn render(
+        &self,
+        commands: &mut bevy::ecs::system::EntityCommands,
+        mut props: DuiProps,
+        ctx: &mut DuiContext,
+    ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
+        let pos_x = get_position(props.borrow::<String>("start-position-x", ctx)?)?;
+        let pos_y = get_position(props.borrow::<String>("start-position-y", ctx)?)?;
+        let drag = get_bool(props.borrow::<String>("drag", ctx)?)?;
+        let wheel = get_bool(props.borrow::<String>("wheel", ctx)?)?;
+
+        props.insert_prop(
+            "scroll-settings",
+            Scrollable::new()
+                .with_direction(ScrollDirection::Both(pos_x, pos_y))
+                .with_drag(drag)
+                .with_wheel(wheel),
+        );
+
+        ctx.render_template(commands, "scrollable-base", props)
     }
 }

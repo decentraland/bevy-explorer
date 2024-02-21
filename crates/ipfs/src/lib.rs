@@ -29,7 +29,6 @@ use bevy::{
     utils::HashMap,
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
-use bimap::BiMap;
 use ipfs_path::IpfsAsset;
 use isahc::{http::StatusCode, prelude::Configurable, AsyncReadResponseExt, RequestExt};
 use serde::{Deserialize, Serialize};
@@ -109,7 +108,7 @@ impl EntityDefinitionLoader {
                 return Ok(EntityDefinition::default());
             };
             let content =
-                ContentMap(BiMap::from_iter(definition_json.content.into_iter().map(
+                ContentMap(HashMap::from_iter(definition_json.content.into_iter().map(
                     |ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash),
                 )));
             let id = definition_json.id.unwrap_or_else(id_fn);
@@ -187,21 +186,15 @@ impl AssetLoader for SceneJsLoader {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ContentMap(BiMap<String, String>);
+pub struct ContentMap(HashMap<String, String>);
 
 impl ContentMap {
-    pub fn file(&self, hash: &str) -> Option<&str> {
-        self.0.get_by_right(hash).map(String::as_str)
-    }
-
     pub fn hash(&self, file: &str) -> Option<&str> {
-        self.0
-            .get_by_left(file.to_lowercase().as_str())
-            .map(String::as_str)
+        self.0.get(file.to_lowercase().as_str()).map(String::as_str)
     }
 
     pub fn files(&self) -> impl Iterator<Item = &String> {
-        self.0.left_values()
+        self.0.keys()
     }
 
     pub fn values(&self) -> impl Iterator<Item = (&String, &String)> {
@@ -340,6 +333,10 @@ impl<'w, 's> IpfsAssetServer<'w, 's> {
     pub fn load_state(&self, id: impl Into<UntypedAssetId>) -> LoadState {
         self.server.load_state(id)
     }
+
+    pub fn is_connected(&self) -> bool {
+        self.ipfs.realm_config_receiver.borrow().is_some()
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -355,6 +352,7 @@ pub struct CommsConfig {
     pub healthy: bool,
     pub protocol: String,
     pub fixed_adapter: Option<String>,
+    pub adapter: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -387,6 +385,7 @@ impl Default for ServerAbout {
                 healthy: true,
                 protocol: "v3".to_owned(),
                 fixed_adapter: Some("offline:offline".to_owned()),
+                adapter: None,
             }),
             configurations: Default::default(),
             lambdas: Default::default(),
@@ -395,7 +394,7 @@ impl Default for ServerAbout {
 }
 
 pub struct IpfsIoPlugin {
-    pub cache_root: Option<String>,
+    pub assets_root: Option<String>,
     pub starting_realm: Option<String>,
 }
 
@@ -403,12 +402,12 @@ impl Plugin for IpfsIoPlugin {
     fn build(&self, app: &mut App) {
         info!("remote server: {:?}", self.starting_realm);
 
-        let file_path = self.cache_root.clone().unwrap_or("assets".to_owned());
-        let default_reader = FileAssetReader::new(file_path);
-        let cache_root = default_reader.root_path().to_owned();
+        let file_path = self.assets_root.clone().unwrap_or("assets".to_owned());
+        let default_reader = FileAssetReader::new(file_path.clone());
+        let cache_root = default_reader.root_path().join("cache");
+        std::fs::create_dir_all(&cache_root).expect("failed to write to assets folder");
 
-        let static_paths = HashMap::from_iter([("genesis_tx.png", "images/genesis_tx.png")]);
-        let ipfs_io = IpfsIo::new(Box::new(default_reader), cache_root, static_paths);
+        let ipfs_io = IpfsIo::new(Box::new(default_reader), cache_root, HashMap::default());
         let ipfs_io = Arc::new(ipfs_io);
         let passthrough = PassThroughReader {
             inner: ipfs_io.clone(),
@@ -416,6 +415,17 @@ impl Plugin for IpfsIoPlugin {
 
         app.insert_resource(IpfsResource { inner: ipfs_io });
 
+        #[cfg(feature = "hot_reload")]
+        app.register_asset_source(
+            AssetSourceId::Default,
+            AssetSource::build()
+                .with_reader(move || Box::new(passthrough.clone()))
+                .with_watcher(AssetSource::get_default_watcher(
+                    file_path,
+                    Duration::from_millis(300),
+                )),
+        );
+        #[cfg(not(feature = "hot_reload"))]
         app.register_asset_source(
             AssetSourceId::Default,
             AssetSource::build().with_reader(move || Box::new(passthrough.clone())),
@@ -465,7 +475,7 @@ fn change_realm_command(
     }
 }
 
-#[derive(Event)]
+#[derive(Event, Clone)]
 pub struct ChangeRealmEvent {
     pub new_realm: String,
 }
@@ -546,7 +556,7 @@ pub struct IpfsContext {
 pub struct IpfsIo {
     default_io: Box<dyn AssetReader>,
     default_fs_path: PathBuf,
-    pub realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>,
+    realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>,
     realm_config_sender: tokio::sync::watch::Sender<Option<(String, ServerAbout)>>,
     context: RwLock<IpfsContext>,
     request_slots: tokio::sync::Semaphore,
@@ -716,9 +726,11 @@ impl IpfsIo {
                             id: entity.id.unwrap(),
                             pointers: entity.pointers,
                             metadata: entity.metadata,
-                            content: ContentMap(BiMap::from_iter(entity.content.into_iter().map(
-                                |ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash),
-                            ))),
+                            content: ContentMap(HashMap::from_iter(
+                                entity.content.into_iter().map(|ipfs| {
+                                    (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash)
+                                }),
+                            )),
                         });
                     }
 
@@ -869,7 +881,7 @@ impl AssetReader for IpfsIo {
 
             if let Some(hash) = &hash {
                 debug!("hash: {}", hash);
-                if let Ok(mut res) = self.default_io.read(Path::new(&hash)).await {
+                if let Ok(mut res) = self.default_io.read(&self.cache_path().join(hash)).await {
                     let mut daft_buffer = Vec::default();
                     res.read_to_end(&mut daft_buffer).await?;
                     let reader: Box<Reader> = Box::new(Cursor::new(daft_buffer));

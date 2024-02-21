@@ -9,10 +9,12 @@ use bevy_atmosphere::{
     system_param::AtmosphereMut,
 };
 
+use bevy_console::ConsoleCommand;
 use common::{
     sets::SetupSets,
     structs::{PrimaryCamera, PrimaryCameraRes, PrimaryUser, SceneLoadDistance},
 };
+use console::DoAddConsoleCommand;
 
 pub struct VisualsPlugin {
     pub no_fog: bool,
@@ -28,6 +30,9 @@ impl Plugin for VisualsPlugin {
             .add_systems(Update, daylight_cycle)
             .add_systems(Update, move_ground)
             .add_systems(Startup, setup.in_set(SetupSets::Main));
+
+        app.add_console_command::<ShadowConsoleCommand, _>(shadow_console_command);
+        app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
     }
 }
 
@@ -123,4 +128,66 @@ fn move_ground(
     };
 
     transform.translation = target.translation() * Vec3::new(1.0, 0.0, 1.0);
+}
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/shadows")]
+struct ShadowConsoleCommand {
+    on: Option<bool>,
+}
+
+fn shadow_console_command(
+    mut input: ConsoleCommand<ShadowConsoleCommand>,
+    mut lights: Query<&mut DirectionalLight>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        for mut light in lights.iter_mut() {
+            light.shadows_enabled = command.on.unwrap_or(!light.shadows_enabled);
+        }
+
+        input.reply_ok(format!(
+            "shadows {}",
+            match command.on {
+                None => "toggled",
+                Some(true) => "enabled",
+                Some(false) => "disabled",
+            }
+        ));
+    }
+}
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/fog")]
+struct FogConsoleCommand {
+    on: Option<bool>,
+}
+
+fn fog_console_command(
+    mut commands: Commands,
+    mut input: ConsoleCommand<FogConsoleCommand>,
+    camera: Res<PrimaryCameraRes>,
+    fogs: Query<(), With<FogSettings>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let activate = command.on.unwrap_or(fogs.is_empty());
+
+        if activate {
+            commands.entity(camera.0).try_insert(FogSettings {
+                color: Color::rgb(0.3, 0.2, 0.1),
+                directional_light_color: Color::rgb(1.0, 1.0, 0.7),
+                directional_light_exponent: 10.0,
+                falloff: FogFalloff::ExponentialSquared { density: 0.01 },
+            });
+        } else {
+            commands.entity(camera.0).remove::<FogSettings>();
+        }
+
+        input.reply_ok(format!(
+            "fog {}",
+            match activate {
+                true => "enabled",
+                false => "disabled",
+            }
+        ));
+    }
 }

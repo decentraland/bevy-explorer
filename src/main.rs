@@ -13,6 +13,7 @@ use bevy::{
     pbr::CascadeShadowConfigBuilder,
     prelude::*,
     render::view::ColorGrading,
+    text::TextSettings,
 };
 use bevy_console::ConsoleCommand;
 
@@ -23,6 +24,7 @@ use common::{
         PrimaryPlayerRes, PrimaryUser, SceneLoadDistance,
     },
 };
+use emotes::EmotesPlugin;
 use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
@@ -158,37 +160,42 @@ fn main() {
         }
     };
 
-    app.insert_resource(msaa).add_plugins(
-        DefaultPlugins
-            .set(TaskPoolPlugin {
-                task_pool_options: TaskPoolOptions {
-                    async_compute: TaskPoolThreadAssignmentPolicy {
-                        min_threads: 1,
-                        max_threads: 8,
-                        percent: 0.25,
+    app.insert_resource(msaa)
+        .insert_resource(TextSettings {
+            soft_max_font_atlases: 4.try_into().unwrap(),
+            allow_dynamic_font_size: true,
+        })
+        .add_plugins(
+            DefaultPlugins
+                .set(TaskPoolPlugin {
+                    task_pool_options: TaskPoolOptions {
+                        async_compute: TaskPoolThreadAssignmentPolicy {
+                            min_threads: 1,
+                            max_threads: 8,
+                            percent: 0.25,
+                        },
+                        ..Default::default()
                     },
+                })
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Decentraland Bevy Explorer".to_owned(),
+                        present_mode,
+                        ..Default::default()
+                    }),
                     ..Default::default()
-                },
-            })
-            .set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: "Decentraland Bevy Explorer".to_owned(),
-                    present_mode,
-                    ..Default::default()
-                }),
-                ..Default::default()
-            })
-            .set(bevy::log::LogPlugin {
-                filter: "wgpu=error,naga=error".to_string(),
-                ..default()
-            })
-            .build()
-            .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
-                starting_realm: Some(final_config.server.clone()),
-                cache_root: Default::default(),
-            })
-            .add_before::<bevy::asset::AssetPlugin, _>(NftReaderPlugin),
-    );
+                })
+                .set(bevy::log::LogPlugin {
+                    filter: "wgpu=error,naga=error".to_string(),
+                    ..default()
+                })
+                .build()
+                .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
+                    starting_realm: Some(final_config.server.clone()),
+                    assets_root: Default::default(),
+                })
+                .add_before::<IpfsIoPlugin, _>(NftReaderPlugin),
+        );
 
     if final_config.graphics.log_fps {
         app.add_plugins(FrameTimeDiagnosticsPlugin)
@@ -216,6 +223,7 @@ fn main() {
         .add_plugins(NftShapePlugin)
         .add_plugins(TweenPlugin)
         .add_plugins(SceneBoundPlugin)
+        .add_plugins(EmotesPlugin)
         .add_plugins(WorldUiPlugin);
 
     if !no_avatar {
@@ -233,7 +241,7 @@ fn main() {
         .add_systems(Startup, setup.in_set(SetupSets::Init))
         .insert_resource(AmbientLight {
             color: Color::rgb(0.85, 0.85, 1.0),
-            brightness: 0.5,
+            brightness: 0.75,
         });
 
     app.add_console_command::<ChangeLocationCommand, _>(change_location);

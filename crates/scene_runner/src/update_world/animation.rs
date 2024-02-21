@@ -70,7 +70,7 @@ fn update_animations(
 
                             let current_weight = v.0;
                             let state_weight = state.weight.unwrap_or(1.0);
-                            if state_weight > current_weight {
+                            if state_weight >= current_weight {
                                 (state_weight, Some(state))
                             } else {
                                 v
@@ -144,16 +144,22 @@ fn update_animations(
                     continue;
                 };
 
+                debug!("playing (something) with state {:?}", state);
                 player.play(h_clip.clone_weak());
 
                 player.set_speed(state.speed.unwrap_or(1.0));
                 if state.r#loop.unwrap_or(true) {
                     player.repeat();
                 } else {
-                    // force restart if loop is false
-                    player.seek_to(0.0);
+                    if player.is_finished() {
+                        // force restart if loop is false
+                        player.replay();
+                    }
+
                     player.set_repeat(RepeatAnimation::Never);
                 }
+
+                player.set_should_reset(state.should_reset.unwrap_or(false));
             }
 
             for (player_ent, _) in others {

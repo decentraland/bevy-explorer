@@ -1,0 +1,26 @@
+<define-template id="settings">
+    <div style="
+        flex-direction: column;
+        height: 100%;
+        width: 100%;
+        background-color: #8888ccff;
+        align-items: center;
+    ">
+        <div id="title-bar" style="width: 100%; height: auto;">
+            <button label-name="change-realm-button" label="@realm" onclick="@change-realm" />
+            <space />
+            <tab-group id="title-pages" tabs="@title-tabs" onchanged="@title-onchanged" initial="@title-initial" />
+            <space />
+            <div id="wallet">
+                <button id="connect-wallet-button" label="Connect wallet" onclick="@connect-wallet" />
+                <button id="profile-settings-button" label="@profile-name" onclick="@profile-settings" />
+                <button id="close-settings-button" label="X" onclick="@close-settings" />
+            </div>
+        </div>
+        <hr-thin />
+        <div style="width: 100%; flex-grow: 1;">
+            <div id="settings-content" />
+        </div>
+    </div>
+</define-template>
+

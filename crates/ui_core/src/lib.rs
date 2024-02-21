@@ -1,3 +1,4 @@
+pub mod button;
 pub mod color_picker;
 pub mod combo_box;
 pub mod dialog;
@@ -5,22 +6,41 @@ pub mod focus;
 pub mod interact_style;
 pub mod nine_slice;
 pub mod scrollable;
+pub mod spinner;
+pub mod text_size;
 pub mod textentry;
+pub mod toggle;
 pub mod ui_actions;
 pub mod ui_builder;
 
-use bevy::prelude::*;
+use std::{any::type_name, marker::PhantomData};
+
+use bevy::{
+    asset::{DependencyLoadState, LoadState, RecursiveDependencyLoadState},
+    ecs::{
+        schedule::SystemConfigs,
+        system::{EntityCommand, EntityCommands},
+    },
+    prelude::*,
+    utils::{HashMap, HashSet},
+};
+use bevy_dui::{DuiPlugin, DuiRegistry};
 use bevy_egui::EguiPlugin;
-use combo_box::update_comboboxen;
+use button::{DuiButtonSetTemplate, DuiButtonTemplate, DuiTabGroupTemplate};
+use color_picker::ColorPickerPlugin;
+use combo_box::ComboBoxPlugin;
 use nine_slice::Ui9SlicePlugin;
 use once_cell::sync::OnceCell;
 
 use common::sets::SetupSets;
+use spinner::SpinnerPlugin;
+use text_size::TextSizePlugin;
+use textentry::TextEntryPlugin;
+use toggle::TogglePlugin;
 
 use self::{
-    color_picker::update_color_picker_components, focus::FocusPlugin,
-    interact_style::InteractStylePlugin, scrollable::ScrollablePlugin,
-    textentry::update_text_entry_components, ui_actions::UiActionPlugin,
+    focus::FocusPlugin, interact_style::InteractStylePlugin, scrollable::ScrollablePlugin,
+    ui_actions::UiActionPlugin,
 };
 
 pub static TEXT_SHAPE_FONT_SANS: OnceCell<Handle<Font>> = OnceCell::new();
@@ -36,22 +56,43 @@ pub struct UiCorePlugin;
 
 impl Plugin for UiCorePlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(DuiPlugin);
         app.add_plugins(EguiPlugin);
         app.add_plugins(UiActionPlugin);
         app.add_plugins(FocusPlugin);
         app.add_plugins(InteractStylePlugin);
         app.add_plugins(ScrollablePlugin);
         app.add_plugins(Ui9SlicePlugin);
-        app.add_systems(Update, update_text_entry_components);
-        app.add_systems(Update, update_color_picker_components);
-        app.add_systems(Update, update_comboboxen);
-
+        app.add_plugins(TogglePlugin);
+        app.add_plugins(TextSizePlugin);
+        app.add_plugins(ComboBoxPlugin);
+        app.add_plugins(TextEntryPlugin);
+        app.add_plugins(SpinnerPlugin);
+        app.add_plugins(ColorPickerPlugin);
+        app.add_state::<State>();
+        app.init_resource::<StateTracker<State>>();
         app.add_systems(Startup, setup.in_set(SetupSets::Init));
+        app.add_systems(
+            Update,
+            StateTracker::<State>::transition_when_finished(State::Ready)
+                .run_if(in_state(State::Loading)),
+        );
     }
 }
 
 #[allow(clippy::type_complexity)]
-fn setup(asset_server: Res<AssetServer>) {
+fn setup(
+    asset_server: Res<AssetServer>,
+    mut tracker: ResMut<StateTracker<State>>,
+    mut dui: ResMut<DuiRegistry>,
+) {
+    tracker.load_asset(asset_server.load_folder("ui"));
+    tracker.load_asset(asset_server.load_folder("images"));
+
+    dui.register_template("button", DuiButtonTemplate);
+    dui.register_template("button-set", DuiButtonSetTemplate);
+    dui.register_template("tab-group", DuiTabGroupTemplate);
+
     TEXT_SHAPE_FONT_SANS
         .set(asset_server.load("fonts/NotoSans-Regular.ttf"))
         .unwrap();
@@ -103,3 +144,105 @@ fn setup(asset_server: Res<AssetServer>) {
         )
         .unwrap();
 }
+
+#[derive(States, Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum State {
+    #[default]
+    Loading,
+    Ready,
+}
+
+// state tracker, allows running several systems until completed, then switching to a new state
+#[derive(Resource, Default)]
+pub struct StateTracker<S: States> {
+    assets: HashSet<UntypedHandle>,
+    systems: HashMap<&'static str, bool>,
+    _p: PhantomData<fn() -> S>,
+}
+
+impl<S: States> StateTracker<S> {
+    pub fn load_asset<A: Asset>(&mut self, h: Handle<A>) {
+        self.assets.insert(h.untyped());
+    }
+
+    // run the system every tick until it returns false
+    pub fn run_while<M, F: IntoSystem<(), bool, M>>(f: F) -> SystemConfigs {
+        let update_cond = move |In(retain): In<bool>, mut slf: ResMut<Self>| {
+            slf.systems.insert(type_name::<F>(), !retain);
+        };
+
+        let check_cond = |slf: Res<Self>| {
+            !slf.systems
+                .get(type_name::<F>())
+                .copied()
+                .unwrap_or_default()
+        };
+
+        f.pipe(update_cond).run_if(check_cond)
+    }
+
+    // transition when all assets are loaded and all systems are finished
+    pub fn transition_when_finished(next: S) -> SystemConfigs {
+        let system = move |slf: Res<StateTracker<S>>,
+                           asset_server: Res<AssetServer>,
+                           mut next_state: ResMut<NextState<S>>| {
+            if slf.assets.iter().all(|a| {
+                asset_server.get_load_states(a.id())
+                    == Some((
+                        LoadState::Loaded,
+                        DependencyLoadState::Loaded,
+                        RecursiveDependencyLoadState::Loaded,
+                    ))
+            }) && slf.systems.values().all(|v| *v)
+            {
+                next_state.set(next.clone())
+            }
+        };
+
+        system.into_configs()
+    }
+}
+
+pub struct ModifyComponent<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> {
+    func: F,
+    _p: PhantomData<fn() -> C>,
+}
+
+impl<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> EntityCommand
+    for ModifyComponent<C, F>
+{
+    fn apply(self, id: Entity, world: &mut World) {
+        if let Some(mut c) = world.get_mut::<C>(id) {
+            (self.func)(&mut *c)
+        }
+    }
+}
+
+impl<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> ModifyComponent<C, F> {
+    fn new(func: F) -> Self {
+        Self {
+            func,
+            _p: PhantomData,
+        }
+    }
+}
+
+pub trait ModifyComponentExt {
+    fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
+        &mut self,
+        func: F,
+    ) -> &mut Self;
+}
+
+impl<'w, 's, 'a> ModifyComponentExt for EntityCommands<'w, 's, 'a> {
+    fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
+        &mut self,
+        func: F,
+    ) -> &mut Self {
+        self.add(ModifyComponent::new(func))
+    }
+}
+
+// blocker for egui elements to prevent interaction fallthrough
+#[derive(Component)]
+struct Blocker;

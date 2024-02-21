@@ -216,7 +216,7 @@ async fn livekit_handler_inner(
                                     warn!("received empty packet body");
                                     continue;
                                 };
-                                warn!("received packet {message:?} from {address}");
+                                debug!("received packet {message:?} from {address}");
                                 if let Err(e) = sender.send(PlayerUpdate {
                                     transport_id,
                                     message: PlayerMessage::PlayerData(message),

@@ -186,13 +186,15 @@ fn update_gltf(
             continue;
         };
 
-        let h_gltf = match ipfas.load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
+        let h_gltf = ipfas.load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
             &gltf.0.src,
             &scene_def.id,
             |s| {
                 s.load_cameras = false;
             },
-        ) {
+        );
+
+        let h_gltf = match h_gltf {
             Ok(h_gltf) => h_gltf,
             Err(e) => {
                 warn!("gltf content file not found: {e}");

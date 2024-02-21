@@ -1,4 +1,7 @@
+use anyhow::{anyhow, bail};
 use bevy::prelude::*;
+use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate, NodeMap};
+use bevy_ecss::StyleSheetAsset;
 // use common::util::TryInsertEx;
 
 /// specify a background image using 9-slice scaling
@@ -13,13 +16,15 @@ pub struct Ui9Slice {
     /// Val::Percent uses a percent of the image size
     /// Val::Auto and Val::Undefined are treated as zero.
     pub center_region: UiRect,
+    pub tint: Option<BackgroundColor>,
 }
 
 impl Ui9Slice {
-    pub fn new(image: Handle<Image>, center_region: UiRect) -> Self {
+    pub fn new(image: Handle<Image>, center_region: UiRect, tint: Option<BackgroundColor>) -> Self {
         Self {
             image,
             center_region,
+            tint,
         }
     }
 }
@@ -31,6 +36,7 @@ pub struct Ui9SlicePlugin;
 
 impl Plugin for Ui9SlicePlugin {
     fn build(&self, app: &mut App) {
+        app.add_systems(Startup, setup);
         app.add_systems(Update, update_slices.in_set(Ui9SliceSet));
     }
 }
@@ -216,6 +222,9 @@ fn update_slices(
                                                 texture: slice.image.clone(),
                                                 ..Default::default()
                                             },
+                                            background_color: slice
+                                                .tint
+                                                .unwrap_or(Color::WHITE.into()),
                                             ..Default::default()
                                         });
                                     });
@@ -256,10 +265,13 @@ fn update_slices(
 
                 let image_ent = children[0];
                 if let Some(mut commands) = commands.get_entity(image_ent) {
-                    commands.insert(UiImage {
-                        texture: slice.image.clone(),
-                        ..Default::default()
-                    });
+                    commands.insert((
+                        UiImage {
+                            texture: slice.image.clone(),
+                            ..Default::default()
+                        },
+                        slice.tint.unwrap_or(Color::WHITE.into()),
+                    ));
                 }
                 let Ok(mut inner_style) = style_query.get_component_mut::<Style>(image_ent) else {
                     panic!("do not taunt happy fun 9slice");
@@ -273,4 +285,82 @@ fn update_slices(
             }
         }
     }
+}
+
+pub struct Ui9SliceTemplate;
+impl DuiTemplate for Ui9SliceTemplate {
+    fn render(
+        &self,
+        commands: &mut bevy::ecs::system::EntityCommands,
+        mut props: DuiProps,
+        ctx: &mut DuiContext,
+    ) -> Result<NodeMap, anyhow::Error> {
+        let border = props
+            .take::<String>("slice-border")?
+            .ok_or(anyhow!("no slice-border specified"))?;
+
+        let image = match (
+            props.borrow::<String>("slice-image", ctx),
+            props.borrow::<Handle<Image>>("slice-image", ctx),
+        ) {
+            (Ok(Some(img)), _) => ctx.asset_server().load(img),
+            (_, Ok(Some(handle))) => handle.clone(),
+            _ => bail!("no slice-image specified"),
+        };
+
+        let tint = props.take::<String>("slice-color")?;
+
+        let border_sheet = if let Some(tint) = tint.as_ref() {
+            format!("#whatever {{ border: {border}; color: {tint}; }}")
+        } else {
+            format!("#whatever {{ border: {border}; }}")
+        };
+
+        let sheet = StyleSheetAsset::parse("", &border_sheet);
+        let properties = &sheet.iter().next().unwrap().properties;
+
+        let center_region = properties
+            .get("border")
+            .unwrap()
+            .rect()
+            .ok_or(anyhow!("failed to parse slice-border value `{border}`"))?;
+        let tint: Option<BackgroundColor> = if let Some(color) = properties.get("color") {
+            Some(
+                color
+                    .color()
+                    .ok_or(anyhow!(
+                        "failed to parse slice-color value `{}`",
+                        tint.unwrap()
+                    ))?
+                    .into(),
+            )
+        } else {
+            None
+        };
+
+        debug!("border rect: {center_region:?}");
+
+        commands.insert((
+            NodeBundle {
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Ui9Slice {
+                image,
+                center_region,
+                tint,
+            },
+        ));
+
+        Ok(NodeMap::default())
+    }
+}
+
+pub fn setup(mut dui: ResMut<DuiRegistry>) {
+    dui.register_template("nineslice", Ui9SliceTemplate);
 }

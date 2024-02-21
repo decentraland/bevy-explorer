@@ -1,0 +1,28 @@
+<define-template id="change-realm">
+    <dialog title="Select a new realm" buttons="@buttons">
+        <div style="flex-direction: column">
+            <div>
+                <large-text style="color: black;" text="Current realm: " />
+                <large-text style="color: black;" id="current-realm" text="@realm" />
+            </div>
+        </div>
+        <hr />
+        <div style="flex-direction: row; width: 100%; justify-content: space-between;">
+            <med-text text="Realm" style="margin: 1.4vmin; color: black; width: 33%" />
+            <med-text text="Users Online" style="margin: 1.4vmin; color: black; width: 33%" />
+            <div style="flex-grow: 1;" />
+        </div>
+        <div id="server-list" style="flex-direction: column; width: 100%">
+            <div style="align-items: center; justify-content: center;"><spinner /></div>
+        </div>
+    </dialog>
+</define-template>
+
+<define-template id="server-item">
+    <div style="flex-direction: row; width: 100%; justify-content: space-between; align-items: center;">
+        <nineslice id="button-background" slice-image="images/button.png" slice-border="37.5%" slice-color="#8888cc" />
+        <med-text text="@name" style="margin: 1.4vmin; color: black; width: 33%" />
+        <med-text text="@users" style="margin: 1.4vmin; color: black; width: 33%" />
+        <button label="warp in" onclick="@onclick" enabled="@enabled" style="flex-grow: 1;" />
+    </div>
+</define-template>

@@ -45,15 +45,22 @@ impl<'w, 's, 'a> SpawnButton<'w, 's> for ChildBuilder<'w, 's, 'a> {
             },
             Interaction::default(),
             InteractStyles {
-                active: InteractStyle {
+                active: Some(InteractStyle {
                     background: Some(Color::rgba(1.0, 1.0, 1.0, 1.0)),
-                },
-                hover: InteractStyle {
+                    ..Default::default()
+                }),
+                hover: Some(InteractStyle {
                     background: Some(Color::rgba(0.7, 0.7, 0.7, 1.0)),
-                },
-                inactive: InteractStyle {
+                    ..Default::default()
+                }),
+                inactive: Some(InteractStyle {
                     background: Some(Color::rgba(0.4, 0.4, 0.4, 1.0)),
-                },
+                    ..Default::default()
+                }),
+                disabled: Some(InteractStyle {
+                    background: Some(Color::rgba(0.2, 0.2, 0.2, 1.0)),
+                    ..Default::default()
+                }),
             },
             Active(false),
             On::<Click>::new(action),

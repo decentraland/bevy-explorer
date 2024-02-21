@@ -81,7 +81,7 @@ impl PluginGroup for TestPlugins {
             .add(HierarchyPlugin::default())
             .add(DiagnosticsPlugin::default())
             .add(IpfsIoPlugin {
-                cache_root: test_path.to_str().map(ToOwned::to_owned),
+                assets_root: test_path.to_str().map(ToOwned::to_owned),
                 starting_realm: Default::default(),
             })
             .add(AssetPlugin::default())

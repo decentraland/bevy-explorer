@@ -8,9 +8,10 @@ use dcl::{
 use dcl_component::{DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter};
 
 use crate::{
-    initialize_scene::SpawnPoint, primary_entities::PrimaryEntities,
-    update_world::transform_and_parent::ParentPositionSync, ContainerEntity, SceneEntity,
-    TargetParent,
+    initialize_scene::SpawnPoint,
+    primary_entities::PrimaryEntities,
+    update_world::{mesh_collider::DisableCollisions, transform_and_parent::ParentPositionSync},
+    ContainerEntity, SceneEntity, TargetParent,
 };
 
 // contains a list of (SceneEntityId.generation, bevy entity) indexed by SceneEntityId.id
@@ -199,12 +200,12 @@ impl RendererSceneContext {
         if id == SceneEntityId::CAMERA {
             commands
                 .entity(spawned)
-                .try_insert(ParentPositionSync(primaries.camera()));
+                .try_insert((ParentPositionSync(primaries.camera()), DisableCollisions));
         }
         if id == SceneEntityId::PLAYER {
             commands
                 .entity(spawned)
-                .try_insert(ParentPositionSync(primaries.player()));
+                .try_insert((ParentPositionSync(primaries.player()), DisableCollisions));
         }
 
         commands.entity(root).add_child(spawned);

@@ -199,7 +199,7 @@ fn reconnect_websocket(
             if conn.0.is_finished() {
                 transport.retries += 1;
                 let (receiver, err) = future::block_on(future::poll_once(&mut conn.0)).unwrap();
-                warn!("websocket room error: {err}, retrying");
+                warn!("archipelago error: {err}, retrying [{}]", transport.address);
                 let remote_address = transport.address.to_owned();
                 let wallet = wallet.clone();
                 let sender = island_channel.sender.clone();
@@ -215,7 +215,7 @@ fn reconnect_websocket(
         } else if transport.retries == 3 && conn.0.is_finished() {
             transport.retries += 1;
             let (_, err) = future::block_on(future::poll_once(&mut conn.0)).unwrap();
-            warn!("websocket room error: {err}, giving up");
+            warn!("archipelago error: {err}, giving up");
         }
     }
 }

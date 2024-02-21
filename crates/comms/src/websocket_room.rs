@@ -142,7 +142,10 @@ fn reconnect_websocket(
             if conn.0.is_finished() {
                 transport.retries += 1;
                 let (receiver, err) = future::block_on(future::poll_once(&mut conn.0)).unwrap();
-                warn!("websocket room error: {err}, retrying");
+                warn!(
+                    "websocket room error: {err}, retrying [{}]",
+                    transport.address
+                );
                 let remote_address = transport.address.to_owned();
                 let wallet = wallet.clone();
                 let sender = player_state.get_sender();
@@ -336,7 +339,7 @@ async fn websocket_room_handler_inner(
 
                     let Some(address) = foreign_aliases.get_by_left(&update.from_alias).cloned()
                     else {
-                        warn!("received packet for unknown alias {}", update.from_alias);
+                        debug!("received packet for unknown alias {}", update.from_alias);
                         continue;
                     };
 

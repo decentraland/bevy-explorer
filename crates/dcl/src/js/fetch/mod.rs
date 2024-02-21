@@ -341,13 +341,11 @@ pub async fn op_signed_fetch_headers(
         ..Default::default()
     };
 
-    let headers = sign_request(
+    sign_request(
         method.as_deref().unwrap_or("get"),
         &Uri::try_from(uri)?,
         &wallet,
         meta,
     )
-    .await;
-
-    Ok(headers)
+    .await
 }

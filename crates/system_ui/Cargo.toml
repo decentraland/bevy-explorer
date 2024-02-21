@@ -17,9 +17,12 @@ avatar = { workspace = true }
 input_manager = { workspace = true }
 av = { workspace = true }
 wallet = { workspace = true }
+emotes = { workspace = true }
+tween = { workspace = true }
 
 bevy = { workspace = true }
 bevy_egui = { workspace = true }
+bevy_dui = { workspace = true }
 urn = { workspace = true }
 ethers-core = { workspace = true }
 ethers-signers = { workspace = true }
@@ -28,5 +31,6 @@ serde_json = { workspace = true }
 isahc = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
+chrono = { workspace = true }
 
 copypasta = "0.10"

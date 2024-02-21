@@ -17,8 +17,10 @@ ui_core = { workspace = true }
 wallet = { workspace = true }
 input_manager = { workspace = true }
 world_ui = { workspace = true }
+emotes = { workspace = true }
 
 bevy = { workspace = true }
+itertools = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 urn = { workspace = true }
@@ -28,3 +30,5 @@ bevy_console = { workspace = true }
 once_cell = { workspace = true }
 tokio = { workspace = true }
 rapier3d-f64 = { workspace = true }
+bevy_dui = { workspace = true }
+isahc = { workspace = true }
