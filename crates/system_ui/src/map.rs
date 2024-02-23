@@ -14,7 +14,7 @@ use common::{
 };
 use ipfs::ipfs_path::IpfsPath;
 use isahc::AsyncReadResponseExt;
-use scene_runner::vec3_to_parcel;
+use scene_runner::{initialize_scene::PARCEL_SIZE, vec3_to_parcel};
 use ui_core::{
     ui_actions::{ClickNoDrag, DragData, Dragged, MouseWheelData, MouseWheeled, On, UiCaller},
     ModifyComponentExt,
@@ -39,11 +39,12 @@ impl Plugin for MapPlugin {
             Update,
             (
                 set_map_content,
-                render_map,
                 touch_map,
-                update_hover,
+                render_map,
+                update_map_data,
                 handle_map_task,
-            ),
+            )
+                .chain(),
         );
     }
 }
@@ -51,8 +52,9 @@ impl Plugin for MapPlugin {
 #[derive(Component)]
 struct MapData {
     cursor: Entity,
+    you_are_here: Entity,
     pixels_per_parcel: f32,
-    top_left_offset: Vec2,
+    bottom_left_offset: Vec2,
     min_parcel: IVec2,
     max_parcel: IVec2,
     tile_entities: HashMap<(usize, i32, i32), Entity>,
@@ -100,7 +102,8 @@ fn set_map_content(
             .get_single()
             .ok()
             .map(|gt| vec3_to_parcel(gt.translation()).as_vec2())
-            .unwrap_or(Vec2::ZERO);
+            .unwrap_or(Vec2::ZERO)
+            - Vec2::Y; // no idea why i have to subtract one :(
 
         debug!("using parcel {}", center);
 
@@ -205,33 +208,62 @@ fn set_map_content(
     }
 }
 
-fn update_hover(
+fn update_map_data(
     mut commands: Commands,
     map: Query<(&GlobalTransform, &MapTexture, &MapData, &Interaction)>,
     window: Query<&Window, With<PrimaryWindow>>,
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
 ) {
     let Ok(window) = window.get_single() else {
         return;
     };
     for (gt, map, data, interaction) in map.iter() {
+        // update you are here
+        if let Ok(gt) = player.get_single() {
+            let icon_pos = data.bottom_left_offset
+                + (((gt.translation().xz() * Vec2::new(1.0, -1.0)) / PARCEL_SIZE)
+                    - data.min_parcel.as_vec2())
+                    * data.pixels_per_parcel;
+
+            let icon_size =
+                (window.width().min(window.height()) * 0.05).max(data.pixels_per_parcel);
+
+            commands.entity(data.you_are_here).insert((
+                Visibility::Visible,
+                Style {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(icon_pos.x - icon_size * 0.5),
+                    bottom: Val::Px(icon_pos.y - data.pixels_per_parcel),
+                    width: Val::Px(icon_size),
+                    height: Val::Px(icon_size),
+                    ..Default::default()
+                },
+            ));
+        }
+
+        // update cursor
         if interaction == &Interaction::None {
             commands.entity(data.cursor).try_insert(Visibility::Hidden);
             continue;
         }
         let cursor_position = window.cursor_position().unwrap_or_default();
-        let cursor_rel_position = cursor_position - gt.translation().truncate();
-        let cursor_parcel =
-            map.center * Vec2::new(1.0, -1.0) + cursor_rel_position / data.pixels_per_parcel;
+        let cursor_rel_position =
+            (cursor_position - gt.translation().truncate()) * Vec2::new(1.0, -1.0);
+        let cursor_parcel = map.center + cursor_rel_position / data.pixels_per_parcel;
         let parcel = cursor_parcel.floor().as_ivec2();
 
-        let topleft_pixel =
-            data.top_left_offset + data.pixels_per_parcel * (parcel - data.min_parcel).as_vec2();
+        let bottomleft_pixel =
+            data.bottom_left_offset + data.pixels_per_parcel * (parcel - data.min_parcel).as_vec2();
         let ppp = data.pixels_per_parcel;
+
+        debug!("center: {}, min parcel: {}, cursor rel position: {}, cursor parcel: {}, blo: {}, blp: {}", map.center, data.min_parcel, cursor_rel_position, parcel, data.bottom_left_offset, bottomleft_pixel);
+
         commands
             .entity(data.cursor)
             .modify_component(move |style: &mut Style| {
-                style.left = Val::Px(topleft_pixel.x);
-                style.top = Val::Px(topleft_pixel.y);
+                style.position_type = PositionType::Absolute;
+                style.left = Val::Px(bottomleft_pixel.x);
+                style.bottom = Val::Px(bottomleft_pixel.y);
                 style.width = Val::Px(ppp);
                 style.height = Val::Px(ppp);
             });
@@ -284,12 +316,23 @@ fn render_map(
                         ..Default::default()
                     })
                     .id();
-                commands.entity(map_entity).try_push_children(&[cursor]);
+                let you_are_here = commands
+                    .spawn(ImageBundle {
+                        z_index: ZIndex::Local(7),
+                        image: UiImage::new(asset_server.load("images/you_are_here.png")),
+                        ..Default::default()
+                    })
+                    .id();
+
+                commands
+                    .entity(map_entity)
+                    .try_push_children(&[cursor, you_are_here]);
                 new_data = Some(MapData {
                     cursor,
+                    you_are_here,
                     pixels_per_parcel: 0.0,
                     tile_entities: Default::default(),
-                    top_left_offset: Default::default(),
+                    bottom_left_offset: Default::default(),
                     min_parcel: Default::default(),
                     max_parcel: Default::default(),
                 });
@@ -312,7 +355,7 @@ fn render_map(
             node.size()
         );
 
-        let center = map.center * Vec2::new(1.0, -1.0);
+        let center = map.center;
 
         data.min_parcel = (center - node.size() / 2.0 / pixels_per_parcel)
             .floor()
@@ -332,42 +375,43 @@ fn render_map(
             }
         }
 
-        let parcels_to_topleft = data.min_parcel.as_vec2() - center;
-        let pixels_to_topleft = parcels_to_topleft * pixels_per_parcel;
-        data.top_left_offset = (node.size() * 0.5 + pixels_to_topleft).floor();
+        let parcels_to_bottomleft = data.min_parcel.as_vec2() - center;
+        let pixels_to_bottomleft = parcels_to_bottomleft * pixels_per_parcel;
+        data.bottom_left_offset = (node.size() * 0.5 + pixels_to_bottomleft).floor();
 
         debug!(
-            "parcels to tl: {}, pixels to tl: {}, tl: {}",
-            parcels_to_topleft, pixels_to_topleft, data.top_left_offset
+            "parcels to bl: {}, pixels to bl: {}, bl: {}",
+            parcels_to_bottomleft, pixels_to_bottomleft, data.bottom_left_offset
         );
 
-        for (level, &tile_parcels) in TILE_PARCELS.iter().enumerate().take(max_level+1) {
-            for x in ((data.min_parcel.x + 152) / tile_parcels)
+        for (level, &tile_parcels) in TILE_PARCELS.iter().enumerate().take(max_level + 1) {
+            // .take(max_level + 1) {
+            // in x, the tile images start at -152 and go up by tile_parcels per step
+            // eg. level=0, x=0 -> parcels[-152, 8]
+            // eg. level=1, x=1 -> parcels[-72, 8]
+            for tile_img_x in ((data.min_parcel.x + 152) / tile_parcels)
                 ..=((data.max_parcel.x + 152) / tile_parcels)
             {
-                for y in ((data.min_parcel.y + 152) / tile_parcels)
-                    ..=((data.max_parcel.y + 152) / tile_parcels)
+                // in y, tile images start at 152 and go down by tile_parcels per step
+                // eg. level=0 y=0 -> parcels[-8, 152]
+                // eg. level=1 y=1 -> parcels[-8, 72]
+                for tile_img_y in ((152 - data.max_parcel.y) / tile_parcels)
+                    ..=((152 - data.min_parcel.y) / tile_parcels)
                 {
-                    let topleft_parcel = IVec2::new(x, y) * tile_parcels - 152;
-                    let bottomright_parcel = topleft_parcel + tile_parcels;
-
-                    let topleft_pixel = data.top_left_offset
-                        + (topleft_parcel - data.min_parcel).as_vec2() * pixels_per_parcel;
-                    let bottomright_pixel = data.top_left_offset
-                        + (bottomright_parcel - data.min_parcel).as_vec2() * pixels_per_parcel;
-
-                    let left = topleft_pixel.x;
-                    let right = node.size().x - bottomright_pixel.x;
-                    let top = topleft_pixel.y;
-                    let bottom = node.size().y - bottomright_pixel.y;
-
-                    debug!("level: {level}, parcels: ({topleft_parcel}..{bottomright_parcel}) -> t l b r ({top}px, {left}px, {bottom}px, {right}px)");
-                    debug!(
-                        "tl pixel: {}, br pixel: {}",
-                        topleft_pixel, bottomright_pixel
+                    let bottomleft_parcel = IVec2::new(
+                        tile_img_x * tile_parcels - 152,
+                        152 - (tile_img_y + 1) * tile_parcels,
                     );
 
-                    match data.tile_entities.entry((level, x, y)) {
+                    let bottomleft_pixel = data.bottom_left_offset
+                        + (bottomleft_parcel - data.min_parcel).as_vec2() * pixels_per_parcel;
+
+                    let left = bottomleft_pixel.x;
+                    let bottom = bottomleft_pixel.y;
+
+                    debug!("level: {level}, img({tile_img_x},{tile_img_y}) bl parcel: ({bottomleft_parcel}) -> bl ({left}px, {bottom}px), sz: {}", pixels_per_parcel * tile_parcels as f32);
+
+                    match data.tile_entities.entry((level, tile_img_x, tile_img_y)) {
                         Entry::Occupied(o) => {
                             debug!("update");
                             let Ok((mut style, mut vis)) = styles.get_mut(*o.get()) else {
@@ -376,9 +420,9 @@ fn render_map(
                             };
 
                             style.left = Val::Px(left);
-                            style.right = Val::Px(right);
-                            style.top = Val::Px(top);
                             style.bottom = Val::Px(bottom);
+                            style.width = Val::Px(pixels_per_parcel * tile_parcels as f32);
+                            style.height = Val::Px(pixels_per_parcel * tile_parcels as f32);
                             *vis = Visibility::Visible;
                         }
                         Entry::Vacant(v) => {
@@ -387,8 +431,8 @@ fn render_map(
                                 &format!(
                                     "https://genesis.city/map/latest/{}/{},{}.jpg",
                                     level + 1,
-                                    x,
-                                    y
+                                    tile_img_x,
+                                    tile_img_y
                                 ),
                                 "jpg",
                             );
@@ -399,9 +443,9 @@ fn render_map(
                                     style: Style {
                                         position_type: PositionType::Absolute,
                                         left: Val::Px(left),
-                                        right: Val::Px(right),
-                                        top: Val::Px(top),
                                         bottom: Val::Px(bottom),
+                                        width: Val::Px(pixels_per_parcel * tile_parcels as f32),
+                                        height: Val::Px(pixels_per_parcel * tile_parcels as f32),
                                         ..Default::default()
                                     },
                                     image: UiImage::new(h_image),
