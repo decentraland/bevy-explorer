@@ -10,6 +10,7 @@ pub mod sysinfo;
 pub mod toasts;
 pub mod tooltip;
 pub mod wearables;
+pub mod map;
 
 use bevy::prelude::*;
 
@@ -18,6 +19,7 @@ use common::{sets::SetupSets, structs::UiRoot};
 use emote_select::EmoteUiPlugin;
 use input_manager::MouseInteractionComponent;
 use login::LoginPlugin;
+use map::MapPlugin;
 use mic::MicUiPlugin;
 use toasts::ToastsPlugin;
 use tooltip::ToolTipPlugin;
@@ -44,6 +46,7 @@ impl Plugin for SystemUiPlugin {
             LoginPlugin,
             EmoteUiPlugin,
             ChangeRealmPlugin,
+            MapPlugin,
         ));
     }
 }

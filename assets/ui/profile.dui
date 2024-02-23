@@ -6,7 +6,7 @@
         background-color: #8888ccff;
         align-items: center;
     ">
-        <div id="title-bar" style="width: 100%; height: auto;">
+        <div id="title-bar" style="width: 100%; height: auto;" z-index="100">
             <button label-name="change-realm-button" label="@realm" onclick="@change-realm" />
             <space />
             <tab-group id="title-pages" tabs="@title-tabs" onchanged="@title-onchanged" initial="@title-initial" />

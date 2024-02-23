@@ -424,12 +424,16 @@ pub struct ContainingScene<'w, 's> {
     portable_scenes: Res<'w, PortableScenes>,
 }
 
+pub fn vec3_to_parcel(position: Vec3) -> IVec2 {
+    (position.xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
+        .floor()
+        .as_ivec2()
+}
+
 impl<'w, 's> ContainingScene<'w, 's> {
     // just the parcel at the position
     pub fn get_parcel_position(&self, position: Vec3) -> Option<Entity> {
-        let parcel = (position.xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
-            .floor()
-            .as_ivec2();
+        let parcel = vec3_to_parcel(position);
 
         if let Some(PointerResult::Exists { hash, .. }) = self.pointers.0.get(&parcel) {
             self.live_scenes.0.get(hash).copied()

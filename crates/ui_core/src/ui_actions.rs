@@ -8,9 +8,9 @@ use bevy::{
         query::{ReadOnlyWorldQuery, WorldQuery},
         system::BoxedSystem,
     },
-    input::mouse::MouseMotion,
+    input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
-    utils::{HashMap, HashSet},
+    utils::{HashMap, HashSet}, window::PrimaryWindow,
 };
 
 use common::sets::SceneSets;
@@ -36,25 +36,36 @@ impl Plugin for UiActionPlugin {
             .init_resource::<UiActions<Defocus>>()
             .init_resource::<UiActions<DataChanged>>()
             .init_resource::<UiActions<Dragged>>()
+            .init_resource::<UiActions<ClickNoDrag>>()
+            .init_resource::<UiActions<MouseWheeled>>()
             .add_systems(
                 Update,
                 (
                     update_drag,
-                    gather_actions::<HoverEnter>,
-                    gather_actions::<Click>,
-                    gather_actions::<HoverExit>,
-                    gather_actions::<Focus>,
-                    gather_actions::<Defocus>,
-                    gather_actions::<DataChanged>,
-                    gather_actions::<Dragged>,
+                    update_wheel,
+                    (
+                        gather_actions::<HoverEnter>,
+                        gather_actions::<Click>,
+                        gather_actions::<HoverExit>,
+                        gather_actions::<Focus>,
+                        gather_actions::<Defocus>,
+                        gather_actions::<DataChanged>,
+                        gather_actions::<Dragged>,
+                        gather_actions::<ClickNoDrag>,
+                        gather_actions::<MouseWheeled>,
+                    ).chain(),
                     apply_deferred,
-                    run_actions::<HoverEnter>,
-                    run_actions::<Click>,
-                    run_actions::<HoverExit>,
-                    run_actions::<Focus>,
-                    run_actions::<Defocus>,
-                    run_actions::<DataChanged>,
-                    run_actions::<Dragged>,
+                    (
+                        run_actions::<HoverEnter>,
+                        run_actions::<Click>,
+                        run_actions::<HoverExit>,
+                        run_actions::<Focus>,
+                        run_actions::<Defocus>,
+                        run_actions::<DataChanged>,
+                        run_actions::<Dragged>,
+                        run_actions::<ClickNoDrag>,
+                        run_actions::<MouseWheeled>,
+                    ).chain()
                 )
                     .chain()
                     .in_set(SceneSets::UiActions)
@@ -161,7 +172,45 @@ impl ActionMarker for Dragged {
 pub struct DragData {
     was_pressed: bool,
     pub trigger: bool,
-    pub delta: Vec2,
+    pub delta_pixels: Vec2,
+    pub delta_viewport: Vec2,
+}
+
+
+#[derive(Component)]
+pub struct ClickNoDrag;
+impl ActionMarker for ClickNoDrag {
+    type Component = Option<&'static ClickNoDragData>;
+
+    fn activate(param: Option<&ClickNoDragData>) -> bool {
+        param.map_or(false, |p| p.trigger)
+    }
+}
+
+#[derive(Component, Default)]
+pub struct ClickNoDragData {
+    pub was_pressed: bool,
+    pub valid: bool,
+    pub trigger: bool,
+}
+
+#[derive(Component)]
+pub struct MouseWheeled;
+impl ActionMarker for MouseWheeled {
+    type Component = Option<&'static MouseWheelData>;
+
+    fn activate(param: Option<&MouseWheelData>) -> bool {
+        param.map_or(false, |p| p.wheel != 0.0)
+    }
+
+    fn repeat_activate() -> bool {
+        true
+    }
+}
+
+#[derive(Component, Default)]
+pub struct MouseWheelData {
+    pub wheel: f32,
 }
 
 #[derive(Component)]
@@ -257,16 +306,36 @@ pub fn run_actions<M: ActionMarker>(world: &mut World) {
 #[allow(clippy::type_complexity)]
 fn update_drag(
     mut commands: Commands,
-    mut q: Query<(Entity, &Interaction, Option<&mut DragData>), With<ActionIndex<Dragged>>>,
+    mut q: Query<(Entity, &Interaction, Option<&mut DragData>, Option<&mut ClickNoDragData>), Or<(With<ActionIndex<Dragged>>, With<ActionIndex<ClickNoDrag>>)>>,
     mut mouse_events: EventReader<MouseMotion>,
+    window: Query<&Window, With<PrimaryWindow>>,
 ) {
     let delta: Vec2 = mouse_events.read().map(|mme| mme.delta).sum();
 
-    for (ent, interaction, drag_data) in q.iter_mut() {
-        let Some(mut drag_data) = drag_data else {
-            commands.entity(ent).try_insert(DragData::default());
+    for (ent, interaction, drag_data, click_no_drag_data) in q.iter_mut() {
+        let (Some(mut drag_data), Some(mut click_no_drag_data)) = (drag_data, click_no_drag_data) else {
+            commands.entity(ent).try_insert((DragData::default(), ClickNoDragData::default()));
             continue;
         };
+
+        if interaction == &Interaction::Pressed {
+            click_no_drag_data.trigger = false;
+
+            if !click_no_drag_data.was_pressed {
+                click_no_drag_data.was_pressed = true;
+                click_no_drag_data.valid = true;
+            }
+
+            if delta != Vec2::ZERO {
+                click_no_drag_data.valid = false;
+            }
+        } else {
+            if click_no_drag_data.was_pressed && click_no_drag_data.valid {
+                click_no_drag_data.trigger = true;
+            }
+            click_no_drag_data.was_pressed = false;
+            click_no_drag_data.valid = false;
+        }
 
         if interaction != &Interaction::Pressed {
             drag_data.trigger = false;
@@ -280,7 +349,34 @@ fn update_drag(
         }
 
         drag_data.trigger = delta != Vec2::ZERO;
-        drag_data.delta = delta;
+        drag_data.delta_pixels = delta;
+
+        let Ok(window) = window.get_single() else {
+            return;
+        };
+        drag_data.delta_viewport = delta / Vec2::new(window.width(), window.height());
+    }
+}
+
+fn update_wheel(
+    mut commands: Commands,
+    mut q: Query<(Entity, &Interaction, Option<&mut MouseWheelData>), With<ActionIndex<Dragged>>>,
+    mut wheel_events: EventReader<MouseWheel>,
+) {
+    let delta: f32 = wheel_events.read().map(|we| we.y).sum();
+
+    for (ent, interaction, wheel_data) in q.iter_mut() {
+        let Some(mut wheel_data) = wheel_data else {
+            commands.entity(ent).try_insert(MouseWheelData::default());
+            continue;
+        };
+
+        if interaction == &Interaction::None {
+            wheel_data.wheel = 0.0;
+            continue;
+        } else {
+            wheel_data.wheel = delta;
+        }
     }
 }
 

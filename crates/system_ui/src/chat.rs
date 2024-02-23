@@ -8,7 +8,7 @@ use common::{
     dcl_assert,
     sets::SetupSets,
     structs::PrimaryUser,
-    util::{RingBuffer, RingBufferReceiver},
+    util::{RingBuffer, RingBufferReceiver, TryPushChildrenEx},
 };
 use comms::{
     chat_marker_things, global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport,
@@ -491,7 +491,7 @@ fn display_chat(
             while let Ok(message) = sink.try_recv() {
                 msgs.push(make_log(&mut commands, &asset_server, message));
             }
-            commands.entity(entity).push_children(&msgs);
+            commands.entity(entity).try_push_children(&msgs);
         }
     }
 }

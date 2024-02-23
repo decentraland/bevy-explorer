@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use bevy::{ecs::system::EntityCommands, prelude::*, ui::FocusPolicy};
 use bevy_dui::{DuiContext, DuiProps, DuiTemplate, NodeMap};
+use common::util::TryPushChildrenEx;
 
 use crate::{
     combo_box::PropsExt,
@@ -177,7 +178,7 @@ impl DuiTemplate for DuiButtonTemplate {
             commands
                 .commands()
                 .entity(components["button-node"])
-                .push_children(&[entity]);
+                .try_push_children(&[entity]);
             components.insert("label".to_owned(), entity);
         }
 
@@ -225,7 +226,7 @@ impl DuiTemplate for DuiButtonSetTemplate {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        commands.push_children(&children);
+        commands.try_push_children(&children);
 
         Ok(NodeMap::from_iter(
             children
@@ -316,7 +317,7 @@ impl DuiTemplate for DuiTabGroupTemplate {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        commands.push_children(&children);
+        commands.try_push_children(&children);
         commands.insert((
             on_changed,
             TabSelection {

@@ -257,7 +257,7 @@ pub fn show_settings(
         },
         DuiButton {
             label: Some("Map".to_owned()),
-            enabled: false,
+            enabled: true,
             ..Default::default()
         },
         DuiButton {
