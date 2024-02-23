@@ -29,7 +29,7 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use emotes::{base_bodyshapes, AvatarAnimation, AvatarAnimations};
+use emotes::{base_bodyshapes, urn_for_emote_specifier, AvatarAnimation, AvatarAnimations};
 use scene_runner::{
     update_world::{transform_and_parent::ParentPositionSync, AddCrdtInterfaceExt},
     ContainerEntity, ContainingScene,
@@ -181,7 +181,7 @@ fn load_animations(
                                 })
                                 .unwrap_or((name.to_owned(), false, false, false));
 
-                            let anim = animations.0.entry(name.clone()).or_insert_with(|| {
+                            let anim = animations.0.entry(format!("urn:decentraland:off-chain:base-emotes:{}", name)).or_insert_with(|| {
                                 AvatarAnimation {
                                     name: name.clone(),
                                     description: name.clone(),
@@ -345,7 +345,6 @@ fn animate(
                     bodyshape: &str|
      -> bool {
         if let Some(clip) = animations
-            .0
             .get(anim)
             .and_then(|anim| anim.clips.get(bodyshape))
         {
@@ -417,13 +416,9 @@ fn animate(
             emote_command: Some(EmoteCommand { emote_urn, r#loop }),
         }) = emote
         {
-            let (emote_urn, repeat) = (emote_urn.as_str(), r#loop);
-            // let (emote_urn, repeat) = DEFAULT_ANIMATION_LOOKUP
-            //     .get(emote_urn.as_str())
-            //     .map(|anim| (if is_female { anim.female } else { anim.male }, anim.repeat))
-            //     .unwrap_or((emote_urn.as_str(), r#loop));
+            let (emote_urn, repeat) = (urn_for_emote_specifier(&emote_urn), r#loop);
 
-            if play(emote_urn, 1.0, animplayer_ent.0, false, repeat, &bodyshape) && !repeat {
+            if play(&emote_urn, 1.0, animplayer_ent.0, false, repeat, &bodyshape) && !repeat {
                 // emote has finished, remove from the set so will resume default anim after
                 emotes.as_mut().unwrap().clear();
             };

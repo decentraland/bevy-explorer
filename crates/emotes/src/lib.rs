@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use bevy::{
     gltf::Gltf,
     prelude::*,
@@ -35,8 +37,15 @@ pub struct AvatarAnimation {
     pub repeat: bool,
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Debug)]
 pub struct AvatarAnimations(pub HashMap<String, AvatarAnimation>);
+
+impl AvatarAnimations {
+    pub fn get(&self, urn: &str) -> Option<&AvatarAnimation> {
+        let urn = urn_for_emote_specifier(urn);
+        self.0.get::<str>(&urn)
+    }
+}
 
 #[derive(Resource, Default)]
 pub struct EmoteLoadData {
@@ -91,7 +100,8 @@ fn fetch_emotes(
     if task.is_none() {
         let missing_urns = required_emote_urns
             .into_iter()
-            .filter(|urn| urn.contains(':') && !defs.loaded.contains(urn))
+            .map(|urn| urn_for_emote_specifier(&urn).into_owned())
+            .filter(|urn| !defs.loaded.contains(urn))
             .collect::<Vec<_>>();
         if !missing_urns.is_empty() {
             debug!("fetching emotes: {missing_urns:?}");
@@ -187,4 +197,12 @@ fn fetch_emote_details(
             },
         )
         .collect();
+}
+
+pub fn urn_for_emote_specifier(specifier: &str) -> Cow<str> {
+    if !specifier.contains(':') {
+        Cow::Owned(format!("urn:decentraland:off-chain:base-emotes:{}", specifier))
+    } else {
+        Cow::Borrowed(specifier)
+    }
 }

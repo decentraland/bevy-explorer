@@ -1463,7 +1463,7 @@ fn process_avatar(
                 {
                     commands
                         .entity(*left_hand)
-                        .push_children(&[attach_points.left_hand]);
+                        .try_push_children(&[attach_points.left_hand]);
                 } else {
                     warn!("no left hand");
                     warn!("available: {:#?}", target_armature_entities.keys());
@@ -1473,7 +1473,7 @@ fn process_avatar(
                 {
                     commands
                         .entity(*right_hand)
-                        .push_children(&[attach_points.right_hand]);
+                        .try_push_children(&[attach_points.right_hand]);
                 } else {
                     warn!("no right hand");
                 }
