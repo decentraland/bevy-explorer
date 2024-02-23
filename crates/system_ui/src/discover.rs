@@ -202,7 +202,10 @@ impl DiscoverSettings {
         self.task = Some(IoTaskPool::get().spawn(async move {
             let mut response = isahc::get_async(url).await?;
 
-            response.json::<DiscoverPages>().await.map_err(|e| anyhow!(e))
+            response
+                .json::<DiscoverPages>()
+                .await
+                .map_err(|e| anyhow!(e))
         }));
     }
 }
@@ -367,7 +370,7 @@ impl DiscoverPage {
             title: format!("({}, {})", coords.x, coords.y),
             base_position: format!("{},{}", coords.x, coords.y),
             image: "https://realm-provider.decentraland.org/content/contents/bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y".to_owned(),
-            ..Default::default()            
+            ..Default::default()
         }
     }
 }
@@ -435,14 +438,21 @@ fn update_page(
                         .with_prop("label", item.title.clone())
                         .with_prop("author", item.contact_name.clone().unwrap_or_default())
                         .with_prop("views", format!("{}", item.user_visits.unwrap_or_default()))
-                        .with_prop("likes", format!("{:.0}%", item.like_score.unwrap_or(0.0) * 100.0)),
+                        .with_prop(
+                            "likes",
+                            format!("{:.0}%", item.like_score.unwrap_or(0.0) * 100.0),
+                        ),
                 )
                 .unwrap();
             commands.entity(button.root).insert((
                 Interaction::default(),
-                On::<Click>::new(move |mut commands: Commands, dui: Res<DuiRegistry>, asset_server: Res<AssetServer>| {
-                    spawn_discover_popup(&mut commands, &dui, &asset_server, &item);
-                }),
+                On::<Click>::new(
+                    move |mut commands: Commands,
+                          dui: Res<DuiRegistry>,
+                          asset_server: Res<AssetServer>| {
+                        spawn_discover_popup(&mut commands, &dui, &asset_server, &item);
+                    },
+                ),
             ));
         }
 
@@ -517,7 +527,11 @@ pub fn spawn_discover_popup(
         .with_prop("author", item.contact_name.clone().unwrap_or_default())
         .with_prop(
             "likes",
-            format!("{:.0}% ({})", item.like_score.unwrap_or(0.0) * 100.0, item.likes),
+            format!(
+                "{:.0}% ({})",
+                item.like_score.unwrap_or(0.0) * 100.0,
+                item.likes
+            ),
         )
         .with_prop("description", item.description.clone().unwrap_or_default())
         .with_prop("location", item.base_position.clone())
@@ -543,6 +557,6 @@ pub fn spawn_discover_popup(
         .with_prop("jump-in", jump_in);
 
     commands
-        .spawn_template(&dui, "discover-popup", props)
+        .spawn_template(dui, "discover-popup", props)
         .unwrap();
 }

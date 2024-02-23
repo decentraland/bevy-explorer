@@ -16,7 +16,10 @@ use bevy::{
 use bevy_dui::{
     DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry, DuiWalker,
 };
-use common::{structs::PrimaryUser, util::{TaskExt, TryPushChildrenEx}};
+use common::{
+    structs::PrimaryUser,
+    util::{TaskExt, TryPushChildrenEx},
+};
 use comms::profile::CurrentUserProfile;
 use ipfs::IpfsAssetServer;
 use isahc::ReadResponseExt;

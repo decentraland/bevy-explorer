@@ -8,7 +8,10 @@ use bevy::{
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use common::{structs::PrimaryUser, util::{TaskExt, TryPushChildrenEx}};
+use common::{
+    structs::PrimaryUser,
+    util::{TaskExt, TryPushChildrenEx},
+};
 use ipfs::ipfs_path::IpfsPath;
 use isahc::AsyncReadResponseExt;
 use scene_runner::vec3_to_parcel;
@@ -194,7 +197,7 @@ fn set_map_content(
                                 .json::<DiscoverPages>()
                                 .await
                                 .map_err(|e| anyhow!(e))
-                        })
+                        }),
                     ));
                 },
             ),
@@ -217,7 +220,8 @@ fn update_hover(
         }
         let cursor_position = window.cursor_position().unwrap_or_default();
         let cursor_rel_position = cursor_position - gt.translation().truncate();
-        let cursor_parcel = map.center * Vec2::new(1.0, -1.0) + cursor_rel_position / data.pixels_per_parcel;
+        let cursor_parcel =
+            map.center * Vec2::new(1.0, -1.0) + cursor_rel_position / data.pixels_per_parcel;
         let parcel = cursor_parcel.floor().as_ivec2();
 
         let topleft_pixel =
@@ -253,6 +257,7 @@ fn touch_map(mut e: EventReader<WindowResized>, mut q: Query<&mut MapTexture>) {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn render_map(
     mut commands: Commands,
     mut q: Query<
@@ -336,15 +341,15 @@ fn render_map(
             parcels_to_topleft, pixels_to_topleft, data.top_left_offset
         );
 
-        for level in 0..=max_level {
-            for x in ((data.min_parcel.x + 152) / TILE_PARCELS[level])
-                ..=((data.max_parcel.x + 152) / TILE_PARCELS[level])
+        for (level, &tile_parcels) in TILE_PARCELS.iter().enumerate().take(max_level+1) {
+            for x in ((data.min_parcel.x + 152) / tile_parcels)
+                ..=((data.max_parcel.x + 152) / tile_parcels)
             {
-                for y in ((data.min_parcel.y + 152) / TILE_PARCELS[level])
-                    ..=((data.max_parcel.y + 152) / TILE_PARCELS[level])
+                for y in ((data.min_parcel.y + 152) / tile_parcels)
+                    ..=((data.max_parcel.y + 152) / tile_parcels)
                 {
-                    let topleft_parcel = IVec2::new(x, y) * TILE_PARCELS[level] - 152;
-                    let bottomright_parcel = topleft_parcel + TILE_PARCELS[level];
+                    let topleft_parcel = IVec2::new(x, y) * tile_parcels - 152;
+                    let bottomright_parcel = topleft_parcel + tile_parcels;
 
                     let topleft_pixel = data.top_left_offset
                         + (topleft_parcel - data.min_parcel).as_vec2() * pixels_per_parcel;
@@ -405,7 +410,9 @@ fn render_map(
                                 })
                                 .id();
 
-                            commands.entity(map_entity).try_push_children(&[tile_entity]);
+                            commands
+                                .entity(map_entity)
+                                .try_push_children(&[tile_entity]);
 
                             v.insert(tile_entity);
                         }
@@ -430,7 +437,10 @@ fn handle_map_task(
         if let Some((coords, mut task)) = settings.task.take() {
             match task.complete() {
                 Some(Ok(mut pages)) => {
-                    let page = pages.data.pop().unwrap_or_else(|| DiscoverPage::dummy(coords));
+                    let page = pages
+                        .data
+                        .pop()
+                        .unwrap_or_else(|| DiscoverPage::dummy(coords));
                     spawn_discover_popup(&mut commands, &dui, &asset_server, &page);
                 }
                 Some(Err(e)) => warn!("places task error: {e}"),

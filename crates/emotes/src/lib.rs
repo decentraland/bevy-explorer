@@ -201,7 +201,10 @@ fn fetch_emote_details(
 
 pub fn urn_for_emote_specifier(specifier: &str) -> Cow<str> {
     if !specifier.contains(':') {
-        Cow::Owned(format!("urn:decentraland:off-chain:base-emotes:{}", specifier))
+        Cow::Owned(format!(
+            "urn:decentraland:off-chain:base-emotes:{}",
+            specifier
+        ))
     } else {
         Cow::Borrowed(specifier)
     }

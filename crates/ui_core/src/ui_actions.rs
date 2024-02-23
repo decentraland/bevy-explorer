@@ -10,7 +10,8 @@ use bevy::{
     },
     input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
-    utils::{HashMap, HashSet}, window::PrimaryWindow,
+    utils::{HashMap, HashSet},
+    window::PrimaryWindow,
 };
 
 use common::sets::SceneSets;
@@ -53,7 +54,8 @@ impl Plugin for UiActionPlugin {
                         gather_actions::<Dragged>,
                         gather_actions::<ClickNoDrag>,
                         gather_actions::<MouseWheeled>,
-                    ).chain(),
+                    )
+                        .chain(),
                     apply_deferred,
                     (
                         run_actions::<HoverEnter>,
@@ -65,7 +67,8 @@ impl Plugin for UiActionPlugin {
                         run_actions::<Dragged>,
                         run_actions::<ClickNoDrag>,
                         run_actions::<MouseWheeled>,
-                    ).chain()
+                    )
+                        .chain(),
                 )
                     .chain()
                     .in_set(SceneSets::UiActions)
@@ -175,7 +178,6 @@ pub struct DragData {
     pub delta_pixels: Vec2,
     pub delta_viewport: Vec2,
 }
-
 
 #[derive(Component)]
 pub struct ClickNoDrag;
@@ -306,15 +308,26 @@ pub fn run_actions<M: ActionMarker>(world: &mut World) {
 #[allow(clippy::type_complexity)]
 fn update_drag(
     mut commands: Commands,
-    mut q: Query<(Entity, &Interaction, Option<&mut DragData>, Option<&mut ClickNoDragData>), Or<(With<ActionIndex<Dragged>>, With<ActionIndex<ClickNoDrag>>)>>,
+    mut q: Query<
+        (
+            Entity,
+            &Interaction,
+            Option<&mut DragData>,
+            Option<&mut ClickNoDragData>,
+        ),
+        Or<(With<ActionIndex<Dragged>>, With<ActionIndex<ClickNoDrag>>)>,
+    >,
     mut mouse_events: EventReader<MouseMotion>,
     window: Query<&Window, With<PrimaryWindow>>,
 ) {
     let delta: Vec2 = mouse_events.read().map(|mme| mme.delta).sum();
 
     for (ent, interaction, drag_data, click_no_drag_data) in q.iter_mut() {
-        let (Some(mut drag_data), Some(mut click_no_drag_data)) = (drag_data, click_no_drag_data) else {
-            commands.entity(ent).try_insert((DragData::default(), ClickNoDragData::default()));
+        let (Some(mut drag_data), Some(mut click_no_drag_data)) = (drag_data, click_no_drag_data)
+        else {
+            commands
+                .entity(ent)
+                .try_insert((DragData::default(), ClickNoDragData::default()));
             continue;
         };
 
@@ -358,6 +371,7 @@ fn update_drag(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn update_wheel(
     mut commands: Commands,
     mut q: Query<(Entity, &Interaction, Option<&mut MouseWheelData>), With<ActionIndex<Dragged>>>,

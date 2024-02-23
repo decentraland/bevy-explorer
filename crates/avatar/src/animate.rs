@@ -181,8 +181,10 @@ fn load_animations(
                                 })
                                 .unwrap_or((name.to_owned(), false, false, false));
 
-                            let anim = animations.0.entry(format!("urn:decentraland:off-chain:base-emotes:{}", name)).or_insert_with(|| {
-                                AvatarAnimation {
+                            let anim = animations
+                                .0
+                                .entry(format!("urn:decentraland:off-chain:base-emotes:{}", name))
+                                .or_insert_with(|| AvatarAnimation {
                                     name: name.clone(),
                                     description: name.clone(),
                                     clips: HashMap::from_iter(
@@ -193,8 +195,7 @@ fn load_animations(
                                     thumbnail: asset_server
                                         .load(format!("animations/thumbnails/{name}_256.png")),
                                     repeat,
-                                }
-                            });
+                                });
 
                             if is_female {
                                 anim.clips

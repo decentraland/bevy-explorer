@@ -4,13 +4,13 @@ pub mod discover;
 pub mod emote_select;
 pub mod emotes;
 pub mod login;
+pub mod map;
 pub mod mic;
 pub mod profile;
 pub mod sysinfo;
 pub mod toasts;
 pub mod tooltip;
 pub mod wearables;
-pub mod map;
 
 use bevy::prelude::*;
 
