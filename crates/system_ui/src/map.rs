@@ -29,6 +29,7 @@ use crate::{
 pub struct MapTexture {
     pub center: Vec2,
     pub parcels_per_vw: f32,
+    pub icon_min_size_vmin: f32,
 }
 
 pub struct MapPlugin;
@@ -50,10 +51,10 @@ impl Plugin for MapPlugin {
 }
 
 #[derive(Component)]
-struct MapData {
+pub struct MapData {
     cursor: Entity,
     you_are_here: Entity,
-    pixels_per_parcel: f32,
+    pub pixels_per_parcel: f32,
     bottom_left_offset: Vec2,
     min_parcel: IVec2,
     max_parcel: IVec2,
@@ -111,6 +112,7 @@ fn set_map_content(
             MapTexture {
                 center,
                 parcels_per_vw: 20.0,
+                icon_min_size_vmin: 0.05,
             },
             Interaction::default(),
             On::<Dragged>::new(
@@ -225,8 +227,8 @@ fn update_map_data(
                     - data.min_parcel.as_vec2())
                     * data.pixels_per_parcel;
 
-            let icon_size =
-                (window.width().min(window.height()) * 0.05).max(data.pixels_per_parcel);
+            let icon_size = (window.width().min(window.height()) * map.icon_min_size_vmin)
+                .max(data.pixels_per_parcel);
 
             commands.entity(data.you_are_here).insert((
                 Visibility::Visible,

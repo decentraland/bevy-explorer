@@ -13,7 +13,7 @@ use comms::profile::CurrentUserProfile;
 use ipfs::{ChangeRealmEvent, CurrentRealm};
 use ui_core::{
     button::{DuiButton, TabSelection},
-    ui_actions::{Click, DataChanged, EventDefaultExt, On, UiCaller},
+    ui_actions::{Click, DataChanged, EventCloneExt, EventDefaultExt, On, UiCaller},
 };
 
 use crate::{
@@ -27,9 +27,10 @@ pub struct ProfileEditPlugin;
 
 impl Plugin for ProfileEditPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<SerializeUi>();
+        app.add_event::<SerializeUi>()
+            .add_event::<ShowSettingsEvent>();
         app.add_systems(Startup, setup);
-        app.add_systems(Update, dump);
+        app.add_systems(Update, (show_settings, dump));
         app.add_plugins((
             DiscoverSettingsPlugin,
             WearableSettingsPlugin,
@@ -53,7 +54,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             ..Default::default()
         },
         Interaction::default(),
-        On::<Click>::new(show_settings),
+        ShowSettingsEvent(SettingsTab::Discover).send_value_on::<Click>(),
     ));
 }
 
@@ -207,12 +208,28 @@ pub fn close_settings(
     }
 }
 
+#[derive(Event, Clone)]
+pub struct ShowSettingsEvent(pub SettingsTab);
+
 pub fn show_settings(
     mut commands: Commands,
     dui: Res<DuiRegistry>,
     realm: Res<CurrentRealm>,
     current_profile: Res<CurrentUserProfile>,
+    mut ev: EventReader<ShowSettingsEvent>,
 ) {
+    let Some(ev) = ev.read().last() else {
+        return;
+    };
+
+    let title_initial = match ev.0 {
+        SettingsTab::Discover => 0usize,
+        SettingsTab::Wearables => 1,
+        SettingsTab::Emotes => 2,
+        SettingsTab::Map => 3,
+        SettingsTab::Settings => 4,
+    };
+
     let Some(profile) = &current_profile.profile.as_ref() else {
         error!("can't edit missing profile");
         return;
@@ -285,7 +302,7 @@ pub fn show_settings(
     props.insert_prop("profile-name", profile.content.name.clone());
     props.insert_prop("close-settings", On::<Click>::new(close_settings));
     props.insert_prop("title-tabs", tabs);
-    props.insert_prop("title-initial", Some(0usize));
+    props.insert_prop("title-initial", Some(title_initial));
     props.insert_prop(
         "title-onchanged",
         On::<DataChanged>::new(
@@ -315,7 +332,7 @@ pub fn show_settings(
         .insert(UpdateRealmText);
     commands
         .entity(components.named("settings-content"))
-        .insert(SettingsTab::Discover);
+        .insert(ev.0);
 
     //start on the wearables tab
 }
