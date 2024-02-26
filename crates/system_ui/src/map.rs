@@ -16,6 +16,7 @@ use ipfs::ipfs_path::IpfsPath;
 use isahc::AsyncReadResponseExt;
 use scene_runner::{initialize_scene::PARCEL_SIZE, vec3_to_parcel};
 use ui_core::{
+    bound_node::{BoundedNode, BoundedNodeBundle},
     ui_actions::{ClickNoDrag, DragData, Dragged, MouseWheelData, MouseWheeled, On, UiCaller},
     ModifyComponentExt,
 };
@@ -28,7 +29,7 @@ use crate::{
 #[derive(Component)]
 pub struct MapTexture {
     pub center: Vec2,
-    pub parcels_per_vw: f32,
+    pub parcels_per_vmin: f32,
     pub icon_min_size_vmin: f32,
 }
 
@@ -111,7 +112,7 @@ fn set_map_content(
         commands.entity(components.named("map-node")).insert((
             MapTexture {
                 center,
-                parcels_per_vw: 20.0,
+                parcels_per_vmin: 20.0,
                 icon_min_size_vmin: 0.05,
             },
             Interaction::default(),
@@ -127,11 +128,13 @@ fn set_map_content(
                     let Ok(window) = window.get_single() else {
                         return;
                     };
+                    let window = Vec2::new(window.width(), window.height());
 
-                    let parcel_delta_x = drag.delta_viewport.x * map.parcels_per_vw;
-                    let parcel_delta_y =
-                        -drag.delta_viewport.y * map.parcels_per_vw * window.height()
-                            / window.width();
+                    let vw = window.x / window.min_element();
+                    let vh = window.y / window.min_element();
+
+                    let parcel_delta_x = drag.delta_viewport.x * map.parcels_per_vmin * vw;
+                    let parcel_delta_y = -drag.delta_viewport.y * map.parcels_per_vmin * vh;
 
                     map.center -= Vec2::new(parcel_delta_x, parcel_delta_y);
                     map.center = map.center.clamp(Vec2::splat(-152.0), Vec2::splat(152.0));
@@ -156,8 +159,9 @@ fn set_map_content(
                     let cursor_parcel = map.center + cursor_rel_position / data.pixels_per_parcel;
 
                     let adj = 1.1f32.powf(-wheel.wheel);
-                    map.parcels_per_vw = (map.parcels_per_vw * adj).clamp(10.0, 500.0);
-                    let pixels_per_parcel = (window.width() / map.parcels_per_vw).round();
+                    map.parcels_per_vmin = (map.parcels_per_vmin * adj).clamp(10.0, 500.0);
+                    let pixels_per_parcel =
+                        (window.width().min(window.height()) / map.parcels_per_vmin).round();
 
                     map.center = cursor_parcel - cursor_rel_position / pixels_per_parcel;
                     map.center = map.center.clamp(Vec2::splat(-152.0), Vec2::splat(152.0));
@@ -230,7 +234,7 @@ fn update_map_data(
             let icon_size = (window.width().min(window.height()) * map.icon_min_size_vmin)
                 .max(data.pixels_per_parcel);
 
-            commands.entity(data.you_are_here).insert((
+            commands.entity(data.you_are_here).try_insert((
                 Visibility::Visible,
                 Style {
                     position_type: PositionType::Absolute,
@@ -312,16 +316,22 @@ fn render_map(
             Some(data) => data.into_inner(),
             None => {
                 let cursor = commands
-                    .spawn(ImageBundle {
-                        z_index: ZIndex::Local(7),
-                        image: UiImage::new(asset_server.load("images/cursor.png")),
+                    .spawn(BoundedNodeBundle {
+                        z_index: ZIndex::Local(8),
+                        bounded: BoundedNode {
+                            image: Some(asset_server.load("images/cursor.png")),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     })
                     .id();
                 let you_are_here = commands
-                    .spawn(ImageBundle {
+                    .spawn(BoundedNodeBundle {
                         z_index: ZIndex::Local(7),
-                        image: UiImage::new(asset_server.load("images/you_are_here.png")),
+                        bounded: BoundedNode {
+                            image: Some(asset_server.load("images/you_are_here.png")),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     })
                     .id();
@@ -342,7 +352,8 @@ fn render_map(
             }
         };
 
-        let pixels_per_parcel = (window.width() / map.parcels_per_vw).round();
+        let pixels_per_parcel =
+            (window.width().min(window.height()) / map.parcels_per_vmin).round();
         data.pixels_per_parcel = pixels_per_parcel;
 
         let max_level = PIXELS_PER_PARCEL
@@ -441,7 +452,7 @@ fn render_map(
                             let h_image = asset_server.load::<Image>(PathBuf::from(&image_path));
 
                             let tile_entity = commands
-                                .spawn(ImageBundle {
+                                .spawn(BoundedNodeBundle {
                                     style: Style {
                                         position_type: PositionType::Absolute,
                                         left: Val::Px(left),
@@ -450,7 +461,10 @@ fn render_map(
                                         height: Val::Px(pixels_per_parcel * tile_parcels as f32),
                                         ..Default::default()
                                     },
-                                    image: UiImage::new(h_image),
+                                    bounded: BoundedNode {
+                                        image: Some(h_image),
+                                        color: None,
+                                    },
                                     z_index: ZIndex::Local(level as i32 + 1),
                                     ..Default::default()
                                 })

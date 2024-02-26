@@ -1,6 +1,8 @@
+use std::{any::type_name, str::FromStr};
+
 use anyhow::anyhow;
 use bevy::{math::Vec3Swizzles, prelude::*, window::PrimaryWindow};
-use bevy_dui::{DuiProps, DuiRegistry, DuiTemplate};
+use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
 use bevy_egui::{egui, EguiContext};
 
 use crate::{
@@ -171,7 +173,7 @@ impl DuiTemplate for DuiComboBoxTemplate {
         &self,
         commands: &mut bevy::ecs::system::EntityCommands,
         mut props: bevy_dui::DuiProps,
-        _: &mut bevy_dui::DuiContext,
+        ctx: &mut bevy_dui::DuiContext,
     ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
         let combobox = ComboBox {
             empty_text: props.take::<String>("empty-text")?.unwrap_or_default(),
@@ -179,8 +181,8 @@ impl DuiTemplate for DuiComboBoxTemplate {
                 .take::<Vec<String>>("options")?
                 .ok_or(anyhow!("no options for combobox"))?,
             selected: props.take::<isize>("selected")?.unwrap_or(-1),
-            allow_null: props.take_bool_like("allow-null")?.unwrap_or(false),
-            disabled: props.take_bool_like("disabled")?.unwrap_or(false),
+            allow_null: props.take_as::<bool>(ctx, "allow-null")?.unwrap_or(false),
+            disabled: props.take_as::<bool>(ctx, "disabled")?.unwrap_or(false),
         };
         commands.insert(combobox);
 
@@ -192,27 +194,96 @@ impl DuiTemplate for DuiComboBoxTemplate {
     }
 }
 
+pub trait DuiFromStr {
+    fn from_str(ctx: &DuiContext, value: &str) -> Result<Self, anyhow::Error>
+    where
+        Self: Sized;
+}
+
+macro_rules! impl_dui_str {
+    ($T:ty) => {
+        impl<'a> DuiFromStr for $T {
+            fn from_str(_: &DuiContext, value: &str) -> Result<Self, anyhow::Error> {
+                <Self as FromStr>::from_str(value)
+                    .map_err(|_| anyhow!("failed to convert `{value}` to {}", type_name::<$T>()))
+            }
+        }
+    };
+}
+
+impl_dui_str!(bool);
+
+impl DuiFromStr for Val {
+    fn from_str(_: &DuiContext, value: &str) -> Result<Self, anyhow::Error>
+    where
+        Self: Sized,
+    {
+        let content = format!("#inline {{a: {value}}}");
+        let ss = bevy_ecss::StyleSheetAsset::parse("", &content);
+        let Some(rule) = ss.iter().next() else {
+            anyhow::bail!("no rule?");
+        };
+        let Some(prop_value) = rule.properties.values().next() else {
+            anyhow::bail!("no value?");
+        };
+
+        prop_value
+            .val()
+            .ok_or_else(|| anyhow!("failed to parse `{value}` as Val"))
+    }
+}
+
+impl DuiFromStr for Color {
+    fn from_str(_: &DuiContext, value: &str) -> Result<Self, anyhow::Error>
+    where
+        Self: Sized,
+    {
+        let content = format!("#inline {{a: {value}}}");
+        let ss = bevy_ecss::StyleSheetAsset::parse("", &content);
+        let Some(rule) = ss.iter().next() else {
+            anyhow::bail!("no rule?");
+        };
+        let Some(prop_value) = rule.properties.values().next() else {
+            anyhow::bail!("no value?");
+        };
+
+        prop_value
+            .color()
+            .ok_or_else(|| anyhow!("failed to parse `{value}` as Color"))
+    }
+}
+
+impl<T: Asset> DuiFromStr for Handle<T> {
+    fn from_str(ctx: &DuiContext, value: &str) -> Result<Self, anyhow::Error>
+    where
+        Self: Sized,
+    {
+        Ok(ctx.asset_server().load::<T>(value.to_owned()))
+    }
+}
+
 pub trait PropsExt {
-    fn take_bool_like(&mut self, label: &str) -> Result<Option<bool>, anyhow::Error>;
+    fn take_as<T: DuiFromStr + 'static>(
+        &mut self,
+        ctx: &DuiContext,
+        label: &str,
+    ) -> Result<Option<T>, anyhow::Error>;
 }
 
 impl PropsExt for DuiProps {
-    fn take_bool_like(&mut self, label: &str) -> Result<Option<bool>, anyhow::Error> {
-        if let Ok(value) = self.take::<bool>(label) {
+    fn take_as<T: DuiFromStr + 'static>(
+        &mut self,
+        ctx: &DuiContext,
+        label: &str,
+    ) -> Result<Option<T>, anyhow::Error> {
+        if let Ok(value) = self.take::<T>(label) {
             return Ok(value);
         }
 
         if let Ok(Some(value)) = self.take::<String>(label) {
-            match value.chars().next() {
-                Some('f') | Some('F') => Ok(Some(false)),
-                Some('t') | Some('T') => Ok(Some(true)),
-                Some(_) => Err(anyhow!(
-                    "unrecognised bool string value `{value}` for key `{label}`"
-                )),
-                None => Ok(None),
-            }
+            Ok(Some(<T as DuiFromStr>::from_str(ctx, &value)?))
         } else {
-            Err(anyhow!("unrecognised bool-like type for key `{label}`"))
+            Err(anyhow!("unrecognised type for key `{label}`"))
         }
     }
 }

@@ -1,3 +1,4 @@
+pub mod bound_node;
 pub mod button;
 pub mod color_picker;
 pub mod combo_box;
@@ -26,6 +27,7 @@ use bevy::{
 };
 use bevy_dui::{DuiPlugin, DuiRegistry};
 use bevy_egui::EguiPlugin;
+use bound_node::BoundedNodePlugin;
 use button::{DuiButtonSetTemplate, DuiButtonTemplate, DuiTabGroupTemplate};
 use color_picker::ColorPickerPlugin;
 use combo_box::ComboBoxPlugin;
@@ -57,6 +59,7 @@ pub struct UiCorePlugin;
 impl Plugin for UiCorePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(DuiPlugin);
+        app.add_plugins(BoundedNodePlugin);
         app.add_plugins(EguiPlugin);
         app.add_plugins(UiActionPlugin);
         app.add_plugins(FocusPlugin);

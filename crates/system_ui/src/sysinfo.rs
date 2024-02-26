@@ -269,7 +269,7 @@ fn setup_minimap(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRe
     commands.entity(components.named("map-node")).insert((
         MapTexture {
             center: Default::default(),
-            parcels_per_vw: 100.0,
+            parcels_per_vmin: 100.0,
             icon_min_size_vmin: 0.03,
         },
         Interaction::default(),

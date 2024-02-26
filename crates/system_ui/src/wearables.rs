@@ -306,10 +306,12 @@ fn set_wearables_content(
                     styles: Some(InteractStyles {
                         active: Some(InteractStyle {
                             background: Some(Color::ORANGE),
+                            border: Some(Color::BLACK),
                             ..Default::default()
                         }),
                         inactive: Some(InteractStyle {
                             background: Some(Color::rgba(0.0, 0.0, 0.0, 0.0)),
+                            border: Some(Color::NONE),
                             ..Default::default()
                         }),
                         ..Default::default()
@@ -768,10 +770,13 @@ fn update_wearables_list(
             if selected.0.as_ref().map(WearableEntry::urn) == Some(wearable.urn()) {
                 initial = Some(ix);
             }
-            let inactive_color = if worn.contains(wearable.id()) {
-                Color::ORANGE
+            let (inactive_color, inactive_border) = if worn.contains(wearable.id()) {
+                (Color::ORANGE, Color::rgb(0.5, 0.325, 0.0))
             } else {
-                Color::rgba(0.0, 0.0, 0.0, 0.0)
+                (
+                    Color::rgba(0.0, 0.0, 0.0, 0.0),
+                    Color::rgba(0.0, 0.0, 0.0, 0.0),
+                )
             };
 
             let content = commands
@@ -786,14 +791,17 @@ fn update_wearables_list(
                 styles: Some(InteractStyles {
                     active: Some(InteractStyle {
                         background: Some(Color::RED),
+                        border: Some(Color::rgb(0.5, 0.0, 0.0)),
                         ..Default::default()
                     }),
                     inactive: Some(InteractStyle {
                         background: Some(inactive_color),
+                        border: Some(inactive_border),
                         ..Default::default()
                     }),
                     disabled: Some(InteractStyle {
                         background: Some(Color::rgba(0.0, 0.0, 0.0, 0.0)),
+                        border: Some(Color::rgba(0.0, 0.0, 0.0, 0.0)),
                         ..Default::default()
                     }),
                     ..Default::default()

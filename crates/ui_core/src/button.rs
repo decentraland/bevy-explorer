@@ -142,7 +142,7 @@ impl DuiTemplate for DuiButtonTemplate {
                 ..Default::default()
             }),
             disabled: Some(InteractStyle {
-                background: Some(Color::rgb(0.4, 0.4, 0.4)),
+                background: Some(Color::rgb(0.6, 0.6, 0.6)),
                 ..Default::default()
             }),
         });
@@ -270,7 +270,7 @@ impl DuiTemplate for DuiTabGroupTemplate {
         let on_changed = props
             .take::<On<DataChanged>>("onchanged")?
             .ok_or(anyhow!("no action for tabgroup"))?;
-        let toggle = props.take_bool_like("toggle")?.unwrap_or(false);
+        let toggle = props.take_as::<bool>(ctx, "toggle")?.unwrap_or(false);
 
         let mut active_entities = Vec::default();
 

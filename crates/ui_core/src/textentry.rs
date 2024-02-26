@@ -167,12 +167,12 @@ impl DuiTemplate for DuiTextEntryTemplate {
         &self,
         commands: &mut bevy::ecs::system::EntityCommands,
         mut props: bevy_dui::DuiProps,
-        _: &mut bevy_dui::DuiContext,
+        ctx: &mut bevy_dui::DuiContext,
     ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
         let textentry = TextEntry {
             hint_text: props.take::<String>("hint-text")?.unwrap_or_default(),
             content: props.take::<String>("initial-text")?.unwrap_or_default(),
-            accept_line: props.take_bool_like("disabled")?.unwrap_or(false),
+            accept_line: props.take_as::<bool>(ctx, "disabled")?.unwrap_or(false),
             ..Default::default()
         };
         commands.insert(textentry);

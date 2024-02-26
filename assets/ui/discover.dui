@@ -41,13 +41,19 @@
 </define-template>
 
 <define-template id="discover-page">
-    <div style="width: 30vmin; height: 25vmin; margin: 1.5vmin; overflow-x: hidden; overflow-y: hidden;">
-        <div style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 5vmin;" image="@image" />
-        <div style="position-type: absolute; left: 0px; right: 0px; top: 20vmin; bottom: 0vmin; background-color: white; flex-direction: column; padding: 0.5vmin;">
+    <bounds 
+        style="width: 30vmin; height: 25vmin; overflow-x: hidden; overflow-y: hidden; margin: 1.5vmin;"
+        corner-size="2vmin"
+        blend-size="0.5vmin"
+        border-size="1vmin"
+        border-color="#0000ff"
+    >
+        <bounded style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 5vmin;" bound-image="@image" />
+        <bounded style="position-type: absolute; left: 0px; right: 0px; top: 20vmin; bottom: 0vmin; flex-direction: column; padding: 0vmin 1vmin 1vmin 1vmin;" color="white">
             <med-text style="color: black;" text="@label" />
             <small-text style="color: black;" text="@author" />
-        </div>
-        <div style="position-type: absolute; bottom: 5vmin; right: 0vmin; background-color: #000000aa;">
+        </bounded>
+        <div style="position-type: absolute; bottom: 5vmin; right: 0.5vmin; background-color: #000000aa;">
             <div style="flex-direction: row; align-items: center;">
                 <div style="width: 2vmin; height: 2vmin; margin: 0px 0.1vmin 0px 1vmin;" image="images/discover/eye.png" />
                 <med-text text="@views" />
@@ -56,24 +62,36 @@
                 <div style="margin: 0px 0.1vmin 0px 1vmin;" />
             </div>
         </div>
-    </div>
+    </bounds>
 </define-template>
 
 <define-template id="discover-popup">
     <fullscreen-block>
-        <div style="
-            flex-direction: column;
-            align-self: center;
-            border: 0.7vmin;
-            border-color: #2222aa;
-            padding: 1vmin;
-            background-color: #8888cccc;
-        ">
+        <bounds 
+            style="
+                flex-direction: column;
+                align-self: center;
+                xborder: 0.7vmin;
+                xborder-color: #2222aa;
+                xpadding: 1vmin;
+                xbackground-color: #8888cccc;
+                max-width: 80%;
+                padding: 2vmin;
+            "
+            corner-size="4vmin"
+            blend-size="1vmin"
+            border-size="2vmin"
+            border-color="#0000ff"
+            color="#8888ccaa"
+        >
             <div style="justify-content: flex-end;">
                 <button label="X" onclick="@close" />
             </div>
             <div style="justify-content: space-around;">
-                <div style="width: 30vmin; height: 20vmin; margin: 1vmin;" image="@image" />
+                <bounds style="width: 30vmin; height: 20vmin; margin: 1vmin;" bound-image="@image" corner-size="2vmin"             blend-size="0vmin"
+            border-size="2vmin"
+            border-color="#000000"
+ />
                 <div style="flex-direction: column">
                     <large-text style="color: black" text="@title" />
                     <div>
@@ -119,6 +137,6 @@
                     <med-text text="@updated" />
                 </div>
             </div>
-        </div>
+        </bounds>
     </fullscreen-block>
 </define-template>

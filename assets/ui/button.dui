@@ -7,9 +7,16 @@
         justify-content: center;
         margin: 0.35vmin 0.7vmin 0.35vmin 0.7vmin;
     ">
-        <nineslice id="button-background" slice-image="images/button.png" slice-border="37.5%" slice-color="#bbbbbb" />
+        <bounds id="button-background" 
+            style="position-type: absolute; width: 100%; height: 100%;"
+            color="#bbbbbb" 
+            corner-size="1.5vmin"
+            blend-size="0.125vmin"
+            border-size="0.75vmin"
+            border-color="#000000"
+        />
         <div style="
-            margin: 0.7vmin;
+            margin: 1vmin;
             align-self: stretch;
             align-items: center;
             justify-content: center;
@@ -30,8 +37,16 @@
         align-items: center;
         justify-content: center;
         margin: 0.35vmin 0.7vmin 0.35vmin 0.7vmin;
+        padding: 1vmin;
     ">
-        <nineslice id="button-background" slice-image="images/button.png" slice-border="37.5%" slice-color="#bbbbbb" />
+        <bounds id="button-background" 
+            style="position-type: absolute; width: 100%; height: 100%;"
+            color="#bbbbbb" 
+            corner-size="1.5vmin"
+            blend-size="0.125vmin"
+            border-size="0.75vmin"
+            border-color="#000000"
+        />
     </div>
 </define-template>
 
@@ -44,10 +59,14 @@
         justify-content: center;
         margin: 0.35vmin 0.7vmin 0.35vmin 0.7vmin;
     ">
-        <div id="button-background" style="
-            position-type: absolute;
-            width: 100%;
-            height: 100%;
-        " image="@image" />
+        <bounds id="button-background" 
+            style="position-type: absolute; width: 100%; height: 100%;"
+            color="#bbbbbb" 
+            corner-size="1.5vmin"
+            blend-size="0.125vmin"
+            border-size="0.75vmin"
+            border-color="#000000"
+            image="@image"
+        />
     </div>
 </define-template>

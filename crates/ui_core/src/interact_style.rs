@@ -3,12 +3,17 @@
 // todo: add more components (maybe make the component generic and change to InteractStylePlugin<T> ?)
 use bevy::prelude::*;
 
-use crate::{nine_slice::Ui9Slice, ui_actions::Enabled};
+use crate::{
+    bound_node::{BoundedNode, NodeBounds},
+    nine_slice::Ui9Slice,
+    ui_actions::Enabled,
+};
 
 #[derive(Clone, Default, Debug)]
 pub struct InteractStyle {
     pub background: Option<Color>,
     pub image: Option<Handle<Image>>,
+    pub border: Option<Color>,
 }
 
 #[derive(Component, Clone, Default)]
@@ -39,6 +44,8 @@ fn set_interaction_style(
             Option<&mut BackgroundColor>,
             Option<&mut Ui9Slice>,
             Option<&mut UiImage>,
+            Option<&mut BoundedNode>,
+            Option<&mut NodeBounds>,
             Option<&Interaction>,
             Option<&Active>,
             Option<&Enabled>,
@@ -57,6 +64,8 @@ fn set_interaction_style(
         maybe_bg,
         maybe_nineslice,
         maybe_image,
+        maybe_bounded,
+        maybe_bounds,
         maybe_interaction,
         maybe_active,
         maybe_enabled,
@@ -84,14 +93,29 @@ fn set_interaction_style(
             if let Some(image) = &style.image {
                 nineslice.image = image.clone();
             }
-        } else {
-            if let (Some(mut bg), Some(req_bg)) = (maybe_bg, style.background) {
-                *bg = BackgroundColor(req_bg);
-            }
+        }
 
-            if let (Some(mut ui_image), Some(image)) = (maybe_image, &style.image) {
-                ui_image.texture = image.clone();
+        if let Some(mut bounded) = maybe_bounded {
+            if let Some(req_bg) = style.background {
+                bounded.color = Some(req_bg);
             }
+            if let Some(image) = &style.image {
+                bounded.image = Some(image.clone());
+            }
+        }
+
+        if let Some(mut bounds) = maybe_bounds {
+            if let Some(border) = style.border {
+                bounds.border_color = border;
+            }
+        }
+
+        if let (Some(mut bg), Some(req_bg)) = (maybe_bg, style.background) {
+            *bg = BackgroundColor(req_bg);
+        }
+
+        if let (Some(mut ui_image), Some(image)) = (maybe_image, &style.image) {
+            ui_image.texture = image.clone();
         }
     }
 }
