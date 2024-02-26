@@ -368,7 +368,7 @@ pub(crate) fn load_scene_javascript(
             }
         } else {
             ipfas.load_url(
-                "https://renderer-artifacts.decentraland.org/sdk7-adaption-layer/main/index.min.js",
+                "https://renderer-artifacts.decentraland.org/sdk7-adaption-layer/dev/index.min.js",
             )
         };
 
