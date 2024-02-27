@@ -217,10 +217,15 @@ pub fn show_settings(
     realm: Res<CurrentRealm>,
     current_profile: Res<CurrentUserProfile>,
     mut ev: EventReader<ShowSettingsEvent>,
+    existing: Query<(), With<SettingsDialog>>,
 ) {
     let Some(ev) = ev.read().last() else {
         return;
     };
+
+    if existing.iter().next().is_some() {
+        return;
+    }
 
     let title_initial = match ev.0 {
         SettingsTab::Discover => 0usize,
