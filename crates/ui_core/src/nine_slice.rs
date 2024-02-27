@@ -96,7 +96,7 @@ fn update_slices(
             .bottom
             .resolve(image_size.y, Vec2::ZERO)
             .unwrap_or(0.0);
-        let middle_height_px = image_size.y - top_px - bottom_px;
+        let middle_height_px = (image_size.y - top_px - bottom_px).max(0.01);
 
         let row_data = [
             ItemData {
@@ -132,7 +132,7 @@ fn update_slices(
             .right
             .resolve(image_size.x, Vec2::ZERO)
             .unwrap_or(0.0);
-        let middle_width_px = image_size.x - left_px - right_px;
+        let middle_width_px = (image_size.x - left_px - right_px).max(0.01);
 
         let col_data = [
             ItemData {

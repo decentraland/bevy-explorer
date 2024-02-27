@@ -643,8 +643,8 @@ fn layout_scene_ui(
                                                     });
                                                 },
                                                 BackgroundTextureMode::Stretch(ref uvs) => {
-                                                    let mid_width = 1.0 - uvs.right - uvs.left;
-                                                    let mid_height = 1.0 - uvs.top - uvs.bottom;
+                                                    let mid_width = (1.0 - uvs.right - uvs.left).max(0.01);
+                                                    let mid_height = (1.0 - uvs.top - uvs.bottom).max(0.01);
 
                                                     ent_cmds.with_children(|c| {
                                                         c.spawn(NodeBundle {
