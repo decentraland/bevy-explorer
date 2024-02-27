@@ -197,7 +197,7 @@ fn update_bounded_nodes(
                 .or_default()
                 .push((mat.id(), bound_parent == ent));
         }
-        commands.entity(ent).insert(mat);
+        commands.entity(ent).try_insert(mat);
     }
 
     for removed in removed_nodes.read() {
