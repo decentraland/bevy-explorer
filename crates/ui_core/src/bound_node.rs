@@ -178,7 +178,6 @@ fn update_bounded_nodes(
                 .resolve(node.unrounded_size().min_element(), window)
                 .unwrap_or(1.0),
         );
-        println!("{}", mat.bounds.edge_scale);
         mat.bounds.corner_size = bounds
             .corner_size
             .resolve(node.unrounded_size().min_element(), window)
