@@ -1,14 +1,14 @@
 <define-template id="minimap">
     <bounds 
         style="flex-direction: column; position-type: absolute; left: 1vmin; top: 1vmin; width: 25vmin;"
-        corner-size="4vmin"
-        blend-size="1vmin"
-        border-size="2vmin"
+        corner-size="2vmin"
+        blend-size="0.5vmin"
+        border-size="1vmin"
         border-color="#000000ff"
         color="#8888cc77"
     >
         <div style="width: 100%; aspect-ratio: 1; overflow-x: hidden; overflow-y: hidden;" z-index="-1">
-            <bounds id="map-node" style="flex-grow: 1; overflow-x: hidden; overflow-y: hidden;" corner-size="4vmin" blend-size="1vmin" border-size="2vmin" border-color="#00000000"/>
+            <bounds id="map-node" style="flex-grow: 1; overflow-x: hidden; overflow-y: hidden;" corner-size="2vmin" blend-size="0.5vmin" border-size="1vmin" border-color="#00000000"/>
         </div>
         <med-text id="title" style="left: 1vmin; margin: 1vmin;" text="" />
         <med-text id="position" style="left: 1vmin; margin: 1vmin 1vmin 2vmin 1vmin;" text="" />
