@@ -9,12 +9,25 @@ use bevy_dui::{DuiRegistry, DuiTemplate};
 
 use crate::combo_box::PropsExt;
 
-#[derive(Component, Default)]
+#[derive(Component)]
 pub struct NodeBounds {
     pub corner_size: Val,
     pub corner_blend_size: Val,
     pub border_size: Val,
+    pub edge_scale: UiRect,
     pub border_color: Color,
+}
+
+impl Default for NodeBounds {
+    fn default() -> Self {
+        Self {
+            corner_size: Default::default(),
+            corner_blend_size: Default::default(),
+            border_size: Default::default(),
+            edge_scale: UiRect::all(Val::Auto),
+            border_color: Default::default(),
+        }
+    }
 }
 
 #[derive(Component, Default, Clone, Debug)]
@@ -67,6 +80,7 @@ impl Plugin for BoundedNodePlugin {
 struct GpuBoundsData {
     bounds: Vec4,
     border_color: Vec4,
+    edge_scale: Vec4,
     corner_size: f32,
     corner_blend_size: f32,
     border_size: f32,
@@ -77,6 +91,7 @@ impl Default for GpuBoundsData {
         Self {
             bounds: Vec4::new(f32::MIN, f32::MIN, f32::MAX, f32::MAX),
             border_color: Default::default(),
+            edge_scale: Default::default(),
             corner_size: Default::default(),
             corner_blend_size: Default::default(),
             border_size: Default::default(),
@@ -141,6 +156,29 @@ fn update_bounded_nodes(
             center.x + size.x * 0.5,
             center.y + size.y * 0.5,
         );
+        mat.bounds.edge_scale = Vec4::new(
+            bounds
+                .edge_scale
+                .left
+                .resolve(node.unrounded_size().min_element(), window)
+                .unwrap_or(1.0),
+            bounds
+                .edge_scale
+                .top
+                .resolve(node.unrounded_size().min_element(), window)
+                .unwrap_or(1.0),
+            bounds
+                .edge_scale
+                .right
+                .resolve(node.unrounded_size().min_element(), window)
+                .unwrap_or(1.0),
+            bounds
+                .edge_scale
+                .bottom
+                .resolve(node.unrounded_size().min_element(), window)
+                .unwrap_or(1.0),
+        );
+        println!("{}", mat.bounds.edge_scale);
         mat.bounds.corner_size = bounds
             .corner_size
             .resolve(node.unrounded_size().min_element(), window)
@@ -244,6 +282,9 @@ impl DuiTemplate for DuiNodeBounds {
                 .take_as::<Val>(ctx, "corner-size")?
                 .unwrap_or_default(),
             corner_blend_size: props.take_as::<Val>(ctx, "blend-size")?.unwrap_or_default(),
+            edge_scale: props
+                .take_as::<UiRect>(ctx, "edge-scale")?
+                .unwrap_or(UiRect::all(Val::Auto)),
             border_size: props
                 .take_as::<Val>(ctx, "border-size")?
                 .unwrap_or_default(),

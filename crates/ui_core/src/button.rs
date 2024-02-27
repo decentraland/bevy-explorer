@@ -4,6 +4,7 @@ use bevy_dui::{DuiContext, DuiProps, DuiTemplate, NodeMap};
 use common::util::TryPushChildrenEx;
 
 use crate::{
+    bound_node::NodeBounds,
     combo_box::PropsExt,
     interact_style::{Active, InteractStyle, InteractStyles},
     ui_actions::{close_ui, Click, DataChanged, Enabled, On, UiCaller},
@@ -271,6 +272,7 @@ impl DuiTemplate for DuiTabGroupTemplate {
             .take::<On<DataChanged>>("onchanged")?
             .ok_or(anyhow!("no action for tabgroup"))?;
         let toggle = props.take_as::<bool>(ctx, "toggle")?.unwrap_or(false);
+        let edge_scale = props.take_as::<UiRect>(ctx, "edge-scale")?;
 
         let mut active_entities = Vec::default();
 
@@ -307,10 +309,16 @@ impl DuiTemplate for DuiTabGroupTemplate {
                     ),
                 )
                 .map(|nodes| {
-                    commands
-                        .commands()
-                        .entity(nodes["button-background"])
-                        .insert(Active(Some(ix) == start_index));
+                    let mut bg = commands.commands().entity(nodes["button-background"]);
+
+                    bg.insert(Active(Some(ix) == start_index));
+
+                    if let Some(flat_side) = edge_scale.clone() {
+                        bg.modify_component(move |bounds: &mut NodeBounds| {
+                            bounds.edge_scale = flat_side
+                        });
+                    }
+
                     active_entities.push(nodes.clone());
                     nodes["root"]
                 })

@@ -6,6 +6,7 @@
 struct Bounds {
     bounds: vec4<f32>,
     border_color: vec4<f32>,
+    edge_scale: vec4<f32>,
     corner_size: f32,
     corner_blend_size: f32,
     border_size: f32,
@@ -19,12 +20,12 @@ struct Bounds {
 fn edge_color(uv: vec2<f32>, position: vec4<f32>, in_color: vec4<f32>) -> vec4<f32> {
     let corner_size = bounds_data.corner_size;
     let bounds = bounds_data.bounds;
+    let edges = bounds_data.edge_scale;
 
-    let left = max(0.0, (bounds.x + corner_size) - position.x);
-    let right = max(0.0, position.x - (bounds.z - corner_size));
-    let top = max(0.0, (bounds.y + corner_size) - position.y);
-    let bottom = max(0.0, position.y - (bounds.w - corner_size));
-
+    let left = max(0.0, (bounds.x + corner_size) - position.x) * edges.x;
+    let right = max(0.0, position.x - (bounds.z - corner_size)) * edges.y;
+    let top = max(0.0, (bounds.y + corner_size) - position.y) * edges.z;
+    let bottom = max(0.0, position.y - (bounds.w - corner_size)) * edges.w;
     let corner_dist_sq = max(left * left, right * right) + max(top * top, bottom * bottom);
     let corner_end_size_sq = corner_size * corner_size;
 

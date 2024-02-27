@@ -233,6 +233,26 @@ impl DuiFromStr for Val {
     }
 }
 
+impl DuiFromStr for UiRect {
+    fn from_str(_: &DuiContext, value: &str) -> Result<Self, anyhow::Error>
+    where
+        Self: Sized,
+    {
+        let content = format!("#inline {{a: {value}}}");
+        let ss = bevy_ecss::StyleSheetAsset::parse("", &content);
+        let Some(rule) = ss.iter().next() else {
+            anyhow::bail!("no rule?");
+        };
+        let Some(prop_value) = rule.properties.values().next() else {
+            anyhow::bail!("no value?");
+        };
+
+        prop_value
+            .rect()
+            .ok_or_else(|| anyhow!("failed to parse `{value}` as Rect"))
+    }
+}
+
 impl DuiFromStr for Color {
     fn from_str(_: &DuiContext, value: &str) -> Result<Self, anyhow::Error>
     where
