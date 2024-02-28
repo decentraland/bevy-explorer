@@ -13,7 +13,7 @@ use tokio::sync::mpsc::Receiver;
 use ipfs::{IpfsResource, SceneJsFile};
 use wallet::Wallet;
 
-use crate::RpcCalls;
+use crate::{js::engine::crdt_send_to_renderer, RpcCalls};
 
 #[cfg(feature = "inspect")]
 use crate::js::inspector::InspectorServer;
@@ -281,9 +281,22 @@ pub(crate) fn scene_thread(
         Ok(script) => script,
     };
 
+    debug!(
+        "[scene thread {scene_id:?}] post script execute, {} rpc calls",
+        state.borrow().borrow::<RpcCalls>().len()
+    );
+
+    // send any initial rpc requests
+    crdt_send_to_renderer(state.clone(), &[]);
+
     // run startup function
     let result =
         rt.block_on(async { run_script(&mut runtime, &script, "onStart", |_| Vec::new()).await });
+
+    debug!(
+        "[scene thread {scene_id:?}] post startup, {} rpc calls",
+        state.borrow().borrow::<RpcCalls>().len()
+    );
 
     if let Err(e) = result {
         // ignore failure to send failure

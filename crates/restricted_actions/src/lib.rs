@@ -466,16 +466,30 @@ fn get_user_data(
     others: Query<(&ForeignPlayer, &UserProfile)>,
     me: Res<Wallet>,
     mut events: EventReader<RpcCall>,
-    mut pending_primary_requests: Local<Vec<RpcResultSender<Result<SerializedProfile, ()>>>>,
+    mut pending_primary_requests: Local<
+        Vec<(Entity, RpcResultSender<Result<SerializedProfile, ()>>)>,
+    >,
+    mut scenes: Query<&mut RendererSceneContext>,
 ) {
-    for (user, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::GetUserData { user, response } => Some((user, response)),
+    for (user, scene, response) in events.read().filter_map(|ev| match ev {
+        RpcCall::GetUserData {
+            user,
+            scene,
+            response,
+        } => Some((user, scene, response)),
         _ => None,
     }) {
+        debug!("process get_user_data");
         match user {
             None => match profile.profile.as_ref() {
                 Some(profile) => response.send(Ok(profile.content.clone())),
-                None => pending_primary_requests.push(response.clone()),
+                None => {
+                    if let Ok(mut ctx) = scenes.get_mut(*scene) {
+                        // force scene to wait till user data is available
+                        ctx.blocked.insert("get_user_data");
+                    }
+                    pending_primary_requests.push((*scene, response.clone()))
+                }
             },
             Some(address) => {
                 if let Some((_, profile)) = others
@@ -503,7 +517,10 @@ fn get_user_data(
 
     if !pending_primary_requests.is_empty() {
         if let Some(profile) = profile.profile.as_ref() {
-            for sender in pending_primary_requests.drain(..) {
+            for (scene, sender) in pending_primary_requests.drain(..) {
+                if let Ok(mut ctx) = scenes.get_mut(scene) {
+                    ctx.blocked.remove("get_user_data");
+                }
                 sender.send(Ok(profile.content.clone()));
             }
         }

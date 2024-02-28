@@ -313,7 +313,7 @@ impl DuiTemplate for DuiTabGroupTemplate {
 
                     bg.insert(Active(Some(ix) == start_index));
 
-                    if let Some(flat_side) = edge_scale.clone() {
+                    if let Some(flat_side) = edge_scale {
                         bg.modify_component(move |bounds: &mut NodeBounds| {
                             bounds.edge_scale = flat_side
                         });

@@ -128,6 +128,7 @@ pub enum RpcCall {
     },
     GetUserData {
         user: Option<String>,
+        scene: Entity,
         response: RpcResultSender<Result<SerializedProfile, ()>>,
     },
     GetConnectedPlayers {

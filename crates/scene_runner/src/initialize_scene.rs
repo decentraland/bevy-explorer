@@ -539,7 +539,7 @@ pub(crate) fn initialize_scene(
         Entity,
         &mut SceneLoading,
         &Handle<SceneJsFile>,
-        &RendererSceneContext,
+        &mut RendererSceneContext,
     )>,
     scene_js_files: Res<Assets<SceneJsFile>>,
     asset_server: Res<AssetServer>,
@@ -547,7 +547,7 @@ pub(crate) fn initialize_scene(
     wallet: Res<Wallet>,
     testing_data: Res<TestingData>,
 ) {
-    for (root, mut state, h_code, context) in loading_scenes.iter_mut() {
+    for (root, mut state, h_code, mut context) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
             continue;
         }
@@ -605,6 +605,9 @@ pub(crate) fn initialize_scene(
                 .map_or(false, |inspect_hash| inspect_hash == &context.hash),
             testing_data.test_mode,
         );
+
+        // mark context as in flight so we wait for initial RPC requests
+        context.in_flight = true;
 
         commands
             .entity(root)

@@ -5,7 +5,7 @@ use common::{profile::SerializedProfile, rpc::RpcCall};
 use deno_core::{anyhow, error::AnyError, op, Op, OpDecl, OpState};
 use serde::Serialize;
 
-use crate::RpcCalls;
+use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
@@ -45,33 +45,45 @@ struct UserData {
 async fn op_get_user_data(state: Rc<RefCell<OpState>>) -> Result<UserData, AnyError> {
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<SerializedProfile, ()>>();
 
+    let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
+    debug!("[{scene:?}] -> get_user_data");
+
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::GetUserData {
             user: None, // current user
+            scene,
             response: sx.into(),
         });
 
-    rx.await
+    let res = rx
+        .await
         .map_err(|e| anyhow::anyhow!(e))?
         .map(Into::into)
         .map(|data| {
             debug!("op_get_user_data: {:?}", data);
             data
         })
-        .map_err(|_| anyhow::anyhow!("Not found"))
+        .map_err(|_| anyhow::anyhow!("Not found"));
+
+    debug!("[{scene:?}] <- get_user_data {res:?}");
+    res
 }
 
 #[op]
 async fn op_get_player_data(state: Rc<RefCell<OpState>>, id: String) -> Result<UserData, AnyError> {
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<SerializedProfile, ()>>();
 
+    let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
+    debug!("[{scene:?}] -> get_player_data");
+
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::GetUserData {
             user: Some(id),
+            scene,
             response: sx.into(),
         });
 

@@ -712,12 +712,12 @@ fn receive_scene_updates(
                     None
                 }
                 SceneResponse::Error(scene_id, message) => {
-                    error!("[{scene_id:?}] error: {message}");
                     if let Some(root) = updates.scene_ids.get(&scene_id) {
                         if let Ok(mut context) = scenes.get_mut(*root) {
                             context.broken = true;
                             context.in_flight = false;
                             let timestamp = context.total_runtime as f64 + 1.0;
+                            error!("[{scene_id:?} @ {}] error: {message}", context.tick_number);
                             context.log(SceneLogMessage {
                                 timestamp,
                                 level: SceneLogLevel::SystemError,
