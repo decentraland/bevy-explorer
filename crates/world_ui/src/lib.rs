@@ -46,6 +46,7 @@ pub struct WorldUi {
     pub resize_height: Option<ResizeAxis>,
     pub pix_per_m: f32,
     pub valign: f32,
+    pub halign: f32,
     pub add_y_pix: f32,
     pub bounds: Vec4,
     pub ui_root: Entity,
@@ -149,6 +150,7 @@ fn update_world_ui(
 
         let material_data = TextQuadData {
             valign: ui.valign,
+            halign: ui.halign,
             pix_per_m: ui.pix_per_m,
             add_y_pix: ui.add_y_pix,
         };
@@ -270,6 +272,7 @@ pub struct TextQuad {
 #[derive(Clone, ShaderType)]
 pub struct TextQuadData {
     pub valign: f32,
+    pub halign: f32,
     pub pix_per_m: f32,
     pub add_y_pix: f32,
 }
