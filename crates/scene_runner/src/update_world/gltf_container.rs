@@ -12,7 +12,7 @@ use bevy::{
         mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
         view::NoFrustumCulling,
     },
-    scene::InstanceId,
+    scene::{scene_spawner_system, InstanceId},
     utils::{HashMap, HashSet},
 };
 use rapier3d_f64::prelude::*;
@@ -53,6 +53,7 @@ impl Plugin for GltfDefinitionPlugin {
         );
 
         app.add_systems(Update, update_gltf.in_set(SceneSets::PostLoop));
+        app.add_systems(SpawnScene, update_ready_gltfs.after(scene_spawner_system));
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
     }
 }
@@ -92,39 +93,16 @@ fn update_gltf(
         (Entity, &SceneEntity, &Handle<Gltf>, &GltfDefinition),
         (With<GltfDefinition>, Without<GltfLoaded>),
     >,
-    ready_gltfs: Query<
-        (Entity, &SceneEntity, &GltfLoaded, &GltfDefinition),
-        Without<GltfProcessed>,
-    >,
-    gltf_spawned_entities: Query<(
-        Option<&Name>,
-        &Transform,
-        &Parent,
-        Option<&AnimationPlayer>,
-        Option<&Handle<Mesh>>,
-        Option<&GltfExtras>,
-        Option<&SkinnedMesh>,
-        Option<&Handle<StandardMaterial>>,
-    )>,
     scene_def_handles: Query<&Handle<EntityDefinition>>,
-    (scene_defs, gltfs, images, ipfas, mut base_mats, mut bound_mats): (
+    (scene_defs, gltfs, images, ipfas, mut base_mats): (
         Res<Assets<EntityDefinition>>,
         Res<Assets<Gltf>>,
         Res<Assets<Image>>,
         IpfsAssetServer,
         ResMut<Assets<StandardMaterial>>,
-        ResMut<Assets<SceneMaterial>>,
     ),
     mut scene_spawner: ResMut<SceneSpawner>,
-    mut meshes: ResMut<Assets<Mesh>>,
     mut contexts: Query<&mut RendererSceneContext>,
-    _debug_query: Query<(
-        Entity,
-        Option<&Name>,
-        Option<&Children>,
-        Option<&SkinnedMesh>,
-        &Transform,
-    )>,
     mut instances_to_despawn_when_ready: Local<Vec<InstanceId>>,
 ) {
     // clean up old instances
@@ -264,7 +242,37 @@ fn update_gltf(
             }
         }
     }
+}
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn update_ready_gltfs(
+    mut commands: Commands,
+    ready_gltfs: Query<
+        (Entity, &SceneEntity, &GltfLoaded, &GltfDefinition),
+        Without<GltfProcessed>,
+    >,
+    gltf_spawned_entities: Query<(
+        Option<&Name>,
+        &Transform,
+        &Parent,
+        Option<&AnimationPlayer>,
+        Option<&Handle<Mesh>>,
+        Option<&GltfExtras>,
+        Option<&SkinnedMesh>,
+        Option<&Handle<StandardMaterial>>,
+    )>,
+    (base_mats, mut bound_mats): (Res<Assets<StandardMaterial>>, ResMut<Assets<SceneMaterial>>),
+    scene_spawner: Res<SceneSpawner>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut contexts: Query<&mut RendererSceneContext>,
+    _debug_query: Query<(
+        Entity,
+        Option<&Name>,
+        Option<&Children>,
+        Option<&SkinnedMesh>,
+        &Transform,
+    )>,
+) {
     for (bevy_scene_entity, dcl_scene_entity, loaded, definition) in ready_gltfs.iter() {
         if loaded.0.is_none() {
             // nothing to process

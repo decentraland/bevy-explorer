@@ -1,6 +1,7 @@
 use bevy::{
     prelude::*,
-    tasks::{IoTaskPool, Task}, window::PrimaryWindow,
+    tasks::{IoTaskPool, Task},
+    window::PrimaryWindow,
 };
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
@@ -214,7 +215,7 @@ fn login(
                 *task = Some(IoTaskPool::get().spawn(async move {
                     let (root_address, local_wallet, auth, _) =
                         try_create_remote_ephemeral().await?;
-                    
+
                     let profile = get_remote_profile(root_address, ipfs).await.ok();
 
                     Ok((root_address, local_wallet, auth, profile))
