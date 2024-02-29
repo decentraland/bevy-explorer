@@ -32,14 +32,16 @@ struct AvatarForUserData {
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
-struct UserData {
+pub struct UserData {
     display_name: String,
-    public_key: Option<String>,
+    pub public_key: Option<String>,
     has_connected_web3: bool,
     user_id: String,
     version: i64,
     avatar: Option<AvatarForUserData>,
 }
+
+pub struct UserEthAddress(pub String);
 
 #[op]
 async fn op_get_user_data(state: Rc<RefCell<OpState>>) -> Result<UserData, AnyError> {
@@ -57,18 +59,16 @@ async fn op_get_user_data(state: Rc<RefCell<OpState>>) -> Result<UserData, AnyEr
             response: sx.into(),
         });
 
-    let res = rx
+    let profile = rx
         .await
-        .map_err(|e| anyhow::anyhow!(e))?
-        .map(Into::into)
-        .map(|data| {
-            debug!("op_get_user_data: {:?}", data);
-            data
-        })
-        .map_err(|_| anyhow::anyhow!("Not found"));
+        .map_err(|e| anyhow::anyhow!(e))?.map_err(|_| anyhow::anyhow!("Not found"))?;
 
-    debug!("[{scene:?}] <- get_user_data {res:?}");
-    res
+    state.borrow_mut().put(UserEthAddress(profile.eth_address.clone()));
+
+    let user_data = profile.into();
+
+    debug!("[{scene:?}] <- get_user_data {user_data:?}");
+    Ok(user_data)
 }
 
 #[op]

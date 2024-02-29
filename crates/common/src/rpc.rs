@@ -175,11 +175,15 @@ pub enum RpcCall {
     },
     SendMessageBus {
         scene: Entity,
-        message: String,
+        data: Vec<u8>,
     },
     SubscribeMessageBus {
         hash: String,
         sender: RpcEventSender,
+    },
+    SubscribeBinaryBus {
+        hash: String,
+        sender: tokio::sync::mpsc::UnboundedSender<(String, Vec<u8>)>,
     },
     TestPlan {
         scene: Entity,

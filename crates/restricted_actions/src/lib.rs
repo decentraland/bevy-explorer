@@ -760,19 +760,19 @@ fn send_scene_messages(
     transports: Query<&Transport>,
     scenes: Query<&SceneHash>,
 ) {
-    for (scene, message) in events.read().filter_map(|c| match c {
-        RpcCall::SendMessageBus { scene, message } => Some((scene, message)),
+    for (scene, data) in events.read().filter_map(|c| match c {
+        RpcCall::SendMessageBus { scene, data } => Some((scene, data)),
         _ => None,
     }) {
         let Ok(hash) = scenes.get(*scene) else {
             continue;
         };
 
-        debug!("messagebus sent from scene {}: {:?}", &hash.0, message);
+        debug!("messagebus sent from scene {}: {:?}", &hash.0, data);
         let message = rfc4::Packet {
             message: Some(rfc4::packet::Message::Scene(rfc4::Scene {
                 scene_id: hash.0.clone(),
-                data: message.clone().into_bytes(),
+                data: data.clone(),
             })),
         };
 

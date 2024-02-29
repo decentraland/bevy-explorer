@@ -15,9 +15,7 @@ use serde_json::json;
 use tokio::sync::{broadcast, mpsc};
 
 use dcl::{
-    crdt::{append_component, delete_entity, put_component},
-    interface::{crdt_context::CrdtContext, CrdtStore, CrdtType},
-    SceneId,
+    crdt::{append_component, delete_entity, put_component}, interface::{crdt_context::CrdtContext, CrdtStore, CrdtType}, js::comms::CommsMessageType, SceneId
 };
 use dcl_component::{
     proto_components::{
@@ -210,17 +208,20 @@ pub fn process_transport_updates(
     mut profile_events: EventWriter<ProfileEvent>,
     mut position_events: EventWriter<PlayerPositionEvent>,
     mut chat_events: EventWriter<ChatEvent>,
-    mut senders: Local<HashMap<String, RpcEventSender>>,
+    mut string_senders: Local<HashMap<String, RpcEventSender>>,
+    mut binary_senders: Local<HashMap<String, tokio::sync::mpsc::UnboundedSender<(String, Vec<u8>)>>>,
     mut subscribers: EventReader<RpcCall>,
 ) {
     // gather any event receivers
-    for (hash, sender) in subscribers.read().filter_map(|ev| match ev {
-        RpcCall::SubscribeMessageBus { sender, hash } => Some((hash, sender)),
-        _ => None,
-    }) {
-        senders.insert(hash.clone(), sender.clone());
+    for ev in subscribers.read() {
+        match ev {
+            RpcCall::SubscribeMessageBus { sender, hash } => { string_senders.insert(hash.clone(), sender.clone()); }
+            RpcCall::SubscribeBinaryBus { sender, hash } => { binary_senders.insert(hash.clone(), sender.clone()); }
+            _ => (),
+        }
     }
-    senders.retain(|_, s| !s.is_closed());
+    string_senders.retain(|_, s| !s.is_closed());
+    binary_senders.retain(|_, s| !s.is_closed());
 
     let mut created_this_frame: HashMap<
         Address,
@@ -367,27 +368,43 @@ pub fn process_transport_updates(
                     message: chat.message,
                 });
             }
-            PlayerMessage::PlayerData(Message::Scene(scene)) => {
-                if let Some(sender) = senders.get(&scene.scene_id) {
-                    let data = match String::from_utf8(scene.data) {
-                        Ok(data) => data,
-                        Err(e) => {
-                            error!("failed to parse data as utf8: {:?}", e);
-                            continue;
-                        }
-                    };
+            PlayerMessage::PlayerData(Message::Scene(mut scene)) => {
+                if scene.data.len() < 1 {
+                    warn!("empty scene message");
+                    continue;
+                }
 
-                    debug!(
-                        "messagebus received from {} to scene {}: `{}`",
-                        update.address, scene.scene_id, data
-                    );
-                    let _ = sender.send(
-                        json!({
-                            "message": data,
-                            "sender": format!("{:#x}", update.address),
-                        })
-                        .to_string(),
-                    );
+                let comms_type = match *scene.data.get(0).unwrap() {
+                    c if c == CommsMessageType::String as u8 => {
+                        scene.data.remove(0);
+                        CommsMessageType::String
+                    },
+                    c if c == CommsMessageType::Binary as u8 => {
+                        scene.data.remove(0);
+                        CommsMessageType::Binary
+                    },
+                    _ => CommsMessageType::String
+                };
+
+                debug!(
+                    "messagebus received from {} to scene {}: [{:?}] `{:?}`",
+                    update.address, scene.scene_id, comms_type, scene.data
+                );
+
+                match comms_type {
+                    CommsMessageType::String => {
+                        if let Some(sender) = string_senders.get(&scene.scene_id) {
+                            let _ = sender.send(json!({
+                                "message": String::from_utf8(scene.data).unwrap_or_default(),
+                                "sender": format!("{:#x}", update.address),
+                            }).to_string());
+                        }
+                    },
+                    CommsMessageType::Binary => {
+                        if let Some(sender) = binary_senders.get(&scene.scene_id) {
+                            let _ = sender.send((format!("{:#x}", update.address), scene.data));
+                        }
+                    },
                 }
             }
             PlayerMessage::PlayerData(Message::Voice(_)) => (),
