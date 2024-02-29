@@ -151,8 +151,9 @@ fn update_animations(
                 if state.r#loop.unwrap_or(true) {
                     player.repeat();
                 } else {
-                    if player.is_finished() {
-                        // force restart if loop is false
+                    // ok i'm really guessing here, not sure what criteria we should use to force a reset
+                    // force restart if speed is not specified??
+                    if state.speed.is_none() {
                         player.replay();
                     }
 
