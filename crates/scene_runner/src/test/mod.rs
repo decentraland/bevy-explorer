@@ -22,12 +22,16 @@ use spin_sleep::SpinSleeper;
 
 use crate::{
     initialize_scene::{PointerResult, ScenePointers},
-    process_scene_entity_lifecycle, 
+    process_scene_entity_lifecycle,
     // receive_scene_updates, send_scene_updates, update_scene_priority,
     update_world::{
         transform_and_parent::process_transform_and_parent_updates, CrdtStateComponent,
     },
-    RendererSceneContext, SceneEntity, SceneLoopLabel, SceneLoopSchedule, SceneRunnerPlugin,
+    RendererSceneContext,
+    SceneEntity,
+    SceneLoopLabel,
+    SceneLoopSchedule,
+    SceneRunnerPlugin,
     SceneUpdates,
 };
 use common::{
