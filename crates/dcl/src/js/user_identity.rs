@@ -61,9 +61,12 @@ async fn op_get_user_data(state: Rc<RefCell<OpState>>) -> Result<UserData, AnyEr
 
     let profile = rx
         .await
-        .map_err(|e| anyhow::anyhow!(e))?.map_err(|_| anyhow::anyhow!("Not found"))?;
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|_| anyhow::anyhow!("Not found"))?;
 
-    state.borrow_mut().put(UserEthAddress(profile.eth_address.clone()));
+    state
+        .borrow_mut()
+        .put(UserEthAddress(profile.eth_address.clone()));
 
     let user_data = profile.into();
 

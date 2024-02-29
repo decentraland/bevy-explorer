@@ -461,6 +461,7 @@ fn list_portables(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn get_user_data(
     profile: Res<CurrentUserProfile>,
     others: Query<(&ForeignPlayer, &UserProfile)>,

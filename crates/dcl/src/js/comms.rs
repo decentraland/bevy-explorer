@@ -40,7 +40,10 @@ async fn op_comms_send_string(state: Rc<RefCell<OpState>>, message: String) {
 }
 
 #[op]
-async fn op_comms_send_binary(state: Rc<RefCell<OpState>>, messages: Vec<JsBuffer>) -> Result<Vec<Vec<u8>>, anyhow::Error> {
+async fn op_comms_send_binary(
+    state: Rc<RefCell<OpState>>,
+    messages: Vec<JsBuffer>,
+) -> Result<Vec<Vec<u8>>, anyhow::Error> {
     debug!("op_comms_send_binary");
     let mut state = state.borrow_mut();
 
@@ -48,7 +51,12 @@ async fn op_comms_send_binary(state: Rc<RefCell<OpState>>, messages: Vec<JsBuffe
     let scene = context.scene_id.0;
     let hash = context.hash.clone();
 
-    let address = state.try_borrow::<UserEthAddress>().ok_or(anyhow::anyhow!("not connected"))?.0.clone().into_bytes();
+    let address = state
+        .try_borrow::<UserEthAddress>()
+        .ok_or(anyhow::anyhow!("not connected"))?
+        .0
+        .clone()
+        .into_bytes();
 
     let mut results = Vec::default();
 
@@ -67,7 +75,9 @@ async fn op_comms_send_binary(state: Rc<RefCell<OpState>>, messages: Vec<JsBuffe
 
     if !state.has::<BinaryBusReceiver>() {
         let (sx, rx) = tokio::sync::mpsc::unbounded_channel::<(String, Vec<u8>)>();
-        state.borrow_mut::<RpcCalls>().push(RpcCall::SubscribeBinaryBus { hash, sender: sx });
+        state
+            .borrow_mut::<RpcCalls>()
+            .push(RpcCall::SubscribeBinaryBus { hash, sender: sx });
         state.put(BinaryBusReceiver(rx));
     }
 

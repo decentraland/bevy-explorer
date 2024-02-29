@@ -15,7 +15,10 @@ use serde_json::json;
 use tokio::sync::{broadcast, mpsc};
 
 use dcl::{
-    crdt::{append_component, delete_entity, put_component}, interface::{crdt_context::CrdtContext, CrdtStore, CrdtType}, js::comms::CommsMessageType, SceneId
+    crdt::{append_component, delete_entity, put_component},
+    interface::{crdt_context::CrdtContext, CrdtStore, CrdtType},
+    js::comms::CommsMessageType,
+    SceneId,
 };
 use dcl_component::{
     proto_components::{
@@ -199,7 +202,7 @@ pub struct ChatEvent {
 #[derive(Component)]
 pub struct TransportRef(Entity);
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_transport_updates(
     mut commands: Commands,
     mut state: ResMut<GlobalCrdtState>,
@@ -209,14 +212,20 @@ pub fn process_transport_updates(
     mut position_events: EventWriter<PlayerPositionEvent>,
     mut chat_events: EventWriter<ChatEvent>,
     mut string_senders: Local<HashMap<String, RpcEventSender>>,
-    mut binary_senders: Local<HashMap<String, tokio::sync::mpsc::UnboundedSender<(String, Vec<u8>)>>>,
+    mut binary_senders: Local<
+        HashMap<String, tokio::sync::mpsc::UnboundedSender<(String, Vec<u8>)>>,
+    >,
     mut subscribers: EventReader<RpcCall>,
 ) {
     // gather any event receivers
     for ev in subscribers.read() {
         match ev {
-            RpcCall::SubscribeMessageBus { sender, hash } => { string_senders.insert(hash.clone(), sender.clone()); }
-            RpcCall::SubscribeBinaryBus { sender, hash } => { binary_senders.insert(hash.clone(), sender.clone()); }
+            RpcCall::SubscribeMessageBus { sender, hash } => {
+                string_senders.insert(hash.clone(), sender.clone());
+            }
+            RpcCall::SubscribeBinaryBus { sender, hash } => {
+                binary_senders.insert(hash.clone(), sender.clone());
+            }
             _ => (),
         }
     }
@@ -369,21 +378,21 @@ pub fn process_transport_updates(
                 });
             }
             PlayerMessage::PlayerData(Message::Scene(mut scene)) => {
-                if scene.data.len() < 1 {
+                if scene.data.is_empty() {
                     warn!("empty scene message");
                     continue;
                 }
 
-                let comms_type = match *scene.data.get(0).unwrap() {
+                let comms_type = match *scene.data.first().unwrap() {
                     c if c == CommsMessageType::String as u8 => {
                         scene.data.remove(0);
                         CommsMessageType::String
-                    },
+                    }
                     c if c == CommsMessageType::Binary as u8 => {
                         scene.data.remove(0);
                         CommsMessageType::Binary
-                    },
-                    _ => CommsMessageType::String
+                    }
+                    _ => CommsMessageType::String,
                 };
 
                 debug!(
@@ -394,17 +403,20 @@ pub fn process_transport_updates(
                 match comms_type {
                     CommsMessageType::String => {
                         if let Some(sender) = string_senders.get(&scene.scene_id) {
-                            let _ = sender.send(json!({
-                                "message": String::from_utf8(scene.data).unwrap_or_default(),
-                                "sender": format!("{:#x}", update.address),
-                            }).to_string());
+                            let _ = sender.send(
+                                json!({
+                                    "message": String::from_utf8(scene.data).unwrap_or_default(),
+                                    "sender": format!("{:#x}", update.address),
+                                })
+                                .to_string(),
+                            );
                         }
-                    },
+                    }
                     CommsMessageType::Binary => {
                         if let Some(sender) = binary_senders.get(&scene.scene_id) {
                             let _ = sender.send((format!("{:#x}", update.address), scene.data));
                         }
-                    },
+                    }
                 }
             }
             PlayerMessage::PlayerData(Message::Voice(_)) => (),
