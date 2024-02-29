@@ -1,6 +1,6 @@
 use bevy::{
     prelude::*,
-    tasks::{IoTaskPool, Task},
+    tasks::{IoTaskPool, Task}, window::PrimaryWindow,
 };
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
@@ -79,6 +79,7 @@ fn login(
     mut dialog: Local<Option<Entity>>,
     mut toaster: Toaster,
     dui: Res<DuiRegistry>,
+    mut window: Query<&mut Window, With<PrimaryWindow>>,
 ) {
     // cleanup if we're done
     if wallet.address().is_some() {
@@ -119,6 +120,10 @@ fn login(
     if let Some(mut t) = task.take() {
         match t.complete() {
             Some(Ok((root_address, local_wallet, auth, profile))) => {
+                if let Ok(mut window) = window.get_single_mut() {
+                    window.focused = true;
+                }
+
                 let ephemeral_key = local_wallet.signer().to_bytes().to_vec();
 
                 // store to app config
@@ -209,7 +214,7 @@ fn login(
                 *task = Some(IoTaskPool::get().spawn(async move {
                     let (root_address, local_wallet, auth, _) =
                         try_create_remote_ephemeral().await?;
-
+                    
                     let profile = get_remote_profile(root_address, ipfs).await.ok();
 
                     Ok((root_address, local_wallet, auth, profile))
