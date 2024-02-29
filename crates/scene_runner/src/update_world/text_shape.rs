@@ -127,7 +127,7 @@ impl From<PbTextShape> for TextShape {
     }
 }
 
-const PIX_PER_M: f32 = 100.0;
+const PIX_PER_M: f32 = 200.0;
 
 fn update_text_shapes(
     mut commands: Commands,
@@ -169,16 +169,16 @@ fn update_text_shapes(
             | TextAlignMode::TamBottomRight => 0.5,
         };
 
-        let halign = match text_align {
+        let (halign_wui, halign) = match text_align {
             TextAlignMode::TamTopLeft
             | TextAlignMode::TamMiddleLeft
-            | TextAlignMode::TamBottomLeft => TextAlignment::Left,
+            | TextAlignMode::TamBottomLeft => (0.5, TextAlignment::Left),
             TextAlignMode::TamTopCenter
             | TextAlignMode::TamMiddleCenter
-            | TextAlignMode::TamBottomCenter => TextAlignment::Center,
+            | TextAlignMode::TamBottomCenter => (0.0, TextAlignment::Center),
             TextAlignMode::TamTopRight
             | TextAlignMode::TamMiddleRight
-            | TextAlignMode::TamBottomRight => TextAlignment::Right,
+            | TextAlignMode::TamBottomRight => (-0.5, TextAlignment::Right),
         };
 
         let add_y_pix = (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * PIX_PER_M;
@@ -197,7 +197,7 @@ fn update_text_shapes(
 
         let max_height = match text_shape.0.line_count() {
             0 => 4096,
-            lines => lines as u32 * font_size as u32,
+            lines => lines as u32 * font_size.ceil() as u32,
         };
 
         // create ui layout
@@ -304,6 +304,7 @@ fn update_text_shapes(
             resize_height: Some(ResizeAxis::MaxContent),
             pix_per_m: PIX_PER_M,
             valign,
+            halign: halign_wui,
             add_y_pix,
             bounds,
             ui_root,

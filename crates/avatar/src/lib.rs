@@ -49,7 +49,7 @@ use scene_runner::{
     update_world::{billboard::Billboard, AddCrdtInterfaceExt},
     ContainingScene, SceneEntity,
 };
-use ui_core::TEXT_SHAPE_FONT_SANS;
+use ui_core::TEXT_SHAPE_FONT_MONO;
 use world_ui::WorldUi;
 
 use crate::{animate::AvatarAnimPlayer, avatar_texture::PRIMARY_AVATAR_RENDERLAYER};
@@ -1607,7 +1607,7 @@ fn process_avatar(
                     TextStyle {
                         font_size: 25.0,
                         color: Color::WHITE,
-                        font: TEXT_SHAPE_FONT_SANS.get().unwrap().clone(),
+                        font: TEXT_SHAPE_FONT_MONO.get().unwrap().clone(),
                     },
                 ))
                 .id();
@@ -1619,12 +1619,13 @@ fn process_avatar(
                         ..Default::default()
                     },
                     WorldUi {
-                        width: 1024,
+                        width: (label.len() * 25) as u32 / 2,
                         height: 25,
                         resize_width: Some(ResizeAxis::MaxContent),
                         resize_height: None,
-                        pix_per_m: 100.0,
+                        pix_per_m: 200.0,
                         valign: 0.0,
+                        halign: 0.0,
                         add_y_pix: 0.0,
                         bounds: Vec4::new(
                             std::f32::MIN,
