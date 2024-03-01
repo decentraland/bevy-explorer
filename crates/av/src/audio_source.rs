@@ -95,13 +95,13 @@ fn update_audio(
 
         if audio_source.0.playing() {
             // stop previous - is this right?
-            if let Some(emitter) = maybe_emitter {
-                for h_instance in emitter.instances.iter() {
-                    if let Some(instance) = audio_instances.get_mut(h_instance) {
-                        instance.stop(AudioTween::default());
-                    }
-                }
-            }
+            // if let Some(emitter) = maybe_emitter {
+            //     for h_instance in emitter.instances.iter() {
+            //         if let Some(instance) = audio_instances.get_mut(h_instance) {
+            //             instance.stop(AudioTween::default());
+            //         }
+            //     }
+            // }
 
             let mut instance = &mut audio.play(h_audio);
             if audio_source.0.r#loop() {
