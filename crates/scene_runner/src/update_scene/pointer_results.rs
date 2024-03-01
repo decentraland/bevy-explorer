@@ -256,7 +256,7 @@ fn send_hover_events(
     new_target: Res<PointerTarget>,
     mut prior_target: Local<PointerTarget>,
     pointer_requests: Query<(&SceneEntity, Option<&PointerEvents>)>,
-    mut scenes: Query<&mut RendererSceneContext>,
+    mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform)>,
     frame: Res<FrameCount>,
 ) {
     if *new_target == *prior_target {
@@ -276,7 +276,7 @@ fn send_hover_events(
                     .peekable();
                 // check there's at least one potential request before doing any work
                 if potential_entries.peek().is_some() {
-                    let Ok(mut context) = scenes.get_mut(scene_entity.root) else {
+                    let Ok((mut context, scene_transform)) = scenes.get_mut(scene_entity.root) else {
                         panic!()
                     };
 
@@ -295,7 +295,9 @@ fn send_hover_events(
                                 &PbPointerEventsResult {
                                     button: InputAction::IaPointer as i32,
                                     hit: Some(RaycastHit {
-                                        position: None,
+                                            position: info.position
+                                            .as_ref()
+                                            .map(|p| Vector3::world_vec_from_vec3(&(*p - scene_transform.translation()))),
                                         global_origin: None,
                                         direction: None,
                                         normal_hit: info
@@ -324,12 +326,14 @@ fn send_hover_events(
         }
     };
 
-    if let Some(info) = prior_target.0.as_ref() {
-        send_event(info, PointerEventType::PetHoverLeave);
-    }
-
-    if let Some(info) = new_target.0.as_ref() {
-        send_event(info, PointerEventType::PetHoverEnter);
+    if new_target.0.as_ref().map(|t| t.container) != prior_target.0.as_ref().map(|t| t.container) {
+        if let Some(info) = prior_target.0.as_ref() {
+            send_event(info, PointerEventType::PetHoverLeave);
+        }
+    
+        if let Some(info) = new_target.0.as_ref() {
+            send_event(info, PointerEventType::PetHoverEnter);
+        }
     }
 
     *prior_target = new_target.clone();
@@ -364,9 +368,7 @@ fn send_action_events(
                         .peekable();
                     // check there's at least one potential request before doing any work
                     if potential_entries.peek().is_some() {
-                        let Ok(mut context) =
-                            scenes.get_component_mut::<RendererSceneContext>(scene_entity.root)
-                        else {
+                        let Ok((_, mut context, scene_transform)) = scenes.get_mut(scene_entity.root) else {
                             panic!()
                         };
                         for ev in potential_entries {
@@ -377,6 +379,21 @@ fn send_action_events(
                                 .unwrap_or(10.0);
                             if info.distance.0 <= max_distance {
                                 let tick_number = context.tick_number;
+                                let hit = RaycastHit {
+                                    position: info.position
+                                        .as_ref()
+                                        .map(|p| Vector3::world_vec_from_vec3(&(*p - scene_transform.translation()))),
+                                    global_origin: None,
+                                    direction: None,
+                                    normal_hit: info
+                                        .normal
+                                        .as_ref()
+                                        .map(Vector3::world_vec_from_vec3),
+                                    length: info.distance.0,
+                                    mesh_name: info.mesh_name.clone(),
+                                    entity_id: scene_entity.id.as_proto_u32(),
+                                };
+                                debug!("pointer hit: {hit:?}");
                                 // send to target entity
                                 context.update_crdt(
                                     SceneComponentId::POINTER_RESULT,
@@ -384,18 +401,7 @@ fn send_action_events(
                                     scene_entity.id,
                                     &PbPointerEventsResult {
                                         button: action as i32,
-                                        hit: Some(RaycastHit {
-                                            position: None,
-                                            global_origin: None,
-                                            direction: None,
-                                            normal_hit: info
-                                                .normal
-                                                .as_ref()
-                                                .map(Vector3::world_vec_from_vec3),
-                                            length: info.distance.0,
-                                            mesh_name: info.mesh_name.clone(),
-                                            entity_id: scene_entity.id.as_proto_u32(),
-                                        }),
+                                        hit: Some(hit),
                                         state: ev_type as i32,
                                         timestamp: frame.0,
                                         analog: None,
