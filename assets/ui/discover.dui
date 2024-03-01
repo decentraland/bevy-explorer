@@ -71,10 +71,6 @@
             style="
                 flex-direction: column;
                 align-self: center;
-                xborder: 0.7vmin;
-                xborder-color: #2222aa;
-                xpadding: 1vmin;
-                xbackground-color: #8888cccc;
                 max-width: 80%;
                 padding: 2vmin;
             "

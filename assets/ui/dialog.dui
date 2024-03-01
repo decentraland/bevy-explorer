@@ -10,10 +10,7 @@
                 overflow-x: hidden;
                 overflow-y: hidden;
                 align-items: center;
-                xborder: 0.7vmin;
-                xborder-color: #2222aa;
                 padding: 4vmin;
-                xbackground-color: #8888cccc;
                 width: 50%;
                 max-width: 80%;
             "
