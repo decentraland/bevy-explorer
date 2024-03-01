@@ -157,9 +157,13 @@ fn update_source_volume(
             let volume = (1. - sound_path.length() / 125.0).clamp(0., 1.).powi(2)
                 * source.0.volume.unwrap_or(1.0);
 
-            let right_ear_angle = receiver.right().angle_between(sound_path);
-            let panning = (right_ear_angle.cos() + 1.) / 2.;
-
+            let panning = if sound_path.length() > f32::EPSILON {
+                let right_ear_angle = receiver.right().angle_between(sound_path);
+                (right_ear_angle.cos() + 1.) / 2.
+            } else {
+                0.5
+            };
+    
             for h_instance in &emitter.instances {
                 if let Some(instance) = audio_instances.get_mut(h_instance) {
                     instance.set_volume(volume as f64, AudioTween::default());

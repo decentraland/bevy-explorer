@@ -127,9 +127,13 @@ pub fn spawn_and_locate_foreign_streams(
                 .clamp(0., 1.)
                 .powi(2);
 
-            let right_ear_angle = receiver_transform.right().angle_between(sound_path);
-            let panning = (right_ear_angle.cos() + 1.) / 2.;
-
+            let panning = if sound_path.length() > f32::EPSILON {
+                let right_ear_angle = receiver_transform.right().angle_between(sound_path);
+                (right_ear_angle.cos() + 1.) / 2.
+            } else {
+                0.5
+            };
+    
             let _ = handle.set_volume(volume as f64, Tween::default());
             let _ = handle.set_panning(panning as f64, Tween::default());
         }
