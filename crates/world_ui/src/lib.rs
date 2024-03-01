@@ -119,7 +119,7 @@ fn update_world_ui(
     };
 
     let mut new_uis = q.iter();
-        
+
     match current_rendered_ui.as_mut() {
         Some((_, countdown)) if *countdown > 0 => {
             *countdown -= 1;
@@ -135,7 +135,7 @@ fn update_world_ui(
                     *vis = Visibility::Hidden;
                 }
             }
-    
+
             // run one thing per frame as we reuse the camera
             if let Some((ent, ui)) = new_uis.next() {
                 debug!("wui render {ent:?}");
@@ -143,7 +143,7 @@ fn update_world_ui(
                 if let Ok(mut vis) = uis.get_mut(ui.ui_root) {
                     *vis = Visibility::Visible;
                 }
-        
+
                 let image_size = Extent3d {
                     width: if ui.resize_width.is_some() {
                         16
@@ -157,34 +157,34 @@ fn update_world_ui(
                     },
                     depth_or_array_layers: 1,
                 };
-        
+
                 let material_data = TextQuadData {
                     valign: ui.valign,
                     halign: ui.halign,
                     pix_per_m: ui.pix_per_m,
                     add_y_pix: ui.add_y_pix,
                 };
-        
+
                 // update camera
                 cam.is_active = true;
                 target.width = ui.resize_width;
                 target.height = ui.resize_height;
                 target.info.max_width = Some(ui.width);
                 target.info.max_height = Some(ui.height);
-        
+
                 // create or update camera and quad
                 let (quad, image) = if let Some(prev_items) = wui.lookup.get(&ent) {
                     if let Ok(quad) = quad_query.get(prev_items.quad) {
                         if let Some(mat) = materials.get_mut(quad) {
                             // update valign
                             mat.extension.data = material_data;
-        
+
                             // update image
                             if let Some(image) =
                                 images.get_mut(mat.base.base.base_color_texture.clone().unwrap())
                             {
                                 // let current_size = image.size();
-        
+
                                 // let width_ok =
                                 //     ui.resize_width.is_some() || image_size.width == current_size.x;
                                 // let height_ok =
@@ -195,12 +195,12 @@ fn update_world_ui(
                             }
                         }
                     }
-        
+
                     // dispose of previous ui if required
                     if let Some(commands) = prev_items.ui.and_then(|e| commands.get_entity(e)) {
                         commands.despawn_recursive();
                     }
-        
+
                     (prev_items.quad, prev_items.image.clone())
                 } else {
                     // create render target image (it'll be resized)
@@ -212,7 +212,7 @@ fn update_world_ui(
                     );
                     image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
                     let image = images.add(image);
-        
+
                     let quad = commands
                         .spawn((
                             MaterialMeshBundle {
@@ -238,12 +238,12 @@ fn update_world_ui(
                             NotShadowCaster,
                         ))
                         .id();
-        
+
                     commands.entity(ent).try_push_children(&[quad]);
-        
+
                     (quad, image)
                 };
-        
+
                 if let Some(mut commands) = commands.get_entity(ui.ui_root) {
                     cam.target = RenderTarget::Image(image.clone());
                     cam.is_active = true;
@@ -251,7 +251,7 @@ fn update_world_ui(
                     // wait 1 tick to ensure size is propagated correctly
                     *current_rendered_ui = Some((ui.ui_root, 1));
                 }
-        
+
                 wui.lookup.insert(
                     ent,
                     WorldUiEntitySet {
@@ -260,7 +260,7 @@ fn update_world_ui(
                         ui: ui.dispose_ui.then_some(ui.ui_root),
                     },
                 );
-        
+
                 commands.entity(ent).try_insert(ProcessedWorldUi);
             }
         }

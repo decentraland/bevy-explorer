@@ -115,6 +115,7 @@ fn update_audio(
             };
             instance =
                 instance.with_volume(bevy_kira_audio::prelude::Volume::Amplitude(volume as f64));
+            instance = instance.with_playback_rate(audio_source.0.pitch.unwrap_or(1.0) as f64);
 
             let instance = instance.handle();
             commands.entity(ent).try_insert(AudioEmitter {
