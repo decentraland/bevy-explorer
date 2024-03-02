@@ -96,7 +96,7 @@ fn update_avatar_colliders(
                 Default::default(),
             ))
             .build();
-            colliders.collider_data.set_collider(&id, collider);
+            colliders.collider_data.set_collider(&id, collider, ent);
             colliders.lookup.insert(id, ent);
         }
     }

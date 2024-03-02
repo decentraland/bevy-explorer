@@ -7,7 +7,7 @@ use bevy::{
 };
 use bevy_console::ConsoleCommand;
 use rapier3d_f64::{
-    control::{EffectiveCharacterMovement, KinematicCharacterController},
+    control::KinematicCharacterController,
     parry::{
         query::{NonlinearRigidMotion, TOIStatus},
         shape::{Ball, Capsule},
@@ -160,6 +160,7 @@ pub struct RaycastResult {
 }
 
 struct ColliderState {
+    entity: Entity,
     base_collider: Collider,
     translation: Vec3,
     rotation: Quat,
@@ -224,12 +225,13 @@ impl ScaleShapeExt for dyn Shape {
 }
 
 impl SceneColliderData {
-    pub fn set_collider(&mut self, id: &ColliderId, new_collider: Collider) {
+    pub fn set_collider(&mut self, id: &ColliderId, new_collider: Collider, entity: Entity) {
         self.remove_collider(id);
 
         self.collider_state.insert(
             id.to_owned(),
             ColliderState {
+                entity,
                 base_collider: new_collider.clone(),
                 translation: Vec3::ZERO,
                 rotation: Quat::IDENTITY,
@@ -251,6 +253,7 @@ impl SceneColliderData {
     ) -> (Option<Transform>, Option<TOI>) {
         if let Some(handle) = self.get_collider_handle(id) {
             if let Some(collider) = self.collider_set.get_mut(handle) {
+                self.query_state_valid_at = None;
                 let (req_scale, req_rotation, req_translation) =
                     transform.to_scale_rotation_translation();
                 let ColliderState {
@@ -258,6 +261,7 @@ impl SceneColliderData {
                     translation: init_translation,
                     scale: init_scale,
                     rotation: init_rotation,
+                    ..
                 } = self.collider_state.get(id).unwrap();
 
                 let mut cast_result = None;
@@ -399,6 +403,10 @@ impl SceneColliderData {
         contact.map(|(handle, toi)| (toi.toi as f32, self.get_id(handle).unwrap().clone()))
     }
 
+    pub fn get_collider_entity(&self, id: &ColliderId) -> Option<Entity> {
+        self.collider_state.get(id).map(|state| state.entity)
+    }
+
     pub fn collider_enabled(&self, handle: ColliderHandle) -> bool {
         !self.disabled.contains(&handle)
     }
@@ -409,25 +417,40 @@ impl SceneColliderData {
         origin: Vec3,
         direction: Vec3,
         character: &KinematicCharacterController,
-    ) -> EffectiveCharacterMovement {
+        specific_collider: Option<&ColliderId>,
+        include_specific_collider: bool,
+    ) -> Vec3 {
         self.update_pipeline(scene_time);
-        character.move_shape(
-            0.00,
-            &self.dummy_rapier_structs.1,
-            &self.collider_set,
-            self.query_state.as_ref().unwrap(),
-            &Capsule::new_y(
-                (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS) as f64,
-                PLAYER_COLLIDER_RADIUS as f64,
-            ),
-            &Isometry {
-                rotation: Default::default(),
-                translation: (origin + Vec3::Y * 1.0).as_dvec3().into(),
-            },
-            direction.as_dvec3().into(),
-            QueryFilter::default().predicate(&|h, _| !self.disabled.contains(&h)),
-            |_| {},
+        let specific_collider = specific_collider.map(|id| self.get_collider_handle(id).unwrap());
+        if include_specific_collider && specific_collider.is_none() {
+            return direction;
+        }
+
+        DVec3::from(
+            character
+                .move_shape(
+                    0.00,
+                    &self.dummy_rapier_structs.1,
+                    &self.collider_set,
+                    self.query_state.as_ref().unwrap(),
+                    &Capsule::new_y(
+                        (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS) as f64,
+                        PLAYER_COLLIDER_RADIUS as f64,
+                    ),
+                    &Isometry {
+                        rotation: Default::default(),
+                        translation: (origin + Vec3::Y * 1.0).as_dvec3().into(),
+                    },
+                    direction.as_dvec3().into(),
+                    QueryFilter::default().predicate(&|h, _| {
+                        ((specific_collider == Some(h)) == include_specific_collider)
+                            && !self.disabled.contains(&h)
+                    }),
+                    |_| {},
+                )
+                .translation,
         )
+        .as_vec3()
     }
 
     pub fn cast_ray_all(
@@ -633,7 +656,7 @@ fn update_colliders(
             continue;
         };
 
-        scene_data.set_collider(&collider_id, collider);
+        scene_data.set_collider(&collider_id, collider, ent);
         commands.entity(ent).try_insert(HasCollider(collider_id));
     }
 
@@ -662,7 +685,7 @@ fn remove_deleted_colliders(
 
 // (scene entity, collider id) of collider player is standing on
 #[derive(Component, Default)]
-pub struct GroundCollider(pub Option<(Entity, ColliderId)>);
+pub struct GroundCollider(pub Option<(Entity, ColliderId, GlobalTransform)>);
 
 #[allow(clippy::type_complexity)]
 fn propagate_disabled(
@@ -716,15 +739,13 @@ fn update_collider_transforms(
     >,
     mut scene_data: Query<&mut SceneColliderData>,
     containing_scene: ContainingScene,
-    mut player: Query<(Entity, &mut Transform, &GroundCollider), With<PrimaryUser>>,
+    mut player: Query<(Entity, &mut Transform), With<PrimaryUser>>,
 ) {
     let mut containing_scenes = HashSet::default();
-    let mut parent_collider = None;
     let mut player_transform = None;
 
-    if let Ok((player, transform, ground_collider)) = player.get_single_mut() {
+    if let Ok((player, transform)) = player.get_single_mut() {
         player_transform = Some(transform);
-        parent_collider = ground_collider.0.clone();
         containing_scenes.extend(containing_scene.get_area(player, PLAYER_COLLIDER_RADIUS));
     }
 
@@ -809,8 +830,9 @@ fn update_collider_transforms(
                     TOIStatus::Penetrating => {
                         // penetrating collider - use closest point to infer fix/depen direction
                         debug!(
-                            "don't skip pen, player: {:?}",
-                            player_transform.as_ref().unwrap().translation
+                            "don't skip pen, player: {:?} [moving {:?}]",
+                            player_transform.as_ref().unwrap().translation,
+                            (&container.root, &collider.0),
                         );
                         let fix_vector = depenetration_vector(
                             &mut scene_data,
@@ -909,53 +931,6 @@ fn update_collider_transforms(
                             player_transform.as_mut().unwrap().translation += fix_vector;
                         }
                     }
-                }
-            }
-
-            #[allow(clippy::map_identity)]
-            if Some((&container.root, &collider.0)) == parent_collider.as_ref().map(|(a, b)| (a, b))
-            {
-                let player_transform = player_transform.as_deref_mut().unwrap();
-                let player_global_transform = GlobalTransform::from(*player_transform);
-                let relative_position =
-                    player_global_transform.reparented_to(&original_transform.into());
-                let new_position = global_transform.mul_transform(relative_position);
-                let (_, rotation, translation) = new_position.to_scale_rotation_translation();
-                let planar_direction = ((rotation * -Vec3::Z) * (Vec3::X + Vec3::Z)).normalize();
-                let planar_rotation = Transform::default()
-                    .looking_at(planar_direction, Vec3::Y)
-                    .rotation;
-                player_transform.translation = translation;
-                player_transform.rotation = planar_rotation;
-
-                // check for intersection and move out until safe
-                let (_, player_collider) = player_collider_set.iter_mut().next().unwrap();
-                player_collider.set_position(Isometry::from_parts(
-                    (player_transform.translation + PLAYER_COLLIDER_HEIGHT * 0.5)
-                        .as_dvec3()
-                        .into(),
-                    Default::default(),
-                ));
-                let new_toi = scene_data
-                    .update_collider_transform(
-                        &collider.0,
-                        global_transform,
-                        Some(&player_collider_set),
-                    )
-                    .1;
-
-                if let Some(new_toi) = new_toi {
-                    debug!(
-                        "motion toi - can we fix it?: {:?}, player: {}",
-                        new_toi, player_transform.translation
-                    );
-                    let fix_vector = depenetration_vector(
-                        &mut scene_data,
-                        player_transform.translation,
-                        &new_toi,
-                    );
-                    debug!("fix: {fix_vector}");
-                    player_transform.translation += fix_vector;
                 }
             }
         }
