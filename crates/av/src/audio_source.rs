@@ -122,7 +122,12 @@ fn update_audio(
             if state.looping {
                 continue;
             }
-            debug!("play {:?} @ {} vs {}", audio_source.0, egt.translation(), gt.translation());
+            debug!(
+                "play {:?} @ {} vs {}",
+                audio_source.0,
+                egt.translation(),
+                gt.translation()
+            );
 
             let mut instance = &mut audio.play(state.handle.clone());
             if audio_source.0.r#loop() {

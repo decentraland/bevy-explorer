@@ -244,7 +244,10 @@ pub fn update_user_position(
     }
 
     // update vertical velocity
-    if dynamic_state.ground_height <= 0.0 || transform.translation.y == 0.0 || platform_motion.y != 0.0{
+    if dynamic_state.ground_height <= 0.0
+        || transform.translation.y == 0.0
+        || platform_motion.y != 0.0
+    {
         // on the floor, set vertical velocity to zero
         dynamic_state.velocity.y = dynamic_state.velocity.y.max(0.0);
     } else if target_motion.y.abs() < (0.5 * dynamic_state.velocity.y * dt).abs() {
