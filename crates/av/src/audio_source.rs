@@ -44,6 +44,13 @@ fn setup_audio(mut commands: Commands, camera: Res<PrimaryCameraRes>) {
     commands.entity(camera.0).try_insert(AudioReceiver);
 }
 
+#[derive(Component)]
+pub struct AudioSourceState {
+    handle: Handle<bevy_kira_audio::AudioSource>,
+    clip_url: String,
+    looping: bool,
+}
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn update_audio(
     mut commands: Commands,
@@ -52,8 +59,9 @@ fn update_audio(
             Entity,
             &SceneEntity,
             &AudioSource,
-            Option<&Handle<bevy_kira_audio::AudioSource>>,
+            Option<&mut AudioSourceState>,
             Option<&mut AudioEmitter>,
+            &GlobalTransform,
         ),
         Changed<AudioSource>,
     >,
@@ -63,6 +71,7 @@ fn update_audio(
     mut audio_instances: ResMut<Assets<AudioInstance>>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
+    cam: Query<&GlobalTransform, With<AudioReceiver>>,
 ) {
     let current_scenes = player
         .get_single()
@@ -70,11 +79,23 @@ fn update_audio(
         .map(|p| containing_scene.get(p))
         .unwrap_or_default();
 
-    for (ent, scene_ent, audio_source, maybe_source, maybe_emitter) in query.iter_mut() {
+    let gt = cam.get_single().unwrap_or(&GlobalTransform::IDENTITY);
+
+    for (ent, scene_ent, audio_source, maybe_source, maybe_emitter, egt) in query.iter_mut() {
+        let mut new_state = None;
         // preload clips
-        let h_audio = match maybe_source {
-            Some(instance) => instance.clone_weak(),
-            None => {
+        let state = match maybe_source {
+            Some(state) if state.clip_url == audio_source.0.audio_clip_url => state.into_inner(),
+            _ => {
+                // stop any previous different clips
+                if let Some(emitter) = maybe_emitter.as_ref() {
+                    for h_instance in emitter.instances.iter() {
+                        if let Some(instance) = audio_instances.get_mut(h_instance) {
+                            instance.stop(AudioTween::default());
+                        }
+                    }
+                }
+
                 let Ok(scene) = scenes.get(scene_ent.root) else {
                     warn!("failed to load audio source scene");
                     continue;
@@ -87,25 +108,28 @@ fn update_audio(
                     continue;
                 };
 
-                let h_audio = handle.clone_weak();
-                commands.entity(ent).try_insert(handle);
-                h_audio
+                new_state = Some(AudioSourceState {
+                    handle,
+                    clip_url: audio_source.0.audio_clip_url.clone(),
+                    looping: false,
+                });
+
+                new_state.as_mut().unwrap()
             }
         };
 
         if audio_source.0.playing() {
-            // stop previous - is this right?
-            // if let Some(emitter) = maybe_emitter {
-            //     for h_instance in emitter.instances.iter() {
-            //         if let Some(instance) = audio_instances.get_mut(h_instance) {
-            //             instance.stop(AudioTween::default());
-            //         }
-            //     }
-            // }
+            if state.looping {
+                continue;
+            }
+            debug!("play {:?} @ {} vs {}", audio_source.0, egt.translation(), gt.translation());
 
-            let mut instance = &mut audio.play(h_audio);
+            let mut instance = &mut audio.play(state.handle.clone());
             if audio_source.0.r#loop() {
                 instance = instance.looped();
+                state.looping = true;
+            } else {
+                state.looping = false;
             }
 
             let volume = if current_scenes.contains(&scene_ent.root) {
@@ -118,17 +142,27 @@ fn update_audio(
             instance = instance.with_playback_rate(audio_source.0.pitch.unwrap_or(1.0) as f64);
 
             let instance = instance.handle();
-            commands.entity(ent).try_insert(AudioEmitter {
-                instances: vec![instance],
-            });
-        } else if let Some(mut emitter) = maybe_emitter {
+
+            if let Some(mut emitter) = maybe_emitter {
+                emitter.instances.push(instance);
+            } else {
+                commands.entity(ent).try_insert(AudioEmitter {
+                    instances: vec![instance],
+                });
+            }
+        } else if let Some(emitter) = maybe_emitter {
+            debug!("stop {:?}", audio_source.0);
             // stop running
             for h_instance in emitter.instances.iter() {
                 if let Some(instance) = audio_instances.get_mut(h_instance) {
                     instance.stop(AudioTween::default());
                 }
             }
-            emitter.instances.clear();
+            state.looping = false;
+        }
+
+        if let Some(new_state) = new_state {
+            commands.entity(ent).try_insert(new_state);
         }
     }
 }
@@ -163,7 +197,7 @@ fn update_source_volume(
             } else {
                 0.5
             };
-    
+
             for h_instance in &emitter.instances {
                 if let Some(instance) = audio_instances.get_mut(h_instance) {
                     instance.set_volume(volume as f64, AudioTween::default());
