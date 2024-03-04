@@ -7,6 +7,7 @@ use ethers_core::types::{transaction::eip2718::TypedTransaction, Address, Signat
 use ethers_signers::{LocalWallet, Signer, WalletError};
 use isahc::http::Uri;
 use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 
 pub mod browser_auth;
 pub mod signed_login;
@@ -20,25 +21,30 @@ impl Plugin for WalletPlugin {
 }
 
 #[derive(Resource, Clone, Default)]
-pub struct Wallet {
-    pub(crate) inner: Option<Arc<Box<dyn ObjSafeWalletSigner + 'static + Send + Sync>>>,
+pub struct Wallet(Arc<RwLock<WalletInner>>);
+
+#[derive(Default)]
+struct WalletInner {
+    pub(crate) inner: Option<Box<dyn ObjSafeWalletSigner + 'static + Send + Sync>>,
     pub(crate) root_address: Option<Address>,
     pub(crate) delegates: Vec<ChainLink>,
 }
 
 impl Wallet {
     pub fn disconnect(&mut self) {
-        self.inner = None;
-        self.root_address = None;
-        self.delegates.clear();
+        let mut write = self.0.try_write().unwrap();
+        write.inner = None;
+        write.root_address = None;
+        write.delegates.clear();
     }
 
     pub fn finalize_as_guest(&mut self) {
-        let inner: Arc<Box<dyn ObjSafeWalletSigner + Send + Sync>> =
-            Arc::new(Box::new(LocalWallet::new(&mut rand::thread_rng())));
-        self.root_address = Some(inner.address());
-        self.delegates.clear();
-        self.inner = Some(inner);
+        let inner: Box<dyn ObjSafeWalletSigner + Send + Sync> =
+            Box::new(LocalWallet::new(&mut rand::thread_rng()));
+        let mut write = self.0.try_write().unwrap();
+        write.root_address = Some(inner.address());
+        write.delegates.clear();
+        write.inner = Some(inner);
     }
 
     pub fn finalize(
@@ -47,13 +53,15 @@ impl Wallet {
         local_wallet: LocalWallet,
         auth: Vec<ChainLink>,
     ) {
-        self.root_address = Some(root_address);
-        self.delegates = auth;
-        self.inner = Some(Arc::new(Box::new(local_wallet)));
+        let mut write = self.0.try_write().unwrap();
+        write.root_address = Some(root_address);
+        write.delegates = auth;
+        write.inner = Some(Box::new(local_wallet));
     }
 
     pub async fn sign_message(&self, message: String) -> Result<SimpleAuthChain, WalletError> {
-        self.inner
+        let read = self.0.read().await;
+        read.inner
             .as_ref()
             .ok_or_else(|| {
                 WalletError::IoError(std::io::Error::new(
@@ -61,16 +69,16 @@ impl Wallet {
                     "wallet not connected",
                 ))
             })?
-            .sign_message(message, self.root_address.unwrap(), &self.delegates)
+            .sign_message(message, read.root_address.unwrap(), &read.delegates)
             .await
     }
 
     pub fn address(&self) -> Option<Address> {
-        self.root_address
+        self.0.try_read().unwrap().root_address
     }
 
     pub fn is_guest(&self) -> bool {
-        self.delegates.is_empty()
+        self.0.try_read().unwrap().delegates.is_empty()
     }
 }
 

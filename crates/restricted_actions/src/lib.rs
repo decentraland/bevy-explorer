@@ -983,6 +983,8 @@ pub fn handle_eth_async(
         } => Some((body, scene, response)),
         _ => None,
     }) {
+        debug!("[{:?}] handle_eth_async {:?}", scene, body);
+
         if primary_user
             .get_single()
             .map_or(true, |player| !containing_scene.get(player).contains(scene))
