@@ -26,7 +26,7 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
 use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, ServerAbout};
 use isahc::{http::StatusCode, AsyncReadResponseExt};
-use nft::asset_source::{Nft, NftIdent};
+use nft::asset_source::Nft;
 use scene_runner::{
     initialize_scene::{
         LiveScenes, PortableScenes, PortableSource, SceneHash, SceneLoading, PARCEL_SIZE,
@@ -875,32 +875,32 @@ impl<'a> IntoDialogBody for NftDialog<'a> {
                     let creator = self
                         .0
                         .creator
-                        .as_ref()
-                        .map(NftIdent::get_string)
+                        .clone()
+                        // .map(NftIdent::get_string)
                         .unwrap_or("???".to_owned());
                     c.spawn(TextBundle::from_section(
                         format!("Creator: {creator}"),
                         BODY_TEXT_STYLE.get().unwrap().clone(),
                     ));
 
-                    if let Some(owner) = self.0.top_ownerships.as_ref().and_then(|v| v.first()) {
-                        let owner = owner.owner.get_string();
-                        c.spawn(TextBundle::from_section(
-                            format!("Owner: {owner}"),
-                            BODY_TEXT_STYLE.get().unwrap().clone(),
-                        ));
-                    }
+                    // if let Some(owner) = self.0.top_ownerships.as_ref().and_then(|v| v.first()) {
+                    //     let owner = owner.owner.get_string();
+                    //     c.spawn(TextBundle::from_section(
+                    //         format!("Owner: {owner}"),
+                    //         BODY_TEXT_STYLE.get().unwrap().clone(),
+                    //     ));
+                    // }
 
-                    let last_sale = self
-                        .0
-                        .last_sale
-                        .as_ref()
-                        .and_then(|ls| ls.get_string())
-                        .unwrap_or(String::from("???"));
-                    c.spawn(TextBundle::from_section(
-                        format!("Last Sale: {last_sale}"),
-                        BODY_TEXT_STYLE.get().unwrap().clone(),
-                    ));
+                    // let last_sale = self
+                    //     .0
+                    //     .last_sale
+                    //     .as_ref()
+                    //     .and_then(|ls| ls.get_string())
+                    //     .unwrap_or(String::from("???"));
+                    // c.spawn(TextBundle::from_section(
+                    //     format!("Last Sale: {last_sale}"),
+                    //     BODY_TEXT_STYLE.get().unwrap().clone(),
+                    // ));
 
                     let mut description = self.0.description.clone().unwrap_or("???".to_owned());
                     if description.len() > 500 {

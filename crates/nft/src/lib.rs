@@ -167,8 +167,8 @@ fn load_nft(
         };
 
         // get image
-        let url = nft.image_url.replace("auto=format", "format=png");
-        let ipfs_path = IpfsPath::new_from_url(&url, "png");
+        let url = &nft.image_url;
+        let ipfs_path = IpfsPath::new_from_url(url, "image");
         let h_image = asset_server.load(PathBuf::from(&ipfs_path));
 
         commands
