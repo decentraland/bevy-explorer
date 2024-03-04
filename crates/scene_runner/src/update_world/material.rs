@@ -56,7 +56,10 @@ impl From<PbMaterial> for MaterialDefinition {
                 )
             }
             Some(pb_material::Material::Pbr(pbr)) => {
-                if pbr.alpha_texture.is_some() && pbr.texture.is_some() && pbr.alpha_texture != pbr.texture {
+                if pbr.alpha_texture.is_some()
+                    && pbr.texture.is_some()
+                    && pbr.alpha_texture != pbr.texture
+                {
                     warn!("separate alpha texture not supported");
                 }
 
