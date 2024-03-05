@@ -272,7 +272,7 @@ fn load_collections(
 
 // send received avatar info into scenes
 fn update_avatar_info(
-    updated_players: Query<(&ForeignPlayer, &UserProfile), Changed<UserProfile>>,
+    updated_players: Query<(Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
     mut global_state: ResMut<GlobalCrdtState>,
 ) {
     for (player, profile) in &updated_players {
@@ -280,9 +280,9 @@ fn update_avatar_info(
         global_state.update_crdt(
             SceneComponentId::AVATAR_BASE,
             CrdtType::LWW_ANY,
-            player.scene_id,
+            player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
             &PbAvatarBase {
-                name: avatar.name.as_deref().unwrap_or("???").to_owned(),
+                name: profile.content.name.clone(),
                 skin_color: avatar.skin.map(|c| c.color),
                 eyes_color: avatar.eyes.map(|c| c.color),
                 hair_color: avatar.hair.map(|c| c.color),
@@ -296,7 +296,7 @@ fn update_avatar_info(
         global_state.update_crdt(
             SceneComponentId::AVATAR_EQUIPPED_DATA,
             CrdtType::LWW_ANY,
-            player.scene_id,
+            player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
             &PbAvatarEquippedData {
                 wearable_urns: avatar.wearables.to_vec(),
                 emotes_urns: avatar
