@@ -364,6 +364,23 @@ impl SceneColliderData {
         };
         self.update_pipeline(scene_time);
 
+        // collect colliders we started inside of, we must omit these from the query
+        let mut inside = HashSet::default();
+        self.query_state.as_ref().unwrap().intersections_with_shape(
+            &self.dummy_rapier_structs.1,
+            &self.collider_set,
+            &origin.as_dvec3().into(),
+            &Ball::new(0.001),
+            QueryFilter::default().groups(InteractionGroups::new(
+                Group::from_bits_truncate(collision_mask),
+                Group::from_bits_truncate(collision_mask),
+            )),
+            |h| {
+                inside.insert(h);
+                true
+            },
+        );
+
         self.query_state
             .as_ref()
             .unwrap()
@@ -373,10 +390,12 @@ impl SceneColliderData {
                 &ray,
                 distance as f64,
                 true,
-                QueryFilter::default().groups(InteractionGroups::new(
-                    Group::from_bits_truncate(collision_mask),
-                    Group::from_bits_truncate(collision_mask),
-                )),
+                QueryFilter::default()
+                    .groups(InteractionGroups::new(
+                        Group::from_bits_truncate(collision_mask),
+                        Group::from_bits_truncate(collision_mask),
+                    ))
+                    .predicate(&|h, _| !inside.contains(&h)),
             )
             .map(|(handle, intersection)| RaycastResult {
                 id: self.get_id(handle).unwrap().clone(),
@@ -468,16 +487,35 @@ impl SceneColliderData {
         let mut results = Vec::default();
         self.update_pipeline(scene_time);
 
+        // collect colliders we started (nearly) inside of, we must omit these from the query
+        let mut inside = HashSet::default();
+        self.query_state.as_ref().unwrap().intersections_with_shape(
+            &self.dummy_rapier_structs.1,
+            &self.collider_set,
+            &origin.as_dvec3().into(),
+            &Ball::new(0.001),
+            QueryFilter::default().groups(InteractionGroups::new(
+                Group::from_bits_truncate(collision_mask),
+                Group::from_bits_truncate(collision_mask),
+            )),
+            |h| {
+                inside.insert(h);
+                true
+            },
+        );
+
         self.query_state.as_ref().unwrap().intersections_with_ray(
             &self.dummy_rapier_structs.1,
             &self.collider_set,
             &ray,
             distance as f64,
             true,
-            QueryFilter::default().groups(InteractionGroups::new(
-                Group::from_bits_truncate(collision_mask),
-                Group::from_bits_truncate(collision_mask),
-            )),
+            QueryFilter::default()
+                .groups(InteractionGroups::new(
+                    Group::from_bits_truncate(collision_mask),
+                    Group::from_bits_truncate(collision_mask),
+                ))
+                .predicate(&|h, _| !inside.contains(&h)),
             |handle, intersection| {
                 results.push(RaycastResult {
                     id: self.get_id(handle).unwrap().clone(),
