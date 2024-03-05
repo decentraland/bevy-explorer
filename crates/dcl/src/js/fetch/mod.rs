@@ -101,10 +101,6 @@ pub fn op_fetch(
         None
     };
 
-    if Uri::try_from(&url)?.scheme_str() != Some("https") {
-        anyhow::bail!("URL scheme must be `https`")
-    }
-
     let mut request = isahc::Request::builder().uri(url.clone());
     let method = Method::from_bytes(&method)?;
 
@@ -333,6 +329,10 @@ pub async fn op_signed_fetch_headers(
     uri: String,
     method: Option<String>,
 ) -> Result<Vec<(String, String)>, AnyError> {
+    if Uri::try_from(&uri)?.scheme_str() != Some("https") {
+        anyhow::bail!("URL scheme must be `https`")
+    }
+
     let wallet = state.borrow().borrow::<Wallet>().clone();
 
     let meta = SignedFetchMeta {
