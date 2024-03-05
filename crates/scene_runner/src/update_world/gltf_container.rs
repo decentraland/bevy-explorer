@@ -451,7 +451,9 @@ fn update_ready_gltfs(
                                 })
                         });
 
-                    if collider_bits != 0 && !is_skinned {
+                    if collider_bits != 0
+                    /* && !is_skinned */
+                    {
                         // create collider shape
                         let VertexAttributeValues::Float32x3(positions_ref) =
                             mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
@@ -481,8 +483,38 @@ fn update_ready_gltfs(
                             .or_default();
                         *index += 1u32;
 
+                        let h_mesh = if is_skinned {
+                            let mut new_mesh = Mesh::new(mesh_data.primitive_topology());
+                            new_mesh.set_indices(mesh_data.indices().cloned());
+                            for (attribute_id, data) in mesh_data.attributes() {
+                                let attribute = match attribute_id {
+                                    id if id == Mesh::ATTRIBUTE_JOINT_INDEX.id => continue,
+                                    id if id == Mesh::ATTRIBUTE_JOINT_WEIGHT.id => continue,
+                                    id if id == Mesh::ATTRIBUTE_POSITION.id => {
+                                        Mesh::ATTRIBUTE_POSITION
+                                    }
+                                    id if id == Mesh::ATTRIBUTE_NORMAL.id => Mesh::ATTRIBUTE_NORMAL,
+                                    id if id == Mesh::ATTRIBUTE_UV_0.id => Mesh::ATTRIBUTE_UV_0,
+                                    id if id == Mesh::ATTRIBUTE_UV_1.id => Mesh::ATTRIBUTE_UV_1,
+                                    id if id == Mesh::ATTRIBUTE_TANGENT.id => {
+                                        Mesh::ATTRIBUTE_TANGENT
+                                    }
+                                    id if id == Mesh::ATTRIBUTE_COLOR.id => Mesh::ATTRIBUTE_COLOR,
+                                    _ => {
+                                        warn!("unrecognised vertex attribute {attribute_id:?}");
+                                        continue;
+                                    }
+                                };
+
+                                new_mesh.insert_attribute(attribute, data.clone());
+                            }
+                            meshes.add(new_mesh)
+                        } else {
+                            h_mesh.clone()
+                        };
+
                         commands.entity(spawned_ent).try_insert(MeshCollider {
-                            shape: MeshColliderShape::Shape(shape, h_mesh.clone()),
+                            shape: MeshColliderShape::Shape(shape, h_mesh),
                             collision_mask: collider_bits,
                             mesh_name: collider_base_name.map(ToOwned::to_owned),
                             index: *index,
