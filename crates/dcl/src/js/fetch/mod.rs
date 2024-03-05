@@ -4,8 +4,9 @@ mod byte_stream;
 mod fetch_response_body_resource;
 
 use bevy::prelude::debug;
+use common::structs::SceneMeta;
 use deno_core::{
-    anyhow,
+    anyhow::{self, anyhow},
     error::{type_error, AnyError},
     futures::TryStreamExt,
     op, AsyncRefCell, ByteString, CancelHandle, JsBuffer, Op, OpDecl, OpState, ResourceId,
@@ -27,6 +28,10 @@ use serde::{Deserialize, Serialize};
 use byte_stream::MpscByteStream;
 use fetch_response_body_resource::{FetchRequestBodyResource, FetchResponseBodyResource};
 use wallet::{sign_request, Wallet};
+
+use crate::interface::crdt_context::CrdtContext;
+
+use super::runtime::realm_information;
 
 // we have to provide fetch perm structs even though we don't use them
 pub struct FP;
@@ -305,10 +310,9 @@ pub fn op_fetch_custom_client(
 #[derive(Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SignedFetchMetaRealm {
-    domain: Option<String>,
-    catalyst_name: Option<String>,
-    layer: Option<String>,
-    lighthouse_version: Option<String>,
+    hostname: String,
+    protocol: String,
+    server_name: String,
 }
 
 #[derive(Serialize, Default)]
@@ -333,12 +337,30 @@ pub async fn op_signed_fetch_headers(
         anyhow::bail!("URL scheme must be `https`")
     }
 
+    let realm_info = realm_information(state.clone()).await?;
     let wallet = state.borrow().borrow::<Wallet>().clone();
+    let urn = state.borrow().borrow::<CrdtContext>().hash.clone();
+    let ipfs = state.borrow().borrow::<IpfsResource>().clone();
+    let scene_meta = ipfs
+        .entity_definition(&urn)
+        .await
+        .and_then(|(entity, _)| {
+            serde_json::from_str::<SceneMeta>(&entity.metadata.unwrap_or_default()).ok()
+        })
+        .ok_or(anyhow!("failed to parse scene metadata"))?;
 
     let meta = SignedFetchMeta {
-        origin: Some("localhost".to_owned()),
+        origin: Some(realm_info.base_url.clone()),
+        scene_id: Some(urn),
+        parcel: Some(scene_meta.scene.base.clone()),
+        tld: Some("org".to_owned()),
+        network: Some("mainnet".to_owned()),
         is_guest: Some(wallet.is_guest()),
-        ..Default::default()
+        realm: SignedFetchMetaRealm {
+            hostname: realm_info.base_url,
+            protocol: "v3".to_owned(),
+            server_name: realm_info.realm_name,
+        },
     };
 
     sign_request(

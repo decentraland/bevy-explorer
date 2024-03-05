@@ -46,22 +46,28 @@ async fn op_read_file(
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SceneInfoResponse {
-    urn: String,
-    content: Vec<ContentFileEntry>,
-    metadata_json: String,
-    base_url: String,
+pub struct SceneInfoResponse {
+    pub urn: String,
+    pub content: Vec<ContentFileEntry>,
+    pub metadata_json: String,
+    pub base_url: String,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ContentFileEntry {
-    file: String,
-    hash: String,
+pub struct ContentFileEntry {
+    pub file: String,
+    pub hash: String,
 }
 
 #[op]
 async fn op_scene_information(
+    op_state: Rc<RefCell<OpState>>,
+) -> Result<SceneInfoResponse, AnyError> {
+    scene_information(op_state).await
+}
+
+pub async fn scene_information(
     op_state: Rc<RefCell<OpState>>,
 ) -> Result<SceneInfoResponse, AnyError> {
     let urn = op_state.borrow().borrow::<CrdtContext>().hash.clone();
@@ -86,16 +92,22 @@ async fn op_scene_information(
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct RealmInfoResponse {
-    base_url: String,
-    realm_name: String,
-    network_id: u32,
-    comms_adapter: String,
-    is_preview: bool,
+pub struct RealmInfoResponse {
+    pub base_url: String,
+    pub realm_name: String,
+    pub network_id: u32,
+    pub comms_adapter: String,
+    pub is_preview: bool,
 }
 
 #[op]
 async fn op_realm_information(
+    op_state: Rc<RefCell<OpState>>,
+) -> Result<RealmInfoResponse, AnyError> {
+    realm_information(op_state).await
+}
+
+pub async fn realm_information(
     op_state: Rc<RefCell<OpState>>,
 ) -> Result<RealmInfoResponse, AnyError> {
     let ipfs = op_state.borrow().borrow::<IpfsResource>().clone();
