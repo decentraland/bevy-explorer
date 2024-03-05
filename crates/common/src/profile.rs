@@ -55,7 +55,7 @@ pub struct SerializedProfile {
     pub blocked: Option<Vec<String>>,
     pub muted: Option<Vec<String>>,
     pub interests: Option<Vec<String>>,
-    pub has_claimed_name: Option<bool>,
+    pub has_claimed_name: bool,
     pub has_connected_web3: Option<bool>,
     pub avatar: AvatarWireFormat,
 }
