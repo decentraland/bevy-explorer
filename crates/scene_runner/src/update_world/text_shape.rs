@@ -87,7 +87,7 @@ bevy: not implemented
 
 */
 
-use bevy::prelude::*;
+use bevy::{prelude::*, text::BreakLineOn};
 use common::sets::SceneLoopSets;
 use dcl::interface::ComponentPosition;
 use dcl_component::{
@@ -201,36 +201,18 @@ fn update_text_shapes(
         };
 
         // create ui layout
-        let mut text = Text::from_section(
+        let text = make_text_section(
             text_shape.0.text.as_str(),
-            TextStyle {
-                font_size,
-                color: text_shape
-                    .0
-                    .text_color
-                    .map(Into::into)
-                    .unwrap_or(Color::WHITE),
-                font: match text_shape.0.font() {
-                    dcl_component::proto_components::sdk::components::common::Font::FSansSerif => {
-                        &TEXT_SHAPE_FONT_SANS
-                    }
-                    dcl_component::proto_components::sdk::components::common::Font::FSerif => {
-                        &TEXT_SHAPE_FONT_SERIF
-                    }
-                    dcl_component::proto_components::sdk::components::common::Font::FMonospace => {
-                        &TEXT_SHAPE_FONT_MONO
-                    }
-                }
-                .get()
-                .unwrap()
-                .clone(),
-            },
-        )
-        .with_alignment(halign);
-
-        if !wrapping {
-            text = text.with_no_wrap();
-        }
+            font_size,
+            text_shape
+                .0
+                .text_color
+                .map(Into::into)
+                .unwrap_or(Color::WHITE),
+            text_shape.0.font(),
+            halign,
+            wrapping,
+        );
 
         let ui_root = commands
             .spawn((NodeBundle {
@@ -310,5 +292,49 @@ fn update_text_shapes(
             ui_root,
             dispose_ui: true,
         });
+    }
+}
+
+pub fn make_text_section(
+    text: &str,
+    font_size: f32,
+    color: Color,
+    font: dcl_component::proto_components::sdk::components::common::Font,
+    alignment: TextAlignment,
+    wrapping: bool,
+) -> Text {
+    let text = text.replace("\\n", "\n");
+
+    // todo split by <b>s
+    let sections = vec![TextSection::new(
+        text,
+        TextStyle {
+            font: match font {
+                dcl_component::proto_components::sdk::components::common::Font::FSansSerif => {
+                    &TEXT_SHAPE_FONT_SANS
+                }
+                dcl_component::proto_components::sdk::components::common::Font::FSerif => {
+                    &TEXT_SHAPE_FONT_SERIF
+                }
+                dcl_component::proto_components::sdk::components::common::Font::FMonospace => {
+                    &TEXT_SHAPE_FONT_MONO
+                }
+            }
+            .get()
+            .unwrap()
+            .clone(),
+            font_size,
+            color,
+        },
+    )];
+
+    Text {
+        sections,
+        linebreak_behavior: if wrapping {
+            BreakLineOn::WordBoundary
+        } else {
+            BreakLineOn::NoWrap
+        },
+        alignment,
     }
 }

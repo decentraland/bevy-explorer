@@ -9,7 +9,7 @@ use input_manager::MouseInteractionComponent;
 
 use crate::{
     renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
-    ContainingScene, SceneEntity, SceneSets,
+    update_world::text_shape::make_text_section, ContainingScene, SceneEntity, SceneSets,
 };
 use common::structs::PrimaryUser;
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -31,7 +31,6 @@ use ui_core::{
     textentry::TextEntry,
     ui_actions::{DataChanged, HoverEnter, HoverExit, On},
     ui_builder::SpawnSpacer,
-    TITLE_TEXT_STYLE,
 };
 
 use super::{material::TextureResolver, pointer_events::PointerEvents, AddCrdtInterfaceExt};
@@ -432,7 +431,13 @@ fn init_scene_ui_root(
 fn update_scene_ui_components(
     new_entities: Query<
         (Entity, &SceneEntity),
-        Or<(Changed<UiTransform>, Changed<UiText>, Changed<UiBackground>)>,
+        Or<(
+            Changed<UiTransform>,
+            Changed<UiText>,
+            Changed<UiBackground>,
+            Changed<UiInput>,
+            Changed<UiDropdown>,
+        )>,
     >,
     mut ui_roots: Query<&mut SceneUiData>,
 ) {
@@ -740,7 +745,7 @@ fn layout_scene_ui(
                                     }
                                 }
 
-                                if let Some(text) = maybe_text {
+                                if let Some(ui_text) = maybe_text {
                                     ent_cmds = ent_cmds.with_children(|c| {
                                         c.spawn(NodeBundle {
                                             style: Style {
@@ -752,7 +757,7 @@ fn layout_scene_ui(
                                             ..Default::default()
                                         })
                                             .with_children(|c| {
-                                                if text.v_align != VAlign::Top {
+                                                if ui_text.v_align != VAlign::Top {
                                                     c.spacer();
                                                 }
 
@@ -764,38 +769,31 @@ fn layout_scene_ui(
                                                     },
                                                     ..Default::default()
                                                 }).with_children(|c| {
-                                                    if text.h_align != TextAlignment::Left {
+                                                    if ui_text.h_align != TextAlignment::Left {
                                                         c.spacer();
                                                     }
 
+                                                    let text = make_text_section(
+                                                        ui_text.text.as_str(),
+                                                        ui_text.font_size,
+                                                        ui_text.color,
+                                                        ui_text.font,
+                                                        ui_text.h_align,
+                                                        false,
+                                                    );
+
                                                     c.spawn(TextBundle {
-                                                        text: Text {
-                                                            sections: vec![TextSection::new(
-                                                                text.text.clone(),
-                                                                TextStyle {
-                                                                    font: TITLE_TEXT_STYLE
-                                                                        .get()
-                                                                        .unwrap()
-                                                                        .clone()
-                                                                        .font, // TODO fix this
-                                                                    font_size: text.font_size,
-                                                                    color: text.color,
-                                                                },
-                                                            )],
-                                                            alignment: text.h_align,
-                                                            linebreak_behavior:
-                                                                bevy::text::BreakLineOn::NoWrap,
-                                                        },
+                                                        text,
                                                         z_index: ZIndex::Local(1),
                                                         ..Default::default()
                                                     });
 
-                                                    if text.h_align != TextAlignment::Right {
+                                                    if ui_text.h_align != TextAlignment::Right {
                                                         c.spacer();
                                                     }
                                                 });
 
-                                                if text.v_align != VAlign::Bottom {
+                                                if ui_text.v_align != VAlign::Bottom {
                                                     c.spacer();
                                                 }
                                             },
