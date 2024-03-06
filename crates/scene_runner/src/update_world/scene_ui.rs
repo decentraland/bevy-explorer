@@ -27,7 +27,7 @@ use dcl_component::{
 };
 use ui_core::{
     combo_box::ComboBox,
-    nine_slice::{Ui9Slice, Ui9SliceSet},
+    nine_slice::Ui9Slice,
     textentry::TextEntry,
     ui_actions::{DataChanged, HoverEnter, HoverExit, On},
     ui_builder::SpawnSpacer,
@@ -407,14 +407,6 @@ impl Plugin for SceneUiPlugin {
                 .chain()
                 .in_set(SceneSets::PostLoop),
         );
-
-        // we need to make sure commands are run before 9slice layouting
-        app.add_systems(
-            Update,
-            apply_deferred
-                .after(SceneSets::PostLoop)
-                .before(Ui9SliceSet),
-        );
     }
 }
 
@@ -612,6 +604,7 @@ fn layout_scene_ui(
                                 ..Default::default()
                             };
                             debug!("{:?} [parent: {:?}, ro: {:?}] style: {:?}", scene_id, ui_transform.parent, ui_transform.right_of, style);
+                            debug!("{:?}, {:?}, {:?}, {:?}, {:?}", maybe_background, maybe_text, maybe_pointer_events, maybe_ui_input, maybe_dropdown);
                             commands.entity(*parent).with_children(|commands| {
                                 let mut ent_cmds = &mut commands.spawn(NodeBundle::default());
 
@@ -632,10 +625,24 @@ fn layout_scene_ui(
                                             match texture_mode {
                                                 BackgroundTextureMode::NineSlices(rect) => {
                                                     ent_cmds.remove::<BackgroundColor>();
-                                                    ent_cmds.insert(Ui9Slice{
-                                                        image: image.image,
-                                                        center_region: rect.into(),
-                                                        tint: background.color.map(|color| BackgroundColor(color)),
+                                                    ent_cmds.with_children(|c| {
+                                                        c.spawn((
+                                                            NodeBundle {
+                                                                style: Style {
+                                                                    position_type: PositionType::Absolute,
+                                                                    width: Val::Percent(100.0),
+                                                                    height: Val::Percent(100.0),
+                                                                    overflow: Overflow::clip(),
+                                                                    ..Default::default()
+                                                                },
+                                                                ..Default::default()
+                                                            },
+                                                            Ui9Slice{
+                                                                image: image.image,
+                                                                center_region: rect.into(),
+                                                                tint: background.color.map(BackgroundColor),
+                                                            },
+                                                        ));
                                                     });
                                                 },
                                                 BackgroundTextureMode::Stretch(ref uvs) => {
