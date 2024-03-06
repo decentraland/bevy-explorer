@@ -244,7 +244,7 @@ pub struct BackgroundTexture {
     mode: BackgroundTextureMode,
 }
 
-#[derive(Component, Clone)]
+#[derive(Component, Clone, Debug)]
 pub struct UiBackground {
     color: Option<Color>,
     texture: Option<BackgroundTexture>,
@@ -303,7 +303,7 @@ pub enum VAlign {
     Bottom,
 }
 
-#[derive(Component, Clone)]
+#[derive(Component, Clone, Debug)]
 pub struct UiText {
     pub text: String,
     pub color: Color,
@@ -351,7 +351,7 @@ impl From<PbUiText> for UiText {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct UiInput(PbUiInput);
 
 impl From<PbUiInput> for UiInput {
@@ -365,7 +365,7 @@ pub struct UiInputPersistentState {
     content: String,
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct UiDropdown(PbUiDropdown);
 
 impl From<PbUiDropdown> for UiDropdown {
@@ -575,16 +575,11 @@ fn layout_scene_ui(
                         )| {
                             // if our rightof is not added, we can't process this node
                             if !processed_nodes.contains_key(&ui_transform.right_of) {
-                                debug!(
-                                    "can't place {} with ro {}",
-                                    scene_id, ui_transform.right_of
-                                );
                                 return true;
                             }
 
                             // if our parent is not added, we can't process this node
                             let Some(parent) = processed_nodes.get(&ui_transform.parent) else {
-                                debug!("can't place {} with parent {}", scene_id, ui_transform.parent);
                                 return true;
                             };
 
@@ -616,7 +611,7 @@ fn layout_scene_ui(
                                 padding: ui_transform.padding,
                                 ..Default::default()
                             };
-                            debug!("{:?} style: {:?}", scene_id, style);
+                            debug!("{:?} [parent: {:?}, ro: {:?}] style: {:?}", scene_id, ui_transform.parent, ui_transform.right_of, style);
                             commands.entity(*parent).with_children(|commands| {
                                 let mut ent_cmds = &mut commands.spawn(NodeBundle::default());
 
@@ -636,10 +631,11 @@ fn layout_scene_ui(
                                         if let Some(image) = image {
                                             match texture_mode {
                                                 BackgroundTextureMode::NineSlices(rect) => {
+                                                    ent_cmds.remove::<BackgroundColor>();
                                                     ent_cmds.insert(Ui9Slice{
                                                         image: image.image,
                                                         center_region: rect.into(),
-                                                        tint: None,
+                                                        tint: background.color.map(|color| BackgroundColor(color)),
                                                     });
                                                 },
                                                 BackgroundTextureMode::Stretch(ref uvs) => {
@@ -937,9 +933,10 @@ fn layout_scene_ui(
                 }
 
                 debug!(
-                    "made ui; placed: {}, unplaced: {}",
+                    "made ui; placed: {}, unplaced: {} ({:?})",
                     processed_nodes.len(),
-                    unprocessed_uis.len()
+                    unprocessed_uis.len(),
+                    unprocessed_uis
                 );
                 ui_data.relayout = false;
                 ui_data.current_node = Some(root);
