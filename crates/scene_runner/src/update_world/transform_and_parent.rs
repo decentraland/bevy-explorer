@@ -248,8 +248,9 @@ fn parent_position_sync(
         }
 
         let (_, final_rotation, final_translation) = final_target.to_scale_rotation_translation();
-        *transform =
-            Transform::from_translation(final_translation - parent_transform.translation())
-                .with_rotation(final_rotation);
+        *transform = GlobalTransform::from(
+            Transform::from_translation(final_translation).with_rotation(final_rotation),
+        )
+        .reparented_to(parent_transform);
     }
 }

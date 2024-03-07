@@ -803,6 +803,9 @@ fn process_scene_entity_lifecycle(
         if !context.nascent.is_empty() {
             debug!("{:?}: nascent: {:?}", root, context.nascent);
         }
+        if !context.death_row.is_empty() {
+            debug!("{:?}: death row: {:?}", root, context.death_row);
+        }
 
         for scene_entity_id in std::mem::take(&mut context.nascent) {
             if context.bevy_entity(scene_entity_id).is_some() {
