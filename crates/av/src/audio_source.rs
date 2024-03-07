@@ -48,7 +48,6 @@ fn setup_audio(mut commands: Commands, camera: Res<PrimaryCameraRes>) {
 pub struct AudioSourceState {
     handle: Handle<bevy_kira_audio::AudioSource>,
     clip_url: String,
-    looping: bool,
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -111,7 +110,6 @@ fn update_audio(
                 new_state = Some(AudioSourceState {
                     handle,
                     clip_url: audio_source.0.audio_clip_url.clone(),
-                    looping: false,
                 });
 
                 new_state.as_mut().unwrap()
@@ -119,9 +117,6 @@ fn update_audio(
         };
 
         if audio_source.0.playing() {
-            if state.looping {
-                continue;
-            }
             debug!(
                 "play {:?} @ {} vs {}",
                 audio_source.0,
@@ -129,32 +124,50 @@ fn update_audio(
                 gt.translation()
             );
 
-            let mut instance = &mut audio.play(state.handle.clone());
-            if audio_source.0.r#loop() {
-                instance = instance.looped();
-                state.looping = true;
-            } else {
-                state.looping = false;
-            }
-
             let volume = if current_scenes.contains(&scene_ent.root) {
                 audio_source.0.volume.unwrap_or(1.0)
             } else {
                 0.0
             };
-            instance =
-                instance.with_volume(bevy_kira_audio::prelude::Volume::Amplitude(volume as f64));
-            instance = instance.with_playback_rate(audio_source.0.pitch.unwrap_or(1.0) as f64);
+            let playback_rate = audio_source.0.pitch.unwrap_or(1.0) as f64;
 
-            let instance = instance.handle();
-
-            if let Some(mut emitter) = maybe_emitter {
-                emitter.instances.push(instance);
-            } else {
-                commands.entity(ent).try_insert(AudioEmitter {
-                    instances: vec![instance],
+            // get existing audio or create new
+            let maybe_playing_instance = maybe_emitter
+                .as_ref()
+                .and_then(|emitter| emitter.instances.first())
+                .and_then(|h_instance| {
+                    let instance = audio_instances.get_mut(h_instance)?;
+                    matches!(
+                        instance.state(),
+                        bevy_kira_audio::PlaybackState::Playing { .. }
+                    )
+                    .then_some(instance)
                 });
-            }
+
+            match maybe_playing_instance {
+                Some(playing_instance) => {
+                    playing_instance.set_loop(audio_source.0.r#loop());
+                    playing_instance.set_volume(
+                        bevy_kira_audio::prelude::Volume::Amplitude(volume as f64),
+                        AudioTween::default(),
+                    );
+                    playing_instance.set_playback_rate(playback_rate, AudioTween::default());
+                }
+                None => {
+                    let mut new_instance = &mut audio.play(state.handle.clone());
+                    if audio_source.0.r#loop() {
+                        new_instance = new_instance.looped();
+                    }
+                    new_instance = new_instance
+                        .with_volume(bevy_kira_audio::prelude::Volume::Amplitude(volume as f64));
+                    new_instance =
+                        new_instance.with_playback_rate(audio_source.0.pitch.unwrap_or(1.0) as f64);
+
+                    commands.entity(ent).try_insert(AudioEmitter {
+                        instances: vec![new_instance.handle()],
+                    });
+                }
+            };
         } else if let Some(emitter) = maybe_emitter {
             debug!("stop {:?}", audio_source.0);
             // stop running
@@ -163,7 +176,6 @@ fn update_audio(
                     instance.stop(AudioTween::default());
                 }
             }
-            state.looping = false;
         }
 
         if let Some(new_state) = new_state {
