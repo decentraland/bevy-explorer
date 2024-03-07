@@ -196,11 +196,12 @@ async fn op_scene_emote(
 ) -> Result<(), anyhow::Error> {
     let scene_info = scene_information(op_state.clone()).await?;
 
+    let emote = emote.to_lowercase();
     let emote_hash = &scene_info
         .content
         .iter()
         .find(|fe| fe.file == emote)
-        .ok_or(anyhow!("emote not found in content map"))?
+        .ok_or(anyhow!("emote not found in content map: {} not in {:?}", emote, scene_info.content.iter().map(|fe| &fe.file).collect::<Vec<_>>()))?
         .hash;
     let emote_urn = format!("urn:decentraland:off-chain:scene-emote:{emote_hash}-{looping}");
 
