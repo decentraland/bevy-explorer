@@ -160,7 +160,8 @@ fn update_animations(
                     player.set_repeat(RepeatAnimation::Never);
                 }
 
-                player.set_should_reset(state.should_reset.unwrap_or(false));
+                // deprecate should_reset
+                player.set_should_reset(false);
             }
 
             for (player_ent, _) in others {
