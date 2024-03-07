@@ -18,6 +18,12 @@ module.exports.triggerEmote = async function (body) {
     return {} 
 }
 
+module.exports.triggerSceneEmote = async function (body) { 
+    // if only there was a way to run an ecs system here
+    Deno.core.ops.op_scene_emote(body.src, body.looping)
+    return {} 
+}
+
 module.exports.changeRealm = async function (body) { 
     return await Deno.core.ops.op_change_realm(body.realm, body.message);
 }

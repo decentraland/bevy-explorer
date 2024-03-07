@@ -261,11 +261,8 @@ fn show_emote_ui(
         for emote in player_emotes {
             debug!("adding {}", emote.slot);
             let h_thumb = emotes
-                .get(&emote.urn)
-                .map(|anim| {
-                    debug!("found with path: {:?}", anim.thumbnail.path());
-                    anim.thumbnail.clone()
-                })
+                .get_server(&emote.urn)
+                .and_then(|anim| anim.thumbnail.clone())
                 .unwrap_or_else(|| {
                     debug!("didn't find {} in {:?}", emote.urn, emotes);
                     asset_server.load("images/redx.png")
@@ -291,7 +288,7 @@ fn show_emote_ui(
             all_slots.remove(&emote.slot);
             let button = buttons.named(format!("emote_{}", emote.slot).as_str());
             let name = emotes
-                .get(&emote.urn)
+                .get_server(&emote.urn)
                 .map(|e| e.name.clone())
                 .unwrap_or("???".to_owned());
             let name2 = name.clone();

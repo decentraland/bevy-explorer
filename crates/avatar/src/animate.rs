@@ -29,7 +29,9 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use emotes::{base_bodyshapes, urn_for_emote_specifier, AvatarAnimation, AvatarAnimations};
+use emotes::{
+    base_bodyshapes, urn_for_emote_specifier, AvatarAnimation, AvatarAnimations, EmoteLoadData,
+};
 use scene_runner::{
     update_world::{transform_and_parent::ParentPositionSync, AddCrdtInterfaceExt},
     ContainerEntity, ContainingScene,
@@ -98,6 +100,10 @@ pub struct AvatarAnimationPlugin;
 
 #[derive(Component, Default, Deref, DerefMut, Debug, Clone)]
 pub struct EmoteList(VecDeque<PbAvatarEmoteCommand>);
+
+// current manually played emote and min velocity
+#[derive(Component, Default)]
+struct PlayingEmote(Option<(String, f32)>);
 
 impl EmoteList {
     pub fn new(emote_urn: impl Into<String>) -> Self {
@@ -192,8 +198,10 @@ fn load_animations(
                                             .into_iter()
                                             .map(|body| (body, h_clip.clone())),
                                     ),
-                                    thumbnail: asset_server
-                                        .load(format!("animations/thumbnails/{name}_256.png")),
+                                    thumbnail: Some(
+                                        asset_server
+                                            .load(format!("animations/thumbnails/{name}_256.png")),
+                                    ),
                                     repeat,
                                 });
 
@@ -319,14 +327,16 @@ fn receive_emotes(mut commands: Commands, mut chat_events: EventReader<ChatEvent
 
 // TODO this function is a POS
 // lots of magic numbers that don't even deserve to be constants, needs reworking
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn animate(
+    mut commands: Commands,
     mut avatars: Query<(
         Entity,
         &AvatarAnimPlayer,
         &AvatarDynamicState,
         Option<&mut EmoteList>,
         Option<&UserProfile>,
+        Option<&PlayingEmote>,
     )>,
     mut players: Query<&mut AnimationPlayer>,
     animations: Res<AvatarAnimations>,
@@ -334,6 +344,7 @@ fn animate(
     mut playing: Local<HashMap<Entity, String>>,
     time: Res<Time>,
     anim_assets: Res<Assets<AnimationClip>>,
+    mut emote_load_data: ResMut<EmoteLoadData>,
 ) {
     let prior_velocities = std::mem::take(&mut *velocities);
     let prior_playing = std::mem::take(&mut *playing);
@@ -346,7 +357,7 @@ fn animate(
                     bodyshape: &str|
      -> bool {
         if let Some(clip) = animations
-            .get(anim)
+            .get_scene_or_server(anim, &mut emote_load_data)
             .and_then(|anim| anim.clips.get(bodyshape))
         {
             if let Ok(mut player) = players.get_mut(ent) {
@@ -376,7 +387,9 @@ fn animate(
         false
     };
 
-    for (avatar_ent, animplayer_ent, dynamic_state, mut emotes, profile) in avatars.iter_mut() {
+    for (avatar_ent, animplayer_ent, dynamic_state, mut emotes, profile, maybe_playing_emote) in
+        avatars.iter_mut()
+    {
         // take a copy of the last entry, remove others
         let mut emote = emotes
             .as_mut()
@@ -399,12 +412,28 @@ fn animate(
         let damped_velocity_len = damped_velocity.xz().length();
         velocities.insert(avatar_ent, damped_velocity);
 
-        if damped_velocity_len > prior_velocity.length() {
-            // stop emotes on move
-            if let Some(emotes) = emotes.as_mut() {
-                emotes.clear();
-                emote = None;
+        let mut min_playing_velocity = damped_velocity_len;
+
+        if let Some(PlayingEmote(Some((playing_src, playing_min_vel)))) = maybe_playing_emote {
+            if Some(playing_src)
+                == emote
+                    .as_ref()
+                    .and_then(|e| e.emote_command.as_ref())
+                    .map(|ec| &ec.emote_urn)
+                && damped_velocity_len * 0.9 > *playing_min_vel
+            {
+                // stop emotes on move
+                debug!(
+                    "clear on motion {} > {}",
+                    damped_velocity_len, playing_min_vel
+                );
+                if let Some(emotes) = emotes.as_mut() {
+                    emotes.clear();
+                    emote = None;
+                }
+                commands.entity(avatar_ent).insert(PlayingEmote::default());
             }
+            min_playing_velocity = min_playing_velocity.min(*playing_min_vel);
         }
 
         let bodyshape = base_bodyshapes().remove(if profile.map_or(true, UserProfile::is_female) {
@@ -417,11 +446,25 @@ fn animate(
             emote_command: Some(EmoteCommand { emote_urn, r#loop }),
         }) = emote
         {
-            let (emote_urn, repeat) = (urn_for_emote_specifier(&emote_urn), r#loop);
+            let (modified_emote_urn, repeat) = (urn_for_emote_specifier(&emote_urn), r#loop);
 
-            if play(&emote_urn, 1.0, animplayer_ent.0, false, repeat, &bodyshape) && !repeat {
+            if play(
+                &modified_emote_urn,
+                1.0,
+                animplayer_ent.0,
+                false,
+                repeat,
+                &bodyshape,
+            ) && !repeat
+            {
                 // emote has finished, remove from the set so will resume default anim after
                 emotes.as_mut().unwrap().clear();
+                commands.entity(avatar_ent).insert(PlayingEmote::default());
+            } else {
+                commands.entity(avatar_ent).insert(PlayingEmote(Some((
+                    emote_urn.to_owned(),
+                    min_playing_velocity,
+                ))));
             };
             continue;
         }
