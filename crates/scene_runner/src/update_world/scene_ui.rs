@@ -28,6 +28,7 @@ use dcl_component::{
 use ui_core::{
     combo_box::ComboBox,
     nine_slice::Ui9Slice,
+    stretch_uvs_image::StretchUvMaterial,
     textentry::TextEntry,
     ui_actions::{DataChanged, HoverEnter, HoverExit, On},
     ui_builder::SpawnSpacer,
@@ -233,8 +234,14 @@ impl From<PbUiTransform> for UiTransform {
 #[derive(Clone, Copy, Debug)]
 pub enum BackgroundTextureMode {
     NineSlices(BorderRect),
-    Stretch(BorderRect),
+    Stretch([Vec4; 2]),
     Center,
+}
+
+impl BackgroundTextureMode {
+    pub fn stretch_default() -> Self {
+        Self::Stretch([Vec4::W, Vec4::ONE - Vec4::W])
+    }
 }
 
 #[derive(Component, Clone, Debug)]
@@ -268,23 +275,22 @@ impl From<PbUiBackground> for UiBackground {
                     }
                     components::BackgroundTextureMode::Center => BackgroundTextureMode::Center,
                     components::BackgroundTextureMode::Stretch => {
-                        // the uvs array seems to contain [x-, y-, x-, y+, x+, y+, x+, y-]
-                        // let's pick ... [1 - 4]              ^^^^^^^^^^^^^^
-                        let mut uvs = BorderRect::default();
-                        let mut iter = value.uvs.iter().skip(1);
-                        if let Some(ymin) = iter.next() {
-                            uvs.bottom = ymin.clamp(0.0, 1.0);
-                        }
-                        if let Some(xmin) = iter.next() {
-                            uvs.left = xmin.clamp(0.0, 1.0);
-                        }
-                        if let Some(ymax) = iter.next() {
-                            uvs.top = 1.0 - ymax.clamp(uvs.bottom, 1.0);
-                        }
-                        if let Some(xmax) = iter.next() {
-                            uvs.right = 1.0 - xmax.clamp(uvs.left, 1.0);
-                        }
-
+                        // the uvs array contain [tl.x, tl.y, bl.x, bl.y, br.x, br.y, tr.x, tr.y]
+                        let mut iter = value.uvs.iter().copied();
+                        let uvs = [
+                            Vec4::new(
+                                iter.next().unwrap_or(0.0),
+                                iter.next().unwrap_or(0.0),
+                                iter.next().unwrap_or(0.0),
+                                iter.next().unwrap_or(1.0),
+                            ),
+                            Vec4::new(
+                                iter.next().unwrap_or(1.0),
+                                iter.next().unwrap_or(1.0),
+                                iter.next().unwrap_or(1.0),
+                                iter.next().unwrap_or(0.0),
+                            ),
+                        ];
                         BackgroundTextureMode::Stretch(uvs)
                     }
                 };
@@ -475,6 +481,7 @@ fn layout_scene_ui(
     ui_input_state: Query<&UiInputPersistentState>,
     ui_dropdown_state: Query<&UiDropdownPersistentState>,
     resolver: TextureResolver,
+    mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
 ) {
     let current_scenes = player
         .get_single()
@@ -614,16 +621,12 @@ fn layout_scene_ui(
                                 let mut ent_cmds = &mut commands.spawn(NodeBundle::default());
 
                                 if let Some(background) = maybe_background {
-                                    if let Some(color) = background.color {
-                                        ent_cmds = ent_cmds.insert(BackgroundColor(color));
-                                    }
-
                                     if let Some(texture) = background.texture.as_ref() {
                                         let image = texture.tex.tex.as_ref().and_then(|tex| resolver.resolve_texture(ent, tex).ok());
 
                                         let texture_mode = match texture.tex.tex {
                                             Some(texture_union::Tex::Texture(_)) => texture.mode,
-                                            _ => BackgroundTextureMode::Stretch(BorderRect::default()),
+                                            _ => BackgroundTextureMode::stretch_default(),
                                         };
 
                                         if let Some(image) = image {
@@ -651,9 +654,6 @@ fn layout_scene_ui(
                                                     });
                                                 },
                                                 BackgroundTextureMode::Stretch(ref uvs) => {
-                                                    let mid_width = (1.0 - uvs.right - uvs.left).max(0.01);
-                                                    let mid_height = (1.0 - uvs.top - uvs.bottom).max(0.01);
-
                                                     ent_cmds.with_children(|c| {
                                                         c.spawn(NodeBundle {
                                                             style: Style {
@@ -665,22 +665,18 @@ fn layout_scene_ui(
                                                             },
                                                             ..Default::default()
                                                         }).with_children(|c| {
-                                                            c.spawn(ImageBundle{
-                                                                style: Style {
-                                                                    position_type: PositionType::Absolute,
-                                                                    left: Val::Percent(-100.0 * uvs.left / mid_width),
-                                                                    right: Val::Percent(-100.0 * uvs.right / mid_width),
-                                                                    top: Val::Percent(-100.0 * uvs.top / mid_height),
-                                                                    bottom: Val::Percent(-100.0 * uvs.bottom / mid_height),
+                                                            c.spawn((
+                                                                NodeBundle{
+                                                                    style: Style {
+                                                                        position_type: PositionType::Absolute,
+                                                                        width: Val::Percent(100.0),
+                                                                        height: Val::Percent(100.0),
+                                                                        ..Default::default()
+                                                                    },
                                                                     ..Default::default()
                                                                 },
-                                                                image: UiImage {
-                                                                    texture: image.image,
-                                                                    flip_x: false,
-                                                                    flip_y: false,
-                                                                },
-                                                                ..Default::default()
-                                                            });
+                                                                stretch_uvs.add(StretchUvMaterial{ image: image.image.clone(), uvs: *uvs, color: background.color.unwrap_or(Color::WHITE).as_linear_rgba_f32().into() })
+                                                            ));
                                                         });
                                                     });
                                                 }
@@ -742,7 +738,10 @@ fn layout_scene_ui(
                                                 texture
                                             );
                                         }
+                                    } else if let Some(color) = background.color {
+                                        ent_cmds = ent_cmds.insert(BackgroundColor(color));
                                     }
+
                                 }
 
                                 if let Some(ui_text) = maybe_text {

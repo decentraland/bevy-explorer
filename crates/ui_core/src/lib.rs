@@ -8,6 +8,7 @@ pub mod interact_style;
 pub mod nine_slice;
 pub mod scrollable;
 pub mod spinner;
+pub mod stretch_uvs_image;
 pub mod text_size;
 pub mod textentry;
 pub mod toggle;
@@ -36,6 +37,7 @@ use once_cell::sync::OnceCell;
 
 use common::sets::SetupSets;
 use spinner::SpinnerPlugin;
+use stretch_uvs_image::StretchUvsImagePlugin;
 use text_size::TextSizePlugin;
 use textentry::TextEntryPlugin;
 use toggle::TogglePlugin;
@@ -66,6 +68,7 @@ impl Plugin for UiCorePlugin {
         app.add_plugins(InteractStylePlugin);
         app.add_plugins(ScrollablePlugin);
         app.add_plugins(Ui9SlicePlugin);
+        app.add_plugins(StretchUvsImagePlugin);
         app.add_plugins(TogglePlugin);
         app.add_plugins(TextSizePlugin);
         app.add_plugins(ComboBoxPlugin);
