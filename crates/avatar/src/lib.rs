@@ -15,6 +15,7 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use colliders::AvatarColliderPlugin;
+use emotes::AvatarAnimations;
 use isahc::AsyncReadResponseExt;
 use itertools::Itertools;
 use npc_dynamics::NpcMovementPlugin;
@@ -87,7 +88,7 @@ impl Plugin for AvatarPlugin {
         app.add_systems(Update, select_avatar);
         app.add_systems(Update, update_render_avatar);
         app.add_systems(Update, spawn_scenes);
-        app.add_systems(PostUpdate, process_avatar);
+        app.add_systems(Update, process_avatar);
 
         app.add_crdt_lww_component::<PbAvatarShape, AvatarShape>(
             SceneComponentId::AVATAR_SHAPE,
@@ -1247,12 +1248,15 @@ fn spawn_scenes(
             });
 
         debug!("avatar files loaded");
-        commands.entity(ent).try_insert(AvatarLoaded {
-            body_instance,
-            wearable_instances: instances.collect(),
-            skin_materials,
-            hair_materials,
-        });
+        commands.entity(ent).try_insert((
+            AvatarLoaded {
+                body_instance,
+                wearable_instances: instances.collect(),
+                skin_materials,
+                hair_materials,
+            },
+            Visibility::Hidden,
+        ));
     }
 }
 
@@ -1274,6 +1278,7 @@ fn process_avatar(
     mut mask_materials: ResMut<Assets<MaskMaterial>>,
     meshes: Res<Assets<Mesh>>,
     attach_points: Query<&AttachPoints>,
+    animations: Res<AvatarAnimations>,
 ) {
     for (avatar_ent, def, loaded_avatar, root_player_entity) in query.iter() {
         let not_loaded = !scene_spawner.instance_is_ready(loaded_avatar.body_instance)
@@ -1313,9 +1318,15 @@ fn process_avatar(
 
             // add animation player to armature root
             if name.to_lowercase() == "armature" && armature_node.is_none() {
-                commands
-                    .entity(scene_ent)
-                    .try_insert(AnimationPlayer::default());
+                let mut player = AnimationPlayer::default();
+                // play default idle anim to avoid t-posing
+                if let Some(clip) = animations
+                    .get_server("Idle_Male")
+                    .and_then(|anim| anim.clips.values().next())
+                {
+                    player.start(clip.clone());
+                }
+                commands.entity(scene_ent).try_insert(player);
                 // record the node with the animator
                 commands
                     .entity(root_player_entity.get())
@@ -1601,7 +1612,9 @@ fn process_avatar(
             wearable_models, wearable_texs, def.hides, loaded_avatar.skin_materials.len(), loaded_avatar.hair_materials.len(), colored_materials.len()
         );
 
-        commands.entity(avatar_ent).try_insert(AvatarProcessed);
+        commands
+            .entity(avatar_ent)
+            .try_insert((AvatarProcessed, Visibility::Inherited));
 
         if let Some(label) = def.label.as_ref() {
             let label_ui = commands
