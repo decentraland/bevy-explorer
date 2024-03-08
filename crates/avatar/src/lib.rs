@@ -17,6 +17,7 @@ use bevy::{
 use colliders::AvatarColliderPlugin;
 use isahc::AsyncReadResponseExt;
 use itertools::Itertools;
+use npc_dynamics::NpcMovementPlugin;
 use serde::Deserialize;
 use urn::Urn;
 
@@ -27,6 +28,7 @@ pub mod base_wearables;
 pub mod colliders;
 pub mod foreign_dynamics;
 pub mod mask_material;
+pub mod npc_dynamics;
 
 use common::{
     structs::{AttachPoints, PrimaryUser},
@@ -69,6 +71,7 @@ impl Plugin for AvatarPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaskMaterialPlugin);
         app.add_plugins(PlayerMovementPlugin);
+        app.add_plugins(NpcMovementPlugin);
         app.add_plugins(AvatarAnimationPlugin);
         app.add_plugins(AttachPlugin);
         app.add_plugins(AvatarColliderPlugin);

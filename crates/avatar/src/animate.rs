@@ -337,6 +337,7 @@ fn animate(
         Option<&mut EmoteList>,
         Option<&UserProfile>,
         Option<&PlayingEmote>,
+        &GlobalTransform,
     )>,
     mut players: Query<&mut AnimationPlayer>,
     animations: Res<AvatarAnimations>,
@@ -387,7 +388,7 @@ fn animate(
         false
     };
 
-    for (avatar_ent, animplayer_ent, dynamic_state, mut emotes, profile, maybe_playing_emote) in
+    for (avatar_ent, animplayer_ent, dynamic_state, mut emotes, profile, maybe_playing_emote, gt) in
         avatars.iter_mut()
     {
         // take a copy of the last entry, remove others
@@ -481,11 +482,13 @@ fn animate(
             continue;
         }
 
-        if damped_velocity_len > 0.1 {
-            if damped_velocity_len < 2.0 {
+        let directional_velocity_len = (damped_velocity * (Vec3::X + Vec3::Z)).dot(gt.forward());
+
+        if damped_velocity_len.abs() > 0.1 {
+            if damped_velocity_len.abs() < 2.0 {
                 play(
                     "Walk",
-                    damped_velocity_len / 1.5,
+                    directional_velocity_len / 1.5,
                     animplayer_ent.0,
                     false,
                     true,
@@ -494,7 +497,7 @@ fn animate(
             } else {
                 play(
                     "Run",
-                    damped_velocity_len / 4.5,
+                    directional_velocity_len / 4.5,
                     animplayer_ent.0,
                     false,
                     true,
