@@ -20,6 +20,7 @@ impl Plugin for NpcMovementPlugin {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn update_npc_velocity(
     mut commands: Commands,
     npcs: Query<
