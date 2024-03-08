@@ -307,7 +307,7 @@ pub fn op_fetch_custom_client(
         .add(IsahcClientResource(builder.build()?)))
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SignedFetchMetaRealm {
     hostname: String,
@@ -315,7 +315,7 @@ pub struct SignedFetchMetaRealm {
     server_name: String,
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SignedFetchMeta {
     origin: Option<String>,
@@ -325,6 +325,7 @@ pub struct SignedFetchMeta {
     network: Option<String>,
     is_guest: Option<bool>,
     realm: SignedFetchMetaRealm,
+    signer: String,
 }
 
 #[op]
@@ -361,7 +362,10 @@ pub async fn op_signed_fetch_headers(
             protocol: "v3".to_owned(),
             server_name: realm_info.realm_name,
         },
+        signer: "decentraland-kernel-scene".to_owned(),
     };
+
+    debug!("signed fetch meta {:?}", meta);
 
     sign_request(
         method.as_deref().unwrap_or("get"),
