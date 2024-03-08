@@ -26,6 +26,7 @@ use dcl_component::{
             common::RaycastHit, pb_raycast::Direction, ColliderLayer, PbRaycastResult,
             RaycastQueryType,
         },
+        RoughRoundExt,
     },
     SceneComponentId, SceneEntityId,
 };
@@ -245,11 +246,15 @@ fn run_raycasts(
         let make_hit = |(scene, result): (Entity, RaycastResult)| -> RaycastHit {
             RaycastHit {
                 position: Some(Vector3::world_vec_from_vec3(
-                    &(scene_origin + direction * result.toi),
+                    &(scene_origin + direction * result.toi).round_at_pow2(-14),
                 )),
-                global_origin: Some(Vector3::world_vec_from_vec3(&scene_origin)),
-                direction: Some(Vector3::world_vec_from_vec3(&direction)),
-                normal_hit: Some(Vector3::world_vec_from_vec3(&result.normal)),
+                global_origin: Some(Vector3::world_vec_from_vec3(
+                    &scene_origin.round_at_pow2(-14),
+                )),
+                direction: Some(Vector3::world_vec_from_vec3(&direction.round_at_pow2(-14))),
+                normal_hit: Some(Vector3::world_vec_from_vec3(
+                    &result.normal.round_at_pow2(-14),
+                )),
                 length: result.toi,
                 // only pass details for hits on current scene entities
                 mesh_name: if scene == scene_ent.root {
@@ -273,7 +278,7 @@ fn run_raycasts(
         let result = PbRaycastResult {
             timestamp: raycast.timestamp,
             global_origin: Some(Vector3::world_vec_from_vec3(&scene_origin)),
-            direction: Some(Vector3::world_vec_from_vec3(&direction)),
+            direction: Some(Vector3::world_vec_from_vec3(&direction.round_at_pow2(-14))),
             hits: results.into_iter().map(make_hit).collect(),
             tick_number: context.tick_number,
         };
