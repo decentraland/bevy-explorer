@@ -132,9 +132,17 @@ pub fn update_camera_position(
             _ => options.distance,
         };
 
-        let player_head = player_transform.translation + Vec3::Y * 1.81;
-        let target_direction =
-            Vec3::Y * 0.2 * distance + camera_transform.rotation.mul_vec3(Vec3::Z * 5.0 * distance);
+        let xz_plane = (camera_transform.rotation.mul_vec3(-Vec3::Z) * Vec3::new(1.0, 0.0, 1.0))
+            .normalize_or_zero();
+        let player_head = player_transform.translation
+            + Vec3::Y * 1.81
+            + camera_transform
+                .rotation
+                .mul_vec3(Vec3::new(1.0, -0.4, 0.0))
+                * distance.clamp(0.0, 0.5)
+            + xz_plane * distance.clamp(0.0, 1.0);
+
+        let target_direction = camera_transform.rotation.mul_vec3(Vec3::Z * 5.0 * distance);
         let mut distance = target_direction.length();
         if target_direction.y + player_head.y < 0.0 {
             distance = distance * player_head.y / -target_direction.y;

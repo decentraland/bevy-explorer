@@ -53,7 +53,41 @@ struct SysInfoMarker;
 #[derive(Component)]
 struct SysInfoContainer;
 
-pub(crate) fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res<AppConfig>) {
+pub(crate) fn setup(
+    mut commands: Commands,
+    root: Res<SystemUiRoot>,
+    config: Res<AppConfig>,
+    asset_server: Res<AssetServer>,
+) {
+    commands.entity(root.0).with_children(|commands| {
+        commands
+            .spawn(NodeBundle {
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    left: Val::Percent(50.0),
+                    top: Val::Percent(50.0),
+                    right: Val::Percent(50.0),
+                    bottom: Val::Percent(50.0),
+                    align_content: AlignContent::Center,
+                    justify_content: JustifyContent::Center,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .with_children(|c| {
+                c.spawn(ImageBundle {
+                    style: Style {
+                        width: Val::VMin(3.0),
+                        height: Val::VMin(3.0),
+                        ..Default::default()
+                    },
+                    image: asset_server.load("images/crosshair.png").into(),
+                    background_color: Color::rgba(1.0, 1.0, 1.0, 0.7).into(),
+                    ..Default::default()
+                });
+            });
+    });
+
     commands.entity(root.0).with_children(|commands| {
         commands
             .spawn((
