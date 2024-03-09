@@ -19,6 +19,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use scene_material::SceneBoundPlugin;
 use spin_sleep::SpinSleeper;
+use ui_core::stretch_uvs_image::StretchUvMaterial;
 
 use crate::{
     initialize_scene::{PointerResult, ScenePointers},
@@ -114,6 +115,7 @@ fn init_test_app(entity_json: &str) -> App {
     app.init_asset::<Shader>();
     app.init_asset::<AnimationClip>();
     app.init_asset::<Image>();
+    app.init_asset::<StretchUvMaterial>();
     app.add_plugins(MaterialPlugin::<StandardMaterial>::default());
     app.add_plugins(GizmoPlugin);
     app.add_plugins(SceneRunnerPlugin);
