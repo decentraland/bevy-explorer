@@ -11,8 +11,8 @@
                 overflow-y: hidden;
                 align-items: center;
                 padding: 4vmin;
-                width: 50%;
                 max-width: 80%;
+                max-height: 80%;
             "
             corner-size="4vmin"
             blend-size="1vmin"

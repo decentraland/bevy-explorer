@@ -1,0 +1,29 @@
+<define-template id="nft-dialog">
+    <dialog title="@title" buttons="@buttons">
+        <div>
+            <div style="width: 35vw; height: 35vw;">
+                <bounds style="width: 100%; height: 100%;"
+                    corner-size="1vmin"
+                    blend-size="0.25vmin"
+                    border-size="0.5vmin"
+                    border-color="#000000"
+                >
+                    <bounded style="width: 100%;" bound-image="@image" />
+                </bounds>
+            </div>
+            <div style="flex-direction: column; max-width: 30vw; margin: 2vmin;">
+                <hr />
+                <div style="flex-direction: column;">
+                    <med-text text="Creator: " />
+                    <med-text text="@creator" />
+                </div>
+                <hr />
+                <div style="flex-direction: column;">
+                    <med-text text="Description: " />
+                    <med-text text="@description" />
+                </div>
+                <hr />
+            </div>
+        </div>
+    </dialog>
+</define-template>

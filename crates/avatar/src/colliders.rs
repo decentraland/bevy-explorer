@@ -1,7 +1,7 @@
 use bevy::{core::FrameCount, prelude::*, render::render_resource::Extent3d, utils::HashMap};
+use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
-    profile::SerializedProfile,
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
     structs::{PrimaryCamera, ToolTips},
@@ -20,10 +20,10 @@ use scene_runner::{
     },
 };
 use serde_json::json;
-use ui_core::dialog::{IntoDialogBody, SpawnDialog};
+use ui_core::button::DuiButton;
 
 use crate::{
-    avatar_texture::{BoothInstance, LiveBooths, PhotoBooth, PROFILE_UI_RENDERLAYER},
+    avatar_texture::{LiveBooths, PhotoBooth, PROFILE_UI_RENDERLAYER},
     AvatarShape,
 };
 
@@ -121,6 +121,7 @@ fn update_avatar_collider_actions(
     mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
     mut photo_booth: PhotoBooth,
+    dui: Res<DuiRegistry>,
 ) {
     // gather any event receivers
     for sender in subscribe_events.read().filter_map(|ev| match ev {
@@ -217,46 +218,20 @@ fn update_avatar_collider_actions(
                 Extent3d::default(),
                 false,
             );
-            commands.spawn_dialog(
-                format!("{} profile", profile.content.name),
-                ForeignProfileDialog {
-                    profile: &profile.content,
-                    booth: &instance,
-                },
-                "Ok",
-                || {},
-            );
+
+            commands
+                .spawn_template(
+                    &dui,
+                    "foreign-profile",
+                    DuiProps::new()
+                        .with_prop("title", format!("{} profile", profile.content.name))
+                        .with_prop("booth-instance", instance)
+                        .with_prop("eth-address", profile.content.eth_address.clone())
+                        .with_prop("buttons", vec![DuiButton::close("Ok")]),
+                )
+                .unwrap();
         }
     }
 
     senders.retain(|s| !s.is_closed());
-}
-
-struct ForeignProfileDialog<'a> {
-    profile: &'a SerializedProfile,
-    booth: &'a BoothInstance,
-}
-
-impl<'a> IntoDialogBody for ForeignProfileDialog<'a> {
-    fn body(self, commands: &mut ChildBuilder) {
-        commands
-            .spawn(NodeBundle {
-                style: Style {
-                    flex_direction: FlexDirection::Row,
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-            .with_children(|c| {
-                c.spawn(self.booth.image_bundle());
-
-                format!(
-                    "profile content goes here.\ne.g. address: {}\netc",
-                    self.profile.eth_address
-                )
-                .body(c);
-            });
-    }
 }

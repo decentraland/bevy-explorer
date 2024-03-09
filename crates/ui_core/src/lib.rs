@@ -2,7 +2,6 @@ pub mod bound_node;
 pub mod button;
 pub mod color_picker;
 pub mod combo_box;
-pub mod dialog;
 pub mod focus;
 pub mod interact_style;
 pub mod nine_slice;

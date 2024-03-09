@@ -16,9 +16,7 @@ use ipfs::{CurrentRealm, IpfsAssetServer};
 use scene_runner::Toaster;
 use ui_core::{
     button::DuiButton,
-    dialog::{IntoDialogBody, SpawnButton},
     ui_actions::{Click, EventCloneExt, On},
-    BODY_TEXT_STYLE,
 };
 use wallet::{browser_auth::try_create_remote_ephemeral, Wallet};
 
@@ -39,28 +37,6 @@ enum LoginType {
     NewRemote,
     Guest,
     Cancel,
-}
-
-struct CancelLoginDialog {
-    sender: tokio::sync::mpsc::Sender<LoginType>,
-}
-
-impl IntoDialogBody for CancelLoginDialog {
-    fn body(self, commands: &mut ChildBuilder) {
-        let sender = self.sender.clone();
-
-        commands.spawn(
-            TextBundle::from_section(
-                "Please follow the directions in your browser to connect your account",
-                BODY_TEXT_STYLE.get().unwrap().clone(),
-            )
-            .with_text_alignment(TextAlignment::Center),
-        );
-
-        commands.spawn_empty().spawn_button("Cancel", move || {
-            let _ = sender.blocking_send(LoginType::Cancel);
-        });
-    }
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
