@@ -62,7 +62,7 @@ fn update_fontsize(
             section.style.font_size = win_size * size.0;
         }
     }
-    if resized {
+    if resized && win_size > 0.0 {
         egui_settings.scale_factor = win_size as f64 / 720.0;
     }
 }
