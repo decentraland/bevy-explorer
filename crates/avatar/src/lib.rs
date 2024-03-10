@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, str::FromStr};
+use std::{borrow::Cow, f32::consts::PI, str::FromStr};
 
 use anyhow::anyhow;
 use attach::AttachPlugin;
@@ -119,7 +119,36 @@ impl WearablePointerResult {
 }
 
 #[derive(Resource, Default, Debug)]
-pub struct WearablePointers(pub HashMap<Urn, WearablePointerResult>);
+pub struct WearablePointers {
+    data: HashMap<String, WearablePointerResult>,
+}
+
+impl WearablePointers {
+    pub fn get(&self, urn: &str) -> Option<&WearablePointerResult> {
+        self.data.get::<str>(&urn_for_wearable_specifier(urn))
+    }
+
+    fn insert(&mut self, urn: &str, wearable: WearablePointerResult) {
+        self.data
+            .insert(urn_for_wearable_specifier(urn).into_owned(), wearable);
+    }
+
+    pub fn contains_key(&self, urn: &str) -> bool {
+        self.data
+            .contains_key::<str>(&urn_for_wearable_specifier(urn))
+    }
+}
+
+// wearables need to be stripped down to at most 6 segments. we don't know why,
+// there is no spec, it is just how it is.
+// TODO justify with ADR-244
+pub fn urn_for_wearable_specifier(specifier: &str) -> Cow<str> {
+    if specifier.split(':').nth(6).is_some() {
+        Cow::Owned(specifier.split(':').take(6).join(":"))
+    } else {
+        Cow::Borrowed(specifier)
+    }
+}
 
 #[derive(Resource, Default, Debug)]
 pub struct WearableMetas(pub HashMap<String, WearableMeta>);
@@ -201,16 +230,8 @@ fn load_base_wearables(
                         }
                     };
                     for pointer in entity.pointers {
-                        match Urn::from_str(&pointer) {
-                            Ok(urn) => {
-                                wearable_pointers
-                                    .0
-                                    .insert(urn, WearablePointerResult::Exists(entity.id.clone()));
-                            }
-                            Err(e) => {
-                                warn!("failed to parse wearable urn: {e}");
-                            }
-                        };
+                        wearable_pointers
+                            .insert(&pointer, WearablePointerResult::Exists(entity.id.clone()));
                     }
 
                     wearable_metas.0.insert(entity.id, wearable_data);
@@ -793,11 +814,11 @@ impl WearableDefinition {
 }
 
 #[derive(Resource, Default)]
-pub struct RequestedWearables(pub HashSet<Urn>);
+pub struct RequestedWearables(pub HashSet<String>);
 
 fn load_wearables(
     mut requested_wearables: ResMut<RequestedWearables>,
-    mut wearable_task: Local<Option<(ActiveEntityTask, HashSet<Urn>)>>,
+    mut wearable_task: Local<Option<(ActiveEntityTask, HashSet<String>)>>,
     mut wearable_pointers: ResMut<WearablePointers>,
     mut wearable_metas: ResMut<WearableMetas>,
     ipfas: IpfsAssetServer,
@@ -829,18 +850,10 @@ fn load_wearables(
                         }
                     };
                     for pointer in entity.pointers {
-                        match Urn::from_str(&pointer) {
-                            Ok(urn) => {
-                                wearables.remove(&urn);
-                                wearable_pointers
-                                    .0
-                                    .insert(urn, WearablePointerResult::Exists(entity.id.clone()));
-                                debug!("{} -> {}", pointer, entity.id);
-                            }
-                            Err(e) => {
-                                warn!("failed to parse wearable urn: {e}");
-                            }
-                        };
+                        wearables.remove(&pointer);
+                        wearable_pointers
+                            .insert(&pointer, WearablePointerResult::Exists(entity.id.clone()));
+                        debug!("{} -> {}", pointer, entity.id);
                     }
 
                     wearable_metas.0.insert(entity.id, wearable_data);
@@ -849,9 +862,7 @@ fn load_wearables(
                 // any urns left in the hashset were requested but not returned
                 for urn in wearables {
                     debug!("missing {urn}");
-                    wearable_pointers
-                        .0
-                        .insert(urn, WearablePointerResult::Missing);
+                    wearable_pointers.insert(&urn, WearablePointerResult::Missing);
                 }
             }
             Some(Err(e)) => {
@@ -866,7 +877,8 @@ fn load_wearables(
         let requested = requested_wearables
             .0
             .drain()
-            .filter(|r| !wearable_pointers.0.contains_key(r))
+            .filter(|r| !wearable_pointers.contains_key(r))
+            .map(|urn| urn_for_wearable_specifier(&urn).into_owned())
             .collect::<HashSet<_>>();
         let base_wearables = HashSet::from_iter(base_wearables::base_wearables());
         let pointers = requested
@@ -969,8 +981,7 @@ fn update_render_avatar(
             .as_ref()
             .unwrap_or(&base_wearables::default_bodyshape())
             .to_lowercase();
-        let body = Urn::from_str(&body).unwrap();
-        let hash = match wearable_pointers.0.get(&body) {
+        let hash = match wearable_pointers.get(&body) {
             Some(WearablePointerResult::Exists(hash)) => hash,
             Some(WearablePointerResult::Missing) => {
                 debug!("failed to resolve body {body}");
@@ -1002,28 +1013,17 @@ fn update_render_avatar(
             .shape
             .wearables
             .iter()
-            .flat_map(|wearable| {
-                // wearables need to be stripped down to at most 6 segments. we don't know why,
-                // there is no spec, it is just how it is.
-                // TODO justify with ADR-244
-                let wearable = wearable.splitn(7, ':').take(6).join(":");
-
-                if let Ok(wearable) = Urn::from_str(&wearable) {
-                    match wearable_pointers.0.get(&wearable) {
-                        Some(WearablePointerResult::Exists(hash)) => Some(hash),
-                        Some(WearablePointerResult::Missing) => {
-                            debug!("skipping failed wearable {wearable:?}");
-                            None
-                        }
-                        None => {
-                            commands.entity(entity).try_insert(RetryRenderAvatar);
-                            debug!("waiting for hash from wearable {wearable:?}");
-                            all_loaded = false;
-                            missing_wearables.insert(wearable);
-                            None
-                        }
-                    }
-                } else {
+            .flat_map(|wearable| match wearable_pointers.get(wearable) {
+                Some(WearablePointerResult::Exists(hash)) => Some(hash),
+                Some(WearablePointerResult::Missing) => {
+                    debug!("skipping failed wearable {wearable:?}");
+                    None
+                }
+                None => {
+                    commands.entity(entity).try_insert(RetryRenderAvatar);
+                    debug!("waiting for hash from wearable {wearable:?}");
+                    all_loaded = false;
+                    missing_wearables.insert(wearable.clone());
                     None
                 }
             })
@@ -1058,13 +1058,12 @@ fn update_render_avatar(
         // add defaults
         let defaults: Vec<_> = base_wearables::default_wearables()
             .flat_map(|default| {
-                let Some(WearablePointerResult::Exists(hash)) =
-                    wearable_pointers.0.get(&Urn::from_str(default).unwrap())
+                let Some(WearablePointerResult::Exists(hash)) = wearable_pointers.get(default)
                 else {
                     warn!("failed to load default renderable {}", default);
                     return None;
                 };
-                let meta = wearable_metas.0.get(hash).unwrap();
+                let meta = wearable_metas.0.get(hash.as_str()).unwrap();
                 WearableDefinition::new(meta, &ipfas, body_shape, hash)
             })
             .collect();

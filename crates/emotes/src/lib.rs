@@ -99,7 +99,6 @@ fn fetch_emotes(
         .flat_map(|p| p.content.avatar.emotes.as_ref())
         .flatten()
         .map(|e| &e.urn)
-        .map(|urn| urn.splitn(7, ':').take(6).join(":"))
         .collect::<HashSet<_>>();
 
     if let Some(result) = task.as_mut().and_then(|t| t.complete()) {
@@ -123,7 +122,7 @@ fn fetch_emotes(
     if task.is_none() {
         let missing_urns = required_emote_urns
             .into_iter()
-            .map(|urn| urn_for_emote_specifier(&urn).into_owned())
+            .map(|urn| urn_for_emote_specifier(urn).into_owned())
             .filter(|urn| !defs.loaded.contains(urn))
             .collect::<Vec<_>>();
         if !missing_urns.is_empty() {
@@ -274,6 +273,8 @@ pub fn urn_for_emote_specifier(specifier: &str) -> Cow<str> {
             "urn:decentraland:off-chain:base-emotes:{}",
             specifier
         ))
+    } else if specifier.split(':').nth(6).is_some() {
+        Cow::Owned(specifier.split(':').take(6).join(":"))
     } else {
         Cow::Borrowed(specifier)
     }

@@ -34,7 +34,6 @@ use ui_core::{
     toggle::Toggled,
     ui_actions::{Click, DataChanged, Enabled, On, UiCaller},
 };
-use urn::Urn;
 
 use crate::profile::{SettingsDialog, SettingsTab};
 
@@ -233,8 +232,7 @@ fn set_wearables_content(
                 let player_shape = &player.get_single().unwrap().0;
                 let body_shape = player_shape.body_shape.clone().unwrap();
                 let body_shape_hash = wearable_pointers
-                    .0
-                    .get(&Urn::from_str(&body_shape.to_lowercase()).unwrap())
+                    .get(&body_shape.to_lowercase())
                     .unwrap()
                     .hash()
                     .unwrap()
@@ -246,9 +244,8 @@ fn set_wearables_content(
                         .wearables
                         .iter()
                         .flat_map(|wearable| {
-                            Urn::from_str(wearable)
-                                .ok()
-                                .and_then(|urn| wearable_pointers.0.get(&urn))
+                            wearable_pointers
+                                .get(wearable)
                                 .and_then(WearablePointerResult::hash)
                                 .and_then(|hash| {
                                     wearable_metas.0.get(hash).map(|meta| (meta, hash))
@@ -534,7 +531,7 @@ fn get_owned_wearables(
 
 #[derive(Component, Clone, Debug)]
 enum WearableEntry {
-    Base(Urn, WearableMeta),
+    Base(String, WearableMeta),
     Owned(OwnedWearableData),
 }
 
@@ -566,10 +563,10 @@ impl WearableEntry {
         }
     }
 
-    fn urn(&self) -> Urn {
+    fn urn(&self) -> &str {
         match self {
-            WearableEntry::Base(urn, _) => urn.clone(),
-            WearableEntry::Owned(o) => Urn::from_str(&o.urn).unwrap(),
+            WearableEntry::Base(urn, _) => urn,
+            WearableEntry::Owned(o) => &o.urn,
         }
     }
 
@@ -688,8 +685,7 @@ fn update_wearables_list(
     } else {
         base_wearables()
             .into_iter()
-            .map(|w| Urn::from_str(&w).unwrap())
-            .filter_map(|urn| wearable_pointers.0.get(&urn).map(|p| (urn, p)))
+            .filter_map(|urn| wearable_pointers.get(&urn).map(|p| (urn, p)))
             .filter_map(|(urn, p)| p.hash().map(|h| (urn, h)))
             .filter_map(|(urn, h)| wearable_metas.0.get(h).map(|m| (urn, m.clone())))
             .map(|(urn, meta)| WearableEntry::Base(urn, meta))
@@ -878,7 +874,7 @@ fn update_wearable_item(
             match &*state {
                 WearableItemState::PendingMeta(ix) => {
                     let ix = *ix;
-                    if let Some(pointer) = wearable_pointers.0.get(&urn) {
+                    if let Some(pointer) = wearable_pointers.get(urn) {
                         match pointer {
                             WearablePointerResult::Exists(h) => {
                                 debug!("found {} -> {h}", entry.urn());
@@ -928,12 +924,11 @@ fn update_wearable_item(
                             }
                         }
                     } else {
-                        request_wearables.0.insert(urn.clone());
+                        request_wearables.0.insert(urn.to_owned());
                     }
                 }
                 WearableItemState::PendingImage(handle) => {
-                    let Some(WearablePointerResult::Exists(h)) = wearable_pointers.0.get(&urn)
-                    else {
+                    let Some(WearablePointerResult::Exists(h)) = wearable_pointers.get(urn) else {
                         panic!();
                     };
                     let meta = wearable_metas.0.get(h).unwrap();
@@ -1049,7 +1044,7 @@ fn update_selected_item(
         .collect::<HashSet<_>>();
 
     if let Some(sel) = current_selection {
-        let Some(WearablePointerResult::Exists(h)) = wearable_pointers.0.get(&sel.urn()) else {
+        let Some(WearablePointerResult::Exists(h)) = wearable_pointers.get(sel.urn()) else {
             *retry = true;
             return;
         };
