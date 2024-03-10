@@ -163,11 +163,37 @@ pub struct WearableMeta {
     pub data: WearableData,
 }
 
+impl WearableMeta {
+    pub fn hides(&self, body_shape: &str) -> HashSet<WearableCategory> {
+        // hides from data
+        let mut hides = HashSet::from_iter(self.data.hides.clone());
+        if let Some(repr) = self
+            .data
+            .representations
+            .iter()
+            .find(|repr| repr.body_shapes.iter().any(|shape| body_shape == shape))
+        {
+            // add hides from representation
+            hides.extend(repr.override_hides.clone());
+        }
+
+        // add all hides for skin
+        if self.data.category == WearableCategory::SKIN {
+            hides.extend(WearableCategory::iter());
+        }
+
+        // remove self
+        hides.remove(&self.data.category);
+        hides
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct WearableData {
     pub tags: Vec<String>,
     pub category: WearableCategory,
     pub representations: Vec<WearableRepresentation>,
+    pub hides: Vec<WearableCategory>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -175,8 +201,8 @@ pub struct WearableData {
 pub struct WearableRepresentation {
     pub body_shapes: Vec<String>,
     pub main_file: String,
-    pub override_replaces: Vec<String>,
-    pub override_hides: Vec<String>,
+    pub override_replaces: Vec<WearableCategory>,
+    pub override_hides: Vec<WearableCategory>,
     pub contents: Vec<String>,
 }
 
@@ -222,13 +248,17 @@ fn load_base_wearables(
                         warn!("no metadata on wearable");
                         continue;
                     };
-                    let wearable_data = match serde_json::from_value::<WearableMeta>(metadata) {
-                        Ok(data) => data,
-                        Err(e) => {
-                            warn!("failed to deserialize wearable data: {e}");
-                            continue;
-                        }
-                    };
+                    let wearable_data =
+                        match serde_json::from_value::<WearableMeta>(metadata.clone()) {
+                            Ok(data) => data,
+                            Err(e) => {
+                                warn!("failed to deserialize wearable data: {e}");
+                                continue;
+                            }
+                        };
+                    if wearable_data.name.contains("dungarees") {
+                        debug!("dungarees: {:?}", metadata);
+                    }
                     for pointer in entity.pointers {
                         wearable_pointers
                             .insert(&pointer, WearablePointerResult::Exists(entity.id.clone()));
@@ -750,13 +780,7 @@ impl WearableDefinition {
             return None;
         }
 
-        let hides = HashSet::from_iter(
-            representation
-                .override_hides
-                .iter()
-                .chain(representation.override_replaces.iter())
-                .flat_map(|c| WearableCategory::from_str(c)),
-        );
+        let hides = meta.hides(body_shape);
 
         let (model, texture, mask) = if category.is_texture {
             // don't validate the main file, as some base wearables have no extension on the main_file member (Eyebrows_09 e.g)
@@ -842,6 +866,7 @@ fn load_wearables(
                         warn!("no metadata on wearable");
                         continue;
                     };
+                    debug!("loaded wearable {:?} -> {:?}", entity.pointers, metadata);
                     let wearable_data = match serde_json::from_value::<WearableMeta>(metadata) {
                         Ok(data) => data,
                         Err(e) => {

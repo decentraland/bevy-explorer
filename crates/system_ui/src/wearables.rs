@@ -1215,32 +1215,24 @@ fn update_selected_item(
             )
             .unwrap();
 
-        let repr = meta
-            .data
-            .representations
-            .iter()
-            .find(|repr| repr.body_shapes.contains(&settings.body_shape));
-        if let Some(repr) = repr {
-            for hides in &repr.override_hides {
-                let Ok(category) = WearableCategory::from_str(hides) else {
-                    warn!("unrecognised hide category {hides}");
-                    continue;
-                };
-                let child = commands
-                    .spawn_template(
-                        &dui,
-                        "wearable-hides",
-                        DuiProps::new().with_prop(
-                            "image",
-                            format!("images/backpack/wearable_categories/{}.png", category.slot),
-                        ),
-                    )
-                    .unwrap()
-                    .root;
-                commands
-                    .entity(components.named("hides"))
-                    .try_push_children(&[child]);
-            }
+        let mut hides = Vec::from_iter(meta.hides(&settings.body_shape));
+        hides.sort_unstable();
+
+        for category in hides {
+            let child = commands
+                .spawn_template(
+                    &dui,
+                    "wearable-hides",
+                    DuiProps::new().with_prop(
+                        "image",
+                        format!("images/backpack/wearable_categories/{}.png", category.slot),
+                    ),
+                )
+                .unwrap()
+                .root;
+            commands
+                .entity(components.named("hides"))
+                .try_push_children(&[child]);
         }
     }
 }
