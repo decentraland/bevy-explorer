@@ -547,8 +547,8 @@ impl DuiTemplate for ScrollableTemplate {
             .unwrap_or_default();
 
         let panel_size = match scrollable.direction {
-            ScrollDirection::Vertical(_) => (Val::Auto, Val::Px(100000.0)),
-            ScrollDirection::Horizontal(_) => (Val::Px(100000.0), Val::Auto),
+            ScrollDirection::Vertical(_) => (Val::Percent(100.0), Val::Px(100000.0)),
+            ScrollDirection::Horizontal(_) => (Val::Px(100000.0), Val::Percent(100.0)),
             ScrollDirection::Both(_, _) => (Val::Px(100000.0), Val::Px(100000.0)),
         };
 
@@ -560,6 +560,8 @@ impl DuiTemplate for ScrollableTemplate {
                 style: Style {
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
+                    min_width: Val::Percent(100.0),
+                    min_height: Val::Percent(100.0),
                     max_width: Val::Percent(100.0),
                     max_height: Val::Percent(100.0),
                     overflow: Overflow::clip(),

@@ -20,6 +20,7 @@ use crate::{
     change_realm::{ChangeRealmDialog, UpdateRealmText},
     discover::DiscoverSettingsPlugin,
     emotes::EmotesSettingsPlugin,
+    profile_detail::ProfileDetail,
     wearables::WearableSettingsPlugin,
 };
 
@@ -97,17 +98,29 @@ pub enum OnCloseEvent {
 fn save_settings(
     mut commands: Commands,
     mut current_profile: ResMut<CurrentUserProfile>,
-    modified: Query<(Entity, Option<&AvatarShape>, Option<&BoothInstance>), With<SettingsDialog>>,
+    modified: Query<
+        (
+            Entity,
+            Option<&AvatarShape>,
+            Option<&ProfileDetail>,
+            Option<&BoothInstance>,
+        ),
+        With<SettingsDialog>,
+    >,
 ) {
     let Some(profile) = current_profile.profile.as_mut() else {
         error!("can't amend missing profile");
         return;
     };
 
-    let Ok((dialog_ent, maybe_avatar, maybe_booth)) = modified.get_single() else {
+    let Ok((dialog_ent, maybe_avatar, maybe_detail, maybe_booth)) = modified.get_single() else {
         error!("no dialog");
         return;
     };
+
+    if let Some(detail) = maybe_detail {
+        profile.content = detail.0.clone();
+    }
 
     if let Some(avatar) = maybe_avatar {
         profile.content.avatar.body_shape = avatar.0.body_shape.to_owned();
@@ -229,10 +242,11 @@ pub fn show_settings(
 
     let title_initial = match ev.0 {
         SettingsTab::Discover => 0usize,
-        SettingsTab::Wearables => 1,
-        SettingsTab::Emotes => 2,
-        SettingsTab::Map => 3,
-        SettingsTab::Settings => 4,
+        SettingsTab::ProfileDetail => 1,
+        SettingsTab::Wearables => 2,
+        SettingsTab::Emotes => 3,
+        SettingsTab::Map => 4,
+        SettingsTab::Settings => 5,
     };
 
     let Some(profile) = &current_profile.profile.as_ref() else {
@@ -249,23 +263,19 @@ pub fn show_settings(
 
     let mut props = DuiProps::new();
 
-    for prop in [
-        "discover",
-        "emotes",
-        "map",
-        "settings",
+    props.insert_prop(
         "connect-wallet",
-        "profile-settings",
-    ] {
-        props.insert_prop(
-            prop,
-            InfoDialog::click("Not implemented".to_owned(), "Not implemented".to_owned()),
-        );
-    }
+        InfoDialog::click("Not implemented".to_owned(), "Not implemented".to_owned()),
+    );
 
     let tabs = vec![
         DuiButton {
             label: Some("Discover".to_owned()),
+            enabled: true,
+            ..Default::default()
+        },
+        DuiButton {
+            label: Some("Profile".to_owned()),
             enabled: true,
             ..Default::default()
         },
@@ -316,19 +326,16 @@ pub fn show_settings(
              mut content: Query<&mut SettingsTab>| {
                 *content.single_mut() = match selected.get(caller.0).unwrap().selected.unwrap() {
                     0 => SettingsTab::Discover,
-                    1 => SettingsTab::Wearables,
-                    2 => SettingsTab::Emotes,
-                    3 => SettingsTab::Map,
-                    4 => SettingsTab::Settings,
+                    1 => SettingsTab::ProfileDetail,
+                    2 => SettingsTab::Wearables,
+                    3 => SettingsTab::Emotes,
+                    4 => SettingsTab::Map,
+                    5 => SettingsTab::Settings,
                     _ => panic!(),
                 }
             },
         ),
     );
-
-    // props.insert_prop("wearables", On::<Click>::new(|mut commands: Commands, q: Query<Entity, With<SettingsTab>>| {commands.entity(q.single()).insert(SettingsTab::Wearables);}));
-    // props.insert_prop("emotes", On::<Click>::new(|mut commands: Commands, q: Query<Entity, With<SettingsTab>>| {commands.entity(q.single()).insert(SettingsTab::Emotes);}));
-    // props.insert_prop("settings", SerializeUi::default_on::<Click>());
 
     let components = root.apply_template(&dui, "settings", props).unwrap();
 
@@ -344,6 +351,7 @@ pub fn show_settings(
 
 #[derive(Component, Default, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
+    ProfileDetail,
     #[default]
     Wearables,
     Emotes,

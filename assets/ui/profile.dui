@@ -13,7 +13,6 @@
             <space />
             <div id="wallet">
                 <button id="connect-wallet-button" label="Connect wallet" onclick="@connect-wallet" />
-                <button id="profile-settings-button" label="@profile-name" onclick="@profile-settings" />
                 <button id="close-settings-button" label="X" onclick="@close-settings" />
             </div>
         </div>
