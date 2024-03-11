@@ -64,10 +64,10 @@ pub(crate) fn setup(
             .spawn(NodeBundle {
                 style: Style {
                     position_type: PositionType::Absolute,
-                    left: Val::Percent(50.0),
-                    top: Val::Percent(50.0),
-                    right: Val::Percent(50.0),
-                    bottom: Val::Percent(50.0),
+                    left: Val::Percent(48.5),
+                    top: Val::Percent(48.5),
+                    right: Val::Percent(48.5),
+                    bottom: Val::Percent(48.5),
                     align_content: AlignContent::Center,
                     justify_content: JustifyContent::Center,
                     ..Default::default()
