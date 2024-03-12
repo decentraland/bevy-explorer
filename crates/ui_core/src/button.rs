@@ -161,8 +161,14 @@ impl DuiTemplate for DuiButtonTemplate {
                 "button-base-image",
                 DuiProps::new()
                     .with_prop("image", img)
-                    .with_prop("width", data.image_width.unwrap_or(Val::VMin(4.4)).style_string())
-                    .with_prop("height", data.image_height.unwrap_or(Val::VMin(4.4)).style_string()),
+                    .with_prop(
+                        "width",
+                        data.image_width.unwrap_or(Val::VMin(4.4)).style_string(),
+                    )
+                    .with_prop(
+                        "height",
+                        data.image_height.unwrap_or(Val::VMin(4.4)).style_string(),
+                    ),
             ),
             (None, None) => ctx.render_template(commands, "button-base-notext", DuiProps::new()),
         }?;
@@ -355,7 +361,7 @@ pub trait StyleStringEx {
 impl StyleStringEx for Val {
     fn style_string(&self) -> String {
         match self {
-            Val::Auto => format!("auto"),
+            Val::Auto => "auto".to_owned(),
             Val::Px(px) => format!("{px}px"),
             Val::Percent(pc) => format!("{pc}%"),
             Val::Vw(vw) => format!("{vw}vw"),

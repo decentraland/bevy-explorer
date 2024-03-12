@@ -1,8 +1,13 @@
 <define-template id="chat">
-    <div 
-        style="width: 30%; min-width: 30%; max-height: 30%; flex-direction: column; justify-content: flex-end;" 
+    <bounds 
+        style="display: none; width: 60vmin; min-width: 30vmin; max-height: 31vmin; flex-direction: column; justify-content: flex-end; padding: 1vmin;" 
         focus="block" 
-        interaction="true"
+        interact="true"
+        corner-size="2vmin"
+        blend-size="0.5vmin"
+        border-size="1vmin"
+        border-color="#000000ff"
+        color="#8888cc77"
     >
         <div>
             <tab-group style="justify-content: flex-start; width: 100%; flex-wrap: wrap;" tabs="@chat-tabs" onchanged="@tab-changed" initial="@initial-tab" edge-scale="1px 1px -0px 1px"/>
@@ -11,20 +16,13 @@
                 <button image="images/redx.png" onclick="@close" />
             </div>
         </div>
-        <vscroll id="chat-output" interact="true" style="flex-grow: 1; border: 50px; border-color: green;">
-            <div id="chat-output-inner" interact="true" style="flex-direction: column; justify-content: flex-end; width: 100%; height: auto; border: 5px; border-color: blue;" />
-        </vscroll>
-        <div style="border: 0.5vmin; width: 100%; border: 1px; border-color: red;">
+        <div style="max-height: 22vmin; width: 100%;">
+            <vscroll id="chat-output" interact="true" style="flex-grow: 1;" start-position="end">
+                <div id="chat-output-inner" interact="true" style="flex-direction: column; justify-content: flex-end; width: 100%; height: auto;" />
+            </vscroll>
+         </div>
+        <div style="width: 100%;">
             <text-entry id="chat-entry" style="flex-grow: 1; background-color: #00000077;" accept-line="true" />
         </div>
-    </div>
-</define-template>
-
-<define-template id="chat-hidden">
-    <div
-        style="width: 30%; min-width: 30%; max-height: 30%; flex-direction: column; justify-content: flex-end;" 
-        focus="block" 
-        interaction="true"
-    >
-    </div>
+    </bounds>
 </define-template>

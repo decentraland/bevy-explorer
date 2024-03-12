@@ -106,7 +106,7 @@ pub fn update_camera(
 
     // Apply look update
     options.pitch =
-        (options.pitch - mouse_delta.y * options.sensitivity / 1000.0).clamp(-PI / 2., PI / 2.);
+        (options.pitch - mouse_delta.y * options.sensitivity / 1000.0).clamp(-PI / 2.1, PI / 2.1);
     options.yaw -= mouse_delta.x * options.sensitivity / 1000.0;
     camera_transform.rotation =
         Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
@@ -133,7 +133,8 @@ pub fn update_camera_position(
         };
 
         let xz_plane = (camera_transform.rotation.mul_vec3(-Vec3::Z) * Vec3::new(1.0, 0.0, 1.0))
-            .normalize_or_zero() * distance.clamp(0.0, 1.0);
+            .normalize_or_zero()
+            * distance.clamp(0.0, 1.0);
         let player_head = player_transform.translation
             + Vec3::Y * 1.81
             + camera_transform

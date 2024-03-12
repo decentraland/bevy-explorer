@@ -389,7 +389,7 @@ fn update_results(mut q: Query<&mut DiscoverSettings>) {
                     settings.data.extend(res.data);
                     settings.has_more = res.total > settings.data.len();
                 }
-                Some(Err(e)) => println!("places fetch failed: {e:?}"),
+                Some(Err(e)) => error!("places fetch failed: {e:?}"),
                 None => settings.bypass_change_detection().task = Some(task),
             }
         }

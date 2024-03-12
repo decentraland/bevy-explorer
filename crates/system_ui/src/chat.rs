@@ -1,12 +1,9 @@
-use bevy::{
-    core::FrameCount,
-    prelude::*,
-};
+use bevy::{core::FrameCount, prelude::*};
 
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     dcl_assert,
-    structs::PrimaryUser,
+    structs::{PrimaryUser, ToolTips},
     util::{RingBuffer, RingBufferReceiver, TryPushChildrenEx},
 };
 use comms::{
@@ -15,13 +12,14 @@ use comms::{
 use copypasta::{ClipboardContext, ClipboardProvider};
 use dcl::{SceneLogLevel, SceneLogMessage};
 use dcl_component::proto_components::kernel::comms::rfc4;
+use input_manager::should_accept_key;
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene, Toaster};
 use ui_core::{
     button::{DuiButton, TabSelection},
     focus::Focus,
     text_size::FontSize,
     textentry::TextEntry,
-    ui_actions::{Click, DataChanged, Defocus, HoverEnter, HoverExit, On, UiCaller},
+    ui_actions::{Click, DataChanged, HoverEnter, HoverExit, On, UiCaller},
 };
 
 use super::SystemUiRoot;
@@ -33,7 +31,12 @@ impl Plugin for ChatPanelPlugin {
         app.add_systems(Update, display_chat);
         app.add_systems(Update, append_chat_messages);
         app.add_systems(Update, emit_user_chat);
-        app.add_systems(OnEnter::<ui_core::State>(ui_core::State::Ready), setup);
+        app.add_systems(Startup, setup);
+        app.add_systems(OnEnter::<ui_core::State>(ui_core::State::Ready), chat_popup);
+        app.add_systems(
+            Update,
+            (keyboard_popup.pipe(select_chat_tab)).run_if(should_accept_key),
+        );
     }
 }
 
@@ -58,13 +61,66 @@ pub struct ChatBox {
     active_log_sink: Option<(Entity, RingBufferReceiver<SceneLogMessage>)>,
 }
 
-#[derive(Component)]
-pub struct ChatButton(&'static str);
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+    // profile button
+    commands.spawn((
+        ImageBundle {
+            image: asset_server.load("images/chat_button.png").into(),
+            style: Style {
+                position_type: PositionType::Absolute,
+                top: Val::Px(10.0 + 26.0 * 3.0),
+                right: Val::Px(10.0),
+                ..Default::default()
+            },
+            focus_policy: bevy::ui::FocusPolicy::Block,
+            ..Default::default()
+        },
+        Interaction::default(),
+        On::<Click>::new(|mut q: Query<&mut Style, With<ChatboxContainer>>| {
+            if let Ok(mut style) = q.get_single_mut() {
+                style.display = if style.display == Display::Flex {
+                    Display::None
+                } else {
+                    Display::Flex
+                };
+            }
+        }),
+        On::<HoverEnter>::new(|mut tooltip: ResMut<ToolTips>| {
+            tooltip.0.insert(
+                "chat-button",
+                vec![("Toggle Chat: Click or press Enter".to_owned(), true)],
+            );
+        }),
+        On::<HoverExit>::new(|mut tooltip: ResMut<ToolTips>| {
+            tooltip.0.remove("chat-button");
+        }),
+    ));
+}
 
-#[derive(Component)]
-pub struct ChatOutput;
+fn keyboard_popup(
+    mut commands: Commands,
+    input: Res<Input<KeyCode>>,
+    mut container: Query<&mut Style, With<ChatboxContainer>>,
+    entry: Query<Entity, With<ChatInput>>,
+) -> &'static str {
+    let mut res = "";
+    if input.just_pressed(KeyCode::Return) {
+        if let Ok(mut style) = container.get_single_mut() {
+            if style.display == Display::None {
+                style.display = Display::Flex;
+                res = "Nearby";
+            };
+        }
 
-fn setup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegistry>) {
+        if let Ok(entry) = entry.get_single() {
+            commands.entity(entry).insert(Focus);
+        }
+    }
+
+    res
+}
+
+fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegistry>) {
     dcl_assert!(root.0 != Entity::PLACEHOLDER);
 
     let chat_tab = |label: &'static str| -> DuiButton {
@@ -81,7 +137,7 @@ fn setup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegistry>)
     let tab_labels_changed = tab_labels.clone();
     let tab_changed =
         (move |caller: Res<UiCaller>, selection: Query<&TabSelection>| -> &'static str {
-            *selection
+            selection
                 .get(caller.0)
                 .ok()
                 .and_then(|ts| ts.selected)
@@ -90,19 +146,18 @@ fn setup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegistry>)
         })
         .pipe(select_chat_tab);
 
+    let close_ui = |mut q: Query<&mut Style, With<ChatboxContainer>>| {
+        let Ok(mut style) = q.get_single_mut() else {
+            return;
+        };
+        style.display = Display::None;
+    };
+
     let props = DuiProps::new()
         .with_prop("chat-tabs", chat_tabs)
         .with_prop("tab-changed", On::<DataChanged>::new(tab_changed))
         .with_prop("initial-tab", Some(0usize))
-        .with_prop(
-            "close",
-            On::<Click>::new(|mut q: Query<&mut Style, With<ChatboxContainer>>| {
-                let Ok(mut style) = q.get_single_mut() else {
-                    return;
-                };
-                style.display = Display::None;
-            }),
-        )
+        .with_prop("close", On::<Click>::new(close_ui))
         .with_prop("copy", On::<Click>::new(copy_chat));
 
     let components = commands
@@ -112,8 +167,6 @@ fn setup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegistry>)
 
     commands.entity(components.root).insert((
         ChatboxContainer,
-        On::<HoverEnter>::new(update_chatbox_focus),
-        On::<HoverExit>::new(update_chatbox_focus),
         On::<Click>::new(
             |mut commands: Commands, q: Query<Entity, With<ChatInput>>| {
                 commands.entity(q.single()).try_insert(Focus);
@@ -121,11 +174,12 @@ fn setup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegistry>)
         ),
     ));
 
-    commands.entity(components.named("chat-entry")).insert(ChatInput);
+    commands
+        .entity(components.named("chat-entry"))
+        .insert(ChatInput);
 
     commands
         .entity(components.named("chat-output"))
-        .insert(ChatOutput)
         .insert(BackgroundColor(Color::rgba(0.0, 0.0, 0.25, 0.2)));
 
     commands
@@ -136,16 +190,6 @@ fn setup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegistry>)
             active_chat_sink: None,
             active_log_sink: None,
         });
-
-    commands
-        .entity(components.named("chat-entry"))
-        .insert(On::<Defocus>::new(update_chatbox_focus));
-
-    for (ix, label) in tab_labels.iter().enumerate() {
-        commands
-            .entity(components.named(format!("tab {ix}").as_str()))
-            .insert(ChatButton(label));
-    }
 }
 
 fn copy_chat(
@@ -412,7 +456,9 @@ fn select_chat_tab(
     mut text_entry: Query<&mut TextEntry, With<ChatInput>>,
     time: Res<Time>,
 ) {
-    debug!("select {}", tab);
+    if tab.is_empty() {
+        return;
+    }
     let (entity, mut chatbox) = chatbox.single_mut();
 
     let clicked_current = chatbox.active_tab == tab;
@@ -447,25 +493,5 @@ fn select_chat_tab(
 
         debug!("tab set to {}", tab);
         chatbox.active_tab = tab;
-    }
-}
-
-fn update_chatbox_focus(
-    interaction: Query<&Interaction, With<ChatboxContainer>>,
-    mut chat: Query<&mut BackgroundColor, With<ChatOutput>>,
-    focused_input: Query<(), (With<ChatInput>, With<Focus>)>,
-) {
-    let Ok(mut bg) = chat.get_single_mut() else {
-        return;
-    };
-    let Ok(interaction) = interaction.get_single() else {
-        return;
-    };
-
-    // keep focus if either input has focus, or we are hovering
-    if focused_input.get_single().is_ok() || !matches!(interaction, Interaction::None) {
-        bg.0 = Color::rgba(0.0, 0.0, 0.25, 0.8);
-    } else {
-        bg.0 = Color::rgba(0.0, 0.0, 0.25, 0.2);
     }
 }
