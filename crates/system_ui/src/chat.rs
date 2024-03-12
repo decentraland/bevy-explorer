@@ -61,6 +61,8 @@ pub struct ChatBox {
     active_log_sink: Option<(Entity, RingBufferReceiver<SceneLogMessage>)>,
 }
 
+pub const BUTTON_SCALE: f32 = 6.0;
+
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // profile button
     commands.spawn((
@@ -68,8 +70,10 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             image: asset_server.load("images/chat_button.png").into(),
             style: Style {
                 position_type: PositionType::Absolute,
-                top: Val::Px(10.0 + 26.0 * 3.0),
-                right: Val::Px(10.0),
+                top: Val::VMin(BUTTON_SCALE * 3.5),
+                right: Val::VMin(BUTTON_SCALE * 0.5),
+                width: Val::VMin(BUTTON_SCALE),
+                height: Val::VMin(BUTTON_SCALE),
                 ..Default::default()
             },
             focus_policy: bevy::ui::FocusPolicy::Block,

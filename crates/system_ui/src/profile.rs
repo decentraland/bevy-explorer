@@ -18,6 +18,7 @@ use ui_core::{
 
 use crate::{
     change_realm::{ChangeRealmDialog, UpdateRealmText},
+    chat::BUTTON_SCALE,
     discover::DiscoverSettingsPlugin,
     emotes::EmotesSettingsPlugin,
     profile_detail::ProfileDetail,
@@ -47,8 +48,10 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             image: asset_server.load("images/profile_button.png").into(),
             style: Style {
                 position_type: PositionType::Absolute,
-                top: Val::Px(10.0),
-                right: Val::Px(10.0),
+                top: Val::VMin(BUTTON_SCALE * 0.5),
+                right: Val::VMin(BUTTON_SCALE * 0.5),
+                width: Val::VMin(BUTTON_SCALE),
+                height: Val::VMin(BUTTON_SCALE),
                 ..Default::default()
             },
             focus_policy: bevy::ui::FocusPolicy::Block,

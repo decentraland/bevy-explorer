@@ -16,6 +16,8 @@ use ui_core::{
     ModifyComponentExt,
 };
 
+use crate::chat::BUTTON_SCALE;
+
 pub struct EmoteUiPlugin;
 
 impl Plugin for EmoteUiPlugin {
@@ -42,8 +44,10 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut dui: ResMut
             image: asset_server.load("images/emote_button.png").into(),
             style: Style {
                 position_type: PositionType::Absolute,
-                top: Val::Px(10.0 + 26.0 * 2.0),
-                right: Val::Px(10.0),
+                top: Val::VMin(BUTTON_SCALE * 2.5),
+                right: Val::VMin(BUTTON_SCALE * 0.5),
+                width: Val::VMin(BUTTON_SCALE),
+                height: Val::VMin(BUTTON_SCALE),
                 ..Default::default()
             },
             focus_policy: bevy::ui::FocusPolicy::Block,
