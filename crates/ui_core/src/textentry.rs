@@ -196,7 +196,8 @@ impl DuiTemplate for DuiTextEntryTemplate {
         let textentry = TextEntry {
             hint_text: props.take::<String>("hint-text")?.unwrap_or_default(),
             content: props.take::<String>("initial-text")?.unwrap_or_default(),
-            accept_line: props.take_as::<bool>(ctx, "disabled")?.unwrap_or(false),
+            enabled: !(props.take_as::<bool>(ctx, "disabled")?.unwrap_or(false)),
+            accept_line: props.take_as::<bool>(ctx, "accept-line")?.unwrap_or(false),
             multiline,
             ..Default::default()
         };

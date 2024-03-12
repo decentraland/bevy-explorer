@@ -44,7 +44,7 @@ impl DuiTemplate for TextTemplate {
 }
 
 #[derive(Component)]
-pub struct FontSize(f32);
+pub struct FontSize(pub f32);
 
 fn update_fontsize(
     mut q: Query<(&mut Text, Ref<FontSize>)>,

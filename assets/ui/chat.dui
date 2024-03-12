@@ -1,0 +1,30 @@
+<define-template id="chat">
+    <div 
+        style="width: 30%; min-width: 30%; max-height: 30%; flex-direction: column; justify-content: flex-end;" 
+        focus="block" 
+        interaction="true"
+    >
+        <div>
+            <tab-group style="justify-content: flex-start; width: 100%; flex-wrap: wrap;" tabs="@chat-tabs" onchanged="@tab-changed" initial="@initial-tab" edge-scale="1px 1px -0px 1px"/>
+            <div>
+                <button image="images/copy.png" onclick="@copy" />
+                <button image="images/redx.png" onclick="@close" />
+            </div>
+        </div>
+        <vscroll id="chat-output" interact="true" style="flex-grow: 1; border: 50px; border-color: green;">
+            <div id="chat-output-inner" interact="true" style="flex-direction: column; justify-content: flex-end; width: 100%; height: auto; border: 5px; border-color: blue;" />
+        </vscroll>
+        <div style="border: 0.5vmin; width: 100%; border: 1px; border-color: red;">
+            <text-entry id="chat-entry" style="flex-grow: 1; background-color: #00000077;" accept-line="true" />
+        </div>
+    </div>
+</define-template>
+
+<define-template id="chat-hidden">
+    <div
+        style="width: 30%; min-width: 30%; max-height: 30%; flex-direction: column; justify-content: flex-end;" 
+        focus="block" 
+        interaction="true"
+    >
+    </div>
+</define-template>

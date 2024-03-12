@@ -60,13 +60,15 @@
         margin: 0.35vmin 0.7vmin 0.35vmin 0.7vmin;
     ">
         <bounds id="button-background" 
-            style="position-type: absolute; width: 100%; height: 100%;"
+            style="width: '@width'; height: '@height';"
             color="#bbbbbb" 
             corner-size="1.5vmin"
             blend-size="0.125vmin"
             border-size="0.75vmin"
             border-color="#000000"
-            image="@image"
-        />
+            bound-image="@image"
+        >
+            <bounded bound-image="@image" style="width: 100%; height: 100%" />
+        </bounds>
     </div>
 </define-template>

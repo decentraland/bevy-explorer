@@ -18,6 +18,8 @@ pub struct DuiButton {
     pub styles: Option<InteractStyles>,
     pub children: Option<Entity>,
     pub image: Option<Handle<Image>>,
+    pub image_width: Option<Val>,
+    pub image_height: Option<Val>,
 }
 
 impl Default for DuiButton {
@@ -29,6 +31,8 @@ impl Default for DuiButton {
             styles: Default::default(),
             children: Default::default(),
             image: None,
+            image_width: None,
+            image_height: None,
         }
     }
 }
@@ -37,11 +41,8 @@ impl DuiButton {
     pub fn new_disabled(label: impl Into<String>) -> Self {
         Self {
             label: Some(label.into()),
-            onclick: None,
             enabled: false,
-            styles: None,
-            children: None,
-            image: None,
+            ..Default::default()
         }
     }
 
@@ -91,9 +92,7 @@ impl DuiButton {
             label: Some(label.into()),
             onclick: Some(On::<Click>::new(onclick)),
             enabled,
-            styles: None,
-            children: None,
-            image: None,
+            ..Default::default()
         }
     }
 }
@@ -125,8 +124,11 @@ impl DuiTemplate for DuiButtonTemplate {
         if let Some(children) = props.take::<Entity>("children")? {
             data.children = Some(children);
         }
-        if let Some(image) = props.take::<Handle<Image>>("image")? {
-            data.image = Some(image)
+        if let Some(image) = props.take_as::<Handle<Image>>(ctx, "image")? {
+            data.image = Some(image);
+
+            data.image_width = props.take_as::<Val>(ctx, "image-width")?;
+            data.image_height = props.take_as::<Val>(ctx, "image-height")?;
         };
 
         let styles = data.styles.unwrap_or(InteractStyles {
@@ -157,7 +159,10 @@ impl DuiTemplate for DuiButtonTemplate {
             (None, Some(img)) => ctx.render_template(
                 commands,
                 "button-base-image",
-                DuiProps::new().with_prop("image", img),
+                DuiProps::new()
+                    .with_prop("image", img)
+                    .with_prop("width", data.image_width.unwrap_or(Val::VMin(4.4)).style_string())
+                    .with_prop("height", data.image_height.unwrap_or(Val::VMin(4.4)).style_string()),
             ),
             (None, None) => ctx.render_template(commands, "button-base-notext", DuiProps::new()),
         }?;
@@ -340,5 +345,23 @@ impl DuiTemplate for DuiTabGroupTemplate {
                 .enumerate()
                 .map(|(i, c)| (format!("tab {i}"), c)),
         ))
+    }
+}
+
+pub trait StyleStringEx {
+    fn style_string(&self) -> String;
+}
+
+impl StyleStringEx for Val {
+    fn style_string(&self) -> String {
+        match self {
+            Val::Auto => format!("auto"),
+            Val::Px(px) => format!("{px}px"),
+            Val::Percent(pc) => format!("{pc}%"),
+            Val::Vw(vw) => format!("{vw}vw"),
+            Val::Vh(vh) => format!("{vh}vh"),
+            Val::VMin(vmin) => format!("{vmin}vmin"),
+            Val::VMax(vmax) => format!("{vmax}vmax"),
+        }
     }
 }

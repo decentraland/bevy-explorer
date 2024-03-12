@@ -213,6 +213,7 @@ macro_rules! impl_dui_str {
 
 impl_dui_str!(bool);
 impl_dui_str!(u32);
+impl_dui_str!(usize);
 
 impl DuiFromStr for Val {
     fn from_str(_: &DuiContext, value: &str) -> Result<Self, anyhow::Error>
