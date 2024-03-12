@@ -476,7 +476,7 @@ fn update_ready_gltfs(
                             .map(|chunk| chunk.try_into().unwrap())
                             .collect();
 
-                        let shape = SharedShape::trimesh(positions_parry, indices_parry);
+                        let shape = SharedShape::trimesh_with_flags(positions_parry, indices_parry, TriMeshFlags::all());
 
                         let index = collider_counter
                             .entry(collider_base_name.to_owned())
