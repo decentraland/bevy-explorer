@@ -5,7 +5,7 @@ use common::rpc::RpcCall;
 use deno_core::{anyhow, op, JsBuffer, Op, OpDecl, OpState};
 use serde::{Deserialize, Serialize};
 
-use crate::{interface::crdt_context::CrdtContext, js::user_identity::UserEthAddress, RpcCalls};
+use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
@@ -51,13 +51,6 @@ async fn op_comms_send_binary(
     let scene = context.scene_id.0;
     let hash = context.hash.clone();
 
-    let address = state
-        .try_borrow::<UserEthAddress>()
-        .ok_or(anyhow::anyhow!("not connected"))?
-        .0
-        .clone()
-        .into_bytes();
-
     let mut results = Vec::default();
 
     for message in messages {
@@ -66,11 +59,6 @@ async fn op_comms_send_binary(
         state
             .borrow_mut::<RpcCalls>()
             .push(RpcCall::SendMessageBus { scene, data });
-
-        let mut response = vec![address.len() as u8];
-        response.extend(&address);
-        response.extend(message.as_ref());
-        results.push(response);
     }
 
     if !state.has::<BinaryBusReceiver>() {
