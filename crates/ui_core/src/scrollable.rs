@@ -560,8 +560,8 @@ impl DuiTemplate for ScrollableTemplate {
                 style: Style {
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
-                    min_width: Val::Percent(100.0),
-                    min_height: Val::Percent(100.0),
+                    min_width: Val::Percent(0.0),
+                    min_height: Val::Percent(0.0),
                     max_width: Val::Percent(100.0),
                     max_height: Val::Percent(100.0),
                     overflow: Overflow::clip(),

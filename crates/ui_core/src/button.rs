@@ -156,20 +156,16 @@ impl DuiTemplate for DuiButtonTemplate {
                 "button-base-text",
                 DuiProps::new().with_prop("label", label),
             ),
-            (None, Some(img)) => ctx.render_template(
-                commands,
-                "button-base-image",
-                DuiProps::new()
-                    .with_prop("image", img)
-                    .with_prop(
-                        "width",
-                        data.image_width.unwrap_or(Val::VMin(4.4)).style_string(),
-                    )
-                    .with_prop(
-                        "height",
-                        data.image_height.unwrap_or(Val::VMin(4.4)).style_string(),
-                    ),
-            ),
+            (None, Some(img)) => {
+                let mut props = DuiProps::new().with_prop("image", img);
+                if let Some(image_width) = data.image_width {
+                    props = props.with_prop("width", image_width.style_string());
+                }
+                if let Some(image_height) = data.image_height {
+                    props = props.with_prop("height", image_height.style_string());
+                }
+                ctx.render_template(commands, "button-base-image", props)
+            }
             (None, None) => ctx.render_template(commands, "button-base-notext", DuiProps::new()),
         }?;
 

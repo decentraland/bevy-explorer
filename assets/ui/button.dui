@@ -58,9 +58,11 @@
         align-items: center;
         justify-content: center;
         margin: 0.35vmin 0.7vmin 0.35vmin 0.7vmin;
+        width: '@width'; 
+        height: '@height';
     ">
         <bounds id="button-background" 
-            style="width: '@width'; height: '@height';"
+            style="position-type: absolute; width: 100%; height: 100%;"
             color="#bbbbbb" 
             corner-size="1.5vmin"
             blend-size="0.125vmin"

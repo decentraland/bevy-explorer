@@ -21,11 +21,9 @@
                 <div style="flex-grow: 1;">
                     <div style="width: 100%; height: 100%; flex-direction: column">
                         <!-- items -->
-                        <div style="width: 100%; height: 100%">
-                            <vscroll>
-                                <div id="items" style="width: 100%; height: auto; flex-direction: row; align-content: center; justify-content: center; flex-wrap: wrap;" />
-                            </vscroll>
-                        </div>
+                        <vscroll>
+                            <div id="items" style="width: 100%; height: auto; flex-direction: row; align-content: center; justify-content: center; flex-wrap: wrap;" />
+                        </vscroll>
                     </div>
                 </div>
             </div>
