@@ -65,8 +65,8 @@ bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = 
 data-encoding = "2.5"
 opener = "0.6"
 chrono = { version = "0.4.31", features = ["serde"] }
-bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "master" }
-bevy_ecss = { git = "https://github.com/robtfm/bevy_ecss", branch = "main" }
+bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "main-12" }
+bevy_ecss = { git = "https://github.com/robtfm/bevy_ecss", branch = "main-12" }
 
 [dependencies]
 common = { workspace = true }
