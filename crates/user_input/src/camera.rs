@@ -106,7 +106,7 @@ pub fn update_camera(
 
     // Apply look update
     options.pitch =
-        (options.pitch - mouse_delta.y * options.sensitivity / 1000.0).clamp(-PI / 2., PI / 2.);
+        (options.pitch - mouse_delta.y * options.sensitivity / 1000.0).clamp(-PI / 2.1, PI / 2.1);
     options.yaw -= mouse_delta.x * options.sensitivity / 1000.0;
     camera_transform.rotation =
         Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
@@ -132,9 +132,18 @@ pub fn update_camera_position(
             _ => options.distance,
         };
 
-        let player_head = player_transform.translation + Vec3::Y * 1.81;
-        let target_direction =
-            Vec3::Y * 0.2 * distance + camera_transform.rotation.mul_vec3(Vec3::Z * 5.0 * distance);
+        let xz_plane = (camera_transform.rotation.mul_vec3(-Vec3::Z) * Vec3::new(1.0, 0.0, 1.0))
+            .normalize_or_zero()
+            * distance.clamp(0.0, 1.0);
+        let player_head = player_transform.translation
+            + Vec3::Y * 1.81
+            + camera_transform
+                .rotation
+                .mul_vec3(Vec3::new(1.0, -0.4, 0.0))
+                * distance.clamp(0.0, 0.5)
+            + xz_plane;
+
+        let target_direction = camera_transform.rotation.mul_vec3(Vec3::Z * 5.0 * distance);
         let mut distance = target_direction.length();
         if target_direction.y + player_head.y < 0.0 {
             distance = distance * player_head.y / -target_direction.y;
@@ -154,7 +163,7 @@ pub fn update_camera_position(
 
                 if let Some(hit) = colliders.cast_ray_nearest(
                     context.last_update_frame,
-                    player_head,
+                    player_head - xz_plane,
                     target_direction.normalize(),
                     distance,
                     u32::MAX,

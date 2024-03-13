@@ -9,7 +9,7 @@ use input_manager::MouseInteractionComponent;
 
 use crate::{
     renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
-    ContainingScene, SceneEntity, SceneSets,
+    update_world::text_shape::make_text_section, ContainingScene, SceneEntity, SceneSets,
 };
 use common::structs::PrimaryUser;
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -27,11 +27,11 @@ use dcl_component::{
 };
 use ui_core::{
     combo_box::ComboBox,
-    nine_slice::{Ui9Slice, Ui9SliceSet},
+    nine_slice::Ui9Slice,
+    stretch_uvs_image::StretchUvMaterial,
     textentry::TextEntry,
     ui_actions::{DataChanged, HoverEnter, HoverExit, On},
     ui_builder::SpawnSpacer,
-    TITLE_TEXT_STYLE,
 };
 
 use super::{material::TextureResolver, pointer_events::PointerEvents, AddCrdtInterfaceExt};
@@ -234,8 +234,14 @@ impl From<PbUiTransform> for UiTransform {
 #[derive(Clone, Copy, Debug)]
 pub enum BackgroundTextureMode {
     NineSlices(BorderRect),
-    Stretch(BorderRect),
+    Stretch([Vec4; 2]),
     Center,
+}
+
+impl BackgroundTextureMode {
+    pub fn stretch_default() -> Self {
+        Self::Stretch([Vec4::W, Vec4::ONE - Vec4::W])
+    }
 }
 
 #[derive(Component, Clone, Debug)]
@@ -244,7 +250,7 @@ pub struct BackgroundTexture {
     mode: BackgroundTextureMode,
 }
 
-#[derive(Component, Clone)]
+#[derive(Component, Clone, Debug)]
 pub struct UiBackground {
     color: Option<Color>,
     texture: Option<BackgroundTexture>,
@@ -269,23 +275,22 @@ impl From<PbUiBackground> for UiBackground {
                     }
                     components::BackgroundTextureMode::Center => BackgroundTextureMode::Center,
                     components::BackgroundTextureMode::Stretch => {
-                        // the uvs array seems to contain [x-, y-, x-, y+, x+, y+, x+, y-]
-                        // let's pick ... [1 - 4]              ^^^^^^^^^^^^^^
-                        let mut uvs = BorderRect::default();
-                        let mut iter = value.uvs.iter().skip(1);
-                        if let Some(ymin) = iter.next() {
-                            uvs.bottom = ymin.clamp(0.0, 1.0);
-                        }
-                        if let Some(xmin) = iter.next() {
-                            uvs.left = xmin.clamp(0.0, 1.0);
-                        }
-                        if let Some(ymax) = iter.next() {
-                            uvs.top = 1.0 - ymax.clamp(uvs.bottom, 1.0);
-                        }
-                        if let Some(xmax) = iter.next() {
-                            uvs.right = 1.0 - xmax.clamp(uvs.left, 1.0);
-                        }
-
+                        // the uvs array contain [tl.x, tl.y, bl.x, bl.y, br.x, br.y, tr.x, tr.y]
+                        let mut iter = value.uvs.iter().copied();
+                        let uvs = [
+                            Vec4::new(
+                                iter.next().unwrap_or(0.0),
+                                iter.next().unwrap_or(0.0),
+                                iter.next().unwrap_or(0.0),
+                                iter.next().unwrap_or(1.0),
+                            ),
+                            Vec4::new(
+                                iter.next().unwrap_or(1.0),
+                                iter.next().unwrap_or(1.0),
+                                iter.next().unwrap_or(1.0),
+                                iter.next().unwrap_or(0.0),
+                            ),
+                        ];
                         BackgroundTextureMode::Stretch(uvs)
                     }
                 };
@@ -303,7 +308,7 @@ pub enum VAlign {
     Bottom,
 }
 
-#[derive(Component, Clone)]
+#[derive(Component, Clone, Debug)]
 pub struct UiText {
     pub text: String,
     pub color: Color,
@@ -351,7 +356,7 @@ impl From<PbUiText> for UiText {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct UiInput(PbUiInput);
 
 impl From<PbUiInput> for UiInput {
@@ -365,7 +370,7 @@ pub struct UiInputPersistentState {
     content: String,
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct UiDropdown(PbUiDropdown);
 
 impl From<PbUiDropdown> for UiDropdown {
@@ -407,14 +412,6 @@ impl Plugin for SceneUiPlugin {
                 .chain()
                 .in_set(SceneSets::PostLoop),
         );
-
-        // we need to make sure commands are run before 9slice layouting
-        app.add_systems(
-            Update,
-            apply_deferred
-                .after(SceneSets::PostLoop)
-                .before(Ui9SliceSet),
-        );
     }
 }
 
@@ -440,7 +437,13 @@ fn init_scene_ui_root(
 fn update_scene_ui_components(
     new_entities: Query<
         (Entity, &SceneEntity),
-        Or<(Changed<UiTransform>, Changed<UiText>, Changed<UiBackground>)>,
+        Or<(
+            Changed<UiTransform>,
+            Changed<UiText>,
+            Changed<UiBackground>,
+            Changed<UiInput>,
+            Changed<UiDropdown>,
+        )>,
     >,
     mut ui_roots: Query<&mut SceneUiData>,
 ) {
@@ -478,6 +481,7 @@ fn layout_scene_ui(
     ui_input_state: Query<&UiInputPersistentState>,
     ui_dropdown_state: Query<&UiDropdownPersistentState>,
     resolver: TextureResolver,
+    mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
 ) {
     let current_scenes = player
         .get_single()
@@ -575,16 +579,11 @@ fn layout_scene_ui(
                         )| {
                             // if our rightof is not added, we can't process this node
                             if !processed_nodes.contains_key(&ui_transform.right_of) {
-                                debug!(
-                                    "can't place {} with ro {}",
-                                    scene_id, ui_transform.right_of
-                                );
                                 return true;
                             }
 
                             // if our parent is not added, we can't process this node
                             let Some(parent) = processed_nodes.get(&ui_transform.parent) else {
-                                debug!("can't place {} with parent {}", scene_id, ui_transform.parent);
                                 return true;
                             };
 
@@ -616,36 +615,45 @@ fn layout_scene_ui(
                                 padding: ui_transform.padding,
                                 ..Default::default()
                             };
-                            debug!("{:?} style: {:?}", scene_id, style);
+                            debug!("{:?} [parent: {:?}, ro: {:?}] style: {:?}", scene_id, ui_transform.parent, ui_transform.right_of, style);
+                            debug!("{:?}, {:?}, {:?}, {:?}, {:?}", maybe_background, maybe_text, maybe_pointer_events, maybe_ui_input, maybe_dropdown);
                             commands.entity(*parent).with_children(|commands| {
                                 let mut ent_cmds = &mut commands.spawn(NodeBundle::default());
 
                                 if let Some(background) = maybe_background {
-                                    if let Some(color) = background.color {
-                                        ent_cmds = ent_cmds.insert(BackgroundColor(color));
-                                    }
-
                                     if let Some(texture) = background.texture.as_ref() {
                                         let image = texture.tex.tex.as_ref().and_then(|tex| resolver.resolve_texture(ent, tex).ok());
 
                                         let texture_mode = match texture.tex.tex {
                                             Some(texture_union::Tex::Texture(_)) => texture.mode,
-                                            _ => BackgroundTextureMode::Stretch(BorderRect::default()),
+                                            _ => BackgroundTextureMode::stretch_default(),
                                         };
 
                                         if let Some(image) = image {
                                             match texture_mode {
                                                 BackgroundTextureMode::NineSlices(rect) => {
-                                                    ent_cmds.insert(Ui9Slice{
-                                                        image: image.image,
-                                                        center_region: rect.into(),
-                                                        tint: None,
+                                                    ent_cmds.remove::<BackgroundColor>();
+                                                    ent_cmds.with_children(|c| {
+                                                        c.spawn((
+                                                            NodeBundle {
+                                                                style: Style {
+                                                                    position_type: PositionType::Absolute,
+                                                                    width: Val::Percent(100.0),
+                                                                    height: Val::Percent(100.0),
+                                                                    overflow: Overflow::clip(),
+                                                                    ..Default::default()
+                                                                },
+                                                                ..Default::default()
+                                                            },
+                                                            Ui9Slice{
+                                                                image: image.image,
+                                                                center_region: rect.into(),
+                                                                tint: background.color.map(BackgroundColor),
+                                                            },
+                                                        ));
                                                     });
                                                 },
                                                 BackgroundTextureMode::Stretch(ref uvs) => {
-                                                    let mid_width = 1.0 - uvs.right - uvs.left;
-                                                    let mid_height = 1.0 - uvs.top - uvs.bottom;
-
                                                     ent_cmds.with_children(|c| {
                                                         c.spawn(NodeBundle {
                                                             style: Style {
@@ -657,22 +665,18 @@ fn layout_scene_ui(
                                                             },
                                                             ..Default::default()
                                                         }).with_children(|c| {
-                                                            c.spawn(ImageBundle{
-                                                                style: Style {
-                                                                    position_type: PositionType::Absolute,
-                                                                    left: Val::Percent(-100.0 * uvs.left / mid_width),
-                                                                    right: Val::Percent(-100.0 * uvs.right / mid_width),
-                                                                    top: Val::Percent(-100.0 * uvs.top / mid_height),
-                                                                    bottom: Val::Percent(-100.0 * uvs.bottom / mid_height),
+                                                            c.spawn((
+                                                                NodeBundle{
+                                                                    style: Style {
+                                                                        position_type: PositionType::Absolute,
+                                                                        width: Val::Percent(100.0),
+                                                                        height: Val::Percent(100.0),
+                                                                        ..Default::default()
+                                                                    },
                                                                     ..Default::default()
                                                                 },
-                                                                image: UiImage {
-                                                                    texture: image.image,
-                                                                    flip_x: false,
-                                                                    flip_y: false,
-                                                                },
-                                                                ..Default::default()
-                                                            });
+                                                                stretch_uvs.add(StretchUvMaterial{ image: image.image.clone(), uvs: *uvs, color: background.color.unwrap_or(Color::WHITE).as_linear_rgba_f32().into() })
+                                                            ));
                                                         });
                                                     });
                                                 }
@@ -734,10 +738,13 @@ fn layout_scene_ui(
                                                 texture
                                             );
                                         }
+                                    } else if let Some(color) = background.color {
+                                        ent_cmds = ent_cmds.insert(BackgroundColor(color));
                                     }
+
                                 }
 
-                                if let Some(text) = maybe_text {
+                                if let Some(ui_text) = maybe_text {
                                     ent_cmds = ent_cmds.with_children(|c| {
                                         c.spawn(NodeBundle {
                                             style: Style {
@@ -749,7 +756,7 @@ fn layout_scene_ui(
                                             ..Default::default()
                                         })
                                             .with_children(|c| {
-                                                if text.v_align != VAlign::Top {
+                                                if ui_text.v_align != VAlign::Top {
                                                     c.spacer();
                                                 }
 
@@ -761,38 +768,31 @@ fn layout_scene_ui(
                                                     },
                                                     ..Default::default()
                                                 }).with_children(|c| {
-                                                    if text.h_align != TextAlignment::Left {
+                                                    if ui_text.h_align != TextAlignment::Left {
                                                         c.spacer();
                                                     }
 
+                                                    let text = make_text_section(
+                                                        ui_text.text.as_str(),
+                                                        ui_text.font_size,
+                                                        ui_text.color,
+                                                        ui_text.font,
+                                                        ui_text.h_align,
+                                                        false,
+                                                    );
+
                                                     c.spawn(TextBundle {
-                                                        text: Text {
-                                                            sections: vec![TextSection::new(
-                                                                text.text.clone(),
-                                                                TextStyle {
-                                                                    font: TITLE_TEXT_STYLE
-                                                                        .get()
-                                                                        .unwrap()
-                                                                        .clone()
-                                                                        .font, // TODO fix this
-                                                                    font_size: text.font_size,
-                                                                    color: text.color,
-                                                                },
-                                                            )],
-                                                            alignment: text.h_align,
-                                                            linebreak_behavior:
-                                                                bevy::text::BreakLineOn::NoWrap,
-                                                        },
+                                                        text,
                                                         z_index: ZIndex::Local(1),
                                                         ..Default::default()
                                                     });
 
-                                                    if text.h_align != TextAlignment::Right {
+                                                    if ui_text.h_align != TextAlignment::Right {
                                                         c.spacer();
                                                     }
                                                 });
 
-                                                if text.v_align != VAlign::Bottom {
+                                                if ui_text.v_align != VAlign::Bottom {
                                                     c.spacer();
                                                 }
                                             },
@@ -937,9 +937,10 @@ fn layout_scene_ui(
                 }
 
                 debug!(
-                    "made ui; placed: {}, unplaced: {}",
+                    "made ui; placed: {}, unplaced: {} ({:?})",
                     processed_nodes.len(),
-                    unprocessed_uis.len()
+                    unprocessed_uis.len(),
+                    unprocessed_uis
                 );
                 ui_data.relayout = false;
                 ui_data.current_node = Some(root);

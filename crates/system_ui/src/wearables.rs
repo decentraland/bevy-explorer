@@ -16,7 +16,10 @@ use bevy::{
 use bevy_dui::{
     DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry, DuiWalker,
 };
-use common::{structs::PrimaryUser, util::TaskExt};
+use common::{
+    structs::PrimaryUser,
+    util::{TaskExt, TryPushChildrenEx},
+};
 use comms::profile::CurrentUserProfile;
 use ipfs::IpfsAssetServer;
 use isahc::ReadResponseExt;
@@ -31,7 +34,6 @@ use ui_core::{
     toggle::Toggled,
     ui_actions::{Click, DataChanged, Enabled, On, UiCaller},
 };
-use urn::Urn;
 
 use crate::profile::{SettingsDialog, SettingsTab};
 
@@ -230,8 +232,7 @@ fn set_wearables_content(
                 let player_shape = &player.get_single().unwrap().0;
                 let body_shape = player_shape.body_shape.clone().unwrap();
                 let body_shape_hash = wearable_pointers
-                    .0
-                    .get(&Urn::from_str(&body_shape.to_lowercase()).unwrap())
+                    .get(&body_shape.to_lowercase())
                     .unwrap()
                     .hash()
                     .unwrap()
@@ -243,9 +244,8 @@ fn set_wearables_content(
                         .wearables
                         .iter()
                         .flat_map(|wearable| {
-                            Urn::from_str(wearable)
-                                .ok()
-                                .and_then(|urn| wearable_pointers.0.get(&urn))
+                            wearable_pointers
+                                .get(wearable)
                                 .and_then(WearablePointerResult::hash)
                                 .and_then(|hash| {
                                     wearable_metas.0.get(hash).map(|meta| (meta, hash))
@@ -303,10 +303,12 @@ fn set_wearables_content(
                     styles: Some(InteractStyles {
                         active: Some(InteractStyle {
                             background: Some(Color::ORANGE),
+                            border: Some(Color::BLACK),
                             ..Default::default()
                         }),
                         inactive: Some(InteractStyle {
                             background: Some(Color::rgba(0.0, 0.0, 0.0, 0.0)),
+                            border: Some(Color::NONE),
                             ..Default::default()
                         }),
                         ..Default::default()
@@ -529,7 +531,7 @@ fn get_owned_wearables(
 
 #[derive(Component, Clone, Debug)]
 enum WearableEntry {
-    Base(Urn, WearableMeta),
+    Base(String, WearableMeta),
     Owned(OwnedWearableData),
 }
 
@@ -561,10 +563,10 @@ impl WearableEntry {
         }
     }
 
-    fn urn(&self) -> Urn {
+    fn urn(&self) -> &str {
         match self {
-            WearableEntry::Base(urn, _) => urn.clone(),
-            WearableEntry::Owned(o) => Urn::from_str(&o.urn).unwrap(),
+            WearableEntry::Base(urn, _) => urn,
+            WearableEntry::Owned(o) => &o.urn,
         }
     }
 
@@ -683,8 +685,7 @@ fn update_wearables_list(
     } else {
         base_wearables()
             .into_iter()
-            .map(|w| Urn::from_str(&w).unwrap())
-            .filter_map(|urn| wearable_pointers.0.get(&urn).map(|p| (urn, p)))
+            .filter_map(|urn| wearable_pointers.get(&urn).map(|p| (urn, p)))
             .filter_map(|(urn, p)| p.hash().map(|h| (urn, h)))
             .filter_map(|(urn, h)| wearable_metas.0.get(h).map(|m| (urn, m.clone())))
             .map(|(urn, meta)| WearableEntry::Base(urn, meta))
@@ -765,10 +766,13 @@ fn update_wearables_list(
             if selected.0.as_ref().map(WearableEntry::urn) == Some(wearable.urn()) {
                 initial = Some(ix);
             }
-            let inactive_color = if worn.contains(wearable.id()) {
-                Color::ORANGE
+            let (inactive_color, inactive_border) = if worn.contains(wearable.id()) {
+                (Color::ORANGE, Color::rgb(0.5, 0.325, 0.0))
             } else {
-                Color::rgba(0.0, 0.0, 0.0, 0.0)
+                (
+                    Color::rgba(0.0, 0.0, 0.0, 0.0),
+                    Color::rgba(0.0, 0.0, 0.0, 0.0),
+                )
             };
 
             let content = commands
@@ -783,14 +787,17 @@ fn update_wearables_list(
                 styles: Some(InteractStyles {
                     active: Some(InteractStyle {
                         background: Some(Color::RED),
+                        border: Some(Color::rgb(0.5, 0.0, 0.0)),
                         ..Default::default()
                     }),
                     inactive: Some(InteractStyle {
                         background: Some(inactive_color),
+                        border: Some(inactive_border),
                         ..Default::default()
                     }),
                     disabled: Some(InteractStyle {
                         background: Some(Color::rgba(0.0, 0.0, 0.0, 0.0)),
+                        border: Some(Color::rgba(0.0, 0.0, 0.0, 0.0)),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -867,7 +874,7 @@ fn update_wearable_item(
             match &*state {
                 WearableItemState::PendingMeta(ix) => {
                     let ix = *ix;
-                    if let Some(pointer) = wearable_pointers.0.get(&urn) {
+                    if let Some(pointer) = wearable_pointers.get(urn) {
                         match pointer {
                             WearablePointerResult::Exists(h) => {
                                 debug!("found {} -> {h}", entry.urn());
@@ -917,12 +924,11 @@ fn update_wearable_item(
                             }
                         }
                     } else {
-                        request_wearables.0.insert(urn.clone());
+                        request_wearables.0.insert(urn.to_owned());
                     }
                 }
                 WearableItemState::PendingImage(handle) => {
-                    let Some(WearablePointerResult::Exists(h)) = wearable_pointers.0.get(&urn)
-                    else {
+                    let Some(WearablePointerResult::Exists(h)) = wearable_pointers.get(urn) else {
                         panic!();
                     };
                     let meta = wearable_metas.0.get(h).unwrap();
@@ -1038,7 +1044,7 @@ fn update_selected_item(
         .collect::<HashSet<_>>();
 
     if let Some(sel) = current_selection {
-        let Some(WearablePointerResult::Exists(h)) = wearable_pointers.0.get(&sel.urn()) else {
+        let Some(WearablePointerResult::Exists(h)) = wearable_pointers.get(sel.urn()) else {
             *retry = true;
             return;
         };
@@ -1209,32 +1215,24 @@ fn update_selected_item(
             )
             .unwrap();
 
-        let repr = meta
-            .data
-            .representations
-            .iter()
-            .find(|repr| repr.body_shapes.contains(&settings.body_shape));
-        if let Some(repr) = repr {
-            for hides in &repr.override_hides {
-                let Ok(category) = WearableCategory::from_str(hides) else {
-                    warn!("unrecognised hide category {hides}");
-                    continue;
-                };
-                let child = commands
-                    .spawn_template(
-                        &dui,
-                        "wearable-hides",
-                        DuiProps::new().with_prop(
-                            "image",
-                            format!("images/backpack/wearable_categories/{}.png", category.slot),
-                        ),
-                    )
-                    .unwrap()
-                    .root;
-                commands
-                    .entity(components.named("hides"))
-                    .push_children(&[child]);
-            }
+        let mut hides = Vec::from_iter(meta.hides(&settings.body_shape));
+        hides.sort_unstable();
+
+        for category in hides {
+            let child = commands
+                .spawn_template(
+                    &dui,
+                    "wearable-hides",
+                    DuiProps::new().with_prop(
+                        "image",
+                        format!("images/backpack/wearable_categories/{}.png", category.slot),
+                    ),
+                )
+                .unwrap()
+                .root;
+            commands
+                .entity(components.named("hides"))
+                .try_push_children(&[child]);
         }
     }
 }

@@ -197,3 +197,14 @@ impl From<common::BorderRect> for bevy::prelude::UiRect {
         }
     }
 }
+
+// util for rounding, scenes expect near 0 to be == 0, etc
+pub trait RoughRoundExt {
+    fn round_at_pow2(self, pow2: i8) -> Self;
+}
+
+impl RoughRoundExt for bevy::math::Vec3 {
+    fn round_at_pow2(self, pow2: i8) -> Self {
+        (self * 2f32.powf(-pow2 as f32)).round() * 2f32.powf(pow2 as f32)
+    }
+}

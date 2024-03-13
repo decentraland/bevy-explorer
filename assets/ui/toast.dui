@@ -1,0 +1,27 @@
+<define-template id="toaster">
+    <div style="position-type: absolute; left: 30%; right: 30%; top: 10%; max-width: 40%" z-index="1">
+        <space />
+        <div id="inner" style="flex-direction: column; justify-content: center;" />
+        <space />
+    </div>
+</define-template>
+
+<define-template id="toast">
+    <div>
+        <space />
+        <bounds 
+            style="
+                align-items: center;
+                padding: 2vmin;
+            "
+            corner-size="4vmin"
+            blend-size="1vmin"
+            border-size="2vmin"
+            border-color="#000000ff"
+            color="#8888cc77"
+        >
+            <med-text text="@toast" />
+        </bounds>
+        <space />
+    </div>
+</define-template>

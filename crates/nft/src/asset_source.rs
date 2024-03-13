@@ -76,10 +76,7 @@ impl AssetReader for NftReader {
                 )));
             }
 
-            let remote = format!(
-                "https://opensea.decentraland.org/api/v1/asset/{}/{}",
-                address, token
-            );
+            let remote = format!("https://opensea.decentraland.org/api/v2/chain/{chain}/contract/{address}/nfts/{token}");
 
             let token = path;
 
@@ -238,9 +235,14 @@ pub struct Nft {
     pub name: Option<String>,
     pub description: Option<String>,
     pub permalink: Option<String>,
-    pub creator: Option<NftIdent>,
-    pub last_sale: Option<NftLastSale>,
-    pub top_ownerships: Option<Vec<NftOwner>>,
+    pub creator: Option<String>,
+    // pub last_sale: Option<NftLastSale>,
+    // pub top_ownerships: Option<Vec<NftOwner>>,
+}
+
+#[derive(Deserialize)]
+pub struct NftWrapper {
+    nft: Nft,
 }
 
 pub struct NftLoader;
@@ -264,12 +266,12 @@ impl AssetLoader for NftLoader {
                 .await
                 .map_err(|e| std::io::Error::new(e.kind(), e))?;
 
-            let res = serde_json::from_reader(bytes.as_slice())
+            let res = serde_json::from_reader::<_, NftWrapper>(bytes.as_slice())
                 .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e));
             if res.is_err() {
                 debug!("errored nft bytes: {}", String::from_utf8(bytes).unwrap());
             }
-            res
+            res.map(|wrapper| wrapper.nft)
         })
     }
 

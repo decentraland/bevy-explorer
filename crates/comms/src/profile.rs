@@ -29,7 +29,7 @@ use common::{
 use common::{rpc::RpcCall, util::AsH160};
 use dcl_component::{
     proto_components::{kernel::comms::rfc4, sdk::components::PbPlayerIdentityData},
-    SceneComponentId,
+    SceneComponentId, SceneEntityId,
 };
 use wallet::Wallet;
 
@@ -63,6 +63,7 @@ pub fn setup_primary_profile(
     wallet: Res<Wallet>,
     ipfas: IpfsAssetServer,
     images: Res<Assets<Image>>,
+    mut global_crdt: ResMut<GlobalCrdtState>,
 ) {
     // gather any event receivers
     for sender in subscribe_events.read().filter_map(|ev| match ev {
@@ -81,6 +82,17 @@ pub fn setup_primary_profile(
 
             // update component
             commands.entity(player).try_insert(profile.clone());
+
+            // send to scenes
+            global_crdt.update_crdt(
+                SceneComponentId::PLAYER_IDENTITY_DATA,
+                CrdtType::LWW_ANY,
+                SceneEntityId::PLAYER,
+                &PbPlayerIdentityData {
+                    address: profile.content.eth_address.clone(),
+                    is_guest: !(profile.content.has_connected_web3.unwrap_or(false)),
+                },
+            );
 
             // send over network
             debug!("sending profile new version {:?}", profile.version);

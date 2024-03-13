@@ -26,14 +26,21 @@ impl Plugin for UserInputPlugin {
             Update,
             (
                 update_user_velocity.run_if(should_accept_key),
-                update_user_position,
                 update_camera,
-                update_camera_position,
             )
                 .chain()
                 .in_set(SceneSets::Input),
         );
-        app.add_systems(Update, manage_player_visibility.in_set(SceneSets::PostLoop));
+        app.add_systems(
+            Update,
+            (
+                manage_player_visibility,
+                update_user_position.after(tween::update_tween),
+                update_camera_position,
+            )
+                .chain()
+                .in_set(SceneSets::PostLoop),
+        );
     }
 }
 

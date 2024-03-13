@@ -3,7 +3,11 @@ use bevy::{
     prelude::{Mat3, Quat, Vec3},
 };
 use common::rpc::RpcCall;
-use deno_core::{anyhow::anyhow, error::AnyError, op, Op, OpDecl, OpState};
+use deno_core::{
+    anyhow::{self, anyhow},
+    error::AnyError,
+    op, Op, OpDecl, OpState,
+};
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
@@ -19,7 +23,7 @@ use dcl_component::{
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
 
-use super::RpcCalls;
+use super::{runtime::scene_information, RpcCalls};
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
@@ -29,6 +33,7 @@ pub fn ops() -> Vec<OpDecl> {
         op_change_realm::DECL,
         op_external_url::DECL,
         op_emote::DECL,
+        op_scene_emote::DECL,
         op_open_nft_dialog::DECL,
     ]
 }
@@ -180,6 +185,46 @@ fn op_emote(op_state: &mut OpState, emote: String) {
         }),
     };
 
+    send_emote(op_state, emote);
+}
+
+#[op]
+async fn op_scene_emote(
+    op_state: Rc<RefCell<OpState>>,
+    emote: String,
+    looping: bool,
+) -> Result<(), anyhow::Error> {
+    let scene_info = scene_information(op_state.clone()).await?;
+
+    let emote = emote.to_lowercase();
+    let emote_hash = &scene_info
+        .content
+        .iter()
+        .find(|fe| fe.file == emote)
+        .ok_or(anyhow!(
+            "emote not found in content map: {} not in {:?}",
+            emote,
+            scene_info
+                .content
+                .iter()
+                .map(|fe| &fe.file)
+                .collect::<Vec<_>>()
+        ))?
+        .hash;
+    let emote_urn = format!("urn:decentraland:off-chain:scene-emote:{emote_hash}-{looping}");
+
+    let emote = PbAvatarEmoteCommand {
+        emote_command: Some(EmoteCommand {
+            emote_urn,
+            r#loop: looping,
+        }),
+    };
+
+    send_emote(&mut op_state.borrow_mut(), emote);
+    Ok(())
+}
+
+fn send_emote(op_state: &mut OpState, emote: PbAvatarEmoteCommand) {
     //ensure entity
     let context = op_state.borrow_mut::<CrdtContext>();
     context.init(SceneEntityId::PLAYER);

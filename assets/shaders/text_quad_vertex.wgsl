@@ -8,6 +8,7 @@
 
 struct TextQuadData {
     valign: f32,
+    halign: f32,
     pix_per_m: f32,
     add_y_pix: f32,
 }
@@ -28,7 +29,7 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
     // then we take the pixels per meter and texture size to determine where the vertices should lie
     let tex_dims = textureDimensions(base_color_texture);
     let modified_vertex_position = vec3<f32>(
-        vertex.position.x * f32(tex_dims.x) / quad_data.pix_per_m,
+        (vertex.position.x + quad_data.halign) * f32(tex_dims.x) / quad_data.pix_per_m,
         ((vertex.position.y + quad_data.valign) * f32(tex_dims.y) + quad_data.add_y_pix) / quad_data.pix_per_m,
         0.0
     );

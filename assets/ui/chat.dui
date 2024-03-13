@@ -1,0 +1,26 @@
+<define-template id="chat">
+    <bounds 
+        style="display: none; width: 60vmin; min-width: 30vmin; max-height: 31vmin; flex-direction: column; justify-content: flex-end; padding: 1vmin;" 
+        focus="block" 
+        interact="true"
+        corner-size="2vmin"
+        blend-size="0.5vmin"
+        border-size="1vmin"
+        border-color="#000000ff"
+        color="#8888cc77"
+    >
+        <div>
+            <tab-group style="justify-content: flex-start; width: 100%; flex-wrap: wrap;" tabs="@chat-tabs" onchanged="@tab-changed" initial="@initial-tab" edge-scale="1px 1px -0px 1px"/>
+            <div>
+                <button image="images/copy.png" onclick="@copy" image-width="4.4vmin" image-height="4.4vmin" />
+                <button image="images/redx.png" onclick="@close" image-width="4.4vmin" image-height="4.4vmin" />
+            </div>
+        </div>
+        <vscroll id="chat-output" interact="true" start-position="end">
+            <div id="chat-output-inner" interact="true" style="flex-direction: column; justify-content: flex-end; width: 100%;" />
+        </vscroll>
+        <div style="width: 100%;">
+            <text-entry id="chat-entry" style="flex-grow: 1; background-color: #00000077;" accept-line="true" />
+        </div>
+    </bounds>
+</define-template>

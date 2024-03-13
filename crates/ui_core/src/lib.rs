@@ -1,12 +1,13 @@
+pub mod bound_node;
 pub mod button;
 pub mod color_picker;
 pub mod combo_box;
-pub mod dialog;
 pub mod focus;
 pub mod interact_style;
 pub mod nine_slice;
 pub mod scrollable;
 pub mod spinner;
+pub mod stretch_uvs_image;
 pub mod text_size;
 pub mod textentry;
 pub mod toggle;
@@ -26,6 +27,7 @@ use bevy::{
 };
 use bevy_dui::{DuiPlugin, DuiRegistry};
 use bevy_egui::EguiPlugin;
+use bound_node::BoundedNodePlugin;
 use button::{DuiButtonSetTemplate, DuiButtonTemplate, DuiTabGroupTemplate};
 use color_picker::ColorPickerPlugin;
 use combo_box::ComboBoxPlugin;
@@ -34,6 +36,7 @@ use once_cell::sync::OnceCell;
 
 use common::sets::SetupSets;
 use spinner::SpinnerPlugin;
+use stretch_uvs_image::StretchUvsImagePlugin;
 use text_size::TextSizePlugin;
 use textentry::TextEntryPlugin;
 use toggle::TogglePlugin;
@@ -57,12 +60,14 @@ pub struct UiCorePlugin;
 impl Plugin for UiCorePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(DuiPlugin);
+        app.add_plugins(BoundedNodePlugin);
         app.add_plugins(EguiPlugin);
         app.add_plugins(UiActionPlugin);
         app.add_plugins(FocusPlugin);
         app.add_plugins(InteractStylePlugin);
         app.add_plugins(ScrollablePlugin);
         app.add_plugins(Ui9SlicePlugin);
+        app.add_plugins(StretchUvsImagePlugin);
         app.add_plugins(TogglePlugin);
         app.add_plugins(TextSizePlugin);
         app.add_plugins(ComboBoxPlugin);

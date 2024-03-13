@@ -4,18 +4,22 @@
 -->
 <define-template id="dialog">
     <fullscreen-block>
-        <div style="
-            flex-direction: column;
-            overflow-x: hidden;
-            overflow-y: hidden;
-            align-items: center;
-            border: 0.7vmin;
-            border-color: #2222aa;
-            padding: 0vmin 2.8vmin 1.4vmin 2.8vmin;
-            background-color: #8888cccc;
-            width: 50%;
-            max-width: 80%;
-        ">
+        <bounds 
+            style="
+                flex-direction: column;
+                overflow-x: hidden;
+                overflow-y: hidden;
+                align-items: center;
+                padding: 4vmin;
+                max-width: 80%;
+                max-height: 80%;
+            "
+            corner-size="4vmin"
+            blend-size="1vmin"
+            border-size="2vmin"
+            border-color="#0000ff"
+            color="#8888cc77"
+        >
             <large-text style="margin: 2.8vmin; text-align: center; color: white;" text="@title" />
             <hr />
             <apply-children />
@@ -24,7 +28,7 @@
                 <space />
                 <button-set buttons="@buttons" />
             </div>
-        </div>
+        </bounds>
     </fullscreen-block>
 </define-template>
 

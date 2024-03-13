@@ -1,6 +1,9 @@
 use bevy::{prelude::*, utils::HashSet};
 
-use common::util::{dcl_assert, RingBuffer};
+use common::{
+    structs::SpawnPoint,
+    util::{dcl_assert, RingBuffer},
+};
 use dcl::{
     interface::{CrdtStore, CrdtType},
     SceneId, SceneLogMessage,
@@ -8,7 +11,6 @@ use dcl::{
 use dcl_component::{DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter};
 
 use crate::{
-    initialize_scene::SpawnPoint,
     primary_entities::PrimaryEntities,
     update_world::{mesh_collider::DisableCollisions, transform_and_parent::ParentPositionSync},
     ContainerEntity, SceneEntity, TargetParent,

@@ -1,8 +1,10 @@
 use anyhow::anyhow;
 use bevy::{ecs::system::EntityCommands, prelude::*, ui::FocusPolicy};
 use bevy_dui::{DuiContext, DuiProps, DuiTemplate, NodeMap};
+use common::util::TryPushChildrenEx;
 
 use crate::{
+    bound_node::NodeBounds,
     combo_box::PropsExt,
     interact_style::{Active, InteractStyle, InteractStyles},
     ui_actions::{close_ui, Click, DataChanged, Enabled, On, UiCaller},
@@ -16,6 +18,8 @@ pub struct DuiButton {
     pub styles: Option<InteractStyles>,
     pub children: Option<Entity>,
     pub image: Option<Handle<Image>>,
+    pub image_width: Option<Val>,
+    pub image_height: Option<Val>,
 }
 
 impl Default for DuiButton {
@@ -27,6 +31,8 @@ impl Default for DuiButton {
             styles: Default::default(),
             children: Default::default(),
             image: None,
+            image_width: None,
+            image_height: None,
         }
     }
 }
@@ -35,11 +41,8 @@ impl DuiButton {
     pub fn new_disabled(label: impl Into<String>) -> Self {
         Self {
             label: Some(label.into()),
-            onclick: None,
             enabled: false,
-            styles: None,
-            children: None,
-            image: None,
+            ..Default::default()
         }
     }
 
@@ -89,9 +92,7 @@ impl DuiButton {
             label: Some(label.into()),
             onclick: Some(On::<Click>::new(onclick)),
             enabled,
-            styles: None,
-            children: None,
-            image: None,
+            ..Default::default()
         }
     }
 }
@@ -123,8 +124,11 @@ impl DuiTemplate for DuiButtonTemplate {
         if let Some(children) = props.take::<Entity>("children")? {
             data.children = Some(children);
         }
-        if let Some(image) = props.take::<Handle<Image>>("image")? {
-            data.image = Some(image)
+        if let Some(image) = props.take_as::<Handle<Image>>(ctx, "image")? {
+            data.image = Some(image);
+
+            data.image_width = props.take_as::<Val>(ctx, "image-width")?;
+            data.image_height = props.take_as::<Val>(ctx, "image-height")?;
         };
 
         let styles = data.styles.unwrap_or(InteractStyles {
@@ -141,7 +145,7 @@ impl DuiTemplate for DuiButtonTemplate {
                 ..Default::default()
             }),
             disabled: Some(InteractStyle {
-                background: Some(Color::rgb(0.4, 0.4, 0.4)),
+                background: Some(Color::rgb(0.6, 0.6, 0.6)),
                 ..Default::default()
             }),
         });
@@ -152,11 +156,16 @@ impl DuiTemplate for DuiButtonTemplate {
                 "button-base-text",
                 DuiProps::new().with_prop("label", label),
             ),
-            (None, Some(img)) => ctx.render_template(
-                commands,
-                "button-base-image",
-                DuiProps::new().with_prop("image", img),
-            ),
+            (None, Some(img)) => {
+                let mut props = DuiProps::new().with_prop("image", img);
+                if let Some(image_width) = data.image_width {
+                    props = props.with_prop("width", image_width.style_string());
+                }
+                if let Some(image_height) = data.image_height {
+                    props = props.with_prop("height", image_height.style_string());
+                }
+                ctx.render_template(commands, "button-base-image", props)
+            }
             (None, None) => ctx.render_template(commands, "button-base-notext", DuiProps::new()),
         }?;
 
@@ -177,7 +186,7 @@ impl DuiTemplate for DuiButtonTemplate {
             commands
                 .commands()
                 .entity(components["button-node"])
-                .push_children(&[entity]);
+                .try_push_children(&[entity]);
             components.insert("label".to_owned(), entity);
         }
 
@@ -225,7 +234,7 @@ impl DuiTemplate for DuiButtonSetTemplate {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        commands.push_children(&children);
+        commands.try_push_children(&children);
 
         Ok(NodeMap::from_iter(
             children
@@ -269,7 +278,8 @@ impl DuiTemplate for DuiTabGroupTemplate {
         let on_changed = props
             .take::<On<DataChanged>>("onchanged")?
             .ok_or(anyhow!("no action for tabgroup"))?;
-        let toggle = props.take_bool_like("toggle")?.unwrap_or(false);
+        let toggle = props.take_as::<bool>(ctx, "toggle")?.unwrap_or(false);
+        let edge_scale = props.take_as::<UiRect>(ctx, "edge-scale")?;
 
         let mut active_entities = Vec::default();
 
@@ -306,17 +316,23 @@ impl DuiTemplate for DuiTabGroupTemplate {
                     ),
                 )
                 .map(|nodes| {
-                    commands
-                        .commands()
-                        .entity(nodes["button-background"])
-                        .insert(Active(Some(ix) == start_index));
+                    let mut bg = commands.commands().entity(nodes["button-background"]);
+
+                    bg.insert(Active(Some(ix) == start_index));
+
+                    if let Some(flat_side) = edge_scale {
+                        bg.modify_component(move |bounds: &mut NodeBounds| {
+                            bounds.edge_scale = flat_side
+                        });
+                    }
+
                     active_entities.push(nodes.clone());
                     nodes["root"]
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        commands.push_children(&children);
+        commands.try_push_children(&children);
         commands.insert((
             on_changed,
             TabSelection {
@@ -331,5 +347,23 @@ impl DuiTemplate for DuiTabGroupTemplate {
                 .enumerate()
                 .map(|(i, c)| (format!("tab {i}"), c)),
         ))
+    }
+}
+
+pub trait StyleStringEx {
+    fn style_string(&self) -> String;
+}
+
+impl StyleStringEx for Val {
+    fn style_string(&self) -> String {
+        match self {
+            Val::Auto => "auto".to_owned(),
+            Val::Px(px) => format!("{px}px"),
+            Val::Percent(pc) => format!("{pc}%"),
+            Val::Vw(vw) => format!("{vw}vw"),
+            Val::Vh(vh) => format!("{vh}vh"),
+            Val::VMin(vmin) => format!("{vmin}vmin"),
+            Val::VMax(vmax) => format!("{vmax}vmax"),
+        }
     }
 }

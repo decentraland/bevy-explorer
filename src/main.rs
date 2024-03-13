@@ -64,7 +64,7 @@ fn main() {
         .unwrap_or_default();
     let mut args = pico_args::Arguments::from_env();
 
-    let mut final_config = AppConfig {
+    let final_config = AppConfig {
         server: args
             .value_from_str("--server")
             .ok()
@@ -101,16 +101,12 @@ fn main() {
             .value_from_str("--distance")
             .ok()
             .unwrap_or(base_config.scene_load_distance),
-        sysinfo_visible: true,
+        sysinfo_visible: false,
         scene_log_to_console: args.contains("--scene_log_to_console"),
     };
 
     let test_scenes = args.value_from_str("--test_scenes").ok();
     let test_mode = args.contains("--testing") || test_scenes.is_some();
-
-    if test_mode {
-        final_config.sysinfo_visible = false;
-    }
 
     app.insert_resource(TestingData {
         inspect_hash: args.value_from_str("--inspect").ok(),

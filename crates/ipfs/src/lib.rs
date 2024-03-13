@@ -200,6 +200,10 @@ impl ContentMap {
     pub fn values(&self) -> impl Iterator<Item = (&String, &String)> {
         self.0.iter()
     }
+
+    pub fn new_single(file: String, hash: String) -> Self {
+        Self(HashMap::from_iter([(file, hash)]))
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

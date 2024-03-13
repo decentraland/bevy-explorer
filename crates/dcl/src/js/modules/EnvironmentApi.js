@@ -1,5 +1,5 @@
 module.exports.getBootstrapData = async function (body) {
-    const sceneInfo = await Deno.core.ops.op_get_scene_information()
+    const sceneInfo = await Deno.core.ops.op_scene_information()
     return {
         id: sceneInfo.urn,
         baseUrl: sceneInfo.baseUrl,

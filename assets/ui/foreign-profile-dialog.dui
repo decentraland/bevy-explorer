@@ -1,0 +1,16 @@
+<define-template id="foreign-profile">
+    <dialog title="@title" buttons="@buttons">
+        <div style="flex-direction: row">
+            <div style="height: 50vh; width: 30vw; border: 1px; border-color: green">
+                <photobooth booth-instance="@booth-instance" />
+            </div>
+            <div style="flex-direction: column; width: 40%">
+                <med-text text="profile content goes here" />
+                <hr/>
+                <med-text text="e.g. eth address:" />
+                <med-text text="@eth-address" />
+                <hr/>
+            </div>
+        </div>
+    </dialog>
+</define-template>

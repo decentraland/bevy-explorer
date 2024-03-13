@@ -31,7 +31,7 @@
             <div style="position-type: absolute; left:82.96%; top:54.5%;"><med-text style="color: black;" text="9" /></div>
             <div style="position-type: absolute; left:75.6%; top:78.17%;"><med-text style="color: black;" text="0" /></div>
 
-            <div style="width: 50%; max-width: 50%; align-items: center; flex-direction: row; flex-grow: 1;">
+            <div style="left: 25%; right: 25%; width: 50%; max-width: 50%; align-self: center; align-items: center; flex-direction: row; flex-grow: 1;">
                 <div style="flex-grow: 1;" />
                 <large-text style="color: white; text-align: center;" id="output" text="" />
                 <div style="flex-grow: 1;" />

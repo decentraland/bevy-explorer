@@ -4,6 +4,8 @@ use common::structs::ToolTips;
 use comms::{Transport, TransportType};
 use ui_core::ui_actions::{Click, HoverEnter, HoverExit, On};
 
+use crate::chat::BUTTON_SCALE;
+
 pub struct MicUiPlugin;
 
 #[derive(Component)]
@@ -37,8 +39,10 @@ fn setup(mut commands: Commands, images: Res<MicImages>) {
             image: images.inactive.clone_weak().into(),
             style: Style {
                 position_type: PositionType::Absolute,
-                top: Val::Px(36.0),
-                right: Val::Px(10.0),
+                top: Val::VMin(BUTTON_SCALE * 1.5),
+                right: Val::VMin(BUTTON_SCALE * 0.5),
+                width: Val::VMin(BUTTON_SCALE),
+                height: Val::VMin(BUTTON_SCALE),
                 ..Default::default()
             },
             focus_policy: bevy::ui::FocusPolicy::Block,

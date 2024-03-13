@@ -116,6 +116,7 @@ globalThis.fetch = fetch.fetch;
 
 import * as timers from "ext:deno_web/02_timers.js";
 globalThis.setTimeout = timers.setTimeout;
+globalThis.setInterval = timers.setInterval;
 globalThis.clearTimeout = timers.clearTimeout;
 
 import * as websocket from "ext:deno_websocket/01_websocket.js";

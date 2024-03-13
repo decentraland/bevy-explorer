@@ -4,7 +4,7 @@ use bevy::utils::{Entry, HashMap, HashSet};
 
 use dcl_component::{DclReader, SceneCrdtTimestamp, SceneEntityId};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LWWEntry {
     pub timestamp: SceneCrdtTimestamp,
     pub is_some: bool,
@@ -163,6 +163,10 @@ impl CrdtLWWState {
             maybe_new_data,
             UpdateMode::ForceIfDifferent,
         )
+    }
+
+    pub fn update_lww_timestamp(&mut self, entity: SceneEntityId, timestamp: SceneCrdtTimestamp) {
+        self.last_write.entry(entity).or_default().timestamp = timestamp;
     }
 }
 

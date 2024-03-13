@@ -113,7 +113,7 @@ impl SceneComponentId {
     pub const TWEEN_STATE: SceneComponentId = SceneComponentId(1103);
 }
 
-#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy, Default)]
 pub struct SceneCrdtTimestamp(pub u32);
 
 impl FromDclReader for Vec3 {

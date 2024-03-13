@@ -6,14 +6,13 @@
         background-color: #8888ccff;
         align-items: center;
     ">
-        <div id="title-bar" style="width: 100%; height: auto;">
+        <div id="title-bar" style="width: 100%; height: auto;" z-index="100">
             <button label-name="change-realm-button" label="@realm" onclick="@change-realm" />
             <space />
-            <tab-group id="title-pages" tabs="@title-tabs" onchanged="@title-onchanged" initial="@title-initial" />
+            <tab-group id="title-pages" tabs="@title-tabs" onchanged="@title-onchanged" initial="@title-initial" edge-scale="1px 1px -0px 1px" />
             <space />
             <div id="wallet">
                 <button id="connect-wallet-button" label="Connect wallet" onclick="@connect-wallet" />
-                <button id="profile-settings-button" label="@profile-name" onclick="@profile-settings" />
                 <button id="close-settings-button" label="X" onclick="@close-settings" />
             </div>
         </div>

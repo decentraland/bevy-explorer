@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, num::ParseIntError, ops::Range, str::FromStr};
+use std::{collections::VecDeque, num::ParseIntError, str::FromStr};
 
 use bevy::{
     asset::{io::Reader, AssetLoader, LoadContext},
@@ -8,10 +8,9 @@ use bevy::{
     utils::{BoxedFuture, HashMap, HashSet},
 };
 use futures_lite::AsyncReadExt;
-use serde::Deserialize;
 
 use common::{
-    structs::{AppConfig, IVec2Arg, SceneLoadDistance},
+    structs::{AppConfig, IVec2Arg, SceneLoadDistance, SceneMeta},
     util::TaskExt,
 };
 use comms::global_crdt::GlobalCrdtState;
@@ -195,72 +194,6 @@ pub(crate) fn load_scene_json(
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
-pub struct SpawnPosition {
-    x: serde_json::Value,
-    y: serde_json::Value,
-    z: serde_json::Value,
-}
-
-impl SpawnPosition {
-    pub fn bounding_box(&self) -> (Vec3, Vec3) {
-        let parse_val = |v: &serde_json::Value| -> Option<Range<f32>> {
-            if let Some(val) = v.as_f64() {
-                Some(val as f32..val as f32)
-            } else if let Some(array) = v.as_array() {
-                if let Some(mut start) = array.first().and_then(|s| s.as_f64()) {
-                    let mut end = array.get(1).and_then(|e| e.as_f64()).unwrap_or(start);
-                    if end < start {
-                        (start, end) = (end, start);
-                    }
-                    Some(start as f32..end as f32)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        };
-
-        let x = parse_val(&self.x).unwrap_or(0.0..16.0);
-        let y = parse_val(&self.y).unwrap_or(0.0..16.0);
-        let z = parse_val(&self.z).unwrap_or(0.0..16.0);
-
-        (
-            Vec3::new(x.start, y.start, z.start),
-            Vec3::new(x.end, y.end, z.end),
-        )
-    }
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct SpawnPoint {
-    pub name: Option<String>,
-    pub default: bool,
-    pub position: SpawnPosition,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct SceneMetaScene {
-    pub base: String,
-    pub parcels: Vec<String>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct SceneDisplay {
-    title: Option<String>,
-}
-
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct SceneMeta {
-    pub display: Option<SceneDisplay>,
-    pub main: String,
-    pub scene: SceneMetaScene,
-    pub runtime_version: Option<String>,
-    pub spawn_points: Option<Vec<SpawnPoint>>,
-}
-
 #[derive(Asset, Default, Clone, TypePath)]
 pub struct SerializedCrdtStore(pub Vec<u8>);
 
@@ -368,7 +301,7 @@ pub(crate) fn load_scene_javascript(
             }
         } else {
             ipfas.load_url(
-                "https://renderer-artifacts.decentraland.org/sdk7-adaption-layer/main/index.min.js",
+                "https://renderer-artifacts.decentraland.org/sdk7-adaption-layer/dev/index.min.js",
             )
         };
 
@@ -539,7 +472,7 @@ pub(crate) fn initialize_scene(
         Entity,
         &mut SceneLoading,
         &Handle<SceneJsFile>,
-        &RendererSceneContext,
+        &mut RendererSceneContext,
     )>,
     scene_js_files: Res<Assets<SceneJsFile>>,
     asset_server: Res<AssetServer>,
@@ -547,7 +480,7 @@ pub(crate) fn initialize_scene(
     wallet: Res<Wallet>,
     testing_data: Res<TestingData>,
 ) {
-    for (root, mut state, h_code, context) in loading_scenes.iter_mut() {
+    for (root, mut state, h_code, mut context) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
             continue;
         }
@@ -605,6 +538,9 @@ pub(crate) fn initialize_scene(
                 .map_or(false, |inspect_hash| inspect_hash == &context.hash),
             testing_data.test_mode,
         );
+
+        // mark context as in flight so we wait for initial RPC requests
+        context.in_flight = true;
 
         commands
             .entity(root)

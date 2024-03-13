@@ -4,6 +4,7 @@ use common::{
     sets::SceneSets,
     structs::{AttachPoints, PrimaryUser},
 };
+use comms::profile::UserProfile;
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::sdk::components::{AvatarAnchorPointType, PbAvatarAttach},
@@ -39,6 +40,7 @@ pub fn update_attached(
     attachments: Query<(Entity, &AvatarAttachment), Changed<AvatarAttachment>>,
     mut removed_attachments: RemovedComponents<AvatarAttachment>,
     primary_user: Query<&AttachPoints, With<PrimaryUser>>,
+    all_users: Query<(&AttachPoints, &UserProfile)>,
 ) {
     for removed in removed_attachments.read() {
         if let Some(mut commands) = commands.get_entity(removed) {
@@ -47,15 +49,31 @@ pub fn update_attached(
     }
 
     for (ent, attach) in attachments.iter() {
-        let attach_points = if attach.0.avatar_id.is_none() {
-            let Ok(data) = primary_user.get_single() else {
-                warn!("no primary user");
-                continue;
-            };
-            data
-        } else {
-            warn!("nope");
-            continue;
+        let attach_points = match attach.0.avatar_id.as_ref() {
+            None => {
+                let Ok(data) = primary_user.get_single() else {
+                    warn!("no primary user");
+                    continue;
+                };
+                data
+            }
+            Some(id) => {
+                let Some((attach, _)) = all_users
+                    .iter()
+                    .find(|(_, profile)| profile.content.user_id.as_ref() == Some(id))
+                else {
+                    warn!("user {:?} not found", id);
+                    warn!(
+                        "available users: {:?}",
+                        all_users
+                            .iter()
+                            .map(|(_, profile)| &profile.content)
+                            .collect::<Vec<_>>()
+                    );
+                    continue;
+                };
+                attach
+            }
         };
 
         let sync_entity = match attach.0.anchor_point_id() {

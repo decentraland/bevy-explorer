@@ -5,17 +5,28 @@ use bevy::{
     ui::FocusPolicy,
 };
 
+use bevy_console::ConsoleCommand;
+use bevy_dui::{DuiCommandsExt, DuiEntities, DuiRegistry};
 use common::{
     sets::SetupSets,
     structs::{AppConfig, PrimaryUser},
 };
 use comms::{global_crdt::ForeignPlayer, Transport};
+use console::DoAddConsoleCommand;
 use scene_runner::{
     initialize_scene::{SceneLoading, PARCEL_SIZE},
     renderer_context::RendererSceneContext,
     ContainingScene, DebugInfo,
 };
-use ui_core::{BODY_TEXT_STYLE, TITLE_TEXT_STYLE};
+use ui_core::{
+    ui_actions::{Click, EventCloneExt},
+    BODY_TEXT_STYLE, TITLE_TEXT_STYLE,
+};
+
+use crate::{
+    map::MapTexture,
+    profile::{SettingsTab, ShowSettingsEvent},
+};
 
 use super::SystemUiRoot;
 
@@ -27,32 +38,78 @@ impl Plugin for SysInfoPanelPlugin {
             Startup,
             setup.in_set(SetupSets::Main).after(SetupSets::Init),
         );
-        app.add_systems(Update, update_scene_load_state);
+        app.add_systems(Update, (update_scene_load_state, update_minimap));
+        app.add_systems(
+            OnEnter::<ui_core::State>(ui_core::State::Ready),
+            setup_minimap,
+        );
+        app.add_console_command::<SysinfoCommand, _>(set_sysinfo);
     }
 }
 
 #[derive(Component)]
 struct SysInfoMarker;
 
-pub(crate) fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res<AppConfig>) {
+#[derive(Component)]
+struct SysInfoContainer;
+
+pub(crate) fn setup(
+    mut commands: Commands,
+    root: Res<SystemUiRoot>,
+    config: Res<AppConfig>,
+    asset_server: Res<AssetServer>,
+) {
     commands.entity(root.0).with_children(|commands| {
         commands
             .spawn(NodeBundle {
                 style: Style {
-                    flex_direction: FlexDirection::Column,
-                    align_self: AlignSelf::FlexStart,
-                    border: UiRect::all(Val::Px(5.)),
+                    position_type: PositionType::Absolute,
+                    left: Val::Percent(48.5),
+                    top: Val::Percent(48.5),
+                    right: Val::Percent(48.5),
+                    bottom: Val::Percent(48.5),
+                    align_content: AlignContent::Center,
+                    justify_content: JustifyContent::Center,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .with_children(|c| {
+                c.spawn(ImageBundle {
+                    style: Style {
+                        width: Val::VMin(3.0),
+                        height: Val::VMin(3.0),
+                        ..Default::default()
+                    },
+                    image: asset_server.load("images/crosshair.png").into(),
+                    background_color: Color::rgba(1.0, 1.0, 1.0, 0.7).into(),
+                    ..Default::default()
+                });
+            });
+    });
+
+    commands.entity(root.0).with_children(|commands| {
+        commands
+            .spawn((
+                NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Column,
+                        align_self: AlignSelf::FlexStart,
+                        border: UiRect::all(Val::Px(5.)),
+                        ..default()
+                    },
+                    visibility: if config.sysinfo_visible {
+                        Visibility::Visible
+                    } else {
+                        Visibility::Hidden
+                    },
+                    background_color: Color::rgba(0.8, 0.8, 1.0, 0.8).into(),
+                    focus_policy: FocusPolicy::Block,
+                    z_index: ZIndex::Global(100),
                     ..default()
                 },
-                visibility: if config.sysinfo_visible {
-                    Visibility::Visible
-                } else {
-                    Visibility::Hidden
-                },
-                background_color: Color::rgba(0.8, 0.8, 1.0, 0.8).into(),
-                focus_policy: FocusPolicy::Block,
-                ..default()
-            })
+                SysInfoContainer,
+            ))
             .with_children(|commands| {
                 commands.spawn(TextBundle::from_section(
                     "System Info",
@@ -119,6 +176,9 @@ pub(crate) fn setup(mut commands: Commands, root: Res<SystemUiRoot>, config: Res
             });
     });
 }
+
+#[derive(Component)]
+pub struct Minimap;
 
 #[allow(clippy::too_many_arguments)]
 fn update_scene_load_state(
@@ -231,5 +291,82 @@ fn update_scene_load_state(
                 format!("{msg}\n{key}: {info}")
             });
         set_child(debug_info);
+    }
+}
+
+fn setup_minimap(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegistry>) {
+    let components = commands
+        .entity(root.0)
+        .spawn_template(&dui, "minimap", Default::default())
+        .unwrap();
+    commands.entity(components.root).insert(Minimap);
+    commands.entity(components.named("map-node")).insert((
+        MapTexture {
+            center: Default::default(),
+            parcels_per_vmin: 100.0,
+            icon_min_size_vmin: 0.03,
+        },
+        Interaction::default(),
+        ShowSettingsEvent(SettingsTab::Map).send_value_on::<Click>(),
+    ));
+}
+
+fn update_minimap(
+    q: Query<&DuiEntities, With<Minimap>>,
+    mut maps: Query<&mut MapTexture>,
+    player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
+    containing_scene: ContainingScene,
+    scenes: Query<&RendererSceneContext>,
+    mut text: Query<&mut Text>,
+) {
+    let Ok((player, gt)) = player.get_single() else {
+        return;
+    };
+
+    let player_translation = (gt.translation().xz() * Vec2::new(1.0, -1.0)) / PARCEL_SIZE;
+    let map_center = player_translation - Vec2::Y; // no idea why i have to subtract one :(
+
+    let scene = containing_scene.get_parcel(player);
+    let parcel = player_translation.floor().as_ivec2();
+    let title = scene
+        .and_then(|scene| scenes.get(scene).ok())
+        .map(|context| context.title.clone())
+        .unwrap_or("???".to_owned());
+
+    if let Ok(components) = q.get_single() {
+        if let Ok(mut map) = maps.get_mut(components.named("map-node")) {
+            map.center = map_center;
+        }
+
+        if let Ok(mut text) = text.get_mut(components.named("title")) {
+            text.sections[0].value = title;
+        }
+
+        if let Ok(mut text) = text.get_mut(components.named("position")) {
+            text.sections[0].value = format!("({},{})", parcel.x, parcel.y);
+        }
+    }
+}
+
+// set fps
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/sysinfo")]
+struct SysinfoCommand {
+    on: Option<bool>,
+}
+
+fn set_sysinfo(
+    mut commands: Commands,
+    mut input: ConsoleCommand<SysinfoCommand>,
+    q: Query<Entity, With<SysInfoContainer>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let on = command.on.unwrap_or(true);
+
+        commands.entity(q.single()).insert(if on {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        });
     }
 }

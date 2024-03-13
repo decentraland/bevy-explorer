@@ -59,13 +59,22 @@ pub(crate) fn process_transform_and_parent_updates(
         }
 
         for (scene_entity, entry) in std::mem::take(&mut updates.last_write) {
+            // since transforms are 2-way we have to force update the return crdt with the current scene timestamps
+            scene_context
+                .crdt_store
+                .lww
+                .entry(SceneComponentId::TRANSFORM)
+                .or_default()
+                .update_lww_timestamp(scene_entity, entry.timestamp);
+
             let (transform, new_target_parent) = if entry.is_some {
                 match DclTransformAndParent::from_reader(&mut DclReader::new(&entry.data)) {
                     Ok(dcl_tp) => {
                         debug!(
-                            "[{:?}] {} -> {:?}",
+                            "[{:?}] {} ({:?}) -> {:?}",
                             scene_entity,
                             std::any::type_name::<DclTransformAndParent>(),
+                            entry.timestamp,
                             dcl_tp
                         );
 
@@ -248,8 +257,9 @@ fn parent_position_sync(
         }
 
         let (_, final_rotation, final_translation) = final_target.to_scale_rotation_translation();
-        *transform =
-            Transform::from_translation(final_translation - parent_transform.translation())
-                .with_rotation(final_rotation);
+        *transform = GlobalTransform::from(
+            Transform::from_translation(final_translation).with_rotation(final_rotation),
+        )
+        .reparented_to(parent_transform);
     }
 }

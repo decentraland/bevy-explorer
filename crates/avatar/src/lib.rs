@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, str::FromStr};
+use std::{borrow::Cow, f32::consts::PI, str::FromStr};
 
 use anyhow::anyhow;
 use attach::AttachPlugin;
@@ -15,8 +15,10 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use colliders::AvatarColliderPlugin;
+use emotes::AvatarAnimations;
 use isahc::AsyncReadResponseExt;
 use itertools::Itertools;
+use npc_dynamics::NpcMovementPlugin;
 use serde::Deserialize;
 use urn::Urn;
 
@@ -27,6 +29,7 @@ pub mod base_wearables;
 pub mod colliders;
 pub mod foreign_dynamics;
 pub mod mask_material;
+pub mod npc_dynamics;
 
 use common::{
     structs::{AttachPoints, PrimaryUser},
@@ -49,7 +52,7 @@ use scene_runner::{
     update_world::{billboard::Billboard, AddCrdtInterfaceExt},
     ContainingScene, SceneEntity,
 };
-use ui_core::TEXT_SHAPE_FONT_SANS;
+use ui_core::TEXT_SHAPE_FONT_MONO;
 use world_ui::WorldUi;
 
 use crate::{animate::AvatarAnimPlayer, avatar_texture::PRIMARY_AVATAR_RENDERLAYER};
@@ -69,6 +72,7 @@ impl Plugin for AvatarPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaskMaterialPlugin);
         app.add_plugins(PlayerMovementPlugin);
+        app.add_plugins(NpcMovementPlugin);
         app.add_plugins(AvatarAnimationPlugin);
         app.add_plugins(AttachPlugin);
         app.add_plugins(AvatarColliderPlugin);
@@ -84,7 +88,7 @@ impl Plugin for AvatarPlugin {
         app.add_systems(Update, select_avatar);
         app.add_systems(Update, update_render_avatar);
         app.add_systems(Update, spawn_scenes);
-        app.add_systems(PostUpdate, process_avatar);
+        app.add_systems(Update, process_avatar);
 
         app.add_crdt_lww_component::<PbAvatarShape, AvatarShape>(
             SceneComponentId::AVATAR_SHAPE,
@@ -115,7 +119,36 @@ impl WearablePointerResult {
 }
 
 #[derive(Resource, Default, Debug)]
-pub struct WearablePointers(pub HashMap<Urn, WearablePointerResult>);
+pub struct WearablePointers {
+    data: HashMap<String, WearablePointerResult>,
+}
+
+impl WearablePointers {
+    pub fn get(&self, urn: &str) -> Option<&WearablePointerResult> {
+        self.data.get::<str>(&urn_for_wearable_specifier(urn))
+    }
+
+    fn insert(&mut self, urn: &str, wearable: WearablePointerResult) {
+        self.data
+            .insert(urn_for_wearable_specifier(urn).into_owned(), wearable);
+    }
+
+    pub fn contains_key(&self, urn: &str) -> bool {
+        self.data
+            .contains_key::<str>(&urn_for_wearable_specifier(urn))
+    }
+}
+
+// wearables need to be stripped down to at most 6 segments. we don't know why,
+// there is no spec, it is just how it is.
+// TODO justify with ADR-244
+pub fn urn_for_wearable_specifier(specifier: &str) -> Cow<str> {
+    if specifier.split(':').nth(6).is_some() {
+        Cow::Owned(specifier.split(':').take(6).join(":"))
+    } else {
+        Cow::Borrowed(specifier)
+    }
+}
 
 #[derive(Resource, Default, Debug)]
 pub struct WearableMetas(pub HashMap<String, WearableMeta>);
@@ -130,11 +163,37 @@ pub struct WearableMeta {
     pub data: WearableData,
 }
 
+impl WearableMeta {
+    pub fn hides(&self, body_shape: &str) -> HashSet<WearableCategory> {
+        // hides from data
+        let mut hides = HashSet::from_iter(self.data.hides.clone());
+        if let Some(repr) = self
+            .data
+            .representations
+            .iter()
+            .find(|repr| repr.body_shapes.iter().any(|shape| body_shape == shape))
+        {
+            // add hides from representation
+            hides.extend(repr.override_hides.clone());
+        }
+
+        // add all hides for skin
+        if self.data.category == WearableCategory::SKIN {
+            hides.extend(WearableCategory::iter());
+        }
+
+        // remove self
+        hides.remove(&self.data.category);
+        hides
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct WearableData {
     pub tags: Vec<String>,
     pub category: WearableCategory,
     pub representations: Vec<WearableRepresentation>,
+    pub hides: Vec<WearableCategory>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -142,8 +201,8 @@ pub struct WearableData {
 pub struct WearableRepresentation {
     pub body_shapes: Vec<String>,
     pub main_file: String,
-    pub override_replaces: Vec<String>,
-    pub override_hides: Vec<String>,
+    pub override_replaces: Vec<WearableCategory>,
+    pub override_hides: Vec<WearableCategory>,
     pub contents: Vec<String>,
 }
 
@@ -189,24 +248,20 @@ fn load_base_wearables(
                         warn!("no metadata on wearable");
                         continue;
                     };
-                    let wearable_data = match serde_json::from_value::<WearableMeta>(metadata) {
-                        Ok(data) => data,
-                        Err(e) => {
-                            warn!("failed to deserialize wearable data: {e}");
-                            continue;
-                        }
-                    };
-                    for pointer in entity.pointers {
-                        match Urn::from_str(&pointer) {
-                            Ok(urn) => {
-                                wearable_pointers
-                                    .0
-                                    .insert(urn, WearablePointerResult::Exists(entity.id.clone()));
-                            }
+                    let wearable_data =
+                        match serde_json::from_value::<WearableMeta>(metadata.clone()) {
+                            Ok(data) => data,
                             Err(e) => {
-                                warn!("failed to parse wearable urn: {e}");
+                                warn!("failed to deserialize wearable data: {e}");
+                                continue;
                             }
                         };
+                    if wearable_data.name.contains("dungarees") {
+                        debug!("dungarees: {:?}", metadata);
+                    }
+                    for pointer in entity.pointers {
+                        wearable_pointers
+                            .insert(&pointer, WearablePointerResult::Exists(entity.id.clone()));
                     }
 
                     wearable_metas.0.insert(entity.id, wearable_data);
@@ -272,7 +327,7 @@ fn load_collections(
 
 // send received avatar info into scenes
 fn update_avatar_info(
-    updated_players: Query<(&ForeignPlayer, &UserProfile), Changed<UserProfile>>,
+    updated_players: Query<(Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,
     mut global_state: ResMut<GlobalCrdtState>,
 ) {
     for (player, profile) in &updated_players {
@@ -280,9 +335,9 @@ fn update_avatar_info(
         global_state.update_crdt(
             SceneComponentId::AVATAR_BASE,
             CrdtType::LWW_ANY,
-            player.scene_id,
+            player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
             &PbAvatarBase {
-                name: avatar.name.as_deref().unwrap_or("???").to_owned(),
+                name: profile.content.name.clone(),
                 skin_color: avatar.skin.map(|c| c.color),
                 eyes_color: avatar.eyes.map(|c| c.color),
                 hair_color: avatar.hair.map(|c| c.color),
@@ -296,7 +351,7 @@ fn update_avatar_info(
         global_state.update_crdt(
             SceneComponentId::AVATAR_EQUIPPED_DATA,
             CrdtType::LWW_ANY,
-            player.scene_id,
+            player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
             &PbAvatarEquippedData {
                 wearable_urns: avatar.wearables.to_vec(),
                 emotes_urns: avatar
@@ -725,13 +780,7 @@ impl WearableDefinition {
             return None;
         }
 
-        let hides = HashSet::from_iter(
-            representation
-                .override_hides
-                .iter()
-                .chain(representation.override_replaces.iter())
-                .flat_map(|c| WearableCategory::from_str(c)),
-        );
+        let hides = meta.hides(body_shape);
 
         let (model, texture, mask) = if category.is_texture {
             // don't validate the main file, as some base wearables have no extension on the main_file member (Eyebrows_09 e.g)
@@ -789,11 +838,11 @@ impl WearableDefinition {
 }
 
 #[derive(Resource, Default)]
-pub struct RequestedWearables(pub HashSet<Urn>);
+pub struct RequestedWearables(pub HashSet<String>);
 
 fn load_wearables(
     mut requested_wearables: ResMut<RequestedWearables>,
-    mut wearable_task: Local<Option<(ActiveEntityTask, HashSet<Urn>)>>,
+    mut wearable_task: Local<Option<(ActiveEntityTask, HashSet<String>)>>,
     mut wearable_pointers: ResMut<WearablePointers>,
     mut wearable_metas: ResMut<WearableMetas>,
     ipfas: IpfsAssetServer,
@@ -817,6 +866,7 @@ fn load_wearables(
                         warn!("no metadata on wearable");
                         continue;
                     };
+                    debug!("loaded wearable {:?} -> {:?}", entity.pointers, metadata);
                     let wearable_data = match serde_json::from_value::<WearableMeta>(metadata) {
                         Ok(data) => data,
                         Err(e) => {
@@ -825,18 +875,10 @@ fn load_wearables(
                         }
                     };
                     for pointer in entity.pointers {
-                        match Urn::from_str(&pointer) {
-                            Ok(urn) => {
-                                wearables.remove(&urn);
-                                wearable_pointers
-                                    .0
-                                    .insert(urn, WearablePointerResult::Exists(entity.id.clone()));
-                                debug!("{} -> {}", pointer, entity.id);
-                            }
-                            Err(e) => {
-                                warn!("failed to parse wearable urn: {e}");
-                            }
-                        };
+                        wearables.remove(&pointer);
+                        wearable_pointers
+                            .insert(&pointer, WearablePointerResult::Exists(entity.id.clone()));
+                        debug!("{} -> {}", pointer, entity.id);
                     }
 
                     wearable_metas.0.insert(entity.id, wearable_data);
@@ -845,9 +887,7 @@ fn load_wearables(
                 // any urns left in the hashset were requested but not returned
                 for urn in wearables {
                     debug!("missing {urn}");
-                    wearable_pointers
-                        .0
-                        .insert(urn, WearablePointerResult::Missing);
+                    wearable_pointers.insert(&urn, WearablePointerResult::Missing);
                 }
             }
             Some(Err(e)) => {
@@ -862,7 +902,8 @@ fn load_wearables(
         let requested = requested_wearables
             .0
             .drain()
-            .filter(|r| !wearable_pointers.0.contains_key(r))
+            .filter(|r| !wearable_pointers.contains_key(r))
+            .map(|urn| urn_for_wearable_specifier(&urn).into_owned())
             .collect::<HashSet<_>>();
         let base_wearables = HashSet::from_iter(base_wearables::base_wearables());
         let pointers = requested
@@ -965,8 +1006,7 @@ fn update_render_avatar(
             .as_ref()
             .unwrap_or(&base_wearables::default_bodyshape())
             .to_lowercase();
-        let body = Urn::from_str(&body).unwrap();
-        let hash = match wearable_pointers.0.get(&body) {
+        let hash = match wearable_pointers.get(&body) {
             Some(WearablePointerResult::Exists(hash)) => hash,
             Some(WearablePointerResult::Missing) => {
                 debug!("failed to resolve body {body}");
@@ -998,28 +1038,17 @@ fn update_render_avatar(
             .shape
             .wearables
             .iter()
-            .flat_map(|wearable| {
-                // wearables need to be stripped down to at most 6 segments. we don't know why,
-                // there is no spec, it is just how it is.
-                // TODO justify with ADR-244
-                let wearable = wearable.splitn(7, ':').take(6).join(":");
-
-                if let Ok(wearable) = Urn::from_str(&wearable) {
-                    match wearable_pointers.0.get(&wearable) {
-                        Some(WearablePointerResult::Exists(hash)) => Some(hash),
-                        Some(WearablePointerResult::Missing) => {
-                            debug!("skipping failed wearable {wearable:?}");
-                            None
-                        }
-                        None => {
-                            commands.entity(entity).try_insert(RetryRenderAvatar);
-                            debug!("waiting for hash from wearable {wearable:?}");
-                            all_loaded = false;
-                            missing_wearables.insert(wearable);
-                            None
-                        }
-                    }
-                } else {
+            .flat_map(|wearable| match wearable_pointers.get(wearable) {
+                Some(WearablePointerResult::Exists(hash)) => Some(hash),
+                Some(WearablePointerResult::Missing) => {
+                    debug!("skipping failed wearable {wearable:?}");
+                    None
+                }
+                None => {
+                    commands.entity(entity).try_insert(RetryRenderAvatar);
+                    debug!("waiting for hash from wearable {wearable:?}");
+                    all_loaded = false;
+                    missing_wearables.insert(wearable.clone());
                     None
                 }
             })
@@ -1054,13 +1083,12 @@ fn update_render_avatar(
         // add defaults
         let defaults: Vec<_> = base_wearables::default_wearables()
             .flat_map(|default| {
-                let Some(WearablePointerResult::Exists(hash)) =
-                    wearable_pointers.0.get(&Urn::from_str(default).unwrap())
+                let Some(WearablePointerResult::Exists(hash)) = wearable_pointers.get(default)
                 else {
                     warn!("failed to load default renderable {}", default);
                     return None;
                 };
-                let meta = wearable_metas.0.get(hash).unwrap();
+                let meta = wearable_metas.0.get(hash.as_str()).unwrap();
                 WearableDefinition::new(meta, &ipfas, body_shape, hash)
             })
             .collect();
@@ -1244,12 +1272,15 @@ fn spawn_scenes(
             });
 
         debug!("avatar files loaded");
-        commands.entity(ent).try_insert(AvatarLoaded {
-            body_instance,
-            wearable_instances: instances.collect(),
-            skin_materials,
-            hair_materials,
-        });
+        commands.entity(ent).try_insert((
+            AvatarLoaded {
+                body_instance,
+                wearable_instances: instances.collect(),
+                skin_materials,
+                hair_materials,
+            },
+            Visibility::Hidden,
+        ));
     }
 }
 
@@ -1271,6 +1302,7 @@ fn process_avatar(
     mut mask_materials: ResMut<Assets<MaskMaterial>>,
     meshes: Res<Assets<Mesh>>,
     attach_points: Query<&AttachPoints>,
+    animations: Res<AvatarAnimations>,
 ) {
     for (avatar_ent, def, loaded_avatar, root_player_entity) in query.iter() {
         let not_loaded = !scene_spawner.instance_is_ready(loaded_avatar.body_instance)
@@ -1310,9 +1342,15 @@ fn process_avatar(
 
             // add animation player to armature root
             if name.to_lowercase() == "armature" && armature_node.is_none() {
-                commands
-                    .entity(scene_ent)
-                    .try_insert(AnimationPlayer::default());
+                let mut player = AnimationPlayer::default();
+                // play default idle anim to avoid t-posing
+                if let Some(clip) = animations
+                    .get_server("Idle_Male")
+                    .and_then(|anim| anim.clips.values().next())
+                {
+                    player.start(clip.clone());
+                }
+                commands.entity(scene_ent).try_insert(player);
                 // record the node with the animator
                 commands
                     .entity(root_player_entity.get())
@@ -1463,7 +1501,7 @@ fn process_avatar(
                 {
                     commands
                         .entity(*left_hand)
-                        .push_children(&[attach_points.left_hand]);
+                        .try_push_children(&[attach_points.left_hand]);
                 } else {
                     warn!("no left hand");
                     warn!("available: {:#?}", target_armature_entities.keys());
@@ -1473,7 +1511,7 @@ fn process_avatar(
                 {
                     commands
                         .entity(*right_hand)
-                        .push_children(&[attach_points.right_hand]);
+                        .try_push_children(&[attach_points.right_hand]);
                 } else {
                     warn!("no right hand");
                 }
@@ -1598,7 +1636,9 @@ fn process_avatar(
             wearable_models, wearable_texs, def.hides, loaded_avatar.skin_materials.len(), loaded_avatar.hair_materials.len(), colored_materials.len()
         );
 
-        commands.entity(avatar_ent).try_insert(AvatarProcessed);
+        commands
+            .entity(avatar_ent)
+            .try_insert((AvatarProcessed, Visibility::Inherited));
 
         if let Some(label) = def.label.as_ref() {
             let label_ui = commands
@@ -1607,7 +1647,7 @@ fn process_avatar(
                     TextStyle {
                         font_size: 25.0,
                         color: Color::WHITE,
-                        font: TEXT_SHAPE_FONT_SANS.get().unwrap().clone(),
+                        font: TEXT_SHAPE_FONT_MONO.get().unwrap().clone(),
                     },
                 ))
                 .id();
@@ -1619,12 +1659,13 @@ fn process_avatar(
                         ..Default::default()
                     },
                     WorldUi {
-                        width: 1024,
+                        width: (label.len() * 25) as u32 / 2,
                         height: 25,
                         resize_width: Some(ResizeAxis::MaxContent),
                         resize_height: None,
-                        pix_per_m: 100.0,
+                        pix_per_m: 200.0,
                         valign: 0.0,
+                        halign: 0.0,
                         add_y_pix: 0.0,
                         bounds: Vec4::new(
                             std::f32::MIN,

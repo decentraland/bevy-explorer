@@ -1,6 +1,7 @@
 use crate::{
     combo_box::PropsExt,
     ui_actions::{DataChanged, On},
+    ModifyComponentExt,
 };
 use bevy::{math::Vec3Swizzles, prelude::*, utils::HashSet, window::PrimaryWindow};
 use bevy_dui::{DuiRegistry, DuiTemplate};
@@ -20,6 +21,7 @@ pub struct TextEntry {
     pub messages: Vec<String>,
     pub accept_line: bool,
     pub id_entity: Option<Entity>,
+    pub multiline: usize,
 }
 
 impl Default for TextEntry {
@@ -32,6 +34,7 @@ impl Default for TextEntry {
             messages: Default::default(),
             accept_line: true,
             id_entity: None,
+            multiline: 1,
         }
     }
 }
@@ -70,14 +73,17 @@ pub fn update_text_entry_components(
     for (entity, mut textbox, style, node, transform, maybe_interaction, maybe_focus) in
         text_entries.iter_mut()
     {
+        let margin = if textbox.multiline > 1 { 5.0 } else { 0.0 };
         let center = transform.translation().xy() / ctx.zoom_factor();
-        let size = node.size() / ctx.zoom_factor();
+        let size = node.unrounded_size() / ctx.zoom_factor() - Vec2::Y * margin;
         let topleft = center - size / 2.0;
 
         if matches!(style.display, Display::Flex) {
             egui::Window::new(format!("{:?}", textbox.id_entity.unwrap_or(entity)))
                 .fixed_pos(topleft.to_array())
                 .fixed_size(size.to_array())
+                .vscroll(textbox.multiline > 1)
+                .resizable(false)
                 .frame(egui::Frame::none())
                 .title_bar(false)
                 .show(ctx, |ui| {
@@ -87,6 +93,7 @@ pub fn update_text_entry_components(
                         ref mut content,
                         ref enabled,
                         ref font_size,
+                        ref multiline,
                         ..
                     } = &mut *textbox;
                     let enabled = *enabled;
@@ -99,18 +106,33 @@ pub fn update_text_entry_components(
                     style.visuals.widgets.inactive.weak_bg_fill =
                         egui::Color32::from_rgba_unmultiplied(0, 0, 0, 128);
 
-                    let response = ui.add_enabled(
-                        enabled,
-                        TextEdit::singleline(content)
-                            .frame(false)
-                            .desired_width(f32::INFINITY)
-                            .text_color(egui::Color32::WHITE)
-                            .hint_text(hint_text)
-                            .font(egui::FontId::new(
-                                *font_size as f32,
-                                egui::FontFamily::Proportional,
-                            )),
-                    );
+                    let response = match multiline {
+                        1 => ui.add_enabled(
+                            enabled,
+                            TextEdit::singleline(content)
+                                .frame(false)
+                                .desired_width(f32::INFINITY)
+                                .text_color(egui::Color32::WHITE)
+                                .hint_text(hint_text)
+                                .font(egui::FontId::new(
+                                    *font_size as f32,
+                                    egui::FontFamily::Proportional,
+                                )),
+                        ),
+                        many => ui.add_enabled(
+                            enabled,
+                            TextEdit::multiline(content)
+                                .frame(false)
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(*many)
+                                .text_color(egui::Color32::WHITE)
+                                .hint_text(hint_text)
+                                .font(egui::FontId::new(
+                                    *font_size as f32,
+                                    egui::FontFamily::Proportional,
+                                )),
+                        ),
+                    };
 
                     if response.changed() && !textbox.accept_line {
                         commands.entity(entity).try_insert(DataChanged);
@@ -167,12 +189,16 @@ impl DuiTemplate for DuiTextEntryTemplate {
         &self,
         commands: &mut bevy::ecs::system::EntityCommands,
         mut props: bevy_dui::DuiProps,
-        _: &mut bevy_dui::DuiContext,
+        ctx: &mut bevy_dui::DuiContext,
     ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
+        let multiline = props.take_as::<u32>(ctx, "multi-line")?.unwrap_or(1) as usize;
+
         let textentry = TextEntry {
             hint_text: props.take::<String>("hint-text")?.unwrap_or_default(),
             content: props.take::<String>("initial-text")?.unwrap_or_default(),
-            accept_line: props.take_bool_like("disabled")?.unwrap_or(false),
+            enabled: !(props.take_as::<bool>(ctx, "disabled")?.unwrap_or(false)),
+            accept_line: props.take_as::<bool>(ctx, "accept-line")?.unwrap_or(false),
+            multiline,
             ..Default::default()
         };
         commands.insert(textentry);
@@ -180,6 +206,10 @@ impl DuiTemplate for DuiTextEntryTemplate {
         if let Some(onchanged) = props.take::<On<DataChanged>>("onchanged")? {
             commands.insert(onchanged);
         }
+
+        commands.modify_component(move |s: &mut Style| {
+            s.height = Val::VMin(2.3 * multiline as f32);
+        });
 
         Ok(Default::default())
     }

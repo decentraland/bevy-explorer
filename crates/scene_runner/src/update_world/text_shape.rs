@@ -87,7 +87,7 @@ bevy: not implemented
 
 */
 
-use bevy::prelude::*;
+use bevy::{prelude::*, text::BreakLineOn};
 use common::sets::SceneLoopSets;
 use dcl::interface::ComponentPosition;
 use dcl_component::{
@@ -127,7 +127,7 @@ impl From<PbTextShape> for TextShape {
     }
 }
 
-const PIX_PER_M: f32 = 100.0;
+const PIX_PER_M: f32 = 200.0;
 
 fn update_text_shapes(
     mut commands: Commands,
@@ -169,16 +169,16 @@ fn update_text_shapes(
             | TextAlignMode::TamBottomRight => 0.5,
         };
 
-        let halign = match text_align {
+        let (halign_wui, halign) = match text_align {
             TextAlignMode::TamTopLeft
             | TextAlignMode::TamMiddleLeft
-            | TextAlignMode::TamBottomLeft => TextAlignment::Left,
+            | TextAlignMode::TamBottomLeft => (0.5, TextAlignment::Left),
             TextAlignMode::TamTopCenter
             | TextAlignMode::TamMiddleCenter
-            | TextAlignMode::TamBottomCenter => TextAlignment::Center,
+            | TextAlignMode::TamBottomCenter => (0.0, TextAlignment::Center),
             TextAlignMode::TamTopRight
             | TextAlignMode::TamMiddleRight
-            | TextAlignMode::TamBottomRight => TextAlignment::Right,
+            | TextAlignMode::TamBottomRight => (-0.5, TextAlignment::Right),
         };
 
         let add_y_pix = (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * PIX_PER_M;
@@ -197,40 +197,22 @@ fn update_text_shapes(
 
         let max_height = match text_shape.0.line_count() {
             0 => 4096,
-            lines => lines as u32 * font_size as u32,
+            lines => lines as u32 * font_size.ceil() as u32,
         };
 
         // create ui layout
-        let mut text = Text::from_section(
+        let text = make_text_section(
             text_shape.0.text.as_str(),
-            TextStyle {
-                font_size,
-                color: text_shape
-                    .0
-                    .text_color
-                    .map(Into::into)
-                    .unwrap_or(Color::WHITE),
-                font: match text_shape.0.font() {
-                    dcl_component::proto_components::sdk::components::common::Font::FSansSerif => {
-                        &TEXT_SHAPE_FONT_SANS
-                    }
-                    dcl_component::proto_components::sdk::components::common::Font::FSerif => {
-                        &TEXT_SHAPE_FONT_SERIF
-                    }
-                    dcl_component::proto_components::sdk::components::common::Font::FMonospace => {
-                        &TEXT_SHAPE_FONT_MONO
-                    }
-                }
-                .get()
-                .unwrap()
-                .clone(),
-            },
-        )
-        .with_alignment(halign);
-
-        if !wrapping {
-            text = text.with_no_wrap();
-        }
+            font_size,
+            text_shape
+                .0
+                .text_color
+                .map(Into::into)
+                .unwrap_or(Color::WHITE),
+            text_shape.0.font(),
+            halign,
+            wrapping,
+        );
 
         let ui_root = commands
             .spawn((NodeBundle {
@@ -304,10 +286,55 @@ fn update_text_shapes(
             resize_height: Some(ResizeAxis::MaxContent),
             pix_per_m: PIX_PER_M,
             valign,
+            halign: halign_wui,
             add_y_pix,
             bounds,
             ui_root,
             dispose_ui: true,
         });
+    }
+}
+
+pub fn make_text_section(
+    text: &str,
+    font_size: f32,
+    color: Color,
+    font: dcl_component::proto_components::sdk::components::common::Font,
+    alignment: TextAlignment,
+    wrapping: bool,
+) -> Text {
+    let text = text.replace("\\n", "\n");
+
+    // todo split by <b>s
+    let sections = vec![TextSection::new(
+        text,
+        TextStyle {
+            font: match font {
+                dcl_component::proto_components::sdk::components::common::Font::FSansSerif => {
+                    &TEXT_SHAPE_FONT_SANS
+                }
+                dcl_component::proto_components::sdk::components::common::Font::FSerif => {
+                    &TEXT_SHAPE_FONT_SERIF
+                }
+                dcl_component::proto_components::sdk::components::common::Font::FMonospace => {
+                    &TEXT_SHAPE_FONT_MONO
+                }
+            }
+            .get()
+            .unwrap()
+            .clone(),
+            font_size,
+            color,
+        },
+    )];
+
+    Text {
+        sections,
+        linebreak_behavior: if wrapping {
+            BreakLineOn::WordBoundary
+        } else {
+            BreakLineOn::NoWrap
+        },
+        alignment,
     }
 }

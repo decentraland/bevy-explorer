@@ -17,3 +17,17 @@
     </div>
 </define-template>
 
+<!-- horizontal rule -->
+<define-template id="vr">
+    <div style="height: 100%; width: 2.8vmin; min-width: 2.8vmin; border: 0 vmin 1.1vmin 0vmin 1.1vmin;">
+        <div style="width: 100%; height: 100%; background-color: #00000044;" />
+    </div>
+</define-template>
+
+<!-- horizontal rule -->
+<define-template id="vr-thin">
+    <div style="height: 100%; width: 0.6vmin; min-width: 0.6vmin;">
+        <div style="width: 100%; height: 100%; background-color: #00000044;" />
+    </div>
+</define-template>
+

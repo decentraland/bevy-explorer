@@ -1,5 +1,9 @@
 use anyhow::{anyhow, bail};
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
+    ui::UiSystem,
+};
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate, NodeMap};
 use bevy_ecss::StyleSheetAsset;
 // use common::util::TryInsertEx;
@@ -37,254 +41,108 @@ pub struct Ui9SlicePlugin;
 impl Plugin for Ui9SlicePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup);
-        app.add_systems(Update, update_slices.in_set(Ui9SliceSet));
+        app.add_plugins(UiMaterialPlugin::<NineSliceMaterial>::default());
+        app.add_systems(PostUpdate, update_slices.after(UiSystem::Layout));
     }
-}
-
-#[derive(Component)]
-struct SliceInitMarker;
-
-struct ItemData {
-    grow: f32,
-    start: Val,
-    end: Val,
-    outer_size: Val,
-    inner_size: Val,
 }
 
 #[allow(clippy::type_complexity)]
 fn update_slices(
     mut commands: Commands,
     images: Res<Assets<Image>>,
-    new_slices: Query<
-        (Entity, &Ui9Slice, Option<&Children>),
-        Or<(Changed<Ui9Slice>, Added<Ui9Slice>, Without<SliceInitMarker>)>,
+    mut new_slices: Query<
+        (
+            Entity,
+            &Node,
+            &mut Ui9Slice,
+            Option<&Handle<NineSliceMaterial>>,
+        ),
+        Or<(Changed<Ui9Slice>, Added<Ui9Slice>, Changed<Node>)>,
     >,
-    existing_slices: Query<(), With<SliceInitMarker>>,
-    children_query: Query<&Children>,
-    mut style_query: Query<(&mut Style, Option<&Children>)>,
     mut removed: RemovedComponents<Ui9Slice>,
+    mut mats: ResMut<Assets<NineSliceMaterial>>,
 ) {
     // clean up removed slices
     for ent in removed.read() {
-        if let Ok(children) = children_query.get(ent) {
-            if let Some(slice_ent) = children
-                .iter()
-                .find(|child| existing_slices.get(**child).is_ok())
-            {
-                commands.entity(*slice_ent).despawn_recursive();
-            }
+        if let Some(mut commands) = commands.get_entity(ent) {
+            commands.remove::<Handle<NineSliceMaterial>>();
         }
     }
 
-    for (ent, slice, maybe_children) in new_slices.iter() {
-        // need the image size to set the patch sizes
-        let Some(image_data) = images.get(&slice.image) else {
+    for (ent, node, mut slice, maybe_material) in new_slices.iter_mut() {
+        let Some(image_size) = images.get(&slice.image).map(Image::size_f32) else {
+            slice.set_changed();
             continue;
         };
 
-        // calculate sizes
-        let image_size = image_data.size_f32();
-
-        let top_px = slice
-            .center_region
-            .top
-            .resolve(image_size.y, Vec2::ZERO)
-            .unwrap_or(0.0);
-        let bottom_px = slice
-            .center_region
-            .bottom
-            .resolve(image_size.y, Vec2::ZERO)
-            .unwrap_or(0.0);
-        let middle_height_px = image_size.y - top_px - bottom_px;
-
-        let row_data = [
-            ItemData {
-                grow: 0.0,
-                start: Val::Px(0.0),
-                end: Val::Auto,
-                outer_size: Val::Px(top_px),
-                inner_size: Val::Px(image_size.y),
+        let new_mat = NineSliceMaterial {
+            image: slice.image.clone(),
+            bounds: GpuSliceData {
+                bounds: Vec4::new(
+                    slice
+                        .center_region
+                        .left
+                        .resolve(image_size.x, Vec2::ZERO)
+                        .unwrap_or(0.0),
+                    slice
+                        .center_region
+                        .left
+                        .resolve(image_size.x, Vec2::ZERO)
+                        .unwrap_or(0.0),
+                    slice
+                        .center_region
+                        .left
+                        .resolve(image_size.x, Vec2::ZERO)
+                        .unwrap_or(0.0),
+                    slice
+                        .center_region
+                        .left
+                        .resolve(image_size.x, Vec2::ZERO)
+                        .unwrap_or(0.0),
+                ),
+                surface: node.unrounded_size().extend(0.0).extend(0.0),
             },
-            ItemData {
-                grow: 1.0,
-                start: Val::Percent(-100.0 * top_px / middle_height_px),
-                end: Val::Auto,
-                outer_size: Val::Auto,
-                inner_size: Val::Percent(100.0 * image_size.y / middle_height_px),
-            },
-            ItemData {
-                grow: 0.0,
-                start: Val::Auto,
-                end: Val::Px(0.0),
-                outer_size: Val::Px(bottom_px),
-                inner_size: Val::Px(image_size.y),
-            },
-        ];
-
-        let left_px = slice
-            .center_region
-            .left
-            .resolve(image_size.x, Vec2::ZERO)
-            .unwrap_or(0.0);
-        let right_px = slice
-            .center_region
-            .right
-            .resolve(image_size.x, Vec2::ZERO)
-            .unwrap_or(0.0);
-        let middle_width_px = image_size.x - left_px - right_px;
-
-        let col_data = [
-            ItemData {
-                grow: 0.0,
-                start: Val::Px(0.0),
-                end: Val::Auto,
-                outer_size: Val::Px(left_px),
-                inner_size: Val::Px(image_size.x),
-            },
-            ItemData {
-                grow: 1.0,
-                start: Val::Percent(-100.0 * left_px / middle_width_px),
-                end: Val::Auto,
-                outer_size: Val::Auto,
-                inner_size: Val::Percent(100.0 * image_size.x / middle_width_px),
-            },
-            ItemData {
-                grow: 0.0,
-                start: Val::Auto,
-                end: Val::Px(0.0),
-                outer_size: Val::Px(right_px),
-                inner_size: Val::Px(image_size.x),
-            },
-        ];
-
-        // get or build tree
-        let Some(container) = maybe_children.and_then(|children| {
-            children
-                .iter()
-                .find(|child| existing_slices.get(**child).is_ok())
-        }) else {
-            // build
-            commands
-                .entity(ent)
-                .try_insert(SliceInitMarker)
-                .with_children(|c| {
-                    // container
-                    c.spawn((
-                        NodeBundle {
-                            style: Style {
-                                flex_direction: FlexDirection::Column,
-                                flex_grow: 1.0,
-                                ..Default::default()
-                            },
-                            ..Default::default()
-                        },
-                        SliceInitMarker,
-                    ))
-                    .with_children(|c| {
-                        // row
-                        for row in &row_data {
-                            c.spawn(NodeBundle {
-                                style: Style {
-                                    flex_direction: FlexDirection::Row,
-                                    flex_grow: row.grow,
-                                    ..Default::default()
-                                },
-                                ..Default::default()
-                            })
-                            .with_children(|r| {
-                                // column
-                                for col in &col_data {
-                                    r.spawn(NodeBundle {
-                                        style: Style {
-                                            width: col.outer_size,
-                                            height: row.outer_size,
-                                            flex_grow: col.grow,
-                                            overflow: Overflow::clip(),
-                                            ..Default::default()
-                                        },
-                                        ..Default::default()
-                                    })
-                                    .with_children(|i| {
-                                        // image
-                                        i.spawn(ImageBundle {
-                                            style: Style {
-                                                width: col.inner_size,
-                                                height: row.inner_size,
-                                                left: col.start,
-                                                top: row.start,
-                                                right: col.end,
-                                                bottom: row.end,
-                                                position_type: PositionType::Absolute,
-                                                ..Default::default()
-                                            },
-                                            image: UiImage {
-                                                texture: slice.image.clone(),
-                                                ..Default::default()
-                                            },
-                                            background_color: slice
-                                                .tint
-                                                .unwrap_or(Color::WHITE.into()),
-                                            ..Default::default()
-                                        });
-                                    });
-                                }
-                            });
-                        }
-                    });
-                });
-
-            continue;
+            color: slice
+                .tint
+                .map(|bg| bg.0)
+                .unwrap_or(Color::WHITE)
+                .as_linear_rgba_f32()
+                .into(),
         };
 
-        // update existing sizes and images
-        let Ok(rows) = children_query
-            .get_component::<Children>(*container)
-            .map(|children| children.iter().copied().collect::<Vec<_>>())
-        else {
-            panic!("do not taunt happy fun 9slice");
-        };
-        assert_eq!(rows.len(), 3);
-        for (row, row_ent) in row_data.iter().zip(rows.into_iter()) {
-            let Ok(cols) = children_query
-                .get_component::<Children>(row_ent)
-                .map(|children| children.iter().copied().collect::<Vec<_>>())
-            else {
-                panic!("do not taunt happy fun 9slice");
-            };
-            assert_eq!(cols.len(), 3);
-
-            for (col, col_ent) in col_data.iter().zip(cols.into_iter()) {
-                let Ok((mut outer_style, Some(children))) = style_query.get_mut(col_ent) else {
-                    panic!("do not taunt happy fun 9slice");
-                };
-                assert_eq!(children.len(), 1);
-
-                outer_style.width = col.outer_size;
-                outer_style.height = row.outer_size;
-
-                let image_ent = children[0];
-                if let Some(mut commands) = commands.get_entity(image_ent) {
-                    commands.insert((
-                        UiImage {
-                            texture: slice.image.clone(),
-                            ..Default::default()
-                        },
-                        slice.tint.unwrap_or(Color::WHITE.into()),
-                    ));
-                }
-                let Ok(mut inner_style) = style_query.get_component_mut::<Style>(image_ent) else {
-                    panic!("do not taunt happy fun 9slice");
-                };
-                inner_style.width = col.inner_size;
-                inner_style.height = row.inner_size;
-                inner_style.left = col.start;
-                inner_style.right = col.end;
-                inner_style.top = row.start;
-                inner_style.bottom = row.end;
-            }
+        if let Some(mat) = maybe_material.and_then(|h| mats.get_mut(h)) {
+            *mat = new_mat;
+        } else {
+            commands.entity(ent).try_insert(mats.add(new_mat));
         }
     }
+}
+
+#[derive(ShaderType, Debug, Clone)]
+struct GpuSliceData {
+    bounds: Vec4,
+    surface: Vec4,
+}
+
+#[derive(AsBindGroup, Asset, TypePath, Debug, Clone)]
+struct NineSliceMaterial {
+    #[texture(0)]
+    #[sampler(1)]
+    image: Handle<Image>,
+    #[uniform(2)]
+    bounds: GpuSliceData,
+    #[uniform(3)]
+    color: Vec4,
+}
+
+impl UiMaterial for NineSliceMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "shaders/nineslice_material.wgsl".into()
+    }
+}
+
+pub fn setup(mut dui: ResMut<DuiRegistry>) {
+    dui.register_template("nineslice", Ui9SliceTemplate);
 }
 
 pub struct Ui9SliceTemplate;
@@ -359,8 +217,4 @@ impl DuiTemplate for Ui9SliceTemplate {
 
         Ok(NodeMap::default())
     }
-}
-
-pub fn setup(mut dui: ResMut<DuiRegistry>) {
-    dui.register_template("nineslice", Ui9SliceTemplate);
 }

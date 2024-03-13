@@ -13,13 +13,15 @@ use comms::profile::CurrentUserProfile;
 use ipfs::{ChangeRealmEvent, CurrentRealm};
 use ui_core::{
     button::{DuiButton, TabSelection},
-    ui_actions::{Click, DataChanged, EventDefaultExt, On, UiCaller},
+    ui_actions::{Click, DataChanged, EventCloneExt, EventDefaultExt, On, UiCaller},
 };
 
 use crate::{
     change_realm::{ChangeRealmDialog, UpdateRealmText},
+    chat::BUTTON_SCALE,
     discover::DiscoverSettingsPlugin,
     emotes::EmotesSettingsPlugin,
+    profile_detail::ProfileDetail,
     wearables::WearableSettingsPlugin,
 };
 
@@ -27,9 +29,10 @@ pub struct ProfileEditPlugin;
 
 impl Plugin for ProfileEditPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<SerializeUi>();
+        app.add_event::<SerializeUi>()
+            .add_event::<ShowSettingsEvent>();
         app.add_systems(Startup, setup);
-        app.add_systems(Update, dump);
+        app.add_systems(Update, (show_settings, dump));
         app.add_plugins((
             DiscoverSettingsPlugin,
             WearableSettingsPlugin,
@@ -45,15 +48,17 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             image: asset_server.load("images/profile_button.png").into(),
             style: Style {
                 position_type: PositionType::Absolute,
-                top: Val::Px(10.0),
-                right: Val::Px(10.0),
+                top: Val::VMin(BUTTON_SCALE * 0.5),
+                right: Val::VMin(BUTTON_SCALE * 0.5),
+                width: Val::VMin(BUTTON_SCALE),
+                height: Val::VMin(BUTTON_SCALE),
                 ..Default::default()
             },
             focus_policy: bevy::ui::FocusPolicy::Block,
             ..Default::default()
         },
         Interaction::default(),
-        On::<Click>::new(show_settings),
+        ShowSettingsEvent(SettingsTab::Discover).send_value_on::<Click>(),
     ));
 }
 
@@ -96,17 +101,29 @@ pub enum OnCloseEvent {
 fn save_settings(
     mut commands: Commands,
     mut current_profile: ResMut<CurrentUserProfile>,
-    modified: Query<(Entity, Option<&AvatarShape>, Option<&BoothInstance>), With<SettingsDialog>>,
+    modified: Query<
+        (
+            Entity,
+            Option<&AvatarShape>,
+            Option<&ProfileDetail>,
+            Option<&BoothInstance>,
+        ),
+        With<SettingsDialog>,
+    >,
 ) {
     let Some(profile) = current_profile.profile.as_mut() else {
         error!("can't amend missing profile");
         return;
     };
 
-    let Ok((dialog_ent, maybe_avatar, maybe_booth)) = modified.get_single() else {
+    let Ok((dialog_ent, maybe_avatar, maybe_detail, maybe_booth)) = modified.get_single() else {
         error!("no dialog");
         return;
     };
+
+    if let Some(detail) = maybe_detail {
+        profile.content = detail.0.clone();
+    }
 
     if let Some(avatar) = maybe_avatar {
         profile.content.avatar.body_shape = avatar.0.body_shape.to_owned();
@@ -207,12 +224,34 @@ pub fn close_settings(
     }
 }
 
+#[derive(Event, Clone)]
+pub struct ShowSettingsEvent(pub SettingsTab);
+
 pub fn show_settings(
     mut commands: Commands,
     dui: Res<DuiRegistry>,
     realm: Res<CurrentRealm>,
     current_profile: Res<CurrentUserProfile>,
+    mut ev: EventReader<ShowSettingsEvent>,
+    existing: Query<(), With<SettingsDialog>>,
 ) {
+    let Some(ev) = ev.read().last() else {
+        return;
+    };
+
+    if existing.iter().next().is_some() {
+        return;
+    }
+
+    let title_initial = match ev.0 {
+        SettingsTab::Discover => 0usize,
+        SettingsTab::ProfileDetail => 1,
+        SettingsTab::Wearables => 2,
+        SettingsTab::Emotes => 3,
+        SettingsTab::Map => 4,
+        SettingsTab::Settings => 5,
+    };
+
     let Some(profile) = &current_profile.profile.as_ref() else {
         error!("can't edit missing profile");
         return;
@@ -227,23 +266,19 @@ pub fn show_settings(
 
     let mut props = DuiProps::new();
 
-    for prop in [
-        "discover",
-        "emotes",
-        "map",
-        "settings",
+    props.insert_prop(
         "connect-wallet",
-        "profile-settings",
-    ] {
-        props.insert_prop(
-            prop,
-            InfoDialog::click("Not implemented".to_owned(), "Not implemented".to_owned()),
-        );
-    }
+        InfoDialog::click("Not implemented".to_owned(), "Not implemented".to_owned()),
+    );
 
     let tabs = vec![
         DuiButton {
             label: Some("Discover".to_owned()),
+            enabled: true,
+            ..Default::default()
+        },
+        DuiButton {
+            label: Some("Profile".to_owned()),
             enabled: true,
             ..Default::default()
         },
@@ -257,7 +292,7 @@ pub fn show_settings(
         },
         DuiButton {
             label: Some("Map".to_owned()),
-            enabled: false,
+            enabled: true,
             ..Default::default()
         },
         DuiButton {
@@ -285,7 +320,7 @@ pub fn show_settings(
     props.insert_prop("profile-name", profile.content.name.clone());
     props.insert_prop("close-settings", On::<Click>::new(close_settings));
     props.insert_prop("title-tabs", tabs);
-    props.insert_prop("title-initial", Some(0usize));
+    props.insert_prop("title-initial", Some(title_initial));
     props.insert_prop(
         "title-onchanged",
         On::<DataChanged>::new(
@@ -294,19 +329,16 @@ pub fn show_settings(
              mut content: Query<&mut SettingsTab>| {
                 *content.single_mut() = match selected.get(caller.0).unwrap().selected.unwrap() {
                     0 => SettingsTab::Discover,
-                    1 => SettingsTab::Wearables,
-                    2 => SettingsTab::Emotes,
-                    3 => SettingsTab::Map,
-                    4 => SettingsTab::Settings,
+                    1 => SettingsTab::ProfileDetail,
+                    2 => SettingsTab::Wearables,
+                    3 => SettingsTab::Emotes,
+                    4 => SettingsTab::Map,
+                    5 => SettingsTab::Settings,
                     _ => panic!(),
                 }
             },
         ),
     );
-
-    // props.insert_prop("wearables", On::<Click>::new(|mut commands: Commands, q: Query<Entity, With<SettingsTab>>| {commands.entity(q.single()).insert(SettingsTab::Wearables);}));
-    // props.insert_prop("emotes", On::<Click>::new(|mut commands: Commands, q: Query<Entity, With<SettingsTab>>| {commands.entity(q.single()).insert(SettingsTab::Emotes);}));
-    // props.insert_prop("settings", SerializeUi::default_on::<Click>());
 
     let components = root.apply_template(&dui, "settings", props).unwrap();
 
@@ -315,13 +347,14 @@ pub fn show_settings(
         .insert(UpdateRealmText);
     commands
         .entity(components.named("settings-content"))
-        .insert(SettingsTab::Discover);
+        .insert(ev.0);
 
     //start on the wearables tab
 }
 
 #[derive(Component, Default, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
+    ProfileDetail,
     #[default]
     Wearables,
     Emotes,

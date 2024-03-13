@@ -1,6 +1,7 @@
 use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
+    window::PrimaryWindow,
 };
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
@@ -15,9 +16,7 @@ use ipfs::{CurrentRealm, IpfsAssetServer};
 use scene_runner::Toaster;
 use ui_core::{
     button::DuiButton,
-    dialog::{IntoDialogBody, SpawnButton},
     ui_actions::{Click, EventCloneExt, On},
-    BODY_TEXT_STYLE,
 };
 use wallet::{browser_auth::try_create_remote_ephemeral, Wallet};
 
@@ -40,28 +39,6 @@ enum LoginType {
     Cancel,
 }
 
-struct CancelLoginDialog {
-    sender: tokio::sync::mpsc::Sender<LoginType>,
-}
-
-impl IntoDialogBody for CancelLoginDialog {
-    fn body(self, commands: &mut ChildBuilder) {
-        let sender = self.sender.clone();
-
-        commands.spawn(
-            TextBundle::from_section(
-                "Please follow the directions in your browser to connect your account",
-                BODY_TEXT_STYLE.get().unwrap().clone(),
-            )
-            .with_text_alignment(TextAlignment::Center),
-        );
-
-        commands.spawn_empty().spawn_button("Cancel", move || {
-            let _ = sender.blocking_send(LoginType::Cancel);
-        });
-    }
-}
-
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn login(
     mut commands: Commands,
@@ -79,6 +56,7 @@ fn login(
     mut dialog: Local<Option<Entity>>,
     mut toaster: Toaster,
     dui: Res<DuiRegistry>,
+    mut window: Query<&mut Window, With<PrimaryWindow>>,
 ) {
     // cleanup if we're done
     if wallet.address().is_some() {
@@ -119,6 +97,10 @@ fn login(
     if let Some(mut t) = task.take() {
         match t.complete() {
             Some(Ok((root_address, local_wallet, auth, profile))) => {
+                if let Ok(mut window) = window.get_single_mut() {
+                    window.focused = true;
+                }
+
                 let ephemeral_key = local_wallet.signer().to_bytes().to_vec();
 
                 // store to app config

@@ -1,5 +1,6 @@
 use avatar::AvatarDynamicState;
 use bevy::{ecs::system::RunSystemOnce, math::Vec3Swizzles, prelude::*};
+use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{rpc::RpcCall, structs::PrimaryUser};
 use comms::global_crdt::ForeignPlayer;
 use ethers_core::rand::{seq::SliceRandom, thread_rng, Rng};
@@ -10,7 +11,7 @@ use scene_runner::{
     renderer_context::RendererSceneContext,
     ContainingScene, OutOfWorld,
 };
-use ui_core::dialog::SpawnDialog;
+use ui_core::button::DuiButton;
 use wallet::Wallet;
 
 pub fn teleport_player(
@@ -18,6 +19,7 @@ pub fn teleport_player(
     mut events: EventReader<RpcCall>,
     player: Query<(Entity, &Transform), With<PrimaryUser>>,
     containing_scene: ContainingScene,
+    dui: Res<DuiRegistry>,
 ) {
     for (requester, parcel, response) in events.read().filter_map(|ev| match ev {
         RpcCall::TeleportPlayer {
@@ -66,16 +68,18 @@ pub fn teleport_player(
         };
 
         if requester.is_some() {
-            commands.spawn_dialog_two(
-                "Teleport".into(),
-                format!("The scene wants to teleport you to another location: {},{}\ntodo: put scene name and thumbnail here", parcel.x, parcel.y),
-                "Let's go!",
-                do_teleport,
-                "No thanks",
-                move || {
-                    response_fail.send(Err("User said no thanks".into()));
-                },
-            );
+            commands.spawn_template(
+                &dui,
+                "text-dialog",
+                DuiProps::new().with_prop("title", "Teleport".to_owned())
+                    .with_prop("body", format!("The scene wants to teleport you to another location: {},{}\ntodo: put scene name and thumbnail here", parcel.x, parcel.y))
+                    .with_prop("buttons", vec![
+                        DuiButton::new_enabled_and_close("Let's go!", do_teleport),
+                        DuiButton::new_enabled_and_close("No thanks", move || {
+                            response_fail.send(Err("User said no thanks".into()));
+                        }),
+                    ]),
+            ).unwrap();
         } else {
             commands.add(|w: &mut World| w.run_system_once(do_teleport))
         }

@@ -35,6 +35,8 @@ impl From<PbMaterial> for MaterialDefinition {
 
                 let alpha_mode = if base_color.a() < 1.0 {
                     AlphaMode::Blend
+                } else if let Some(test) = unlit.alpha_test {
+                    AlphaMode::Mask(test)
                 } else {
                     AlphaMode::Opaque
                 };
@@ -54,6 +56,13 @@ impl From<PbMaterial> for MaterialDefinition {
                 )
             }
             Some(pb_material::Material::Pbr(pbr)) => {
+                if pbr.alpha_texture.is_some()
+                    && pbr.texture.is_some()
+                    && pbr.alpha_texture != pbr.texture
+                {
+                    warn!("separate alpha texture not supported");
+                }
+
                 let base_color = pbr.albedo_color.map(Color::from).unwrap_or(Color::WHITE);
 
                 let alpha_mode = match pbr
@@ -74,8 +83,10 @@ impl From<PbMaterial> for MaterialDefinition {
                         AlphaMode::Blend
                     }
                     Some(MaterialTransparencyMode::MtmAuto) | None => {
-                        if base_color.a() < 1.0 {
+                        if base_color.a() < 1.0 || pbr.alpha_texture.is_some() {
                             AlphaMode::Blend
+                        } else if let Some(test) = pbr.alpha_test {
+                            AlphaMode::Mask(test)
                         } else {
                             AlphaMode::Opaque
                         }

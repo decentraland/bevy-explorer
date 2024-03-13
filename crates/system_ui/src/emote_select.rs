@@ -16,6 +16,8 @@ use ui_core::{
     ModifyComponentExt,
 };
 
+use crate::chat::BUTTON_SCALE;
+
 pub struct EmoteUiPlugin;
 
 impl Plugin for EmoteUiPlugin {
@@ -42,8 +44,10 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut dui: ResMut
             image: asset_server.load("images/emote_button.png").into(),
             style: Style {
                 position_type: PositionType::Absolute,
-                top: Val::Px(10.0 + 26.0 * 2.0),
-                right: Val::Px(10.0),
+                top: Val::VMin(BUTTON_SCALE * 2.5),
+                right: Val::VMin(BUTTON_SCALE * 0.5),
+                width: Val::VMin(BUTTON_SCALE),
+                height: Val::VMin(BUTTON_SCALE),
                 ..Default::default()
             },
             focus_policy: bevy::ui::FocusPolicy::Block,
@@ -261,14 +265,10 @@ fn show_emote_ui(
         for emote in player_emotes {
             debug!("adding {}", emote.slot);
             let h_thumb = emotes
-                .0
-                .get(&emote.urn)
-                .map(|anim| {
-                    debug!("found with path: {:?}", anim.thumbnail.path());
-                    anim.thumbnail.clone()
-                })
+                .get_server(&emote.urn)
+                .and_then(|anim| anim.thumbnail.clone())
                 .unwrap_or_else(|| {
-                    debug!("didn't find {} in {:?}", emote.urn, emotes.0);
+                    debug!("didn't find {} in {:?}", emote.urn, emotes);
                     asset_server.load("images/redx.png")
                 });
             props.insert_prop(format!("image_{}", emote.slot), h_thumb.clone())
@@ -292,8 +292,7 @@ fn show_emote_ui(
             all_slots.remove(&emote.slot);
             let button = buttons.named(format!("emote_{}", emote.slot).as_str());
             let name = emotes
-                .0
-                .get(&emote.urn)
+                .get_server(&emote.urn)
                 .map(|e| e.name.clone())
                 .unwrap_or("???".to_owned());
             let name2 = name.clone();

@@ -28,6 +28,10 @@ pub fn ops() -> Vec<OpDecl> {
 // receive and process a buffer of crdt messages
 #[op(v8)]
 fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
+    crdt_send_to_renderer(op_state, messages)
+}
+
+pub fn crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
     let mut op_state = op_state.borrow_mut();
     let elapsed_time = op_state.borrow::<SceneElapsedTime>().0;
     let logs = op_state.take::<Vec<SceneLogMessage>>();
@@ -36,7 +40,7 @@ fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
     let mut crdt_store = op_state.take::<CrdtStore>();
     let writers = op_state.take::<CrdtComponentInterfaces>();
     let mut stream = DclReader::new(messages);
-    debug!("BATCH len: {}", stream.len());
+    debug!("op_crdt_send_to_renderer BATCH len: {}", stream.len());
 
     // collect commands
     crdt_store.process_message_stream(&mut entity_map, &writers, &mut stream, true);
@@ -70,6 +74,7 @@ async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<OpState>>) -> Vec<Vec<u
     let span = op_state.borrow_mut().take::<EnteredSpan>();
     drop(span); // don't hold it over the await point so we get a clearer view of when js is running
 
+    debug!("op_crdt_recv_from_renderer");
     let response = receiver.recv().await;
 
     let mut op_state = op_state.borrow_mut();

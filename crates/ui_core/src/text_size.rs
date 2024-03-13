@@ -44,7 +44,7 @@ impl DuiTemplate for TextTemplate {
 }
 
 #[derive(Component)]
-pub struct FontSize(f32);
+pub struct FontSize(pub f32);
 
 fn update_fontsize(
     mut q: Query<(&mut Text, Ref<FontSize>)>,
@@ -62,7 +62,7 @@ fn update_fontsize(
             section.style.font_size = win_size * size.0;
         }
     }
-    if resized {
+    if resized && win_size > 0.0 {
         egui_settings.scale_factor = win_size as f64 / 720.0;
     }
 }

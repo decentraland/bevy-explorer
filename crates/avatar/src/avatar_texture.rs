@@ -178,7 +178,7 @@ impl BoothInstance {
         let Ok((instance, drag)) = q.get_single() else {
             return;
         };
-        let drag = drag.delta;
+        let drag = drag.delta_pixels;
         let Ok(mut transform) = transform.get_mut(instance.camera) else {
             return;
         };

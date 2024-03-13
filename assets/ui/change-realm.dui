@@ -19,7 +19,7 @@
 </define-template>
 
 <define-template id="server-item">
-    <div style="flex-direction: row; width: 100%; justify-content: space-between; align-items: center;">
+    <div style="flex-direction: row; width: 100%; justify-content: space-between; align-items: center; margin: 0.5vmin">
         <nineslice id="button-background" slice-image="images/button.png" slice-border="37.5%" slice-color="#8888cc" />
         <med-text text="@name" style="margin: 1.4vmin; color: black; width: 33%" />
         <med-text text="@users" style="margin: 1.4vmin; color: black; width: 33%" />

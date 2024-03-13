@@ -424,12 +424,16 @@ pub struct ContainingScene<'w, 's> {
     portable_scenes: Res<'w, PortableScenes>,
 }
 
+pub fn vec3_to_parcel(position: Vec3) -> IVec2 {
+    (position.xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
+        .floor()
+        .as_ivec2()
+}
+
 impl<'w, 's> ContainingScene<'w, 's> {
     // just the parcel at the position
     pub fn get_parcel_position(&self, position: Vec3) -> Option<Entity> {
-        let parcel = (position.xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
-            .floor()
-            .as_ivec2();
+        let parcel = vec3_to_parcel(position);
 
         if let Some(PointerResult::Exists { hash, .. }) = self.pointers.0.get(&parcel) {
             self.live_scenes.0.get(hash).copied()
@@ -708,12 +712,12 @@ fn receive_scene_updates(
                     None
                 }
                 SceneResponse::Error(scene_id, message) => {
-                    error!("[{scene_id:?}] error: {message}");
                     if let Some(root) = updates.scene_ids.get(&scene_id) {
                         if let Ok(mut context) = scenes.get_mut(*root) {
                             context.broken = true;
                             context.in_flight = false;
                             let timestamp = context.total_runtime as f64 + 1.0;
+                            error!("[{scene_id:?} @ {}] error: {message}", context.tick_number);
                             context.log(SceneLogMessage {
                                 timestamp,
                                 level: SceneLogLevel::SystemError,
@@ -798,6 +802,9 @@ fn process_scene_entity_lifecycle(
     for (root, mut context, mut deleted_entities) in scenes.iter_mut() {
         if !context.nascent.is_empty() {
             debug!("{:?}: nascent: {:?}", root, context.nascent);
+        }
+        if !context.death_row.is_empty() {
+            debug!("{:?}: death row: {:?}", root, context.death_row);
         }
 
         for scene_entity_id in std::mem::take(&mut context.nascent) {

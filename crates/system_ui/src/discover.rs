@@ -26,7 +26,16 @@ pub struct DiscoverSettingsPlugin;
 
 impl Plugin for DiscoverSettingsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (set_discover_content, update_results, update_page));
+        app.add_systems(
+            Update,
+            (
+                set_discover_content,
+                (update_results, update_page).run_if(|q: Query<&SettingsTab>| {
+                    q.get_single()
+                        .map_or(false, |tab| tab == &SettingsTab::Discover)
+                }),
+            ),
+        );
     }
 }
 
@@ -162,7 +171,7 @@ pub struct DiscoverSettings {
     filter: HashSet<DiscoverCategory>,
     data: Vec<DiscoverPage>,
     has_more: bool,
-    task: Option<Task<Result<Pages, anyhow::Error>>>,
+    task: Option<Task<Result<DiscoverPages, anyhow::Error>>>,
     order_by: SortBy,
     worlds: bool,
 }
@@ -193,7 +202,10 @@ impl DiscoverSettings {
         self.task = Some(IoTaskPool::get().spawn(async move {
             let mut response = isahc::get_async(url).await?;
 
-            response.json::<Pages>().await.map_err(|e| anyhow!(e))
+            response
+                .json::<DiscoverPages>()
+                .await
+                .map_err(|e| anyhow!(e))
         }));
     }
 }
@@ -334,9 +346,9 @@ fn set_discover_content(
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
-struct DiscoverPage {
-    title: String,
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct DiscoverPage {
+    pub title: String,
     contact_name: Option<String>,
     description: Option<String>,
     base_position: String,
@@ -345,17 +357,28 @@ struct DiscoverPage {
     user_count: usize,
     favorites: usize,
     user_visits: Option<usize>,
-    like_rate: f32,
+    like_score: Option<f32>,
     likes: usize,
     categories: Vec<String>,
     content_rating: String,
     updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+impl DiscoverPage {
+    pub fn dummy(coords: IVec2) -> Self {
+        Self {
+            title: format!("({}, {})", coords.x, coords.y),
+            base_position: format!("{},{}", coords.x, coords.y),
+            image: "https://realm-provider.decentraland.org/content/contents/bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y".to_owned(),
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(Deserialize, Debug)]
-struct Pages {
-    total: usize,
-    data: Vec<DiscoverPage>,
+pub struct DiscoverPages {
+    pub total: usize,
+    pub data: Vec<DiscoverPage>,
 }
 
 fn update_results(mut q: Query<&mut DiscoverSettings>) {
@@ -366,7 +389,7 @@ fn update_results(mut q: Query<&mut DiscoverSettings>) {
                     settings.data.extend(res.data);
                     settings.has_more = res.total > settings.data.len();
                 }
-                Some(Err(e)) => println!("places fetch failed: {e:?}"),
+                Some(Err(e)) => error!("places fetch failed: {e:?}"),
                 None => settings.bypass_change_detection().task = Some(task),
             }
         }
@@ -400,7 +423,7 @@ fn update_page(
     if actual != expected {
         for item in settings.data.iter().skip(actual) {
             let item = item.clone();
-            let image_path = IpfsPath::new_from_url(&item.image, "png");
+            let image_path = IpfsPath::new_from_url(&item.image, "image");
             let h_image = ipfas
                 .asset_server()
                 .load::<Image>(PathBuf::from(&image_path));
@@ -415,79 +438,21 @@ fn update_page(
                         .with_prop("label", item.title.clone())
                         .with_prop("author", item.contact_name.clone().unwrap_or_default())
                         .with_prop("views", format!("{}", item.user_visits.unwrap_or_default()))
-                        .with_prop("likes", format!("{:.0}%", item.like_rate * 100.0)),
+                        .with_prop(
+                            "likes",
+                            format!("{:.0}%", item.like_score.unwrap_or(0.0) * 100.0),
+                        ),
                 )
                 .unwrap();
             commands.entity(button.root).insert((
                 Interaction::default(),
-                On::<Click>::new(move |mut commands: Commands, dui: Res<DuiRegistry>| {
-                    let url = match &item.world_name {
-                        Some(name) => format!(
-                            "https://worlds-content-server.decentraland.org/world/{}",
-                            name.clone()
-                        ),
-                        None => "https://realm-provider.decentraland.org/main".to_owned(),
-                    };
-
-                    let Ok(to) = IVec2Arg::from_str(&item.base_position) else {
-                        warn!("invalid location");
-                        return;
-                    };
-                    let system = move |mut settings: Query<&mut SettingsDialog>| {
-                        let cr_ev = ChangeRealmEvent {
-                            new_realm: url.clone(),
-                        };
-                        let rpc_ev = RpcCall::TeleportPlayer {
-                            scene: None,
-                            to: to.0,
-                            response: Default::default(),
-                        };
-
-                        if let Ok(mut settings) = settings.get_single_mut() {
-                            settings.on_close = Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev));
-                        } else {
-                            warn!("no settings");
-                        }
-                    };
-
-                    let jump_in = On::<Click>::new(system.pipe(close_settings).pipe(close_ui));
-
-                    let props = DuiProps::new()
-                        .with_prop("close", On::<Click>::new(DuiButton::close_dialog))
-                        .with_prop("image", h_image.clone())
-                        .with_prop("title", item.title.clone())
-                        .with_prop("author", item.contact_name.clone().unwrap_or_default())
-                        .with_prop(
-                            "likes",
-                            format!("{:.0}% ({})", item.like_rate * 100.0, item.likes),
-                        )
-                        .with_prop("description", item.description.clone().unwrap_or_default())
-                        .with_prop("location", item.base_position.clone())
-                        .with_prop(
-                            "categories",
-                            item.categories
-                                .iter()
-                                .flat_map(|c| DiscoverCategory::from(c))
-                                .map(|cat| DuiButton::new_disabled(cat.text()))
-                                .collect::<Vec<_>>(),
-                        )
-                        .with_prop("rating", item.content_rating.clone())
-                        .with_prop("active", format!("{}", item.user_count))
-                        .with_prop("favorites", format!("{}", item.favorites))
-                        .with_prop(
-                            "visits",
-                            format!("{}", item.user_visits.unwrap_or_default()),
-                        )
-                        .with_prop(
-                            "updated",
-                            format!("{}", item.updated_at.format("%d/%m/%Y %H:%M")),
-                        )
-                        .with_prop("jump-in", jump_in);
-
-                    commands
-                        .spawn_template(&dui, "discover-popup", props)
-                        .unwrap();
-                }),
+                On::<Click>::new(
+                    move |mut commands: Commands,
+                          dui: Res<DuiRegistry>,
+                          asset_server: Res<AssetServer>| {
+                        spawn_discover_popup(&mut commands, &dui, &asset_server, &item);
+                    },
+                ),
             ));
         }
 
@@ -513,4 +478,85 @@ fn update_page(
                 .modify_component(|style: &mut Style| style.min_width = Val::Vw(80.0));
         }
     }
+}
+
+pub fn spawn_discover_popup(
+    commands: &mut Commands,
+    dui: &DuiRegistry,
+    asset_server: &AssetServer,
+    item: &DiscoverPage,
+) {
+    let url = match &item.world_name {
+        Some(name) => format!(
+            "https://worlds-content-server.decentraland.org/world/{}",
+            name.clone()
+        ),
+        None => "https://realm-provider.decentraland.org/main".to_owned(),
+    };
+
+    let Ok(to) = IVec2Arg::from_str(&item.base_position) else {
+        warn!("invalid location");
+        return;
+    };
+    let system = move |mut settings: Query<&mut SettingsDialog>| {
+        let cr_ev = ChangeRealmEvent {
+            new_realm: url.clone(),
+        };
+        let rpc_ev = RpcCall::TeleportPlayer {
+            scene: None,
+            to: to.0,
+            response: Default::default(),
+        };
+
+        if let Ok(mut settings) = settings.get_single_mut() {
+            settings.on_close = Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev));
+        } else {
+            warn!("no settings");
+        }
+    };
+
+    let jump_in = On::<Click>::new(system.pipe(close_settings).pipe(close_ui));
+
+    let image_path = IpfsPath::new_from_url(&item.image, "image");
+    let h_image = asset_server.load::<Image>(PathBuf::from(&image_path));
+
+    let props = DuiProps::new()
+        .with_prop("close", On::<Click>::new(DuiButton::close_dialog))
+        .with_prop("image", h_image.clone())
+        .with_prop("title", item.title.clone())
+        .with_prop("author", item.contact_name.clone().unwrap_or_default())
+        .with_prop(
+            "likes",
+            format!(
+                "{:.0}% ({})",
+                item.like_score.unwrap_or(0.0) * 100.0,
+                item.likes
+            ),
+        )
+        .with_prop("description", item.description.clone().unwrap_or_default())
+        .with_prop("location", item.base_position.clone())
+        .with_prop(
+            "categories",
+            item.categories
+                .iter()
+                .flat_map(|c| DiscoverCategory::from(c))
+                .map(|cat| DuiButton::new_disabled(cat.text()))
+                .collect::<Vec<_>>(),
+        )
+        .with_prop("rating", item.content_rating.clone())
+        .with_prop("active", format!("{}", item.user_count))
+        .with_prop("favorites", format!("{}", item.favorites))
+        .with_prop(
+            "visits",
+            format!("{}", item.user_visits.unwrap_or_default()),
+        )
+        .with_prop(
+            "updated",
+            format!("{}", item.updated_at.format("%d/%m/%Y %H:%M")),
+        )
+        .with_prop("jump-in", jump_in);
+
+    commands
+        .spawn_template(dui, "discover-popup", props)
+        .unwrap();
 }

@@ -1,48 +1,24 @@
 use bevy::{prelude::*, utils::HashMap};
-use common::sets::SetupSets;
+use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use scene_runner::Toasts;
-use ui_core::{ui_builder::SpawnSpacer, BODY_TEXT_STYLE};
 
 pub struct ToastsPlugin;
 
 impl Plugin for ToastsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup.in_set(SetupSets::Main));
+        app.add_systems(OnEnter::<ui_core::State>(ui_core::State::Ready), setup);
         app.add_systems(Update, update_toasts);
     }
 }
 
 #[derive(Component)]
 pub struct ToastMarker;
-fn setup(mut commands: Commands) {
-    commands
-        .spawn(NodeBundle {
-            style: Style {
-                position_type: PositionType::Absolute,
-                left: Val::Percent(30.0),
-                right: Val::Percent(30.0),
-                top: Val::Percent(10.0),
-                max_width: Val::Percent(40.0),
-                ..Default::default()
-            },
-            z_index: ZIndex::Global(1),
-            ..Default::default()
-        })
-        .with_children(|c| {
-            c.spacer();
-            c.spawn((
-                NodeBundle {
-                    style: Style {
-                        flex_direction: FlexDirection::Column,
-                        ..Default::default()
-                    },
-                    background_color: Color::rgba(0.2, 0.2, 1.0, 0.2).into(),
-                    ..Default::default()
-                },
-                ToastMarker,
-            ));
-            c.spacer();
-        });
+fn setup(mut commands: Commands, dui: Res<DuiRegistry>) {
+    let inner = commands
+        .spawn_template(&dui, "toaster", DuiProps::default())
+        .unwrap()
+        .named("inner");
+    commands.entity(inner).insert(ToastMarker);
 }
 
 fn update_toasts(
@@ -51,6 +27,7 @@ fn update_toasts(
     mut toasts: ResMut<Toasts>,
     time: Res<Time>,
     mut displays: Local<HashMap<String, Option<Entity>>>,
+    dui: Res<DuiRegistry>,
 ) {
     let Ok(toaster_ent) = toast_display.get_single() else {
         return;
@@ -60,26 +37,22 @@ fn update_toasts(
 
     for (key, toast) in &toasts.0 {
         let Some(maybe_ent) = prev_displays.remove(key) else {
-            commands.entity(toaster_ent).with_children(|c| {
-                let id = c
-                    .spawn(TextBundle {
-                        text: Text::from_section(
-                            &toast.message,
-                            BODY_TEXT_STYLE.get().unwrap().clone(),
-                        )
-                        .with_alignment(TextAlignment::Center),
-                        background_color: Color::rgba(0.2, 0.2, 1.0, 0.0).into(),
-                        ..Default::default()
-                    })
-                    .id();
-                displays.insert(key.clone(), Some(id));
-            });
+            let components = commands
+                .entity(toaster_ent)
+                .spawn_template(
+                    &dui,
+                    "toast",
+                    DuiProps::new().with_prop("toast", toast.message.clone()),
+                )
+                .unwrap();
+            displays.insert(key.clone(), Some(components.root));
             continue;
         };
 
         if let Some(ent) = maybe_ent {
             if toast.time < time.elapsed_seconds() - 5.0 {
                 commands.entity(ent).despawn_recursive();
+                displays.insert(key.clone(), None);
                 continue;
             }
         }

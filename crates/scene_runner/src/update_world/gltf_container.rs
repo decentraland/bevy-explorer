@@ -12,7 +12,7 @@ use bevy::{
         mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
         view::NoFrustumCulling,
     },
-    scene::InstanceId,
+    scene::{scene_spawner_system, InstanceId},
     utils::{HashMap, HashSet},
 };
 use rapier3d_f64::prelude::*;
@@ -53,6 +53,7 @@ impl Plugin for GltfDefinitionPlugin {
         );
 
         app.add_systems(Update, update_gltf.in_set(SceneSets::PostLoop));
+        app.add_systems(SpawnScene, update_ready_gltfs.after(scene_spawner_system));
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
     }
 }
@@ -92,39 +93,16 @@ fn update_gltf(
         (Entity, &SceneEntity, &Handle<Gltf>, &GltfDefinition),
         (With<GltfDefinition>, Without<GltfLoaded>),
     >,
-    ready_gltfs: Query<
-        (Entity, &SceneEntity, &GltfLoaded, &GltfDefinition),
-        Without<GltfProcessed>,
-    >,
-    gltf_spawned_entities: Query<(
-        Option<&Name>,
-        &Transform,
-        &Parent,
-        Option<&AnimationPlayer>,
-        Option<&Handle<Mesh>>,
-        Option<&GltfExtras>,
-        Option<&SkinnedMesh>,
-        Option<&Handle<StandardMaterial>>,
-    )>,
     scene_def_handles: Query<&Handle<EntityDefinition>>,
-    (scene_defs, gltfs, images, ipfas, mut base_mats, mut bound_mats): (
+    (scene_defs, gltfs, images, ipfas, mut base_mats): (
         Res<Assets<EntityDefinition>>,
         Res<Assets<Gltf>>,
         Res<Assets<Image>>,
         IpfsAssetServer,
         ResMut<Assets<StandardMaterial>>,
-        ResMut<Assets<SceneMaterial>>,
     ),
     mut scene_spawner: ResMut<SceneSpawner>,
-    mut meshes: ResMut<Assets<Mesh>>,
     mut contexts: Query<&mut RendererSceneContext>,
-    _debug_query: Query<(
-        Entity,
-        Option<&Name>,
-        Option<&Children>,
-        Option<&SkinnedMesh>,
-        &Transform,
-    )>,
     mut instances_to_despawn_when_ready: Local<Vec<InstanceId>>,
 ) {
     // clean up old instances
@@ -264,7 +242,37 @@ fn update_gltf(
             }
         }
     }
+}
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn update_ready_gltfs(
+    mut commands: Commands,
+    ready_gltfs: Query<
+        (Entity, &SceneEntity, &GltfLoaded, &GltfDefinition),
+        Without<GltfProcessed>,
+    >,
+    gltf_spawned_entities: Query<(
+        Option<&Name>,
+        &Transform,
+        &Parent,
+        Option<&AnimationPlayer>,
+        Option<&Handle<Mesh>>,
+        Option<&GltfExtras>,
+        Option<&SkinnedMesh>,
+        Option<&Handle<StandardMaterial>>,
+    )>,
+    (base_mats, mut bound_mats): (Res<Assets<StandardMaterial>>, ResMut<Assets<SceneMaterial>>),
+    scene_spawner: Res<SceneSpawner>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut contexts: Query<&mut RendererSceneContext>,
+    _debug_query: Query<(
+        Entity,
+        Option<&Name>,
+        Option<&Children>,
+        Option<&SkinnedMesh>,
+        &Transform,
+    )>,
+) {
     for (bevy_scene_entity, dcl_scene_entity, loaded, definition) in ready_gltfs.iter() {
         if loaded.0.is_none() {
             // nothing to process
@@ -390,15 +398,17 @@ fn update_gltf(
                     }
 
                     // process collider
-                    let mut collider_base_name =
-                        maybe_name.and_then(|name| name.as_str().strip_suffix("_collider"));
+                    let mut collider_base_name = maybe_name
+                        .map(Name::as_str)
+                        .filter(|name| name.contains("_collider"));
 
                     if collider_base_name.is_none() {
                         // check parent name also
                         collider_base_name = gltf_spawned_entities
                             .get_component::<Name>(parent.get())
-                            .map(|name| name.as_str().strip_suffix("_collider"))
-                            .unwrap_or(None)
+                            .map(|name| name.as_str())
+                            .ok()
+                            .filter(|name| name.contains("_collider"))
                     }
                     let is_collider = collider_base_name.is_some();
 
@@ -441,7 +451,9 @@ fn update_gltf(
                                 })
                         });
 
-                    if collider_bits != 0 && !is_skinned {
+                    if collider_bits != 0
+                    /* && !is_skinned */
+                    {
                         // create collider shape
                         let VertexAttributeValues::Float32x3(positions_ref) =
                             mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
@@ -464,15 +476,49 @@ fn update_gltf(
                             .map(|chunk| chunk.try_into().unwrap())
                             .collect();
 
-                        let shape = SharedShape::trimesh(positions_parry, indices_parry);
+                        let shape = SharedShape::trimesh_with_flags(
+                            positions_parry,
+                            indices_parry,
+                            TriMeshFlags::all(),
+                        );
 
                         let index = collider_counter
                             .entry(collider_base_name.to_owned())
                             .or_default();
                         *index += 1u32;
 
+                        let h_mesh = if is_skinned {
+                            let mut new_mesh = Mesh::new(mesh_data.primitive_topology());
+                            new_mesh.set_indices(mesh_data.indices().cloned());
+                            for (attribute_id, data) in mesh_data.attributes() {
+                                let attribute = match attribute_id {
+                                    id if id == Mesh::ATTRIBUTE_JOINT_INDEX.id => continue,
+                                    id if id == Mesh::ATTRIBUTE_JOINT_WEIGHT.id => continue,
+                                    id if id == Mesh::ATTRIBUTE_POSITION.id => {
+                                        Mesh::ATTRIBUTE_POSITION
+                                    }
+                                    id if id == Mesh::ATTRIBUTE_NORMAL.id => Mesh::ATTRIBUTE_NORMAL,
+                                    id if id == Mesh::ATTRIBUTE_UV_0.id => Mesh::ATTRIBUTE_UV_0,
+                                    id if id == Mesh::ATTRIBUTE_UV_1.id => Mesh::ATTRIBUTE_UV_1,
+                                    id if id == Mesh::ATTRIBUTE_TANGENT.id => {
+                                        Mesh::ATTRIBUTE_TANGENT
+                                    }
+                                    id if id == Mesh::ATTRIBUTE_COLOR.id => Mesh::ATTRIBUTE_COLOR,
+                                    _ => {
+                                        warn!("unrecognised vertex attribute {attribute_id:?}");
+                                        continue;
+                                    }
+                                };
+
+                                new_mesh.insert_attribute(attribute, data.clone());
+                            }
+                            meshes.add(new_mesh)
+                        } else {
+                            h_mesh.clone()
+                        };
+
                         commands.entity(spawned_ent).try_insert(MeshCollider {
-                            shape: MeshColliderShape::Shape(shape, h_mesh.clone()),
+                            shape: MeshColliderShape::Shape(shape, h_mesh),
                             collision_mask: collider_bits,
                             mesh_name: collider_base_name.map(ToOwned::to_owned),
                             index: *index,
