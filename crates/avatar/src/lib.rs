@@ -129,8 +129,7 @@ impl WearablePointers {
     }
 
     fn insert(&mut self, urn: &str, wearable: WearablePointerResult) {
-        self.data
-            .insert(urn_for_wearable_specifier(urn), wearable);
+        self.data.insert(urn_for_wearable_specifier(urn), wearable);
     }
 
     pub fn contains_key(&self, urn: &str) -> bool {
@@ -163,12 +162,11 @@ impl WearableMeta {
     pub fn hides(&self, body_shape: &str) -> HashSet<WearableCategory> {
         // hides from data
         let mut hides = HashSet::from_iter(self.data.hides.clone());
-        if let Some(repr) = self
-            .data
-            .representations
-            .iter()
-            .find(|repr| repr.body_shapes.iter().any(|shape| body_shape.to_lowercase() == shape.to_lowercase()))
-        {
+        if let Some(repr) = self.data.representations.iter().find(|repr| {
+            repr.body_shapes
+                .iter()
+                .any(|shape| body_shape.to_lowercase() == shape.to_lowercase())
+        }) {
             // add hides from representation
             hides.extend(repr.override_hides.clone());
         }

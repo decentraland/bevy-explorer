@@ -273,7 +273,9 @@ fn update_map_data(
                 style.width = Val::Px(ppp);
                 style.height = Val::Px(ppp);
             });
-        commands.entity(data.cursor).try_insert(Visibility::Inherited);
+        commands
+            .entity(data.cursor)
+            .try_insert(Visibility::Inherited);
     }
 }
 

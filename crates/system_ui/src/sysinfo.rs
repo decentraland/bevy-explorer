@@ -39,7 +39,14 @@ impl Plugin for SysInfoPanelPlugin {
             Startup,
             setup.in_set(SetupSets::Main).after(SetupSets::Init),
         );
-        app.add_systems(Update, (update_scene_load_state, update_minimap, update_map_visibilty));
+        app.add_systems(
+            Update,
+            (
+                update_scene_load_state,
+                update_minimap,
+                update_map_visibilty,
+            ),
+        );
         app.add_systems(
             OnEnter::<ui_core::State>(ui_core::State::Ready),
             setup_minimap,
@@ -327,11 +334,17 @@ fn update_minimap(
     let player_translation = (gt.translation().xz() * Vec2::new(1.0, -1.0)) / PARCEL_SIZE;
     let map_center = player_translation - Vec2::Y; // no idea why i have to subtract one :(
 
-    let scene = containing_scene.get_parcel(player).and_then(|scene| scenes.get(scene).ok());
+    let scene = containing_scene
+        .get_parcel(player)
+        .and_then(|scene| scenes.get(scene).ok());
     let parcel = player_translation.floor().as_ivec2();
-    let title = scene.map(|context| context.title.clone()).unwrap_or("???".to_owned());
+    let title = scene
+        .map(|context| context.title.clone())
+        .unwrap_or("???".to_owned());
     let sdk = scene.map(|context| context.sdk_version).unwrap_or("");
-    let state = scene.map(|context| if context.broken { "Broken" } else { "Ok "}).unwrap_or("No scene");
+    let state = scene
+        .map(|context| if context.broken { "Broken" } else { "Ok " })
+        .unwrap_or("No scene");
 
     if let Ok(components) = q.get_single() {
         if let Ok(mut map) = maps.get_mut(components.named("map-node")) {
