@@ -1,4 +1,4 @@
-use std::{io::ErrorKind, str::FromStr, time::Duration};
+use std::{io::ErrorKind, str::FromStr, sync::Arc, time::Duration};
 
 use async_std::io::{Cursor, ReadExt};
 use bevy::{
@@ -40,40 +40,40 @@ impl AssetReader for NftReader {
 
             let path = path.to_string_lossy();
             let Some(encoded_urn) = path.split('.').next() else {
-                return Err(AssetReaderError::Io(std::io::Error::new(
+                return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     path,
-                )));
+                ))));
             };
             let urn = urlencoding::decode(encoded_urn).map_err(|e| {
-                AssetReaderError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
+                AssetReaderError::Io(Arc::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))
             })?;
             let urn = urn::Urn::from_str(&urn).map_err(|e| {
-                AssetReaderError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
+                AssetReaderError::Io(Arc::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))
             })?;
 
             if urn.nid() != "decentraland" {
-                return Err(AssetReaderError::Io(std::io::Error::new(
+                return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     "nid must be `decentraland`",
-                )));
+                ))));
             }
 
             let mut parts = urn.nss().split(':');
             let (Some(chain), Some(_standard), Some(address), Some(token)) =
                 (parts.next(), parts.next(), parts.next(), parts.next())
             else {
-                return Err(AssetReaderError::Io(std::io::Error::new(
+                return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     "nss must be `chain:standard:contract_address:token`",
-                )));
+                ))));
             };
 
             if chain != "ethereum" {
-                return Err(AssetReaderError::Io(std::io::Error::new(
+                return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     "unsupported chain `{chain}`",
-                )));
+                ))));
             }
 
             let remote = format!("https://opensea.decentraland.org/api/v2/chain/{chain}/contract/{address}/nfts/{token}");
@@ -89,10 +89,10 @@ impl AssetReader for NftReader {
                     .timeout(Duration::from_secs(30 * attempt))
                     .body(())
                     .map_err(|e| {
-                        AssetReaderError::Io(std::io::Error::new(
+                        AssetReaderError::Io(Arc::new(std::io::Error::new(
                             ErrorKind::Other,
                             format!("[{token:?}]: {e}"),
-                        ))
+                        )))
                     })?;
 
                 let response = request.send_async().await;
@@ -102,20 +102,20 @@ impl AssetReader for NftReader {
                 let mut response = match response {
                     Err(e) if e.is_timeout() && attempt <= 3 => continue,
                     Err(e) => {
-                        return Err(AssetReaderError::Io(std::io::Error::new(
+                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
                             ErrorKind::Other,
                             format!("[{token:?}]: {e}"),
-                        )))
+                        ))))
                     }
                     Ok(response) if !matches!(response.status(), StatusCode::OK) => {
-                        return Err(AssetReaderError::Io(std::io::Error::new(
+                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
                             ErrorKind::Other,
                             format!(
                                 "[{token:?}]: server responded with status {} requesting `{}`",
                                 response.status(),
                                 remote,
                             ),
-                        )))
+                        ))))
                     }
                     Ok(response) => response,
                 };
@@ -128,10 +128,10 @@ impl AssetReader for NftReader {
                         if matches!(e.kind(), std::io::ErrorKind::TimedOut) && attempt <= 3 {
                             continue;
                         }
-                        return Err(AssetReaderError::Io(std::io::Error::new(
+                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
                             ErrorKind::Other,
                             format!("[{token:?}] {e}"),
-                        )));
+                        ))));
                     }
                 }
             };

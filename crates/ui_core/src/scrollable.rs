@@ -28,7 +28,7 @@ pub trait SpawnScrollable {
     );
 }
 
-impl SpawnScrollable for ChildBuilder<'_, '_, '_> {
+impl SpawnScrollable for ChildBuilder<'_> {
     fn spawn_scrollable(
         &mut self,
         bundle: impl Bundle,
@@ -169,8 +169,8 @@ fn update_scrollables(
         &ScrollContent,
         &Node,
         &GlobalTransform,
-        Changed<GlobalTransform>,
-        Changed<Node>,
+        Ref<GlobalTransform>,
+        Ref<Node>,
         &Interaction,
     )>,
     mut bars: Query<
@@ -220,8 +220,8 @@ fn update_scrollables(
         scroll_content,
         node,
         transform,
-        transform_changed,
-        node_changed,
+        ref_transform,
+        ref_node,
         interaction,
     ) in scrollables.iter_mut()
     {
@@ -269,8 +269,8 @@ fn update_scrollables(
         // the reported content-size is rounded, and occasionally repositioning when it changes causes a loop of +/- 1 pixel
         // so we allow 1 pixel tolerance (new content smaller) before redrawing
         let change = scrollable.content_size - child_size;
-        let redraw = transform_changed
-            || node_changed
+        let redraw = ref_transform.is_changed()
+            || ref_node.is_changed()
             || change.max_element() > 0.0
             || change.min_element() < -1.0;
 
@@ -424,7 +424,7 @@ fn update_scrollables(
             }
 
             // re-paginate content
-            let mut style = nodes.get_component_mut::<Style>(info.content).unwrap();
+            let mut style = nodes.get_mut(info.content).unwrap().1;
             let offset = info.slide_amount * -slider.position;
             if slider.vertical {
                 style.top = Val::Px(offset.y);
@@ -516,7 +516,7 @@ fn update_scrollables(
             ));
         });
 
-        let mut style = nodes.get_component_mut::<Style>(info.content).unwrap();
+        let mut style = nodes.get_mut(info.content).unwrap().1;
         let offset = info.slide_amount * -position;
         if vertical {
             style.top = Val::Px(offset.y);

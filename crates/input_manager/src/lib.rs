@@ -33,18 +33,18 @@ impl Default for InputMap {
             inputs: BiMap::from_iter([
                 (InputAction::IaAny, InputItem::Any),
                 (InputAction::IaPointer, InputItem::Mouse(MouseButton::Left)),
-                (InputAction::IaPrimary, InputItem::Key(KeyCode::E)),
-                (InputAction::IaSecondary, InputItem::Key(KeyCode::F)),
-                (InputAction::IaForward, InputItem::Key(KeyCode::W)),
-                (InputAction::IaBackward, InputItem::Key(KeyCode::S)),
-                (InputAction::IaRight, InputItem::Key(KeyCode::D)),
-                (InputAction::IaLeft, InputItem::Key(KeyCode::A)),
+                (InputAction::IaPrimary, InputItem::Key(KeyCode::KeyE)),
+                (InputAction::IaSecondary, InputItem::Key(KeyCode::KeyF)),
+                (InputAction::IaForward, InputItem::Key(KeyCode::KeyW)),
+                (InputAction::IaBackward, InputItem::Key(KeyCode::KeyS)),
+                (InputAction::IaRight, InputItem::Key(KeyCode::KeyD)),
+                (InputAction::IaLeft, InputItem::Key(KeyCode::KeyA)),
                 (InputAction::IaJump, InputItem::Key(KeyCode::Space)),
                 (InputAction::IaWalk, InputItem::Key(KeyCode::ShiftLeft)),
-                (InputAction::IaAction3, InputItem::Key(KeyCode::Key1)),
-                (InputAction::IaAction4, InputItem::Key(KeyCode::Key2)),
-                (InputAction::IaAction5, InputItem::Key(KeyCode::Key3)),
-                (InputAction::IaAction6, InputItem::Key(KeyCode::Key4)),
+                (InputAction::IaAction3, InputItem::Key(KeyCode::Digit1)),
+                (InputAction::IaAction4, InputItem::Key(KeyCode::Digit2)),
+                (InputAction::IaAction5, InputItem::Key(KeyCode::Digit3)),
+                (InputAction::IaAction6, InputItem::Key(KeyCode::Digit4)),
             ]),
         }
     }
@@ -59,8 +59,8 @@ impl InputMap {
 #[derive(SystemParam)]
 pub struct InputManager<'w> {
     map: Res<'w, InputMap>,
-    mouse_input: Res<'w, Input<MouseButton>>,
-    key_input: Res<'w, Input<KeyCode>>,
+    mouse_input: Res<'w, ButtonInput<MouseButton>>,
+    key_input: Res<'w, ButtonInput<KeyCode>>,
     should_accept: Res<'w, AcceptInput>,
 }
 
@@ -179,10 +179,10 @@ impl std::fmt::Display for InputItem {
 fn key_to_str(key: &KeyCode) -> String {
     use KeyCode::*;
     let str = match key {
-        Key1 => "1",
-        Key2 => "2",
-        Key3 => "3",
-        Key4 => "4",
+        Digit1 => "1",
+        Digit2 => "2",
+        Digit3 => "3",
+        Digit4 => "4",
         Space => "Space",
         ShiftLeft => "Left Shift",
         _ => return format!("{:?}", key),

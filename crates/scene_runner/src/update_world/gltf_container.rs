@@ -9,8 +9,7 @@ use bevy::{
     pbr::ExtendedMaterial,
     prelude::*,
     render::{
-        mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
-        view::NoFrustumCulling,
+        mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues}, render_asset::RenderAssetUsages, view::NoFrustumCulling
     },
     scene::{scene_spawner_system, InstanceId},
     utils::{HashMap, HashSet},
@@ -216,7 +215,7 @@ fn update_gltf(
                 }
 
                 if let Some(texture) = images.get(h_base) {
-                    if texture.texture_descriptor.format.sample_type(None)
+                    if texture.texture_descriptor.format.sample_type(None, None)
                         != Some(bevy::render::render_resource::TextureSampleType::Float {
                             filterable: true,
                         })
@@ -405,9 +404,10 @@ fn update_ready_gltfs(
                     if collider_base_name.is_none() {
                         // check parent name also
                         collider_base_name = gltf_spawned_entities
-                            .get_component::<Name>(parent.get())
-                            .map(|name| name.as_str())
+                            .get(parent.get())
                             .ok()
+                            .and_then(|(name, ..)| name)
+                            .map(|name| name.as_str())
                             .filter(|name| name.contains("_collider"))
                     }
                     let is_collider = collider_base_name.is_some();
@@ -428,8 +428,9 @@ fn update_ready_gltfs(
                         .unwrap_or_else(|| {
                             // then try parent node
                             gltf_spawned_entities
-                                .get_component::<GltfExtras>(parent.get())
+                                .get(parent.get())
                                 .ok()
+                                .and_then(|tpl| tpl.5)
                                 .and_then(|extras| {
                                     serde_json::from_str::<DclNodeExtras>(&extras.value).ok()
                                 })
@@ -488,8 +489,10 @@ fn update_ready_gltfs(
                         *index += 1u32;
 
                         let h_mesh = if is_skinned {
-                            let mut new_mesh = Mesh::new(mesh_data.primitive_topology());
-                            new_mesh.set_indices(mesh_data.indices().cloned());
+                            let mut new_mesh = Mesh::new(mesh_data.primitive_topology(), RenderAssetUsages::RENDER_WORLD);
+                            if let Some(indices) = mesh_data.indices().cloned() {
+                                new_mesh.insert_indices(indices);
+                            }
                             for (attribute_id, data) in mesh_data.attributes() {
                                 let attribute = match attribute_id {
                                     id if id == Mesh::ATTRIBUTE_JOINT_INDEX.id => continue,
@@ -568,7 +571,7 @@ fn check_gltfs_ready(
 }
 
 // debug show the gltf graph
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, deprecated)]
 fn _node_graph(
     scene_entity_query: &Query<(
         Entity,

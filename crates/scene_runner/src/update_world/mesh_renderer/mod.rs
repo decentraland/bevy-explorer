@@ -164,12 +164,11 @@ pub fn update_mesh(
                     defaults.cylinder.clone()
                 } else {
                     meshes.add(
-                        TruncatedCone {
+                        Mesh::from(TruncatedCone {
                             base_radius: *radius_bottom,
                             tip_radius: *radius_top,
                             ..Default::default()
-                        }
-                        .into(),
+                        }),
                     )
                 }
             }

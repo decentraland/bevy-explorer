@@ -93,15 +93,15 @@ impl Default for PrimaryCamera {
     fn default() -> Self {
         Self {
             mouse_key_enable_mouse: MouseButton::Right,
-            keyboard_key_enable_mouse: KeyCode::M,
+            keyboard_key_enable_mouse: KeyCode::KeyM,
             sensitivity: 5.0,
             initialized: Default::default(),
             yaw: Default::default(),
             pitch: Default::default(),
             roll: Default::default(),
             distance: 1.0,
-            key_roll_left: KeyCode::T,
-            key_roll_right: KeyCode::G,
+            key_roll_left: KeyCode::KeyT,
+            key_roll_right: KeyCode::KeyG,
             scene_override: None,
         }
     }

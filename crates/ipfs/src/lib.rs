@@ -517,7 +517,7 @@ fn change_realm(
                         None => print.send(PrintConsoleLine::new(
                             format!("Failed to set realm `{realm}`").into(),
                         )),
-                    }
+                    };
                 }
             }
         }
@@ -865,10 +865,10 @@ impl AssetReader for IpfsIo {
     {
         Box::pin(async move {
             let wrap_err = |e| {
-                bevy::asset::io::AssetReaderError::Io(std::io::Error::new(
+                bevy::asset::io::AssetReaderError::Io(Arc::new(std::io::Error::new(
                     ErrorKind::Other,
                     format!("w: {e}"),
-                ))
+                )))
             };
 
             debug!("request: {:?}", path);
@@ -897,7 +897,7 @@ impl AssetReader for IpfsIo {
 
             // get semaphore to limit concurrent requests
             let _permit = self.request_slots.acquire().await.map_err(|e| {
-                AssetReaderError::Io(std::io::Error::new(ErrorKind::Interrupted, e))
+                AssetReaderError::Io(Arc::new(std::io::Error::new(ErrorKind::Interrupted, e)))
             })?;
             let token = self.reqno.fetch_add(1, atomic::Ordering::SeqCst);
 
@@ -930,10 +930,10 @@ impl AssetReader for IpfsIo {
                     .timeout(Duration::from_secs(30 * attempt))
                     .body(())
                     .map_err(|e| {
-                        AssetReaderError::Io(std::io::Error::new(
+                        AssetReaderError::Io(Arc::new(std::io::Error::new(
                             ErrorKind::Other,
                             format!("[{token:?}]: {e}"),
-                        ))
+                        )))
                     })?;
 
                 let response = request.send_async().await;
@@ -943,20 +943,20 @@ impl AssetReader for IpfsIo {
                 let mut response = match response {
                     Err(e) if e.is_timeout() && attempt <= 3 => continue,
                     Err(e) => {
-                        return Err(AssetReaderError::Io(std::io::Error::new(
+                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
                             ErrorKind::Other,
                             format!("[{token:?}]: {e}"),
-                        )))
+                        ))))
                     }
                     Ok(response) if !matches!(response.status(), StatusCode::OK) => {
-                        return Err(AssetReaderError::Io(std::io::Error::new(
+                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
                             ErrorKind::Other,
                             format!(
                                 "[{token:?}]: server responded with status {} requesting `{}`",
                                 response.status(),
                                 remote,
                             ),
-                        )))
+                        ))))
                     }
                     Ok(response) => response,
                 };
@@ -969,10 +969,10 @@ impl AssetReader for IpfsIo {
                         if matches!(e.kind(), std::io::ErrorKind::TimedOut) && attempt <= 3 {
                             continue;
                         }
-                        return Err(AssetReaderError::Io(std::io::Error::new(
+                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
                             ErrorKind::Other,
                             format!("[{token:?}] {e}"),
-                        )));
+                        ))));
                     }
                 }
             };

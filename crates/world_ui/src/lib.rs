@@ -2,11 +2,10 @@ use bevy::{
     pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster},
     prelude::*,
     render::{
-        camera::RenderTarget,
-        render_resource::{
+        camera::RenderTarget, render_asset::RenderAssetUsages, render_resource::{
             AsBindGroup, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
             TextureUsages,
-        },
+        }
     },
     utils::HashMap,
 };
@@ -92,12 +91,10 @@ fn update_world_ui(
                 camera: Camera {
                     order: -1,
                     is_active: false,
-                    ..Default::default()
-                },
-                camera_2d: Camera2d {
-                    clear_color: bevy::core_pipeline::clear_color::ClearColorConfig::Custom(
+                    clear_color: bevy::render::camera::ClearColorConfig::Custom(
                         Color::NONE,
                     ),
+                    ..Default::default()
                 },
                 ..Default::default()
             },
@@ -209,6 +206,7 @@ fn update_world_ui(
                         TextureDimension::D2,
                         &[0, 0, 0, 0],
                         TextureFormat::Bgra8UnormSrgb,
+                        RenderAssetUsages::all(),
                     );
                     image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
                     let image = images.add(image);
@@ -216,7 +214,7 @@ fn update_world_ui(
                     let quad = commands
                         .spawn((
                             MaterialMeshBundle {
-                                mesh: meshes.add(shape::Quad::default().into()),
+                                mesh: meshes.add(bevy::math::primitives::Rectangle::default().mesh()),
                                 material: materials.add(TextShapeMaterial {
                                     base: SceneMaterial {
                                         base: StandardMaterial {

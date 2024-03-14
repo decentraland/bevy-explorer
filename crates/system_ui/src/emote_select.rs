@@ -75,7 +75,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut dui: ResMut
 fn handle_emote_key(
     mut commands: Commands,
     player: Query<Entity, With<PrimaryUser>>,
-    key_input: Res<Input<KeyCode>>,
+    key_input: Res<ButtonInput<KeyCode>>,
     window: Query<&Window, With<PrimaryWindow>>,
     mut w: EventWriter<EmoteUiEvent>,
     time: Res<Time>,
@@ -105,16 +105,16 @@ fn handle_emote_key(
     }
 
     const EMOTE_KEYS: [(KeyCode, u32); 10] = [
-        (KeyCode::Key0, 0),
-        (KeyCode::Key1, 1),
-        (KeyCode::Key2, 2),
-        (KeyCode::Key3, 3),
-        (KeyCode::Key4, 4),
-        (KeyCode::Key5, 5),
-        (KeyCode::Key6, 6),
-        (KeyCode::Key7, 7),
-        (KeyCode::Key8, 8),
-        (KeyCode::Key9, 9),
+        (KeyCode::Digit0, 0),
+        (KeyCode::Digit1, 1),
+        (KeyCode::Digit2, 2),
+        (KeyCode::Digit3, 3),
+        (KeyCode::Digit4, 4),
+        (KeyCode::Digit5, 5),
+        (KeyCode::Digit6, 6),
+        (KeyCode::Digit7, 7),
+        (KeyCode::Digit8, 8),
+        (KeyCode::Digit9, 9),
     ];
     if !existing.is_empty() {
         for (emote_key, slot) in EMOTE_KEYS {
@@ -279,7 +279,7 @@ fn show_emote_ui(
                 EmoteDialog,
                 Focus,
                 Interaction::default(),
-                On::<Defocus>::new(|mut w: EventWriter<EmoteUiEvent>| w.send(EmoteUiEvent::Hide)),
+                On::<Defocus>::new(|mut w: EventWriter<EmoteUiEvent>| { w.send(EmoteUiEvent::Hide); }),
             ))
             .apply_template(&dui, "choose-emote-base", props)
             .unwrap();

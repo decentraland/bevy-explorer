@@ -117,7 +117,7 @@ fn update_avatar_collider_actions(
     frame: Res<FrameCount>,
     mut tooltips: ResMut<ToolTips>,
     profiles: Query<(&ForeignPlayer, &UserProfile, &PlayerModifiers)>,
-    mouse_input: Res<Input<MouseButton>>,
+    mouse_input: Res<ButtonInput<MouseButton>>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
     mut photo_booth: PhotoBooth,
@@ -178,7 +178,7 @@ fn update_avatar_collider_actions(
     if let Some(avatar_target) = colliders.collider_data.cast_ray_nearest(
         frame.0,
         ray.origin,
-        ray.direction,
+        ray.direction.into(),
         pointer_distance,
         u32::MAX,
     ) {

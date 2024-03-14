@@ -3,7 +3,6 @@ use std::{path::PathBuf, sync::Arc};
 use anyhow::anyhow;
 use bevy::{
     core::FrameCount,
-    core_pipeline::clear_color::ClearColorConfig,
     ecs::system::SystemParam,
     prelude::*,
     render::{
@@ -273,16 +272,12 @@ fn add_booth_camera(
                         order: -1,
                         target: RenderTarget::Image(avatar_texture.clone()),
                         is_active: true,
-                        ..default()
-                    },
-                    camera_3d: Camera3d {
                         clear_color: ClearColorConfig::Custom(Color::NONE),
-                        ..Default::default()
+                        ..default()
                     },
                     ..Default::default()
                 },
                 render_layers,
-                UiCameraConfig { show_ui: false },
             ))
             .id(),
         );
@@ -414,18 +409,13 @@ fn snapshot(
                         Camera3dBundle {
                             transform,
                             camera: Camera {
+                                clear_color: ClearColorConfig::Custom(Color::NONE),
                                 target: RenderTarget::Window(WindowRef::Entity(window)),
                                 ..default()
-                            },
-
-                            camera_3d: Camera3d {
-                                clear_color: ClearColorConfig::Custom(Color::NONE),
-                                ..Default::default()
                             },
                             ..Default::default()
                         },
                         selection.render_layers.unwrap_or_default(),
-                        UiCameraConfig { show_ui: false },
                     ))
                     .id()
             };

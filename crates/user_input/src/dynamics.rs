@@ -155,7 +155,7 @@ pub fn update_user_position(
                     * old_transform.to_scale_rotation_translation().1.inverse();
                 // clamp to x/z plane to avoid twisting around
                 let new_facing =
-                    ((rotation_change * transform.forward()) * (Vec3::X + Vec3::Z)).normalize();
+                    ((rotation_change * Vec3::from(transform.forward())) * (Vec3::X + Vec3::Z)).normalize();
                 transform.look_to(new_facing, Vec3::Y);
                 // and rotate velocity
                 dynamic_state.velocity = rotation_change * dynamic_state.velocity;

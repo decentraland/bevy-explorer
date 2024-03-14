@@ -299,7 +299,7 @@ fn update_materials(
                     .insert(RetryMaterial(vec![base.image.clone()]));
                 continue;
             };
-            if texture.texture_descriptor.format.sample_type(None)
+            if texture.texture_descriptor.format.sample_type(None, None)
                 != Some(bevy::render::render_resource::TextureSampleType::Float {
                     filterable: true,
                 })

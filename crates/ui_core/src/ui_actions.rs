@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 
 use bevy::{
     ecs::{
-        query::{ReadOnlyWorldQuery, WorldQuery},
+        query::{QueryData, WorldQuery},
         system::BoxedSystem,
     },
     input::mouse::{MouseMotion, MouseWheel},
@@ -104,9 +104,9 @@ pub fn close_ui(mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller
 }
 
 pub trait ActionMarker: Send + Sync + 'static {
-    type Component: ReadOnlyWorldQuery;
+    type Component: QueryData;
 
-    fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool;
+    fn activate(param: <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool;
     fn repeat_activate() -> bool {
         false
     }
@@ -115,7 +115,7 @@ pub trait ActionMarker: Send + Sync + 'static {
 pub struct Click;
 impl ActionMarker for Click {
     type Component = (&'static Interaction, Option<&'static Enabled>);
-    fn activate((interact, enabled): <Self::Component as WorldQuery>::Item<'_>) -> bool {
+    fn activate((interact, enabled): <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool {
         matches!(interact, Interaction::Pressed) && enabled.map_or(true, |a| a.0)
     }
 }
@@ -123,27 +123,27 @@ impl ActionMarker for Click {
 pub struct HoverEnter;
 impl ActionMarker for HoverEnter {
     type Component = (&'static Interaction, Option<&'static Enabled>);
-    fn activate((interact, enabled): <Self::Component as WorldQuery>::Item<'_>) -> bool {
+    fn activate((interact, enabled): <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool {
         !matches!(interact, Interaction::None) && enabled.map_or(true, |a| a.0)
     }
 }
 pub struct HoverExit;
 impl ActionMarker for HoverExit {
     type Component = (&'static Interaction, Option<&'static Enabled>);
-    fn activate((interact, enabled): <Self::Component as WorldQuery>::Item<'_>) -> bool {
+    fn activate((interact, enabled): <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool {
         matches!(interact, Interaction::None) && enabled.map_or(true, |a| a.0)
     }
 }
 impl ActionMarker for Focus {
     type Component = Option<&'static Focus>;
-    fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
+    fn activate(param: <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool {
         param.is_some()
     }
 }
 pub struct Defocus;
 impl ActionMarker for Defocus {
     type Component = Option<&'static Focus>;
-    fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
+    fn activate(param: <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool {
         param.is_none()
     }
 }
@@ -151,9 +151,9 @@ impl ActionMarker for Defocus {
 #[derive(Component)]
 pub struct DataChanged;
 impl ActionMarker for DataChanged {
-    type Component = Option<Changed<DataChanged>>;
-    fn activate(param: <Self::Component as WorldQuery>::Item<'_>) -> bool {
-        param.unwrap_or(false)
+    type Component = Option<Ref<'static, DataChanged>>;
+    fn activate(param: <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool {
+        param.map(|p| p.is_changed()).unwrap_or(false)
     }
 }
 

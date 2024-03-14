@@ -349,7 +349,7 @@ pub fn process_transport_updates(
                         pos.rotation_z,
                         pos.rotation_w,
                     ]),
-                })
+                });
             }
             PlayerMessage::PlayerData(Message::ProfileVersion(version)) => {
                 profile_events.send(ProfileEvent {

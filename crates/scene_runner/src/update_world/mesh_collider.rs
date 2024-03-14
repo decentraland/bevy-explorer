@@ -1043,13 +1043,12 @@ fn render_debug_colliders(
     if let Ok(player) = player.get_single() {
         if !debug_entities.contains_key(&player) {
             let h_mesh = meshes.add(
-                bevy::prelude::shape::Capsule {
+                Mesh::from(bevy::prelude::shape::Capsule {
                     radius: PLAYER_COLLIDER_RADIUS,
                     rings: 1,
                     depth: PLAYER_COLLIDER_HEIGHT - PLAYER_COLLIDER_RADIUS * 2.0,
                     ..Default::default()
-                }
-                .into(),
+                }),
             );
             let debug_ent = commands
                 .spawn((
@@ -1074,23 +1073,22 @@ fn render_debug_colliders(
     for (collider_ent, collider) in with_collider.iter() {
         if !debug_entities.contains_key(&collider_ent) && collider.collision_mask & debug.0 != 0 {
             let h_mesh = match &collider.shape {
-                MeshColliderShape::Box => meshes.add(bevy::prelude::shape::Cube::default().into()),
+                MeshColliderShape::Box => meshes.add(Mesh::from(bevy::prelude::shape::Cube::default())),
                 MeshColliderShape::Cylinder {
                     radius_top,
                     radius_bottom,
                 } => meshes.add(
-                    TruncatedCone {
+                    Mesh::from(TruncatedCone {
                         base_radius: *radius_bottom,
                         tip_radius: *radius_top,
                         ..Default::default()
-                    }
-                    .into(),
+                    }),
                 ),
                 MeshColliderShape::Plane => {
-                    meshes.add(bevy::prelude::shape::Quad::default().into())
+                    meshes.add(Mesh::from(bevy::prelude::shape::Quad::default()))
                 }
                 MeshColliderShape::Sphere => {
-                    meshes.add(bevy::prelude::shape::UVSphere::default().into())
+                    meshes.add(Mesh::from(bevy::prelude::shape::UVSphere::default()))
                 }
                 MeshColliderShape::Shape(_, h_mesh) => h_mesh.clone(),
             };

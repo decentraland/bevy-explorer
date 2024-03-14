@@ -1,5 +1,6 @@
 <define-template id="settings">
     <div style="
+        position-type: absolute;
         flex-direction: column;
         height: 100%;
         width: 100%;

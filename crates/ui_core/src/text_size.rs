@@ -63,6 +63,6 @@ fn update_fontsize(
         }
     }
     if resized && win_size > 0.0 {
-        egui_settings.scale_factor = win_size as f64 / 720.0;
+        egui_settings.scale_factor = win_size / 720.0;
     }
 }

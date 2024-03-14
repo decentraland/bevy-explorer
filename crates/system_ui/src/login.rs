@@ -205,7 +205,7 @@ fn login(
                             "buttons",
                             vec![DuiButton::new_enabled(
                                 "Cancel",
-                                |mut e: EventWriter<LoginType>| e.send(LoginType::Cancel),
+                                |mut e: EventWriter<LoginType>| { e.send(LoginType::Cancel); },
                             )],
                         ),
                     )

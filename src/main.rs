@@ -237,7 +237,7 @@ fn main() {
         .add_systems(Startup, setup.in_set(SetupSets::Init))
         .insert_resource(AmbientLight {
             color: Color::rgb(0.85, 0.85, 1.0),
-            brightness: 0.75,
+            brightness: 575.0,
         });
 
     app.add_console_command::<ChangeLocationCommand, _>(change_location);

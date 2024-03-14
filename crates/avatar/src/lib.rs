@@ -480,12 +480,12 @@ fn select_avatar(
             Entity,
             Option<&ForeignPlayer>,
             &AvatarShape,
-            Changed<AvatarShape>,
+            Ref<AvatarShape>,
             Option<&mut AvatarSelection>,
         ),
         Or<(With<ForeignPlayer>, With<PrimaryUser>)>,
     >,
-    scene_avatar_defs: Query<(Entity, &SceneEntity, &AvatarShape, Changed<AvatarShape>)>,
+    scene_avatar_defs: Query<(Entity, &SceneEntity, &AvatarShape, Ref<AvatarShape>)>,
     orphaned_avatar_selections: Query<(Entity, &AvatarSelection), Without<AvatarShape>>,
     containing_scene: ContainingScene,
 ) {
@@ -500,7 +500,7 @@ fn select_avatar(
     let mut updates = HashMap::default();
 
     // set up initial state
-    for (entity, maybe_player, base_shape, changed, maybe_prev_selection) in root_avatar_defs.iter()
+    for (entity, maybe_player, base_shape, ref_avatar, maybe_prev_selection) in root_avatar_defs.iter()
     {
         let id = maybe_player
             .map(|p| p.scene_id)
@@ -509,7 +509,7 @@ fn select_avatar(
             id,
             AvatarUpdate {
                 base_name: base_shape.0.name.clone().unwrap_or_else(|| "Guest".into()),
-                update_shape: changed.then_some(base_shape.0.clone()),
+                update_shape: ref_avatar.is_changed().then_some(base_shape.0.clone()),
                 active_scenes: containing_scene.get(entity),
                 prev_source: maybe_prev_selection
                     .as_ref()
@@ -520,10 +520,10 @@ fn select_avatar(
         );
     }
 
-    for (ent, scene_ent, scene_avatar_shape, changed) in scene_avatar_defs.iter() {
+    for (ent, scene_ent, scene_avatar_shape, ref_avatar) in scene_avatar_defs.iter() {
         let Some(update) = updates.get_mut(&scene_ent.id) else {
             // this is an NPC avatar, attach selection immediately
-            if changed {
+            if ref_avatar.is_changed() {
                 commands.entity(ent).try_insert(AvatarSelection {
                     scene: Some(scene_ent.root),
                     shape: PbAvatarShape {
@@ -553,7 +553,7 @@ fn select_avatar(
         // this is the source
         update.current_source = Some(ent);
 
-        if changed || update.prev_source != update.current_source {
+        if ref_avatar.is_changed() || update.prev_source != update.current_source {
             // and it needs to be updated
             update.update_shape = Some(PbAvatarShape {
                 name: Some(

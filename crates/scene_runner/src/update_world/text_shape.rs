@@ -172,13 +172,13 @@ fn update_text_shapes(
         let (halign_wui, halign) = match text_align {
             TextAlignMode::TamTopLeft
             | TextAlignMode::TamMiddleLeft
-            | TextAlignMode::TamBottomLeft => (0.5, TextAlignment::Left),
+            | TextAlignMode::TamBottomLeft => (0.5, JustifyText::Left),
             TextAlignMode::TamTopCenter
             | TextAlignMode::TamMiddleCenter
-            | TextAlignMode::TamBottomCenter => (0.0, TextAlignment::Center),
+            | TextAlignMode::TamBottomCenter => (0.0, JustifyText::Center),
             TextAlignMode::TamTopRight
             | TextAlignMode::TamMiddleRight
-            | TextAlignMode::TamBottomRight => (-0.5, TextAlignment::Right),
+            | TextAlignMode::TamBottomRight => (-0.5, JustifyText::Right),
         };
 
         let add_y_pix = (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * PIX_PER_M;
@@ -238,7 +238,7 @@ fn update_text_shapes(
                     });
                 }
 
-                if halign != TextAlignment::Left {
+                if halign != JustifyText::Left {
                     c.spacer();
                 }
 
@@ -251,9 +251,9 @@ fn update_text_shapes(
                         text,
                         style: Style {
                             align_self: match halign {
-                                TextAlignment::Left => AlignSelf::FlexStart,
-                                TextAlignment::Center => AlignSelf::Center,
-                                TextAlignment::Right => AlignSelf::FlexEnd,
+                                JustifyText::Left => AlignSelf::FlexStart,
+                                JustifyText::Center => AlignSelf::Center,
+                                JustifyText::Right => AlignSelf::FlexEnd,
                             },
                             ..Default::default()
                         },
@@ -261,7 +261,7 @@ fn update_text_shapes(
                     });
                 });
 
-                if halign != TextAlignment::Right {
+                if halign != JustifyText::Right {
                     c.spacer();
                 }
 
@@ -300,7 +300,7 @@ pub fn make_text_section(
     font_size: f32,
     color: Color,
     font: dcl_component::proto_components::sdk::components::common::Font,
-    alignment: TextAlignment,
+    justify: JustifyText,
     wrapping: bool,
 ) -> Text {
     let text = text.replace("\\n", "\n");
@@ -335,6 +335,6 @@ pub fn make_text_section(
         } else {
             BreakLineOn::NoWrap
         },
-        alignment,
+        justify,
     }
 }

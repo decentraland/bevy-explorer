@@ -13,7 +13,7 @@ struct SceneBounds {
     bounds: vec4<f32>,
 }
 
-@group(1) @binding(100)
+@group(2) @binding(100)
 var<uniform> bounds: SceneBounds;
 
 

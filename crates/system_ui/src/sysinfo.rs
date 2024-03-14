@@ -1,8 +1,5 @@
 use bevy::{
-    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
-    math::Vec3Swizzles,
-    prelude::*,
-    ui::FocusPolicy,
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin}, math::Vec3Swizzles, prelude::*, text::JustifyText, ui::FocusPolicy
 };
 
 use bevy_console::ConsoleCommand;
@@ -149,7 +146,7 @@ pub(crate) fn setup(
                                             label,
                                             BODY_TEXT_STYLE.get().unwrap().clone(),
                                         )
-                                        .with_alignment(TextAlignment::Right),
+                                        .with_justify(JustifyText::Right),
                                         ..Default::default()
                                     });
                                     commands.spawn(TextBundle {
@@ -272,7 +269,7 @@ fn update_scene_load_state(
         let players = players.iter().count() + 1;
 
         if config.graphics.log_fps {
-            if let Some(fps) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
+            if let Some(fps) = diagnostics.get(&FrameTimeDiagnosticsPlugin::FPS) {
                 let fps = fps.smoothed().unwrap_or_default();
                 set_child(format!("{fps:.0}"));
             } else {

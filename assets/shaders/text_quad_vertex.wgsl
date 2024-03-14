@@ -13,7 +13,7 @@ struct TextQuadData {
     add_y_pix: f32,
 }
 
-@group(1) @binding(200)
+@group(2) @binding(200)
 var<uniform> quad_data: TextQuadData;
 
 @vertex
@@ -41,7 +41,7 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
 
     // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
     // See https://github.com/gfx-rs/naga/issues/2416
-    out.instance_index = get_instance_index(vertex_no_morph.instance_index);
+    out.instance_index = vertex_no_morph.instance_index;
 
     return out;
 }

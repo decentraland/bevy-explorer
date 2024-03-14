@@ -103,12 +103,12 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn keyboard_popup(
     mut commands: Commands,
-    input: Res<Input<KeyCode>>,
+    input: Res<ButtonInput<KeyCode>>,
     mut container: Query<&mut Style, With<ChatboxContainer>>,
     entry: Query<Entity, With<ChatInput>>,
 ) -> &'static str {
     let mut res = "";
-    if input.just_pressed(KeyCode::Return) {
+    if input.just_pressed(KeyCode::Enter) || input.just_pressed(KeyCode::NumpadEnter) {
         if let Ok(mut style) = container.get_single_mut() {
             if style.display == Display::None {
                 style.display = Display::Flex;

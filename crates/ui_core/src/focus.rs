@@ -25,15 +25,15 @@ impl Plugin for FocusPlugin {
 
 fn defocus(
     mut commands: Commands,
-    focus_elements: Query<(Entity, Changed<Focus>), With<Focus>>,
-    mouse_button_input: Res<Input<MouseButton>>,
+    focus_elements: Query<(Entity, Ref<Focus>)>,
+    mouse_button_input: Res<ButtonInput<MouseButton>>,
 ) {
     let refocussed = mouse_button_input.any_just_pressed([MouseButton::Left, MouseButton::Right])
-        || focus_elements.iter().any(|(_, added)| added);
+        || focus_elements.iter().any(|(_, focus)| focus.is_changed());
 
     if refocussed {
-        for (entity, added) in focus_elements.iter() {
-            if !added {
+        for (entity, ref_focus) in focus_elements.iter() {
+            if !ref_focus.is_changed() {
                 commands.entity(entity).remove::<Focus>();
             }
         }

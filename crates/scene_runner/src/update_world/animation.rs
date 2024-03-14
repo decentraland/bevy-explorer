@@ -47,7 +47,7 @@ fn update_animations(
         (Option<&mut Animator>, &Handle<Gltf>, &mut GltfProcessed),
         Or<(Changed<Animator>, Changed<GltfProcessed>)>,
     >,
-    mut players: Query<&mut AnimationPlayer, &Name>,
+    mut players: Query<&mut AnimationPlayer>,
     clips: Res<Assets<AnimationClip>>,
     gltfs: Res<Assets<Gltf>>,
 ) {

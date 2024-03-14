@@ -169,7 +169,8 @@ impl DuiTemplate for DuiButtonTemplate {
             (None, None) => ctx.render_template(commands, "button-base-notext", DuiProps::new()),
         }?;
 
-        let mut button = commands.commands().entity(components["button-background"]);
+        let mut new_commands = commands.commands();
+        let mut button = new_commands.entity(components["button-background"]);
 
         button.insert((
             Enabled(data.enabled),
@@ -316,7 +317,8 @@ impl DuiTemplate for DuiTabGroupTemplate {
                     ),
                 )
                 .map(|nodes| {
-                    let mut bg = commands.commands().entity(nodes["button-background"]);
+                    let mut new_commands = commands.commands();
+                    let mut bg = new_commands.entity(nodes["button-background"]);
 
                     bg.insert(Active(Some(ix) == start_index));
 

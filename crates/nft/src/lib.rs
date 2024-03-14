@@ -135,7 +135,7 @@ fn load_frame(
             })
             .id();
 
-        scene_spawner.spawn_as_child(gltf.default_scene.as_ref().unwrap(), child);
+        scene_spawner.spawn_as_child(gltf.default_scene.clone().unwrap(), child);
         commands
             .entity(ent)
             .remove::<FrameLoading>()
@@ -177,7 +177,7 @@ fn load_nft(
                 PbrBundle {
                     transform: Transform::from_translation(Vec3::Z * 0.03),
                     mesh: mesh
-                        .get_or_insert_with(|| meshes.add(shape::Quad::default().into()))
+                        .get_or_insert_with(|| meshes.add(Mesh::from(shape::Quad::default())))
                         .clone(),
                     material: materials.add(StandardMaterial {
                         base_color_texture: Some(h_image.clone()),

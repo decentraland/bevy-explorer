@@ -928,7 +928,7 @@ pub fn process_scene_lifecycle(
                 Some(urn) => SceneIpfsLocation::Urn(urn.to_owned()),
                 None => SceneIpfsLocation::Hash(required_scene_hash.to_owned()),
             },
-        })
+        });
     }
 }
 

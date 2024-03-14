@@ -64,11 +64,7 @@ fn setup(
     commands.spawn((
         PbrBundle {
             mesh: meshes.add(
-                shape::Plane {
-                    size: 50000.0,
-                    subdivisions: 10,
-                }
-                .into(),
+                Plane3d::default().mesh().size(50000.0, 50000.0)
             ),
             material: materials.add(StandardMaterial {
                 base_color: Color::rgb(0.15, 0.2, 0.05),
@@ -97,7 +93,7 @@ fn daylight_cycle(
 
     if let Ok((mut light_trans, mut directional)) = sun.get_single_mut() {
         light_trans.rotation = rotation;
-        directional.illuminance = t.sin().max(0.0).powf(2.0) * 30000.0;
+        directional.illuminance = t.sin().max(0.0).powf(2.0) * 10_000.0;
 
         if let Ok(mut fog) = fog.get_single_mut() {
             let distance = scene_distance.0
