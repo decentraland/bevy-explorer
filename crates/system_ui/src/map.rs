@@ -235,7 +235,7 @@ fn update_map_data(
                 .max(data.pixels_per_parcel);
 
             commands.entity(data.you_are_here).try_insert((
-                Visibility::Visible,
+                Visibility::Inherited,
                 Style {
                     position_type: PositionType::Absolute,
                     left: Val::Px(icon_pos.x - icon_size * 0.5),
@@ -273,7 +273,7 @@ fn update_map_data(
                 style.width = Val::Px(ppp);
                 style.height = Val::Px(ppp);
             });
-        commands.entity(data.cursor).try_insert(Visibility::Visible);
+        commands.entity(data.cursor).try_insert(Visibility::Inherited);
     }
 }
 
@@ -436,7 +436,7 @@ fn render_map(
                             style.bottom = Val::Px(bottom);
                             style.width = Val::Px(pixels_per_parcel * tile_parcels as f32);
                             style.height = Val::Px(pixels_per_parcel * tile_parcels as f32);
-                            *vis = Visibility::Visible;
+                            *vis = Visibility::Inherited;
                         }
                         Entry::Vacant(v) => {
                             debug!("new");

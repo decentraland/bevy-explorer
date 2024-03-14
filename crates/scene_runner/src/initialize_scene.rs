@@ -333,6 +333,7 @@ pub(crate) fn load_scene_javascript(
             size,
             1.0,
             config.scene_log_to_console,
+            if is_sdk7 { "sdk7" } else { "sdk6" },
         );
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?})");
 

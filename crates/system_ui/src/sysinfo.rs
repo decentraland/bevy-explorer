@@ -13,6 +13,7 @@ use common::{
 };
 use comms::{global_crdt::ForeignPlayer, Transport};
 use console::DoAddConsoleCommand;
+use ipfs::CurrentRealm;
 use scene_runner::{
     initialize_scene::{SceneLoading, PARCEL_SIZE},
     renderer_context::RendererSceneContext,
@@ -38,7 +39,7 @@ impl Plugin for SysInfoPanelPlugin {
             Startup,
             setup.in_set(SetupSets::Main).after(SetupSets::Init),
         );
-        app.add_systems(Update, (update_scene_load_state, update_minimap));
+        app.add_systems(Update, (update_scene_load_state, update_minimap, update_map_visibilty));
         app.add_systems(
             OnEnter::<ui_core::State>(ui_core::State::Ready),
             setup_minimap,
@@ -326,12 +327,11 @@ fn update_minimap(
     let player_translation = (gt.translation().xz() * Vec2::new(1.0, -1.0)) / PARCEL_SIZE;
     let map_center = player_translation - Vec2::Y; // no idea why i have to subtract one :(
 
-    let scene = containing_scene.get_parcel(player);
+    let scene = containing_scene.get_parcel(player).and_then(|scene| scenes.get(scene).ok());
     let parcel = player_translation.floor().as_ivec2();
-    let title = scene
-        .and_then(|scene| scenes.get(scene).ok())
-        .map(|context| context.title.clone())
-        .unwrap_or("???".to_owned());
+    let title = scene.map(|context| context.title.clone()).unwrap_or("???".to_owned());
+    let sdk = scene.map(|context| context.sdk_version).unwrap_or("");
+    let state = scene.map(|context| if context.broken { "Broken" } else { "Ok "}).unwrap_or("No scene");
 
     if let Ok(components) = q.get_single() {
         if let Ok(mut map) = maps.get_mut(components.named("map-node")) {
@@ -343,7 +343,7 @@ fn update_minimap(
         }
 
         if let Ok(mut text) = text.get_mut(components.named("position")) {
-            text.sections[0].value = format!("({},{})", parcel.x, parcel.y);
+            text.sections[0].value = format!("({},{})   {sdk}   {state}", parcel.x, parcel.y);
         }
     }
 }
@@ -368,5 +368,26 @@ fn set_sysinfo(
         } else {
             Visibility::Hidden
         });
+    }
+}
+
+fn update_map_visibilty(
+    realm: Res<CurrentRealm>,
+    map: Query<&DuiEntities, With<Minimap>>,
+    mut style: Query<&mut Style>,
+) {
+    if realm.is_changed() {
+        let Ok(nodes) = map.get_single() else {
+            return;
+        };
+        let Ok(mut style) = style.get_mut(nodes.named("map-container")) else {
+            return;
+        };
+        // todo this is really bad
+        if realm.address == "https://realm-provider.decentraland.org/main" {
+            style.display = Display::Flex;
+        } else {
+            style.display = Display::None;
+        }
     }
 }

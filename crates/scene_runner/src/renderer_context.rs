@@ -80,6 +80,8 @@ pub struct RendererSceneContext {
 
     // last time a pointer event occurred
     pub last_action_event: Option<f32>,
+    // sdk version
+    pub sdk_version: &'static str,
 }
 
 pub const SCENE_LOG_BUFFER_SIZE: usize = 100;
@@ -98,6 +100,7 @@ impl RendererSceneContext {
         size: UVec2,
         priority: f32,
         log_to_stdout: bool,
+        sdk_version: &'static str,
     ) -> Self {
         let mut new_context = Self {
             scene_id,
@@ -126,6 +129,7 @@ impl RendererSceneContext {
             logs: RingBuffer::new(1000, 100),
             log_to_stdout,
             last_action_event: None,
+            sdk_version,
         };
 
         new_context.live_entities[SceneEntityId::ROOT.id as usize] =
