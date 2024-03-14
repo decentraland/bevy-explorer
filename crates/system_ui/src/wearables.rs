@@ -2,10 +2,7 @@ use std::str::FromStr;
 
 use anyhow::anyhow;
 use avatar::{
-    avatar_texture::{BoothInstance, PhotoBooth, PROFILE_UI_RENDERLAYER},
-    base_wearables::base_wearables,
-    AvatarShape, RequestedWearables, WearableCategory, WearableCollections, WearableMeta,
-    WearableMetas, WearablePointerResult, WearablePointers,
+    avatar_texture::{BoothInstance, PhotoBooth, PROFILE_UI_RENDERLAYER}, base_wearables::base_wearables, urn_for_wearable_specifier, AvatarShape, RequestedWearables, WearableCategory, WearableCollections, WearableMeta, WearableMetas, WearablePointerResult, WearablePointers
 };
 use bevy::{
     prelude::*,
@@ -230,7 +227,7 @@ fn set_wearables_content(
             }
             None => {
                 let player_shape = &player.get_single().unwrap().0;
-                let body_shape = player_shape.body_shape.clone().unwrap();
+                let body_shape = urn_for_wearable_specifier(player_shape.body_shape.as_ref().unwrap());
                 let body_shape_hash = wearable_pointers
                     .get(&body_shape.to_lowercase())
                     .unwrap()
@@ -251,7 +248,7 @@ fn set_wearables_content(
                                     wearable_metas.0.get(hash).map(|meta| (meta, hash))
                                 })
                                 .map(|(meta, hash)| {
-                                    (meta.data.category, (meta.id.to_owned(), hash.to_owned()))
+                                    (meta.data.category, (urn_for_wearable_specifier(&meta.id), hash.to_owned()))
                                 })
                         })
                         .chain(std::iter::once((
@@ -726,10 +723,10 @@ fn update_wearables_list(
             let worn = settings
                 .current_wearables
                 .values()
-                .map(|(urn, _)| urn.as_str())
+                .map(|(urn, _)| urn.to_lowercase())
                 .collect::<HashSet<_>>();
 
-            wearables.sort_by_key(|w| (!worn.contains(w.id()), -w.time()))
+            wearables.sort_by_key(|w| (!worn.contains(&w.id().to_lowercase()), -w.time()))
         }
     }
 
@@ -766,9 +763,12 @@ fn update_wearables_list(
             if selected.0.as_ref().map(WearableEntry::urn) == Some(wearable.urn()) {
                 initial = Some(ix);
             }
-            let (inactive_color, inactive_border) = if worn.contains(wearable.id()) {
+            let (inactive_color, inactive_border) = if worn.contains::<str>(&urn_for_wearable_specifier(wearable.urn())) {
                 (Color::ORANGE, Color::rgb(0.5, 0.325, 0.0))
             } else {
+                if wearable.category() == Some(WearableCategory::BODY_SHAPE) {
+                    println!("worn does not contain {} - {:?}", wearable.urn(), worn);
+                }
                 (
                     Color::rgba(0.0, 0.0, 0.0, 0.0),
                     Color::rgba(0.0, 0.0, 0.0, 0.0),
@@ -883,7 +883,7 @@ fn update_wearable_item(
                                     .data
                                     .representations
                                     .iter()
-                                    .any(|rep| rep.body_shapes.contains(&settings.body_shape))
+                                    .any(|repr| repr.body_shapes.iter().any(|shape| settings.body_shape.to_lowercase() == shape.to_lowercase()))
                                     || meta.data.category == WearableCategory::BODY_SHAPE;
 
                                 *state = WearableItemState::PendingImage(
@@ -937,7 +937,7 @@ fn update_wearable_item(
                         .data
                         .representations
                         .iter()
-                        .any(|rep| rep.body_shapes.contains(&settings.body_shape))
+                        .any(|repr| repr.body_shapes.iter().any(|shape| settings.body_shape.to_lowercase() == shape.to_lowercase()))
                         || meta.data.category == WearableCategory::BODY_SHAPE;
 
                     let (image_color, rarity_color) = if fits {
@@ -1052,9 +1052,9 @@ fn update_selected_item(
         let category = meta.data.category;
         let urn = meta.id.clone();
         let hash = h.clone();
-        let is_remove = worn.contains(sel.id());
+        let is_remove = worn.contains::<str>(&sel.id().to_lowercase());
 
-        let label = if worn.contains(sel.id()) {
+        let label = if is_remove {
             "REMOVE"
         } else {
             "EQUIP"
@@ -1090,7 +1090,9 @@ fn update_selected_item(
                 // update wearables on avatar
                 let mut wearables = avatar.0.wearables.drain(..).collect::<HashSet<_>>();
                 if let Some((old_urn, _)) = prev {
-                    if !wearables.remove(&old_urn) {
+                    if let Some(worn_urn) = wearables.iter().find(|w| urn_for_wearable_specifier(w) == old_urn) {
+                        wearables.remove(&worn_urn.clone());
+                    } else {
                         warn!("failed to remove {old_urn} from {wearables:?}");
                     }
                 }

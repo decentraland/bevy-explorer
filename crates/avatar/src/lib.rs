@@ -1,4 +1,4 @@
-use std::{borrow::Cow, f32::consts::PI, str::FromStr};
+use std::{f32::consts::PI, str::FromStr};
 
 use anyhow::anyhow;
 use attach::AttachPlugin;
@@ -130,7 +130,7 @@ impl WearablePointers {
 
     fn insert(&mut self, urn: &str, wearable: WearablePointerResult) {
         self.data
-            .insert(urn_for_wearable_specifier(urn).into_owned(), wearable);
+            .insert(urn_for_wearable_specifier(urn), wearable);
     }
 
     pub fn contains_key(&self, urn: &str) -> bool {
@@ -142,12 +142,8 @@ impl WearablePointers {
 // wearables need to be stripped down to at most 6 segments. we don't know why,
 // there is no spec, it is just how it is.
 // TODO justify with ADR-244
-pub fn urn_for_wearable_specifier(specifier: &str) -> Cow<str> {
-    if specifier.split(':').nth(6).is_some() {
-        Cow::Owned(specifier.split(':').take(6).join(":"))
-    } else {
-        Cow::Borrowed(specifier)
-    }
+pub fn urn_for_wearable_specifier(specifier: &str) -> String {
+    specifier.split(':').take(6).join(":").to_lowercase()
 }
 
 #[derive(Resource, Default, Debug)]
@@ -171,7 +167,7 @@ impl WearableMeta {
             .data
             .representations
             .iter()
-            .find(|repr| repr.body_shapes.iter().any(|shape| body_shape == shape))
+            .find(|repr| repr.body_shapes.iter().any(|shape| body_shape.to_lowercase() == shape.to_lowercase()))
         {
             // add hides from representation
             hides.extend(repr.override_hides.clone());
@@ -767,7 +763,7 @@ impl WearableDefinition {
             meta.data.representations.iter().find(|rep| {
                 rep.body_shapes
                     .iter()
-                    .any(|rep_shape| rep_shape.to_lowercase() == *body_shape)
+                    .any(|rep_shape| rep_shape.to_lowercase() == body_shape.to_lowercase())
             })
         }) else {
             warn!("no representation for body shape {body_shape}");
@@ -903,7 +899,7 @@ fn load_wearables(
             .0
             .drain()
             .filter(|r| !wearable_pointers.contains_key(r))
-            .map(|urn| urn_for_wearable_specifier(&urn).into_owned())
+            .map(|urn| urn_for_wearable_specifier(&urn))
             .collect::<HashSet<_>>();
         let base_wearables = HashSet::from_iter(base_wearables::base_wearables());
         let pointers = requested
