@@ -102,7 +102,7 @@ fn daylight_cycle(
         if let Ok(mut fog) = fog.get_single_mut() {
             let distance = scene_distance.0
                 + camera.get_single().map(|c| c.distance).unwrap_or_default() * 5.0;
-            fog.falloff = FogFalloff::from_visibility_squared(distance);
+            fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
             let sun_up = atmosphere.sun_position.dot(Vec3::Y);
             let rgb = Vec3::new(0.4, 0.4, 0.2) * sun_up.clamp(0.0, 1.0)
                 + Vec3::new(0.0, 0.0, 0.0) * (8.0 * (0.125 - sun_up.clamp(0.0, 0.125)));
