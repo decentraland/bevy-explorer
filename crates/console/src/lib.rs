@@ -1,7 +1,7 @@
 use bevy::{prelude::*, scene::scene_spawner_system};
 use bevy_console::{
     Command, ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, ConsoleSet,
-    PrintConsoleLine, 
+    PrintConsoleLine,
 };
 use clap::Parser;
 

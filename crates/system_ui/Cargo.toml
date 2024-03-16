@@ -20,6 +20,8 @@ wallet = { workspace = true }
 emotes = { workspace = true }
 tween = { workspace = true }
 console = { workspace = true }
+scene_material = { workspace = true }
+world_ui = { workspace = true }
 
 bevy = { workspace = true }
 bevy_egui = { workspace = true }

@@ -279,7 +279,9 @@ fn show_emote_ui(
                 EmoteDialog,
                 Focus,
                 Interaction::default(),
-                On::<Defocus>::new(|mut w: EventWriter<EmoteUiEvent>| { w.send(EmoteUiEvent::Hide); }),
+                On::<Defocus>::new(|mut w: EventWriter<EmoteUiEvent>| {
+                    w.send(EmoteUiEvent::Hide);
+                }),
             ))
             .apply_template(&dui, "choose-emote-base", props)
             .unwrap();

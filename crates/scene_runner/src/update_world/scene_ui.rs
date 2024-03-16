@@ -8,8 +8,10 @@ use bevy::{
 use input_manager::MouseInteractionComponent;
 
 use crate::{
-    renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
-    update_world::text_shape::make_text_section, ContainingScene, SceneEntity, SceneSets,
+    renderer_context::RendererSceneContext,
+    update_scene::pointer_results::UiPointerTarget,
+    update_world::text_shape::{make_text_section, DespawnWith},
+    ContainingScene, SceneEntity, SceneSets,
 };
 use common::structs::PrimaryUser;
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -559,6 +561,7 @@ fn layout_scene_ui(
                             ..Default::default()
                         },
                         SceneUiRoot(ent),
+                        DespawnWith(ent),
                     ))
                     .id();
                 processed_nodes.insert(SceneEntityId::ROOT, root);

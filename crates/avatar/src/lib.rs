@@ -49,7 +49,7 @@ use dcl_component::{
 };
 use ipfs::{ActiveEntityTask, IpfsAssetServer, IpfsModifier};
 use scene_runner::{
-    update_world::{billboard::Billboard, AddCrdtInterfaceExt},
+    update_world::{billboard::Billboard, text_shape::DespawnWith, AddCrdtInterfaceExt},
     ContainingScene, SceneEntity,
 };
 use ui_core::TEXT_SHAPE_FONT_MONO;
@@ -500,7 +500,8 @@ fn select_avatar(
     let mut updates = HashMap::default();
 
     // set up initial state
-    for (entity, maybe_player, base_shape, ref_avatar, maybe_prev_selection) in root_avatar_defs.iter()
+    for (entity, maybe_player, base_shape, ref_avatar, maybe_prev_selection) in
+        root_avatar_defs.iter()
     {
         let id = maybe_player
             .map(|p| p.scene_id)
@@ -1636,13 +1637,16 @@ fn process_avatar(
 
         if let Some(label) = def.label.as_ref() {
             let label_ui = commands
-                .spawn(TextBundle::from_section(
-                    label,
-                    TextStyle {
-                        font_size: 25.0,
-                        color: Color::WHITE,
-                        font: TEXT_SHAPE_FONT_MONO.get().unwrap().clone(),
-                    },
+                .spawn((
+                    TextBundle::from_section(
+                        label,
+                        TextStyle {
+                            font_size: 25.0,
+                            color: Color::WHITE,
+                            font: TEXT_SHAPE_FONT_MONO.get().unwrap().clone(),
+                        },
+                    ),
+                    DespawnWith(avatar_ent),
                 ))
                 .id();
 
@@ -1668,7 +1672,6 @@ fn process_avatar(
                             std::f32::MAX,
                         ),
                         ui_root: label_ui,
-                        dispose_ui: true,
                     },
                     Billboard::Y,
                 ));

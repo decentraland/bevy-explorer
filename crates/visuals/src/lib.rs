@@ -63,9 +63,7 @@ fn setup(
 
     commands.spawn((
         PbrBundle {
-            mesh: meshes.add(
-                Plane3d::default().mesh().size(50000.0, 50000.0)
-            ),
+            mesh: meshes.add(Plane3d::default().mesh().size(50000.0, 50000.0)),
             material: materials.add(StandardMaterial {
                 base_color: Color::rgb(0.15, 0.2, 0.05),
                 perceptual_roughness: 1.0,

@@ -1,5 +1,11 @@
+use avatar::mask_material::MaskMaterial;
 use bevy::{
-    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin}, math::Vec3Swizzles, prelude::*, text::JustifyText, ui::FocusPolicy
+    core::FrameCount,
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    math::Vec3Swizzles,
+    prelude::*,
+    text::JustifyText,
+    ui::FocusPolicy,
 };
 
 use bevy_console::ConsoleCommand;
@@ -11,15 +17,19 @@ use common::{
 use comms::{global_crdt::ForeignPlayer, Transport};
 use console::DoAddConsoleCommand;
 use ipfs::CurrentRealm;
+use scene_material::SceneMaterial;
 use scene_runner::{
     initialize_scene::{SceneLoading, PARCEL_SIZE},
     renderer_context::RendererSceneContext,
     ContainingScene, DebugInfo,
 };
 use ui_core::{
+    bound_node::BoundedImageMaterial,
+    stretch_uvs_image::StretchUvMaterial,
     ui_actions::{Click, EventCloneExt},
     BODY_TEXT_STYLE, TITLE_TEXT_STYLE,
 };
+use world_ui::TextShapeMaterial;
 
 use crate::{
     map::MapTexture,
@@ -49,6 +59,8 @@ impl Plugin for SysInfoPanelPlugin {
             setup_minimap,
         );
         app.add_console_command::<SysinfoCommand, _>(set_sysinfo);
+
+        app.add_systems(First, entity_count);
     }
 }
 
@@ -399,5 +411,36 @@ fn update_map_visibilty(
         } else {
             style.display = Display::None;
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn entity_count(
+    q: Query<Entity>,
+    f: Res<FrameCount>,
+    meshes: Res<Assets<Mesh>>,
+    textures: Res<Assets<Image>>,
+    ui_nodes: Query<(), With<Node>>,
+    scene_mats: Query<(), With<Handle<SceneMaterial>>>,
+    std_mats: Query<(), With<Handle<StandardMaterial>>>,
+    mask_mats: Query<(), With<Handle<MaskMaterial>>>,
+    uv_mats: Query<(), With<Handle<StretchUvMaterial>>>,
+    bound_mats: Query<(), With<Handle<BoundedImageMaterial>>>,
+    textshape_mats: Query<(), With<Handle<TextShapeMaterial>>>,
+) {
+    if f.0 % 100 == 0 {
+        let entities = q.iter().count();
+        let meshes = meshes.iter().count();
+        let textures = textures.iter().count();
+        let ui_nodes = ui_nodes.iter().count();
+        debug!("{entities} ents, {meshes} meshes, {textures} textures, {ui_nodes} ui nodes");
+
+        let scene_mats = scene_mats.iter().count();
+        let std_mats = std_mats.iter().count();
+        let mask_mats = mask_mats.iter().count();
+        let uv_mats = uv_mats.iter().count();
+        let bound_mats = bound_mats.iter().count();
+        let textshape_mats = textshape_mats.iter().count();
+        debug!("scene {scene_mats}, std {std_mats}, mask: {mask_mats}, uv: {uv_mats}, bound: {bound_mats}, text: {textshape_mats}");
     }
 }

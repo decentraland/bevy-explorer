@@ -271,10 +271,7 @@ fn run_raycasts(
         };
 
         // lookup again as global raycasts require access to other contexts
-        let mut context = scene_context
-            .get_mut(scene_ent.root)
-            .unwrap()
-            .1;
+        let mut context = scene_context.get_mut(scene_ent.root).unwrap().1;
 
         let result = PbRaycastResult {
             timestamp: raycast.timestamp,

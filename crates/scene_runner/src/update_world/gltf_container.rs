@@ -9,7 +9,9 @@ use bevy::{
     pbr::ExtendedMaterial,
     prelude::*,
     render::{
-        mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues}, render_asset::RenderAssetUsages, view::NoFrustumCulling
+        mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
+        render_asset::RenderAssetUsages,
+        view::NoFrustumCulling,
     },
     scene::{scene_spawner_system, InstanceId},
     utils::{HashMap, HashSet},
@@ -489,7 +491,10 @@ fn update_ready_gltfs(
                         *index += 1u32;
 
                         let h_mesh = if is_skinned {
-                            let mut new_mesh = Mesh::new(mesh_data.primitive_topology(), RenderAssetUsages::RENDER_WORLD);
+                            let mut new_mesh = Mesh::new(
+                                mesh_data.primitive_topology(),
+                                RenderAssetUsages::RENDER_WORLD,
+                            );
                             if let Some(indices) = mesh_data.indices().cloned() {
                                 new_mesh.insert_indices(indices);
                             }

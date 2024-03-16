@@ -1,7 +1,9 @@
 use bevy::{
     asset::LoadedFolder,
     prelude::*,
-    render::{camera::RenderTarget, render_asset::RenderAssetUsages, view::screenshot::ScreenshotManager},
+    render::{
+        camera::RenderTarget, render_asset::RenderAssetUsages, view::screenshot::ScreenshotManager,
+    },
     utils::{HashMap, HashSet},
     window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution},
 };

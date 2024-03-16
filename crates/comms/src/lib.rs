@@ -153,12 +153,12 @@ impl<'w, 's> AdapterManager<'w, 's> {
                 self.ws_room_events.send(StartWsRoom {
                     address: address.to_owned(),
                 });
-            },
+            }
             "signed-login" => {
                 self.signed_login_events.send(StartSignedLogin {
                     address: address.to_owned(),
                 });
-            },
+            }
             "livekit" => {
                 let entity = self.commands.spawn_empty().id();
                 self.livekit_events.send(StartLivekit {

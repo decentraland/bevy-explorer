@@ -6,7 +6,10 @@ use crate::{
 use bevy::{
     core::FrameCount,
     prelude::*,
-    render::{render_asset::RenderAssetUsages, render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages}},
+    render::{
+        render_asset::RenderAssetUsages,
+        render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
+    },
 };
 use common::sets::SceneSets;
 use dcl::interface::{ComponentPosition, CrdtType};

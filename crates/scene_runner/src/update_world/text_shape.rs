@@ -115,6 +115,7 @@ impl Plugin for TextShapePlugin {
             Update,
             update_text_shapes.in_set(SceneLoopSets::UpdateWorld),
         );
+        app.add_systems(Update, despawn_with);
     }
 }
 
@@ -129,9 +130,12 @@ impl From<PbTextShape> for TextShape {
 
 const PIX_PER_M: f32 = 200.0;
 
+#[derive(Component)]
+pub struct PriorTextShapeUi(Entity);
+
 fn update_text_shapes(
     mut commands: Commands,
-    query: Query<(Entity, &SceneEntity, &TextShape), Changed<TextShape>>,
+    query: Query<(Entity, &SceneEntity, &TextShape, Option<&PriorTextShapeUi>), Changed<TextShape>>,
     mut removed: RemovedComponents<TextShape>,
     scenes: Query<&RendererSceneContext>,
 ) {
@@ -143,13 +147,19 @@ fn update_text_shapes(
     }
 
     // add new nodes
-    for (ent, scene_ent, text_shape) in query.iter() {
+    for (ent, scene_ent, text_shape, maybe_prior) in query.iter() {
         let bounds = scenes
             .get(scene_ent.root)
             .map(|c| c.bounds)
             .unwrap_or_default();
 
         debug!("ts: {:?}", text_shape.0);
+
+        if let Some(prior) = maybe_prior {
+            if let Some(commands) = commands.get_entity(prior.0) {
+                commands.despawn_recursive();
+            }
+        }
 
         let text_align = text_shape
             .0
@@ -215,16 +225,19 @@ fn update_text_shapes(
         );
 
         let ui_root = commands
-            .spawn((NodeBundle {
-                style: Style {
-                    flex_direction: FlexDirection::Row,
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
+            .spawn((
+                NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Row,
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        ..Default::default()
+                    },
+                    // background_color: Color::rgba(1.0, 0.0, 0.0, 0.25).into(),
                     ..Default::default()
                 },
-                // background_color: Color::rgba(1.0, 0.0, 0.0, 0.25).into(),
-                ..Default::default()
-            },))
+                DespawnWith(ent),
+            ))
             .with_children(|c| {
                 if text_shape.0.padding_left.is_some() {
                     c.spawn(NodeBundle {
@@ -279,19 +292,21 @@ fn update_text_shapes(
             })
             .id();
 
-        commands.entity(ent).try_insert(WorldUi {
-            width,
-            height: max_height,
-            resize_width,
-            resize_height: Some(ResizeAxis::MaxContent),
-            pix_per_m: PIX_PER_M,
-            valign,
-            halign: halign_wui,
-            add_y_pix,
-            bounds,
-            ui_root,
-            dispose_ui: true,
-        });
+        commands.entity(ent).try_insert((
+            PriorTextShapeUi(ui_root),
+            WorldUi {
+                width,
+                height: max_height,
+                resize_width,
+                resize_height: Some(ResizeAxis::MaxContent),
+                pix_per_m: PIX_PER_M,
+                valign,
+                halign: halign_wui,
+                add_y_pix,
+                bounds,
+                ui_root,
+            },
+        ));
     }
 }
 
@@ -336,5 +351,16 @@ pub fn make_text_section(
             BreakLineOn::NoWrap
         },
         justify,
+    }
+}
+
+#[derive(Component)]
+pub struct DespawnWith(pub Entity);
+
+fn despawn_with(mut commands: Commands, q: Query<(Entity, &DespawnWith)>) {
+    for (ent, with) in q.iter() {
+        if commands.get_entity(with.0).is_none() {
+            commands.entity(ent).despawn_recursive();
+        }
     }
 }

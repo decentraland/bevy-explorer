@@ -46,10 +46,16 @@ impl AssetReader for NftReader {
                 ))));
             };
             let urn = urlencoding::decode(encoded_urn).map_err(|e| {
-                AssetReaderError::Io(Arc::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))
+                AssetReaderError::Io(Arc::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    e,
+                )))
             })?;
             let urn = urn::Urn::from_str(&urn).map_err(|e| {
-                AssetReaderError::Io(Arc::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))
+                AssetReaderError::Io(Arc::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    e,
+                )))
             })?;
 
             if urn.nid() != "decentraland" {

@@ -2,10 +2,12 @@ use bevy::{
     pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster},
     prelude::*,
     render::{
-        camera::RenderTarget, render_asset::RenderAssetUsages, render_resource::{
+        camera::RenderTarget,
+        render_asset::RenderAssetUsages,
+        render_resource::{
             AsBindGroup, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
             TextureUsages,
-        }
+        },
     },
     utils::HashMap,
 };
@@ -29,7 +31,6 @@ impl Plugin for WorldUiPlugin {
 struct WorldUiEntitySet {
     quad: Entity,
     image: Handle<Image>,
-    ui: Option<Entity>,
 }
 
 #[derive(Resource, Default)]
@@ -49,7 +50,6 @@ pub struct WorldUi {
     pub add_y_pix: f32,
     pub bounds: Vec4,
     pub ui_root: Entity,
-    pub dispose_ui: bool,
 }
 
 #[derive(Component)]
@@ -78,9 +78,6 @@ fn update_world_ui(
             if let Some(commands) = commands.get_entity(entities.quad) {
                 commands.despawn_recursive();
             }
-            if let Some(commands) = entities.ui.and_then(|ui| commands.get_entity(ui)) {
-                commands.despawn_recursive();
-            }
         }
     }
 
@@ -91,9 +88,7 @@ fn update_world_ui(
                 camera: Camera {
                     order: -1,
                     is_active: false,
-                    clear_color: bevy::render::camera::ClearColorConfig::Custom(
-                        Color::NONE,
-                    ),
+                    clear_color: bevy::render::camera::ClearColorConfig::Custom(Color::NONE),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -193,11 +188,6 @@ fn update_world_ui(
                         }
                     }
 
-                    // dispose of previous ui if required
-                    if let Some(commands) = prev_items.ui.and_then(|e| commands.get_entity(e)) {
-                        commands.despawn_recursive();
-                    }
-
                     (prev_items.quad, prev_items.image.clone())
                 } else {
                     // create render target image (it'll be resized)
@@ -214,7 +204,8 @@ fn update_world_ui(
                     let quad = commands
                         .spawn((
                             MaterialMeshBundle {
-                                mesh: meshes.add(bevy::math::primitives::Rectangle::default().mesh()),
+                                mesh: meshes
+                                    .add(bevy::math::primitives::Rectangle::default().mesh()),
                                 material: materials.add(TextShapeMaterial {
                                     base: SceneMaterial {
                                         base: StandardMaterial {
@@ -250,14 +241,7 @@ fn update_world_ui(
                     *current_rendered_ui = Some((ui.ui_root, 1));
                 }
 
-                wui.lookup.insert(
-                    ent,
-                    WorldUiEntitySet {
-                        quad,
-                        image,
-                        ui: ui.dispose_ui.then_some(ui.ui_root),
-                    },
-                );
+                wui.lookup.insert(ent, WorldUiEntitySet { quad, image });
 
                 commands.entity(ent).try_insert(ProcessedWorldUi);
             }

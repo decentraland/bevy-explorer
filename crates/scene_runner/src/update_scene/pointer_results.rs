@@ -441,12 +441,10 @@ fn send_action_events(
         return;
     }
 
-    let scene_entity = target.0.as_ref().and_then(|info| {
-        pointer_requests
-            .get(info.container)
-            .map(|(e, _)| e)
-            .ok()
-    });
+    let scene_entity = target
+        .0
+        .as_ref()
+        .and_then(|info| pointer_requests.get(info.container).map(|(e, _)| e).ok());
     let scene_root = scene_entity.map(|e| e.root);
 
     for (root_ent, mut context, scene_transform) in scenes.iter_mut() {

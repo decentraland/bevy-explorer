@@ -650,7 +650,7 @@ fn send_scene_updates(
     if let Ok(window) = window.get_single() {
         buf.clear();
         DclWriter::new(&mut buf).write(&PbUiCanvasInformation {
-            device_pixel_ratio: window.resolution.scale_factor() as f32,
+            device_pixel_ratio: window.resolution.scale_factor(),
             width: window.resolution.width() as i32,
             height: window.resolution.height() as i32,
             interactable_area: Some(BorderRect {

@@ -108,3 +108,5 @@ ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-l
 parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "try_convex" }
 rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }
 serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_204_hotfix" }
+wgpu = { git = "https://github.com/robtfm/wgpu", branch = "0.19-with-buffer-leak-fix" }
+naga = { git = "https://github.com/robtfm/wgpu", branch = "0.19-with-buffer-leak-fix" }

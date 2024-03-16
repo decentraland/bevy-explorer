@@ -57,7 +57,9 @@ pub(crate) fn update_user_velocity(
         let forward = (Vec3::from(camera_transform.forward()) * ground)
             .xz()
             .normalize_or_zero();
-        let right = (Vec3::from(camera_transform.right()) * ground).xz().normalize_or_zero();
+        let right = (Vec3::from(camera_transform.right()) * ground)
+            .xz()
+            .normalize_or_zero();
 
         axis_input = right * axis_input.x + forward * axis_input.y;
 

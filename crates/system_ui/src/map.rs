@@ -385,7 +385,7 @@ fn render_map(
         debug!("parcels ({}..{})", data.min_parcel, data.max_parcel);
 
         for entity in data.tile_entities.values() {
-            if let Ok(mut vis) = styles.get_component_mut::<Visibility>(*entity) {
+            if let Ok((_, mut vis)) = styles.get_mut(*entity) {
                 *vis = Visibility::Hidden;
             }
         }

@@ -177,7 +177,7 @@ fn load_nft(
                 PbrBundle {
                     transform: Transform::from_translation(Vec3::Z * 0.03),
                     mesh: mesh
-                        .get_or_insert_with(|| meshes.add(Mesh::from(shape::Quad::default())))
+                        .get_or_insert_with(|| meshes.add(Rectangle::default()))
                         .clone(),
                     material: materials.add(StandardMaterial {
                         base_color_texture: Some(h_image.clone()),
