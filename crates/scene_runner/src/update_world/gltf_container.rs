@@ -32,7 +32,7 @@ use scene_material::{SceneBound, SceneMaterial};
 
 use super::{
     mesh_collider::{MeshCollider, MeshColliderShape},
-    AddCrdtInterfaceExt,
+    AddCrdtInterfaceExt, ComponentTracker,
 };
 
 pub struct GltfDefinitionPlugin;
@@ -80,6 +80,7 @@ struct DclNodeExtras {
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_gltf(
     mut commands: Commands,
+    mut commands2: Commands,
     new_gltfs: Query<
         (
             Entity,
@@ -103,7 +104,7 @@ fn update_gltf(
         ResMut<Assets<StandardMaterial>>,
     ),
     mut scene_spawner: ResMut<SceneSpawner>,
-    mut contexts: Query<&mut RendererSceneContext>,
+    mut contexts: Query<(Entity, &mut RendererSceneContext, Has<MaterialLookup>)>,
     mut instances_to_despawn_when_ready: Local<Vec<InstanceId>>,
 ) {
     // clean up old instances
@@ -122,7 +123,7 @@ fn update_gltf(
     });
 
     let mut set_state = |scene_ent: &SceneEntity, current_state: LoadingState| {
-        if let Ok(mut context) = contexts.get_mut(scene_ent.root) {
+        if let Ok((root, mut context, has_material_lookup)) = contexts.get_mut(scene_ent.root) {
             context.update_crdt(
                 SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
                 CrdtType::LWW_ANY,
@@ -131,6 +132,10 @@ fn update_gltf(
                     current_state: current_state as i32,
                 },
             );
+
+            if !has_material_lookup {
+                commands2.entity(root).try_insert(MaterialLookup::default());
+            }
         };
     };
 
@@ -245,6 +250,11 @@ fn update_gltf(
     }
 }
 
+#[derive(Component, Default)]
+pub struct MaterialLookup {
+    lookup: HashMap<Handle<StandardMaterial>, Handle<SceneMaterial>>,
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_ready_gltfs(
     mut commands: Commands,
@@ -265,7 +275,7 @@ fn update_ready_gltfs(
     (base_mats, mut bound_mats): (Res<Assets<StandardMaterial>>, ResMut<Assets<SceneMaterial>>),
     scene_spawner: Res<SceneSpawner>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut contexts: Query<&mut RendererSceneContext>,
+    mut contexts: Query<(&mut RendererSceneContext, &mut MaterialLookup, &mut ComponentTracker)>,
     _debug_query: Query<(
         Entity,
         Option<&Name>,
@@ -308,7 +318,7 @@ fn update_ready_gltfs(
             // create a counter per name so we can make unique collider handles
             let mut collider_counter: HashMap<_, u32> = HashMap::default();
 
-            let Ok(mut context) = contexts.get_mut(dcl_scene_entity.root) else {
+            let Ok((mut context, mut material_lookup, mut tracker)) = contexts.get_mut(dcl_scene_entity.root) else {
                 continue;
             };
 
@@ -385,17 +395,26 @@ fn update_ready_gltfs(
 
                     // substitute material
                     if let Some(h_material) = maybe_material {
-                        let Some(base) = base_mats.get(h_material) else {
-                            panic!();
-                        };
-                        commands
-                            .entity(spawned_ent)
-                            .insert(bound_mats.add(ExtendedMaterial {
+                        let h_scene_material = if let Some(h_scene_material) = material_lookup.lookup.get(h_material) {
+                            h_scene_material.clone()
+                        } else {
+                            let Some(base) = base_mats.get(h_material) else {
+                                panic!();
+                            };
+                            let h_scene_material = bound_mats.add(ExtendedMaterial {
                                 base: base.clone(),
                                 extension: SceneBound {
                                     bounds: context.bounds,
                                 },
-                            }));
+                            });
+                            material_lookup.lookup.insert(h_material.clone(), h_scene_material.clone());
+
+                            *tracker.0.entry("Materials").or_default() += 1;
+                            h_scene_material
+                        };
+                        commands
+                            .entity(spawned_ent)
+                            .insert(h_scene_material);
                     }
 
                     // process collider
