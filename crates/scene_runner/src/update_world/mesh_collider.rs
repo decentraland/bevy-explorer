@@ -1084,9 +1084,7 @@ fn render_debug_colliders(
                     ..Default::default()
                 })),
                 MeshColliderShape::Plane => meshes.add(Rectangle::default().mesh()),
-                MeshColliderShape::Sphere => {
-                    meshes.add(Sphere::default().mesh().uv(36, 18))
-                }
+                MeshColliderShape::Sphere => meshes.add(Sphere::default().mesh().uv(36, 18)),
                 MeshColliderShape::Shape(_, h_mesh) => h_mesh.clone(),
             };
 

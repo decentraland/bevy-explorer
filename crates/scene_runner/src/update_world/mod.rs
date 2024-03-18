@@ -170,8 +170,15 @@ impl Plugin for SceneOutputPlugin {
 
         app.init_resource::<TrackComponents>();
 
-        app.add_systems(PostUpdate, track_components::<Handle<Mesh>, true>.run_if(|track: Res<TrackComponents>| track.0));
-        app.add_systems(PostUpdate, track_components::<Handle<SceneMaterial>, true>.run_if(|track: Res<TrackComponents>| track.0));
+        app.add_systems(
+            PostUpdate,
+            track_components::<Handle<Mesh>, true>.run_if(|track: Res<TrackComponents>| track.0),
+        );
+        app.add_systems(
+            PostUpdate,
+            track_components::<Handle<SceneMaterial>, true>
+                .run_if(|track: Res<TrackComponents>| track.0),
+        );
     }
 }
 
@@ -232,7 +239,10 @@ impl AddCrdtInterfaceExt for App {
             .schedule
             .add_systems(process_crdt_lww_updates::<D, C>.in_set(SceneLoopSets::UpdateWorld));
         // add a tracker system
-        self.add_systems(PostUpdate, track_components::<C, false>.run_if(|track: Res<TrackComponents>| track.0));
+        self.add_systems(
+            PostUpdate,
+            track_components::<C, false>.run_if(|track: Res<TrackComponents>| track.0),
+        );
     }
 
     fn add_crdt_go_component<
@@ -410,7 +420,10 @@ pub fn track_components<C: Component, const ALLOW_UNALLOCATED: bool>(
     }
 
     for (ent, mut track) in track.iter_mut() {
-        track.0.insert(std::any::type_name::<C>(), counts.remove(&ent).unwrap_or_default());
+        track.0.insert(
+            std::any::type_name::<C>(),
+            counts.remove(&ent).unwrap_or_default(),
+        );
     }
 
     for (component, count) in counts.drain() {

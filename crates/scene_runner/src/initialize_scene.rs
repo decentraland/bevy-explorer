@@ -30,7 +30,8 @@ use wallet::Wallet;
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 use crate::{
-    renderer_context::RendererSceneContext, update_world::ComponentTracker, ContainerEntity, DeletedSceneEntities, SceneEntity, SceneThreadHandle
+    renderer_context::RendererSceneContext, update_world::ComponentTracker, ContainerEntity,
+    DeletedSceneEntities, SceneEntity, SceneThreadHandle,
 };
 
 #[derive(Default)]

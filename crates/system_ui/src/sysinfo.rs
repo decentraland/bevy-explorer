@@ -19,7 +19,10 @@ use console::DoAddConsoleCommand;
 use ipfs::CurrentRealm;
 use scene_material::SceneMaterial;
 use scene_runner::{
-    initialize_scene::{SceneLoading, PARCEL_SIZE}, renderer_context::RendererSceneContext, update_world::{ComponentTracker, TrackComponents}, ContainingScene, DebugInfo
+    initialize_scene::{SceneLoading, PARCEL_SIZE},
+    renderer_context::RendererSceneContext,
+    update_world::{ComponentTracker, TrackComponents},
+    ContainingScene, DebugInfo,
 };
 use ui_core::{
     bound_node::BoundedImageMaterial,
@@ -465,7 +468,6 @@ fn display_tracked_components(
         println!("scene {:?}\n{:#?}", scene, components.get(scene));
     }
 }
-
 
 // set fps
 #[derive(clap::Parser, ConsoleCommand)]

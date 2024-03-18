@@ -275,7 +275,11 @@ fn update_ready_gltfs(
     (base_mats, mut bound_mats): (Res<Assets<StandardMaterial>>, ResMut<Assets<SceneMaterial>>),
     scene_spawner: Res<SceneSpawner>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut contexts: Query<(&mut RendererSceneContext, &mut MaterialLookup, &mut ComponentTracker)>,
+    mut contexts: Query<(
+        &mut RendererSceneContext,
+        &mut MaterialLookup,
+        &mut ComponentTracker,
+    )>,
     _debug_query: Query<(
         Entity,
         Option<&Name>,
@@ -318,7 +322,9 @@ fn update_ready_gltfs(
             // create a counter per name so we can make unique collider handles
             let mut collider_counter: HashMap<_, u32> = HashMap::default();
 
-            let Ok((mut context, mut material_lookup, mut tracker)) = contexts.get_mut(dcl_scene_entity.root) else {
+            let Ok((mut context, mut material_lookup, mut tracker)) =
+                contexts.get_mut(dcl_scene_entity.root)
+            else {
                 continue;
             };
 
@@ -395,7 +401,9 @@ fn update_ready_gltfs(
 
                     // substitute material
                     if let Some(h_material) = maybe_material {
-                        let h_scene_material = if let Some(h_scene_material) = material_lookup.lookup.get(h_material) {
+                        let h_scene_material = if let Some(h_scene_material) =
+                            material_lookup.lookup.get(h_material)
+                        {
                             h_scene_material.clone()
                         } else {
                             let Some(base) = base_mats.get(h_material) else {
@@ -407,14 +415,14 @@ fn update_ready_gltfs(
                                     bounds: context.bounds,
                                 },
                             });
-                            material_lookup.lookup.insert(h_material.clone(), h_scene_material.clone());
+                            material_lookup
+                                .lookup
+                                .insert(h_material.clone(), h_scene_material.clone());
 
                             *tracker.0.entry("Materials").or_default() += 1;
                             h_scene_material
                         };
-                        commands
-                            .entity(spawned_ent)
-                            .insert(h_scene_material);
+                        commands.entity(spawned_ent).insert(h_scene_material);
                     }
 
                     // process collider
