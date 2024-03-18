@@ -1,16 +1,19 @@
 use std::{
-    collections::VecDeque,
+    collections::{BTreeMap, VecDeque},
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
 
-use bevy::{ecs::system::EntityCommands, prelude::*, utils::HashMap};
+use bevy::{core::FrameCount, ecs::system::EntityCommands, prelude::*, utils::HashMap};
 
 use dcl::{
     crdt::{growonly::CrdtGOState, lww::CrdtLWWState},
     interface::{ComponentPosition, CrdtStore, CrdtType},
 };
 use dcl_component::{DclReader, FromDclReader, SceneComponentId};
+use scene_material::SceneMaterial;
+
+use crate::ContainerEntity;
 
 use self::{
     animation::AnimatorPlugin, avatar_modifier_area::AvatarModifierAreaPlugin,
@@ -138,6 +141,9 @@ pub struct SceneOutputPlugin;
 #[derive(Resource)]
 pub struct NoGltf(pub bool);
 
+#[derive(Resource, Default)]
+pub struct TrackComponents(pub bool);
+
 impl Plugin for SceneOutputPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(TransformAndParentPlugin);
@@ -161,6 +167,11 @@ impl Plugin for SceneOutputPlugin {
         app.add_plugins(CameraModeAreaPlugin);
         app.add_plugins(VisibilityComponentPlugin);
         app.add_plugins(AvatarModifierAreaPlugin);
+
+        app.init_resource::<TrackComponents>();
+
+        app.add_systems(PostUpdate, track_components::<Handle<Mesh>, true>.run_if(|track: Res<TrackComponents>| track.0));
+        app.add_systems(PostUpdate, track_components::<Handle<SceneMaterial>, true>.run_if(|track: Res<TrackComponents>| track.0));
     }
 }
 
@@ -220,6 +231,8 @@ impl AddCrdtInterfaceExt for App {
             .resource_mut::<SceneLoopSchedule>()
             .schedule
             .add_systems(process_crdt_lww_updates::<D, C>.in_set(SceneLoopSets::UpdateWorld));
+        // add a tracker system
+        self.add_systems(PostUpdate, track_components::<C, false>.run_if(|track: Res<TrackComponents>| track.0));
     }
 
     fn add_crdt_go_component<
@@ -368,6 +381,41 @@ fn process_crdt_go_updates<
             if !exists {
                 commands.entity(entity).try_insert(new);
             }
+        }
+    }
+}
+
+#[derive(Component, Default, Debug)]
+pub struct ComponentTracker(BTreeMap<&'static str, usize>);
+
+pub fn track_components<C: Component, const ALLOW_UNALLOCATED: bool>(
+    q: Query<Option<&ContainerEntity>, With<C>>,
+    mut track: Query<(Entity, &mut ComponentTracker)>,
+    frame: Res<FrameCount>,
+) {
+    if frame.0 % 100 != 0 {
+        return;
+    }
+
+    let mut counts = HashMap::default();
+
+    for container in q.iter() {
+        let Some(container) = container else {
+            if !ALLOW_UNALLOCATED {
+                warn!("no container with {:?}", std::any::type_name::<C>());
+            }
+            continue;
+        };
+        *counts.entry(container.root).or_default() += 1;
+    }
+
+    for (ent, mut track) in track.iter_mut() {
+        track.0.insert(std::any::type_name::<C>(), counts.remove(&ent).unwrap_or_default());
+    }
+
+    for (component, count) in counts.drain() {
+        if !ALLOW_UNALLOCATED {
+            warn!("{:?} unallocated {}", component, count);
         }
     }
 }

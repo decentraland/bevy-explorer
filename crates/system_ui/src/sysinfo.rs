@@ -19,9 +19,7 @@ use console::DoAddConsoleCommand;
 use ipfs::CurrentRealm;
 use scene_material::SceneMaterial;
 use scene_runner::{
-    initialize_scene::{SceneLoading, PARCEL_SIZE},
-    renderer_context::RendererSceneContext,
-    ContainingScene, DebugInfo,
+    initialize_scene::{SceneLoading, PARCEL_SIZE}, renderer_context::RendererSceneContext, update_world::{ComponentTracker, TrackComponents}, ContainingScene, DebugInfo
 };
 use ui_core::{
     bound_node::BoundedImageMaterial,
@@ -60,7 +58,8 @@ impl Plugin for SysInfoPanelPlugin {
         );
         app.add_console_command::<SysinfoCommand, _>(set_sysinfo);
 
-        app.add_systems(First, entity_count);
+        app.add_systems(First, (entity_count, display_tracked_components));
+        app.add_console_command::<TrackComponentCommand, _>(set_track_components);
     }
 }
 
@@ -390,6 +389,7 @@ fn set_sysinfo(
         } else {
             Visibility::Hidden
         });
+        input.reply_ok("");
     }
 }
 
@@ -442,5 +442,45 @@ fn entity_count(
         let bound_mats = bound_mats.iter().count();
         let textshape_mats = textshape_mats.iter().count();
         debug!("scene {scene_mats}, std {std_mats}, mask: {mask_mats}, uv: {uv_mats}, bound: {bound_mats}, text: {textshape_mats}");
+    }
+}
+
+fn display_tracked_components(
+    track: Res<TrackComponents>,
+    f: Res<FrameCount>,
+    player: Query<Entity, With<PrimaryUser>>,
+    containing_scene: ContainingScene,
+    components: Query<&ComponentTracker>,
+) {
+    if !track.0 || f.0 % 100 != 0 {
+        return;
+    }
+
+    let Ok(player) = player.get_single() else {
+        return;
+    };
+
+    let scenes = containing_scene.get(player);
+    for scene in scenes {
+        println!("scene {:?}\n{:#?}", scene, components.get(scene));
+    }
+}
+
+
+// set fps
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/track_components")]
+struct TrackComponentCommand {
+    on: Option<bool>,
+}
+
+fn set_track_components(
+    mut input: ConsoleCommand<TrackComponentCommand>,
+    mut track: ResMut<TrackComponents>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let on = command.on.unwrap_or(true);
+        track.0 = on;
+        input.reply_ok("");
     }
 }

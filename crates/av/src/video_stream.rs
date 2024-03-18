@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use bevy::prelude::*;
+use bevy::{prelude::*, utils::tracing};
 use common::structs::AudioDecoderError;
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::format::input;
@@ -91,6 +91,7 @@ fn av_thread(
     path: String,
     hash: String,
 ) {
+    let _span = tracing::info_span!("av-thread").entered();
     if let Err(e) = av_thread_inner(&ipfs, commands, frames.clone(), audio, path, hash) {
         let _ = frames.blocking_send(VideoData::State(VideoState::VsError));
         warn!("av error: {e}");

@@ -30,8 +30,7 @@ use wallet::Wallet;
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 use crate::{
-    renderer_context::RendererSceneContext, ContainerEntity, DeletedSceneEntities, SceneEntity,
-    SceneThreadHandle,
+    renderer_context::RendererSceneContext, update_world::ComponentTracker, ContainerEntity, DeletedSceneEntities, SceneEntity, SceneThreadHandle
 };
 
 #[derive(Default)]
@@ -401,6 +400,7 @@ pub(crate) fn load_scene_javascript(
                 ..Default::default()
             },
             renderer_context,
+            ComponentTracker::default(),
             DeletedSceneEntities::default(),
             SceneEntity {
                 root,
