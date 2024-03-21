@@ -1,3 +1,5 @@
+use std::f32::consts::FRAC_PI_2;
+
 use bevy::{prelude::*, render::mesh::VertexAttributeValues, utils::HashMap};
 
 use common::sets::SceneSets;
@@ -102,7 +104,7 @@ impl Plugin for MeshDefinitionPlugin {
             bevy::math::primitives::Cuboid::default().into(),
         ));
         let cylinder = assets.add(generate_tangents(Cylinder::default().into()));
-        let plane = assets.add(generate_tangents(Rectangle::default().into()));
+        let plane = assets.add(generate_tangents(Rectangle::default().mesh()));
         let sphere = assets.add(generate_tangents(flip_uv(
             Sphere::new(0.5).mesh().uv(36, 18),
         )));
@@ -172,7 +174,7 @@ pub fn update_mesh(
                 if uvs.is_empty() {
                     defaults.plane.clone()
                 } else {
-                    let mut mesh = Mesh::from(Rectangle::default());
+                    let mut mesh = Rectangle::default().mesh().rotated_by(Quat::from_rotation_z(-FRAC_PI_2));
                     let Some(VertexAttributeValues::Float32x2(mesh_uvs)) =
                         mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
                     else {
