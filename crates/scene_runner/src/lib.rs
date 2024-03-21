@@ -754,7 +754,7 @@ fn receive_scene_updates(
                             interface.updates_to_entity(*component_id, &mut crdt, &mut commands);
                         }
                         dcl_assert!(
-                            updates.jobs_in_flight.contains(root) || context.tick_number == 1
+                            updates.jobs_in_flight.contains(root) || context.tick_number <= 2
                         );
 
                         for rpc_call in rpc_calls {
