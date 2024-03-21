@@ -174,7 +174,9 @@ pub fn update_mesh(
                 if uvs.is_empty() {
                     defaults.plane.clone()
                 } else {
-                    let mut mesh = Rectangle::default().mesh().rotated_by(Quat::from_rotation_z(-FRAC_PI_2));
+                    let mut mesh = Rectangle::default()
+                        .mesh()
+                        .rotated_by(Quat::from_rotation_z(-FRAC_PI_2));
                     let Some(VertexAttributeValues::Float32x2(mesh_uvs)) =
                         mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
                     else {

@@ -121,7 +121,7 @@ pub(crate) fn process_transform_and_parent_updates(
                     });
                 }
                 SceneEntityId::CAMERA => {
-                    restricted_actions.send(RpcCall::MoveCamera{
+                    restricted_actions.send(RpcCall::MoveCamera {
                         scene: root,
                         to: transform.rotation,
                     });

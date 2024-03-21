@@ -46,7 +46,13 @@ impl From<PbAnimator> for Animator {
 #[allow(clippy::type_complexity)]
 fn update_animations(
     mut animators: Query<
-        (Entity, &SceneEntity, Option<&mut Animator>, &Handle<Gltf>, &mut GltfProcessed),
+        (
+            Entity,
+            &SceneEntity,
+            Option<&mut Animator>,
+            &Handle<Gltf>,
+            &mut GltfProcessed,
+        ),
         Or<(Changed<Animator>, Changed<GltfProcessed>)>,
     >,
     mut players: Query<&mut AnimationPlayer>,
@@ -146,7 +152,10 @@ fn update_animations(
                     continue;
                 };
 
-                debug!("[{ent:?}/{scene_ent:?}] playing (something) with state {:?}", state);
+                debug!(
+                    "[{ent:?}/{scene_ent:?}] playing (something) with state {:?}",
+                    state
+                );
                 player.play(h_clip.clone_weak());
 
                 player.set_speed(state.speed.unwrap_or(1.0));

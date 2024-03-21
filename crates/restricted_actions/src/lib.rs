@@ -122,13 +122,13 @@ fn move_player(
 }
 
 fn move_camera(
-    mut events: EventReader<RpcCall>, 
+    mut events: EventReader<RpcCall>,
     mut camera: Query<&mut PrimaryCamera>,
     player: Query<Entity, With<PrimaryUser>>,
     containing_scene: ContainingScene,
 ) {
     for (root, rotation) in events.read().filter_map(|ev| match ev {
-        RpcCall::MoveCamera{scene, to} => Some((scene, to)),
+        RpcCall::MoveCamera { scene, to } => Some((scene, to)),
         _ => None,
     }) {
         if !player

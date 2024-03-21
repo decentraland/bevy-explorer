@@ -113,7 +113,7 @@ pub enum RpcCall {
         to: IVec2,
         response: RpcResultSender<Result<(), String>>,
     },
-    MoveCamera{
+    MoveCamera {
         scene: Entity,
         to: Quat,
     },
