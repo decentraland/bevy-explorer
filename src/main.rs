@@ -2,6 +2,11 @@
 // - separate js crate
 // - budget -> deadline is just last end + frame time
 
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 use avatar::AvatarDynamicState;
 use bevy::{
     core::TaskPoolThreadAssignmentPolicy,
