@@ -1,8 +1,7 @@
 use std::f32::consts::FRAC_PI_2;
 
 use bevy::{
-    pbr::{wireframe::WireframePlugin, DirectionalLightShadowMap},
-    prelude::*,
+    core::FrameCount, pbr::{wireframe::WireframePlugin, DirectionalLightShadowMap}, prelude::*, render::render_asset::RenderAssetBytesPerFrame
 };
 use bevy_atmosphere::{
     prelude::{AtmosphereCamera, AtmosphereModel, AtmospherePlugin, Nishita},
@@ -29,7 +28,9 @@ impl Plugin for VisualsPlugin {
             .add_plugins(WireframePlugin)
             .add_systems(Update, daylight_cycle)
             .add_systems(Update, move_ground)
-            .add_systems(Startup, setup.in_set(SetupSets::Main));
+            .add_systems(Startup, setup.in_set(SetupSets::Main))
+            // workaround for font uploading
+            .add_systems(Update, set_max_upload.run_if(|f: Res<FrameCount>| f.0 == 100));
 
         app.add_console_command::<ShadowConsoleCommand, _>(shadow_console_command);
         app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
@@ -38,6 +39,12 @@ impl Plugin for VisualsPlugin {
 
 #[derive(Resource)]
 struct NoFog(bool);
+
+fn set_max_upload(
+    mut commands: Commands,
+) {
+    commands.insert_resource(RenderAssetBytesPerFrame::new(16777216));
+}
 
 fn setup(
     mut commands: Commands,
