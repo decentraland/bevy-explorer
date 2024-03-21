@@ -175,6 +175,8 @@ fn update_gltf(
             &scene_def.id,
             |s| {
                 s.load_cameras = false;
+                s.load_lights = false;
+                s.load_materials = RenderAssetUsages::RENDER_WORLD;
             },
         );
 
@@ -363,6 +365,7 @@ fn update_ready_gltfs(
                     // if there is an animation player, record the entity (bevy-specific hack)
                     if maybe_player.is_some() {
                         if let Some(name) = maybe_name {
+                            debug!("animator found on {name} node of {}", definition.0.src);
                             animation_roots.insert((spawned_ent, name.clone()));
                         }
                     }
