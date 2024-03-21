@@ -20,7 +20,6 @@ use isahc::AsyncReadResponseExt;
 use itertools::Itertools;
 use npc_dynamics::NpcMovementPlugin;
 use serde::Deserialize;
-use urn::Urn;
 
 pub mod animate;
 pub mod attach;
@@ -1679,6 +1678,3 @@ fn process_avatar(
         }
     }
 }
-
-#[derive(Component)]
-struct PendingAvatarTask(HashSet<Urn>);

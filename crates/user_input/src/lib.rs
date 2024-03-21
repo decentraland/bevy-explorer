@@ -8,6 +8,8 @@ use common::{
     sets::SceneSets,
     structs::{PrimaryCamera, PrimaryUser},
 };
+use console::DoAddConsoleCommand;
+use dynamics::{no_clip, NoClipCommand, UserClipping};
 use input_manager::should_accept_key;
 use scene_runner::{update_world::avatar_modifier_area::PlayerModifiers, OutOfWorld};
 
@@ -41,6 +43,8 @@ impl Plugin for UserInputPlugin {
                 .chain()
                 .in_set(SceneSets::PostLoop),
         );
+        app.insert_resource(UserClipping(true));
+        app.add_console_command::<NoClipCommand, _>(no_clip);
     }
 }
 

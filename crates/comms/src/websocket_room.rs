@@ -1,11 +1,5 @@
 use anyhow::{anyhow, bail};
-use async_std::net::TcpStream;
-use async_tls::client::TlsStream;
-use async_tungstenite::{
-    stream::Stream,
-    tungstenite::{client::IntoClientRequest, http::HeaderValue},
-    WebSocketStream,
-};
+use async_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValue};
 use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
@@ -21,7 +15,7 @@ use dcl_component::proto_components::kernel::comms::{
     rfc4,
     rfc5::{
         ws_packet, WsChallengeRequired, WsIdentification, WsPacket, WsPeerUpdate,
-        WsSignedChallenge, WsWelcome,
+        WsSignedChallenge, 
     },
 };
 use wallet::Wallet;
@@ -56,11 +50,6 @@ pub struct WebsocketRoomTransport {
     pub receiver: Option<Receiver<NetworkMessage>>,
     pub retries: usize,
 }
-
-type WssStream = WebSocketStream<Stream<TcpStream, TlsStream<TcpStream>>>;
-
-#[derive(Component)]
-pub struct WebSocketInitTask(Task<Result<(WssStream, WsWelcome), anyhow::Error>>);
 
 #[derive(Component)]
 pub struct WebSocketConnection(Task<(Receiver<NetworkMessage>, anyhow::Error)>);

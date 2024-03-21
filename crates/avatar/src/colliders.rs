@@ -32,7 +32,6 @@ pub struct AvatarColliderPlugin;
 impl Plugin for AvatarColliderPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<AvatarColliders>();
-        app.init_resource::<AvatarHoverTarget>();
         app.init_resource::<LiveBooths>();
         app.add_systems(
             Update,
@@ -101,9 +100,6 @@ fn update_avatar_colliders(
         }
     }
 }
-
-#[derive(Resource, Default)]
-pub struct AvatarHoverTarget(Option<Entity>);
 
 #[allow(clippy::too_many_arguments)]
 fn update_avatar_collider_actions(

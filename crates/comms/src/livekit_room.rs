@@ -58,7 +58,7 @@ pub struct LivekitTransport {
 }
 
 #[derive(Component)]
-pub struct LivekitConnection(Task<()>);
+pub struct LivekitConnection(pub Task<()>);
 
 pub fn start_livekit(
     mut commands: Commands,

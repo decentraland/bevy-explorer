@@ -158,7 +158,7 @@ impl Plugin for MaterialDefinitionPlugin {
 }
 
 #[derive(Component)]
-pub struct RetryMaterial(Vec<Handle<Image>>);
+pub struct RetryMaterial(pub Vec<Handle<Image>>);
 
 #[derive(Component)]
 pub struct TouchMaterial;

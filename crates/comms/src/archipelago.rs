@@ -1,11 +1,5 @@
 use anyhow::{anyhow, bail};
-use async_std::net::TcpStream;
-use async_tls::client::TlsStream;
-use async_tungstenite::{
-    stream::Stream,
-    tungstenite::{client::IntoClientRequest, http::HeaderValue},
-    WebSocketStream,
-};
+use async_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValue};
 use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
@@ -32,7 +26,7 @@ use dcl_component::{
             rfc4,
             v3::{
                 client_packet, server_packet, ChallengeRequestMessage, ChallengeResponseMessage,
-                ClientPacket, Heartbeat, ServerPacket, SignedChallengeMessage, WelcomeMessage,
+                ClientPacket, Heartbeat, ServerPacket, SignedChallengeMessage,
             },
         },
     },
@@ -88,11 +82,6 @@ pub struct ArchipelagoTransport {
     pub receiver: Option<Receiver<NetworkMessage>>,
     pub retries: usize,
 }
-
-type WssStream = WebSocketStream<Stream<TcpStream, TlsStream<TcpStream>>>;
-
-#[derive(Component)]
-pub struct ArchipelagoInitTask(Task<Result<(WssStream, WelcomeMessage), anyhow::Error>>);
 
 #[derive(Component)]
 pub struct ArchipelagoConnection(Task<(Receiver<NetworkMessage>, anyhow::Error)>);

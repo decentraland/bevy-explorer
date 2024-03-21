@@ -275,9 +275,6 @@ pub struct BasicAuth {
 pub struct IsahcClientResource(isahc::HttpClient);
 impl deno_core::Resource for IsahcClientResource {}
 
-pub struct IsahcDefaultClientResource(isahc::HttpClient);
-impl deno_core::Resource for IsahcDefaultClientResource {}
-
 #[op]
 pub fn op_fetch_custom_client(
     state: &mut OpState,
