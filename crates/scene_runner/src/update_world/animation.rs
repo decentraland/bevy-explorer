@@ -11,6 +11,8 @@ use dcl_component::{
     SceneComponentId,
 };
 
+use crate::SceneEntity;
+
 use super::{gltf_container::GltfProcessed, AddCrdtInterfaceExt};
 
 pub struct AnimatorPlugin;
@@ -44,14 +46,14 @@ impl From<PbAnimator> for Animator {
 #[allow(clippy::type_complexity)]
 fn update_animations(
     mut animators: Query<
-        (Option<&mut Animator>, &Handle<Gltf>, &mut GltfProcessed),
+        (Entity, &SceneEntity, Option<&mut Animator>, &Handle<Gltf>, &mut GltfProcessed),
         Or<(Changed<Animator>, Changed<GltfProcessed>)>,
     >,
     mut players: Query<&mut AnimationPlayer>,
     clips: Res<Assets<AnimationClip>>,
     gltfs: Res<Assets<Gltf>>,
 ) {
-    for (mut maybe_animator, h_gltf, mut gltf_processed) in animators.iter_mut() {
+    for (ent, scene_ent, mut maybe_animator, h_gltf, mut gltf_processed) in animators.iter_mut() {
         let maybe_h_clip = match maybe_animator {
             Some(ref animator) => {
                 // TODO bevy only supports a single concurrent animation (or a single timed transition which we can't use)
@@ -144,7 +146,7 @@ fn update_animations(
                     continue;
                 };
 
-                debug!("playing (something) with state {:?}", state);
+                debug!("[{ent:?}/{scene_ent:?}] playing (something) with state {:?}", state);
                 player.play(h_clip.clone_weak());
 
                 player.set_speed(state.speed.unwrap_or(1.0));
