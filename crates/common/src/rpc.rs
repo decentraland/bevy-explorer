@@ -113,7 +113,10 @@ pub enum RpcCall {
         to: IVec2,
         response: RpcResultSender<Result<(), String>>,
     },
-    MoveCamera(Quat),
+    MoveCamera{
+        scene: Entity,
+        to: Quat,
+    },
     SpawnPortable {
         location: PortableLocation,
         spawner: Option<String>,

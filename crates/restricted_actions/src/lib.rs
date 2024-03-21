@@ -121,11 +121,30 @@ fn move_player(
     }
 }
 
-fn move_camera(mut events: EventReader<RpcCall>, mut camera: Query<&mut PrimaryCamera>) {
-    for rotation in events.read().filter_map(|ev| match ev {
-        RpcCall::MoveCamera(rotation) => Some(rotation),
+fn move_camera(
+    mut events: EventReader<RpcCall>, 
+    mut camera: Query<&mut PrimaryCamera>,
+    player: Query<Entity, With<PrimaryUser>>,
+    containing_scene: ContainingScene,
+) {
+    for (root, rotation) in events.read().filter_map(|ev| match ev {
+        RpcCall::MoveCamera{scene, to} => Some((scene, to)),
         _ => None,
     }) {
+        if !player
+            .get_single()
+            .ok()
+            .map_or(false, |e| containing_scene.get(e).contains(root))
+        {
+            warn!("invalid camera move request from non-containing scene");
+            warn!("request from {root:?}");
+            warn!(
+                "containing scenes {:?}",
+                player.get_single().map(|p| containing_scene.get(p))
+            );
+            return;
+        }
+
         let (yaw, pitch, roll) = rotation.to_euler(EulerRot::YXZ);
 
         let mut camera = camera.single_mut();
