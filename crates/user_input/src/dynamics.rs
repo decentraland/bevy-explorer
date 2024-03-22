@@ -185,7 +185,7 @@ pub fn update_user_position(
                         &controller,
                         Some(&collider),
                         true,
-                    );    
+                    );
                 }
 
                 // add platform motion
@@ -288,10 +288,7 @@ pub(crate) struct NoClipCommand {
     clip: Option<bool>,
 }
 
-pub(crate) fn no_clip(
-    mut input: ConsoleCommand<NoClipCommand>,
-    mut clip: ResMut<UserClipping>,
-) {
+pub(crate) fn no_clip(mut input: ConsoleCommand<NoClipCommand>, mut clip: ResMut<UserClipping>) {
     if let Some(Ok(command)) = input.take() {
         let new_state = command.clip.unwrap_or(!clip.0);
         clip.0 = new_state;

@@ -287,9 +287,8 @@ fn update_materials(
             commands.entity(ent).insert(TouchMaterial);
         }
 
-        let [base_color_texture, emissive_texture, normal_map_texture]: [Option<
-            ResolvedTexture,
-        >; 3] = textures.try_into().unwrap();
+        let [base_color_texture, emissive_texture, normal_map_texture]: [Option<ResolvedTexture>;
+            3] = textures.try_into().unwrap();
 
         let bounds = scenes
             .get(container.root)

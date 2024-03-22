@@ -14,8 +14,7 @@ use common::util::{dcl_assert, AsH160};
 use dcl_component::proto_components::kernel::comms::{
     rfc4,
     rfc5::{
-        ws_packet, WsChallengeRequired, WsIdentification, WsPacket, WsPeerUpdate,
-        WsSignedChallenge, 
+        ws_packet, WsChallengeRequired, WsIdentification, WsPacket, WsPeerUpdate, WsSignedChallenge,
     },
 };
 use wallet::Wallet;

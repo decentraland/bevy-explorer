@@ -902,7 +902,7 @@ impl AssetReader for IpfsIo {
             self.connected().await.map_err(wrap_err)?;
 
             let context = self.context.read().await;
-            let remote = ipfs_path.to_url(&*context).map_err(wrap_err);
+            let remote = ipfs_path.to_url(&context).map_err(wrap_err);
 
             if remote.is_err() {
                 // check for default file
