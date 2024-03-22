@@ -461,10 +461,15 @@ impl SceneColliderData {
                         translation: (origin + Vec3::Y * 1.0).as_dvec3().into(),
                     },
                     direction.as_dvec3().into(),
-                    QueryFilter::default().predicate(&|h, _| {
-                        ((specific_collider == Some(h)) == include_specific_collider)
-                            && !self.disabled.contains(&h)
-                    }),
+                    QueryFilter::default()
+                        .groups(InteractionGroups::new(
+                            Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                            Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                        ))
+                        .predicate(&|h, _| {
+                            ((specific_collider == Some(h)) == include_specific_collider)
+                                && !self.disabled.contains(&h)
+                        }),
                     |_| {},
                 )
                 .translation,

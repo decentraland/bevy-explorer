@@ -522,8 +522,13 @@ fn update_ready_gltfs(
                                     if is_collider {
                                         definition.0.invisible_meshes_collision_mask.unwrap_or(
                                             // colliders default to physics + pointers
-                                            ColliderLayer::ClPhysics as u32
-                                                | ColliderLayer::ClPointer as u32,
+                                            if is_skinned {
+                                                // if skinned, maybe foundation uses 0 default?
+                                                0
+                                            } else {
+                                                ColliderLayer::ClPhysics as u32
+                                                    | ColliderLayer::ClPointer as u32
+                                            },
                                         )
                                     } else {
                                         definition.0.visible_meshes_collision_mask.unwrap_or(
