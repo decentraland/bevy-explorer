@@ -162,16 +162,14 @@ fn update_animations(
                 if state.r#loop.unwrap_or(true) {
                     player.repeat();
                 } else {
-                    // ok i'm really guessing here, not sure what criteria we should use to force a reset
-                    // force restart if speed is not specified??
-                    if state.speed.is_none() {
+                    if state.should_reset.unwrap_or(false) {
                         player.replay();
                     }
 
                     player.set_repeat(RepeatAnimation::Never);
                 }
 
-                // deprecate should_reset
+                // on my version of bevy animator this means "should go back to starting position when finished"
                 player.set_should_reset(false);
             }
 
