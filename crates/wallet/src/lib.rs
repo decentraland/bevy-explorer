@@ -31,6 +31,10 @@ struct WalletInner {
 }
 
 impl Wallet {
+    pub fn auth_chain(&self) -> SimpleAuthChain {
+        SimpleAuthChain(self.0.blocking_read().delegates.clone())
+    }
+
     pub fn disconnect(&mut self) {
         let mut write = self.0.try_write().unwrap();
         write.inner = None;
@@ -131,7 +135,7 @@ impl ObjSafeWalletSigner for LocalWallet {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SimpleAuthChain(Vec<ChainLink>);
 
 impl SimpleAuthChain {

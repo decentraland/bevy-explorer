@@ -6,70 +6,45 @@ use ethers_signers::{LocalWallet, Signer};
 use isahc::{config::Configurable, http::StatusCode, AsyncReadResponseExt, RequestExt};
 use std::{str::FromStr, time::Duration};
 
-use rand::{thread_rng, Rng};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use rand::thread_rng;
+use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Debug)]
-pub struct RemoteWalletResponse<T> {
-    pub ok: bool,
-    pub reason: Option<String>,
-    pub response: Option<T>,
-}
+use crate::SimpleAuthChain;
 
-#[derive(Deserialize, Debug)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SignResponseData {
-    pub account: String,
-    pub signature: String,
-    pub chain_id: u64,
+struct CreateRequest {
+    pub method: String,
+    pub params: Vec<serde_json::Value>, // Using serde_json::Value for unknown[]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_chain: Option<SimpleAuthChain>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum RemoteWalletRequest {
-    #[serde(rename = "send-async", rename_all = "camelCase")]
-    SendAsync {
-        body: RPCSendableMessage,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        by_address: Option<String>,
-    },
-    #[serde(rename = "sign", rename_all = "camelCase")]
-    Sign {
-        b64_message: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        by_address: Option<String>,
-    },
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InitializedRequest {
+    request_id: String,
+    code: Option<i32>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RegisterRequestBody {
-    pub id: String,
-    pub request: RemoteWalletRequest,
+#[derive(Debug, Deserialize)]
+struct ServerResponse {
+    sender: String,
+    result: Option<serde_json::Value>,
+    error: Option<ServerResponseError>,
 }
 
-const AUTH_FRONT_URL: &str = "https://auth.dclexplorer.com/";
-const AUTH_SERVER_ENDPOINT_URL: &str = "https://auth-server.dclexplorer.com/task/";
+#[derive(Debug, Deserialize)]
+struct ServerResponseError {
+    message: String,
+}
+
+const AUTH_FRONT_URL: &str = "https://decentraland.zone/auth/requests";
+const AUTH_SERVER_ENDPOINT_URL: &str = "https://auth-api.decentraland.zone/requests";
 const AUTH_SERVER_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 const AUTH_SERVER_TIMEOUT: Duration = Duration::from_secs(600);
 
-pub enum RemoteReportState {
-    OpenUrl { url: String, description: String },
-}
-
-pub fn gen_id() -> String {
-    rand::thread_rng()
-        .sample_iter(rand::distributions::Alphanumeric)
-        .take(56)
-        .collect::<Vec<u8>>()
-        .into_iter()
-        .map(|byte| byte as char)
-        .collect()
-}
-
-async fn fetch_server<T>(req_id: String) -> Result<T, anyhow::Error>
-where
-    T: DeserializeOwned + Unpin + std::fmt::Debug,
-{
+async fn fetch_server(req_id: String) -> Result<(H160, serde_json::Value), anyhow::Error> {
     let start_time = std::time::Instant::now();
     let mut attempt = 0;
     loop {
@@ -83,7 +58,7 @@ where
         }
         attempt += 1;
 
-        let url = format!("{AUTH_SERVER_ENDPOINT_URL}/{req_id}/response");
+        let url = format!("{AUTH_SERVER_ENDPOINT_URL}/{req_id}");
         let response = isahc::Request::get(&url)
             .timeout(AUTH_SERVER_TIMEOUT)
             .body(())?
@@ -93,14 +68,29 @@ where
         match response {
             Ok(mut response) => {
                 if response.status().is_success() {
-                    match response.json::<RemoteWalletResponse<T>>().await {
-                        Ok(rwr) => match (rwr.response, rwr.reason) {
-                            (Some(t), _) => return Ok(t),
-                            (_, Some(r)) => anyhow::bail!("remote server returned error: {}", r),
-                            _ => anyhow::bail!("invalid response (no response or reason)"),
-                        },
+                    let text = response.text().await?;
+                    if text.is_empty() {
+                        async_std::task::sleep(AUTH_SERVER_RETRY_INTERVAL).await;
+                        continue;
+                    }
+                    match serde_json::from_str::<ServerResponse>(&text) {
+                        Ok(inner) => {
+                            if let Some(t) = inner.result {
+                                return Ok((
+                                    inner.sender.as_h160().ok_or(anyhow!(
+                                        "valid response but couldn't convert signer: {:?}",
+                                        inner.sender
+                                    ))?,
+                                    t,
+                                ));
+                            }
+                            if let Some(err) = inner.error {
+                                anyhow::bail!("remote server returned error: {}", err.message);
+                            }
+                            anyhow::bail!("invalid response (no response or reason)");
+                        }
                         Err(e) => {
-                            anyhow::bail!("error parsing json as RemoteWalletResponse: {:?}", e)
+                            anyhow::bail!("error parsing json as ServerResponse: {:?}", e)
                         }
                     }
                 } else {
@@ -122,78 +112,52 @@ where
     }
 }
 
-async fn register_request(
-    req_id: String,
-    request: RemoteWalletRequest,
-) -> Result<(), anyhow::Error> {
-    let body = RegisterRequestBody {
-        id: req_id,
-        request,
-    };
-    let body = serde_json::to_string(&body).expect("valid json");
-    let response = isahc::Request::post(AUTH_SERVER_ENDPOINT_URL)
-        .timeout(AUTH_SERVER_RETRY_INTERVAL)
+async fn init_request(request: CreateRequest) -> Result<InitializedRequest, anyhow::Error> {
+    let body = serde_json::to_string(&request).expect("valid json");
+
+    let mut response = isahc::Request::post(AUTH_SERVER_ENDPOINT_URL)
+        .timeout(AUTH_SERVER_TIMEOUT)
         .header("Content-Type", "application/json")
         .body(body)?
         .send_async()
         .await?;
 
     if response.status().is_success() {
-        Ok(())
+        let response = response.json::<InitializedRequest>().await?;
+        Ok(response)
     } else {
-        error!("Error registering request: {:?}", response);
-        Err(anyhow::Error::msg("couldn't get response"))
+        let status_code = response.status().as_u16();
+        let response = response.text().await?;
+        anyhow::bail!("Error creating request {status_code}: ${response}")
     }
 }
 
-async fn generate_and_report_request(
-    request: RemoteWalletRequest,
-) -> Result<String, anyhow::Error> {
-    let req_id = gen_id();
-    register_request(req_id.clone(), request).await?;
-    let open_url = format!("{AUTH_FRONT_URL}remote-wallet/{req_id}");
+async fn finish_request(request_id: String) -> Result<(H160, serde_json::Value), anyhow::Error> {
+    let url = format!("{AUTH_FRONT_URL}/{request_id}?targetConfigId=alternative");
+    opener::open_browser(url)?;
 
-    debug!("sign url {:?}", open_url);
-    opener::open_browser(open_url)?;
-
-    Ok(req_id)
-}
-
-pub async fn remote_sign_message(
-    payload: &[u8],
-    by_signer: Option<H160>,
-) -> Result<(H160, Signature, u64), anyhow::Error> {
-    let by_address = by_signer.map(|address| format!("{:#x}", address));
-    let b64_message = data_encoding::BASE64URL_NOPAD.encode(payload);
-
-    let req_id = generate_and_report_request(RemoteWalletRequest::Sign {
-        b64_message,
-        by_address,
-    })
-    .await?;
-    let sign_payload = fetch_server::<SignResponseData>(req_id).await?;
-    let Some(account) = sign_payload.account.as_h160() else {
-        anyhow::bail!("invalid address from server: {}", sign_payload.account);
-    };
-    let Ok(signature) = Signature::from_str(sign_payload.signature.as_str()) else {
-        anyhow::bail!("error parsing signature from server");
-    };
-
-    Ok((account, signature, sign_payload.chain_id))
+    fetch_server(request_id).await
 }
 
 pub async fn remote_send_async(
     message: RPCSendableMessage,
-    by_signer: Option<H160>,
+    auth_chain: Option<SimpleAuthChain>,
 ) -> Result<serde_json::Value, anyhow::Error> {
-    let by_address = by_signer.map(|address| format!("{:#x}", address));
-    let req_id = generate_and_report_request(RemoteWalletRequest::SendAsync {
-        body: message,
-        by_address,
+    let req = init_request(CreateRequest {
+        method: message.method,
+        params: message.params,
+        auth_chain,
     })
     .await?;
 
-    fetch_server::<serde_json::Value>(req_id).await
+    println!(
+        "send_async code (tbd integrate into flow properly when there's a test case): {:?}",
+        req.code
+    );
+
+    finish_request(req.request_id)
+        .await
+        .map(|(_, payload)| payload)
 }
 
 fn get_ephemeral_message(ephemeral_address: &str, expiration: std::time::SystemTime) -> String {
@@ -204,18 +168,51 @@ fn get_ephemeral_message(ephemeral_address: &str, expiration: std::time::SystemT
     )
 }
 
-pub async fn try_create_remote_ephemeral(
-) -> Result<(H160, LocalWallet, Vec<ChainLink>, u64), anyhow::Error> {
+pub struct RemoteEphemeralRequest {
+    pub code: Option<i32>,
+    request_id: String,
+    message: String,
+    ephemeral_wallet: LocalWallet,
+}
+
+pub async fn init_remote_ephemeral_request() -> Result<RemoteEphemeralRequest, anyhow::Error> {
     let ephemeral_wallet = LocalWallet::new(&mut thread_rng());
     let ephemeral_address = format!("{:#x}", ephemeral_wallet.address());
     let expiration = std::time::SystemTime::now() + std::time::Duration::from_secs(30 * 24 * 3600);
     let message = get_ephemeral_message(ephemeral_address.as_str(), expiration);
 
-    let (signer, signature, chain_id) = remote_sign_message(message.as_bytes(), None).await?;
+    let request = CreateRequest {
+        method: "dcl_personal_sign".to_owned(),
+        params: vec![message.clone().into()],
+        auth_chain: None,
+    };
+    init_request(request)
+        .await
+        .map(|init| RemoteEphemeralRequest {
+            code: init.code,
+            request_id: init.request_id,
+            message,
+            ephemeral_wallet,
+        })
+}
+
+pub async fn finish_remote_ephemeral_request(
+    request: RemoteEphemeralRequest,
+) -> Result<(H160, LocalWallet, Vec<ChainLink>, u64), anyhow::Error> {
+    let RemoteEphemeralRequest {
+        request_id,
+        message,
+        ephemeral_wallet,
+        ..
+    } = request;
+
+    let (signer, result) = finish_request(request_id).await?;
+    let signature = Signature::from_str(result.as_str().ok_or(anyhow!("result is not a string"))?)?;
+
     let delegate = ChainLink {
         ty: "ECDSA_EPHEMERAL".to_owned(),
         payload: message,
         signature: format!("0x{}", signature),
     };
-    Ok((signer, ephemeral_wallet, vec![delegate], chain_id))
+    Ok((signer, ephemeral_wallet, vec![delegate], 1))
 }

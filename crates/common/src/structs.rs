@@ -121,7 +121,7 @@ pub struct UiRoot;
 pub struct ToolTips(pub HashMap<&'static str, Vec<(String, bool)>>);
 
 // web3 authorization chain link
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ChainLink {
     #[serde(rename = "type")]
     pub ty: String,

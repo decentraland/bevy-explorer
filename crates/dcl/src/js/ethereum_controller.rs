@@ -35,12 +35,7 @@ async fn op_send_async(
                 .borrow_mut()
                 .borrow_mut::<Vec<RpcCall>>()
                 .push(RpcCall::SendAsync {
-                    body: RPCSendableMessage {
-                        jsonrpc: "2.0".into(),
-                        id: 1,
-                        method,
-                        params,
-                    },
+                    body: RPCSendableMessage { method, params },
                     scene,
                     response: sx.into(),
                 });

@@ -18,7 +18,12 @@ use ui_core::{
     button::DuiButton,
     ui_actions::{Click, EventCloneExt, On},
 };
-use wallet::{browser_auth::try_create_remote_ephemeral, Wallet};
+use wallet::{
+    browser_auth::{
+        finish_remote_ephemeral_request, init_remote_ephemeral_request, RemoteEphemeralRequest,
+    },
+    Wallet,
+};
 
 pub struct LoginPlugin;
 
@@ -45,7 +50,9 @@ fn login(
     ipfas: IpfsAssetServer,
     mut wallet: ResMut<Wallet>,
     mut current_profile: ResMut<CurrentUserProfile>,
-    mut task: Local<
+    mut init_task: Local<Option<Task<Result<RemoteEphemeralRequest, anyhow::Error>>>>,
+
+    mut final_task: Local<
         Option<
             Task<
                 Result<(Address, LocalWallet, Vec<ChainLink>, Option<UserProfile>), anyhow::Error>,
@@ -64,12 +71,12 @@ fn login(
             commands.despawn_recursive();
         }
         *dialog = None;
-        *task = None;
+        *final_task = None;
         return;
     }
 
     // create dialog
-    if dialog.is_none() && task.is_none() {
+    if dialog.is_none() && final_task.is_none() {
         let previous_login = std::fs::read("config.json")
             .ok()
             .and_then(|f| serde_json::from_slice::<AppConfig>(&f).ok())
@@ -94,7 +101,59 @@ fn login(
     }
 
     // handle task results
-    if let Some(mut t) = task.take() {
+    if let Some(mut t) = init_task.take() {
+        match t.complete() {
+            Some(Ok(request)) => {
+                let code = request.code;
+                let ipfs = ipfas.ipfs().clone();
+
+                *final_task = Some(IoTaskPool::get().spawn(async move {
+                    let (root_address, local_wallet, auth, _) =
+                        finish_remote_ephemeral_request(request).await?;
+
+                    let profile = get_remote_profile(root_address, ipfs).await.ok();
+
+                    Ok((root_address, local_wallet, auth, profile))
+                }));
+
+                if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
+                    commands.despawn_recursive();
+                }
+
+                let components = commands
+                    .spawn_template(
+                        &dui,
+                        "cancel-login",
+                        DuiProps::new()
+                            .with_prop(
+                                "buttons",
+                                vec![DuiButton::new_enabled(
+                                    "Cancel",
+                                    |mut e: EventWriter<LoginType>| {
+                                        e.send(LoginType::Cancel);
+                                    },
+                                )],
+                            )
+                            .with_prop("code", format!("{}", code.unwrap_or(-1))),
+                    )
+                    .unwrap();
+
+                *dialog = Some(components.root);
+            }
+            Some(Err(e)) => {
+                error!("{e}");
+                toaster.add_toast("login profile", format!("Login failed: {}", e));
+                if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
+                    commands.despawn_recursive();
+                }
+                *dialog = None;
+            }
+            None => {
+                *init_task = Some(t);
+            }
+        }
+    }
+    if let Some(mut t) = final_task.take() {
         match t.complete() {
             Some(Ok((root_address, local_wallet, auth, profile))) => {
                 if let Ok(mut window) = window.get_single_mut() {
@@ -148,7 +207,7 @@ fn login(
                 *dialog = None;
             }
             None => {
-                *task = Some(t);
+                *final_task = Some(t);
             }
         }
     }
@@ -170,7 +229,7 @@ fn login(
                     .previous_login
                     .unwrap();
 
-                *task = Some(IoTaskPool::get().spawn(async move {
+                *final_task = Some(IoTaskPool::get().spawn(async move {
                     let PreviousLogin {
                         root_address,
                         ephemeral_key,
@@ -187,29 +246,23 @@ fn login(
             LoginType::NewRemote => {
                 info!("new remote");
 
-                let ipfs = ipfas.ipfs().clone();
-                *task = Some(IoTaskPool::get().spawn(async move {
-                    let (root_address, local_wallet, auth, _) =
-                        try_create_remote_ephemeral().await?;
-
-                    let profile = get_remote_profile(root_address, ipfs).await.ok();
-
-                    Ok((root_address, local_wallet, auth, profile))
-                }));
+                *init_task = Some(IoTaskPool::get().spawn(init_remote_ephemeral_request()));
 
                 let components = commands
                     .spawn_template(
                         &dui,
                         "cancel-login",
-                        DuiProps::new().with_prop(
-                            "buttons",
-                            vec![DuiButton::new_enabled(
-                                "Cancel",
-                                |mut e: EventWriter<LoginType>| {
-                                    e.send(LoginType::Cancel);
-                                },
-                            )],
-                        ),
+                        DuiProps::new()
+                            .with_prop(
+                                "buttons",
+                                vec![DuiButton::new_enabled(
+                                    "Cancel",
+                                    |mut e: EventWriter<LoginType>| {
+                                        e.send(LoginType::Cancel);
+                                    },
+                                )],
+                            )
+                            .with_prop("code", "...".to_string()),
                     )
                     .unwrap();
 
@@ -234,7 +287,7 @@ fn login(
                 current_profile.is_deployed = true;
             }
             LoginType::Cancel => {
-                *task = None;
+                *final_task = None;
                 *dialog = None;
             }
         }
