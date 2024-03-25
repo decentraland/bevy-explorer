@@ -362,7 +362,7 @@ fn animate(
             .and_then(|anim| anim.clips.get(bodyshape))
         {
             if let Ok(mut player) = players.get_mut(ent) {
-                if restart && player.elapsed() == 0.75 {
+                if restart && player.elapsed() == 0.75 { // what is this meant to do?
                     player.start(clip.clone()).repeat();
                 } else if Some(anim) != prior_playing.get(&ent).map(String::as_str) || restart {
                     player.play_with_transition(clip.clone(), Duration::from_millis(100));
@@ -371,7 +371,6 @@ fn animate(
                     } else {
                         player.set_repeat(RepeatAnimation::Never);
                     }
-                    playing.insert(ent, anim.to_owned());
                 }
 
                 if anim == "Jump" && player.elapsed() >= 0.75 {
@@ -381,6 +380,7 @@ fn animate(
                 }
 
                 player.set_speed(speed);
+                playing.insert(ent, anim.to_owned());
                 return player.elapsed() > anim_assets.get(clip).map_or(f32::MAX, |c| c.duration());
             }
         }
