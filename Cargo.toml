@@ -37,8 +37,8 @@ world_ui = { path="crates/world_ui" }
 emotes = { path="crates/emotes" }
 
 bevy = { version = "0.13", features=["jpeg"] }
-bevy_console = "0.11"
-bevy_egui = "0.25"
+bevy_console = { git = "https://github.com/robtfm/bevy-console", branch="egui-26" }
+bevy_egui = "0.26"
 
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
