@@ -106,6 +106,10 @@ fn main() {
             .value_from_str("--distance")
             .ok()
             .unwrap_or(base_config.scene_load_distance),
+        scene_unload_extra_distance: args
+            .value_from_str("--unload")
+            .ok()
+            .unwrap_or(base_config.scene_unload_extra_distance),
         sysinfo_visible: false,
         scene_log_to_console: args.contains("--scene_log_to_console"),
     };
@@ -203,7 +207,10 @@ fn main() {
             .add_plugins(LogDiagnosticsPlugin::default());
     }
 
-    app.insert_resource(SceneLoadDistance(final_config.scene_load_distance));
+    app.insert_resource(SceneLoadDistance {
+        load: final_config.scene_load_distance,
+        unload: final_config.scene_unload_extra_distance,
+    });
 
     app.insert_resource(final_config);
     if no_gltf {
@@ -367,11 +374,12 @@ fn change_location(
     }
 }
 
-/// set scene load distance (defaults to 100.0m)
+/// set scene load distance (defaults to 75.0m) and additional unload distance (defaults to 25.0m)
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/scene_distance")]
 struct SceneDistanceCommand {
     distance: Option<f32>,
+    unload: Option<f32>,
 }
 
 fn scene_distance(
@@ -379,9 +387,12 @@ fn scene_distance(
     mut scene_load_distance: ResMut<SceneLoadDistance>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        let distance = command.distance.unwrap_or(100.0);
-        scene_load_distance.0 = distance;
-        input.reply_ok("set scene load distance to {distance}");
+        let distance = command.distance.unwrap_or(75.0);
+        scene_load_distance.load = distance;
+        if let Some(unload) = command.unload {
+            scene_load_distance.unload = unload;
+        }
+        input.reply_ok(format!("set scene load distance to +{distance} -{}", scene_load_distance.load + scene_load_distance.unload));
     }
 }
 

@@ -146,6 +146,7 @@ pub struct AppConfig {
     pub graphics: GraphicsSettings,
     pub scene_threads: usize,
     pub scene_load_distance: f32,
+    pub scene_unload_extra_distance: f32,
     pub sysinfo_visible: bool,
     pub scene_log_to_console: bool,
 }
@@ -159,7 +160,8 @@ impl Default for AppConfig {
             previous_login: None,
             graphics: Default::default(),
             scene_threads: 4,
-            scene_load_distance: 100.0,
+            scene_load_distance: 75.0,
+            scene_unload_extra_distance: 25.0,
             sysinfo_visible: true,
             scene_log_to_console: false,
         }
@@ -192,7 +194,10 @@ pub enum AudioDecoderError {
 }
 
 #[derive(Resource)]
-pub struct SceneLoadDistance(pub f32);
+pub struct SceneLoadDistance {
+    pub load: f32,
+    pub unload: f32, // additional
+}
 
 #[derive(Debug)]
 pub struct IVec2Arg(pub IVec2);

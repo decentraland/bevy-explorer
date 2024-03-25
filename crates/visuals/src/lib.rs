@@ -105,7 +105,8 @@ fn daylight_cycle(
         directional.illuminance = t.sin().max(0.0).powf(2.0) * 10_000.0;
 
         if let Ok(mut fog) = fog.get_single_mut() {
-            let distance = scene_distance.0
+            let distance = scene_distance.load
+                + scene_distance.unload
                 + camera.get_single().map(|c| c.distance).unwrap_or_default() * 5.0;
             fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
             let sun_up = atmosphere.sun_position.dot(Vec3::Y);
