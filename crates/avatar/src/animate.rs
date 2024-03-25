@@ -362,7 +362,8 @@ fn animate(
             .and_then(|anim| anim.clips.get(bodyshape))
         {
             if let Ok(mut player) = players.get_mut(ent) {
-                if restart && player.elapsed() == 0.75 { // what is this meant to do?
+                if restart && player.elapsed() == 0.75 {
+                    // what is this meant to do?
                     player.start(clip.clone()).repeat();
                 } else if Some(anim) != prior_playing.get(&ent).map(String::as_str) || restart {
                     player.play_with_transition(clip.clone(), Duration::from_millis(100));
