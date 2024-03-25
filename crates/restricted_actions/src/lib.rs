@@ -993,7 +993,7 @@ pub fn handle_eth_async(
 
         tasks.push((
             response.clone(),
-            IoTaskPool::get().spawn(remote_send_async(body.clone(), Some(wallet.auth_chain()))),
+            IoTaskPool::get().spawn(remote_send_async(body.clone(), wallet.auth_chain().ok())),
         ));
     }
 

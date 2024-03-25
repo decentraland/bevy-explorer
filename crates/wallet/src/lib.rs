@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use async_trait::async_trait;
 use bevy::prelude::*;
 use common::structs::ChainLink;
@@ -31,8 +32,16 @@ struct WalletInner {
 }
 
 impl Wallet {
-    pub fn auth_chain(&self) -> SimpleAuthChain {
-        SimpleAuthChain(self.0.blocking_read().delegates.clone())
+    pub fn auth_chain(&self) -> Result<SimpleAuthChain, anyhow::Error> {
+        let inner = self.0.blocking_read();
+
+        Ok(SimpleAuthChain::new_chain(
+            *inner
+                .root_address
+                .as_ref()
+                .ok_or(anyhow!("wallet not connected"))?,
+            &inner.delegates,
+        ))
     }
 
     pub fn disconnect(&mut self) {
@@ -157,6 +166,17 @@ impl SimpleAuthChain {
             payload,
             signature: format!("0x{signature}"),
         });
+        Self(links)
+    }
+
+    pub fn new_chain(signer_address: Address, delegates: &[ChainLink]) -> Self {
+        let mut links = Vec::with_capacity(delegates.len() + 1);
+        links.push(ChainLink {
+            ty: "SIGNER".to_owned(),
+            payload: format!("{signer_address:#x}"),
+            signature: String::default(),
+        });
+        links.extend(delegates.iter().cloned());
         Self(links)
     }
 
