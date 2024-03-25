@@ -1,4 +1,4 @@
-use std::f32::consts::FRAC_PI_2;
+use std::f32::consts::{FRAC_PI_2, TAU};
 
 use bevy::{
     core::FrameCount,
@@ -96,7 +96,7 @@ fn daylight_cycle(
     camera: Query<&PrimaryCamera>,
     scene_distance: Res<SceneLoadDistance>,
 ) {
-    let t = 120.0 + time.elapsed_seconds_wrapped() / 200.0;
+    let t = ((TAU * 0.15 + time.elapsed_seconds_wrapped() / 200.0) % TAU) * 0.6 - TAU * 0.05;
     let rotation = Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0);
     atmosphere.sun_position = rotation * Vec3::Z;
 
