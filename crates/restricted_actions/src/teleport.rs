@@ -9,6 +9,7 @@ use scene_runner::{
         LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, PARCEL_SIZE,
     },
     renderer_context::RendererSceneContext,
+    update_world::mesh_collider::SceneColliderData,
     ContainingScene, OutOfWorld,
 };
 use ui_core::button::DuiButton;
@@ -89,7 +90,14 @@ pub fn teleport_player(
 #[allow(clippy::type_complexity)]
 pub fn handle_out_of_world(
     mut commands: Commands,
-    scenes: Query<(Option<&RendererSceneContext>, Option<&SceneLoading>), With<SceneHash>>,
+    mut scenes: Query<
+        (
+            Option<&RendererSceneContext>,
+            Option<&SceneLoading>,
+            Option<&mut SceneColliderData>,
+        ),
+        With<SceneHash>,
+    >,
     mut player: Query<(Entity, &mut Transform), (With<PrimaryUser>, With<OutOfWorld>)>,
     pointers: Res<ScenePointers>,
     live_scenes: Res<LiveScenes>,
@@ -131,7 +139,7 @@ pub fn handle_out_of_world(
         return;
     };
 
-    let (maybe_context, maybe_loadstate) = scenes.get(*scene).unwrap();
+    let (maybe_context, maybe_loadstate, maybe_collider_data) = scenes.get_mut(*scene).unwrap();
 
     if let Some(context) = maybe_context {
         if !context.broken && (context.tick_number <= 5 || !context.blocked.is_empty()) {
@@ -153,14 +161,22 @@ pub fn handle_out_of_world(
             let mut best_distance = 0.0;
             let mut best_position = Vec3::new(
                 rng.gen_range(0.0..PARCEL_SIZE),
-                rng.gen_range(0.0..PARCEL_SIZE),
-                rng.gen_range(0.0..PARCEL_SIZE),
+                1000.0,
+                -rng.gen_range(0.0..PARCEL_SIZE),
             ) + base_position;
+            best_position.y = 1000.0
+                - maybe_collider_data
+                    .and_then(|mut cd| cd.get_groundheight(context.tick_number, best_position))
+                    .map(|(h, _)| h)
+                    .unwrap_or(1000.0);
             let mut count = 100;
 
             if !context.spawn_points.is_empty() {
                 while best_distance < 0.75 && count > 0 {
                     let spawn_point = context.spawn_points.choose(rng).unwrap();
+                    if !spawn_point.default && count > 50 {
+                        continue;
+                    }
                     let aabb = spawn_point.position.bounding_box();
                     let position = base_position
                         + Vec3::new(

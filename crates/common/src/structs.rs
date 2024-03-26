@@ -265,7 +265,7 @@ impl SpawnPosition {
         };
 
         let x = parse_val(&self.x).unwrap_or(0.0..16.0);
-        let y = parse_val(&self.y).unwrap_or(0.0..16.0);
+        let y = parse_val(&self.y).unwrap_or(0.0..0.0);
         let z = parse_val(&self.z).unwrap_or(0.0..16.0);
 
         (
