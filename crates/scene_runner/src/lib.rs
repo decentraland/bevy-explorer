@@ -609,7 +609,7 @@ fn send_scene_updates(
 ) {
     let updates = &mut *updates;
 
-    if updates.jobs_in_flight.len() == config.scene_threads {
+    if updates.jobs_in_flight.len() >= config.scene_threads {
         return;
     }
 
