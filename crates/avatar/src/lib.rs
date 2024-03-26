@@ -1294,7 +1294,7 @@ fn process_avatar(
     mut skins: Query<&mut SkinnedMesh>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut mask_materials: ResMut<Assets<MaskMaterial>>,
-    meshes: Res<Assets<Mesh>>,
+    mut meshes: ResMut<Assets<Mesh>>,
     attach_points: Query<&AttachPoints>,
     animations: Res<AvatarAnimations>,
 ) {
@@ -1561,7 +1561,8 @@ fn process_avatar(
                 }
 
                 if let Some(h_mesh) = maybe_h_mesh {
-                    if let Some(mesh_data) = meshes.get(h_mesh) {
+                    if let Some(mesh_data) = meshes.get_mut(h_mesh) {
+                        mesh_data.normalize_joint_weights();
                         let is_skinned =
                             mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
                         if is_skinned {
