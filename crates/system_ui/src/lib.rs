@@ -1,3 +1,4 @@
+pub mod app_settings;
 pub mod change_realm;
 pub mod chat;
 pub mod discover;

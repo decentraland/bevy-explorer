@@ -1,6 +1,5 @@
 <define-template id="discover">
     <div style="width: 100%; flex-grow: 1; flex-direction: row;">
-        <!-- <div id="background" style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%; background-color: #cccccc;" image="images/backpack/Background.jpeg" /> -->
         <div style="position-type: absolute; width: 100%; height: 100%; flex-grow: 1; flex-direction: column;">
             <div style="width: 100%; align-items: center;" focus="block" interact="true" z-index="1">
                 <!-- categories -->

@@ -124,7 +124,10 @@ fn init_test_app(entity_json: &str) -> App {
     app.init_resource::<AcceptInput>();
     app.init_resource::<ToolTips>();
     app.add_event::<RpcCall>();
-    app.insert_resource(SceneLoadDistance(1.0, 0.0));
+    app.insert_resource(SceneLoadDistance {
+        load: 1.0,
+        unload: 0.0,
+    });
     app.finish();
 
     let mut test_path = std::env::current_dir().unwrap();

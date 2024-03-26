@@ -1,0 +1,38 @@
+<define-template id="settings-tab">
+    <div style="position-type: absolute; width: 100%; height: 100%; flex-grow: 1; flex-direction: row; border: 10px; border-color: blue;">
+        <div style="flex-direction: column; width: 70%; height: 100%">
+            <vscroll>
+                <div id="settings" style="width: 100%; flex-direction: column;" />
+            </vscroll>
+        </div>
+        <div style="width: 30%; height: 100%; border: 10px; border-color: green;">
+            <vscroll>
+                <div style="border: 1px; border-color:red;">
+                    <med-text text="Hover a setting to show a description" id="settings-description" />
+                </div>
+            </vscroll>
+        </div>
+    </div>
+</define-template>
+
+<define-template id="enum-setting">
+    <div style="width: 100%; flex-direction: row; align-items: center; border: 10px; border-color: yellow;" interact="true">
+        <div style="flex-direction: column; align-items: flex-end; width: 50%; margin: 0px 2vmin 0px 0px;">
+            <large-text text="@title" />
+        </div>
+        <div style="width: 50%; flex-direction: row; justify-content: center; border:1px; border-color:green;">
+            <button label="<" onclick="@prev" />
+            <bounds 
+                style="flex-grow: 1; margin: 1vmin; padding: 1vmin; justify-content: center;"
+                corner-size="2vmin"
+                blend-size="0.5vmin"
+                border-size="1vmin"
+                border-color="#000000ff"
+                color="#8888ff"
+            >
+                <large-text id="setting-label" text="@label-initial" />
+            </bounds>
+            <button label=">" onclick="@next" />
+        </div>
+    </div>
+</define-template>

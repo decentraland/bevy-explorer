@@ -15,7 +15,7 @@ use bevy::{
         tonemapping::{DebandDither, Tonemapping},
     },
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    pbr::CascadeShadowConfigBuilder,
+    pbr::{CascadeShadowConfigBuilder, ShadowFilteringMethod},
     prelude::*,
     render::view::ColorGrading,
     text::TextSettings,
@@ -89,14 +89,11 @@ fn main() {
                 .value_from_str("--log_fps")
                 .ok()
                 .unwrap_or(base_config.graphics.log_fps),
-            msaa: args
-                .value_from_str::<_, usize>("--msaa")
-                .ok()
-                .unwrap_or(base_config.graphics.msaa),
             fps_target: args
                 .value_from_str::<_, usize>("--fps")
                 .ok()
                 .unwrap_or(base_config.graphics.fps_target),
+            ..base_config.graphics
         },
         scene_threads: args
             .value_from_str("--threads")
@@ -151,21 +148,21 @@ fn main() {
         false => bevy::window::PresentMode::AutoNoVsync,
     };
 
-    let msaa = match final_config.graphics.msaa {
-        1 => Msaa::Off,
-        2 => Msaa::Sample2,
-        4 => Msaa::Sample4,
-        8 => Msaa::Sample8,
-        _ => {
-            warnings.push(
-                "Invalid msaa sample count, must be one of (1, 2, 4, 8). Defaulting to Off"
-                    .to_owned(),
-            );
-            Msaa::Off
-        }
-    };
+    // let msaa = match final_config.graphics.msaa {
+    //     1 => Msaa::Off,
+    //     2 => Msaa::Sample2,
+    //     4 => Msaa::Sample4,
+    //     8 => Msaa::Sample8,
+    //     _ => {
+    //         warnings.push(
+    //             "Invalid msaa sample count, must be one of (1, 2, 4, 8). Defaulting to Off"
+    //                 .to_owned(),
+    //         );
+    //         Msaa::Off
+    //     }
+    // };
 
-    app.insert_resource(msaa)
+    app //.insert_resource(msaa)
         .insert_resource(TextSettings {
             soft_max_font_atlases: 4.try_into().unwrap(),
             allow_dynamic_font_size: true,
@@ -319,6 +316,7 @@ fn setup(
                 intensity: 0.15,
                 ..BloomSettings::OLD_SCHOOL
             },
+            ShadowFilteringMethod::Castano13,
             PrimaryCamera::default(),
         ))
         .id();
@@ -392,7 +390,10 @@ fn scene_distance(
         if let Some(unload) = command.unload {
             scene_load_distance.unload = unload;
         }
-        input.reply_ok(format!("set scene load distance to +{distance} -{}", scene_load_distance.load + scene_load_distance.unload));
+        input.reply_ok(format!(
+            "set scene load distance to +{distance} -{}",
+            scene_load_distance.load + scene_load_distance.unload
+        ));
     }
 }
 

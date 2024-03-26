@@ -130,7 +130,7 @@ pub struct ChainLink {
 }
 
 // ephemeral identity info
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct PreviousLogin {
     pub root_address: Address,
     pub ephemeral_key: Vec<u8>,
@@ -138,7 +138,7 @@ pub struct PreviousLogin {
 }
 
 // app configuration
-#[derive(Serialize, Deserialize, Resource)]
+#[derive(Serialize, Deserialize, Resource, Clone)]
 pub struct AppConfig {
     pub server: String,
     pub location: IVec2,
@@ -168,12 +168,14 @@ impl Default for AppConfig {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct GraphicsSettings {
     pub vsync: bool,
     pub log_fps: bool,
-    pub msaa: usize,
+    pub msaa: AaSetting,
     pub fps_target: usize,
+    pub shadow_distance: f32,
+    pub shadow_settings: ShadowSetting,
 }
 
 impl Default for GraphicsSettings {
@@ -181,10 +183,29 @@ impl Default for GraphicsSettings {
         Self {
             vsync: false,
             log_fps: true,
-            msaa: 4,
+            msaa: AaSetting::Msaa4x,
             fps_target: 60,
+            shadow_distance: 100.0,
+            shadow_settings: ShadowSetting::High,
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub enum ShadowSetting {
+    Off,
+    Low,
+    High,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub enum AaSetting {
+    Off,
+    FxaaLow,
+    FxaaHigh,
+    Msaa2x,
+    Msaa4x,
+    Msaa8x,
 }
 
 #[derive(Debug)]
