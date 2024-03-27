@@ -176,6 +176,9 @@ pub struct GraphicsSettings {
     pub fps_target: usize,
     pub shadow_distance: f32,
     pub shadow_settings: ShadowSetting,
+    pub window: WindowSetting,
+    // removed until bevy window resizing bugs are fixed
+    // pub fullscreen_res: FullscreenResSetting,
 }
 
 impl Default for GraphicsSettings {
@@ -187,18 +190,20 @@ impl Default for GraphicsSettings {
             fps_target: 60,
             shadow_distance: 100.0,
             shadow_settings: ShadowSetting::High,
+            window: WindowSetting::Windowed,
+            // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
         }
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ShadowSetting {
     Off,
     Low,
     High,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum AaSetting {
     Off,
     FxaaLow,
@@ -207,6 +212,16 @@ pub enum AaSetting {
     Msaa4x,
     Msaa8x,
 }
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum WindowSetting {
+    Fullscreen,
+    Windowed,
+    Borderless,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub struct FullscreenResSetting(pub UVec2);
 
 #[derive(Debug)]
 pub enum AudioDecoderError {

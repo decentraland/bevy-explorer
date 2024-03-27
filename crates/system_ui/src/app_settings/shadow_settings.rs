@@ -12,7 +12,8 @@ use common::structs::{AppConfig, PrimaryCameraRes, ShadowSetting};
 use super::{spawn_enum_setting_template, AppSetting, EnumAppSetting};
 
 impl EnumAppSetting for ShadowSetting {
-    fn variants() -> Vec<Self> {
+    type VParam = ();
+    fn variants(_: ()) -> Vec<Self> {
         vec![Self::Off, Self::Low, Self::High]
     }
 

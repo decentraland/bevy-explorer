@@ -12,7 +12,8 @@ use common::structs::{AaSetting, AppConfig, PrimaryCameraRes};
 use super::{spawn_enum_setting_template, AppSetting, EnumAppSetting};
 
 impl EnumAppSetting for AaSetting {
-    fn variants() -> Vec<Self> {
+    type VParam = ();
+    fn variants(_: ()) -> Vec<Self> {
         vec![
             Self::Off,
             Self::FxaaLow,

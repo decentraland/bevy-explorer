@@ -6,15 +6,18 @@ use bevy::{
     prelude::*,
 };
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use common::structs::{AaSetting, AppConfig, ShadowSetting};
+use common::structs::{AaSetting, AppConfig, ShadowSetting, WindowSetting};
 use ui_core::ui_actions::{Click, HoverEnter, On, UiCaller};
 
 use crate::profile::{SettingsDialog, SettingsTab};
+
+// use self::window_settings::{set_resolutions, MonitorResolutions};
 
 pub struct AppSettingsPlugin;
 
 mod aa_settings;
 mod shadow_settings;
+pub mod window_settings;
 
 impl Plugin for AppSettingsPlugin {
     fn build(&self, app: &mut App) {
@@ -22,12 +25,21 @@ impl Plugin for AppSettingsPlugin {
 
         let mut apply_schedule = Schedule::new(ApplyAppSettingsLabel);
 
-        apply_schedule.add_systems((apply_setting::<ShadowSetting>, apply_setting::<AaSetting>));
+        apply_schedule.add_systems((
+            apply_setting::<ShadowSetting>,
+            apply_setting::<AaSetting>,
+            apply_setting::<WindowSetting>,
+            // apply_setting::<FullscreenResSetting>.after(apply_setting::<WindowSetting>),
+        ));
 
         app.insert_resource(ApplyAppSettingsSchedule(apply_schedule));
+        // app.init_resource::<MonitorResolutions>();
         app.add_systems(
             Update,
-            apply_settings.run_if(|config: Res<AppConfig>| config.is_changed()),
+            (
+                apply_settings.run_if(|config: Res<AppConfig>| config.is_changed()),
+                // set_resolutions,
+            ),
         );
     }
 }
@@ -79,8 +91,10 @@ fn set_app_settings_content(
             .unwrap();
 
         let children = vec![
-            ShadowSetting::spawn_template(&mut commands, &dui, &config),
+            WindowSetting::spawn_template(&mut commands, &dui, &config),
+            // FullscreenResSetting::spawn_template(&mut commands, &dui, &config),
             AaSetting::spawn_template(&mut commands, &dui, &config),
+            ShadowSetting::spawn_template(&mut commands, &dui, &config),
         ];
 
         commands
@@ -103,8 +117,9 @@ pub trait AppSetting: Eq + 'static {
     fn spawn_template(commands: &mut Commands, dui: &DuiRegistry, config: &AppConfig) -> Entity;
 }
 
-pub trait EnumAppSetting: AppSetting + Sized {
-    fn variants() -> Vec<Self>;
+pub trait EnumAppSetting: AppSetting + Sized + std::fmt::Debug {
+    type VParam: SystemParam + 'static;
+    fn variants(param: SystemParamItem<Self::VParam>) -> Vec<Self>;
     fn name(&self) -> String;
 }
 
@@ -120,12 +135,13 @@ fn spawn_enum_setting_template<S: EnumAppSetting>(
         On::<Click>::new(
             move |mut q: Query<(&mut SettingsDialog, &mut AppSettingsDetail)>,
                   params: StaticSystemParam<S::Param>,
+                  v_params: StaticSystemParam<S::VParam>,
                   commands: Commands,
                   caller: Res<UiCaller>,
                   parents: Query<(&Parent, Option<&DuiEntities>)>,
                   mut text: Query<&mut Text, Without<AppSettingDescription>>,
                   mut description: Query<&mut Text, With<AppSettingDescription>>| {
-                let mut variants = S::variants();
+                let mut variants = S::variants(v_params.into_inner());
                 let (mut dialog, mut config) = q.single_mut();
                 let config = &mut config.0;
                 let current = S::load(config);
@@ -167,7 +183,6 @@ fn spawn_enum_setting_template<S: EnumAppSetting>(
         On::<HoverEnter>::new(
             |q: Query<&AppSettingsDetail>,
              mut description: Query<&mut Text, With<AppSettingDescription>>| {
-                println!("hehe");
                 let value = S::load(&q.single().0);
                 description.single_mut().sections[0].value = value.description();
             },
