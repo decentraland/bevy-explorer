@@ -13,6 +13,8 @@ use ui_core::ui_actions::{Click, HoverEnter, On, UiCaller};
 
 use crate::profile::{SettingsDialog, SettingsTab};
 
+use self::oob_setting::OobSetting;
+
 // use self::window_settings::{set_resolutions, MonitorResolutions};
 
 pub struct AppSettingsPlugin;
@@ -20,6 +22,7 @@ pub struct AppSettingsPlugin;
 mod aa_settings;
 mod bloom_settings;
 pub mod fog_settings;
+mod oob_setting;
 mod shadow_settings;
 pub mod window_settings;
 
@@ -33,6 +36,7 @@ impl Plugin for AppSettingsPlugin {
             apply_setting::<ShadowSetting>,
             apply_setting::<FogSetting>,
             apply_setting::<BloomSetting>,
+            apply_setting::<OobSetting>,
             apply_setting::<AaSetting>,
             apply_setting::<WindowSetting>,
             // apply_setting::<FullscreenResSetting>.after(apply_setting::<WindowSetting>),
@@ -103,6 +107,7 @@ fn set_app_settings_content(
             ShadowSetting::spawn_template(&mut commands, &dui, &config),
             FogSetting::spawn_template(&mut commands, &dui, &config),
             BloomSetting::spawn_template(&mut commands, &dui, &config),
+            OobSetting::spawn_template(&mut commands, &dui, &config),
         ];
 
         commands

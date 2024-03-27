@@ -11,7 +11,7 @@ use bevy::{
     },
     utils::HashMap,
 };
-use common::{sets::SceneSets, util::TryPushChildrenEx};
+use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
 use scene_material::{SceneBound, SceneMaterial};
 
 #[derive(SystemSet, Hash, Eq, PartialEq, Clone, Copy, Debug)]
@@ -71,6 +71,7 @@ fn update_world_ui(
     mut images: ResMut<Assets<Image>>,
     mut uis: Query<&mut Visibility>,
     mut current_rendered_ui: Local<Option<(Entity, usize)>>,
+    config: Res<AppConfig>,
 ) {
     // remove old quads
     for e in removed.read() {
@@ -216,7 +217,7 @@ fn update_world_ui(
                                             alpha_mode: AlphaMode::Mask(0.5),
                                             ..Default::default()
                                         },
-                                        extension: SceneBound { bounds: ui.bounds },
+                                        extension: SceneBound::new(ui.bounds, config.graphics.oob),
                                     },
                                     extension: TextQuad {
                                         data: material_data,

@@ -181,6 +181,7 @@ pub struct GraphicsSettings {
     // pub fullscreen_res: FullscreenResSetting,
     pub fog: FogSetting,
     pub bloom: BloomSetting,
+    pub oob: f32,
 }
 
 impl Default for GraphicsSettings {
@@ -196,6 +197,7 @@ impl Default for GraphicsSettings {
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
             fog: FogSetting::Atmospheric,
             bloom: BloomSetting::Low,
+            oob: 2.0,
         }
     }
 }

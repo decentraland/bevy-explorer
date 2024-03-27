@@ -19,6 +19,7 @@ use bevy::{
     scene::{scene_spawner_system, InstanceId},
     utils::{HashMap, HashSet},
 };
+use common::structs::AppConfig;
 use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
@@ -302,6 +303,7 @@ fn update_ready_gltfs(
         &Transform,
     )>,
     asset_server: Res<AssetServer>,
+    config: Res<AppConfig>,
 ) {
     for (bevy_scene_entity, dcl_scene_entity, loaded, definition) in ready_gltfs.iter() {
         if loaded.0.is_none() {
@@ -463,9 +465,7 @@ fn update_ready_gltfs(
                             };
                             let h_scene_material = bound_mats.add(ExtendedMaterial {
                                 base: base.clone(),
-                                extension: SceneBound {
-                                    bounds: context.bounds,
-                                },
+                                extension: SceneBound::new(context.bounds, config.graphics.oob),
                             });
                             resource_lookup
                                 .materials

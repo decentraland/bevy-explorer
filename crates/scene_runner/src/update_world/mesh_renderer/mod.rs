@@ -2,7 +2,7 @@ use std::f32::consts::FRAC_PI_2;
 
 use bevy::{prelude::*, render::mesh::VertexAttributeValues, utils::HashMap};
 
-use common::sets::SceneSets;
+use common::{sets::SceneSets, structs::AppConfig};
 
 use dcl::interface::ComponentPosition;
 use dcl_component::{
@@ -137,6 +137,7 @@ pub fn update_mesh(
     mut default_material: Local<HashMap<Entity, Handle<SceneMaterial>>>,
     mut materials: ResMut<Assets<SceneMaterial>>,
     scenes: Query<&RendererSceneContext>,
+    config: Res<AppConfig>,
 ) {
     for (ent, scene_ent, prim, maybe_material) in new_primitives.iter() {
         let handle = match prim {
@@ -201,7 +202,7 @@ pub fn update_mesh(
                     .unwrap_or_default();
                 materials.add(SceneMaterial {
                     base: Default::default(),
-                    extension: SceneBound { bounds },
+                    extension: SceneBound::new(bounds, config.graphics.oob),
                 })
             });
 

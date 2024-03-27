@@ -1,5 +1,5 @@
 use bevy::{ecs::system::SystemParam, pbr::NotShadowCaster, prelude::*, render::primitives::Aabb};
-use common::structs::AvatarTextureHandle;
+use common::structs::{AppConfig, AvatarTextureHandle};
 use comms::profile::UserProfile;
 use ipfs::IpfsAssetServer;
 
@@ -252,6 +252,7 @@ fn update_materials(
     touch: Query<&Handle<SceneMaterial>, With<TouchMaterial>>,
     resolver: TextureResolver,
     scenes: Query<&RendererSceneContext>,
+    config: Res<AppConfig>,
 ) {
     for (ent, defn, container) in new_materials.iter_mut() {
         let textures: Result<Vec<_>, _> = [
@@ -305,7 +306,7 @@ fn update_materials(
                     normal_map_texture: normal_map_texture.map(|t| t.image),
                     ..defn.material.clone()
                 },
-                extension: SceneBound { bounds },
+                extension: SceneBound::new(bounds, config.graphics.oob),
             }));
         if defn.shadow_caster {
             commands.remove::<NotShadowCaster>();

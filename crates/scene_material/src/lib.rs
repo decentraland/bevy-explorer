@@ -1,7 +1,7 @@
 use bevy::{
     pbr::{ExtendedMaterial, MaterialExtension},
     prelude::*,
-    render::render_resource::{AsBindGroup, ShaderRef},
+    render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
 };
 
 pub type SceneMaterial = ExtendedMaterial<StandardMaterial, SceneBound>;
@@ -9,7 +9,21 @@ pub type SceneMaterial = ExtendedMaterial<StandardMaterial, SceneBound>;
 #[derive(Asset, TypePath, Clone, AsBindGroup)]
 pub struct SceneBound {
     #[uniform(100)]
+    pub data: SceneBoundData,
+}
+
+impl SceneBound {
+    pub fn new(bounds: Vec4, distance: f32) -> Self {
+        Self {
+            data: SceneBoundData { bounds, distance },
+        }
+    }
+}
+
+#[derive(ShaderType, Clone)]
+pub struct SceneBoundData {
     pub bounds: Vec4,
+    distance: f32,
 }
 
 impl MaterialExtension for SceneBound {
