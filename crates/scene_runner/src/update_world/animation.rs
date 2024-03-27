@@ -11,6 +11,8 @@ use dcl_component::{
     SceneComponentId,
 };
 
+use crate::SceneEntity;
+
 use super::{gltf_container::GltfProcessed, AddCrdtInterfaceExt};
 
 pub struct AnimatorPlugin;
@@ -44,14 +46,20 @@ impl From<PbAnimator> for Animator {
 #[allow(clippy::type_complexity)]
 fn update_animations(
     mut animators: Query<
-        (Option<&mut Animator>, &Handle<Gltf>, &mut GltfProcessed),
+        (
+            Entity,
+            &SceneEntity,
+            Option<&mut Animator>,
+            &Handle<Gltf>,
+            &mut GltfProcessed,
+        ),
         Or<(Changed<Animator>, Changed<GltfProcessed>)>,
     >,
-    mut players: Query<&mut AnimationPlayer, &Name>,
+    mut players: Query<&mut AnimationPlayer>,
     clips: Res<Assets<AnimationClip>>,
     gltfs: Res<Assets<Gltf>>,
 ) {
-    for (mut maybe_animator, h_gltf, mut gltf_processed) in animators.iter_mut() {
+    for (ent, scene_ent, mut maybe_animator, h_gltf, mut gltf_processed) in animators.iter_mut() {
         let maybe_h_clip = match maybe_animator {
             Some(ref animator) => {
                 // TODO bevy only supports a single concurrent animation (or a single timed transition which we can't use)
@@ -144,23 +152,24 @@ fn update_animations(
                     continue;
                 };
 
-                debug!("playing (something) with state {:?}", state);
+                debug!(
+                    "[{ent:?}/{scene_ent:?}] playing (something) with state {:?}",
+                    state
+                );
                 player.play(h_clip.clone_weak());
 
                 player.set_speed(state.speed.unwrap_or(1.0));
                 if state.r#loop.unwrap_or(true) {
                     player.repeat();
                 } else {
-                    // ok i'm really guessing here, not sure what criteria we should use to force a reset
-                    // force restart if speed is not specified??
-                    if state.speed.is_none() {
+                    if state.should_reset.unwrap_or(false) {
                         player.replay();
                     }
 
                     player.set_repeat(RepeatAnimation::Never);
                 }
 
-                // deprecate should_reset
+                // on my version of bevy animator this means "should go back to starting position when finished"
                 player.set_should_reset(false);
             }
 

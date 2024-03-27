@@ -76,7 +76,7 @@ fn update_mic_ui(
     transport: Query<&Transport>,
     mut button: Query<&mut UiImage, With<MicUiMarker>>,
     mut pressed: Local<bool>,
-    input: Res<Input<KeyCode>>,
+    input: Res<ButtonInput<KeyCode>>,
     mic_images: Res<MicImages>,
 ) {
     let mic_available = mic_state.available;

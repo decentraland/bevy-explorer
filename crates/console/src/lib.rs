@@ -1,7 +1,7 @@
 use bevy::{prelude::*, scene::scene_spawner_system};
 use bevy_console::{
     Command, ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, ConsoleSet,
-    PrintConsoleLine, ToggleConsoleKey,
+    PrintConsoleLine,
 };
 use clap::Parser;
 
@@ -43,10 +43,7 @@ pub struct ConsolePlugin {
 impl Plugin for ConsolePlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ConsoleConfiguration {
-            keys: vec![
-                ToggleConsoleKey::ScanCode(41), // Console key on a swedish keyboard
-                ToggleConsoleKey::KeyCode(KeyCode::Grave), // US console key
-            ],
+            keys: vec![KeyCode::Backquote],
             left_pos: 0.0,
             top_pos: 0.0,
             height: 100.0,
@@ -148,6 +145,6 @@ pub fn send_pending(
         sender.send(ConsoleCommandEntered {
             command_name,
             args: Default::default(),
-        })
+        });
     }
 }

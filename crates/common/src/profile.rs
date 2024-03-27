@@ -75,8 +75,7 @@ impl Default for SerializedProfile {
                     \"urn:decentraland:off-chain:base-avatars:f_mouth_00\"
                 ],
                 \"emotes\":[
-                    {\"slot\": 0, \"urn\": \"headexplode\" },
-                    {\"slot\": 1, \"urn\": \"urn:decentraland:matic:collections-v2:0x9087f96750c4e7607454c67c4f0bcf357ae62a46:2\" }
+                    {\"slot\": 0, \"urn\": \"headexplode\" }
                 ],
                 \"snapshots\": {
                     \"face256\":\"bafkreifxucgpg7w2rnnfevjzvlokojxnxqh7uvxhe2nwwyks4xr4unx4bu\",
@@ -93,6 +92,8 @@ impl Default for SerializedProfile {
                 }
             }
         ").unwrap();
+
+        //                     {\"slot\": 1, \"urn\": \"urn:decentraland:matic:collections-v2:0x9087f96750c4e7607454c67c4f0bcf357ae62a46:2\" }
 
         Self {
             user_id: Default::default(),

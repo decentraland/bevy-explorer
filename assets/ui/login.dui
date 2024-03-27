@@ -49,6 +49,22 @@
                     "
                     text="Please follow the instructions in your browser to connect your wallet to your Decentraland account"
                 />
+                <div style="flex-direction: row;">
+                    <med-text style="
+                        color: black;
+                        text-align: center;
+                        margin: 2.8vmin;
+                        "
+                        text="Connection code: "
+                    />
+                    <large-text style="
+                        color: black;
+                        text-align: center;
+                        margin: 2.8vmin;
+                        "
+                        text="@code"
+                    />
+                </div>
             </div>
             <spinner />
         </div>

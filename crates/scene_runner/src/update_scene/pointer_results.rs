@@ -135,7 +135,7 @@ fn update_pointer_target(
                 let maybe_nearest = collider_data.cast_ray_nearest(
                     context.last_update_frame,
                     ray.origin,
-                    ray.direction,
+                    ray.direction.into(),
                     f32::MAX,
                     ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32,
                 );
@@ -441,11 +441,10 @@ fn send_action_events(
         return;
     }
 
-    let scene_entity = target.0.as_ref().and_then(|info| {
-        pointer_requests
-            .get_component::<SceneEntity>(info.container)
-            .ok()
-    });
+    let scene_entity = target
+        .0
+        .as_ref()
+        .and_then(|info| pointer_requests.get(info.container).map(|(e, _)| e).ok());
     let scene_root = scene_entity.map(|e| e.root);
 
     for (root_ent, mut context, scene_transform) in scenes.iter_mut() {

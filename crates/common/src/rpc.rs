@@ -83,8 +83,6 @@ pub struct CompareSnapshotResult {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RPCSendableMessage {
-    pub jsonrpc: String,
-    pub id: u64,
     pub method: String,
     pub params: Vec<serde_json::Value>, // Using serde_json::Value for unknown[]
 }
@@ -113,7 +111,10 @@ pub enum RpcCall {
         to: IVec2,
         response: RpcResultSender<Result<(), String>>,
     },
-    MoveCamera(Quat),
+    MoveCamera {
+        scene: Entity,
+        to: Quat,
+    },
     SpawnPortable {
         location: PortableLocation,
         spawner: Option<String>,

@@ -106,7 +106,7 @@ fn update_camera_mode_area(
     // apply last-entered
     match current_areas.last() {
         Some(area_ent) => {
-            let area = areas.get_component::<CameraModeArea>(*area_ent).unwrap();
+            let area = areas.get(*area_ent).unwrap().2;
 
             match area.0.mode() {
                 CameraType::CtFirstPerson => {

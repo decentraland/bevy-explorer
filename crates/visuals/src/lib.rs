@@ -1,8 +1,10 @@
-use std::f32::consts::FRAC_PI_2;
+use std::f32::consts::{FRAC_PI_2, TAU};
 
 use bevy::{
+    core::FrameCount,
     pbr::{wireframe::WireframePlugin, DirectionalLightShadowMap},
     prelude::*,
+    render::render_asset::RenderAssetBytesPerFrame,
 };
 use bevy_atmosphere::{
     prelude::{AtmosphereCamera, AtmosphereModel, AtmospherePlugin, Nishita},
@@ -12,7 +14,9 @@ use bevy_atmosphere::{
 use bevy_console::ConsoleCommand;
 use common::{
     sets::SetupSets,
-    structs::{PrimaryCamera, PrimaryCameraRes, PrimaryUser, SceneLoadDistance},
+    structs::{
+        AppConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser, SceneLoadDistance,
+    },
 };
 use console::DoAddConsoleCommand;
 
@@ -29,7 +33,12 @@ impl Plugin for VisualsPlugin {
             .add_plugins(WireframePlugin)
             .add_systems(Update, daylight_cycle)
             .add_systems(Update, move_ground)
-            .add_systems(Startup, setup.in_set(SetupSets::Main));
+            .add_systems(Startup, setup.in_set(SetupSets::Main))
+            // workaround for font uploading
+            .add_systems(
+                Update,
+                set_max_upload.run_if(|f: Res<FrameCount>| f.0 == 100),
+            );
 
         app.add_console_command::<ShadowConsoleCommand, _>(shadow_console_command);
         app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
@@ -38,6 +47,10 @@ impl Plugin for VisualsPlugin {
 
 #[derive(Resource)]
 struct NoFog(bool);
+
+fn set_max_upload(mut commands: Commands) {
+    commands.insert_resource(RenderAssetBytesPerFrame::new(16777216));
+}
 
 fn setup(
     mut commands: Commands,
@@ -63,13 +76,7 @@ fn setup(
 
     commands.spawn((
         PbrBundle {
-            mesh: meshes.add(
-                shape::Plane {
-                    size: 50000.0,
-                    subdivisions: 10,
-                }
-                .into(),
-            ),
+            mesh: meshes.add(Plane3d::default().mesh().size(50000.0, 50000.0)),
             material: materials.add(StandardMaterial {
                 base_color: Color::rgb(0.15, 0.2, 0.05),
                 perceptual_roughness: 1.0,
@@ -85,24 +92,40 @@ fn setup(
 
 fn daylight_cycle(
     mut fog: Query<&mut FogSettings>,
+    setting: Res<AppConfig>,
     mut atmosphere: AtmosphereMut<Nishita>,
     mut sun: Query<(&mut Transform, &mut DirectionalLight)>,
     time: Res<Time>,
     camera: Query<&PrimaryCamera>,
     scene_distance: Res<SceneLoadDistance>,
 ) {
-    let t = 120.0 + time.elapsed_seconds_wrapped() / 200.0;
+    let t = ((TAU * 0.15 + time.elapsed_seconds_wrapped() / 200.0) % TAU) * 0.6 - TAU * 0.05;
     let rotation = Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0);
     atmosphere.sun_position = rotation * Vec3::Z;
 
     if let Ok((mut light_trans, mut directional)) = sun.get_single_mut() {
         light_trans.rotation = rotation;
-        directional.illuminance = t.sin().max(0.0).powf(2.0) * 30000.0;
+        directional.illuminance = t.sin().max(0.0).powf(2.0) * 10_000.0;
 
         if let Ok(mut fog) = fog.get_single_mut() {
-            let distance = scene_distance.0
+            let distance = scene_distance.load
+                + scene_distance.unload
                 + camera.get_single().map(|c| c.distance).unwrap_or_default() * 5.0;
-            fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
+            match setting.graphics.fog {
+                FogSetting::Off => {
+                    fog.falloff = FogFalloff::from_visibility_squared(distance * 200.0);
+                    fog.directional_light_color = Color::rgb(0.3, 0.2, 0.1);
+                }
+                FogSetting::Basic => {
+                    fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
+                    fog.directional_light_color = Color::rgb(0.3, 0.2, 0.1);
+                }
+                FogSetting::Atmospheric => {
+                    fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
+                    fog.directional_light_color = Color::rgb(1.0, 1.0, 0.7);
+                }
+            }
+
             let sun_up = atmosphere.sun_position.dot(Vec3::Y);
             let rgb = Vec3::new(0.4, 0.4, 0.2) * sun_up.clamp(0.0, 1.0)
                 + Vec3::new(0.0, 0.0, 0.0) * (8.0 * (0.125 - sun_up.clamp(0.0, 0.125)));
@@ -163,24 +186,17 @@ struct FogConsoleCommand {
 }
 
 fn fog_console_command(
-    mut commands: Commands,
     mut input: ConsoleCommand<FogConsoleCommand>,
-    camera: Res<PrimaryCameraRes>,
-    fogs: Query<(), With<FogSettings>>,
+    mut config: ResMut<AppConfig>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        let activate = command.on.unwrap_or(fogs.is_empty());
+        let activate = command.on.unwrap_or(true);
 
-        if activate {
-            commands.entity(camera.0).try_insert(FogSettings {
-                color: Color::rgb(0.3, 0.2, 0.1),
-                directional_light_color: Color::rgb(1.0, 1.0, 0.7),
-                directional_light_exponent: 10.0,
-                falloff: FogFalloff::ExponentialSquared { density: 0.01 },
-            });
+        config.graphics.fog = if activate {
+            FogSetting::Atmospheric
         } else {
-            commands.entity(camera.0).remove::<FogSettings>();
-        }
+            FogSetting::Off
+        };
 
         input.reply_ok(format!(
             "fog {}",

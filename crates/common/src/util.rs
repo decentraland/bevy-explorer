@@ -138,7 +138,7 @@ pub trait TryPushChildrenEx {
     fn try_push_children(&mut self, children: &[Entity]) -> &mut Self;
 }
 
-impl<'w, 's> TryPushChildrenEx for EntityCommands<'w, 's, '_> {
+impl TryPushChildrenEx for EntityCommands<'_> {
     fn try_push_children(&mut self, children: &[Entity]) -> &mut Self {
         let parent = self.id();
         self.commands().add(TryPushChildren {

@@ -35,6 +35,14 @@ pub struct AudioSpawned(
     Option<<StreamingSoundData<AudioDecoderError> as kira::sound::SoundData>::Handle>,
 );
 
+impl Drop for AudioSpawned {
+    fn drop(&mut self) {
+        if let Some(mut handle) = self.0.take() {
+            let _ = handle.stop(Tween::default());
+        }
+    }
+}
+
 // TODO integrate better with bevy_kira_audio to avoid logic on a main-thread system (NonSendMut forces this system to the main thread)
 pub fn spawn_audio_streams(
     mut commands: Commands,

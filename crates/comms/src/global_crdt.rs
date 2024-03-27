@@ -199,9 +199,6 @@ pub struct ChatEvent {
     pub message: String,
 }
 
-#[derive(Component)]
-pub struct TransportRef(Entity);
-
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_transport_updates(
     mut commands: Commands,
@@ -349,7 +346,7 @@ pub fn process_transport_updates(
                         pos.rotation_z,
                         pos.rotation_w,
                     ]),
-                })
+                });
             }
             PlayerMessage::PlayerData(Message::ProfileVersion(version)) => {
                 profile_events.send(ProfileEvent {

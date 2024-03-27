@@ -30,8 +30,8 @@ use wallet::Wallet;
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 use crate::{
-    renderer_context::RendererSceneContext, ContainerEntity, DeletedSceneEntities, SceneEntity,
-    SceneThreadHandle,
+    renderer_context::RendererSceneContext, update_world::ComponentTracker, ContainerEntity,
+    DeletedSceneEntities, SceneEntity, SceneThreadHandle,
 };
 
 #[derive(Default)]
@@ -401,6 +401,7 @@ pub(crate) fn load_scene_javascript(
                 ..Default::default()
             },
             renderer_context,
+            ComponentTracker::default(),
             DeletedSceneEntities::default(),
             SceneEntity {
                 root,
@@ -590,7 +591,7 @@ impl PointerResult {
     }
 }
 
-fn parcels_in_range(focus: &GlobalTransform, range: f32) -> Vec<IVec2> {
+fn parcels_in_range(focus: &GlobalTransform, range: f32) -> Vec<(IVec2, f32)> {
     let focus = focus.translation().xz() * Vec2::new(1.0, -1.0);
 
     let min_point = focus - Vec2::splat(range);
@@ -610,7 +611,7 @@ fn parcels_in_range(focus: &GlobalTransform, range: f32) -> Vec<IVec2> {
             let distance = nearest_point.distance(focus);
 
             if distance < range {
-                results.push(parcel);
+                results.push((parcel, distance));
             }
         }
     }
@@ -696,25 +697,27 @@ fn load_active_entities(
             return;
         };
 
-        let parcels: HashSet<_> = parcels_in_range(focus, range.0)
+        let required_parcels: HashSet<_> = parcels_in_range(focus, range.load)
             .into_iter()
-            .filter(|parcel| match pointers.0.get(parcel) {
+            .filter_map(|(parcel, _)| match pointers.0.get(&parcel) {
                 Some(PointerResult::Exists { realm, .. })
-                | Some(PointerResult::Nothing { realm, .. }) => realm != &current_realm.address,
-                _ => true,
+                | Some(PointerResult::Nothing { realm, .. }) => {
+                    (realm != &current_realm.address).then_some(parcel)
+                }
+                _ => Some(parcel),
             })
             .collect();
 
         if !has_scene_urns {
             // load required pointers
-            let pointers = parcels
+            let pointers = required_parcels
                 .iter()
                 .map(|parcel| format!("{},{}", parcel.x, parcel.y))
                 .collect();
 
-            if !parcels.is_empty() {
+            if !required_parcels.is_empty() {
                 *pointer_request = Some((
-                    parcels,
+                    required_parcels,
                     HashMap::default(),
                     ipfas
                         .ipfs()
@@ -767,10 +770,10 @@ fn load_active_entities(
             );
 
             // issue request if either parcels or urns are non-empty, so that we populate `PointerResult::Nothing`s
-            if !required_paths.is_empty() || !parcels.is_empty() {
+            if !required_paths.is_empty() || !required_parcels.is_empty() {
                 debug!("requesting {} urns", required_paths.len());
                 *pointer_request = Some((
-                    parcels,
+                    required_parcels,
                     lookup,
                     ipfas
                         .ipfs()
@@ -856,19 +859,19 @@ pub fn process_scene_lifecycle(
     let mut required_scene_ids: HashSet<(String, Option<String>)> = HashSet::default();
 
     // add nearby scenes to requirements
-    if required_scene_ids.is_empty() {
-        let Ok(focus) = focus.get_single() else {
-            return;
-        };
-        required_scene_ids.extend(parcels_in_range(focus, range.0).into_iter().flat_map(
-            |parcel| {
-                pointers
-                    .0
-                    .get(&parcel)
-                    .and_then(PointerResult::hash_and_urn)
-            },
-        ));
-    }
+    let Ok(focus) = focus.get_single() else {
+        return;
+    };
+
+    let pir = parcels_in_range(focus, range.load + range.unload);
+
+    required_scene_ids.extend(pir.iter().flat_map(|(parcel, dist)| {
+        if *dist < range.load {
+            pointers.0.get(parcel).and_then(PointerResult::hash_and_urn)
+        } else {
+            None
+        }
+    }));
 
     // add any portables to requirements
     required_scene_ids.extend(
@@ -878,8 +881,18 @@ pub fn process_scene_lifecycle(
             .map(|(hash, source)| (hash.clone(), Some(source.pid.clone()))),
     );
 
+    // record additional optional scenes
+    let mut keep_scene_ids = required_scene_ids.clone();
+    keep_scene_ids.extend(pir.iter().flat_map(|(parcel, dist)| {
+        if *dist >= range.load {
+            pointers.0.get(parcel).and_then(PointerResult::hash_and_urn)
+        } else {
+            None
+        }
+    }));
+
     // record which scene entities we should keep
-    let required_entities: HashMap<_, _> = required_scene_ids
+    let keep_entities: HashMap<_, _> = keep_scene_ids
         .iter()
         .flat_map(|(hash, maybe_urn)| live_scenes.0.get(hash).map(|ent| (ent, (hash, maybe_urn))))
         .collect();
@@ -889,7 +902,7 @@ pub fn process_scene_lifecycle(
 
     // despawn any no-longer required entities
     for (entity, scene_hash) in &scene_entities {
-        match required_entities.get(&entity) {
+        match keep_entities.get(&entity) {
             Some((hash, _)) => {
                 existing_ids.insert(<&String>::clone(hash));
             }
@@ -902,7 +915,7 @@ pub fn process_scene_lifecycle(
             }
         }
     }
-    drop(required_entities);
+    drop(keep_entities);
 
     for removed_hash in removed_hashes {
         live_scenes.0.remove(removed_hash);
@@ -928,7 +941,7 @@ pub fn process_scene_lifecycle(
                 Some(urn) => SceneIpfsLocation::Urn(urn.to_owned()),
                 None => SceneIpfsLocation::Hash(required_scene_hash.to_owned()),
             },
-        })
+        });
     }
 }
 

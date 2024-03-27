@@ -8,7 +8,7 @@ use std::{
         atomic::{self, AtomicU16},
         Arc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::anyhow;
@@ -517,7 +517,7 @@ fn change_realm(
                         None => print.send(PrintConsoleLine::new(
                             format!("Failed to set realm `{realm}`").into(),
                         )),
-                    }
+                    };
                 }
             }
         }
@@ -555,6 +555,7 @@ pub struct IpfsContext {
     entities: HashMap<String, IpfsEntity>,
     about: Option<ServerAbout>,
     modifiers: HashMap<String, IpfsModifier>,
+    failed_remotes: HashMap<String, Instant>,
 }
 
 pub struct IpfsIo {
@@ -865,10 +866,10 @@ impl AssetReader for IpfsIo {
     {
         Box::pin(async move {
             let wrap_err = |e| {
-                bevy::asset::io::AssetReaderError::Io(std::io::Error::new(
+                bevy::asset::io::AssetReaderError::Io(Arc::new(std::io::Error::new(
                     ErrorKind::Other,
                     format!("w: {e}"),
-                ))
+                )))
             };
 
             debug!("request: {:?}", path);
@@ -895,18 +896,13 @@ impl AssetReader for IpfsIo {
 
             debug!("remote");
 
-            // get semaphore to limit concurrent requests
-            let _permit = self.request_slots.acquire().await.map_err(|e| {
-                AssetReaderError::Io(std::io::Error::new(ErrorKind::Interrupted, e))
-            })?;
             let token = self.reqno.fetch_add(1, atomic::Ordering::SeqCst);
 
             // wait till connected
             self.connected().await.map_err(wrap_err)?;
 
-            let remote = ipfs_path
-                .to_url(&*self.context.read().await)
-                .map_err(wrap_err);
+            let context = self.context.read().await;
+            let remote = ipfs_path.to_url(&context).map_err(wrap_err);
 
             if remote.is_err() {
                 // check for default file
@@ -919,7 +915,31 @@ impl AssetReader for IpfsIo {
             }
             let remote = remote?;
 
-            debug!("[{token:?}]: remote url: `{remote}`");
+            let fail_time = context.failed_remotes.get(&remote).cloned();
+            drop(context);
+
+            if let Some(fail_time) = fail_time {
+                // wait 10 secs before retrying failed assets
+                if Instant::now()
+                    .checked_duration_since(fail_time)
+                    .unwrap_or_default()
+                    > Duration::from_secs(10)
+                {
+                    self.context.write().await.failed_remotes.remove(&remote);
+                } else {
+                    return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
+                        ErrorKind::Other,
+                        format!("(repeat request for failed `{remote}`)"),
+                    ))));
+                }
+            }
+
+            debug!("[{token:?}]: remote url: `{remote}` awaiting semaphore");
+            // get semaphore to limit concurrent requests
+            let _permit = self.request_slots.acquire().await.map_err(|e| {
+                AssetReaderError::Io(Arc::new(std::io::Error::new(ErrorKind::Interrupted, e)))
+            })?;
+            debug!("[{token:?}]: remote url: `{remote}` proceeding");
 
             let mut attempt = 0;
             let data = loop {
@@ -930,10 +950,10 @@ impl AssetReader for IpfsIo {
                     .timeout(Duration::from_secs(30 * attempt))
                     .body(())
                     .map_err(|e| {
-                        AssetReaderError::Io(std::io::Error::new(
+                        AssetReaderError::Io(Arc::new(std::io::Error::new(
                             ErrorKind::Other,
                             format!("[{token:?}]: {e}"),
-                        ))
+                        )))
                     })?;
 
                 let response = request.send_async().await;
@@ -943,20 +963,30 @@ impl AssetReader for IpfsIo {
                 let mut response = match response {
                     Err(e) if e.is_timeout() && attempt <= 3 => continue,
                     Err(e) => {
-                        return Err(AssetReaderError::Io(std::io::Error::new(
+                        self.context
+                            .write()
+                            .await
+                            .failed_remotes
+                            .insert(remote.clone(), Instant::now());
+                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
                             ErrorKind::Other,
-                            format!("[{token:?}]: {e}"),
-                        )))
+                            format!("[{token:?}]: server responded {e} rqeuesting `{remote}`"),
+                        ))));
                     }
                     Ok(response) if !matches!(response.status(), StatusCode::OK) => {
-                        return Err(AssetReaderError::Io(std::io::Error::new(
+                        self.context
+                            .write()
+                            .await
+                            .failed_remotes
+                            .insert(remote.clone(), Instant::now());
+                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
                             ErrorKind::Other,
                             format!(
                                 "[{token:?}]: server responded with status {} requesting `{}`",
                                 response.status(),
                                 remote,
                             ),
-                        )))
+                        ))));
                     }
                     Ok(response) => response,
                 };
@@ -969,10 +999,15 @@ impl AssetReader for IpfsIo {
                         if matches!(e.kind(), std::io::ErrorKind::TimedOut) && attempt <= 3 {
                             continue;
                         }
-                        return Err(AssetReaderError::Io(std::io::Error::new(
+                        self.context
+                            .write()
+                            .await
+                            .failed_remotes
+                            .insert(remote.clone(), Instant::now());
+                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
                             ErrorKind::Other,
-                            format!("[{token:?}] {e}"),
-                        )));
+                            format!("[{token:?}] failed to convert to bytes: `{remote}`: {e}"),
+                        ))));
                     }
                 }
             };

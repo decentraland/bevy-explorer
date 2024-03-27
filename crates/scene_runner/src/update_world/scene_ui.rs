@@ -8,8 +8,10 @@ use bevy::{
 use input_manager::MouseInteractionComponent;
 
 use crate::{
-    renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
-    update_world::text_shape::make_text_section, ContainingScene, SceneEntity, SceneSets,
+    renderer_context::RendererSceneContext,
+    update_scene::pointer_results::UiPointerTarget,
+    update_world::text_shape::{make_text_section, DespawnWith},
+    ContainingScene, SceneEntity, SceneSets,
 };
 use common::structs::PrimaryUser;
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -312,7 +314,7 @@ pub enum VAlign {
 pub struct UiText {
     pub text: String,
     pub color: Color,
-    pub h_align: TextAlignment,
+    pub h_align: JustifyText,
     pub v_align: VAlign,
     pub font: proto_components::sdk::components::common::Font,
     pub font_size: f32,
@@ -331,13 +333,13 @@ impl From<PbUiText> for UiText {
             h_align: match text_align {
                 components::common::TextAlignMode::TamTopLeft
                 | components::common::TextAlignMode::TamMiddleLeft
-                | components::common::TextAlignMode::TamBottomLeft => TextAlignment::Left,
+                | components::common::TextAlignMode::TamBottomLeft => JustifyText::Left,
                 components::common::TextAlignMode::TamTopCenter
                 | components::common::TextAlignMode::TamMiddleCenter
-                | components::common::TextAlignMode::TamBottomCenter => TextAlignment::Center,
+                | components::common::TextAlignMode::TamBottomCenter => JustifyText::Center,
                 components::common::TextAlignMode::TamTopRight
                 | components::common::TextAlignMode::TamMiddleRight
-                | components::common::TextAlignMode::TamBottomRight => TextAlignment::Right,
+                | components::common::TextAlignMode::TamBottomRight => JustifyText::Right,
             },
             v_align: match text_align {
                 components::common::TextAlignMode::TamTopLeft
@@ -559,6 +561,7 @@ fn layout_scene_ui(
                             ..Default::default()
                         },
                         SceneUiRoot(ent),
+                        DespawnWith(ent),
                     ))
                     .id();
                 processed_nodes.insert(SceneEntityId::ROOT, root);
@@ -768,7 +771,7 @@ fn layout_scene_ui(
                                                     },
                                                     ..Default::default()
                                                 }).with_children(|c| {
-                                                    if ui_text.h_align != TextAlignment::Left {
+                                                    if ui_text.h_align != JustifyText::Left {
                                                         c.spacer();
                                                     }
 
@@ -787,7 +790,7 @@ fn layout_scene_ui(
                                                         ..Default::default()
                                                     });
 
-                                                    if ui_text.h_align != TextAlignment::Right {
+                                                    if ui_text.h_align != JustifyText::Right {
                                                         c.spacer();
                                                     }
                                                 });

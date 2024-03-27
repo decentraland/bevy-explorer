@@ -12,6 +12,9 @@ scene_runner = { workspace = true }
 dcl_component = { workspace = true }
 avatar = { workspace = true }
 tween = { workspace = true }
+console = { workspace = true }
 
 bevy = { workspace = true }
+bevy_console = { workspace = true }
 rapier3d-f64 = { workspace = true }
+clap = { workspace = true }

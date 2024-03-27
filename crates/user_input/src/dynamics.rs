@@ -36,6 +36,7 @@
 // and back to scene loop
 
 use bevy::{core::FrameCount, math::Vec3Swizzles, prelude::*};
+use bevy_console::ConsoleCommand;
 use rapier3d_f64::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 
 use common::{
@@ -53,6 +54,9 @@ use scene_runner::{
     ContainingScene, OutOfWorld,
 };
 
+#[derive(Resource)]
+pub struct UserClipping(pub bool);
+
 pub fn update_user_position(
     mut player: Query<
         (
@@ -69,6 +73,7 @@ pub fn update_user_position(
     time: Res<Time>,
     _frame: Res<FrameCount>,
     manual_transform: Query<(&Transform, Option<&Parent>), Without<PrimaryUser>>,
+    clip: Res<UserClipping>,
 ) {
     let Ok((user_ent, user, mut transform, mut dynamic_state, mut ground_collider)) =
         player.get_single_mut()
@@ -154,8 +159,9 @@ pub fn update_user_position(
                 let rotation_change = new_global_transform.to_scale_rotation_translation().1
                     * old_transform.to_scale_rotation_translation().1.inverse();
                 // clamp to x/z plane to avoid twisting around
-                let new_facing =
-                    ((rotation_change * transform.forward()) * (Vec3::X + Vec3::Z)).normalize();
+                let new_facing = ((rotation_change * Vec3::from(transform.forward()))
+                    * (Vec3::X + Vec3::Z))
+                    .normalize();
                 transform.look_to(new_facing, Vec3::Y);
                 // and rotate velocity
                 dynamic_state.velocity = rotation_change * dynamic_state.velocity;
@@ -171,14 +177,16 @@ pub fn update_user_position(
                 collider_data.update_collider_transform(&collider, &new_global_transform, None);
 
                 // adjust base motion wrt ground collider
-                target_motion = collider_data.move_character(
-                    ctx.last_update_frame,
-                    transform.translation,
-                    target_motion,
-                    &controller,
-                    Some(&collider),
-                    true,
-                );
+                if clip.0 {
+                    target_motion = collider_data.move_character(
+                        ctx.last_update_frame,
+                        transform.translation,
+                        target_motion,
+                        &controller,
+                        Some(&collider),
+                        true,
+                    );
+                }
 
                 // add platform motion
                 target_motion += platform_motion;
@@ -202,14 +210,16 @@ pub fn update_user_position(
                 });
 
         // get allowed motion for total motion wrt all but ground collider
-        target_motion = collider_data.move_character(
-            context.last_update_frame,
-            transform.translation,
-            target_motion,
-            &controller,
-            platform_handle,
-            false,
-        );
+        if clip.0 {
+            target_motion = collider_data.move_character(
+                context.last_update_frame,
+                transform.translation,
+                target_motion,
+                &controller,
+                platform_handle,
+                false,
+            );
+        }
     }
 
     debug!(
@@ -268,5 +278,20 @@ pub fn update_user_position(
     if dynamic_state.velocity.xz().length_squared() < 1e-3 {
         dynamic_state.velocity.x = 0.0;
         dynamic_state.velocity.z = 0.0;
+    }
+}
+
+// turn clipping on/off
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/idnoclip")]
+pub(crate) struct NoClipCommand {
+    clip: Option<bool>,
+}
+
+pub(crate) fn no_clip(mut input: ConsoleCommand<NoClipCommand>, mut clip: ResMut<UserClipping>) {
+    if let Some(Ok(command)) = input.take() {
+        let new_state = command.clip.unwrap_or(!clip.0);
+        clip.0 = new_state;
+        input.reply_ok(format!("clipping set to {}", clip.0));
     }
 }

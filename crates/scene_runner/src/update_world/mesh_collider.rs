@@ -285,7 +285,7 @@ impl SceneColliderData {
                             &NonlinearRigidMotion {
                                 start: Isometry::from_parts(
                                     (*init_translation).as_dvec3().into(),
-                                    (*init_rotation).as_f64().into(),
+                                    (*init_rotation).as_dquat().into(),
                                 ),
                                 local_center: Default::default(),
                                 linvel: (req_translation - *init_translation).as_dvec3().into(),
@@ -317,7 +317,7 @@ impl SceneColliderData {
 
                 collider.set_position(Isometry::from_parts(
                     req_translation.as_dvec3().into(),
-                    req_rotation.as_f64().into(),
+                    req_rotation.as_dquat().into(),
                 ));
                 return (Some(initial_transform), cast_result);
             }
@@ -461,10 +461,15 @@ impl SceneColliderData {
                         translation: (origin + Vec3::Y * 1.0).as_dvec3().into(),
                     },
                     direction.as_dvec3().into(),
-                    QueryFilter::default().predicate(&|h, _| {
-                        ((specific_collider == Some(h)) == include_specific_collider)
-                            && !self.disabled.contains(&h)
-                    }),
+                    QueryFilter::default()
+                        .groups(InteractionGroups::new(
+                            Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                            Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                        ))
+                        .predicate(&|h, _| {
+                            ((specific_collider == Some(h)) == include_specific_collider)
+                                && !self.disabled.contains(&h)
+                        }),
                     |_| {},
                 )
                 .translation,
@@ -1043,13 +1048,11 @@ fn render_debug_colliders(
     if let Ok(player) = player.get_single() {
         if !debug_entities.contains_key(&player) {
             let h_mesh = meshes.add(
-                bevy::prelude::shape::Capsule {
-                    radius: PLAYER_COLLIDER_RADIUS,
-                    rings: 1,
-                    depth: PLAYER_COLLIDER_HEIGHT - PLAYER_COLLIDER_RADIUS * 2.0,
-                    ..Default::default()
-                }
-                .into(),
+                Capsule3d::new(
+                    PLAYER_COLLIDER_RADIUS,
+                    PLAYER_COLLIDER_HEIGHT - PLAYER_COLLIDER_RADIUS * 2.0,
+                )
+                .mesh(),
             );
             let debug_ent = commands
                 .spawn((
@@ -1074,24 +1077,19 @@ fn render_debug_colliders(
     for (collider_ent, collider) in with_collider.iter() {
         if !debug_entities.contains_key(&collider_ent) && collider.collision_mask & debug.0 != 0 {
             let h_mesh = match &collider.shape {
-                MeshColliderShape::Box => meshes.add(bevy::prelude::shape::Cube::default().into()),
+                MeshColliderShape::Box => {
+                    meshes.add(bevy::math::primitives::Cuboid::default().mesh())
+                }
                 MeshColliderShape::Cylinder {
                     radius_top,
                     radius_bottom,
-                } => meshes.add(
-                    TruncatedCone {
-                        base_radius: *radius_bottom,
-                        tip_radius: *radius_top,
-                        ..Default::default()
-                    }
-                    .into(),
-                ),
-                MeshColliderShape::Plane => {
-                    meshes.add(bevy::prelude::shape::Quad::default().into())
-                }
-                MeshColliderShape::Sphere => {
-                    meshes.add(bevy::prelude::shape::UVSphere::default().into())
-                }
+                } => meshes.add(Mesh::from(TruncatedCone {
+                    base_radius: *radius_bottom,
+                    tip_radius: *radius_top,
+                    ..Default::default()
+                })),
+                MeshColliderShape::Plane => meshes.add(Rectangle::default().mesh()),
+                MeshColliderShape::Sphere => meshes.add(Sphere::default().mesh().uv(36, 18)),
                 MeshColliderShape::Shape(_, h_mesh) => h_mesh.clone(),
             };
 

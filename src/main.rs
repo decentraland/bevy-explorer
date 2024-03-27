@@ -1,6 +1,10 @@
-// todo
-// - separate js crate
-// - budget -> deadline is just last end + frame time
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+use build_time::build_time_utc;
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 use avatar::AvatarDynamicState;
 use bevy::{
@@ -10,7 +14,7 @@ use bevy::{
         tonemapping::{DebandDither, Tonemapping},
     },
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    pbr::CascadeShadowConfigBuilder,
+    pbr::{CascadeShadowConfigBuilder, ShadowFilteringMethod},
     prelude::*,
     render::view::ColorGrading,
     text::TextSettings,
@@ -21,7 +25,7 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AttachPoints, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes,
-        PrimaryPlayerRes, PrimaryUser, SceneLoadDistance,
+        PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, Version,
     },
 };
 use emotes::EmotesPlugin;
@@ -84,14 +88,11 @@ fn main() {
                 .value_from_str("--log_fps")
                 .ok()
                 .unwrap_or(base_config.graphics.log_fps),
-            msaa: args
-                .value_from_str::<_, usize>("--msaa")
-                .ok()
-                .unwrap_or(base_config.graphics.msaa),
             fps_target: args
                 .value_from_str::<_, usize>("--fps")
                 .ok()
                 .unwrap_or(base_config.graphics.fps_target),
+            ..base_config.graphics
         },
         scene_threads: args
             .value_from_str("--threads")
@@ -101,6 +102,10 @@ fn main() {
             .value_from_str("--distance")
             .ok()
             .unwrap_or(base_config.scene_load_distance),
+        scene_unload_extra_distance: args
+            .value_from_str("--unload")
+            .ok()
+            .unwrap_or(base_config.scene_unload_extra_distance),
         sysinfo_visible: false,
         scene_log_to_console: args.contains("--scene_log_to_console"),
     };
@@ -142,21 +147,25 @@ fn main() {
         false => bevy::window::PresentMode::AutoNoVsync,
     };
 
-    let msaa = match final_config.graphics.msaa {
-        1 => Msaa::Off,
-        2 => Msaa::Sample2,
-        4 => Msaa::Sample4,
-        8 => Msaa::Sample8,
-        _ => {
-            warnings.push(
-                "Invalid msaa sample count, must be one of (1, 2, 4, 8). Defaulting to Off"
-                    .to_owned(),
-            );
-            Msaa::Off
-        }
-    };
+    // let msaa = match final_config.graphics.msaa {
+    //     1 => Msaa::Off,
+    //     2 => Msaa::Sample2,
+    //     4 => Msaa::Sample4,
+    //     8 => Msaa::Sample8,
+    //     _ => {
+    //         warnings.push(
+    //             "Invalid msaa sample count, must be one of (1, 2, 4, 8). Defaulting to Off"
+    //                 .to_owned(),
+    //         );
+    //         Msaa::Off
+    //     }
+    // };
 
-    app.insert_resource(msaa)
+    let bt = build_time_utc!("%Y-%m-%d %H:%M");
+    let version = format!("{VERSION} ({bt})");
+
+    app //.insert_resource(msaa)
+        .insert_resource(Version(version))
         .insert_resource(TextSettings {
             soft_max_font_atlases: 4.try_into().unwrap(),
             allow_dynamic_font_size: true,
@@ -198,7 +207,10 @@ fn main() {
             .add_plugins(LogDiagnosticsPlugin::default());
     }
 
-    app.insert_resource(SceneLoadDistance(final_config.scene_load_distance));
+    app.insert_resource(SceneLoadDistance {
+        load: final_config.scene_load_distance,
+        unload: final_config.scene_unload_extra_distance,
+    });
 
     app.insert_resource(final_config);
     if no_gltf {
@@ -237,7 +249,7 @@ fn main() {
         .add_systems(Startup, setup.in_set(SetupSets::Init))
         .insert_resource(AmbientLight {
             color: Color::rgb(0.85, 0.85, 1.0),
-            brightness: 0.75,
+            brightness: 575.0,
         });
 
     app.add_console_command::<ChangeLocationCommand, _>(change_location);
@@ -307,6 +319,7 @@ fn setup(
                 intensity: 0.15,
                 ..BloomSettings::OLD_SCHOOL
             },
+            ShadowFilteringMethod::Castano13,
             PrimaryCamera::default(),
         ))
         .id();
@@ -362,11 +375,12 @@ fn change_location(
     }
 }
 
-/// set scene load distance (defaults to 100.0m)
+/// set scene load distance (defaults to 75.0m) and additional unload distance (defaults to 25.0m)
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/scene_distance")]
 struct SceneDistanceCommand {
     distance: Option<f32>,
+    unload: Option<f32>,
 }
 
 fn scene_distance(
@@ -374,9 +388,15 @@ fn scene_distance(
     mut scene_load_distance: ResMut<SceneLoadDistance>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        let distance = command.distance.unwrap_or(100.0);
-        scene_load_distance.0 = distance;
-        input.reply_ok("set scene load distance to {distance}");
+        let distance = command.distance.unwrap_or(75.0);
+        scene_load_distance.load = distance;
+        if let Some(unload) = command.unload {
+            scene_load_distance.unload = unload;
+        }
+        input.reply_ok(format!(
+            "set scene load distance to +{distance} -{}",
+            scene_load_distance.load + scene_load_distance.unload
+        ));
     }
 }
 

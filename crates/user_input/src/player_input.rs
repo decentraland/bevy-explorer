@@ -54,10 +54,12 @@ pub(crate) fn update_user_velocity(
         axis_input = axis_input.normalize() * max_speed * time.delta_seconds();
 
         let ground = Vec3::X + Vec3::Z;
-        let forward = (camera_transform.forward() * ground)
+        let forward = (Vec3::from(camera_transform.forward()) * ground)
             .xz()
             .normalize_or_zero();
-        let right = (camera_transform.right() * ground).xz().normalize_or_zero();
+        let right = (Vec3::from(camera_transform.right()) * ground)
+            .xz()
+            .normalize_or_zero();
 
         axis_input = right * axis_input.x + forward * axis_input.y;
 

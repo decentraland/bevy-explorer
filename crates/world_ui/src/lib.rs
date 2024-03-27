@@ -3,6 +3,7 @@ use bevy::{
     prelude::*,
     render::{
         camera::RenderTarget,
+        render_asset::RenderAssetUsages,
         render_resource::{
             AsBindGroup, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
             TextureUsages,
@@ -10,7 +11,7 @@ use bevy::{
     },
     utils::HashMap,
 };
-use common::{sets::SceneSets, util::TryPushChildrenEx};
+use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
 use scene_material::{SceneBound, SceneMaterial};
 
 #[derive(SystemSet, Hash, Eq, PartialEq, Clone, Copy, Debug)]
@@ -30,7 +31,6 @@ impl Plugin for WorldUiPlugin {
 struct WorldUiEntitySet {
     quad: Entity,
     image: Handle<Image>,
-    ui: Option<Entity>,
 }
 
 #[derive(Resource, Default)]
@@ -50,7 +50,6 @@ pub struct WorldUi {
     pub add_y_pix: f32,
     pub bounds: Vec4,
     pub ui_root: Entity,
-    pub dispose_ui: bool,
 }
 
 #[derive(Component)]
@@ -72,14 +71,12 @@ fn update_world_ui(
     mut images: ResMut<Assets<Image>>,
     mut uis: Query<&mut Visibility>,
     mut current_rendered_ui: Local<Option<(Entity, usize)>>,
+    config: Res<AppConfig>,
 ) {
     // remove old quads
     for e in removed.read() {
         if let Some(entities) = wui.lookup.remove(&e) {
             if let Some(commands) = commands.get_entity(entities.quad) {
-                commands.despawn_recursive();
-            }
-            if let Some(commands) = entities.ui.and_then(|ui| commands.get_entity(ui)) {
                 commands.despawn_recursive();
             }
         }
@@ -92,12 +89,8 @@ fn update_world_ui(
                 camera: Camera {
                     order: -1,
                     is_active: false,
+                    clear_color: bevy::render::camera::ClearColorConfig::Custom(Color::NONE),
                     ..Default::default()
-                },
-                camera_2d: Camera2d {
-                    clear_color: bevy::core_pipeline::clear_color::ClearColorConfig::Custom(
-                        Color::NONE,
-                    ),
                 },
                 ..Default::default()
             },
@@ -196,11 +189,6 @@ fn update_world_ui(
                         }
                     }
 
-                    // dispose of previous ui if required
-                    if let Some(commands) = prev_items.ui.and_then(|e| commands.get_entity(e)) {
-                        commands.despawn_recursive();
-                    }
-
                     (prev_items.quad, prev_items.image.clone())
                 } else {
                     // create render target image (it'll be resized)
@@ -209,6 +197,7 @@ fn update_world_ui(
                         TextureDimension::D2,
                         &[0, 0, 0, 0],
                         TextureFormat::Bgra8UnormSrgb,
+                        RenderAssetUsages::all(),
                     );
                     image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
                     let image = images.add(image);
@@ -216,7 +205,8 @@ fn update_world_ui(
                     let quad = commands
                         .spawn((
                             MaterialMeshBundle {
-                                mesh: meshes.add(shape::Quad::default().into()),
+                                mesh: meshes
+                                    .add(bevy::math::primitives::Rectangle::default().mesh()),
                                 material: materials.add(TextShapeMaterial {
                                     base: SceneMaterial {
                                         base: StandardMaterial {
@@ -227,7 +217,7 @@ fn update_world_ui(
                                             alpha_mode: AlphaMode::Mask(0.5),
                                             ..Default::default()
                                         },
-                                        extension: SceneBound { bounds: ui.bounds },
+                                        extension: SceneBound::new(ui.bounds, config.graphics.oob),
                                     },
                                     extension: TextQuad {
                                         data: material_data,
@@ -252,14 +242,7 @@ fn update_world_ui(
                     *current_rendered_ui = Some((ui.ui_root, 1));
                 }
 
-                wui.lookup.insert(
-                    ent,
-                    WorldUiEntitySet {
-                        quad,
-                        image,
-                        ui: ui.dispose_ui.then_some(ui.ui_root),
-                    },
-                );
+                wui.lookup.insert(ent, WorldUiEntitySet { quad, image });
 
                 commands.entity(ent).try_insert(ProcessedWorldUi);
             }

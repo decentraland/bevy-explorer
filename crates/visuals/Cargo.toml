@@ -10,7 +10,7 @@ common = { workspace = true }
 console = { workspace = true }
 bevy = { workspace = true }
 
-bevy_atmosphere = "0.8"
+bevy_atmosphere = "0.9"
 bevy_console = { workspace = true }
 
 clap = { workspace = true }

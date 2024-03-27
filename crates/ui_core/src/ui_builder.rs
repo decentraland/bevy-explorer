@@ -1,11 +1,11 @@
 use bevy::{ecs::system::EntityCommands, prelude::*};
 
-pub trait SpawnSpacer<'w, 's> {
-    fn spacer(&mut self) -> EntityCommands<'w, 's, '_>;
+pub trait SpawnSpacer {
+    fn spacer(&mut self) -> EntityCommands<'_>;
 }
 
-impl<'w, 's, 'a> SpawnSpacer<'w, 's> for ChildBuilder<'w, 's, 'a> {
-    fn spacer(&mut self) -> EntityCommands<'w, 's, '_> {
+impl<'a> SpawnSpacer for ChildBuilder<'a> {
+    fn spacer(&mut self) -> EntityCommands<'_> {
         self.spawn(NodeBundle {
             style: Style {
                 flex_grow: 1.0,

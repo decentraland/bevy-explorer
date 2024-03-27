@@ -775,7 +775,7 @@ fn update_wearables_list(
                     (Color::ORANGE, Color::rgb(0.5, 0.325, 0.0))
                 } else {
                     if wearable.category() == Some(WearableCategory::BODY_SHAPE) {
-                        println!("worn does not contain {} - {:?}", wearable.urn(), worn);
+                        debug!("worn does not contain {} - {:?}", wearable.urn(), worn);
                     }
                     (
                         Color::rgba(0.0, 0.0, 0.0, 0.0),

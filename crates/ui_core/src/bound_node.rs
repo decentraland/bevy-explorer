@@ -100,7 +100,7 @@ impl Default for GpuBoundsData {
 }
 
 #[derive(AsBindGroup, Asset, TypePath, Debug, Clone)]
-struct BoundedImageMaterial {
+pub struct BoundedImageMaterial {
     #[texture(0)]
     #[sampler(1)]
     image: Option<Handle<Image>>,

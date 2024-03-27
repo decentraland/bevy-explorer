@@ -74,7 +74,7 @@ impl Plugin for UiCorePlugin {
         app.add_plugins(TextEntryPlugin);
         app.add_plugins(SpinnerPlugin);
         app.add_plugins(ColorPickerPlugin);
-        app.add_state::<State>();
+        app.init_state::<State>();
         app.init_resource::<StateTracker<State>>();
         app.add_systems(Startup, setup.in_set(SetupSets::Init));
         app.add_systems(
@@ -239,7 +239,7 @@ pub trait ModifyComponentExt {
     ) -> &mut Self;
 }
 
-impl<'w, 's, 'a> ModifyComponentExt for EntityCommands<'w, 's, 'a> {
+impl<'a> ModifyComponentExt for EntityCommands<'a> {
     fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
         &mut self,
         func: F,

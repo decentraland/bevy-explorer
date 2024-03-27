@@ -1,4 +1,4 @@
-use bevy::{prelude::*, ui::widget::UiImageSize};
+use bevy::{prelude::*, sprite::TextureAtlasLayout, ui::widget::UiImageSize};
 use bevy_dui::*;
 
 #[derive(Component)]
@@ -16,18 +16,20 @@ impl Plugin for SpinnerPlugin {
 fn setup(
     mut dui: ResMut<DuiRegistry>,
     asset_server: Res<AssetServer>,
-    mut texture_atlases: ResMut<Assets<TextureAtlas>>,
+    mut texture_atlases: ResMut<Assets<TextureAtlasLayout>>,
 ) {
     dui.register_template("spinner", DuiSpinnerTemplate);
 
     let texture = asset_server.load::<Image>("images/spinner_atlas.png");
-    let texture_atlas = TextureAtlas::from_grid(texture, Vec2::new(34.0, 34.0), 8, 1, None, None);
-    let texture_atlas_handle = texture_atlases.add(texture_atlas);
+    let texture_atlas_layout =
+        TextureAtlasLayout::from_grid(Vec2::new(34.0, 34.0), 8, 1, None, None);
+    let texture_atlas_layout_handle = texture_atlases.add(texture_atlas_layout);
 
-    dui.set_default_prop("spinner-atlas", texture_atlas_handle);
+    dui.set_default_prop("spinner-image", texture);
+    dui.set_default_prop("spinner-layout", texture_atlas_layout_handle);
 }
 
-fn spin_spinners(mut q: Query<&mut UiTextureAtlasImage, With<Spinner>>, time: Res<Time>) {
+fn spin_spinners(mut q: Query<&mut TextureAtlas, With<Spinner>>, time: Res<Time>) {
     for mut t in q.iter_mut() {
         t.index = (time.elapsed_seconds() * 8.0) as usize % 8;
     }
@@ -42,13 +44,20 @@ impl DuiTemplate for DuiSpinnerTemplate {
         ctx: &mut DuiContext,
     ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
         ctx.render_template(commands, "spinner-base", DuiProps::new())?;
+
+        let layout = props
+            .borrow::<Handle<TextureAtlasLayout>>("spinner-layout", ctx)?
+            .unwrap()
+            .clone();
+        let image = props
+            .borrow::<Handle<Image>>("spinner-image", ctx)?
+            .unwrap()
+            .clone();
+
         commands.insert((
-            props
-                .borrow::<Handle<TextureAtlas>>("spinner-atlas", ctx)?
-                .unwrap()
-                .clone(),
+            UiImage::new(image),
+            TextureAtlas { layout, index: 0 },
             BackgroundColor(Color::WHITE),
-            UiTextureAtlasImage::default(),
             UiImageSize::default(),
             Spinner,
         ));

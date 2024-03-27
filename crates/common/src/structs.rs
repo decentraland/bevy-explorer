@@ -4,6 +4,9 @@ use bevy::{prelude::*, utils::HashMap};
 use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
 
+#[derive(Resource)]
+pub struct Version(pub String);
+
 // main user entity
 #[derive(Component)]
 pub struct PrimaryUser {
@@ -93,15 +96,15 @@ impl Default for PrimaryCamera {
     fn default() -> Self {
         Self {
             mouse_key_enable_mouse: MouseButton::Right,
-            keyboard_key_enable_mouse: KeyCode::M,
+            keyboard_key_enable_mouse: KeyCode::KeyM,
             sensitivity: 5.0,
             initialized: Default::default(),
             yaw: Default::default(),
             pitch: Default::default(),
             roll: Default::default(),
             distance: 1.0,
-            key_roll_left: KeyCode::T,
-            key_roll_right: KeyCode::G,
+            key_roll_left: KeyCode::KeyT,
+            key_roll_right: KeyCode::KeyG,
             scene_override: None,
         }
     }
@@ -121,7 +124,7 @@ pub struct UiRoot;
 pub struct ToolTips(pub HashMap<&'static str, Vec<(String, bool)>>);
 
 // web3 authorization chain link
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ChainLink {
     #[serde(rename = "type")]
     pub ty: String,
@@ -130,7 +133,7 @@ pub struct ChainLink {
 }
 
 // ephemeral identity info
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct PreviousLogin {
     pub root_address: Address,
     pub ephemeral_key: Vec<u8>,
@@ -138,7 +141,7 @@ pub struct PreviousLogin {
 }
 
 // app configuration
-#[derive(Serialize, Deserialize, Resource)]
+#[derive(Serialize, Deserialize, Resource, Clone)]
 pub struct AppConfig {
     pub server: String,
     pub location: IVec2,
@@ -146,6 +149,7 @@ pub struct AppConfig {
     pub graphics: GraphicsSettings,
     pub scene_threads: usize,
     pub scene_load_distance: f32,
+    pub scene_unload_extra_distance: f32,
     pub sysinfo_visible: bool,
     pub scene_log_to_console: bool,
 }
@@ -159,19 +163,28 @@ impl Default for AppConfig {
             previous_login: None,
             graphics: Default::default(),
             scene_threads: 4,
-            scene_load_distance: 100.0,
+            scene_load_distance: 75.0,
+            scene_unload_extra_distance: 25.0,
             sysinfo_visible: true,
             scene_log_to_console: false,
         }
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct GraphicsSettings {
     pub vsync: bool,
     pub log_fps: bool,
-    pub msaa: usize,
+    pub msaa: AaSetting,
     pub fps_target: usize,
+    pub shadow_distance: f32,
+    pub shadow_settings: ShadowSetting,
+    pub window: WindowSetting,
+    // removed until bevy window resizing bugs are fixed
+    // pub fullscreen_res: FullscreenResSetting,
+    pub fog: FogSetting,
+    pub bloom: BloomSetting,
+    pub oob: f32,
 }
 
 impl Default for GraphicsSettings {
@@ -179,10 +192,58 @@ impl Default for GraphicsSettings {
         Self {
             vsync: false,
             log_fps: true,
-            msaa: 4,
+            msaa: AaSetting::Msaa4x,
             fps_target: 60,
+            shadow_distance: 100.0,
+            shadow_settings: ShadowSetting::High,
+            window: WindowSetting::Windowed,
+            // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
+            fog: FogSetting::Atmospheric,
+            bloom: BloomSetting::Low,
+            oob: 2.0,
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ShadowSetting {
+    Off,
+    Low,
+    High,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AaSetting {
+    Off,
+    FxaaLow,
+    FxaaHigh,
+    Msaa2x,
+    Msaa4x,
+    Msaa8x,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum WindowSetting {
+    Fullscreen,
+    Windowed,
+    Borderless,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub struct FullscreenResSetting(pub UVec2);
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FogSetting {
+    Off,
+    Basic,
+    Atmospheric,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BloomSetting {
+    Off,
+    Low,
+    High,
 }
 
 #[derive(Debug)]
@@ -192,7 +253,10 @@ pub enum AudioDecoderError {
 }
 
 #[derive(Resource)]
-pub struct SceneLoadDistance(pub f32);
+pub struct SceneLoadDistance {
+    pub load: f32,
+    pub unload: f32, // additional
+}
 
 #[derive(Debug)]
 pub struct IVec2Arg(pub IVec2);
@@ -260,7 +324,7 @@ impl SpawnPosition {
         };
 
         let x = parse_val(&self.x).unwrap_or(0.0..16.0);
-        let y = parse_val(&self.y).unwrap_or(0.0..16.0);
+        let y = parse_val(&self.y).unwrap_or(0.0..0.0);
         let z = parse_val(&self.z).unwrap_or(0.0..16.0);
 
         (

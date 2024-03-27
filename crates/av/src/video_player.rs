@@ -6,7 +6,10 @@ use crate::{
 use bevy::{
     core::FrameCount,
     prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
+    render::{
+        render_asset::RenderAssetUsages,
+        render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
+    },
 };
 use common::sets::SceneSets;
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -173,6 +176,7 @@ pub fn update_video_players(
                         TextureDimension::D2,
                         &Color::PINK.as_rgba_u32().to_le_bytes(),
                         TextureFormat::Rgba8UnormSrgb,
+                        RenderAssetUsages::all(),
                     );
                     image.texture_descriptor.usage =
                         TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;

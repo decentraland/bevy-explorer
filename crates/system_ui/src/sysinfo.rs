@@ -1,7 +1,10 @@
+use avatar::mask_material::MaskMaterial;
 use bevy::{
+    core::FrameCount,
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     math::Vec3Swizzles,
     prelude::*,
+    text::JustifyText,
     ui::FocusPolicy,
 };
 
@@ -9,20 +12,25 @@ use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiRegistry};
 use common::{
     sets::SetupSets,
-    structs::{AppConfig, PrimaryUser},
+    structs::{AppConfig, PrimaryUser, Version},
 };
 use comms::{global_crdt::ForeignPlayer, Transport};
 use console::DoAddConsoleCommand;
 use ipfs::CurrentRealm;
+use scene_material::SceneMaterial;
 use scene_runner::{
     initialize_scene::{SceneLoading, PARCEL_SIZE},
     renderer_context::RendererSceneContext,
+    update_world::{ComponentTracker, TrackComponents},
     ContainingScene, DebugInfo,
 };
 use ui_core::{
+    bound_node::BoundedImageMaterial,
+    stretch_uvs_image::StretchUvMaterial,
     ui_actions::{Click, EventCloneExt},
     BODY_TEXT_STYLE, TITLE_TEXT_STYLE,
 };
+use world_ui::TextShapeMaterial;
 
 use crate::{
     map::MapTexture,
@@ -52,6 +60,9 @@ impl Plugin for SysInfoPanelPlugin {
             setup_minimap,
         );
         app.add_console_command::<SysinfoCommand, _>(set_sysinfo);
+
+        app.add_systems(First, (entity_count, display_tracked_components));
+        app.add_console_command::<TrackComponentCommand, _>(set_track_components);
     }
 }
 
@@ -66,6 +77,7 @@ pub(crate) fn setup(
     root: Res<SystemUiRoot>,
     config: Res<AppConfig>,
     asset_server: Res<AssetServer>,
+    version: Res<Version>,
 ) {
     commands.entity(root.0).with_children(|commands| {
         commands
@@ -94,6 +106,19 @@ pub(crate) fn setup(
                     ..Default::default()
                 });
             });
+        commands.spawn(TextBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                right: Val::VMin(2.0),
+                bottom: Val::VMin(2.0),
+                ..Default::default()
+            },
+            text: Text::from_section(
+                format!("Version: {}", version.0),
+                BODY_TEXT_STYLE.get().unwrap().clone(),
+            ),
+            ..Default::default()
+        });
     });
 
     commands.entity(root.0).with_children(|commands| {
@@ -149,7 +174,7 @@ pub(crate) fn setup(
                                             label,
                                             BODY_TEXT_STYLE.get().unwrap().clone(),
                                         )
-                                        .with_alignment(TextAlignment::Right),
+                                        .with_justify(JustifyText::Right),
                                         ..Default::default()
                                     });
                                     commands.spawn(TextBundle {
@@ -272,7 +297,7 @@ fn update_scene_load_state(
         let players = players.iter().count() + 1;
 
         if config.graphics.log_fps {
-            if let Some(fps) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
+            if let Some(fps) = diagnostics.get(&FrameTimeDiagnosticsPlugin::FPS) {
                 let fps = fps.smoothed().unwrap_or_default();
                 set_child(format!("{fps:.0}"));
             } else {
@@ -381,6 +406,7 @@ fn set_sysinfo(
         } else {
             Visibility::Hidden
         });
+        input.reply_ok("");
     }
 }
 
@@ -402,5 +428,75 @@ fn update_map_visibilty(
         } else {
             style.display = Display::None;
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn entity_count(
+    q: Query<Entity>,
+    f: Res<FrameCount>,
+    meshes: Res<Assets<Mesh>>,
+    textures: Res<Assets<Image>>,
+    ui_nodes: Query<(), With<Node>>,
+    scene_mats: Query<(), With<Handle<SceneMaterial>>>,
+    std_mats: Query<(), With<Handle<StandardMaterial>>>,
+    mask_mats: Query<(), With<Handle<MaskMaterial>>>,
+    uv_mats: Query<(), With<Handle<StretchUvMaterial>>>,
+    bound_mats: Query<(), With<Handle<BoundedImageMaterial>>>,
+    textshape_mats: Query<(), With<Handle<TextShapeMaterial>>>,
+) {
+    if f.0 % 100 == 0 {
+        let entities = q.iter().count();
+        let meshes = meshes.iter().count();
+        let textures = textures.iter().count();
+        let ui_nodes = ui_nodes.iter().count();
+        debug!("{entities} ents, {meshes} meshes, {textures} textures, {ui_nodes} ui nodes");
+
+        let scene_mats = scene_mats.iter().count();
+        let std_mats = std_mats.iter().count();
+        let mask_mats = mask_mats.iter().count();
+        let uv_mats = uv_mats.iter().count();
+        let bound_mats = bound_mats.iter().count();
+        let textshape_mats = textshape_mats.iter().count();
+        debug!("scene {scene_mats}, std {std_mats}, mask: {mask_mats}, uv: {uv_mats}, bound: {bound_mats}, text: {textshape_mats}");
+    }
+}
+
+fn display_tracked_components(
+    track: Res<TrackComponents>,
+    f: Res<FrameCount>,
+    player: Query<Entity, With<PrimaryUser>>,
+    containing_scene: ContainingScene,
+    components: Query<&ComponentTracker>,
+) {
+    if !track.0 || f.0 % 100 != 0 {
+        return;
+    }
+
+    let Ok(player) = player.get_single() else {
+        return;
+    };
+
+    let scenes = containing_scene.get(player);
+    for scene in scenes {
+        println!("scene {:?}\n{:#?}", scene, components.get(scene));
+    }
+}
+
+// set fps
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/track_components")]
+struct TrackComponentCommand {
+    on: Option<bool>,
+}
+
+fn set_track_components(
+    mut input: ConsoleCommand<TrackComponentCommand>,
+    mut track: ResMut<TrackComponents>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let on = command.on.unwrap_or(true);
+        track.0 = on;
+        input.reply_ok("");
     }
 }

@@ -1,7 +1,10 @@
 // TODO
 // - gltf collider flags
 // - clean up of cached colliders (when mesh is unloaded?)
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    hash::{Hash, Hasher},
+};
 
 use bevy::{
     asset::LoadState,
@@ -10,11 +13,13 @@ use bevy::{
     prelude::*,
     render::{
         mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
+        render_asset::RenderAssetUsages,
         view::NoFrustumCulling,
     },
     scene::{scene_spawner_system, InstanceId},
     utils::{HashMap, HashSet},
 };
+use common::structs::AppConfig;
 use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
@@ -31,7 +36,7 @@ use scene_material::{SceneBound, SceneMaterial};
 
 use super::{
     mesh_collider::{MeshCollider, MeshColliderShape},
-    AddCrdtInterfaceExt,
+    AddCrdtInterfaceExt, ComponentTracker,
 };
 
 pub struct GltfDefinitionPlugin;
@@ -79,6 +84,7 @@ struct DclNodeExtras {
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_gltf(
     mut commands: Commands,
+    mut commands2: Commands,
     new_gltfs: Query<
         (
             Entity,
@@ -102,7 +108,7 @@ fn update_gltf(
         ResMut<Assets<StandardMaterial>>,
     ),
     mut scene_spawner: ResMut<SceneSpawner>,
-    mut contexts: Query<&mut RendererSceneContext>,
+    mut contexts: Query<(Entity, &mut RendererSceneContext, Has<SceneResourceLookup>)>,
     mut instances_to_despawn_when_ready: Local<Vec<InstanceId>>,
 ) {
     // clean up old instances
@@ -121,7 +127,7 @@ fn update_gltf(
     });
 
     let mut set_state = |scene_ent: &SceneEntity, current_state: LoadingState| {
-        if let Ok(mut context) = contexts.get_mut(scene_ent.root) {
+        if let Ok((root, mut context, has_material_lookup)) = contexts.get_mut(scene_ent.root) {
             context.update_crdt(
                 SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
                 CrdtType::LWW_ANY,
@@ -130,6 +136,12 @@ fn update_gltf(
                     current_state: current_state as i32,
                 },
             );
+
+            if !has_material_lookup {
+                commands2
+                    .entity(root)
+                    .try_insert(SceneResourceLookup::default());
+            }
         };
     };
 
@@ -169,6 +181,8 @@ fn update_gltf(
             &scene_def.id,
             |s| {
                 s.load_cameras = false;
+                s.load_lights = false;
+                s.load_materials = RenderAssetUsages::RENDER_WORLD;
             },
         );
 
@@ -216,7 +230,7 @@ fn update_gltf(
                 }
 
                 if let Some(texture) = images.get(h_base) {
-                    if texture.texture_descriptor.format.sample_type(None)
+                    if texture.texture_descriptor.format.sample_type(None, None)
                         != Some(bevy::render::render_resource::TextureSampleType::Float {
                             filterable: true,
                         })
@@ -244,6 +258,18 @@ fn update_gltf(
     }
 }
 
+pub struct CachedMeshData {
+    mesh_id: AssetId<Mesh>,
+    is_skinned: bool,
+    maybe_collider: Option<Handle<Mesh>>,
+}
+
+#[derive(Component, Default)]
+pub struct SceneResourceLookup {
+    materials: HashMap<Handle<StandardMaterial>, Handle<SceneMaterial>>,
+    meshes: HashMap<u64, CachedMeshData>,
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_ready_gltfs(
     mut commands: Commands,
@@ -264,7 +290,11 @@ fn update_ready_gltfs(
     (base_mats, mut bound_mats): (Res<Assets<StandardMaterial>>, ResMut<Assets<SceneMaterial>>),
     scene_spawner: Res<SceneSpawner>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut contexts: Query<&mut RendererSceneContext>,
+    mut contexts: Query<(
+        &mut RendererSceneContext,
+        &mut SceneResourceLookup,
+        &mut ComponentTracker,
+    )>,
     _debug_query: Query<(
         Entity,
         Option<&Name>,
@@ -272,6 +302,8 @@ fn update_ready_gltfs(
         Option<&SkinnedMesh>,
         &Transform,
     )>,
+    asset_server: Res<AssetServer>,
+    config: Res<AppConfig>,
 ) {
     for (bevy_scene_entity, dcl_scene_entity, loaded, definition) in ready_gltfs.iter() {
         if loaded.0.is_none() {
@@ -307,7 +339,9 @@ fn update_ready_gltfs(
             // create a counter per name so we can make unique collider handles
             let mut collider_counter: HashMap<_, u32> = HashMap::default();
 
-            let Ok(mut context) = contexts.get_mut(dcl_scene_entity.root) else {
+            let Ok((mut context, mut resource_lookup, mut tracker)) =
+                contexts.get_mut(dcl_scene_entity.root)
+            else {
                 continue;
             };
 
@@ -346,56 +380,103 @@ fn update_ready_gltfs(
                     // if there is an animation player, record the entity (bevy-specific hack)
                     if maybe_player.is_some() {
                         if let Some(name) = maybe_name {
+                            debug!("animator found on {name} node of {}", definition.0.src);
                             animation_roots.insert((spawned_ent, name.clone()));
+                            *tracker.0.entry("Animations").or_default() += 1;
                         }
                     }
 
                     // if there is no mesh, there's nothing further to do
-                    let Some(h_mesh) = maybe_h_mesh else {
+                    let Some(h_gltf_mesh) = maybe_h_mesh else {
                         continue;
                     };
-                    let Some(mesh_data) = meshes.get_mut(h_mesh) else {
+                    let Some(mesh_data) = meshes.get_mut(h_gltf_mesh) else {
                         error!("gltf contained mesh not loaded?!");
                         continue;
                     };
 
-                    // fix up mesh
-                    mesh_data.normalize_joint_weights();
-
-                    let has_joints = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();
-                    let has_weights = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
-                    let has_skin = maybe_skin.is_some();
-                    let is_skinned = has_skin && has_joints && has_weights;
-                    if is_skinned {
-                        // bevy doesn't calculate culling correctly for skinned entities
-                        commands.entity(spawned_ent).try_insert(NoFrustumCulling);
-                    } else {
-                        // bevy crashes if unskinned models have joints and weights, or if skinned models don't
-                        if has_joints {
-                            mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_INDEX);
-                        }
-                        if has_weights {
-                            mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT);
-                        }
-                        if has_skin {
-                            commands.entity(spawned_ent).remove::<SkinnedMesh>();
-                        }
+                    let hash = &mut std::hash::DefaultHasher::new();
+                    for (attr_id, data) in mesh_data.attributes() {
+                        attr_id.hash(hash);
+                        data.get_bytes().hash(hash);
                     }
+                    let hash = hash.finish();
+
+                    let cached_data = resource_lookup.meshes.get(&hash).and_then(|data| {
+                        asset_server
+                            .get_id_handle(data.mesh_id)
+                            .map(|h| (h, data.is_skinned, &data.maybe_collider))
+                    });
+
+                    let (h_mesh, is_skinned, cached_collider) = match cached_data {
+                        Some((h_mesh, is_skinned, cached_collider)) => {
+                            // overwrite with cached handle
+                            commands.entity(spawned_ent).insert(h_mesh.clone());
+                            (h_mesh, is_skinned, cached_collider.clone())
+                        }
+                        None => {
+                            mesh_data.normalize_joint_weights();
+
+                            let has_joints =
+                                mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();
+                            let has_weights =
+                                mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
+                            let has_skin = maybe_skin.is_some();
+                            let is_skinned = has_skin && has_joints && has_weights;
+                            if is_skinned {
+                                // bevy doesn't calculate culling correctly for skinned entities
+                                commands.entity(spawned_ent).try_insert(NoFrustumCulling);
+                            } else {
+                                // bevy crashes if unskinned models have joints and weights, or if skinned models don't
+                                if has_joints {
+                                    mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_INDEX);
+                                }
+                                if has_weights {
+                                    mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT);
+                                }
+                                if has_skin {
+                                    commands.entity(spawned_ent).remove::<SkinnedMesh>();
+                                }
+                            }
+
+                            resource_lookup.meshes.insert(
+                                hash,
+                                CachedMeshData {
+                                    mesh_id: h_gltf_mesh.id(),
+                                    is_skinned,
+                                    maybe_collider: None,
+                                },
+                            );
+                            *tracker.0.entry("Unique Meshes").or_default() += 1;
+                            (h_gltf_mesh.clone(), is_skinned, None)
+                        }
+                    };
+                    *tracker.0.entry("Total Meshes").or_default() += 1;
 
                     // substitute material
                     if let Some(h_material) = maybe_material {
-                        let Some(base) = base_mats.get(h_material) else {
-                            panic!();
-                        };
-                        commands
-                            .entity(spawned_ent)
-                            .insert(bound_mats.add(ExtendedMaterial {
+                        let h_scene_material = if let Some(h_scene_material) =
+                            resource_lookup.materials.get(h_material)
+                        {
+                            h_scene_material.clone()
+                        } else {
+                            let Some(base) = base_mats.get(h_material) else {
+                                panic!();
+                            };
+                            let h_scene_material = bound_mats.add(ExtendedMaterial {
                                 base: base.clone(),
-                                extension: SceneBound {
-                                    bounds: context.bounds,
-                                },
-                            }));
+                                extension: SceneBound::new(context.bounds, config.graphics.oob),
+                            });
+                            resource_lookup
+                                .materials
+                                .insert(h_material.clone(), h_scene_material.clone());
+
+                            *tracker.0.entry("Unique Materials").or_default() += 1;
+                            h_scene_material
+                        };
+                        commands.entity(spawned_ent).insert(h_scene_material);
                     }
+                    *tracker.0.entry("Materials").or_default() += 1;
 
                     // process collider
                     let mut collider_base_name = maybe_name
@@ -405,9 +486,10 @@ fn update_ready_gltfs(
                     if collider_base_name.is_none() {
                         // check parent name also
                         collider_base_name = gltf_spawned_entities
-                            .get_component::<Name>(parent.get())
-                            .map(|name| name.as_str())
+                            .get(parent.get())
                             .ok()
+                            .and_then(|(name, ..)| name)
+                            .map(|name| name.as_str())
                             .filter(|name| name.contains("_collider"))
                     }
                     let is_collider = collider_base_name.is_some();
@@ -428,8 +510,9 @@ fn update_ready_gltfs(
                         .unwrap_or_else(|| {
                             // then try parent node
                             gltf_spawned_entities
-                                .get_component::<GltfExtras>(parent.get())
+                                .get(parent.get())
                                 .ok()
+                                .and_then(|tpl| tpl.5)
                                 .and_then(|extras| {
                                     serde_json::from_str::<DclNodeExtras>(&extras.value).ok()
                                 })
@@ -439,8 +522,13 @@ fn update_ready_gltfs(
                                     if is_collider {
                                         definition.0.invisible_meshes_collision_mask.unwrap_or(
                                             // colliders default to physics + pointers
-                                            ColliderLayer::ClPhysics as u32
-                                                | ColliderLayer::ClPointer as u32,
+                                            if is_skinned {
+                                                // if skinned, maybe foundation uses 0 default?
+                                                0
+                                            } else {
+                                                ColliderLayer::ClPhysics as u32
+                                                    | ColliderLayer::ClPointer as u32
+                                            },
                                         )
                                     } else {
                                         definition.0.visible_meshes_collision_mask.unwrap_or(
@@ -487,38 +575,62 @@ fn update_ready_gltfs(
                             .or_default();
                         *index += 1u32;
 
-                        let h_mesh = if is_skinned {
-                            let mut new_mesh = Mesh::new(mesh_data.primitive_topology());
-                            new_mesh.set_indices(mesh_data.indices().cloned());
-                            for (attribute_id, data) in mesh_data.attributes() {
-                                let attribute = match attribute_id {
-                                    id if id == Mesh::ATTRIBUTE_JOINT_INDEX.id => continue,
-                                    id if id == Mesh::ATTRIBUTE_JOINT_WEIGHT.id => continue,
-                                    id if id == Mesh::ATTRIBUTE_POSITION.id => {
-                                        Mesh::ATTRIBUTE_POSITION
+                        let h_collider = if is_skinned {
+                            match cached_collider {
+                                Some(collider) => collider,
+                                None => {
+                                    let mut new_mesh = Mesh::new(
+                                        mesh_data.primitive_topology(),
+                                        RenderAssetUsages::RENDER_WORLD,
+                                    );
+                                    if let Some(indices) = mesh_data.indices().cloned() {
+                                        new_mesh.insert_indices(indices);
                                     }
-                                    id if id == Mesh::ATTRIBUTE_NORMAL.id => Mesh::ATTRIBUTE_NORMAL,
-                                    id if id == Mesh::ATTRIBUTE_UV_0.id => Mesh::ATTRIBUTE_UV_0,
-                                    id if id == Mesh::ATTRIBUTE_UV_1.id => Mesh::ATTRIBUTE_UV_1,
-                                    id if id == Mesh::ATTRIBUTE_TANGENT.id => {
-                                        Mesh::ATTRIBUTE_TANGENT
-                                    }
-                                    id if id == Mesh::ATTRIBUTE_COLOR.id => Mesh::ATTRIBUTE_COLOR,
-                                    _ => {
-                                        warn!("unrecognised vertex attribute {attribute_id:?}");
-                                        continue;
-                                    }
-                                };
+                                    for (attribute_id, data) in mesh_data.attributes() {
+                                        let attribute = match attribute_id {
+                                            id if id == Mesh::ATTRIBUTE_JOINT_INDEX.id => continue,
+                                            id if id == Mesh::ATTRIBUTE_JOINT_WEIGHT.id => continue,
+                                            id if id == Mesh::ATTRIBUTE_POSITION.id => {
+                                                Mesh::ATTRIBUTE_POSITION
+                                            }
+                                            id if id == Mesh::ATTRIBUTE_NORMAL.id => {
+                                                Mesh::ATTRIBUTE_NORMAL
+                                            }
+                                            id if id == Mesh::ATTRIBUTE_UV_0.id => {
+                                                Mesh::ATTRIBUTE_UV_0
+                                            }
+                                            id if id == Mesh::ATTRIBUTE_UV_1.id => {
+                                                Mesh::ATTRIBUTE_UV_1
+                                            }
+                                            id if id == Mesh::ATTRIBUTE_TANGENT.id => {
+                                                Mesh::ATTRIBUTE_TANGENT
+                                            }
+                                            id if id == Mesh::ATTRIBUTE_COLOR.id => {
+                                                Mesh::ATTRIBUTE_COLOR
+                                            }
+                                            _ => {
+                                                warn!("unrecognised vertex attribute {attribute_id:?}");
+                                                continue;
+                                            }
+                                        };
 
-                                new_mesh.insert_attribute(attribute, data.clone());
+                                        new_mesh.insert_attribute(attribute, data.clone());
+                                    }
+                                    let h_collider = meshes.add(new_mesh);
+                                    resource_lookup
+                                        .meshes
+                                        .get_mut(&hash)
+                                        .unwrap()
+                                        .maybe_collider = Some(h_collider.clone());
+                                    h_collider
+                                }
                             }
-                            meshes.add(new_mesh)
                         } else {
                             h_mesh.clone()
                         };
 
                         commands.entity(spawned_ent).try_insert(MeshCollider {
-                            shape: MeshColliderShape::Shape(shape, h_mesh),
+                            shape: MeshColliderShape::Shape(shape, h_collider),
                             collision_mask: collider_bits,
                             mesh_name: collider_base_name.map(ToOwned::to_owned),
                             index: *index,
@@ -568,7 +680,7 @@ fn check_gltfs_ready(
 }
 
 // debug show the gltf graph
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, deprecated)]
 fn _node_graph(
     scene_entity_query: &Query<(
         Entity,

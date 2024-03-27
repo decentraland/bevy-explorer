@@ -8,6 +8,7 @@ use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::{AvatarColor, SerializedProfile},
     rpc::RpcCall,
+    structs::AppConfig,
 };
 use comms::profile::CurrentUserProfile;
 use ipfs::{ChangeRealmEvent, CurrentRealm};
@@ -17,6 +18,7 @@ use ui_core::{
 };
 
 use crate::{
+    app_settings::{AppSettingsDetail, AppSettingsPlugin},
     change_realm::{ChangeRealmDialog, UpdateRealmText},
     chat::BUTTON_SCALE,
     discover::DiscoverSettingsPlugin,
@@ -37,6 +39,7 @@ impl Plugin for ProfileEditPlugin {
             DiscoverSettingsPlugin,
             WearableSettingsPlugin,
             EmotesSettingsPlugin,
+            AppSettingsPlugin,
         ));
     }
 }
@@ -101,12 +104,14 @@ pub enum OnCloseEvent {
 fn save_settings(
     mut commands: Commands,
     mut current_profile: ResMut<CurrentUserProfile>,
+    mut config: ResMut<AppConfig>,
     modified: Query<
         (
             Entity,
             Option<&AvatarShape>,
             Option<&ProfileDetail>,
             Option<&BoothInstance>,
+            Option<&AppSettingsDetail>,
         ),
         With<SettingsDialog>,
     >,
@@ -116,31 +121,39 @@ fn save_settings(
         return;
     };
 
-    let Ok((dialog_ent, maybe_avatar, maybe_detail, maybe_booth)) = modified.get_single() else {
+    let Ok((dialog_ent, maybe_avatar, maybe_detail, maybe_booth, maybe_settings)) =
+        modified.get_single()
+    else {
         error!("no dialog");
         return;
     };
 
-    if let Some(detail) = maybe_detail {
-        profile.content = detail.0.clone();
+    if let Some(settings) = maybe_settings {
+        *config = settings.0.clone();
     }
 
-    if let Some(avatar) = maybe_avatar {
-        profile.content.avatar.body_shape = avatar.0.body_shape.to_owned();
-        profile.content.avatar.hair = avatar.0.hair_color.map(AvatarColor::new);
-        profile.content.avatar.eyes = avatar.0.eye_color.map(AvatarColor::new);
-        profile.content.avatar.skin = avatar.0.skin_color.map(AvatarColor::new);
-        profile.content.avatar.wearables = avatar.0.wearables.to_vec();
+    if maybe_detail.is_some() || maybe_avatar.is_some() {
+        if let Some(detail) = maybe_detail {
+            profile.content = detail.0.clone();
+        }
+
+        if let Some(avatar) = maybe_avatar {
+            profile.content.avatar.body_shape = avatar.0.body_shape.to_owned();
+            profile.content.avatar.hair = avatar.0.hair_color.map(AvatarColor::new);
+            profile.content.avatar.eyes = avatar.0.eye_color.map(AvatarColor::new);
+            profile.content.avatar.skin = avatar.0.skin_color.map(AvatarColor::new);
+            profile.content.avatar.wearables = avatar.0.wearables.to_vec();
+        }
+
+        profile.version += 1;
+        profile.content.version = profile.version as i64;
+
+        if let Some(booth) = maybe_booth {
+            current_profile.snapshots = booth.snapshot_target.clone();
+        }
+
+        current_profile.is_deployed = false;
     }
-
-    profile.version += 1;
-    profile.content.version = profile.version as i64;
-
-    if let Some(booth) = maybe_booth {
-        current_profile.snapshots = booth.snapshot_target.clone();
-    }
-
-    current_profile.is_deployed = false;
 
     commands.entity(dialog_ent).despawn_recursive();
 }
@@ -297,7 +310,7 @@ pub fn show_settings(
         },
         DuiButton {
             label: Some("Settings".to_owned()),
-            enabled: false,
+            enabled: true,
             ..Default::default()
         },
     ];

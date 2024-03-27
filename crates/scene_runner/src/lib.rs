@@ -609,7 +609,7 @@ fn send_scene_updates(
 ) {
     let updates = &mut *updates;
 
-    if updates.jobs_in_flight.len() == config.scene_threads {
+    if updates.jobs_in_flight.len() >= config.scene_threads {
         return;
     }
 
@@ -650,7 +650,7 @@ fn send_scene_updates(
     if let Ok(window) = window.get_single() {
         buf.clear();
         DclWriter::new(&mut buf).write(&PbUiCanvasInformation {
-            device_pixel_ratio: window.resolution.scale_factor() as f32,
+            device_pixel_ratio: window.resolution.scale_factor(),
             width: window.resolution.width() as i32,
             height: window.resolution.height() as i32,
             interactable_area: Some(BorderRect {
@@ -754,7 +754,7 @@ fn receive_scene_updates(
                             interface.updates_to_entity(*component_id, &mut crdt, &mut commands);
                         }
                         dcl_assert!(
-                            updates.jobs_in_flight.contains(root) || context.tick_number == 1
+                            updates.jobs_in_flight.contains(root) || context.tick_number <= 2
                         );
 
                         for rpc_call in rpc_calls {

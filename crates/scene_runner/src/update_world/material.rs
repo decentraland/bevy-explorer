@@ -1,5 +1,5 @@
 use bevy::{ecs::system::SystemParam, pbr::NotShadowCaster, prelude::*, render::primitives::Aabb};
-use common::structs::AvatarTextureHandle;
+use common::structs::{AppConfig, AvatarTextureHandle};
 use comms::profile::UserProfile;
 use ipfs::IpfsAssetServer;
 
@@ -158,7 +158,7 @@ impl Plugin for MaterialDefinitionPlugin {
 }
 
 #[derive(Component)]
-pub struct RetryMaterial(Vec<Handle<Image>>);
+pub struct RetryMaterial(pub Vec<Handle<Image>>);
 
 #[derive(Component)]
 pub struct TouchMaterial;
@@ -249,10 +249,10 @@ fn update_materials(
         Or<(Changed<MaterialDefinition>, With<RetryMaterial>)>,
     >,
     mut materials: ResMut<Assets<SceneMaterial>>,
-    images: Res<Assets<Image>>,
     touch: Query<&Handle<SceneMaterial>, With<TouchMaterial>>,
     resolver: TextureResolver,
     scenes: Query<&RendererSceneContext>,
+    config: Res<AppConfig>,
 ) {
     for (ent, defn, container) in new_materials.iter_mut() {
         let textures: Result<Vec<_>, _> = [
@@ -288,26 +288,8 @@ fn update_materials(
             commands.entity(ent).insert(TouchMaterial);
         }
 
-        let [mut base_color_texture, emissive_texture, normal_map_texture]: [Option<
-            ResolvedTexture,
-        >; 3] = textures.try_into().unwrap();
-
-        if let Some(base) = base_color_texture.as_ref() {
-            let Some(texture) = images.get(base.image.id()) else {
-                commands
-                    .entity(ent)
-                    .insert(RetryMaterial(vec![base.image.clone()]));
-                continue;
-            };
-            if texture.texture_descriptor.format.sample_type(None)
-                != Some(bevy::render::render_resource::TextureSampleType::Float {
-                    filterable: true,
-                })
-            {
-                warn!("invalid format for base color texture, disabling");
-                base_color_texture = None;
-            }
-        }
+        let [base_color_texture, emissive_texture, normal_map_texture]: [Option<ResolvedTexture>;
+            3] = textures.try_into().unwrap();
 
         let bounds = scenes
             .get(container.root)
@@ -324,7 +306,7 @@ fn update_materials(
                     normal_map_texture: normal_map_texture.map(|t| t.image),
                     ..defn.material.clone()
                 },
-                extension: SceneBound { bounds },
+                extension: SceneBound::new(bounds, config.graphics.oob),
             }));
         if defn.shadow_caster {
             commands.remove::<NotShadowCaster>();

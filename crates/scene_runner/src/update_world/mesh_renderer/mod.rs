@@ -1,6 +1,8 @@
+use std::f32::consts::FRAC_PI_2;
+
 use bevy::{prelude::*, render::mesh::VertexAttributeValues, utils::HashMap};
 
-use common::sets::SceneSets;
+use common::{sets::SceneSets, structs::AppConfig};
 
 use dcl::interface::ComponentPosition;
 use dcl_component::{
@@ -98,15 +100,13 @@ impl Plugin for MeshDefinitionPlugin {
         };
 
         let mut assets = app.world.resource_mut::<Assets<Mesh>>();
-        let boxx = assets.add(generate_tangents(shape::Cube::default().into()));
-        let cylinder = assets.add(generate_tangents(shape::Cylinder::default().into()));
-        let plane = assets.add(generate_tangents(shape::Quad::default().into()));
+        let boxx = assets.add(generate_tangents(
+            bevy::math::primitives::Cuboid::default().into(),
+        ));
+        let cylinder = assets.add(generate_tangents(Cylinder::default().into()));
+        let plane = assets.add(generate_tangents(Rectangle::default().mesh()));
         let sphere = assets.add(generate_tangents(flip_uv(
-            shape::UVSphere {
-                radius: 0.5,
-                ..Default::default()
-            }
-            .into(),
+            Sphere::new(0.5).mesh().uv(36, 18),
         )));
         app.insert_resource(MeshPrimitiveDefaults {
             boxx,
@@ -137,6 +137,7 @@ pub fn update_mesh(
     mut default_material: Local<HashMap<Entity, Handle<SceneMaterial>>>,
     mut materials: ResMut<Assets<SceneMaterial>>,
     scenes: Query<&RendererSceneContext>,
+    config: Res<AppConfig>,
 ) {
     for (ent, scene_ent, prim, maybe_material) in new_primitives.iter() {
         let handle = match prim {
@@ -144,7 +145,7 @@ pub fn update_mesh(
                 if uvs.is_empty() {
                     defaults.boxx.clone()
                 } else {
-                    let mut mesh = Mesh::from(shape::Cube::default());
+                    let mut mesh = Mesh::from(bevy::math::primitives::Cuboid::default());
                     let Some(VertexAttributeValues::Float32x2(mesh_uvs)) =
                         mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
                     else {
@@ -163,21 +164,20 @@ pub fn update_mesh(
                 if *radius_bottom == 1.0 && *radius_top == 1.0 {
                     defaults.cylinder.clone()
                 } else {
-                    meshes.add(
-                        TruncatedCone {
-                            base_radius: *radius_bottom,
-                            tip_radius: *radius_top,
-                            ..Default::default()
-                        }
-                        .into(),
-                    )
+                    meshes.add(Mesh::from(TruncatedCone {
+                        base_radius: *radius_bottom,
+                        tip_radius: *radius_top,
+                        ..Default::default()
+                    }))
                 }
             }
             MeshDefinition::Plane { uvs } => {
                 if uvs.is_empty() {
                     defaults.plane.clone()
                 } else {
-                    let mut mesh = Mesh::from(shape::Quad::default());
+                    let mut mesh = Rectangle::default()
+                        .mesh()
+                        .rotated_by(Quat::from_rotation_z(-FRAC_PI_2));
                     let Some(VertexAttributeValues::Float32x2(mesh_uvs)) =
                         mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
                     else {
@@ -202,7 +202,7 @@ pub fn update_mesh(
                     .unwrap_or_default();
                 materials.add(SceneMaterial {
                     base: Default::default(),
-                    extension: SceneBound { bounds },
+                    extension: SceneBound::new(bounds, config.graphics.oob),
                 })
             });
 

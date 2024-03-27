@@ -1,8 +1,9 @@
 use bevy::{
     asset::LoadedFolder,
-    core_pipeline::clear_color::ClearColorConfig,
     prelude::*,
-    render::{camera::RenderTarget, view::screenshot::ScreenshotManager},
+    render::{
+        camera::RenderTarget, render_asset::RenderAssetUsages, view::screenshot::ScreenshotManager,
+    },
     utils::{HashMap, HashSet},
     window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution},
 };
@@ -107,12 +108,8 @@ fn automatic_testing(
                         }),
                         camera: Camera {
                             target: RenderTarget::Window(WindowRef::Entity(window)),
-                            ..default()
-                        },
-
-                        camera_3d: Camera3d {
                             clear_color: ClearColorConfig::Custom(Color::NONE),
-                            ..Default::default()
+                            ..default()
                         },
                         ..Default::default()
                     },))
@@ -171,7 +168,7 @@ fn automatic_testing(
                 p == format!("{name}.png")
             })
             .and_then(|h| {
-                let img = images.get(h.id());
+                let img = images.get(h.id().typed());
                 img
             });
 
@@ -187,7 +184,7 @@ fn automatic_testing(
                 let image2 = std::fs::read(path).unwrap();
                 let image2 =
                     image::load_from_memory_with_format(&image2, image::ImageFormat::Png).unwrap();
-                let image2 = Image::from_dynamic(image2, false);
+                let image2 = Image::from_dynamic(image2, false, RenderAssetUsages::default());
                 compute_image_similarity(saved_image.clone(), image2)
             }
             None => {
