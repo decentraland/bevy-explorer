@@ -27,12 +27,16 @@ fn fragment(
     let world_position = pbr_input.world_position.xyz;
     let outside_amt = max(max(max(0.0, bounds.bounds.x - world_position.x), max(world_position.x - bounds.bounds.z, bounds.bounds.y - world_position.z)), world_position.z - bounds.bounds.w);
 
-    var noise = 0.0;
-    if outside_amt > 0.0 && outside_amt < bounds.distance {
-        noise = simplex_noise_3d(world_position * 2.0 + globals.time * vec3(0.2, 0.16, 0.24)) * 0.5 + 0.55;
-    }
-    if noise < (outside_amt - 0.125) / bounds.distance {
-        discard;
+    var noise = 0.05;
+    if outside_amt > 0.00 {
+        if outside_amt < bounds.distance {
+            noise = simplex_noise_3d(world_position * 2.0 + globals.time * vec3(0.2, 0.16, 0.24)) * 0.5 + 0.55;
+            if noise < (outside_amt - 0.125) / 2.0 {
+                discard;
+            }
+        } else if outside_amt > 0.05 {
+            discard;
+        }
     }
 
     // alpha discard
@@ -50,7 +54,7 @@ fn fragment(
     // note this does not include fullscreen postprocessing effects like bloom.
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
 
-    if noise < outside_amt / bounds.distance {
+    if noise < outside_amt / 2.0 {
         out.color = mix(out.color, vec4(10.0, 1.0, 0.0, 1.0), (outside_amt / 2.0 - noise) / 0.125);
     }
 
