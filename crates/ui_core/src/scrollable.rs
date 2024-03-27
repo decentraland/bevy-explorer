@@ -1,5 +1,6 @@
 use bevy::{input::mouse::MouseWheel, prelude::*, utils::HashMap, window::PrimaryWindow};
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
+use common::util::TryPushChildrenEx;
 
 use super::ui_builder::SpawnSpacer;
 
@@ -444,7 +445,7 @@ fn update_scrollables(
             (Val::Px(info.length), Val::Px(5.0))
         };
 
-        commands.entity(entity).with_children(|commands| {
+        let children = [
             commands.spawn((
                 NodeBundle {
                     style: Style {
@@ -464,8 +465,10 @@ fn update_scrollables(
                     vertical,
                 },
                 Interaction::default(),
-            ));
-        });
+            )).id()
+        ];
+
+        commands.entity(entity).try_push_children(&children);
 
         let position = match info.start {
             StartPosition::Start => 0.0,
@@ -492,8 +495,8 @@ fn update_scrollables(
             )
         };
 
-        commands.entity(entity).with_children(|commands| {
-            commands.spawn((
+        let children = [commands
+            .spawn((
                 NodeBundle {
                     style: Style {
                         position_type: PositionType::Absolute,
@@ -513,8 +516,10 @@ fn update_scrollables(
                     position,
                 },
                 Interaction::default(),
-            ));
-        });
+            ))
+            .id()];
+
+        commands.entity(entity).try_push_children(&children);
 
         let mut style = nodes.get_mut(info.content).unwrap().1;
         let offset = info.slide_amount * -position;
