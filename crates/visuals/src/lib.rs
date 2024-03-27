@@ -14,7 +14,9 @@ use bevy_atmosphere::{
 use bevy_console::ConsoleCommand;
 use common::{
     sets::SetupSets,
-    structs::{PrimaryCamera, PrimaryCameraRes, PrimaryUser, SceneLoadDistance},
+    structs::{
+        AppConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser, SceneLoadDistance,
+    },
 };
 use console::DoAddConsoleCommand;
 
@@ -90,6 +92,7 @@ fn setup(
 
 fn daylight_cycle(
     mut fog: Query<&mut FogSettings>,
+    setting: Res<AppConfig>,
     mut atmosphere: AtmosphereMut<Nishita>,
     mut sun: Query<(&mut Transform, &mut DirectionalLight)>,
     time: Res<Time>,
@@ -108,7 +111,21 @@ fn daylight_cycle(
             let distance = scene_distance.load
                 + scene_distance.unload
                 + camera.get_single().map(|c| c.distance).unwrap_or_default() * 5.0;
-            fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
+            match setting.graphics.fog {
+                FogSetting::Off => {
+                    fog.falloff = FogFalloff::from_visibility_squared(distance * 200.0);
+                    fog.directional_light_color = Color::rgb(0.3, 0.2, 0.1);
+                }
+                FogSetting::Basic => {
+                    fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
+                    fog.directional_light_color = Color::rgb(0.3, 0.2, 0.1);
+                }
+                FogSetting::Atmospheric => {
+                    fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
+                    fog.directional_light_color = Color::rgb(1.0, 1.0, 0.7);
+                }
+            }
+
             let sun_up = atmosphere.sun_position.dot(Vec3::Y);
             let rgb = Vec3::new(0.4, 0.4, 0.2) * sun_up.clamp(0.0, 1.0)
                 + Vec3::new(0.0, 0.0, 0.0) * (8.0 * (0.125 - sun_up.clamp(0.0, 0.125)));
@@ -169,24 +186,17 @@ struct FogConsoleCommand {
 }
 
 fn fog_console_command(
-    mut commands: Commands,
     mut input: ConsoleCommand<FogConsoleCommand>,
-    camera: Res<PrimaryCameraRes>,
-    fogs: Query<(), With<FogSettings>>,
+    mut config: ResMut<AppConfig>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        let activate = command.on.unwrap_or(fogs.is_empty());
+        let activate = command.on.unwrap_or(true);
 
-        if activate {
-            commands.entity(camera.0).try_insert(FogSettings {
-                color: Color::rgb(0.3, 0.2, 0.1),
-                directional_light_color: Color::rgb(1.0, 1.0, 0.7),
-                directional_light_exponent: 10.0,
-                falloff: FogFalloff::ExponentialSquared { density: 0.01 },
-            });
+        config.graphics.fog = if activate {
+            FogSetting::Atmospheric
         } else {
-            commands.entity(camera.0).remove::<FogSettings>();
-        }
+            FogSetting::Off
+        };
 
         input.reply_ok(format!(
             "fog {}",

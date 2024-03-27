@@ -179,6 +179,7 @@ pub struct GraphicsSettings {
     pub window: WindowSetting,
     // removed until bevy window resizing bugs are fixed
     // pub fullscreen_res: FullscreenResSetting,
+    pub fog: FogSetting,
 }
 
 impl Default for GraphicsSettings {
@@ -192,6 +193,7 @@ impl Default for GraphicsSettings {
             shadow_settings: ShadowSetting::High,
             window: WindowSetting::Windowed,
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
+            fog: FogSetting::Atmospheric,
         }
     }
 }
@@ -222,6 +224,13 @@ pub enum WindowSetting {
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct FullscreenResSetting(pub UVec2);
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FogSetting {
+    Off,
+    Basic,
+    Atmospheric,
+}
 
 #[derive(Debug)]
 pub enum AudioDecoderError {

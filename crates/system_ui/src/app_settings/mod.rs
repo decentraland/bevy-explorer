@@ -6,7 +6,7 @@ use bevy::{
     prelude::*,
 };
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use common::structs::{AaSetting, AppConfig, ShadowSetting, WindowSetting};
+use common::structs::{AaSetting, AppConfig, FogSetting, ShadowSetting, WindowSetting};
 use ui_core::ui_actions::{Click, HoverEnter, On, UiCaller};
 
 use crate::profile::{SettingsDialog, SettingsTab};
@@ -16,6 +16,7 @@ use crate::profile::{SettingsDialog, SettingsTab};
 pub struct AppSettingsPlugin;
 
 mod aa_settings;
+pub mod fog_settings;
 mod shadow_settings;
 pub mod window_settings;
 
@@ -27,6 +28,7 @@ impl Plugin for AppSettingsPlugin {
 
         apply_schedule.add_systems((
             apply_setting::<ShadowSetting>,
+            apply_setting::<FogSetting>,
             apply_setting::<AaSetting>,
             apply_setting::<WindowSetting>,
             // apply_setting::<FullscreenResSetting>.after(apply_setting::<WindowSetting>),
@@ -95,6 +97,7 @@ fn set_app_settings_content(
             // FullscreenResSetting::spawn_template(&mut commands, &dui, &config),
             AaSetting::spawn_template(&mut commands, &dui, &config),
             ShadowSetting::spawn_template(&mut commands, &dui, &config),
+            FogSetting::spawn_template(&mut commands, &dui, &config),
         ];
 
         commands
