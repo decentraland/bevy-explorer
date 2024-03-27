@@ -445,8 +445,8 @@ fn update_scrollables(
             (Val::Px(info.length), Val::Px(5.0))
         };
 
-        let children = [
-            commands.spawn((
+        let children = [commands
+            .spawn((
                 NodeBundle {
                     style: Style {
                         position_type: PositionType::Absolute,
@@ -465,8 +465,8 @@ fn update_scrollables(
                     vertical,
                 },
                 Interaction::default(),
-            )).id()
-        ];
+            ))
+            .id()];
 
         commands.entity(entity).try_push_children(&children);
 

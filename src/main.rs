@@ -1,7 +1,6 @@
-// todo
-// - separate js crate
-// - budget -> deadline is just last end + frame time
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+use build_time::build_time_utc;
 use mimalloc::MiMalloc;
 
 #[global_allocator]
@@ -26,7 +25,7 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AttachPoints, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes,
-        PrimaryPlayerRes, PrimaryUser, SceneLoadDistance,
+        PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, Version,
     },
 };
 use emotes::EmotesPlugin;
@@ -162,7 +161,11 @@ fn main() {
     //     }
     // };
 
+    let bt = build_time_utc!("%Y-%m-%d %H:%M");
+    let version = format!("{VERSION} ({bt})");
+
     app //.insert_resource(msaa)
+        .insert_resource(Version(version))
         .insert_resource(TextSettings {
             soft_max_font_atlases: 4.try_into().unwrap(),
             allow_dynamic_font_size: true,

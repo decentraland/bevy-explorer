@@ -12,7 +12,7 @@ use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiRegistry};
 use common::{
     sets::SetupSets,
-    structs::{AppConfig, PrimaryUser},
+    structs::{AppConfig, PrimaryUser, Version},
 };
 use comms::{global_crdt::ForeignPlayer, Transport};
 use console::DoAddConsoleCommand;
@@ -77,6 +77,7 @@ pub(crate) fn setup(
     root: Res<SystemUiRoot>,
     config: Res<AppConfig>,
     asset_server: Res<AssetServer>,
+    version: Res<Version>,
 ) {
     commands.entity(root.0).with_children(|commands| {
         commands
@@ -105,6 +106,19 @@ pub(crate) fn setup(
                     ..Default::default()
                 });
             });
+        commands.spawn(TextBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                right: Val::VMin(2.0),
+                bottom: Val::VMin(2.0),
+                ..Default::default()
+            },
+            text: Text::from_section(
+                format!("Version: {}", version.0),
+                BODY_TEXT_STYLE.get().unwrap().clone(),
+            ),
+            ..Default::default()
+        });
     });
 
     commands.entity(root.0).with_children(|commands| {

@@ -4,6 +4,9 @@ use bevy::{prelude::*, utils::HashMap};
 use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
 
+#[derive(Resource)]
+pub struct Version(pub String);
+
 // main user entity
 #[derive(Component)]
 pub struct PrimaryUser {
