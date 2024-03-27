@@ -180,6 +180,7 @@ pub struct GraphicsSettings {
     // removed until bevy window resizing bugs are fixed
     // pub fullscreen_res: FullscreenResSetting,
     pub fog: FogSetting,
+    pub bloom: BloomSetting,
 }
 
 impl Default for GraphicsSettings {
@@ -194,6 +195,7 @@ impl Default for GraphicsSettings {
             window: WindowSetting::Windowed,
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
             fog: FogSetting::Atmospheric,
+            bloom: BloomSetting::Low,
         }
     }
 }
@@ -230,6 +232,13 @@ pub enum FogSetting {
     Off,
     Basic,
     Atmospheric,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BloomSetting {
+    Off,
+    Low,
+    High,
 }
 
 #[derive(Debug)]
