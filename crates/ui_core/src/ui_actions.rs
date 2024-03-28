@@ -32,6 +32,7 @@ impl Plugin for UiActionPlugin {
         app.insert_resource(UiCaller(Entity::PLACEHOLDER))
             .init_resource::<UiActions<HoverEnter>>()
             .init_resource::<UiActions<Click>>()
+            .init_resource::<UiActions<ClickRepeat>>()
             .init_resource::<UiActions<HoverExit>>()
             .init_resource::<UiActions<Focus>>()
             .init_resource::<UiActions<Defocus>>()
@@ -47,6 +48,7 @@ impl Plugin for UiActionPlugin {
                     (
                         gather_actions::<HoverEnter>,
                         gather_actions::<Click>,
+                        gather_actions::<ClickRepeat>,
                         gather_actions::<HoverExit>,
                         gather_actions::<Focus>,
                         gather_actions::<Defocus>,
@@ -60,6 +62,7 @@ impl Plugin for UiActionPlugin {
                     (
                         run_actions::<HoverEnter>,
                         run_actions::<Click>,
+                        run_actions::<ClickRepeat>,
                         run_actions::<HoverExit>,
                         run_actions::<Focus>,
                         run_actions::<Defocus>,
@@ -119,6 +122,18 @@ impl ActionMarker for Click {
         (interact, enabled): <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>,
     ) -> bool {
         matches!(interact, Interaction::Pressed) && enabled.map_or(true, |a| a.0)
+    }
+}
+
+pub struct ClickRepeat;
+impl ActionMarker for ClickRepeat {
+    type Component = <Click as ActionMarker>::Component;
+    fn activate(param: <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool {
+        <Click as ActionMarker>::activate(param)
+    }
+
+    fn repeat_activate() -> bool {
+        true
     }
 }
 

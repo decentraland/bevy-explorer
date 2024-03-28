@@ -7,13 +7,14 @@ use crate::{
     bound_node::NodeBounds,
     combo_box::PropsExt,
     interact_style::{Active, InteractStyle, InteractStyles},
-    ui_actions::{close_ui, Click, DataChanged, Enabled, On, UiCaller},
+    ui_actions::{close_ui, Click, ClickRepeat, DataChanged, Enabled, On, UiCaller},
     ModifyComponentExt,
 };
 
 pub struct DuiButton {
     pub label: Option<String>,
     pub onclick: Option<On<Click>>,
+    pub onclickrepeat: Option<On<ClickRepeat>>,
     pub enabled: bool,
     pub styles: Option<InteractStyles>,
     pub children: Option<Entity>,
@@ -27,6 +28,7 @@ impl Default for DuiButton {
         Self {
             label: Default::default(),
             onclick: Default::default(),
+            onclickrepeat: Default::default(),
             enabled: true,
             styles: Default::default(),
             children: Default::default(),
@@ -115,6 +117,9 @@ impl DuiTemplate for DuiButtonTemplate {
         if let Some(onclick) = props.take::<On<Click>>("onclick")? {
             data.onclick = Some(onclick);
         }
+        if let Some(onclickrepeat) = props.take::<On<ClickRepeat>>("onclickrepeat")? {
+            data.onclickrepeat = Some(onclickrepeat);
+        }
         if let Some(enabled) = props.take::<bool>("enabled")? {
             data.enabled = enabled;
         }
@@ -178,9 +183,15 @@ impl DuiTemplate for DuiButtonTemplate {
             FocusPolicy::Block,
             styles,
         ));
+
         if let Some(onclick) = data.onclick {
             debug!("add on click");
             button.insert(onclick);
+        }
+
+        if let Some(onclickrepeat) = data.onclickrepeat {
+            debug!("add on click repeat");
+            button.insert(onclickrepeat);
         }
 
         if let Some(entity) = data.children {

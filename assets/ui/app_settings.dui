@@ -36,3 +36,51 @@
         </div>
     </div>
 </define-template>
+
+<define-template id="int-setting">
+    <div style="width: 100%; flex-direction: row; align-items: center; border: 10px; border-color: yellow;" interact="true">
+        <div style="flex-direction: column; align-items: flex-end; width: 50%; margin: 0px 2vmin 0px 0px;">
+            <large-text text="@title" />
+        </div>
+        <div style="width: 50%; flex-direction: row; justify-content: center; border:1px; border-color:green;">
+            <button label="<" onclickrepeat="@prev" />
+            <div style="flex-direction: column; flex-grow: 1; align-items: center;">
+                <med-text text="@label-initial" id="setting-label" />
+                <div style="flex-direction: row; border: 1px; border-color: red; width: 100%;">
+                    <bounds 
+                        id="container"
+                        style="flex-grow: 1; margin: 1vmin; padding: 1vmin; height: 3vmin; justify-content: center; align-items: center; border:1px; border-color: black;"
+                        corner-size="2vmin"
+                        blend-size="0.5vmin"
+                        border-size="1vmin"
+                        border-color="#000000ff"
+                        color="#8888ff"
+                        interact="true"
+                    >
+
+                        <div id="marker" style="position-type: absolute; border: 1px; border-color: orange; max-width: 0px; max-height: 0px; align-items: center; justify-content: center; left: '@initial-offset'">
+                            <bounds id="grip" style="position-type: absolute; width: 4vmin; height: 4vmin;"
+                                corner-size="2vmin"
+                                blend-size="2vmin"
+                                border-size="1vmin"
+                                border-color="#0000ffff"
+                                color="#8888ff"
+                            >
+                                <bounded style="width: 100%; height: 100%" bound-image="images/grip.png" />
+                            </bounds>
+                        </div>
+                    </bounds>
+                </div>
+            </div>
+            <button label=">" onclickrepeat="@next" />
+        </div>
+    </div>
+</define-template>
+
+<define-template id="settings-header">
+    <div style="width: 100%; flex-direction: column;">
+        <hr />
+        <large-text text="@label" />
+        <hr-thin />
+    </div>
+</define-template>
