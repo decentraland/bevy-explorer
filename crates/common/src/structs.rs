@@ -152,6 +152,7 @@ pub struct AppConfig {
     pub scene_unload_extra_distance: f32,
     pub sysinfo_visible: bool,
     pub scene_log_to_console: bool,
+    pub max_avatars: usize,
 }
 
 impl Default for AppConfig {
@@ -167,6 +168,7 @@ impl Default for AppConfig {
             scene_unload_extra_distance: 25.0,
             sysinfo_visible: true,
             scene_log_to_console: false,
+            max_avatars: 100,
         }
     }
 }

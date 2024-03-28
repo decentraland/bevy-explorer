@@ -31,7 +31,7 @@ pub mod mask_material;
 pub mod npc_dynamics;
 
 use common::{
-    structs::{AttachPoints, PrimaryUser},
+    structs::{AppConfig, AttachPoints, PrimaryUser},
     util::{TaskExt, TryPushChildrenEx},
 };
 use comms::{
@@ -80,14 +80,21 @@ impl Plugin for AvatarPlugin {
         app.init_resource::<WearableMetas>();
         app.init_resource::<RequestedWearables>();
         app.init_resource::<WearableCollections>();
-        app.add_systems(Update, (load_base_wearables, load_collections));
-        app.add_systems(Update, load_wearables);
-        app.add_systems(Update, update_avatar_info);
-        app.add_systems(Update, update_base_avatar_shape);
-        app.add_systems(Update, select_avatar);
-        app.add_systems(Update, update_render_avatar);
-        app.add_systems(Update, spawn_scenes);
-        app.add_systems(Update, process_avatar);
+        app.add_systems(
+            Update,
+            (
+                load_base_wearables,
+                load_collections,
+                load_wearables,
+                update_avatar_info,
+                update_base_avatar_shape,
+                select_avatar,
+                update_render_avatar,
+                spawn_scenes,
+                process_avatar,
+                set_avatar_visibility,
+            ),
+        );
 
         app.add_crdt_lww_component::<PbAvatarShape, AvatarShape>(
             SceneComponentId::AVATAR_SHAPE,
@@ -1677,5 +1684,38 @@ fn process_avatar(
                 ));
             });
         }
+    }
+}
+
+fn set_avatar_visibility(
+    mut q: Query<(&GlobalTransform, &mut Visibility, Option<&RenderLayers>), With<AvatarProcessed>>,
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
+    config: Res<AppConfig>,
+) {
+    let Ok(player_pos) = player.get_single().map(|gt| gt.translation()) else {
+        return;
+    };
+
+    let default_layer = RenderLayers::layer(0);
+    let mut distances = q
+        .iter()
+        .filter(|(_, _, maybe_layer)| {
+            maybe_layer.map_or(true, |layer| layer.intersects(&default_layer))
+        })
+        .map(|(t, ..)| (t.translation() - player_pos).length_squared())
+        .collect::<Vec<_>>();
+    distances.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less));
+    let cutoff = distances
+        .get(config.max_avatars)
+        .copied()
+        .unwrap_or(f32::MAX);
+
+    for (t, mut vis, maybe_layer) in q.iter_mut() {
+        let is_root_layer = maybe_layer.map_or(true, |layer| layer.intersects(&default_layer));
+        *vis = if is_root_layer && (t.translation() - player_pos).length_squared() >= cutoff {
+            Visibility::Hidden
+        } else {
+            Visibility::Inherited
+        };
     }
 }

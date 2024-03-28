@@ -108,6 +108,7 @@ fn main() {
             .unwrap_or(base_config.scene_unload_extra_distance),
         sysinfo_visible: false,
         scene_log_to_console: args.contains("--scene_log_to_console"),
+        ..base_config
     };
 
     let test_scenes = args.value_from_str("--test_scenes").ok();

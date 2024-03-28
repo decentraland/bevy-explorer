@@ -17,6 +17,7 @@ use crate::profile::{SettingsDialog, SettingsTab};
 use self::{
     frame_rate::FpsTargetSetting,
     load_distance::{LoadDistanceSetting, UnloadDistanceSetting},
+    max_avatars::MaxAvatarsSetting,
     oob_setting::OobSetting,
     scene_threads::SceneThreadsSetting,
 };
@@ -30,6 +31,7 @@ mod bloom_settings;
 pub mod fog_settings;
 pub mod frame_rate;
 pub mod load_distance;
+pub mod max_avatars;
 mod oob_setting;
 pub mod scene_threads;
 mod shadow_settings;
@@ -52,6 +54,7 @@ impl Plugin for AppSettingsPlugin {
             apply_setting::<UnloadDistanceSetting>,
             apply_setting::<FpsTargetSetting>,
             apply_setting::<SceneThreadsSetting>,
+            apply_setting::<MaxAvatarsSetting>,
             // apply_setting::<FullscreenResSetting>.after(apply_setting::<WindowSetting>),
         ));
 
@@ -141,6 +144,7 @@ fn set_app_settings_content(
             UnloadDistanceSetting::spawn_template(&mut commands, &dui, &config),
             FpsTargetSetting::spawn_template(&mut commands, &dui, &config),
             SceneThreadsSetting::spawn_template(&mut commands, &dui, &config),
+            MaxAvatarsSetting::spawn_template(&mut commands, &dui, &config),
         ];
 
         commands
