@@ -20,6 +20,9 @@ use self::{
     max_avatars::MaxAvatarsSetting,
     oob_setting::OobSetting,
     scene_threads::SceneThreadsSetting,
+    volume_settings::{
+        MasterVolumeSetting, SceneVolumeSetting, SystemVolumeSetting, VoiceVolumeSetting,
+    },
 };
 
 // use self::window_settings::{set_resolutions, MonitorResolutions};
@@ -35,6 +38,7 @@ pub mod max_avatars;
 mod oob_setting;
 pub mod scene_threads;
 mod shadow_settings;
+pub mod volume_settings;
 pub mod window_settings;
 
 impl Plugin for AppSettingsPlugin {
@@ -55,6 +59,10 @@ impl Plugin for AppSettingsPlugin {
             apply_setting::<FpsTargetSetting>,
             apply_setting::<SceneThreadsSetting>,
             apply_setting::<MaxAvatarsSetting>,
+            apply_setting::<MasterVolumeSetting>,
+            apply_setting::<SceneVolumeSetting>,
+            apply_setting::<VoiceVolumeSetting>,
+            apply_setting::<SystemVolumeSetting>,
             // apply_setting::<FullscreenResSetting>.after(apply_setting::<WindowSetting>),
         ));
 
@@ -145,6 +153,18 @@ fn set_app_settings_content(
             FpsTargetSetting::spawn_template(&mut commands, &dui, &config),
             SceneThreadsSetting::spawn_template(&mut commands, &dui, &config),
             MaxAvatarsSetting::spawn_template(&mut commands, &dui, &config),
+            commands
+                .spawn_template(
+                    &dui,
+                    "settings-header",
+                    DuiProps::new().with_prop("label", "Audio Settings".to_owned()),
+                )
+                .unwrap()
+                .root,
+            MasterVolumeSetting::spawn_template(&mut commands, &dui, &config),
+            SceneVolumeSetting::spawn_template(&mut commands, &dui, &config),
+            VoiceVolumeSetting::spawn_template(&mut commands, &dui, &config),
+            SystemVolumeSetting::spawn_template(&mut commands, &dui, &config),
         ];
 
         commands

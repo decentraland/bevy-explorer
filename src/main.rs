@@ -171,6 +171,7 @@ fn main() {
             soft_max_font_atlases: 4.try_into().unwrap(),
             allow_dynamic_font_size: true,
         })
+        .insert_resource(final_config.audio.clone())
         .add_plugins(
             DefaultPlugins
                 .set(TaskPoolPlugin {

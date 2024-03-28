@@ -147,6 +147,7 @@ pub struct AppConfig {
     pub location: IVec2,
     pub previous_login: Option<PreviousLogin>,
     pub graphics: GraphicsSettings,
+    pub audio: AudioSettings,
     pub scene_threads: usize,
     pub scene_load_distance: f32,
     pub scene_unload_extra_distance: f32,
@@ -163,6 +164,7 @@ impl Default for AppConfig {
             location: IVec2::new(78, -7),
             previous_login: None,
             graphics: Default::default(),
+            audio: Default::default(),
             scene_threads: 4,
             scene_load_distance: 75.0,
             scene_unload_extra_distance: 25.0,
@@ -204,6 +206,37 @@ impl Default for GraphicsSettings {
             bloom: BloomSetting::Low,
             oob: 2.0,
         }
+    }
+}
+
+#[derive(Resource, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AudioSettings {
+    pub master: i32, // 0-100
+    pub voice: i32,
+    pub scene: i32,
+    pub system: i32,
+}
+
+impl Default for AudioSettings {
+    fn default() -> Self {
+        Self {
+            master: 100,
+            voice: 100,
+            scene: 100,
+            system: 100,
+        }
+    }
+}
+
+impl AudioSettings {
+    pub fn voice(&self) -> f32 {
+        (self.voice * self.master) as f32 / 10_000.0
+    }
+    pub fn scene(&self) -> f32 {
+        (self.scene * self.master) as f32 / 10_000.0
+    }
+    pub fn system(&self) -> f32 {
+        (self.system * self.master) as f32 / 10_000.0
     }
 }
 

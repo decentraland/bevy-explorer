@@ -5,7 +5,7 @@ use bevy_kira_audio::{
 };
 use common::{
     sets::{SceneSets, SetupSets},
-    structs::{PrimaryCameraRes, PrimaryUser},
+    structs::{AudioSettings, PrimaryCameraRes, PrimaryUser},
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{proto_components::sdk::components::PbAudioSource, SceneComponentId};
@@ -71,6 +71,7 @@ fn update_audio(
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
     cam: Query<&GlobalTransform, With<AudioReceiver>>,
+    settings: Res<AudioSettings>,
 ) {
     let current_scenes = player
         .get_single()
@@ -125,7 +126,7 @@ fn update_audio(
             );
 
             let volume = if current_scenes.contains(&scene_ent.root) {
-                audio_source.0.volume.unwrap_or(1.0)
+                audio_source.0.volume.unwrap_or(1.0) * settings.scene()
             } else {
                 0.0
             };
@@ -191,6 +192,7 @@ fn update_source_volume(
     player: Query<Entity, With<PrimaryUser>>,
     mut prev_scenes: Local<HashSet<Entity>>,
     receiver: Query<&GlobalTransform, With<AudioReceiver>>,
+    settings: Res<AudioSettings>,
 ) {
     let current_scenes = player
         .get_single()
@@ -206,7 +208,8 @@ fn update_source_volume(
         if current_scenes.contains(&scene.root) {
             let sound_path = transform.translation() - receiver.translation();
             let volume = (1. - sound_path.length() / 125.0).clamp(0., 1.).powi(2)
-                * source.0.volume.unwrap_or(1.0);
+                * source.0.volume.unwrap_or(1.0)
+                * settings.scene();
 
             let panning = if sound_path.length() > f32::EPSILON {
                 let right_ear_angle = receiver.right().angle_between(sound_path);
