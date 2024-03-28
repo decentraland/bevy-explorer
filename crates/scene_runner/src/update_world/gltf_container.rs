@@ -260,7 +260,6 @@ fn update_gltf(
 
 pub struct CachedMeshData {
     mesh_id: AssetId<Mesh>,
-    is_skinned: bool,
     maybe_collider: Option<Handle<Mesh>>,
 }
 
@@ -400,58 +399,68 @@ fn update_ready_gltfs(
                         attr_id.hash(hash);
                         data.get_bytes().hash(hash);
                     }
+
+                    let has_joints = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();
+                    let has_weights = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
+                    let has_skin = maybe_skin.is_some();
+                    let is_skinned = has_skin && has_joints && has_weights;
+                    is_skinned.hash(hash);
+
+                    mesh_data.primitive_topology().hash(hash);
+
+                    if let Some(indices) = mesh_data.indices() {
+                        indices.iter().for_each(|index| index.hash(hash));
+                    }
+
                     let hash = hash.finish();
 
                     let cached_data = resource_lookup.meshes.get(&hash).and_then(|data| {
                         asset_server
                             .get_id_handle(data.mesh_id)
-                            .map(|h| (h, data.is_skinned, &data.maybe_collider))
+                            .map(|h| (h, &data.maybe_collider))
                     });
 
-                    let (h_mesh, is_skinned, cached_collider) = match cached_data {
-                        Some((h_mesh, is_skinned, cached_collider)) => {
-                            // overwrite with cached handle
-                            commands.entity(spawned_ent).insert(h_mesh.clone());
-                            (h_mesh, is_skinned, cached_collider.clone())
-                        }
-                        None => {
-                            mesh_data.normalize_joint_weights();
-
-                            let has_joints =
-                                mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();
-                            let has_weights =
-                                mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
-                            let has_skin = maybe_skin.is_some();
-                            let is_skinned = has_skin && has_joints && has_weights;
-                            if is_skinned {
-                                // bevy doesn't calculate culling correctly for skinned entities
-                                commands.entity(spawned_ent).try_insert(NoFrustumCulling);
-                            } else {
-                                // bevy crashes if unskinned models have joints and weights, or if skinned models don't
-                                if has_joints {
-                                    mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_INDEX);
-                                }
-                                if has_weights {
-                                    mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT);
-                                }
-                                if has_skin {
-                                    commands.entity(spawned_ent).remove::<SkinnedMesh>();
-                                }
+                    // note: disable cache for meshes with morph targets as we don't include them in the hash
+                    let (h_mesh, cached_collider) =
+                        match (mesh_data.has_morph_targets(), cached_data) {
+                            (false, Some((h_mesh, cached_collider))) => {
+                                // overwrite with cached handle
+                                commands.entity(spawned_ent).insert(h_mesh.clone());
+                                (h_mesh, cached_collider.clone())
                             }
+                            _ => {
+                                mesh_data.normalize_joint_weights();
 
-                            resource_lookup.meshes.insert(
-                                hash,
-                                CachedMeshData {
-                                    mesh_id: h_gltf_mesh.id(),
-                                    is_skinned,
-                                    maybe_collider: None,
-                                },
-                            );
-                            *tracker.0.entry("Unique Meshes").or_default() += 1;
-                            (h_gltf_mesh.clone(), is_skinned, None)
-                        }
-                    };
+                                if !is_skinned {
+                                    // bevy crashes if unskinned models have joints and weights, or if skinned models don't
+                                    if has_joints {
+                                        mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_INDEX);
+                                    }
+                                    if has_weights {
+                                        mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT);
+                                    }
+                                }
+
+                                resource_lookup.meshes.insert(
+                                    hash,
+                                    CachedMeshData {
+                                        mesh_id: h_gltf_mesh.id(),
+                                        maybe_collider: None,
+                                    },
+                                );
+                                *tracker.0.entry("Unique Meshes").or_default() += 1;
+                                (h_gltf_mesh.clone(), None)
+                            }
+                        };
                     *tracker.0.entry("Total Meshes").or_default() += 1;
+
+                    if is_skinned {
+                        // bevy doesn't calculate culling correctly for skinned entities
+                        commands.entity(spawned_ent).try_insert(NoFrustumCulling);
+                    } else if maybe_skin.is_some() {
+                        // remove skin data if mesh doesn't have all required data
+                        commands.entity(spawned_ent).remove::<SkinnedMesh>();
+                    }
 
                     // substitute material
                     if let Some(h_material) = maybe_material {
@@ -617,11 +626,11 @@ fn update_ready_gltfs(
                                         new_mesh.insert_attribute(attribute, data.clone());
                                     }
                                     let h_collider = meshes.add(new_mesh);
-                                    resource_lookup
-                                        .meshes
-                                        .get_mut(&hash)
-                                        .unwrap()
-                                        .maybe_collider = Some(h_collider.clone());
+
+                                    if let Some(data) = resource_lookup.meshes.get_mut(&hash) {
+                                        data.maybe_collider = Some(h_collider.clone());
+                                    }
+
                                     h_collider
                                 }
                             }
