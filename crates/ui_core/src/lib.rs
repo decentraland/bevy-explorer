@@ -109,7 +109,7 @@ fn setup(
         .unwrap();
     TITLE_TEXT_STYLE
         .set(TextStyle {
-            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
             font_size: 35.0,
             color: Color::BLACK,
         })
@@ -123,14 +123,14 @@ fn setup(
         .unwrap();
     BUTTON_TEXT_STYLE
         .set(TextStyle {
-            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
             font_size: 20.0,
             color: Color::BLACK,
         })
         .unwrap();
     BUTTON_DISABLED_TEXT_STYLE
         .set(TextStyle {
-            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
             font_size: 20.0,
             color: Color::GRAY,
         })
@@ -139,7 +139,7 @@ fn setup(
         .set(
             (0..10)
                 .map(|i| TextStyle {
-                    font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                    font: asset_server.load("fonts/NotoSans-Bold.ttf"),
                     font_size: 25.0,
                     color: Color::rgba(1.0, 1.0, 1.0, i as f32 / 9.0),
                 })

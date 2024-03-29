@@ -276,7 +276,7 @@ fn make_chat(
                     TextSection::new(
                         format!("{}: ", sender),
                         TextStyle {
-                            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
                             font_size: 15.0,
                             color: Color::YELLOW,
                         },
@@ -284,7 +284,7 @@ fn make_chat(
                     TextSection::new(
                         message,
                         TextStyle {
-                            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
                             font_size: 15.0,
                             color: Color::WHITE,
                         },
@@ -314,7 +314,7 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
                 text: Text::from_sections([TextSection::new(
                     message,
                     TextStyle {
-                        font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                        font: asset_server.load("fonts/NotoSans-Bold.ttf"),
                         font_size: 15.0,
                         color: match level {
                             SceneLogLevel::Log => Color::WHITE,

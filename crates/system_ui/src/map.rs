@@ -17,6 +17,7 @@ use isahc::AsyncReadResponseExt;
 use scene_runner::{initialize_scene::PARCEL_SIZE, vec3_to_parcel};
 use ui_core::{
     bound_node::{BoundedNode, BoundedNodeBundle},
+    text_size::FontSize,
     ui_actions::{ClickNoDrag, DragData, Dragged, MouseWheelData, MouseWheeled, On, UiCaller},
     ModifyComponentExt,
 };
@@ -219,6 +220,8 @@ fn update_map_data(
     map: Query<(&GlobalTransform, &MapTexture, &MapData, &Interaction)>,
     window: Query<&Window, With<PrimaryWindow>>,
     player: Query<&GlobalTransform, With<PrimaryUser>>,
+    children: Query<&Children>,
+    mut text: Query<&mut Text>,
 ) {
     let Ok(window) = window.get_single() else {
         return;
@@ -272,10 +275,17 @@ fn update_map_data(
                 style.bottom = Val::Px(bottomleft_pixel.y);
                 style.width = Val::Px(ppp);
                 style.height = Val::Px(ppp);
-            });
-        commands
-            .entity(data.cursor)
+            })
             .try_insert(Visibility::Inherited);
+
+        if let Some(mut text) = children
+            .get(data.cursor)
+            .ok()
+            .and_then(|c| c.first())
+            .and_then(|c| text.get_mut(*c).ok())
+        {
+            text.sections[0].value = format!("({},{})", parcel.x, parcel.y + 1);
+        }
     }
 }
 
@@ -325,6 +335,21 @@ fn render_map(
                             ..Default::default()
                         },
                         ..Default::default()
+                    })
+                    .with_children(|c| {
+                        c.spawn((
+                            TextBundle {
+                                style: Style {
+                                    position_type: PositionType::Absolute,
+                                    bottom: Val::Percent(100.0),
+                                    left: Val::Percent(100.0),
+                                    ..Default::default()
+                                },
+                                text: Text::from_section("Hello!", Default::default()),
+                                ..Default::default()
+                            },
+                            FontSize(0.03),
+                        ));
                     })
                     .id();
                 let you_are_here = commands
