@@ -1,12 +1,15 @@
 <define-template id="settings">
-    <div style="
-        position-type: absolute;
-        flex-direction: column;
-        height: 100%;
-        width: 100%;
-        background-color: #aa1fc1ff;
-        align-items: center;
-    ">
+    <div 
+        style="
+            position-type: absolute;
+            flex-direction: column;
+            height: 100%;
+            width: 100%;
+            background-color: #aa1fc1ff;
+            align-items: center;
+        "
+        focus="block"
+    >
         <div id="title-bar" style="width: 100%; height: auto;" z-index="100">
             <button label-name="change-realm-button" label="@realm" onclick="@change-realm" />
             <space />

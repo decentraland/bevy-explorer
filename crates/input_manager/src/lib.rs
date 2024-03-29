@@ -205,6 +205,7 @@ fn check_accept_input(
     let Ok(mut ctx) = ctx.get_single_mut() else {
         return;
     };
+    // we only accept mouse input if the cursor reaches the ui root, not if blocked by anything inbetween
     should_accept.mouse = ui_roots
         .iter()
         .any(|root| !matches!(root, Interaction::None));
