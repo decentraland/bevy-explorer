@@ -104,8 +104,8 @@ build-time = "0.1.3"
 prost-build = "0.11.8"
 
 [patch.crates-io]
-# bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.13-dcl" }
-bevy = { path="../bevy" }
+bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.13-dcl" }
+# bevy = { path="../bevy" }
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
 parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "try_convex" }
 rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }
