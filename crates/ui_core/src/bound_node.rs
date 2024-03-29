@@ -7,7 +7,7 @@ use bevy::{
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};
 
-use crate::combo_box::PropsExt;
+use crate::{combo_box::PropsExt, interact_style::InteractStyles};
 
 #[derive(Component)]
 pub struct NodeBounds {
@@ -291,6 +291,9 @@ impl DuiTemplate for DuiNodeBounds {
                 .take_as::<Color>(ctx, "border-color")?
                 .unwrap_or_default(),
         });
+        if let Some(styles) = props.take_as::<InteractStyles>(ctx, "styles")? {
+            commands.insert(styles);
+        }
         DuiBoundNode.render(commands, props, ctx)
     }
 }

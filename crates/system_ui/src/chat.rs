@@ -182,9 +182,9 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
         .entity(components.named("chat-entry"))
         .insert(ChatInput);
 
-    commands
-        .entity(components.named("chat-output"))
-        .insert(BackgroundColor(Color::rgba(0.0, 0.0, 0.25, 0.2)));
+    // commands
+    //     .entity(components.named("chat-output"))
+    //     .insert(BackgroundColor(Color::rgba(0.0, 0.0, 0.25, 0.2)));
 
     commands
         .entity(components.named("chat-output-inner"))

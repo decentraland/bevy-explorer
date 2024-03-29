@@ -1,14 +1,17 @@
 <define-template id="settings-tab">
-    <div style="position-type: absolute; width: 100%; height: 100%; flex-grow: 1; flex-direction: row; border: 10px; border-color: blue;">
+    <div style="position-type: absolute; width: 100%; height: 100%; flex-grow: 1; flex-direction: row;">
         <div style="flex-direction: column; width: 70%; height: 100%">
             <vscroll>
                 <div id="settings" style="width: 100%; flex-direction: column;" />
             </vscroll>
         </div>
-        <div style="width: 30%; height: 100%; border: 10px; border-color: green;">
+        <div style="width: 30%; height: 100%; flex-direction: column;">
+            <hr />
+            <large-text text="Setting Info" />
+            <hr-thin />
             <vscroll>
-                <div style="border: 1px; border-color:red;">
-                    <med-text text="Hover a setting to show a description" id="settings-description" />
+                <div style="margin: 1vmin">
+                    <med-text text="Hover a setting to show a description" id="settings-description" style="color: black" />
                 </div>
             </vscroll>
         </div>
@@ -16,55 +19,55 @@
 </define-template>
 
 <define-template id="enum-setting">
-    <div style="width: 100%; flex-direction: row; align-items: center; border: 10px; border-color: yellow;" interact="true">
+    <div style="width: 100%; flex-direction: row; align-items: center;" interact="true">
         <div style="flex-direction: column; align-items: flex-end; width: 50%; margin: 0px 2vmin 0px 0px;">
-            <large-text text="@title" />
+            <large-text text="@title" style="color: black" />
         </div>
-        <div style="width: 50%; flex-direction: row; justify-content: center; border:1px; border-color:green;">
-            <button label="<" onclick="@prev" />
+        <div style="width: 50%; flex-direction: row; align-items: center; margin: 1vmin">
+            <div><button image="images/left-arrow.png" onclick="@prev" image-width="5vmin" image-height="5vmin" /></div>
             <bounds 
-                style="flex-grow: 1; margin: 1vmin; padding: 1vmin; justify-content: center;"
+                style="flex-grow: 1; padding: 1vmin; justify-content: center;"
                 corner-size="2vmin"
                 blend-size="0.5vmin"
                 border-size="1vmin"
-                border-color="#000000ff"
-                color="#8888ff"
+                border-color="#7f569e"
+                color="#b2a1bf"
             >
-                <large-text id="setting-label" text="@label-initial" />
+                <large-text id="setting-label" text="@label-initial" style="color: #222222;" />
             </bounds>
-            <button label=">" onclick="@next" />
+            <div><button image="images/right-arrow.png" onclick="@next" image-width="5vmin" image-height="5vmin" /></div>
         </div>
     </div>
 </define-template>
 
 <define-template id="int-setting">
-    <div style="width: 100%; flex-direction: row; align-items: center; border: 10px; border-color: yellow;" interact="true" focus="block">
+    <div style="width: 100%; flex-direction: row; align-items: center;" interact="true" focus="block">
         <div style="flex-direction: column; align-items: flex-end; width: 50%; margin: 0px 2vmin 0px 0px;">
-            <large-text text="@title" />
+            <large-text text="@title" style="color: black" />
         </div>
-        <div style="width: 50%; flex-direction: row; justify-content: center; border:1px; border-color:green;">
-            <button label="<" onclickrepeat="@prev" />
+        <div style="width: 50%; flex-direction: row; align-items: center; margin: 1vmin">
+            <div><button image="images/left-arrow.png" onclickrepeat="@prev" image-width="5vmin" image-height="5vmin" /></div>
             <div style="flex-direction: column; flex-grow: 1; align-items: center;">
                 <med-text text="@label-initial" id="setting-label" />
-                <div style="flex-direction: row; border: 1px; border-color: red; width: 100%;">
+                <div style="flex-direction: row; width: 100%;">
                     <bounds 
                         id="container"
-                        style="flex-grow: 1; margin: 1vmin; padding: 1vmin; height: 3vmin; justify-content: center; align-items: center; border:1px; border-color: black;"
+                        style="flex-grow: 1; margin: 1vmin; padding: 1vmin; height: 3vmin; justify-content: center; align-items: center;"
                         corner-size="2vmin"
                         blend-size="0.5vmin"
                         border-size="1vmin"
-                        border-color="#000000ff"
-                        color="#8888ff"
+                        border-color="#7f569e"
+                        color="#b2a1bf"
                         interact="true"
                     >
 
-                        <div id="marker" style="position-type: absolute; border: 1px; border-color: orange; max-width: 0px; max-height: 0px; align-items: center; justify-content: center; left: '@initial-offset'">
+                        <div id="marker" style="position-type: absolute; max-width: 0px; max-height: 0px; align-items: center; justify-content: center; left: '@initial-offset'">
                             <bounds id="grip" style="position-type: absolute; width: 4vmin; height: 4vmin;"
                                 corner-size="2vmin"
                                 blend-size="2vmin"
                                 border-size="1vmin"
-                                border-color="#0000ffff"
-                                color="#8888ff"
+                                border-color="#7f569e"
+                                color="#b2a1bf"
                             >
                                 <bounded style="width: 100%; height: 100%" bound-image="images/grip.png" />
                             </bounds>
@@ -72,13 +75,13 @@
                     </bounds>
                 </div>
             </div>
-            <button label=">" onclickrepeat="@next" />
+            <div><button image="images/right-arrow.png" onclickrepeat="@next" image-width="5vmin" image-height="5vmin" /></div>
         </div>
     </div>
 </define-template>
 
 <define-template id="settings-header">
-    <div style="width: 100%; flex-direction: column;">
+    <div style="width: 100%; flex-direction: column; margin: 0vmin 1vmin 1vmin 1vmin;">
         <hr />
         <large-text text="@label" />
         <hr-thin />

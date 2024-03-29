@@ -6,7 +6,7 @@ use common::util::TryPushChildrenEx;
 use crate::{
     bound_node::NodeBounds,
     combo_box::PropsExt,
-    interact_style::{Active, InteractStyle, InteractStyles},
+    interact_style::{Active, InteractStyles},
     ui_actions::{close_ui, Click, ClickRepeat, DataChanged, Enabled, On, UiCaller},
     ModifyComponentExt,
 };
@@ -136,25 +136,6 @@ impl DuiTemplate for DuiButtonTemplate {
             data.image_height = props.take_as::<Val>(ctx, "image-height")?;
         };
 
-        let styles = data.styles.unwrap_or(InteractStyles {
-            active: Some(InteractStyle {
-                background: Some(Color::WHITE),
-                ..Default::default()
-            }),
-            hover: Some(InteractStyle {
-                background: Some(Color::rgb(0.9, 0.9, 1.0)),
-                ..Default::default()
-            }),
-            inactive: Some(InteractStyle {
-                background: Some(Color::rgb(0.7, 0.7, 1.0)),
-                ..Default::default()
-            }),
-            disabled: Some(InteractStyle {
-                background: Some(Color::rgb(0.6, 0.6, 0.6)),
-                ..Default::default()
-            }),
-        });
-
         let mut components = match (data.label, data.image) {
             (Some(label), _) => ctx.render_template(
                 commands,
@@ -181,8 +162,11 @@ impl DuiTemplate for DuiButtonTemplate {
             Enabled(data.enabled),
             Interaction::default(),
             FocusPolicy::Block,
-            styles,
         ));
+
+        if let Some(styles) = data.styles {
+            button.insert(styles);
+        }
 
         if let Some(onclick) = data.onclick {
             debug!("add on click");

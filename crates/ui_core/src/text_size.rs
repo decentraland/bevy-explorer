@@ -17,9 +17,9 @@ impl Plugin for TextSizePlugin {
 }
 
 fn setup(mut dui: ResMut<DuiRegistry>) {
-    dui.register_template("small-text", TextTemplate(0.0125));
-    dui.register_template("med-text", TextTemplate(0.025));
-    dui.register_template("large-text", TextTemplate(0.05));
+    dui.register_template("small-text", TextTemplate(0.015));
+    dui.register_template("med-text", TextTemplate(0.03));
+    dui.register_template("large-text", TextTemplate(0.06));
 }
 
 pub struct TextTemplate(f32);
@@ -32,7 +32,11 @@ impl DuiTemplate for TextTemplate {
         ctx: &mut bevy_dui::DuiContext,
     ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
         commands.insert(FontSize(self.0));
-        let font = ctx.asset_server().load("fonts/FiraSans-Bold.ttf");
+        let font = if self.0 < 0.02 {
+            ctx.asset_server().load("fonts/NotoSans-Regular.ttf")
+        } else {
+            ctx.asset_server().load("fonts/NotoSans-Bold.ttf")
+        };
         commands.modify_component(move |text: &mut Text| {
             for section in &mut text.sections {
                 section.style.font = font.clone();
