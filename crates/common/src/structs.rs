@@ -190,6 +190,7 @@ pub struct GraphicsSettings {
     pub bloom: BloomSetting,
     pub ssao: SsaoSetting,
     pub oob: f32,
+    pub ambient_brightness: i32,
 }
 
 impl Default for GraphicsSettings {
@@ -207,6 +208,7 @@ impl Default for GraphicsSettings {
             bloom: BloomSetting::Low,
             ssao: SsaoSetting::Off,
             oob: 2.0,
+            ambient_brightness: 50,
         }
     }
 }

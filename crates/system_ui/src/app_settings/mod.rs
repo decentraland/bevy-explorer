@@ -15,6 +15,7 @@ use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 use crate::profile::{SettingsDialog, SettingsTab};
 
 use self::{
+    ambient_brightness_setting::AmbientSetting,
     frame_rate::FpsTargetSetting,
     load_distance::{LoadDistanceSetting, UnloadDistanceSetting},
     max_avatars::MaxAvatarsSetting,
@@ -30,6 +31,7 @@ use self::{
 pub struct AppSettingsPlugin;
 
 mod aa_settings;
+pub mod ambient_brightness_setting;
 mod bloom_settings;
 pub mod fog_settings;
 pub mod frame_rate;
@@ -55,6 +57,7 @@ impl Plugin for AppSettingsPlugin {
             apply_setting::<SsaoSetting>,
             apply_setting::<OobSetting>,
             apply_setting::<AaSetting>,
+            apply_setting::<AmbientSetting>,
             apply_setting::<WindowSetting>,
             apply_setting::<LoadDistanceSetting>,
             apply_setting::<UnloadDistanceSetting>,
@@ -138,6 +141,7 @@ fn set_app_settings_content(
             WindowSetting::spawn_template(&mut commands, &dui, &config),
             // FullscreenResSetting::spawn_template(&mut commands, &dui, &config),
             AaSetting::spawn_template(&mut commands, &dui, &config),
+            AmbientSetting::spawn_template(&mut commands, &dui, &config),
             ShadowSetting::spawn_template(&mut commands, &dui, &config),
             FogSetting::spawn_template(&mut commands, &dui, &config),
             BloomSetting::spawn_template(&mut commands, &dui, &config),
