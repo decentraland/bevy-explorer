@@ -357,6 +357,7 @@ impl SceneColliderData {
         direction: Vec3,
         distance: f32,
         collision_mask: u32,
+        skip_inside: bool,
     ) -> Option<RaycastResult> {
         let ray = rapier3d_f64::prelude::Ray {
             origin: origin.as_dvec3().into(),
@@ -366,20 +367,22 @@ impl SceneColliderData {
 
         // collect colliders we started inside of, we must omit these from the query
         let mut inside = HashSet::default();
-        self.query_state.as_ref().unwrap().intersections_with_shape(
-            &self.dummy_rapier_structs.1,
-            &self.collider_set,
-            &origin.as_dvec3().into(),
-            &Ball::new(0.001),
-            QueryFilter::default().groups(InteractionGroups::new(
-                Group::from_bits_truncate(collision_mask),
-                Group::from_bits_truncate(collision_mask),
-            )),
-            |h| {
-                inside.insert(h);
-                true
-            },
-        );
+        if skip_inside {
+            self.query_state.as_ref().unwrap().intersections_with_shape(
+                &self.dummy_rapier_structs.1,
+                &self.collider_set,
+                &origin.as_dvec3().into(),
+                &Ball::new(0.001),
+                QueryFilter::default().groups(InteractionGroups::new(
+                    Group::from_bits_truncate(collision_mask),
+                    Group::from_bits_truncate(collision_mask),
+                )),
+                |h| {
+                    inside.insert(h);
+                    true
+                },
+            );
+        }
 
         self.query_state
             .as_ref()
@@ -484,6 +487,7 @@ impl SceneColliderData {
         direction: Vec3,
         distance: f32,
         collision_mask: u32,
+        skip_inside: bool,
     ) -> Vec<RaycastResult> {
         let ray = rapier3d_f64::prelude::Ray {
             origin: origin.as_dvec3().into(),
@@ -492,22 +496,24 @@ impl SceneColliderData {
         let mut results = Vec::default();
         self.update_pipeline(scene_time);
 
-        // collect colliders we started (nearly) inside of, we must omit these from the query
         let mut inside = HashSet::default();
-        self.query_state.as_ref().unwrap().intersections_with_shape(
-            &self.dummy_rapier_structs.1,
-            &self.collider_set,
-            &origin.as_dvec3().into(),
-            &Ball::new(0.001),
-            QueryFilter::default().groups(InteractionGroups::new(
-                Group::from_bits_truncate(collision_mask),
-                Group::from_bits_truncate(collision_mask),
-            )),
-            |h| {
-                inside.insert(h);
-                true
-            },
-        );
+        if skip_inside {
+            // collect colliders we started (nearly) inside of, we must omit these from the query
+            self.query_state.as_ref().unwrap().intersections_with_shape(
+                &self.dummy_rapier_structs.1,
+                &self.collider_set,
+                &origin.as_dvec3().into(),
+                &Ball::new(0.001),
+                QueryFilter::default().groups(InteractionGroups::new(
+                    Group::from_bits_truncate(collision_mask),
+                    Group::from_bits_truncate(collision_mask),
+                )),
+                |h| {
+                    inside.insert(h);
+                    true
+                },
+            );
+        }
 
         self.query_state.as_ref().unwrap().intersections_with_ray(
             &self.dummy_rapier_structs.1,

@@ -172,8 +172,9 @@ pub fn update_camera_position(
                     target_direction.normalize(),
                     distance,
                     u32::MAX,
+                    false,
                 ) {
-                    distance = distance.min(hit.toi);
+                    distance = distance.min(hit.toi - 0.1).max(0.0);
                 }
             }
         }

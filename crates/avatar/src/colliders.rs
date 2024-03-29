@@ -177,6 +177,7 @@ fn update_avatar_collider_actions(
         ray.direction.into(),
         pointer_distance,
         u32::MAX,
+        true,
     ) {
         let avatar = colliders.lookup.get(&avatar_target.id).unwrap();
         tooltips.0.insert(

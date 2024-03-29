@@ -138,6 +138,7 @@ fn update_pointer_target(
                     ray.direction.into(),
                     f32::MAX,
                     ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32,
+                    true,
                 );
 
                 match (maybe_nearest, maybe_prior_nearest) {
