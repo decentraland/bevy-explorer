@@ -134,7 +134,7 @@ fn move_ground(
         return;
     };
 
-    transform.translation = target.translation() * Vec3::new(1.0, 0.0, 1.0);
+    transform.translation = target.translation() * Vec3::new(1.0, 0.0, 1.0) + Vec3::Y * -0.01;
 }
 
 #[derive(clap::Parser, ConsoleCommand)]
