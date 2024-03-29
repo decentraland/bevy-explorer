@@ -8,7 +8,7 @@ use bevy::{
 };
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::structs::{
-    AaSetting, AppConfig, BloomSetting, FogSetting, ShadowSetting, WindowSetting,
+    AaSetting, AppConfig, BloomSetting, FogSetting, ShadowSetting, SsaoSetting, WindowSetting,
 };
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
@@ -38,6 +38,7 @@ pub mod max_avatars;
 mod oob_setting;
 pub mod scene_threads;
 mod shadow_settings;
+pub mod ssao_setting;
 pub mod volume_settings;
 pub mod window_settings;
 
@@ -51,6 +52,7 @@ impl Plugin for AppSettingsPlugin {
             apply_setting::<ShadowSetting>,
             apply_setting::<FogSetting>,
             apply_setting::<BloomSetting>,
+            apply_setting::<SsaoSetting>,
             apply_setting::<OobSetting>,
             apply_setting::<AaSetting>,
             apply_setting::<WindowSetting>,
@@ -139,6 +141,7 @@ fn set_app_settings_content(
             ShadowSetting::spawn_template(&mut commands, &dui, &config),
             FogSetting::spawn_template(&mut commands, &dui, &config),
             BloomSetting::spawn_template(&mut commands, &dui, &config),
+            SsaoSetting::spawn_template(&mut commands, &dui, &config),
             OobSetting::spawn_template(&mut commands, &dui, &config),
             commands
                 .spawn_template(

@@ -43,5 +43,15 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
     // See https://github.com/gfx-rs/naga/issues/2416
     out.instance_index = vertex_no_morph.instance_index;
 
+
+#ifdef NORMAL_PREPASS_OR_DEFERRED_PREPASS
+    out.world_normal = mesh_functions::mesh_normal_local_to_world(
+        vertex.normal,
+        // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
+        // See https://github.com/gfx-rs/naga/issues/2416
+        vertex_no_morph.instance_index
+    );
+#endif // NORMAL_PREPASS_OR_DEFERRED_PREPASS
+
     return out;
 }

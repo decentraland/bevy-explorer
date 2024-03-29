@@ -188,6 +188,7 @@ pub struct GraphicsSettings {
     // pub fullscreen_res: FullscreenResSetting,
     pub fog: FogSetting,
     pub bloom: BloomSetting,
+    pub ssao: SsaoSetting,
     pub oob: f32,
 }
 
@@ -204,6 +205,7 @@ impl Default for GraphicsSettings {
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
             fog: FogSetting::Atmospheric,
             bloom: BloomSetting::Low,
+            ssao: SsaoSetting::Off,
             oob: 2.0,
         }
     }
@@ -276,6 +278,13 @@ pub enum FogSetting {
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum BloomSetting {
+    Off,
+    Low,
+    High,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SsaoSetting {
     Off,
     Low,
     High,
