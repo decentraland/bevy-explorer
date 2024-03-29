@@ -30,6 +30,7 @@ use ui_core::{
     ui_actions::{Click, EventCloneExt},
     BODY_TEXT_STYLE, TITLE_TEXT_STYLE,
 };
+use user_input::CursorLocked;
 use world_ui::TextShapeMaterial;
 
 use crate::{
@@ -53,6 +54,7 @@ impl Plugin for SysInfoPanelPlugin {
                 update_scene_load_state,
                 update_minimap,
                 update_map_visibilty,
+                update_crosshair,
             ),
         );
         app.add_systems(
@@ -71,6 +73,9 @@ struct SysInfoMarker;
 
 #[derive(Component)]
 struct SysInfoContainer;
+
+#[derive(Component)]
+struct CrossHair;
 
 pub(crate) fn setup(
     mut commands: Commands,
@@ -95,16 +100,19 @@ pub(crate) fn setup(
                 ..Default::default()
             })
             .with_children(|c| {
-                c.spawn(ImageBundle {
-                    style: Style {
-                        width: Val::VMin(3.0),
-                        height: Val::VMin(3.0),
+                c.spawn((
+                    ImageBundle {
+                        style: Style {
+                            width: Val::VMin(3.0),
+                            height: Val::VMin(3.0),
+                            ..Default::default()
+                        },
+                        image: asset_server.load("images/crosshair.png").into(),
+                        background_color: Color::rgba(1.0, 1.0, 1.0, 0.7).into(),
                         ..Default::default()
                     },
-                    image: asset_server.load("images/crosshair.png").into(),
-                    background_color: Color::rgba(1.0, 1.0, 1.0, 0.7).into(),
-                    ..Default::default()
-                });
+                    CrossHair,
+                ));
             });
         commands.spawn(TextBundle {
             style: Style {
@@ -498,5 +506,20 @@ fn set_track_components(
         let on = command.on.unwrap_or(true);
         track.0 = on;
         input.reply_ok("");
+    }
+}
+
+fn update_crosshair(
+    locked: Res<CursorLocked>,
+    mut prev: Local<Option<bool>>,
+    mut crosshair: Query<&mut BackgroundColor, With<CrossHair>>,
+) {
+    if Some(locked.0) != *prev {
+        *prev = Some(locked.0);
+        if locked.0 {
+            crosshair.single_mut().0.set_a(0.7);
+        } else {
+            crosshair.single_mut().0.set_a(0.2);
+        }
     }
 }

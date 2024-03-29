@@ -13,6 +13,8 @@ use scene_runner::{
     ContainingScene,
 };
 
+use crate::CursorLocked;
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn update_camera(
     time: Res<Time>,
@@ -25,6 +27,7 @@ pub fn update_camera(
     mut camera: Query<(&mut Transform, &mut PrimaryCamera)>,
     mut locked_cursor_position: Local<Option<Vec2>>,
     accept_input: Res<AcceptInput>,
+    mut cursor_locked: ResMut<CursorLocked>,
 ) {
     let dt = time.delta_seconds();
 
@@ -68,6 +71,7 @@ pub fn update_camera(
 
             window.cursor.grab_mode = CursorGrabMode::Locked;
             window.cursor.visible = false;
+            cursor_locked.0 = true;
 
             #[cfg(target_os = "windows")]
             {
@@ -90,6 +94,7 @@ pub fn update_camera(
         for mut window in &mut windows {
             window.cursor.grab_mode = CursorGrabMode::None;
             window.cursor.visible = true;
+            cursor_locked.0 = false;
             *locked_cursor_position = None;
         }
     }
