@@ -120,7 +120,7 @@ fn connect_livekit(
         ));
         commands
             .entity(transport_id)
-            .insert(LivekitConnection(task));
+            .try_insert(LivekitConnection(task));
     }
 }
 
