@@ -589,6 +589,13 @@ impl PointerResult {
             PointerResult::Exists { hash, urn, .. } => Some((hash.clone(), urn.clone())),
         }
     }
+
+    fn realm(&self) -> &str {
+        match self {
+            PointerResult::Nothing { realm, .. } => realm,
+            PointerResult::Exists { realm, .. } => realm,
+        }
+    }
 }
 
 fn parcels_in_range(focus: &GlobalTransform, range: f32) -> Vec<(IVec2, f32)> {
@@ -885,7 +892,13 @@ pub fn process_scene_lifecycle(
     let mut keep_scene_ids = required_scene_ids.clone();
     keep_scene_ids.extend(pir.iter().flat_map(|(parcel, dist)| {
         if *dist >= range.load {
-            pointers.0.get(parcel).and_then(PointerResult::hash_and_urn)
+            pointers
+                .0
+                .get(parcel)
+                // immediately unload scenes from other realms, even if they might match
+                // we don't check them until they are in range, so better to just nuke them
+                .filter(|pr| pr.realm() == current_realm.address)
+                .and_then(PointerResult::hash_and_urn)
         } else {
             None
         }
