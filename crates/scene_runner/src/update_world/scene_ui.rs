@@ -46,6 +46,12 @@ struct Size {
     height: Val,
 }
 
+#[derive(Debug, Copy, Clone)]
+struct MaybeSize {
+    width: Option<Val>,
+    height: Option<Val>,
+}
+
 // macro helpers to convert proto format to bevy format for val, size, rect
 macro_rules! val {
     ($pb:ident, $u:ident, $v:ident, $d:expr) => {
@@ -63,6 +69,28 @@ macro_rules! size {
         Size {
             width: val!($pb, $wu, $w, $d),
             height: val!($pb, $hu, $h, $d),
+        }
+    }};
+}
+
+
+// macro helpers to convert proto format to bevy format for val, size, rect
+macro_rules! maybe_val {
+    ($pb:ident, $u:ident, $v:ident, $d:expr) => {
+        match $pb.$u() {
+            YgUnit::YguUndefined => None,
+            YgUnit::YguAuto => Some(Val::Auto),
+            YgUnit::YguPoint => Some(Val::Px($pb.$v)),
+            YgUnit::YguPercent => Some(Val::Percent($pb.$v)),
+        }
+    };
+}
+
+macro_rules! maybe_size {
+    ($pb:ident, $wu:ident, $w:ident, $hu:ident, $h:ident, $d:expr) => {{
+        MaybeSize {
+            width: maybe_val!($pb, $wu, $w, $d),
+            height: maybe_val!($pb, $hu, $h, $d),
         }
     }};
 }
@@ -94,7 +122,7 @@ pub struct UiTransform {
     display: Display,
     basis: Val,
     grow: f32,
-    size: Size,
+    size: MaybeSize,
     min_size: Size,
     max_size: Size,
     position: UiRect,
@@ -176,7 +204,7 @@ impl From<PbUiTransform> for UiTransform {
             },
             basis: val!(value, flex_basis_unit, flex_basis, Val::Auto),
             grow: value.flex_grow,
-            size: size!(value, width_unit, width, height_unit, height, Val::Auto),
+            size: maybe_size!(value, width_unit, width, height_unit, height, Val::Auto),
             min_size: size!(
                 value,
                 min_width_unit,
@@ -604,8 +632,8 @@ fn layout_scene_ui(
                                 display: ui_transform.display,
                                 flex_basis: ui_transform.basis,
                                 flex_grow: ui_transform.grow,
-                                width: ui_transform.size.width,
-                                height: ui_transform.size.height,
+                                width: ui_transform.size.width.unwrap_or_default(),
+                                height: ui_transform.size.height.unwrap_or_default(),
                                 min_width: ui_transform.min_size.width,
                                 min_height: ui_transform.min_size.height,
                                 max_width: ui_transform.max_size.width,
@@ -621,7 +649,9 @@ fn layout_scene_ui(
                             debug!("{:?} [parent: {:?}, ro: {:?}] style: {:?}", scene_id, ui_transform.parent, ui_transform.right_of, style);
                             debug!("{:?}, {:?}, {:?}, {:?}, {:?}", maybe_background, maybe_text, maybe_pointer_events, maybe_ui_input, maybe_dropdown);
                             commands.entity(*parent).with_children(|commands| {
-                                let mut ent_cmds = &mut commands.spawn(NodeBundle::default());
+                                let ent_cmds = &mut commands.spawn(NodeBundle::default());
+                                // we ues entity id as zindex. this is rubbish but mimics the foundation behaviour for multiple overlapping root nodes.
+                                let mut ent_cmds = ent_cmds.insert(ZIndex::Local(scene_id.id as i32));
 
                                 if let Some(background) = maybe_background {
                                     if let Some(texture) = background.texture.as_ref() {
@@ -748,56 +778,88 @@ fn layout_scene_ui(
                                 }
 
                                 if let Some(ui_text) = maybe_text {
+                                    let text = make_text_section(
+                                        ui_text.text.as_str(),
+                                        ui_text.font_size,
+                                        ui_text.color,
+                                        ui_text.font,
+                                        ui_text.h_align,
+                                        false,
+                                    );
+
+                                    // with text nodes the axis sizes are unusual. 
+                                    // a) if either size axis is NOT NONE, (explicit or auto), we want auto to size appropriately for the content.
+                                    // b) if both axes are NONE, we want to size to zero.
+                                    // a) - we tackle this by using a nested position-type: relative node which will size it's parent appropriately, and default the parent to Auto
+                                    //    - for alignment we use align-items and justify-content
+                                    // b) - we use a nested position-type: absolute node, and default the parent to auto
+                                    //    - for alignment we use align-items and justify-content as above, and we also set left/right/top/bottom to 50% if required
+
+                                    let any_axis_auto = [ui_transform.size.width, ui_transform.size.height].iter().any(Option::is_some);
+
+                                    let inner_style = if any_axis_auto {
+                                        Style {
+                                            position_type: PositionType::Relative,
+                                            ..Default::default()
+                                        }                                        
+                                    } else {
+                                        Style {
+                                            position_type: PositionType::Absolute,
+                                            left: if ui_text.h_align == JustifyText::Left {
+                                                Val::Percent(50.0)
+                                            } else {
+                                                Val::Auto
+                                            },
+                                            right: if ui_text.h_align == JustifyText::Right {
+                                                Val::Percent(50.0)
+                                            } else {
+                                                Val::Auto
+                                            },
+                                            top: if ui_text.v_align == VAlign::Top {
+                                                Val::Percent(50.0)
+                                            } else {
+                                                Val::Auto
+                                            },
+                                            bottom: if ui_text.v_align == VAlign::Bottom {
+                                                Val::Percent(50.0)
+                                            } else {
+                                                Val::Auto
+                                            },
+                                            ..Default::default()
+                                        }
+                                    };
+
                                     ent_cmds = ent_cmds.with_children(|c| {
                                         c.spawn(NodeBundle {
                                             style: Style {
                                                 flex_direction: FlexDirection::Column,
-                                                width: Val::Percent(100.0),
-                                                height: Val::Percent(100.0),
+                                                align_items: match ui_text.h_align {
+                                                    JustifyText::Left => AlignItems::FlexStart,
+                                                    JustifyText::Center => AlignItems::Center,
+                                                    JustifyText::Right => AlignItems::FlexEnd,
+                                                },
+                                                justify_content: match ui_text.v_align {
+                                                    VAlign::Top => JustifyContent::FlexStart,
+                                                    VAlign::Middle => JustifyContent::Center,
+                                                    VAlign::Bottom => JustifyContent::FlexEnd,
+                                                },
+                                                width: style.width,
+                                                height: style.height,
                                                 ..Default::default()
                                             },
                                             ..Default::default()
                                         })
                                             .with_children(|c| {
-                                                if ui_text.v_align != VAlign::Top {
-                                                    c.spacer();
-                                                }
-
                                                 c.spawn(NodeBundle {
-                                                    style: Style {
-                                                        flex_direction: FlexDirection::Row,
-                                                        width: Val::Percent(100.0),
-                                                        ..Default::default()
-                                                    },
+                                                    style: inner_style,
                                                     ..Default::default()
                                                 }).with_children(|c| {
-                                                    if ui_text.h_align != JustifyText::Left {
-                                                        c.spacer();
-                                                    }
-
-                                                    let text = make_text_section(
-                                                        ui_text.text.as_str(),
-                                                        ui_text.font_size,
-                                                        ui_text.color,
-                                                        ui_text.font,
-                                                        ui_text.h_align,
-                                                        false,
-                                                    );
-
                                                     c.spawn(TextBundle {
                                                         text,
                                                         z_index: ZIndex::Local(1),
                                                         ..Default::default()
                                                     });
-
-                                                    if ui_text.h_align != JustifyText::Right {
-                                                        c.spacer();
-                                                    }
                                                 });
-
-                                                if ui_text.v_align != VAlign::Bottom {
-                                                    c.spacer();
-                                                }
                                             },
                                         );
                                     });
