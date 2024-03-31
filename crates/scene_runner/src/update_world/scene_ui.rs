@@ -73,7 +73,6 @@ macro_rules! size {
     }};
 }
 
-
 // macro helpers to convert proto format to bevy format for val, size, rect
 macro_rules! maybe_val {
     ($pb:ident, $u:ident, $v:ident, $d:expr) => {
@@ -801,7 +800,7 @@ fn layout_scene_ui(
                                         Style {
                                             position_type: PositionType::Relative,
                                             ..Default::default()
-                                        }                                        
+                                        }
                                     } else {
                                         Style {
                                             position_type: PositionType::Absolute,
