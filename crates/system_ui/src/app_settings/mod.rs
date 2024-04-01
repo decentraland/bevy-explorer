@@ -21,6 +21,7 @@ use self::{
     max_avatars::MaxAvatarsSetting,
     oob_setting::OobSetting,
     scene_threads::SceneThreadsSetting,
+    shadow_settings::ShadowDistanceSetting,
     volume_settings::{
         MasterVolumeSetting, SceneVolumeSetting, SystemVolumeSetting, VoiceVolumeSetting,
     },
@@ -51,7 +52,8 @@ impl Plugin for AppSettingsPlugin {
         let mut apply_schedule = Schedule::new(ApplyAppSettingsLabel);
 
         apply_schedule.add_systems((
-            apply_setting::<ShadowSetting>,
+            apply_setting::<ShadowDistanceSetting>,
+            apply_setting::<ShadowSetting>.after(apply_setting::<ShadowDistanceSetting>),
             apply_setting::<FogSetting>,
             apply_setting::<BloomSetting>,
             apply_setting::<SsaoSetting>,
@@ -143,6 +145,7 @@ fn set_app_settings_content(
             AaSetting::spawn_template(&mut commands, &dui, &config),
             AmbientSetting::spawn_template(&mut commands, &dui, &config),
             ShadowSetting::spawn_template(&mut commands, &dui, &config),
+            ShadowDistanceSetting::spawn_template(&mut commands, &dui, &config),
             FogSetting::spawn_template(&mut commands, &dui, &config),
             BloomSetting::spawn_template(&mut commands, &dui, &config),
             SsaoSetting::spawn_template(&mut commands, &dui, &config),

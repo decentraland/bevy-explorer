@@ -200,7 +200,7 @@ impl Default for GraphicsSettings {
             log_fps: true,
             msaa: AaSetting::Msaa4x,
             fps_target: 60,
-            shadow_distance: 100.0,
+            shadow_distance: 200.0,
             shadow_settings: ShadowSetting::High,
             window: WindowSetting::Windowed,
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
