@@ -1,9 +1,10 @@
-use std::{f32::consts::PI, str::FromStr};
+use std::{f32::consts::PI, path::PathBuf, str::FromStr};
 
 use anyhow::anyhow;
 use attach::AttachPlugin;
 use avatar_texture::AvatarTexturePlugin;
 use bevy::{
+    asset::{io::AssetReader, AsyncReadExt},
     gltf::Gltf,
     prelude::*,
     render::{
@@ -14,11 +15,14 @@ use bevy::{
     tasks::{IoTaskPool, Task},
     utils::{HashMap, HashSet},
 };
+use bevy_console::ConsoleCommand;
 use colliders::AvatarColliderPlugin;
+use console::DoAddConsoleCommand;
 use emotes::AvatarAnimations;
 use isahc::AsyncReadResponseExt;
 use itertools::Itertools;
 use npc_dynamics::NpcMovementPlugin;
+use scene_material::{SceneMaterial, SceneMaterialExt};
 use serde::Deserialize;
 
 pub mod animate;
@@ -46,9 +50,13 @@ use dcl_component::{
     },
     SceneComponentId, SceneEntityId,
 };
-use ipfs::{ActiveEntityTask, IpfsAssetServer, IpfsModifier};
+use ipfs::{
+    ipfs_path::{IpfsPath, IpfsType},
+    ActiveEntityTask, EntityDefinition, IpfsAssetServer, IpfsModifier,
+};
 use scene_runner::{
     update_world::{billboard::Billboard, text_shape::DespawnWith, AddCrdtInterfaceExt},
+    util::ConsoleRelay,
     ContainingScene, SceneEntity,
 };
 use ui_core::TEXT_SHAPE_FONT_MONO;
@@ -100,6 +108,8 @@ impl Plugin for AvatarPlugin {
             SceneComponentId::AVATAR_SHAPE,
             ComponentPosition::Any,
         );
+
+        app.add_console_command::<DebugDumpAvatar, _>(debug_dump_avatar);
     }
 }
 
@@ -1299,7 +1309,8 @@ fn process_avatar(
     )>,
     named_ents: Query<&Name>,
     mut skins: Query<&mut SkinnedMesh>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    standard_materials: Res<Assets<StandardMaterial>>,
+    mut scene_materials: ResMut<Assets<SceneMaterial>>,
     mut mask_materials: ResMut<Assets<MaskMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     attach_points: Query<&AttachPoints>,
@@ -1320,7 +1331,7 @@ fn process_avatar(
             continue;
         }
 
-        let mut colored_materials = HashMap::default();
+        let mut instance_scene_materials = HashMap::default();
         let mut armature_node = None;
         let mut target_armature_entities = HashMap::default();
 
@@ -1377,30 +1388,27 @@ fn process_avatar(
             }
 
             if let Some(h_mat) = maybe_h_mat {
-                if loaded_avatar.skin_materials.contains(h_mat) {
-                    if let Some(mat) = materials.get(h_mat) {
-                        let new_mat = StandardMaterial {
-                            base_color: def.skin_color,
-                            ..mat.clone()
-                        };
-                        let h_colored_mat = colored_materials
-                            .entry(h_mat.clone_weak())
-                            .or_insert_with(|| materials.add(new_mat));
-                        commands.entity(scene_ent).try_insert(h_colored_mat.clone());
-                    }
-                }
+                commands
+                    .entity(scene_ent)
+                    .remove::<Handle<StandardMaterial>>();
 
-                if loaded_avatar.hair_materials.contains(h_mat) {
-                    if let Some(mat) = materials.get(h_mat) {
-                        let new_mat = StandardMaterial {
-                            base_color: def.hair_color,
-                            ..mat.clone()
-                        };
-                        let h_colored_mat = colored_materials
-                            .entry(h_mat.clone_weak())
-                            .or_insert_with(|| materials.add(new_mat));
-                        commands.entity(scene_ent).try_insert(h_colored_mat.clone());
-                    }
+                if let Some(mat) = standard_materials.get(h_mat) {
+                    let base_color = if loaded_avatar.skin_materials.contains(h_mat) {
+                        def.skin_color
+                    } else if loaded_avatar.hair_materials.contains(h_mat) {
+                        def.hair_color
+                    } else {
+                        mat.base_color
+                    };
+
+                    let new_mat = SceneMaterial::unbounded(StandardMaterial {
+                        base_color,
+                        ..mat.clone()
+                    });
+                    let instance_mat = instance_scene_materials
+                        .entry(h_mat.clone_weak())
+                        .or_insert_with(|| scene_materials.add(new_mat));
+                    commands.entity(scene_ent).try_insert(instance_mat.clone());
                 }
             }
 
@@ -1440,19 +1448,20 @@ fn process_avatar(
                             commands
                                 .entity(scene_ent)
                                 .try_insert(mask_material)
-                                .remove::<Handle<StandardMaterial>>();
+                                .remove::<Handle<SceneMaterial>>();
                         } else {
                             debug!("no mask for {suffix}");
-                            let material = materials.add(StandardMaterial {
-                                base_color: if no_mask_means_ignore_color {
-                                    Color::WHITE
-                                } else {
-                                    color
-                                },
-                                base_color_texture: texture.clone(),
-                                alpha_mode: AlphaMode::Blend,
-                                ..Default::default()
-                            });
+                            let material =
+                                scene_materials.add(SceneMaterial::unbounded(StandardMaterial {
+                                    base_color: if no_mask_means_ignore_color {
+                                        Color::WHITE
+                                    } else {
+                                        color
+                                    },
+                                    base_color_texture: texture.clone(),
+                                    alpha_mode: AlphaMode::Blend,
+                                    ..Default::default()
+                                }));
                             commands.entity(scene_ent).try_insert(material);
                         };
                         *vis = Visibility::Inherited;
@@ -1582,30 +1591,27 @@ fn process_avatar(
                 }
 
                 if let Some(h_mat) = maybe_h_mat {
-                    if loaded_avatar.skin_materials.contains(h_mat) {
-                        if let Some(mat) = materials.get(h_mat) {
-                            let new_mat = StandardMaterial {
-                                base_color: def.skin_color,
-                                ..mat.clone()
-                            };
-                            let h_colored_mat = colored_materials
-                                .entry(h_mat.clone_weak())
-                                .or_insert_with(|| materials.add(new_mat));
-                            commands.entity(scene_ent).try_insert(h_colored_mat.clone());
-                        }
-                    }
+                    commands
+                        .entity(scene_ent)
+                        .remove::<Handle<StandardMaterial>>();
 
-                    if loaded_avatar.hair_materials.contains(h_mat) {
-                        if let Some(mat) = materials.get(h_mat) {
-                            let new_mat = StandardMaterial {
-                                base_color: def.hair_color,
-                                ..mat.clone()
-                            };
-                            let h_colored_mat = colored_materials
-                                .entry(h_mat.clone_weak())
-                                .or_insert_with(|| materials.add(new_mat));
-                            commands.entity(scene_ent).try_insert(h_colored_mat.clone());
-                        }
+                    if let Some(mat) = standard_materials.get(h_mat) {
+                        let base_color = if loaded_avatar.skin_materials.contains(h_mat) {
+                            def.skin_color
+                        } else if loaded_avatar.hair_materials.contains(h_mat) {
+                            def.hair_color
+                        } else {
+                            mat.base_color
+                        };
+
+                        let new_mat = SceneMaterial::unbounded(StandardMaterial {
+                            base_color,
+                            ..mat.clone()
+                        });
+                        let instance_mat = instance_scene_materials
+                            .entry(h_mat.clone_weak())
+                            .or_insert_with(|| scene_materials.add(new_mat));
+                        commands.entity(scene_ent).try_insert(instance_mat.clone());
                     }
                 }
             }
@@ -1635,7 +1641,7 @@ fn process_avatar(
 
         debug!(
             "avatar processed, 1+{} models, {} textures. hides: {:?}, skin mats: {:?}, hair mats: {:?}, used mats: {:?}",
-            wearable_models, wearable_texs, def.hides, loaded_avatar.skin_materials.len(), loaded_avatar.hair_materials.len(), colored_materials.len()
+            wearable_models, wearable_texs, def.hides, loaded_avatar.skin_materials.len(), loaded_avatar.hair_materials.len(), instance_scene_materials.len()
         );
 
         commands
@@ -1718,4 +1724,132 @@ fn set_avatar_visibility(
             Visibility::Inherited
         };
     }
+}
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/debug_dump_avatar")]
+struct DebugDumpAvatar;
+
+#[allow(clippy::too_many_arguments)]
+fn debug_dump_avatar(
+    mut input: ConsoleCommand<DebugDumpAvatar>,
+    player: Query<&AvatarShape, With<PrimaryUser>>,
+    ipfas: IpfsAssetServer,
+    entity_definitions: Res<Assets<EntityDefinition>>,
+    mut tasks: Local<Vec<Task<()>>>,
+    console_relay: Res<ConsoleRelay>,
+    wearable_pointers: Res<WearablePointers>,
+    mut store: Local<HashSet<Handle<EntityDefinition>>>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        let Ok(shape) = player.get_single() else {
+            return;
+        };
+
+        let hashes: Vec<_> = shape
+            .0
+            .wearables
+            .iter()
+            .flat_map(|wearable| match wearable_pointers.get(wearable) {
+                Some(WearablePointerResult::Exists(hash)) => Some(hash),
+                Some(WearablePointerResult::Missing) => None,
+                None => None,
+            })
+            .collect();
+
+        for scene_hash in hashes {
+            let h_scene = ipfas.load_hash::<EntityDefinition>(scene_hash);
+            let Some(def) = entity_definitions.get(&h_scene) else {
+                input.reply_failed("can't resolve wearable handle - try again in a few seconds");
+                store.insert(h_scene);
+                continue;
+            };
+
+            let dump_folder = ipfas
+                .ipfs()
+                .cache_path()
+                .to_owned()
+                .join("scene_dump")
+                .join("wearables")
+                .join(scene_hash);
+            std::fs::create_dir_all(&dump_folder).unwrap();
+
+            // total / succeed / fail
+            let count = std::sync::Arc::new(std::sync::Mutex::new((0, 0, 0)));
+
+            for content_file in def.content.files() {
+                count.lock().unwrap().0 += 1;
+                let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+                    scene_hash.to_owned(),
+                    content_file.to_owned(),
+                ));
+
+                let path = PathBuf::from(&ipfs_path);
+
+                let ipfs = ipfas.ipfs().clone();
+                let content_file = content_file.clone();
+                let dump_folder = dump_folder.clone();
+                let count = count.clone();
+                let send = console_relay.send.clone();
+                tasks.push(IoTaskPool::get().spawn(async move {
+                    let report = |fail: Option<String>| {
+                        let mut count = count.lock().unwrap();
+                        if let Some(fail) = fail {
+                            count.2 += 1;
+                            let _ = send.send(fail.into());
+                        } else {
+                            count.1 += 1;
+                        }
+                        if count.0 == count.1 + count.2 {
+                            if count.2 == 0 {
+                                let _ =
+                                    send.send(format!("[ok] {} files downloaded", count.0).into());
+                            } else {
+                                let _ = send.send(
+                                    format!("[failed] {}/{} files downloaded", count.1, count.0)
+                                        .into(),
+                                );
+                            }
+                        }
+                    };
+
+                    let Ok(mut reader) = ipfs.read(&path).await else {
+                        report(Some(format!(
+                            "{content_file} failed: couldn't load bytes\n"
+                        )));
+                        return;
+                    };
+                    let mut bytes = Vec::default();
+                    if let Err(e) = reader.read_to_end(&mut bytes).await {
+                        report(Some(format!("{content_file} failed: {e}")));
+                        return;
+                    }
+
+                    let file = dump_folder.join(&content_file);
+                    if let Some(parent) = file.parent() {
+                        if let Err(e) = std::fs::create_dir_all(parent) {
+                            report(Some(format!(
+                                "{content_file} failed: couldn't create parent: {e}"
+                            )));
+                            return;
+                        }
+                    }
+                    if let Err(e) = std::fs::write(file, bytes) {
+                        report(Some(format!("{content_file} failed: {e}")));
+                        return;
+                    }
+
+                    report(None);
+                }));
+            }
+
+            input.reply(format!(
+                "scene hash {}, downloading {} files",
+                scene_hash,
+                tasks.len()
+            ));
+        }
+    }
+
+    tasks.retain_mut(|t| !t.is_finished());
 }

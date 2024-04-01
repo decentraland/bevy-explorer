@@ -6,6 +6,24 @@ use bevy::{
 
 pub type SceneMaterial = ExtendedMaterial<StandardMaterial, SceneBound>;
 
+pub trait SceneMaterialExt {
+    fn unbounded(mat: StandardMaterial) -> Self
+    where
+        Self: Sized;
+}
+
+impl SceneMaterialExt for SceneMaterial {
+    fn unbounded(mat: StandardMaterial) -> Self
+    where
+        Self: Sized,
+    {
+        Self {
+            base: mat,
+            extension: SceneBound::unbounded(),
+        }
+    }
+}
+
 #[derive(Asset, TypePath, Clone, AsBindGroup)]
 pub struct SceneBound {
     #[uniform(100)]
@@ -16,6 +34,20 @@ impl SceneBound {
     pub fn new(bounds: Vec4, distance: f32) -> Self {
         Self {
             data: SceneBoundData { bounds, distance },
+        }
+    }
+
+    pub fn unbounded() -> Self {
+        Self {
+            data: SceneBoundData {
+                bounds: Vec4::new(
+                    f32::NEG_INFINITY,
+                    f32::NEG_INFINITY,
+                    f32::INFINITY,
+                    f32::INFINITY,
+                ),
+                distance: 0.0,
+            },
         }
     }
 }
