@@ -794,9 +794,9 @@ fn layout_scene_ui(
                                     // b) - we use a nested position-type: absolute node, and default the parent to auto
                                     //    - for alignment we use align-items and justify-content as above, and we also set left/right/top/bottom to 50% if required
 
-                                    let any_axis_auto = [ui_transform.size.width, ui_transform.size.height].iter().any(Option::is_some);
+                                    let any_axis_specified = [ui_transform.size.width, ui_transform.size.height].iter().any(Option::is_some);
 
-                                    let inner_style = if any_axis_auto {
+                                    let inner_style = if any_axis_specified {
                                         Style {
                                             position_type: PositionType::Relative,
                                             ..Default::default()
