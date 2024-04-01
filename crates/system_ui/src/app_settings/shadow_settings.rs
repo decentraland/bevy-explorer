@@ -80,8 +80,14 @@ impl AppSetting for ShadowSetting {
             }
         }
 
+        let value = if config.graphics.shadow_distance == 0.0 {
+            ShadowSetting::Off
+        } else {
+            *self
+        };
+
         for (mut light, mut cascades) in lights.iter_mut() {
-            match self {
+            match value {
                 ShadowSetting::Off => {
                     light.shadows_enabled = false;
                 }
