@@ -280,7 +280,9 @@ pub fn process_profile_events(
             }
             ProfileEventType::Version(v) => {
                 if let Ok((mut player, _)) = players.get_mut(ev.sender) {
-                    player.profile_version = v.profile_version;
+                    if player.profile_version != v.profile_version {
+                        player.profile_version = v.profile_version;
+                    }
                 } else {
                     warn!("profile version for unknown player {:?}", ev.sender);
                 }
@@ -299,7 +301,7 @@ pub fn process_profile_events(
 
                     // check/update profile version
                     if version < player.profile_version {
-                        return;
+                        continue;
                     }
                     if version > player.profile_version {
                         player.profile_version = version;
@@ -322,7 +324,9 @@ pub fn process_profile_events(
                     );
 
                     if let Some(mut existing_profile) = maybe_profile {
-                        *existing_profile = profile;
+                        if existing_profile.as_ref() != &profile {
+                            *existing_profile = profile;
+                        }
                     } else {
                         commands.entity(ev.sender).try_insert(profile);
                     }
@@ -336,7 +340,7 @@ pub fn process_profile_events(
     last_sent_request.retain(|_, req_time| *req_time > time.elapsed_seconds() - 10.0);
 }
 
-#[derive(Component, Serialize, Deserialize, Clone, Debug)]
+#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct UserProfile {
     pub version: u32,
     pub content: SerializedProfile,

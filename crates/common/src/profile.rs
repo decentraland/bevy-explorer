@@ -1,7 +1,7 @@
 use dcl_component::proto_components::common::Color3;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct AvatarSnapshots {
     pub face256: String,
     pub body: String,
@@ -18,13 +18,21 @@ pub struct AvatarColor {
     pub color: Color3,
 }
 
+impl PartialEq for AvatarColor {
+    fn eq(&self, other: &Self) -> bool {
+        self.color == other.color
+    }
+}
+
+impl Eq for AvatarColor {}
+
 impl AvatarColor {
     pub fn new(color: Color3) -> Self {
         Self { color }
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AvatarWireFormat {
     pub name: Option<String>,
@@ -42,7 +50,7 @@ pub struct LambdaProfiles {
     pub avatars: Vec<SerializedProfile>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SerializedProfile {
     pub user_id: Option<String>,
