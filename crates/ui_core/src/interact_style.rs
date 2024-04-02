@@ -131,7 +131,6 @@ impl DuiFromStr for InteractStyles {
         let Some(rule) = ss.iter().next() else {
             anyhow::bail!("no rule?");
         };
-        println!("{:?}", rule.properties);
         let res = Self {
             active: rule
                 .properties
@@ -166,7 +165,6 @@ impl DuiFromStr for InteractStyles {
                     ..Default::default()
                 }),
         };
-        println!("{:?}", res);
         Ok(res)
     }
 }

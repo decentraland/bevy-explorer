@@ -37,8 +37,10 @@ impl Plugin for UserInputPlugin {
             Update,
             (
                 manage_player_visibility,
-                update_user_position.after(tween::update_tween),
-                update_camera_position,
+                update_user_position
+                    .after(tween::update_tween)
+                    .after(restricted_actions::move_player),
+                update_camera_position.after(restricted_actions::move_camera),
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),

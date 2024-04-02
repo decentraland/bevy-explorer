@@ -75,7 +75,7 @@ impl Plugin for RestrictedActionsPlugin {
     }
 }
 
-fn move_player(
+pub fn move_player(
     mut events: EventReader<RpcCall>,
     scenes: Query<&RendererSceneContext>,
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
@@ -121,7 +121,7 @@ fn move_player(
     }
 }
 
-fn move_camera(
+pub fn move_camera(
     mut events: EventReader<RpcCall>,
     mut camera: Query<&mut PrimaryCamera>,
     player: Query<Entity, With<PrimaryUser>>,

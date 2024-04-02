@@ -87,8 +87,11 @@ bevy: not implemented
 
 */
 
-use bevy::{prelude::*, text::BreakLineOn};
-use common::sets::SceneLoopSets;
+use bevy::{prelude::*, text::BreakLineOn, utils::hashbrown::HashMap};
+use common::{
+    sets::SceneLoopSets,
+    util::{DespawnWith, TryPushChildrenEx},
+};
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::sdk::components::{common::TextAlignMode, PbTextShape},
@@ -97,7 +100,7 @@ use dcl_component::{
 use ui_core::{
     ui_builder::SpawnSpacer, TEXT_SHAPE_FONT_MONO, TEXT_SHAPE_FONT_SANS, TEXT_SHAPE_FONT_SERIF,
 };
-use world_ui::WorldUi;
+use world_ui::{spawn_world_ui_view, WorldUi};
 
 use crate::{renderer_context::RendererSceneContext, SceneEntity};
 
@@ -115,7 +118,6 @@ impl Plugin for TextShapePlugin {
             Update,
             update_text_shapes.in_set(SceneLoopSets::UpdateWorld),
         );
-        app.add_systems(Update, despawn_with);
     }
 }
 
@@ -133,11 +135,18 @@ const PIX_PER_M: f32 = 200.0;
 #[derive(Component)]
 pub struct PriorTextShapeUi(Entity);
 
+#[derive(Component, Clone, Copy)]
+pub struct SceneWorldUi {
+    view: Entity,
+    ui_root: Entity,
+}
+
 fn update_text_shapes(
     mut commands: Commands,
+    images: ResMut<Assets<Image>>,
     query: Query<(Entity, &SceneEntity, &TextShape, Option<&PriorTextShapeUi>), Changed<TextShape>>,
     mut removed: RemovedComponents<TextShape>,
-    scenes: Query<&RendererSceneContext>,
+    scenes: Query<(&RendererSceneContext, Option<&SceneWorldUi>)>,
 ) {
     // remove deleted ui nodes
     for e in removed.read() {
@@ -146,14 +155,43 @@ fn update_text_shapes(
         }
     }
 
+    let mut new_world_uis: HashMap<Entity, SceneWorldUi> = HashMap::default();
+    let images = images.into_inner();
+
     // add new nodes
     for (ent, scene_ent, text_shape, maybe_prior) in query.iter() {
-        let bounds = scenes
-            .get(scene_ent.root)
-            .map(|c| c.bounds)
-            .unwrap_or_default();
-
         debug!("ts: {:?}", text_shape.0);
+
+        let Ok((scene, world_ui)) = scenes.get(scene_ent.root) else {
+            warn!("no scene!");
+            continue;
+        };
+
+        let world_ui = world_ui.unwrap_or_else(|| {
+            new_world_uis.entry(scene_ent.root).or_insert_with(|| {
+                let view = spawn_world_ui_view(&mut commands, images);
+                let ui_root = commands
+                    .spawn((
+                        NodeBundle {
+                            style: Style {
+                                width: Val::Px(8192.0),
+                                min_width: Val::Px(8192.0),
+                                max_width: Val::Px(8192.0),
+                                max_height: Val::Px(8192.0),
+                                flex_direction: FlexDirection::Row,
+                                flex_wrap: FlexWrap::Wrap,
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        TargetCamera(view),
+                    ))
+                    .id();
+                let world_ui = SceneWorldUi { view, ui_root };
+                commands.entity(scene_ent.root).try_insert(world_ui);
+                world_ui
+            })
+        });
 
         if let Some(prior) = maybe_prior {
             if let Some(commands) = commands.get_entity(prior.0) {
@@ -198,16 +236,9 @@ fn update_text_shapes(
         let wrapping = text_shape.0.text_wrapping() && !text_shape.0.font_auto_size();
 
         let width = if wrapping {
-            (text_shape.0.width.unwrap_or(1.0) * PIX_PER_M) as u32
+            text_shape.0.width.unwrap_or(1.0) * PIX_PER_M
         } else {
-            4096
-        };
-        let resize_width =
-            (text_shape.0.width.is_none() || !wrapping).then_some(ResizeAxis::MaxContent);
-
-        let max_height = match text_shape.0.line_count() {
-            0 => 4096,
-            lines => lines as u32 * font_size.ceil() as u32,
+            4096.0
         };
 
         // create ui layout
@@ -224,16 +255,14 @@ fn update_text_shapes(
             wrapping,
         );
 
-        let ui_root = commands
+        let ui_node = commands
             .spawn((
                 NodeBundle {
                     style: Style {
                         flex_direction: FlexDirection::Row,
-                        width: Val::Percent(100.0),
-                        height: Val::Percent(100.0),
+                        max_width: Val::Px(width),
                         ..Default::default()
                     },
-                    // background_color: Color::rgba(1.0, 0.0, 0.0, 0.25).into(),
                     ..Default::default()
                 },
                 DespawnWith(ent),
@@ -256,7 +285,6 @@ fn update_text_shapes(
                 }
 
                 c.spawn(NodeBundle {
-                    // background_color: Color::rgba(0.0, 0.0, 1.0, 0.25).into(),
                     ..Default::default()
                 })
                 .with_children(|c| {
@@ -292,19 +320,21 @@ fn update_text_shapes(
             })
             .id();
 
+        commands
+            .entity(world_ui.ui_root)
+            .try_push_children(&[ui_node]);
+
         commands.entity(ent).try_insert((
-            PriorTextShapeUi(ui_root),
+            PriorTextShapeUi(ui_node),
             WorldUi {
-                width,
-                height: max_height,
-                resize_width,
-                resize_height: Some(ResizeAxis::MaxContent),
+                dbg: format!("TextShape `{}`", text_shape.0.text),
                 pix_per_m: PIX_PER_M,
                 valign,
                 halign: halign_wui,
                 add_y_pix,
-                bounds,
-                ui_root,
+                bounds: scene.bounds,
+                view: world_ui.view,
+                ui_node,
             },
         ));
     }
@@ -351,16 +381,5 @@ pub fn make_text_section(
             BreakLineOn::NoWrap
         },
         justify,
-    }
-}
-
-#[derive(Component)]
-pub struct DespawnWith(pub Entity);
-
-fn despawn_with(mut commands: Commands, q: Query<(Entity, &DespawnWith)>) {
-    for (ent, with) in q.iter() {
-        if commands.get_entity(with.0).is_none() {
-            commands.entity(ent).despawn_recursive();
-        }
     }
 }

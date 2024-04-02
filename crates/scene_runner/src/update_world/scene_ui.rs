@@ -8,12 +8,10 @@ use bevy::{
 use input_manager::MouseInteractionComponent;
 
 use crate::{
-    renderer_context::RendererSceneContext,
-    update_scene::pointer_results::UiPointerTarget,
-    update_world::text_shape::{make_text_section, DespawnWith},
-    ContainingScene, SceneEntity, SceneSets,
+    renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
+    update_world::text_shape::make_text_section, ContainingScene, SceneEntity, SceneSets,
 };
-use common::structs::PrimaryUser;
+use common::{structs::PrimaryUser, util::DespawnWith};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{

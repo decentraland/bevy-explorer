@@ -13,6 +13,7 @@ dcl_component = { workspace = true }
 avatar = { workspace = true }
 tween = { workspace = true }
 console = { workspace = true }
+restricted_actions = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }

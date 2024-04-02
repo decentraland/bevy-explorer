@@ -16,6 +16,7 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
+use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use colliders::AvatarColliderPlugin;
 use console::DoAddConsoleCommand;
 use emotes::AvatarAnimations;
@@ -35,8 +36,9 @@ pub mod mask_material;
 pub mod npc_dynamics;
 
 use common::{
+    sets::SetupSets,
     structs::{AppConfig, AttachPoints, PrimaryUser},
-    util::{TaskExt, TryPushChildrenEx},
+    util::{DespawnWith, TaskExt, TryPushChildrenEx},
 };
 use comms::{
     global_crdt::{ForeignPlayer, GlobalCrdtState},
@@ -55,12 +57,11 @@ use ipfs::{
     ActiveEntityTask, EntityDefinition, IpfsAssetServer, IpfsModifier,
 };
 use scene_runner::{
-    update_world::{billboard::Billboard, text_shape::DespawnWith, AddCrdtInterfaceExt},
+    update_world::{billboard::Billboard, AddCrdtInterfaceExt},
     util::ConsoleRelay,
     ContainingScene, SceneEntity,
 };
-use ui_core::TEXT_SHAPE_FONT_MONO;
-use world_ui::WorldUi;
+use world_ui::{spawn_world_ui_view, WorldUi};
 
 use crate::{animate::AvatarAnimPlayer, avatar_texture::PRIMARY_AVATAR_RENDERLAYER};
 
@@ -104,6 +105,12 @@ impl Plugin for AvatarPlugin {
             ),
         );
 
+        app.insert_resource(AvatarWorldUi {
+            view: Entity::PLACEHOLDER,
+            ui_root: Entity::PLACEHOLDER,
+        });
+        app.add_systems(Startup, setup.in_set(SetupSets::Main));
+
         app.add_crdt_lww_component::<PbAvatarShape, AvatarShape>(
             SceneComponentId::AVATAR_SHAPE,
             ComponentPosition::Any,
@@ -111,6 +118,33 @@ impl Plugin for AvatarPlugin {
 
         app.add_console_command::<DebugDumpAvatar, _>(debug_dump_avatar);
     }
+}
+
+#[derive(Resource)]
+struct AvatarWorldUi {
+    view: Entity,
+    ui_root: Entity,
+}
+
+fn setup(mut commands: Commands, images: ResMut<Assets<Image>>, mut view: ResMut<AvatarWorldUi>) {
+    view.view = spawn_world_ui_view(&mut commands, images.into_inner());
+    view.ui_root = commands
+        .spawn((
+            NodeBundle {
+                style: Style {
+                    width: Val::Px(0.0),
+                    min_width: Val::Px(0.0),
+                    max_width: Val::Px(0.0),
+                    max_height: Val::Px(0.0),
+                    flex_direction: FlexDirection::Row,
+                    flex_wrap: FlexWrap::Wrap,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            TargetCamera(view.view),
+        ))
+        .id();
 }
 
 #[derive(Component, Default)]
@@ -1122,7 +1156,18 @@ fn update_render_avatar(
                     ..Default::default()
                 },
                 AvatarDefinition {
-                    label: selection.shape.name.clone(),
+                    label: selection.shape.name.as_ref().map(|name| {
+                        format!(
+                            "{}#{}",
+                            name,
+                            selection
+                                .shape
+                                .id
+                                .chars()
+                                .skip(selection.shape.id.len().saturating_sub(4))
+                                .collect::<String>()
+                        )
+                    }),
                     body: body_wearable,
                     wearables: wearables.into_values().collect(),
                     hides,
@@ -1315,6 +1360,8 @@ fn process_avatar(
     mut meshes: ResMut<Assets<Mesh>>,
     attach_points: Query<&AttachPoints>,
     animations: Res<AvatarAnimations>,
+    ui_view: Res<AvatarWorldUi>,
+    dui: Res<DuiRegistry>,
 ) {
     for (avatar_ent, def, loaded_avatar, root_player_entity) in query.iter() {
         let not_loaded = !scene_spawner.instance_is_ready(loaded_avatar.body_instance)
@@ -1648,47 +1695,48 @@ fn process_avatar(
             .entity(avatar_ent)
             .try_insert((AvatarProcessed, Visibility::Inherited));
 
-        if let Some(label) = def.label.as_ref() {
-            let label_ui = commands
-                .spawn((
-                    TextBundle::from_section(
-                        label,
-                        TextStyle {
-                            font_size: 25.0,
-                            color: Color::WHITE,
-                            font: TEXT_SHAPE_FONT_MONO.get().unwrap().clone(),
-                        },
-                    ),
-                    DespawnWith(avatar_ent),
-                ))
-                .id();
+        if def.render_layer.is_none() {
+            // add nametag
+            if let Some(label) = def.label.as_ref() {
+                debug!("spawn avatar label for {label}");
+                let label_ui = commands
+                    .entity(ui_view.ui_root)
+                    .spawn_template(
+                        &dui,
+                        "avatar-nametag",
+                        DuiProps::new().with_prop("name", label.to_string()),
+                    )
+                    .unwrap()
+                    .root;
 
-            commands.entity(avatar_ent).with_children(|commands| {
-                commands.spawn((
-                    SpatialBundle {
-                        transform: Transform::from_translation(Vec3::Y * 2.2),
-                        ..Default::default()
-                    },
-                    WorldUi {
-                        width: (label.len() * 25) as u32 / 2,
-                        height: 25,
-                        resize_width: Some(ResizeAxis::MaxContent),
-                        resize_height: None,
-                        pix_per_m: 200.0,
-                        valign: 0.0,
-                        halign: 0.0,
-                        add_y_pix: 0.0,
-                        bounds: Vec4::new(
-                            std::f32::MIN,
-                            std::f32::MIN,
-                            std::f32::MAX,
-                            std::f32::MAX,
-                        ),
-                        ui_root: label_ui,
-                    },
-                    Billboard::Y,
-                ));
-            });
+                debug!("{:?} as child of {:?}", label_ui, ui_view.view);
+                commands.entity(label_ui).insert(DespawnWith(avatar_ent));
+
+                commands.entity(avatar_ent).with_children(|commands| {
+                    commands.spawn((
+                        SpatialBundle {
+                            transform: Transform::from_translation(Vec3::Y * 2.2),
+                            ..Default::default()
+                        },
+                        WorldUi {
+                            dbg: label.clone(),
+                            pix_per_m: 200.0,
+                            valign: 0.0,
+                            halign: 0.0,
+                            add_y_pix: 0.0,
+                            bounds: Vec4::new(
+                                std::f32::MIN,
+                                std::f32::MIN,
+                                std::f32::MAX,
+                                std::f32::MAX,
+                            ),
+                            view: ui_view.view,
+                            ui_node: label_ui,
+                        },
+                        Billboard::Y,
+                    ));
+                });
+            }
         }
     }
 }

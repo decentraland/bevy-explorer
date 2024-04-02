@@ -27,6 +27,7 @@ use common::{
         AppConfig, AttachPoints, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes,
         PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, Version,
     },
+    util::UtilsPlugin,
 };
 use emotes::EmotesPlugin;
 use restricted_actions::RestrictedActionsPlugin;
@@ -221,7 +222,8 @@ fn main() {
 
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
 
-    app.add_plugins(InputManagerPlugin)
+    app.add_plugins(UtilsPlugin)
+        .add_plugins(InputManagerPlugin)
         .add_plugins(SceneRunnerPlugin)
         .add_plugins(UserInputPlugin)
         .add_plugins(UiCorePlugin)
