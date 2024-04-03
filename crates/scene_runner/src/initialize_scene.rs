@@ -617,7 +617,7 @@ fn parcels_in_range(focus: &GlobalTransform, range: f32) -> Vec<(IVec2, f32)> {
             let nearest_point = focus.clamp(parcel_min_point, parcel_max_point);
             let distance = nearest_point.distance(focus);
 
-            if distance < range {
+            if distance <= range {
                 results.push((parcel, distance));
             }
         }
@@ -855,7 +855,7 @@ pub fn process_scene_lifecycle(
     portables: Res<PortableScenes>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
     scene_entities: Query<
-        (Entity, &SceneHash),
+        (Entity, &SceneHash, Option<&RendererSceneContext>),
         Or<(With<SceneLoading>, With<RendererSceneContext>)>,
     >,
     range: Res<SceneLoadDistance>,
@@ -869,6 +869,12 @@ pub fn process_scene_lifecycle(
     let Ok(focus) = focus.get_single() else {
         return;
     };
+
+    let current_scene = parcels_in_range(focus, 0.0)[0].0;
+    let current_scene = pointers
+        .0
+        .get(&current_scene)
+        .and_then(PointerResult::hash_and_urn);
 
     let pir = parcels_in_range(focus, range.load + range.unload);
 
@@ -914,7 +920,8 @@ pub fn process_scene_lifecycle(
     let mut removed_hashes = Vec::default();
 
     // despawn any no-longer required entities
-    for (entity, scene_hash) in &scene_entities {
+    let mut current_scene_loading = false;
+    for (entity, scene_hash, maybe_ctx) in &scene_entities {
         match keep_entities.get(&entity) {
             Some((hash, _)) => {
                 existing_ids.insert(<&String>::clone(hash));
@@ -927,11 +934,31 @@ pub fn process_scene_lifecycle(
                 removed_hashes.push(&scene_hash.0);
             }
         }
+
+        // check if the current scene is still loading
+        if let Some((current_hash, _)) = current_scene.as_ref() {
+            if &scene_hash.0 == current_hash && maybe_ctx.map_or(true, |ctx| ctx.tick_number < 5) {
+                current_scene_loading = true;
+            }
+        }
     }
     drop(keep_entities);
 
     for removed_hash in removed_hashes {
         live_scenes.0.remove(removed_hash);
+    }
+
+    // if the current scene is still loading, we don't try to spawn any new scenes
+    if current_scene_loading {
+        return;
+    }
+
+    if let Some(current_scene) = current_scene {
+        if required_scene_ids.contains(&current_scene) && !existing_ids.contains(&current_scene.0) {
+            // if the current scene is not even spawned, spawn only that scene
+            required_scene_ids.clear();
+            required_scene_ids.extend([current_scene]);
+        }
     }
 
     // spawn any newly required scenes

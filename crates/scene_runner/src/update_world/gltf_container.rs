@@ -212,7 +212,11 @@ fn update_gltf(
                 commands.entity(ent).try_insert(GltfLoaded(None));
                 continue;
             }
-            _ => continue,
+            bevy::asset::LoadState::Loading => continue,
+            other => {
+                warn!("unexpected load state: {other:?}");
+                continue;
+            }
         }
 
         let gltf = gltfs.get(h_gltf).unwrap();
@@ -668,22 +672,41 @@ fn update_ready_gltfs(
 
 pub const GLTF_LOADING: &str = "gltfs loading";
 
+#[derive(Component)]
+pub struct GltfLoadingCount(pub usize);
+
 fn check_gltfs_ready(
-    mut scenes: Query<(Entity, &mut RendererSceneContext)>,
+    mut commands: Commands,
+    mut scenes: Query<(
+        Entity,
+        &mut RendererSceneContext,
+        Option<&mut GltfLoadingCount>,
+    )>,
     unready_gltfs: Query<&SceneEntity, (With<GltfDefinition>, Without<GltfProcessed>)>,
 ) {
-    let mut unready_scenes = HashSet::default();
+    let mut unready_scenes = HashMap::<Entity, usize>::default();
 
     for ent in &unready_gltfs {
-        unready_scenes.insert(ent.root);
+        *unready_scenes.entry(ent.root).or_default() += 1;
     }
 
-    for (root, mut context) in scenes.iter_mut() {
-        if unready_scenes.contains(&root) && context.tick_number <= 5 {
-            debug!("{root:?} blocked on gltfs");
-            context.blocked.insert(GLTF_LOADING);
-        } else {
-            context.blocked.remove(GLTF_LOADING);
+    for (root, mut context, maybe_count) in scenes.iter_mut() {
+        if context.tick_number <= 5 {
+            if let Some(n) = unready_scenes.get(&root) {
+                debug!("{root:?} blocked on gltfs");
+                context.blocked.insert(GLTF_LOADING);
+                if let Some(mut count) = maybe_count {
+                    count.0 = *n;
+                } else {
+                    commands.entity(root).try_insert(GltfLoadingCount(*n));
+                }
+                continue;
+            }
+        }
+
+        context.blocked.remove(GLTF_LOADING);
+        if let Some(mut count) = maybe_count {
+            count.0 = 0;
         }
     }
 }

@@ -21,7 +21,7 @@ use scene_material::SceneMaterial;
 use scene_runner::{
     initialize_scene::{SceneLoading, PARCEL_SIZE},
     renderer_context::RendererSceneContext,
-    update_world::{ComponentTracker, TrackComponents},
+    update_world::{gltf_container::GltfLoadingCount, ComponentTracker, TrackComponents},
     ContainingScene, DebugInfo,
 };
 use ui_core::{
@@ -357,7 +357,7 @@ fn update_minimap(
     mut maps: Query<&mut MapTexture>,
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     containing_scene: ContainingScene,
-    scenes: Query<&RendererSceneContext>,
+    scenes: Query<(&RendererSceneContext, Option<&GltfLoadingCount>)>,
     mut text: Query<&mut Text>,
 ) {
     let Ok((player, gt)) = player.get_single() else {
@@ -365,19 +365,27 @@ fn update_minimap(
     };
 
     let player_translation = (gt.translation().xz() * Vec2::new(1.0, -1.0)) / PARCEL_SIZE;
-    let map_center = player_translation - Vec2::Y; // no idea why i have to subtract one :(
+    let map_center = player_translation - Vec2::Y;
 
     let scene = containing_scene
-        .get_parcel(player)
+        .get_parcel_oow(player)
         .and_then(|scene| scenes.get(scene).ok());
     let parcel = player_translation.floor().as_ivec2();
     let title = scene
-        .map(|context| context.title.clone())
+        .map(|(context, _)| context.title.clone())
         .unwrap_or("???".to_owned());
-    let sdk = scene.map(|context| context.sdk_version).unwrap_or("");
+    let sdk = scene.map(|(context, _)| context.sdk_version).unwrap_or("");
     let state = scene
-        .map(|context| if context.broken { "Broken" } else { "Ok " })
-        .unwrap_or("No scene");
+        .map(|(context, gltf_count)| {
+            if context.broken {
+                "Broken".to_owned()
+            } else if !context.blocked.is_empty() {
+                format!("Loading [{}]", gltf_count.map(|c| c.0).unwrap_or_default())
+            } else {
+                "Ok ".to_owned()
+            }
+        })
+        .unwrap_or("No scene".to_owned());
 
     if let Ok(components) = q.get_single() {
         if let Ok(mut map) = maps.get_mut(components.named("map-node")) {

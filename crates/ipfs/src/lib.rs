@@ -947,7 +947,7 @@ impl AssetReader for IpfsIo {
 
                 let request = isahc::Request::get(&remote)
                     .connect_timeout(Duration::from_secs(5 * attempt))
-                    .timeout(Duration::from_secs(30 * attempt))
+                    .timeout(Duration::from_secs(5 + 30 * attempt))
                     .body(())
                     .map_err(|e| {
                         AssetReaderError::Io(Arc::new(std::io::Error::new(
@@ -961,7 +961,10 @@ impl AssetReader for IpfsIo {
                 debug!("[{token:?}]: attempt {attempt}: request: {remote}, response: {response:?}");
 
                 let mut response = match response {
-                    Err(e) if e.is_timeout() && attempt <= 3 => continue,
+                    Err(e) if e.is_timeout() && attempt <= 3 => {
+                        warn!("[{token:?}] timeout requesting `{remote}`, retrying");
+                        continue;
+                    }
                     Err(e) => {
                         self.context
                             .write()
@@ -997,6 +1000,7 @@ impl AssetReader for IpfsIo {
                     Ok(data) => break data,
                     Err(e) => {
                         if matches!(e.kind(), std::io::ErrorKind::TimedOut) && attempt <= 3 {
+                            warn!("[{token:?}] timeout retrieving `{remote}`, retrying");
                             continue;
                         }
                         self.context

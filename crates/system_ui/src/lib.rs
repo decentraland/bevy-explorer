@@ -7,6 +7,7 @@ pub mod emotes;
 pub mod login;
 pub mod map;
 pub mod mic;
+pub mod oow;
 pub mod profile;
 pub mod profile_detail;
 pub mod sysinfo;
@@ -23,6 +24,7 @@ use input_manager::MouseInteractionComponent;
 use login::LoginPlugin;
 use map::MapPlugin;
 use mic::MicUiPlugin;
+use oow::OowUiPlugin;
 use profile_detail::ProfileDetailPlugin;
 use toasts::ToastsPlugin;
 use tooltip::ToolTipPlugin;
@@ -51,6 +53,7 @@ impl Plugin for SystemUiPlugin {
             ChangeRealmPlugin,
             MapPlugin,
             ProfileDetailPlugin,
+            OowUiPlugin,
         ));
     }
 }
