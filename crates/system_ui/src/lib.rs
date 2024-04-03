@@ -70,13 +70,29 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
                     height: Val::Percent(100.0),
                     ..Default::default()
                 },
+                z_index: ZIndex::Global(1),
                 ..Default::default()
             },
-            Interaction::default(),
-            MouseInteractionComponent,
             UiRoot,
         ))
         .id();
-
     ui_root.0 = root;
+
+    // interaction component
+    commands.spawn((
+        NodeBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                right: Val::Px(0.0),
+                top: Val::Px(0.0),
+                bottom: Val::Px(0.0),
+                ..Default::default()
+            },
+            z_index: ZIndex::Global(-1),
+            ..Default::default()
+        },
+        Interaction::default(),
+        MouseInteractionComponent,
+    ));
 }

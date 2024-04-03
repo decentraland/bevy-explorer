@@ -648,6 +648,8 @@ fn send_scene_updates(
 
     // add canvas info
     if let Ok(window) = window.get_single() {
+        let vmin = window.resolution.width().min(window.resolution.height());
+
         buf.clear();
         DclWriter::new(&mut buf).write(&PbUiCanvasInformation {
             device_pixel_ratio: window.resolution.scale_factor(),
@@ -655,9 +657,9 @@ fn send_scene_updates(
             height: window.resolution.height() as i32,
             interactable_area: Some(BorderRect {
                 top: 0.0,
-                left: 0.0,
-                right: 0.0,
-                bottom: 36.0,
+                left: 0.27 * vmin,  // minimap
+                right: 0.04 * vmin, // icons
+                bottom: 0.0,
             }),
         });
         crdt_store.force_update(

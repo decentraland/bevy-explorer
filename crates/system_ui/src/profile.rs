@@ -362,6 +362,7 @@ pub fn show_settings(
 
     let components = root.apply_template(&dui, "settings", props).unwrap();
 
+    commands.entity(components.root).insert(ZIndex::Global(2));
     commands
         .entity(components.named("change-realm-button"))
         .insert(UpdateRealmText);
