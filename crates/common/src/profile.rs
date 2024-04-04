@@ -105,7 +105,7 @@ impl Default for SerializedProfile {
 
         Self {
             user_id: Default::default(),
-            name: "Bevy User".to_string(),
+            name: "Bevy_User".to_string(),
             description: Default::default(),
             version: 1,
             eth_address: "0x0000000000000000000000000000000000000000".to_owned(),
