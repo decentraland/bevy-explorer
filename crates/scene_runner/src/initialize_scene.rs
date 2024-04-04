@@ -3,15 +3,17 @@ use std::{collections::VecDeque, num::ParseIntError, str::FromStr};
 use bevy::{
     asset::{io::Reader, AssetLoader, LoadContext},
     math::Vec3Swizzles,
+    pbr::NotShadowCaster,
     prelude::*,
     reflect::TypePath,
+    render::render_resource::{AsBindGroup, ShaderRef},
     utils::{BoxedFuture, HashMap, HashSet},
 };
 use futures_lite::AsyncReadExt;
 
 use common::{
     structs::{AppConfig, IVec2Arg, SceneLoadDistance, SceneMeta},
-    util::TaskExt,
+    util::{TaskExt, TryPushChildrenEx},
 };
 use comms::global_crdt::GlobalCrdtState;
 use dcl::{
@@ -69,6 +71,7 @@ impl Plugin for SceneLifecyclePlugin {
         app.init_resource::<PortableScenes>();
         app.init_asset::<SerializedCrdtStore>();
         app.init_asset_loader::<CrdtLoader>();
+        app.add_plugins(MaterialPlugin::<LoadingMaterial>::default());
 
         app.add_systems(
             Update,
@@ -77,6 +80,8 @@ impl Plugin for SceneLifecyclePlugin {
                 load_scene_json,
                 load_scene_javascript,
                 initialize_scene,
+                animate_ready_scene,
+                update_loading_quads,
             )
                 .in_set(SceneSets::Init),
         );
@@ -256,15 +261,23 @@ pub(crate) fn load_scene_javascript(
         // populate pointers
         let mut extent_min = IVec2::MAX;
         let mut extent_max = IVec2::MIN;
-        for pointer in meta.scene.parcels {
-            let (x, y) = pointer.split_once(',').unwrap();
-            let x = x.parse::<i32>().unwrap();
-            let y = y.parse::<i32>().unwrap();
-            let parcel = IVec2::new(x, y);
+        let parcels = meta
+            .scene
+            .parcels
+            .iter()
+            .map(|pointer| {
+                let (x, y) = pointer.split_once(',').unwrap();
+                let x = x.parse::<i32>().unwrap();
+                let y = y.parse::<i32>().unwrap();
+                let parcel = IVec2::new(x, y);
 
-            extent_min = extent_min.min(parcel);
-            extent_max = extent_max.max(parcel);
-        }
+                extent_min = extent_min.min(parcel);
+                extent_max = extent_max.max(parcel);
+
+                parcel
+            })
+            .collect();
+
         let size = (extent_max - extent_min).as_uvec2();
         let bounds = IVec4::new(
             extent_min.x * 16,
@@ -327,6 +340,7 @@ pub(crate) fn load_scene_javascript(
             is_portable,
             title,
             base,
+            parcels,
             bounds,
             meta.spawn_points.clone().unwrap_or_default(),
             root,
@@ -395,7 +409,7 @@ pub(crate) fn load_scene_javascript(
             SpatialBundle {
                 transform: Transform::from_translation(Vec3::new(
                     initial_position.x,
-                    0.0,
+                    -1000.0,
                     -initial_position.y,
                 )),
                 ..Default::default()
@@ -937,7 +951,7 @@ pub fn process_scene_lifecycle(
 
         // check if the current scene is still loading
         if let Some((current_hash, _)) = current_scene.as_ref() {
-            if &scene_hash.0 == current_hash && maybe_ctx.map_or(true, |ctx| ctx.tick_number < 5) {
+            if &scene_hash.0 == current_hash && maybe_ctx.map_or(true, |ctx| ctx.tick_number <= 6) {
                 current_scene_loading = true;
             }
         }
@@ -987,3 +1001,152 @@ pub fn process_scene_lifecycle(
 
 #[derive(Component)]
 pub struct SceneHash(pub String);
+
+#[derive(Component)]
+pub struct LoadingQuad(bool);
+
+fn animate_ready_scene(
+    mut q: Query<(
+        Entity,
+        &mut Transform,
+        Ref<RendererSceneContext>,
+        Option<&Children>,
+    )>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<LoadingMaterial>>,
+    loading_quads: Query<(), With<LoadingQuad>>,
+) {
+    for (root, mut transform, ctx, children) in q.iter_mut() {
+        if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken) {
+            if transform.translation.y == -1000.0 {
+                for child in children.map(|c| c.iter()).unwrap_or_default() {
+                    if loading_quads.get(*child).is_ok() {
+                        commands.entity(*child).despawn_recursive();
+                    }
+                }
+            }
+
+            transform.translation.y *= 0.75;
+            if transform.translation.y > -0.01 {
+                transform.translation.y = 0.0;
+            }
+        }
+
+        if ctx.is_added() {
+            let mut children = Vec::new();
+            for parcel in ctx.parcels.iter() {
+                let position = ((*parcel - ctx.base) * IVec2::new(1, -1))
+                    .as_vec2()
+                    .extend(0.0)
+                    .xzy()
+                    * PARCEL_SIZE;
+                let middle = Vec3::new(PARCEL_SIZE * 0.5, 0.0, PARCEL_SIZE * -0.5);
+
+                for (parcel_offset, position_offset, is_x) in [
+                    (-IVec2::X, -Vec3::Z * 0.5, true),
+                    (IVec2::X, -Vec3::Z * 0.5 + Vec3::X, true),
+                    (-IVec2::Y, Vec3::X * 0.5, false),
+                    (IVec2::Y, Vec3::X * 0.5 - Vec3::Z, false),
+                ] {
+                    if !ctx.parcels.contains(&(*parcel + parcel_offset)) {
+                        children.push(
+                            commands
+                                .spawn((
+                                    MaterialMeshBundle {
+                                        mesh: meshes.add(
+                                            Rectangle::default()
+                                                .mesh()
+                                                .scaled_by(Vec3::splat(PARCEL_SIZE)),
+                                        ),
+                                        material: materials.add(LoadingMaterial::default()),
+                                        transform: Transform::from_translation(
+                                            position
+                                                + position_offset * PARCEL_SIZE
+                                                + Vec3::Y * 1000.0,
+                                        )
+                                        .looking_at(position + middle + Vec3::Y * 1000.0, Vec3::Y),
+                                        ..Default::default()
+                                    },
+                                    LoadingQuad(is_x),
+                                    NotShadowCaster,
+                                ))
+                                .id(),
+                        );
+                    }
+                }
+            }
+
+            commands.entity(root).try_push_children(&children);
+        }
+    }
+}
+
+fn update_loading_quads(
+    mut q: Query<
+        (
+            &GlobalTransform,
+            &mut Transform,
+            &Handle<LoadingMaterial>,
+            &LoadingQuad,
+        ),
+        Without<PrimaryUser>,
+    >,
+    player: Query<&Transform, With<PrimaryUser>>,
+    mut mats: ResMut<Assets<LoadingMaterial>>,
+    mut local_prev_active: Local<HashSet<AssetId<LoadingMaterial>>>,
+) {
+    let Ok(player_translation) = player.get_single().map(|p| p.translation) else {
+        return;
+    };
+
+    let prev_active = std::mem::take(&mut *local_prev_active);
+
+    for (gt, mut trans, h_mat, loading) in q.iter_mut() {
+        let nearest_point = player_translation.xz().clamp(
+            gt.translation().xz()
+                - if loading.0 {
+                    Vec2::Y * PARCEL_SIZE * 0.5
+                } else {
+                    Vec2::X * PARCEL_SIZE * 0.5
+                },
+            gt.translation().xz()
+                + if loading.0 {
+                    Vec2::Y * PARCEL_SIZE * 0.5
+                } else {
+                    Vec2::X * PARCEL_SIZE * 0.5
+                },
+        );
+        let active = (nearest_point - player_translation.xz()).length() < 10.0;
+        if prev_active.contains(&h_mat.id()) || active {
+            let mat = mats.get_mut(h_mat.id()).unwrap();
+            mat.player_pos = player_translation.extend(if active { 1.0 } else { 0.0 })
+        }
+
+        trans.translation.y = player_translation.y + 1000.0;
+
+        if active {
+            local_prev_active.insert(h_mat.id());
+        }
+    }
+}
+
+#[derive(Asset, TypePath, Clone, AsBindGroup, Default)]
+pub struct LoadingMaterial {
+    #[uniform(0)]
+    player_pos: Vec4, // xyz = player pos, w = active
+}
+
+impl Material for LoadingMaterial {
+    fn fragment_shader() -> bevy::render::render_resource::ShaderRef {
+        ShaderRef::Path("shaders/loading.wgsl".into())
+    }
+
+    fn prepass_fragment_shader() -> ShaderRef {
+        ShaderRef::Path("shaders/loading.wgsl".into())
+    }
+
+    fn alpha_mode(&self) -> AlphaMode {
+        AlphaMode::Blend
+    }
+}
