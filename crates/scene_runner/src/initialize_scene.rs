@@ -32,8 +32,7 @@ use wallet::Wallet;
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 use crate::{
-    renderer_context::RendererSceneContext, update_world::ComponentTracker, ContainerEntity,
-    DeletedSceneEntities, SceneEntity, SceneThreadHandle,
+    renderer_context::RendererSceneContext, update_world::ComponentTracker, ContainerEntity, DeletedSceneEntities, OutOfWorld, SceneEntity, SceneThreadHandle
 };
 
 #[derive(Default)]
@@ -867,7 +866,7 @@ pub fn process_scene_lifecycle(
     mut commands: Commands,
     current_realm: Res<CurrentRealm>,
     portables: Res<PortableScenes>,
-    focus: Query<&GlobalTransform, With<PrimaryUser>>,
+    focus: Query<(&GlobalTransform, Option<&OutOfWorld>), With<PrimaryUser>>,
     scene_entities: Query<
         (Entity, &SceneHash, Option<&RendererSceneContext>),
         Or<(With<SceneLoading>, With<RendererSceneContext>)>,
@@ -880,15 +879,18 @@ pub fn process_scene_lifecycle(
     let mut required_scene_ids: HashSet<(String, Option<String>)> = HashSet::default();
 
     // add nearby scenes to requirements
-    let Ok(focus) = focus.get_single() else {
+    let Ok((focus, oow)) = focus.get_single() else {
         return;
     };
 
-    let current_scene = parcels_in_range(focus, 0.0)[0].0;
-    let current_scene = pointers
-        .0
-        .get(&current_scene)
-        .and_then(PointerResult::hash_and_urn);
+    let current_scene = if oow.is_some() {
+        pointers
+            .0
+            .get(&parcels_in_range(focus, 0.0)[0].0)
+            .and_then(PointerResult::hash_and_urn)
+    } else {
+        None
+    };
 
     let pir = parcels_in_range(focus, range.load + range.unload);
 

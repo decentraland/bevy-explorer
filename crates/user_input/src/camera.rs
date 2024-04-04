@@ -150,8 +150,8 @@ pub fn update_camera_position(
 
         let target_direction = camera_transform.rotation.mul_vec3(Vec3::Z * 5.0 * distance);
         let mut distance = target_direction.length();
-        if target_direction.y + player_head.y < 0.0 {
-            distance = distance * player_head.y / -target_direction.y;
+        if target_direction.y + player_head.y < 0.1 {
+            distance = distance * (player_head.y - 0.1) / -target_direction.y;
         }
         let target_direction = target_direction.normalize_or_zero();
 
