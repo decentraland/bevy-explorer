@@ -1,6 +1,7 @@
 use bevy::{
     prelude::*,
     render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
+    transform::TransformSystem,
     ui::FocusPolicy,
     utils::HashMap,
     window::{PrimaryWindow, WindowResized},
@@ -72,7 +73,10 @@ impl Plugin for BoundedNodePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(UiMaterialPlugin::<BoundedImageMaterial>::default())
             .add_systems(Startup, setup_templates)
-            .add_systems(Update, update_bounded_nodes);
+            .add_systems(
+                PostUpdate,
+                update_bounded_nodes.after(TransformSystem::TransformPropagate),
+            );
     }
 }
 
