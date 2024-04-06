@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::{
     prelude::*,
@@ -11,7 +11,10 @@ use crate::{
     renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
     update_world::text_shape::make_text_section, ContainingScene, SceneEntity, SceneSets,
 };
-use common::{structs::PrimaryUser, util::DespawnWith};
+use common::{
+    structs::{AppConfig, PrimaryUser},
+    util::DespawnWith,
+};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
@@ -125,20 +128,22 @@ pub struct UiTransform {
     position: UiRect,
     margin: UiRect,
     padding: UiRect,
+    // debug: PbUiTransform,
 }
 
 impl From<PbUiTransform> for UiTransform {
     fn from(value: PbUiTransform) -> Self {
         Self {
+            // debug: value.clone(),
             parent: SceneEntityId::from_proto_u32(value.parent as u32),
             right_of: SceneEntityId::from_proto_u32(value.right_of as u32),
             align_content: match value.align_content() {
                 YgAlign::YgaAuto |
                 YgAlign::YgaBaseline | // baseline is invalid for align content
+                YgAlign::YgaStretch => AlignContent::Stretch,
                 YgAlign::YgaFlexStart => AlignContent::FlexStart,
                 YgAlign::YgaCenter => AlignContent::Center,
                 YgAlign::YgaFlexEnd => AlignContent::FlexEnd,
-                YgAlign::YgaStretch => AlignContent::Stretch,
                 YgAlign::YgaSpaceBetween => AlignContent::SpaceBetween,
                 YgAlign::YgaSpaceAround => AlignContent::SpaceAround,
             },
@@ -509,6 +514,7 @@ fn layout_scene_ui(
     ui_dropdown_state: Query<&UiDropdownPersistentState>,
     resolver: TextureResolver,
     mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
+    config: Res<AppConfig>,
 ) {
     let current_scenes = player
         .get_single()
@@ -525,7 +531,7 @@ fn layout_scene_ui(
 
     for (ent, mut ui_data) in scene_uis.iter_mut() {
         if current_scenes.contains(&ent) {
-            if ui_data.relayout || ui_data.current_node.is_none() {
+            if ui_data.relayout || ui_data.current_node.is_none() || config.is_changed() {
                 // clear any existing ui target
                 *ui_target = UiPointerTarget::None;
 
@@ -537,7 +543,7 @@ fn layout_scene_ui(
                 // collect ui data
                 let mut deleted_nodes = HashSet::default();
                 let mut unprocessed_uis =
-                    HashMap::from_iter(ui_data.nodes.iter().flat_map(|node| {
+                    BTreeMap::from_iter(ui_data.nodes.iter().flat_map(|node| {
                         match ui_nodes.get(*node) {
                             Ok((
                                 scene_entity,
@@ -570,26 +576,40 @@ fn layout_scene_ui(
                 // remove any dead nodes
                 ui_data.nodes.retain(|node| !deleted_nodes.contains(node));
 
+                // scene_id -> Option<Entity>
+                // if scene_id is display::None, it will be present here (so that right-of works) but with a None value
                 let mut processed_nodes = HashMap::new();
+
+                let root_style = if config.constrain_scene_ui {
+                    Style {
+                        position_type: PositionType::Absolute,
+                        left: Val::VMin(27.0),
+                        right: Val::VMin(12.0),
+                        top: Val::VMin(6.0),
+                        bottom: Val::VMin(6.0),
+                        overflow: Overflow::clip(),
+                        ..Default::default()
+                    }
+                } else {
+                    Style {
+                        position_type: PositionType::Absolute,
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        ..Default::default()
+                    }
+                };
 
                 let root = commands
                     .spawn((
                         NodeBundle {
-                            style: Style {
-                                position_type: PositionType::Absolute,
-                                left: Val::Px(0.0),
-                                right: Val::Px(0.0),
-                                top: Val::Px(0.0),
-                                bottom: Val::Px(0.0),
-                                ..Default::default()
-                            },
+                            style: root_style,
                             ..Default::default()
                         },
                         SceneUiRoot(ent),
                         DespawnWith(ent),
                     ))
                     .id();
-                processed_nodes.insert(SceneEntityId::ROOT, root);
+                processed_nodes.insert(SceneEntityId::ROOT, Some(root));
 
                 let mut modified = true;
                 while modified && !unprocessed_uis.is_empty() {
@@ -610,10 +630,18 @@ fn layout_scene_ui(
                                 return true;
                             }
 
-                            // if our parent is not added, we can't process this node
+                            // if our parent is not added (or is hidden), we can't process this node
                             let Some(parent) = processed_nodes.get(&ui_transform.parent) else {
                                 return true;
                             };
+
+                            // if we're hidden or our parent is hidden, bail here
+                            if parent.is_none() || ui_transform.display == Display::None {
+                                processed_nodes.insert(*scene_id, None);
+                                modified = true;
+                                return false;
+                            }
+                            let parent = parent.unwrap();
 
                             // we can process this node
                             let mut style = Style {
@@ -643,9 +671,9 @@ fn layout_scene_ui(
                                 padding: ui_transform.padding,
                                 ..Default::default()
                             };
-                            debug!("{:?} [parent: {:?}, ro: {:?}] style: {:?}", scene_id, ui_transform.parent, ui_transform.right_of, style);
+                            debug!("{:?} style: {:?}", scene_id, ui_transform);
                             debug!("{:?}, {:?}, {:?}, {:?}, {:?}", maybe_background, maybe_text, maybe_pointer_events, maybe_ui_input, maybe_dropdown);
-                            commands.entity(*parent).with_children(|commands| {
+                            commands.entity(parent).with_children(|commands| {
                                 let ent_cmds = &mut commands.spawn(NodeBundle::default());
                                 // we ues entity id as zindex. this is rubbish but mimics the foundation behaviour for multiple overlapping root nodes.
                                 let mut ent_cmds = ent_cmds.insert(ZIndex::Local(scene_id.id as i32));
@@ -777,7 +805,7 @@ fn layout_scene_ui(
                                 if let Some(ui_text) = maybe_text {
                                     let text = make_text_section(
                                         ui_text.text.as_str(),
-                                        ui_text.font_size,
+                                        ui_text.font_size * 1.3,
                                         ui_text.color,
                                         ui_text.font,
                                         ui_text.h_align,
@@ -826,22 +854,38 @@ fn layout_scene_ui(
                                         }
                                     };
 
+                                    // we need to set size for the first inner element depending 
+                                    // on how the outer was specified
+                                    let width = match ui_transform.size.width {
+                                        Some(Val::Px(px)) => Val::Px(px),
+                                        Some(Val::Percent(_)) => Val::Percent(100.0),
+                                        _ => Val::Auto,
+                                    };
+                                    let height = match ui_transform.size.height {
+                                        Some(Val::Px(px)) => Val::Px(px),
+                                        Some(Val::Percent(_)) => Val::Percent(100.0),
+                                        _ => Val::Auto,
+                                    };
+
                                     ent_cmds = ent_cmds.with_children(|c| {
                                         c.spawn(NodeBundle {
                                             style: Style {
-                                                flex_direction: FlexDirection::Column,
-                                                align_items: match ui_text.h_align {
-                                                    JustifyText::Left => AlignItems::FlexStart,
-                                                    JustifyText::Center => AlignItems::Center,
-                                                    JustifyText::Right => AlignItems::FlexEnd,
+                                                flex_direction: FlexDirection::Row,
+                                                justify_content: match ui_text.h_align {
+                                                    JustifyText::Left => JustifyContent::FlexStart,
+                                                    JustifyText::Center => JustifyContent::Center,
+                                                    JustifyText::Right => JustifyContent::FlexEnd,
                                                 },
-                                                justify_content: match ui_text.v_align {
-                                                    VAlign::Top => JustifyContent::FlexStart,
-                                                    VAlign::Middle => JustifyContent::Center,
-                                                    VAlign::Bottom => JustifyContent::FlexEnd,
+                                                align_items: match ui_text.v_align {
+                                                    VAlign::Top => AlignItems::FlexStart,
+                                                    VAlign::Middle => AlignItems::Center,
+                                                    VAlign::Bottom => AlignItems::FlexEnd,
                                                 },
-                                                width: style.width,
-                                                height: style.height,
+                                                width,
+                                                height,
+                                                align_self: AlignSelf::FlexStart,
+                                                // elements are horizontally centered by default
+                                                margin: UiRect::horizontal(Val::Auto),
                                                 ..Default::default()
                                             },
                                             ..Default::default()
@@ -988,7 +1032,7 @@ fn layout_scene_ui(
                                 }
 
                                 ent_cmds.insert(style);
-                                processed_nodes.insert(*scene_id, ent_cmds.id());
+                                processed_nodes.insert(*scene_id, Some(ent_cmds.id()));
                             });
 
                             // mark to continue and remove from unprocessed

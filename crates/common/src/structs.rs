@@ -154,6 +154,7 @@ pub struct AppConfig {
     pub sysinfo_visible: bool,
     pub scene_log_to_console: bool,
     pub max_avatars: usize,
+    pub constrain_scene_ui: bool,
 }
 
 impl Default for AppConfig {
@@ -171,6 +172,7 @@ impl Default for AppConfig {
             sysinfo_visible: true,
             scene_log_to_console: false,
             max_avatars: 100,
+            constrain_scene_ui: false,
         }
     }
 }

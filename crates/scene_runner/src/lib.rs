@@ -8,7 +8,7 @@ use std::{
 use bevy::{
     core::FrameCount,
     ecs::{query::Has, schedule::ScheduleLabel, system::SystemParam},
-    math::Vec3Swizzles,
+    math::{Vec3A, Vec3Swizzles},
     prelude::*,
     scene::scene_spawner_system,
     utils::{FloatOrd, HashMap, HashSet, Instant},
@@ -630,7 +630,7 @@ fn send_scene_updates(
         (camera.single().compute_affine(), SceneEntityId::CAMERA),
     ] {
         buf.clear();
-        affine.translation -= scene_transform.affine().translation;
+        affine.translation -= scene_transform.affine().translation * Vec3A::new(1.0, 0.0, 1.0);
         let relative_transform = Transform::from(GlobalTransform::from(affine));
 
         DclWriter::new(&mut buf).write(&DclTransformAndParent::from_bevy_transform_and_parent(
@@ -650,18 +650,35 @@ fn send_scene_updates(
     if let Ok(window) = window.get_single() {
         let vmin = window.resolution.width().min(window.resolution.height());
 
+        let canvas_info = if config.constrain_scene_ui {
+            // we optionally misreport window size and constrain scene ui directly as nobody uses this info properly
+            PbUiCanvasInformation {
+                device_pixel_ratio: window.resolution.scale_factor(),
+                width: (window.resolution.width() - 0.39 * vmin) as i32,
+                height: (window.resolution.height() - 0.12 * vmin) as i32,
+                interactable_area: Some(BorderRect {
+                    top: 0.0,
+                    left: 0.0,
+                    right: 0.0,
+                    bottom: 0.0,
+                }),
+            }
+        } else {
+            PbUiCanvasInformation {
+                device_pixel_ratio: window.resolution.scale_factor(),
+                width: (window.resolution.width()) as i32,
+                height: (window.resolution.height()) as i32,
+                interactable_area: Some(BorderRect {
+                    top: 0.05 * vmin,
+                    left: 0.27 * vmin,  // minimap
+                    right: 0.11 * vmin, // icons
+                    bottom: 0.05 * vmin,
+                }),
+            }
+        };
+
         buf.clear();
-        DclWriter::new(&mut buf).write(&PbUiCanvasInformation {
-            device_pixel_ratio: window.resolution.scale_factor(),
-            width: window.resolution.width() as i32,
-            height: window.resolution.height() as i32,
-            interactable_area: Some(BorderRect {
-                top: 0.0,
-                left: 0.27 * vmin,  // minimap
-                right: 0.04 * vmin, // icons
-                bottom: 0.0,
-            }),
-        });
+        DclWriter::new(&mut buf).write(&canvas_info);
         crdt_store.force_update(
             SceneComponentId::CANVAS_INFO,
             CrdtType::LWW_ROOT,

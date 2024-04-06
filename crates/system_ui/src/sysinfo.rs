@@ -97,6 +97,7 @@ pub(crate) fn setup(
                     justify_content: JustifyContent::Center,
                     ..Default::default()
                 },
+                z_index: ZIndex::Global(-1),
                 ..Default::default()
             })
             .with_children(|c| {

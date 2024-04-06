@@ -300,8 +300,16 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
     let SceneLogMessage {
         timestamp,
         level,
-        message,
+        mut message,
     } = log;
+
+    if message.len() > 1000 {
+        message = format!(
+            "{} ... [truncated]",
+            message.chars().take(1000).collect::<String>()
+        );
+    }
+
     commands
         .spawn((
             DisplayChatMessage {
@@ -333,14 +341,23 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
 fn display_chat(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut chatbox: Query<(Entity, &mut ChatBox)>,
+    mut chatbox: Query<(Entity, &mut ChatBox, Option<&Children>)>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
     contexts: Query<&RendererSceneContext>,
 ) {
-    let Ok((entity, mut chatbox)) = chatbox.get_single_mut() else {
+    let Ok((entity, mut chatbox, maybe_children)) = chatbox.get_single_mut() else {
         return;
     };
+
+    if let Some(children) = maybe_children {
+        if children.len() > 255 {
+            let mut iter = children.iter();
+            for _ in 0..children.len() - 255 {
+                commands.entity(*iter.next().unwrap()).despawn_recursive();
+            }
+        }
+    }
 
     if chatbox.active_tab == "Nearby" {
         if chatbox.active_chat_sink.is_none() {

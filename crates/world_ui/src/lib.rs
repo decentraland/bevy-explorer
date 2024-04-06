@@ -144,6 +144,8 @@ pub fn add_worldui_materials(
             }
         }
 
+        debug!("wui {} -> {:?}", wui.dbg, wui.ui_node);
+
         commands.entity(ent).try_push_children(&[quad]);
     }
 }

@@ -10,6 +10,7 @@ use bevy::{
     },
     input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
+    ui::UiSystem,
     utils::{HashMap, HashSet},
     window::PrimaryWindow,
 };
@@ -41,7 +42,7 @@ impl Plugin for UiActionPlugin {
             .init_resource::<UiActions<ClickNoDrag>>()
             .init_resource::<UiActions<MouseWheeled>>()
             .add_systems(
-                Update,
+                PreUpdate,
                 (
                     update_drag,
                     update_wheel,
@@ -74,6 +75,7 @@ impl Plugin for UiActionPlugin {
                         .chain(),
                 )
                     .chain()
+                    .after(UiSystem::Focus)
                     .in_set(SceneSets::UiActions)
                     .in_set(UiActionSet),
             );

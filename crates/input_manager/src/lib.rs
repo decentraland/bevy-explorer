@@ -2,11 +2,12 @@
 
 use bimap::BiMap;
 
-use bevy::{ecs::system::SystemParam, prelude::*, window::PrimaryWindow};
+use bevy::{ecs::system::SystemParam, prelude::*, ui::UiSystem, window::PrimaryWindow};
 use bevy_console::ConsoleOpen;
 use bevy_egui::EguiContext;
 
 use dcl_component::proto_components::sdk::components::common::InputAction;
+use ui_core::ui_actions::UiActionSet;
 
 pub struct InputManagerPlugin;
 
@@ -14,7 +15,12 @@ impl Plugin for InputManagerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<InputMap>();
         app.init_resource::<AcceptInput>();
-        app.add_systems(PreUpdate, check_accept_input);
+        app.add_systems(
+            PreUpdate,
+            check_accept_input
+                .after(UiSystem::Focus)
+                .before(UiActionSet),
+        );
     }
 }
 

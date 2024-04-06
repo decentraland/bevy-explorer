@@ -16,6 +16,7 @@ use crate::profile::{SettingsDialog, SettingsTab};
 
 use self::{
     ambient_brightness_setting::AmbientSetting,
+    constrain_ui::ConstrainUiSetting,
     frame_rate::FpsTargetSetting,
     load_distance::{LoadDistanceSetting, UnloadDistanceSetting},
     max_avatars::MaxAvatarsSetting,
@@ -34,6 +35,7 @@ pub struct AppSettingsPlugin;
 mod aa_settings;
 pub mod ambient_brightness_setting;
 mod bloom_settings;
+pub mod constrain_ui;
 pub mod fog_settings;
 pub mod frame_rate;
 pub mod load_distance;
@@ -70,6 +72,7 @@ impl Plugin for AppSettingsPlugin {
             apply_setting::<SceneVolumeSetting>,
             apply_setting::<VoiceVolumeSetting>,
             apply_setting::<SystemVolumeSetting>,
+            apply_setting::<ConstrainUiSetting>,
             // apply_setting::<FullscreenResSetting>.after(apply_setting::<WindowSetting>),
         ));
 
@@ -150,6 +153,7 @@ fn set_app_settings_content(
             BloomSetting::spawn_template(&mut commands, &dui, &config),
             SsaoSetting::spawn_template(&mut commands, &dui, &config),
             OobSetting::spawn_template(&mut commands, &dui, &config),
+            ConstrainUiSetting::spawn_template(&mut commands, &dui, &config),
             commands
                 .spawn_template(
                     &dui,

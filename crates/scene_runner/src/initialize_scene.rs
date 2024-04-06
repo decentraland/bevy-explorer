@@ -32,7 +32,8 @@ use wallet::Wallet;
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 use crate::{
-    renderer_context::RendererSceneContext, update_world::ComponentTracker, ContainerEntity, DeletedSceneEntities, OutOfWorld, SceneEntity, SceneThreadHandle
+    renderer_context::RendererSceneContext, update_world::ComponentTracker, ContainerEntity,
+    DeletedSceneEntities, OutOfWorld, SceneEntity, SceneThreadHandle,
 };
 
 #[derive(Default)]
@@ -313,7 +314,7 @@ pub(crate) fn load_scene_javascript(
             }
         } else {
             ipfas.load_url(
-                "https://renderer-artifacts.decentraland.org/sdk7-adaption-layer/dev/index.min.js",
+                "https://renderer-artifacts.decentraland.org/sdk6-adaption-layer/main/index.min.js",
             )
         };
 
