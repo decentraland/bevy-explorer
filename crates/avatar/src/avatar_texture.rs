@@ -287,7 +287,7 @@ fn add_booth_camera(
                 transform: Transform::from_xyz(1.0, 2.0, -1.0)
                     .looking_at(Vec3::new(0.0, 1.8, 0.0), Vec3::Z),
                 spot_light: SpotLight {
-                    intensity: 300.0,
+                    intensity: 30000.0,
                     color: Color::WHITE,
                     shadows_enabled: false,
                     inner_angle: 0.6,

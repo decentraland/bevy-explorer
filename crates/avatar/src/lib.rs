@@ -851,6 +851,10 @@ fn process_avatar(
 
         // hide and colour the base model
         for scene_ent in scene_spawner.iter_instance_entities(loaded_avatar.body_instance) {
+            if def.hides.contains(&WearableCategory::BODY_SHAPE) {
+                commands.entity(scene_ent).try_insert(Visibility::Hidden);
+            }
+
             if let Some(layer) = def.render_layer {
                 // set render layer for primary avatar
                 commands.entity(scene_ent).try_insert(layer);
