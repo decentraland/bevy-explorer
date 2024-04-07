@@ -255,7 +255,12 @@ fn make_graph(app: &mut App) -> String {
         if let Some(children) = maybe_children {
             let sorted_children_with_scene_id: BTreeMap<_, _> = children
                 .iter()
-                .map(|c| (scene_entity_query.get(&app.world, *c).unwrap().0.id, c))
+                .filter_map(|c| {
+                    scene_entity_query
+                        .get(&app.world, *c)
+                        .ok()
+                        .map(|q| (q.0.id, c))
+                })
                 .collect();
 
             to_check.extend(sorted_children_with_scene_id.values().copied());
