@@ -3,8 +3,9 @@ use std::str::FromStr;
 use crate::{base_wearables, CollectibleInstance, CollectibleUrn};
 use anyhow::anyhow;
 use bevy::{
-    gltf::Gltf,
+    gltf::{Gltf, GltfLoaderSettings},
     prelude::*,
+    render::render_asset::RenderAssetUsages,
     tasks::{IoTaskPool, Task},
     utils::{HashMap, HashSet},
 };
@@ -479,7 +480,15 @@ impl WearableDefinition {
             }
 
             let model = ipfas
-                .load_content_file::<Gltf>(&representation.main_file, &data.hash)
+                .load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
+                    &representation.main_file,
+                    &data.hash,
+                    |s| {
+                        s.load_cameras = false;
+                        s.load_lights = false;
+                        s.load_materials = RenderAssetUsages::RENDER_WORLD;
+                    },
+                )
                 .ok();
 
             (model, None, None)
