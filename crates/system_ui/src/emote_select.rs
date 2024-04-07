@@ -7,9 +7,9 @@ use bevy::{
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
+use collectibles::emotes::AvatarAnimations;
 use common::structs::PrimaryUser;
 use comms::profile::CurrentUserProfile;
-use emotes::AvatarAnimations;
 use ui_core::{
     focus::Focus,
     ui_actions::{Click, Defocus, HoverEnter, HoverExit, On},

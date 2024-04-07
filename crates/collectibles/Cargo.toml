@@ -1,5 +1,5 @@
 [package]
-name = "emotes"
+name = "collectibles"
 version = "0.1.0"
 edition = "2021"
 
@@ -20,3 +20,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 urn = { workspace = true }
 itertools = { workspace = true }
+isahc = { workspace = true }

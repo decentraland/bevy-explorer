@@ -9,6 +9,9 @@ use bevy::{
     utils::HashMap,
 };
 use bevy_console::ConsoleCommand;
+use collectibles::emotes::{
+    base_bodyshapes, urn_for_emote_specifier, AvatarAnimation, AvatarAnimations, EmoteLoadData,
+};
 use common::{
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
@@ -28,9 +31,6 @@ use dcl_component::{
         sdk::components::{pb_avatar_emote_command::EmoteCommand, PbAvatarEmoteCommand},
     },
     SceneComponentId,
-};
-use emotes::{
-    base_bodyshapes, urn_for_emote_specifier, AvatarAnimation, AvatarAnimations, EmoteLoadData,
 };
 use scene_runner::{
     update_world::{transform_and_parent::ParentPositionSync, AddCrdtInterfaceExt},

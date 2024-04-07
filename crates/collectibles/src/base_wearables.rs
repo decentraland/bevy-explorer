@@ -1,3 +1,5 @@
+use crate::wearables::{WearableInstance, WearableUrn};
+
 const BASE_WEARABLES: [&str; 278] = [
     "BaseFemale",
     "BaseMale",
@@ -280,35 +282,52 @@ const BASE_WEARABLES: [&str; 278] = [
     "polocoloredtshirt",
 ];
 
-pub fn base_wearables() -> Vec<String> {
+pub fn base_wearable_urns() -> Vec<WearableUrn> {
     BASE_WEARABLES
         .iter()
         .map(|wearable| {
             format!("urn:decentraland:off-chain:base-avatars:{}", wearable).to_lowercase()
         })
+        .map(WearableUrn::new)
         .collect()
 }
 
-pub fn default_bodyshape() -> String {
-    format!(
+pub fn default_bodyshape_urn() -> WearableUrn {
+    WearableUrn::new(format!(
         "urn:decentraland:off-chain:base-avatars:{}",
         BASE_WEARABLES[0]
-    )
-    .to_lowercase()
+    ))
 }
 
 pub const CONTENT_URL: &str = "https://peer.decentraland.org/content/contents/";
 pub const BASE_URL: &str = "https://peer.decentraland.org/content";
 
-pub fn default_wearables() -> impl Iterator<Item = &'static str> {
-    [
-        // "urn:decentraland:off-chain:base-avatars:f_eyes_00",
-        // "urn:decentraland:off-chain:base-avatars:f_eyebrows_00",
-        // "urn:decentraland:off-chain:base-avatars:f_mouth_00",
-        // "urn:decentraland:off-chain:base-avatars:standard_hair",
-        // "urn:decentraland:off-chain:base-avatars:f_simple_yellow_tshirt",
-        // "urn:decentraland:off-chain:base-avatars:f_brown_trousers",
-        // "urn:decentraland:off-chain:base-avatars:bun_shoes",
-    ]
+pub fn default_wearables(body_shape: &WearableUrn) -> impl Iterator<Item = WearableInstance> {
+    match body_shape.as_str() {
+        "urn:decentraland:off-chain:base-avatars:base_female" => {
+            vec![
+                "urn:decentraland:off-chain:base-avatars:f_eyes_00",
+                "urn:decentraland:off-chain:base-avatars:f_eyebrows_00",
+                "urn:decentraland:off-chain:base-avatars:f_mouth_00",
+                "urn:decentraland:off-chain:base-avatars:standard_hair",
+                "urn:decentraland:off-chain:base-avatars:f_simple_yellow_tshirt",
+                "urn:decentraland:off-chain:base-avatars:f_brown_trousers",
+                "urn:decentraland:off-chain:base-avatars:bun_shoes",
+            ]
+        }
+        "urn:decentraland:off-chain:base-avatars:base_male" => {
+            vec![
+                "urn:decentraland:off-chain:base-avatars:eyes_00",
+                "urn:decentraland:off-chain:base-avatars:eyebrows_00",
+                "urn:decentraland:off-chain:base-avatars:mouth_00",
+                "urn:decentraland:off-chain:base-avatars:standard_hair",
+                "urn:decentraland:off-chain:base-avatars:simple_blue_tshirt",
+                "urn:decentraland:off-chain:base-avatars:distressed_black_Jeans",
+                "urn:decentraland:off-chain:base-avatars:citycomfortableshoes",
+            ]
+        }
+        _ => Vec::default(),
+    }
     .into_iter()
+    .map(WearableInstance::new)
 }
