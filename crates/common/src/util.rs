@@ -1,15 +1,29 @@
 use std::collections::VecDeque;
 
 use bevy::{
-    ecs::system::{Command, EntityCommands},
+    app::Update,
+    ecs::{
+        component::Component,
+        system::{Command, Commands, EntityCommands, Query},
+    },
+    hierarchy::DespawnRecursiveExt,
     prelude::{
-        despawn_with_children_recursive, BuildWorldChildren, Entity, IntoSystemConfigs, World,
+        despawn_with_children_recursive, BuildWorldChildren, Entity, IntoSystemConfigs, Plugin,
+        World,
     },
     tasks::Task,
 };
 use ethers_core::types::H160;
 use futures_lite::future;
 use smallvec::SmallVec;
+
+pub struct UtilsPlugin;
+
+impl Plugin for UtilsPlugin {
+    fn build(&self, app: &mut bevy::prelude::App) {
+        app.add_systems(Update, despawn_with);
+    }
+}
 
 // get results from a task
 pub trait TaskExt {
@@ -185,6 +199,17 @@ impl QuatNormalizeExt for bevy::prelude::Quat {
             norm
         } else {
             bevy::prelude::Quat::IDENTITY
+        }
+    }
+}
+
+#[derive(Component)]
+pub struct DespawnWith(pub Entity);
+
+fn despawn_with(mut commands: Commands, q: Query<(Entity, &DespawnWith)>) {
+    for (ent, with) in q.iter() {
+        if commands.get_entity(with.0).is_none() {
+            commands.entity(ent).despawn_recursive();
         }
     }
 }

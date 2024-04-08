@@ -151,6 +151,7 @@ fn run_raycasts(
                     direction,
                     raycast.max_distance,
                     mask,
+                    true,
                 )
                 .map(|hit| vec![(scene_ent.root, hit)])
                 .unwrap_or_default(),
@@ -161,6 +162,7 @@ fn run_raycasts(
                     direction,
                     raycast.max_distance,
                     mask,
+                    true,
                 )
                 .into_iter()
                 .map(|hit| (scene_ent.root, hit))
@@ -188,6 +190,7 @@ fn run_raycasts(
                         direction,
                         raycast.max_distance,
                         mask,
+                        true,
                     ) {
                         if best_result
                             .as_ref()
@@ -219,6 +222,7 @@ fn run_raycasts(
                             direction,
                             raycast.max_distance,
                             mask,
+                            true,
                         )
                         .into_iter()
                     {

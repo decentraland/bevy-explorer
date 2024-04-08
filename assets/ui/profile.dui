@@ -1,12 +1,15 @@
 <define-template id="settings">
-    <div style="
-        position-type: absolute;
-        flex-direction: column;
-        height: 100%;
-        width: 100%;
-        background-color: #8888ccff;
-        align-items: center;
-    ">
+    <div 
+        style="
+            position-type: absolute;
+            flex-direction: column;
+            height: 100%;
+            width: 100%;
+            background-color: #aa1fc1ff;
+            align-items: center;
+        "
+        focus="block"
+    >
         <div id="title-bar" style="width: 100%; height: auto;" z-index="100">
             <button label-name="change-realm-button" label="@realm" onclick="@change-realm" />
             <space />
@@ -14,7 +17,7 @@
             <space />
             <div id="wallet">
                 <button id="connect-wallet-button" label="Connect wallet" onclick="@connect-wallet" />
-                <button id="close-settings-button" label="X" onclick="@close-settings" />
+                <button image="images/redx.png" onclick="@close-settings" image-width="4.4vmin" image-height="4.4vmin" />
             </div>
         </div>
         <hr-thin />

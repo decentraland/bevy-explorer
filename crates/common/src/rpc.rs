@@ -104,7 +104,8 @@ pub enum RpcCall {
     },
     MovePlayer {
         scene: Entity,
-        to: Transform,
+        to: Vec3,
+        looking_at: Option<Vec3>,
     },
     TeleportPlayer {
         scene: Option<Entity>,
@@ -113,7 +114,7 @@ pub enum RpcCall {
     },
     MoveCamera {
         scene: Entity,
-        to: Quat,
+        to: Vec3,
     },
     SpawnPortable {
         location: PortableLocation,

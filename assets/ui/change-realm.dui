@@ -7,22 +7,40 @@
             </div>
         </div>
         <hr />
-        <div style="flex-direction: row; width: 100%; justify-content: space-between;">
-            <med-text text="Realm" style="margin: 1.4vmin; color: black; width: 33%" />
-            <med-text text="Users Online" style="margin: 1.4vmin; color: black; width: 33%" />
-            <div style="flex-grow: 1;" />
+        <div style="flex-direction: column; width: 100%">
+            <bounds 
+                style="flex-grow: 1; justify-content: center; width: 95%;"
+                corner-size="2vmin"
+                blend-size="0.5vmin"
+                border-size="1vmin"
+                border-color="#00000000"
+                color="#00000000"
+            >
+                <med-text text="Realm" style="margin: 1.4vmin; color: black; width: 33%" />
+                <med-text text="Users Online" style="margin: 1.4vmin; color: black; width: 33%" />
+                <div style="width: 33%;" />
+            </bounds>
         </div>
-        <div id="server-list" style="flex-direction: column; width: 100%">
-            <div style="align-items: center; justify-content: center;"><spinner /></div>
-        </div>
+        <hr />
+        <vscroll>
+            <div id="server-list" style="flex-direction: column; width: 95%">
+                <div style="align-items: center; justify-content: center;"><spinner /></div>
+            </div>
+        </vscroll>
     </dialog>
 </define-template>
 
 <define-template id="server-item">
-    <div style="flex-direction: row; width: 100%; justify-content: space-between; align-items: center; margin: 0.5vmin">
-        <nineslice id="button-background" slice-image="images/button.png" slice-border="37.5%" slice-color="#8888cc" />
+    <bounds 
+        style="flex-grow: 1; justify-content: center;"
+        corner-size="2vmin"
+        blend-size="0.5vmin"
+        border-size="1vmin"
+        border-color="#7f569e"
+        color="#b2a1bf"
+    >
         <med-text text="@name" style="margin: 1.4vmin; color: black; width: 33%" />
         <med-text text="@users" style="margin: 1.4vmin; color: black; width: 33%" />
-        <button label="warp in" onclick="@onclick" enabled="@enabled" style="flex-grow: 1;" />
-    </div>
+        <div style="width: 33%; justify-content: flex-end;"><button label="warp in" onclick="@onclick" enabled="@enabled" /></div>
+    </bounds>
 </define-template>

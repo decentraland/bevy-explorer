@@ -1,12 +1,14 @@
 pub mod app_settings;
 pub mod change_realm;
 pub mod chat;
+pub mod crash_report;
 pub mod discover;
 pub mod emote_select;
 pub mod emotes;
 pub mod login;
 pub mod map;
 pub mod mic;
+pub mod oow;
 pub mod profile;
 pub mod profile_detail;
 pub mod sysinfo;
@@ -23,6 +25,7 @@ use input_manager::MouseInteractionComponent;
 use login::LoginPlugin;
 use map::MapPlugin;
 use mic::MicUiPlugin;
+use oow::OowUiPlugin;
 use profile_detail::ProfileDetailPlugin;
 use toasts::ToastsPlugin;
 use tooltip::ToolTipPlugin;
@@ -51,6 +54,7 @@ impl Plugin for SystemUiPlugin {
             ChangeRealmPlugin,
             MapPlugin,
             ProfileDetailPlugin,
+            OowUiPlugin,
         ));
     }
 }
@@ -70,13 +74,29 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
                     height: Val::Percent(100.0),
                     ..Default::default()
                 },
+                z_index: ZIndex::Global(1),
                 ..Default::default()
             },
-            Interaction::default(),
-            MouseInteractionComponent,
             UiRoot,
         ))
         .id();
-
     ui_root.0 = root;
+
+    // interaction component
+    commands.spawn((
+        NodeBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                right: Val::Px(0.0),
+                top: Val::Px(0.0),
+                bottom: Val::Px(0.0),
+                ..Default::default()
+            },
+            z_index: ZIndex::Global(-1),
+            ..Default::default()
+        },
+        Interaction::default(),
+        MouseInteractionComponent,
+    ));
 }

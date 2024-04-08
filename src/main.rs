@@ -1,5 +1,7 @@
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+use std::{fs::File, io::Write, sync::OnceLock};
+
 use build_time::build_time_utc;
 use mimalloc::MiMalloc;
 
@@ -14,6 +16,7 @@ use bevy::{
         tonemapping::{DebandDither, Tonemapping},
     },
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    log::BoxedSubscriber,
     pbr::{CascadeShadowConfigBuilder, ShadowFilteringMethod},
     prelude::*,
     render::view::ColorGrading,
@@ -21,14 +24,15 @@ use bevy::{
 };
 use bevy_console::ConsoleCommand;
 
+use collectibles::CollectiblesPlugin;
 use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AttachPoints, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes,
         PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, Version,
     },
+    util::UtilsPlugin,
 };
-use emotes::EmotesPlugin;
 use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
@@ -45,7 +49,7 @@ use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
 use ipfs::IpfsIoPlugin;
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
-use system_ui::SystemUiPlugin;
+use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
 use user_input::UserInputPlugin;
@@ -53,7 +57,35 @@ use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
 use world_ui::WorldUiPlugin;
 
+static SESSION_LOG: OnceLock<String> = OnceLock::new();
+
 fn main() {
+    let session_time: chrono::DateTime<chrono::Utc> = std::time::SystemTime::now().into();
+    SESSION_LOG
+        .set(format!(
+            "./log/{}.log",
+            session_time.format("%Y%m%d-%H%M%S")
+        ))
+        .unwrap();
+    std::fs::create_dir_all("./log").unwrap();
+    File::create(SESSION_LOG.get().unwrap())
+        .expect("failed to create log file")
+        .write_all(format!("{}\n\n", SESSION_LOG.get().unwrap()).as_bytes())
+        .expect("failed to create log file");
+
+    let crash_file = std::fs::read_dir("./log")
+        .unwrap()
+        .filter_map(|f| f.ok())
+        .find(|f| f.path().extension().map(|oss| oss.to_string_lossy()) == Some("touch".into()))
+        .map(|f| {
+            f.path()
+                .parent()
+                .unwrap()
+                .join(f.path().file_stem().unwrap())
+        });
+
+    File::create(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
+
     // warnings before log init must be stored and replayed later
     let mut warnings = Vec::default();
     let mut app = App::new();
@@ -108,6 +140,7 @@ fn main() {
             .unwrap_or(base_config.scene_unload_extra_distance),
         sysinfo_visible: false,
         scene_log_to_console: args.contains("--scene_log_to_console"),
+        ..base_config
     };
 
     let test_scenes = args.value_from_str("--test_scenes").ok();
@@ -170,6 +203,7 @@ fn main() {
             soft_max_font_atlases: 4.try_into().unwrap(),
             allow_dynamic_font_size: true,
         })
+        .insert_resource(final_config.audio.clone())
         .add_plugins(
             DefaultPlugins
                 .set(TaskPoolPlugin {
@@ -192,6 +226,20 @@ fn main() {
                 })
                 .set(bevy::log::LogPlugin {
                     filter: "wgpu=error,naga=error".to_string(),
+                    update_subscriber: Some(move |_: BoxedSubscriber| -> BoxedSubscriber {
+                        let (non_blocking, guard) = tracing_appender::non_blocking(
+                            File::options()
+                                .write(true)
+                                .open(SESSION_LOG.get().unwrap())
+                                .unwrap(),
+                        );
+                        let l = bevy::log::tracing_subscriber::fmt()
+                            .with_ansi(false)
+                            .with_writer(non_blocking)
+                            .finish();
+                        Box::leak(Box::new(guard));
+                        Box::new(l)
+                    }),
                     ..default()
                 })
                 .build()
@@ -219,7 +267,8 @@ fn main() {
 
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
 
-    app.add_plugins(InputManagerPlugin)
+    app.add_plugins(UtilsPlugin)
+        .add_plugins(InputManagerPlugin)
         .add_plugins(SceneRunnerPlugin)
         .add_plugins(UserInputPlugin)
         .add_plugins(UiCorePlugin)
@@ -231,8 +280,14 @@ fn main() {
         .add_plugins(NftShapePlugin)
         .add_plugins(TweenPlugin)
         .add_plugins(SceneBoundPlugin)
-        .add_plugins(EmotesPlugin)
+        .add_plugins(CollectiblesPlugin)
         .add_plugins(WorldUiPlugin);
+
+    if let Some(crashed) = crash_file {
+        app.add_plugins(CrashReportPlugin {
+            file: crashed.canonicalize().unwrap(),
+        });
+    }
 
     if !no_avatar {
         app.add_plugins(AvatarPlugin);
@@ -257,6 +312,8 @@ fn main() {
     app.add_console_command::<SceneThreadsCommand, _>(scene_threads);
     app.add_console_command::<FpsCommand, _>(set_fps);
 
+    info!("Bevy-Explorer version {}", VERSION);
+
     // replay any warnings
     for warning in warnings {
         warn!(warning);
@@ -266,7 +323,10 @@ fn main() {
     // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
     // bevy_mod_debugdump::print_main_schedule(&mut app);
 
-    app.run()
+    log_panics::init();
+    app.run();
+
+    std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
 }
 
 fn setup(

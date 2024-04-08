@@ -35,6 +35,7 @@ pub struct RendererSceneContext {
     pub is_portable: bool,
     pub title: String,
     pub base: IVec2,
+    pub parcels: HashSet<IVec2>,
     // world-space bounds for the scene
     pub bounds: Vec4,
     pub spawn_points: Vec<SpawnPoint>,
@@ -94,6 +95,7 @@ impl RendererSceneContext {
         is_portable: bool,
         title: String,
         base: IVec2,
+        parcels: HashSet<IVec2>,
         bounds: Vec4,
         spawn_points: Vec<SpawnPoint>,
         root: Entity,
@@ -108,6 +110,7 @@ impl RendererSceneContext {
             is_portable,
             title,
             base,
+            parcels,
             bounds,
             spawn_points,
             size,

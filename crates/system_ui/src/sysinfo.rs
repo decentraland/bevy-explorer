@@ -21,7 +21,7 @@ use scene_material::SceneMaterial;
 use scene_runner::{
     initialize_scene::{SceneLoading, PARCEL_SIZE},
     renderer_context::RendererSceneContext,
-    update_world::{ComponentTracker, TrackComponents},
+    update_world::{gltf_container::GltfLoadingCount, ComponentTracker, TrackComponents},
     ContainingScene, DebugInfo,
 };
 use ui_core::{
@@ -30,6 +30,7 @@ use ui_core::{
     ui_actions::{Click, EventCloneExt},
     BODY_TEXT_STYLE, TITLE_TEXT_STYLE,
 };
+use user_input::CursorLocked;
 use world_ui::TextShapeMaterial;
 
 use crate::{
@@ -53,6 +54,7 @@ impl Plugin for SysInfoPanelPlugin {
                 update_scene_load_state,
                 update_minimap,
                 update_map_visibilty,
+                update_crosshair,
             ),
         );
         app.add_systems(
@@ -71,6 +73,9 @@ struct SysInfoMarker;
 
 #[derive(Component)]
 struct SysInfoContainer;
+
+#[derive(Component)]
+struct CrossHair;
 
 pub(crate) fn setup(
     mut commands: Commands,
@@ -92,19 +97,23 @@ pub(crate) fn setup(
                     justify_content: JustifyContent::Center,
                     ..Default::default()
                 },
+                z_index: ZIndex::Global(-1),
                 ..Default::default()
             })
             .with_children(|c| {
-                c.spawn(ImageBundle {
-                    style: Style {
-                        width: Val::VMin(3.0),
-                        height: Val::VMin(3.0),
+                c.spawn((
+                    ImageBundle {
+                        style: Style {
+                            width: Val::VMin(3.0),
+                            height: Val::VMin(3.0),
+                            ..Default::default()
+                        },
+                        image: asset_server.load("images/crosshair.png").into(),
+                        background_color: Color::rgba(1.0, 1.0, 1.0, 0.7).into(),
                         ..Default::default()
                     },
-                    image: asset_server.load("images/crosshair.png").into(),
-                    background_color: Color::rgba(1.0, 1.0, 1.0, 0.7).into(),
-                    ..Default::default()
-                });
+                    CrossHair,
+                ));
             });
         commands.spawn(TextBundle {
             style: Style {
@@ -349,7 +358,7 @@ fn update_minimap(
     mut maps: Query<&mut MapTexture>,
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     containing_scene: ContainingScene,
-    scenes: Query<&RendererSceneContext>,
+    scenes: Query<(&RendererSceneContext, Option<&GltfLoadingCount>)>,
     mut text: Query<&mut Text>,
 ) {
     let Ok((player, gt)) = player.get_single() else {
@@ -357,19 +366,27 @@ fn update_minimap(
     };
 
     let player_translation = (gt.translation().xz() * Vec2::new(1.0, -1.0)) / PARCEL_SIZE;
-    let map_center = player_translation - Vec2::Y; // no idea why i have to subtract one :(
+    let map_center = player_translation - Vec2::Y;
 
     let scene = containing_scene
-        .get_parcel(player)
+        .get_parcel_oow(player)
         .and_then(|scene| scenes.get(scene).ok());
     let parcel = player_translation.floor().as_ivec2();
     let title = scene
-        .map(|context| context.title.clone())
+        .map(|(context, _)| context.title.clone())
         .unwrap_or("???".to_owned());
-    let sdk = scene.map(|context| context.sdk_version).unwrap_or("");
+    let sdk = scene.map(|(context, _)| context.sdk_version).unwrap_or("");
     let state = scene
-        .map(|context| if context.broken { "Broken" } else { "Ok " })
-        .unwrap_or("No scene");
+        .map(|(context, gltf_count)| {
+            if context.broken {
+                "Broken".to_owned()
+            } else if !context.blocked.is_empty() {
+                format!("Loading [{}]", gltf_count.map(|c| c.0).unwrap_or_default())
+            } else {
+                "Ok ".to_owned()
+            }
+        })
+        .unwrap_or("No scene".to_owned());
 
     if let Ok(components) = q.get_single() {
         if let Ok(mut map) = maps.get_mut(components.named("map-node")) {
@@ -498,5 +515,20 @@ fn set_track_components(
         let on = command.on.unwrap_or(true);
         track.0 = on;
         input.reply_ok("");
+    }
+}
+
+fn update_crosshair(
+    locked: Res<CursorLocked>,
+    mut prev: Local<Option<bool>>,
+    mut crosshair: Query<&mut BackgroundColor, With<CrossHair>>,
+) {
+    if Some(locked.0) != *prev {
+        *prev = Some(locked.0);
+        if locked.0 {
+            crosshair.single_mut().0.set_a(0.7);
+        } else {
+            crosshair.single_mut().0.set_a(0.2);
+        }
     }
 }

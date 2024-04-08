@@ -1,7 +1,6 @@
 use std::f32::consts::{FRAC_PI_2, TAU};
 
 use bevy::{
-    core::FrameCount,
     pbr::{wireframe::WireframePlugin, DirectionalLightShadowMap},
     prelude::*,
     render::render_asset::RenderAssetBytesPerFrame,
@@ -26,7 +25,6 @@ pub struct VisualsPlugin {
 
 impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(NoFog(self.no_fog));
         app.insert_resource(DirectionalLightShadowMap { size: 4096 })
             .insert_resource(AtmosphereModel::default())
             .add_plugins(AtmospherePlugin)
@@ -34,22 +32,11 @@ impl Plugin for VisualsPlugin {
             .add_systems(Update, daylight_cycle)
             .add_systems(Update, move_ground)
             .add_systems(Startup, setup.in_set(SetupSets::Main))
-            // workaround for font uploading
-            .add_systems(
-                Update,
-                set_max_upload.run_if(|f: Res<FrameCount>| f.0 == 100),
-            );
+            .insert_resource(RenderAssetBytesPerFrame::new(16777216));
 
         app.add_console_command::<ShadowConsoleCommand, _>(shadow_console_command);
         app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
     }
-}
-
-#[derive(Resource)]
-struct NoFog(bool);
-
-fn set_max_upload(mut commands: Commands) {
-    commands.insert_resource(RenderAssetBytesPerFrame::new(16777216));
 }
 
 fn setup(
@@ -57,7 +44,6 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     camera: Res<PrimaryCameraRes>,
-    no_fog: Res<NoFog>,
 ) {
     info!("visuals::setup");
 
@@ -65,14 +51,12 @@ fn setup(
         .entity(camera.0)
         .try_insert(AtmosphereCamera::default());
 
-    if !no_fog.0 {
-        commands.entity(camera.0).try_insert(FogSettings {
-            color: Color::rgb(0.3, 0.2, 0.1),
-            directional_light_color: Color::rgb(1.0, 1.0, 0.7),
-            directional_light_exponent: 10.0,
-            falloff: FogFalloff::ExponentialSquared { density: 0.01 },
-        });
-    }
+    commands.entity(camera.0).try_insert(FogSettings {
+        color: Color::rgb(0.3, 0.2, 0.1),
+        directional_light_color: Color::rgb(1.0, 1.0, 0.7),
+        directional_light_exponent: 10.0,
+        falloff: FogFalloff::ExponentialSquared { density: 0.01 },
+    });
 
     commands.spawn((
         PbrBundle {
@@ -150,7 +134,7 @@ fn move_ground(
         return;
     };
 
-    transform.translation = target.translation() * Vec3::new(1.0, 0.0, 1.0);
+    transform.translation = target.translation() * Vec3::new(1.0, 0.0, 1.0) + Vec3::Y * -0.01;
 }
 
 #[derive(clap::Parser, ConsoleCommand)]

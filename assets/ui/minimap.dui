@@ -1,11 +1,11 @@
 <define-template id="minimap">
     <bounds 
-        style="flex-direction: column; position-type: absolute; left: 1vmin; top: 1vmin; width: 25vmin;"
+        style="flex-direction: column; position-type: absolute; left: 1vmin; top: 1vmin; width: 25vmin; overflow-x: hidden;"
         corner-size="2vmin"
-        blend-size="0.5vmin"
+        blend-size="0.25vmin"
         border-size="1vmin"
-        border-color="#000000ff"
-        color="#8888cc77"
+        border-color="#1C298aff"
+        color="#aa1fc166"
     >
         <div id="map-container" style="width: 100%; aspect-ratio: 1; overflow-x: hidden; overflow-y: hidden;" z-index="-1">
             <bounds id="map-node" style="flex-grow: 1; overflow-x: hidden; overflow-y: hidden;" corner-size="2vmin" blend-size="0.5vmin" border-size="1vmin" border-color="#00000000"/>

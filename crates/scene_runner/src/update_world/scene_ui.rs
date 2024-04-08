@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::{
     prelude::*,
@@ -8,12 +8,13 @@ use bevy::{
 use input_manager::MouseInteractionComponent;
 
 use crate::{
-    renderer_context::RendererSceneContext,
-    update_scene::pointer_results::UiPointerTarget,
-    update_world::text_shape::{make_text_section, DespawnWith},
-    ContainingScene, SceneEntity, SceneSets,
+    renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
+    update_world::text_shape::make_text_section, ContainingScene, SceneEntity, SceneSets,
 };
-use common::structs::PrimaryUser;
+use common::{
+    structs::{AppConfig, PrimaryUser},
+    util::DespawnWith,
+};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
@@ -46,6 +47,12 @@ struct Size {
     height: Val,
 }
 
+#[derive(Debug, Copy, Clone)]
+struct MaybeSize {
+    width: Option<Val>,
+    height: Option<Val>,
+}
+
 // macro helpers to convert proto format to bevy format for val, size, rect
 macro_rules! val {
     ($pb:ident, $u:ident, $v:ident, $d:expr) => {
@@ -63,6 +70,27 @@ macro_rules! size {
         Size {
             width: val!($pb, $wu, $w, $d),
             height: val!($pb, $hu, $h, $d),
+        }
+    }};
+}
+
+// macro helpers to convert proto format to bevy format for val, size, rect
+macro_rules! maybe_val {
+    ($pb:ident, $u:ident, $v:ident, $d:expr) => {
+        match $pb.$u() {
+            YgUnit::YguUndefined => None,
+            YgUnit::YguAuto => Some(Val::Auto),
+            YgUnit::YguPoint => Some(Val::Px($pb.$v)),
+            YgUnit::YguPercent => Some(Val::Percent($pb.$v)),
+        }
+    };
+}
+
+macro_rules! maybe_size {
+    ($pb:ident, $wu:ident, $w:ident, $hu:ident, $h:ident, $d:expr) => {{
+        MaybeSize {
+            width: maybe_val!($pb, $wu, $w, $d),
+            height: maybe_val!($pb, $hu, $h, $d),
         }
     }};
 }
@@ -94,26 +122,28 @@ pub struct UiTransform {
     display: Display,
     basis: Val,
     grow: f32,
-    size: Size,
+    size: MaybeSize,
     min_size: Size,
     max_size: Size,
     position: UiRect,
     margin: UiRect,
     padding: UiRect,
+    // debug: PbUiTransform,
 }
 
 impl From<PbUiTransform> for UiTransform {
     fn from(value: PbUiTransform) -> Self {
         Self {
+            // debug: value.clone(),
             parent: SceneEntityId::from_proto_u32(value.parent as u32),
             right_of: SceneEntityId::from_proto_u32(value.right_of as u32),
             align_content: match value.align_content() {
                 YgAlign::YgaAuto |
                 YgAlign::YgaBaseline | // baseline is invalid for align content
+                YgAlign::YgaStretch => AlignContent::Stretch,
                 YgAlign::YgaFlexStart => AlignContent::FlexStart,
                 YgAlign::YgaCenter => AlignContent::Center,
                 YgAlign::YgaFlexEnd => AlignContent::FlexEnd,
-                YgAlign::YgaStretch => AlignContent::Stretch,
                 YgAlign::YgaSpaceBetween => AlignContent::SpaceBetween,
                 YgAlign::YgaSpaceAround => AlignContent::SpaceAround,
             },
@@ -176,7 +206,7 @@ impl From<PbUiTransform> for UiTransform {
             },
             basis: val!(value, flex_basis_unit, flex_basis, Val::Auto),
             grow: value.flex_grow,
-            size: size!(value, width_unit, width, height_unit, height, Val::Auto),
+            size: maybe_size!(value, width_unit, width, height_unit, height, Val::Auto),
             min_size: size!(
                 value,
                 min_width_unit,
@@ -484,6 +514,7 @@ fn layout_scene_ui(
     ui_dropdown_state: Query<&UiDropdownPersistentState>,
     resolver: TextureResolver,
     mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
+    config: Res<AppConfig>,
 ) {
     let current_scenes = player
         .get_single()
@@ -500,7 +531,7 @@ fn layout_scene_ui(
 
     for (ent, mut ui_data) in scene_uis.iter_mut() {
         if current_scenes.contains(&ent) {
-            if ui_data.relayout || ui_data.current_node.is_none() {
+            if ui_data.relayout || ui_data.current_node.is_none() || config.is_changed() {
                 // clear any existing ui target
                 *ui_target = UiPointerTarget::None;
 
@@ -512,7 +543,7 @@ fn layout_scene_ui(
                 // collect ui data
                 let mut deleted_nodes = HashSet::default();
                 let mut unprocessed_uis =
-                    HashMap::from_iter(ui_data.nodes.iter().flat_map(|node| {
+                    BTreeMap::from_iter(ui_data.nodes.iter().flat_map(|node| {
                         match ui_nodes.get(*node) {
                             Ok((
                                 scene_entity,
@@ -545,26 +576,40 @@ fn layout_scene_ui(
                 // remove any dead nodes
                 ui_data.nodes.retain(|node| !deleted_nodes.contains(node));
 
+                // scene_id -> Option<Entity>
+                // if scene_id is display::None, it will be present here (so that right-of works) but with a None value
                 let mut processed_nodes = HashMap::new();
+
+                let root_style = if config.constrain_scene_ui {
+                    Style {
+                        position_type: PositionType::Absolute,
+                        left: Val::VMin(27.0),
+                        right: Val::VMin(12.0),
+                        top: Val::VMin(6.0),
+                        bottom: Val::VMin(6.0),
+                        overflow: Overflow::clip(),
+                        ..Default::default()
+                    }
+                } else {
+                    Style {
+                        position_type: PositionType::Absolute,
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        ..Default::default()
+                    }
+                };
 
                 let root = commands
                     .spawn((
                         NodeBundle {
-                            style: Style {
-                                position_type: PositionType::Absolute,
-                                left: Val::Px(0.0),
-                                right: Val::Px(0.0),
-                                top: Val::Px(0.0),
-                                bottom: Val::Px(0.0),
-                                ..Default::default()
-                            },
+                            style: root_style,
                             ..Default::default()
                         },
                         SceneUiRoot(ent),
                         DespawnWith(ent),
                     ))
                     .id();
-                processed_nodes.insert(SceneEntityId::ROOT, root);
+                processed_nodes.insert(SceneEntityId::ROOT, Some(root));
 
                 let mut modified = true;
                 while modified && !unprocessed_uis.is_empty() {
@@ -585,10 +630,18 @@ fn layout_scene_ui(
                                 return true;
                             }
 
-                            // if our parent is not added, we can't process this node
+                            // if our parent is not added (or is hidden), we can't process this node
                             let Some(parent) = processed_nodes.get(&ui_transform.parent) else {
                                 return true;
                             };
+
+                            // if we're hidden or our parent is hidden, bail here
+                            if parent.is_none() || ui_transform.display == Display::None {
+                                processed_nodes.insert(*scene_id, None);
+                                modified = true;
+                                return false;
+                            }
+                            let parent = parent.unwrap();
 
                             // we can process this node
                             let mut style = Style {
@@ -604,8 +657,8 @@ fn layout_scene_ui(
                                 display: ui_transform.display,
                                 flex_basis: ui_transform.basis,
                                 flex_grow: ui_transform.grow,
-                                width: ui_transform.size.width,
-                                height: ui_transform.size.height,
+                                width: ui_transform.size.width.unwrap_or_default(),
+                                height: ui_transform.size.height.unwrap_or_default(),
                                 min_width: ui_transform.min_size.width,
                                 min_height: ui_transform.min_size.height,
                                 max_width: ui_transform.max_size.width,
@@ -618,10 +671,12 @@ fn layout_scene_ui(
                                 padding: ui_transform.padding,
                                 ..Default::default()
                             };
-                            debug!("{:?} [parent: {:?}, ro: {:?}] style: {:?}", scene_id, ui_transform.parent, ui_transform.right_of, style);
+                            debug!("{:?} style: {:?}", scene_id, ui_transform);
                             debug!("{:?}, {:?}, {:?}, {:?}, {:?}", maybe_background, maybe_text, maybe_pointer_events, maybe_ui_input, maybe_dropdown);
-                            commands.entity(*parent).with_children(|commands| {
-                                let mut ent_cmds = &mut commands.spawn(NodeBundle::default());
+                            commands.entity(parent).with_children(|commands| {
+                                let ent_cmds = &mut commands.spawn(NodeBundle::default());
+                                // we ues entity id as zindex. this is rubbish but mimics the foundation behaviour for multiple overlapping root nodes.
+                                let mut ent_cmds = ent_cmds.insert(ZIndex::Local(scene_id.id as i32));
 
                                 if let Some(background) = maybe_background {
                                     if let Some(texture) = background.texture.as_ref() {
@@ -748,56 +803,104 @@ fn layout_scene_ui(
                                 }
 
                                 if let Some(ui_text) = maybe_text {
+                                    let text = make_text_section(
+                                        ui_text.text.as_str(),
+                                        ui_text.font_size * 1.3,
+                                        ui_text.color,
+                                        ui_text.font,
+                                        ui_text.h_align,
+                                        false,
+                                    );
+
+                                    // with text nodes the axis sizes are unusual. 
+                                    // a) if either size axis is NOT NONE, (explicit or auto), we want auto to size appropriately for the content.
+                                    // b) if both axes are NONE, we want to size to zero.
+                                    // a) - we tackle this by using a nested position-type: relative node which will size it's parent appropriately, and default the parent to Auto
+                                    //    - for alignment we use align-items and justify-content
+                                    // b) - we use a nested position-type: absolute node, and default the parent to auto
+                                    //    - for alignment we use align-items and justify-content as above, and we also set left/right/top/bottom to 50% if required
+
+                                    let any_axis_specified = [ui_transform.size.width, ui_transform.size.height].iter().any(Option::is_some);
+
+                                    let inner_style = if any_axis_specified {
+                                        Style {
+                                            position_type: PositionType::Relative,
+                                            ..Default::default()
+                                        }
+                                    } else {
+                                        Style {
+                                            position_type: PositionType::Absolute,
+                                            left: if ui_text.h_align == JustifyText::Left {
+                                                Val::Percent(50.0)
+                                            } else {
+                                                Val::Auto
+                                            },
+                                            right: if ui_text.h_align == JustifyText::Right {
+                                                Val::Percent(50.0)
+                                            } else {
+                                                Val::Auto
+                                            },
+                                            top: if ui_text.v_align == VAlign::Top {
+                                                Val::Percent(50.0)
+                                            } else {
+                                                Val::Auto
+                                            },
+                                            bottom: if ui_text.v_align == VAlign::Bottom {
+                                                Val::Percent(50.0)
+                                            } else {
+                                                Val::Auto
+                                            },
+                                            ..Default::default()
+                                        }
+                                    };
+
+                                    // we need to set size for the first inner element depending 
+                                    // on how the outer was specified
+                                    let width = match ui_transform.size.width {
+                                        Some(Val::Px(px)) => Val::Px(px),
+                                        Some(Val::Percent(_)) => Val::Percent(100.0),
+                                        _ => Val::Auto,
+                                    };
+                                    let height = match ui_transform.size.height {
+                                        Some(Val::Px(px)) => Val::Px(px),
+                                        Some(Val::Percent(_)) => Val::Percent(100.0),
+                                        _ => Val::Auto,
+                                    };
+
                                     ent_cmds = ent_cmds.with_children(|c| {
                                         c.spawn(NodeBundle {
                                             style: Style {
-                                                flex_direction: FlexDirection::Column,
-                                                width: Val::Percent(100.0),
-                                                height: Val::Percent(100.0),
+                                                flex_direction: FlexDirection::Row,
+                                                justify_content: match ui_text.h_align {
+                                                    JustifyText::Left => JustifyContent::FlexStart,
+                                                    JustifyText::Center => JustifyContent::Center,
+                                                    JustifyText::Right => JustifyContent::FlexEnd,
+                                                },
+                                                align_items: match ui_text.v_align {
+                                                    VAlign::Top => AlignItems::FlexStart,
+                                                    VAlign::Middle => AlignItems::Center,
+                                                    VAlign::Bottom => AlignItems::FlexEnd,
+                                                },
+                                                width,
+                                                height,
+                                                align_self: AlignSelf::FlexStart,
+                                                // elements are horizontally centered by default
+                                                margin: UiRect::horizontal(Val::Auto),
                                                 ..Default::default()
                                             },
                                             ..Default::default()
                                         })
                                             .with_children(|c| {
-                                                if ui_text.v_align != VAlign::Top {
-                                                    c.spacer();
-                                                }
-
                                                 c.spawn(NodeBundle {
-                                                    style: Style {
-                                                        flex_direction: FlexDirection::Row,
-                                                        width: Val::Percent(100.0),
-                                                        ..Default::default()
-                                                    },
+                                                    style: inner_style,
                                                     ..Default::default()
                                                 }).with_children(|c| {
-                                                    if ui_text.h_align != JustifyText::Left {
-                                                        c.spacer();
-                                                    }
-
-                                                    let text = make_text_section(
-                                                        ui_text.text.as_str(),
-                                                        ui_text.font_size,
-                                                        ui_text.color,
-                                                        ui_text.font,
-                                                        ui_text.h_align,
-                                                        false,
-                                                    );
-
                                                     c.spawn(TextBundle {
                                                         text,
                                                         z_index: ZIndex::Local(1),
                                                         ..Default::default()
                                                     });
-
-                                                    if ui_text.h_align != JustifyText::Right {
-                                                        c.spacer();
-                                                    }
                                                 });
-
-                                                if ui_text.v_align != VAlign::Bottom {
-                                                    c.spacer();
-                                                }
                                             },
                                         );
                                     });
@@ -929,7 +1032,7 @@ fn layout_scene_ui(
                                 }
 
                                 ent_cmds.insert(style);
-                                processed_nodes.insert(*scene_id, ent_cmds.id());
+                                processed_nodes.insert(*scene_id, Some(ent_cmds.id()));
                             });
 
                             // mark to continue and remove from unprocessed

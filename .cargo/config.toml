@@ -9,3 +9,6 @@ rustflags = ["-C", "link-args=-ObjC"]
 
 [target.aarch64-apple-darwin]
 rustflags = ["-C", "link-args=-ObjC"]
+
+[env]
+RUST_BACKTRACE = "1"

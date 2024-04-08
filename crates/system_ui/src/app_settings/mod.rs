@@ -4,26 +4,47 @@ use bevy::{
         system::{StaticSystemParam, SystemParam, SystemParamItem},
     },
     prelude::*,
+    ui::RelativeCursorPosition,
 };
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::structs::{
-    AaSetting, AppConfig, BloomSetting, FogSetting, ShadowSetting, WindowSetting,
+    AaSetting, AppConfig, BloomSetting, FogSetting, ShadowSetting, SsaoSetting, WindowSetting,
 };
-use ui_core::ui_actions::{Click, HoverEnter, On, UiCaller};
+use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
 use crate::profile::{SettingsDialog, SettingsTab};
 
-use self::oob_setting::OobSetting;
+use self::{
+    ambient_brightness_setting::AmbientSetting,
+    constrain_ui::ConstrainUiSetting,
+    frame_rate::FpsTargetSetting,
+    load_distance::{LoadDistanceSetting, UnloadDistanceSetting},
+    max_avatars::MaxAvatarsSetting,
+    oob_setting::OobSetting,
+    scene_threads::SceneThreadsSetting,
+    shadow_settings::ShadowDistanceSetting,
+    volume_settings::{
+        MasterVolumeSetting, SceneVolumeSetting, SystemVolumeSetting, VoiceVolumeSetting,
+    },
+};
 
 // use self::window_settings::{set_resolutions, MonitorResolutions};
 
 pub struct AppSettingsPlugin;
 
 mod aa_settings;
+pub mod ambient_brightness_setting;
 mod bloom_settings;
+pub mod constrain_ui;
 pub mod fog_settings;
+pub mod frame_rate;
+pub mod load_distance;
+pub mod max_avatars;
 mod oob_setting;
+pub mod scene_threads;
 mod shadow_settings;
+pub mod ssao_setting;
+pub mod volume_settings;
 pub mod window_settings;
 
 impl Plugin for AppSettingsPlugin {
@@ -33,12 +54,25 @@ impl Plugin for AppSettingsPlugin {
         let mut apply_schedule = Schedule::new(ApplyAppSettingsLabel);
 
         apply_schedule.add_systems((
-            apply_setting::<ShadowSetting>,
+            apply_setting::<ShadowDistanceSetting>,
+            apply_setting::<ShadowSetting>.after(apply_setting::<ShadowDistanceSetting>),
             apply_setting::<FogSetting>,
             apply_setting::<BloomSetting>,
+            apply_setting::<SsaoSetting>,
             apply_setting::<OobSetting>,
             apply_setting::<AaSetting>,
+            apply_setting::<AmbientSetting>,
             apply_setting::<WindowSetting>,
+            apply_setting::<LoadDistanceSetting>,
+            apply_setting::<UnloadDistanceSetting>,
+            apply_setting::<FpsTargetSetting>,
+            apply_setting::<SceneThreadsSetting>,
+            apply_setting::<MaxAvatarsSetting>,
+            apply_setting::<MasterVolumeSetting>,
+            apply_setting::<SceneVolumeSetting>,
+            apply_setting::<VoiceVolumeSetting>,
+            apply_setting::<SystemVolumeSetting>,
+            apply_setting::<ConstrainUiSetting>,
             // apply_setting::<FullscreenResSetting>.after(apply_setting::<WindowSetting>),
         ));
 
@@ -101,13 +135,50 @@ fn set_app_settings_content(
             .unwrap();
 
         let children = vec![
+            commands
+                .spawn_template(
+                    &dui,
+                    "settings-header",
+                    DuiProps::new().with_prop("label", "Graphics Settings".to_owned()),
+                )
+                .unwrap()
+                .root,
             WindowSetting::spawn_template(&mut commands, &dui, &config),
             // FullscreenResSetting::spawn_template(&mut commands, &dui, &config),
             AaSetting::spawn_template(&mut commands, &dui, &config),
+            AmbientSetting::spawn_template(&mut commands, &dui, &config),
             ShadowSetting::spawn_template(&mut commands, &dui, &config),
+            ShadowDistanceSetting::spawn_template(&mut commands, &dui, &config),
             FogSetting::spawn_template(&mut commands, &dui, &config),
             BloomSetting::spawn_template(&mut commands, &dui, &config),
+            SsaoSetting::spawn_template(&mut commands, &dui, &config),
             OobSetting::spawn_template(&mut commands, &dui, &config),
+            ConstrainUiSetting::spawn_template(&mut commands, &dui, &config),
+            commands
+                .spawn_template(
+                    &dui,
+                    "settings-header",
+                    DuiProps::new().with_prop("label", "Performance Settings".to_owned()),
+                )
+                .unwrap()
+                .root,
+            LoadDistanceSetting::spawn_template(&mut commands, &dui, &config),
+            UnloadDistanceSetting::spawn_template(&mut commands, &dui, &config),
+            FpsTargetSetting::spawn_template(&mut commands, &dui, &config),
+            SceneThreadsSetting::spawn_template(&mut commands, &dui, &config),
+            MaxAvatarsSetting::spawn_template(&mut commands, &dui, &config),
+            commands
+                .spawn_template(
+                    &dui,
+                    "settings-header",
+                    DuiProps::new().with_prop("label", "Audio Settings".to_owned()),
+                )
+                .unwrap()
+                .root,
+            MasterVolumeSetting::spawn_template(&mut commands, &dui, &config),
+            SceneVolumeSetting::spawn_template(&mut commands, &dui, &config),
+            VoiceVolumeSetting::spawn_template(&mut commands, &dui, &config),
+            SystemVolumeSetting::spawn_template(&mut commands, &dui, &config),
         ];
 
         commands
@@ -136,49 +207,92 @@ pub trait EnumAppSetting: AppSetting + Sized + std::fmt::Debug {
     fn name(&self) -> String;
 }
 
+pub trait IntAppSetting: AppSetting + Sized + std::fmt::Debug {
+    fn from_int(value: i32) -> Self;
+    fn value(&self) -> i32;
+    fn min() -> i32;
+    fn max() -> i32;
+}
+
 #[derive(Component)]
 struct AppSettingDescription;
+
+#[allow(clippy::too_many_arguments)]
+fn bump_enum<S: EnumAppSetting, const I: isize>(
+    mut q: Query<(&mut SettingsDialog, &mut AppSettingsDetail)>,
+    params: StaticSystemParam<S::Param>,
+    v_params: StaticSystemParam<S::VParam>,
+    commands: Commands,
+    caller: Res<UiCaller>,
+    parents: Query<(&Parent, Option<&DuiEntities>)>,
+    mut text: Query<&mut Text, Without<AppSettingDescription>>,
+    mut description: Query<&mut Text, With<AppSettingDescription>>,
+) {
+    let mut variants = S::variants(v_params.into_inner());
+    let (mut dialog, mut config) = q.single_mut();
+    let config = &mut config.0;
+    let current = S::load(config);
+    let index = variants.iter().position(|v| v == &current).unwrap();
+    let next =
+        variants.remove(((index as isize + I) + variants.len() as isize) as usize % variants.len());
+    S::save(&next, config);
+    S::apply(&next, params.into_inner(), commands);
+
+    let (mut parent, mut entities) = parents.get(caller.0).unwrap();
+    while entities.map_or(true, |e| e.get_named("setting-label").is_none()) {
+        (parent, entities) = parents.get(parent.get()).unwrap()
+    }
+    text.get_mut(entities.unwrap().named("setting-label"))
+        .unwrap()
+        .sections[0]
+        .value = next.name();
+    description.single_mut().sections[0].value = next.description();
+    dialog.modified = true;
+}
+
+fn bump_int<S: IntAppSetting, const I: i32>(
+    mut q: Query<(&mut SettingsDialog, &mut AppSettingsDetail)>,
+    params: StaticSystemParam<S::Param>,
+    commands: Commands,
+    caller: Res<UiCaller>,
+    parents: Query<(&Parent, Option<&DuiEntities>)>,
+    mut style: Query<&mut Style>,
+    mut text: Query<&mut Text, Without<AppSettingDescription>>,
+) {
+    let (mut dialog, mut config) = q.single_mut();
+    let config = &mut config.0;
+    let current = S::load(config).value();
+    let next = S::from_int((current + I).clamp(S::min(), S::max()));
+    S::save(&next, config);
+    S::apply(&next, params.into_inner(), commands);
+
+    let (mut parent, mut entities) = parents.get(caller.0).unwrap();
+    while entities.map_or(true, |e| e.get_named("marker").is_none()) {
+        (parent, entities) = parents.get(parent.get()).unwrap()
+    }
+    style
+        .get_mut(entities.unwrap().named("marker"))
+        .unwrap()
+        .left =
+        Val::Percent((next.value() - S::min()) as f32 / (S::max() - S::min()) as f32 * 100.0);
+
+    let (mut parent, mut entities) = parents.get(caller.0).unwrap();
+    while entities.map_or(true, |e| e.get_named("setting-label").is_none()) {
+        (parent, entities) = parents.get(parent.get()).unwrap()
+    }
+    text.get_mut(entities.unwrap().named("setting-label"))
+        .unwrap()
+        .sections[0]
+        .value = format!("{}", next.value());
+
+    dialog.modified = true;
+}
 
 fn spawn_enum_setting_template<S: EnumAppSetting>(
     commands: &mut Commands,
     dui: &DuiRegistry,
     config: &AppConfig,
 ) -> Entity {
-    let change = |offset: isize| -> On<Click> {
-        On::<Click>::new(
-            move |mut q: Query<(&mut SettingsDialog, &mut AppSettingsDetail)>,
-                  params: StaticSystemParam<S::Param>,
-                  v_params: StaticSystemParam<S::VParam>,
-                  commands: Commands,
-                  caller: Res<UiCaller>,
-                  parents: Query<(&Parent, Option<&DuiEntities>)>,
-                  mut text: Query<&mut Text, Without<AppSettingDescription>>,
-                  mut description: Query<&mut Text, With<AppSettingDescription>>| {
-                let mut variants = S::variants(v_params.into_inner());
-                let (mut dialog, mut config) = q.single_mut();
-                let config = &mut config.0;
-                let current = S::load(config);
-                let index = variants.iter().position(|v| v == &current).unwrap();
-                let next = variants.remove(
-                    ((index as isize + offset) + variants.len() as isize) as usize % variants.len(),
-                );
-                S::save(&next, config);
-                S::apply(&next, params.into_inner(), commands);
-
-                let (mut parent, mut entities) = parents.get(caller.0).unwrap();
-                while entities.map_or(true, |e| e.get_named("setting-label").is_none()) {
-                    (parent, entities) = parents.get(parent.get()).unwrap()
-                }
-                text.get_mut(entities.unwrap().named("setting-label"))
-                    .unwrap()
-                    .sections[0]
-                    .value = next.name();
-                description.single_mut().sections[0].value = next.description();
-                dialog.modified = true;
-            },
-        )
-    };
-
     let components = commands
         .spawn_template(
             dui,
@@ -186,8 +300,8 @@ fn spawn_enum_setting_template<S: EnumAppSetting>(
             DuiProps::new()
                 .with_prop("title", S::title())
                 .with_prop("label-initial", S::load(config).name())
-                .with_prop("next", change(1))
-                .with_prop("prev", change(-1)),
+                .with_prop("next", On::<Click>::new(bump_enum::<S, 1>))
+                .with_prop("prev", On::<Click>::new(bump_enum::<S, -1>)),
         )
         .unwrap();
 
@@ -198,6 +312,89 @@ fn spawn_enum_setting_template<S: EnumAppSetting>(
              mut description: Query<&mut Text, With<AppSettingDescription>>| {
                 let value = S::load(&q.single().0);
                 description.single_mut().sections[0].value = value.description();
+            },
+        ),
+    ));
+
+    components.root
+}
+
+fn spawn_int_setting_template<S: IntAppSetting>(
+    commands: &mut Commands,
+    dui: &DuiRegistry,
+    config: &AppConfig,
+) -> Entity {
+    let initial_offset = (S::load(config).value() - S::min()) as f32 / (S::max() - S::min()) as f32;
+
+    let components = commands
+        .spawn_template(
+            dui,
+            "int-setting",
+            DuiProps::new()
+                .with_prop("title", S::title())
+                .with_prop("initial-offset", format!("{}%", initial_offset * 100.0))
+                .with_prop("label-initial", format!("{}", S::load(config).value()))
+                .with_prop("next", On::<ClickRepeat>::new(bump_int::<S, 1>))
+                .with_prop("prev", On::<ClickRepeat>::new(bump_int::<S, -1>)),
+        )
+        .unwrap();
+
+    commands.entity(components.root).insert((
+        Interaction::default(),
+        On::<HoverEnter>::new(
+            |q: Query<&AppSettingsDetail>,
+             mut description: Query<&mut Text, With<AppSettingDescription>>| {
+                let value = S::load(&q.single().0);
+                description.single_mut().sections[0].value = value.description();
+            },
+        ),
+    ));
+
+    commands.entity(components.named("container")).insert((
+        Interaction::default(),
+        RelativeCursorPosition::default(),
+        On::<ClickRepeat>::new(
+            |caller: Res<UiCaller>,
+             cursor: Query<&RelativeCursorPosition>,
+             mut q: Query<(&mut SettingsDialog, &mut AppSettingsDetail)>,
+             params: StaticSystemParam<S::Param>,
+             commands: Commands,
+             parents: Query<(&Parent, Option<&DuiEntities>)>,
+             mut style: Query<&mut Style>,
+             mut text: Query<&mut Text, Without<AppSettingDescription>>| {
+                let Some(pos) = cursor.get(caller.0).ok().and_then(|rcp| rcp.normalized) else {
+                    return;
+                };
+
+                let new = S::min() + ((S::max() - S::min()) as f32 * pos.x.clamp(0.0, 1.0)) as i32;
+                let next = S::from_int(new);
+
+                let (mut dialog, mut config) = q.single_mut();
+                let config = &mut config.0;
+                S::save(&next, config);
+                S::apply(&next, params.into_inner(), commands);
+
+                let (mut parent, mut entities) = parents.get(caller.0).unwrap();
+                while entities.map_or(true, |e| e.get_named("marker").is_none()) {
+                    (parent, entities) = parents.get(parent.get()).unwrap()
+                }
+                style
+                    .get_mut(entities.unwrap().named("marker"))
+                    .unwrap()
+                    .left = Val::Percent(
+                    (next.value() - S::min()) as f32 / (S::max() - S::min()) as f32 * 100.0,
+                );
+
+                let (mut parent, mut entities) = parents.get(caller.0).unwrap();
+                while entities.map_or(true, |e| e.get_named("setting-label").is_none()) {
+                    (parent, entities) = parents.get(parent.get()).unwrap()
+                }
+                text.get_mut(entities.unwrap().named("setting-label"))
+                    .unwrap()
+                    .sections[0]
+                    .value = format!("{}", next.value());
+
+                dialog.modified = true;
             },
         ),
     ));

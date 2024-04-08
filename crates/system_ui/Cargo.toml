@@ -17,11 +17,12 @@ avatar = { workspace = true }
 input_manager = { workspace = true }
 av = { workspace = true }
 wallet = { workspace = true }
-emotes = { workspace = true }
+collectibles = { workspace = true }
 tween = { workspace = true }
 console = { workspace = true }
 scene_material = { workspace = true }
 world_ui = { workspace = true }
+user_input = { workspace =true }
 
 bevy = { workspace = true }
 bevy_egui = { workspace = true }
@@ -37,5 +38,7 @@ tokio = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+opener = { workspace = true }
+urlencoding = { workspace = true }
 
 copypasta = "0.10"

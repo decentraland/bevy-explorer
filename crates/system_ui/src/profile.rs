@@ -158,13 +158,20 @@ fn save_settings(
     commands.entity(dialog_ent).despawn_recursive();
 }
 
-fn really_close_settings(mut commands: Commands, modified: Query<Entity, With<SettingsDialog>>) {
+fn really_close_settings(
+    mut commands: Commands,
+    modified: Query<Entity, With<SettingsDialog>>,
+    mut config: ResMut<AppConfig>,
+) {
     let Ok(dialog_ent) = modified.get_single() else {
         error!("no dialog");
         return;
     };
 
     commands.entity(dialog_ent).despawn_recursive();
+
+    // touch the app config so all settings get reverted
+    config.set_changed();
 }
 
 pub fn close_settings(
@@ -355,6 +362,7 @@ pub fn show_settings(
 
     let components = root.apply_template(&dui, "settings", props).unwrap();
 
+    commands.entity(components.root).insert(ZIndex::Global(2));
     commands
         .entity(components.named("change-realm-button"))
         .insert(UpdateRealmText);

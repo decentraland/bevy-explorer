@@ -37,16 +37,22 @@ impl Plugin for UserInputPlugin {
             Update,
             (
                 manage_player_visibility,
-                update_user_position.after(tween::update_tween),
-                update_camera_position,
+                update_user_position
+                    .after(tween::update_tween)
+                    .after(restricted_actions::move_player),
+                update_camera_position.after(restricted_actions::move_camera),
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),
         );
         app.insert_resource(UserClipping(true));
+        app.init_resource::<CursorLocked>();
         app.add_console_command::<NoClipCommand, _>(no_clip);
     }
 }
+
+#[derive(Resource, Default)]
+pub struct CursorLocked(pub bool);
 
 fn manage_player_visibility(
     camera: Query<&GlobalTransform, With<PrimaryCamera>>,

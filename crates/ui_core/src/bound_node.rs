@@ -1,13 +1,14 @@
 use bevy::{
     prelude::*,
     render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
+    transform::TransformSystem,
     ui::FocusPolicy,
     utils::HashMap,
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};
 
-use crate::combo_box::PropsExt;
+use crate::{combo_box::PropsExt, interact_style::InteractStyles};
 
 #[derive(Component)]
 pub struct NodeBounds {
@@ -72,7 +73,10 @@ impl Plugin for BoundedNodePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(UiMaterialPlugin::<BoundedImageMaterial>::default())
             .add_systems(Startup, setup_templates)
-            .add_systems(Update, update_bounded_nodes);
+            .add_systems(
+                PostUpdate,
+                update_bounded_nodes.after(TransformSystem::TransformPropagate),
+            );
     }
 }
 
@@ -291,6 +295,9 @@ impl DuiTemplate for DuiNodeBounds {
                 .take_as::<Color>(ctx, "border-color")?
                 .unwrap_or_default(),
         });
+        if let Some(styles) = props.take_as::<InteractStyles>(ctx, "styles")? {
+            commands.insert(styles);
+        }
         DuiBoundNode.render(commands, props, ctx)
     }
 }

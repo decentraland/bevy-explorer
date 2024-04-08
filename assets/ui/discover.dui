@@ -39,18 +39,18 @@
 
 <define-template id="discover-page">
     <bounds 
-        style="width: 30vmin; height: 25vmin; overflow-x: hidden; overflow-y: hidden; margin: 1.5vmin;"
+        style="width: 36vmin; height: 28vmin; overflow-x: hidden; overflow-y: hidden; margin: 1.5vmin 2.5vmin 1.5vmin 2.5vmin;"
         corner-size="2vmin"
         blend-size="0.5vmin"
         border-size="1vmin"
         border-color="#0000ff"
     >
-        <bounded style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 5vmin;" bound-image="@image" />
-        <bounded style="position-type: absolute; left: 0px; right: 0px; top: 20vmin; bottom: 0vmin; flex-direction: column; padding: 0vmin 1vmin 1vmin 1vmin;" color="white">
+        <bounded style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 8vmin;" bound-image="@image" />
+        <bounded style="position-type: absolute; left: 0px; right: 0px; top: 20vmin; bottom: 0vmin; flex-direction: column; padding: 0vmin 1vmin 1vmin 1vmin;" color="#b2a1ff">
             <med-text style="color: black;" text="@label" />
             <small-text style="color: black;" text="@author" />
         </bounded>
-        <div style="position-type: absolute; bottom: 5vmin; right: 0.5vmin; background-color: #000000aa;">
+        <div style="position-type: absolute; bottom: 8vmin; right: 0.5vmin; background-color: #000000aa;">
             <div style="flex-direction: row; align-items: center;">
                 <div style="width: 2vmin; height: 2vmin; margin: 0px 0.1vmin 0px 1vmin;" image="images/discover/eye.png" />
                 <med-text text="@views" />
@@ -72,13 +72,13 @@
                 padding: 2vmin;
             "
             corner-size="4vmin"
-            blend-size="1vmin"
+            blend-size="0.25vmin"
             border-size="2vmin"
-            border-color="#0000ff"
-            color="#8888ccaa"
+            border-color="#1C298aff"
+            color="#aa1fc1bb"
         >
             <div style="justify-content: flex-end;">
-                <button label="X" onclick="@close" />
+                <button image="images/redx.png" onclick="@close" image-width="4.4vmin" image-height="4.4vmin" />
             </div>
             <div style="justify-content: space-around;">
                 <bounds style="width: 30vmin; height: 20vmin; margin: 1vmin;" bound-image="@image" corner-size="2vmin"             blend-size="0vmin"

@@ -5,6 +5,7 @@ use bevy::prelude::*;
 
 use crate::{
     bound_node::{BoundedNode, NodeBounds},
+    combo_box::DuiFromStr,
     nine_slice::Ui9Slice,
     ui_actions::Enabled,
 };
@@ -16,7 +17,7 @@ pub struct InteractStyle {
     pub border: Option<Color>,
 }
 
-#[derive(Component, Clone, Default)]
+#[derive(Component, Clone, Default, Debug)]
 pub struct InteractStyles {
     pub active: Option<InteractStyle>,
     pub hover: Option<InteractStyle>,
@@ -117,5 +118,53 @@ fn set_interaction_style(
         if let (Some(mut ui_image), Some(image)) = (maybe_image, &style.image) {
             ui_image.texture = image.clone();
         }
+    }
+}
+
+impl DuiFromStr for InteractStyles {
+    fn from_str(_: &bevy_dui::DuiContext, value: &str) -> Result<Self, anyhow::Error>
+    where
+        Self: Sized,
+    {
+        let content = format!("#inline {{{value}}}");
+        let ss = bevy_ecss::StyleSheetAsset::parse("", &content);
+        let Some(rule) = ss.iter().next() else {
+            anyhow::bail!("no rule?");
+        };
+        let res = Self {
+            active: rule
+                .properties
+                .get("active")
+                .and_then(|v| v.color())
+                .map(|c| InteractStyle {
+                    background: Some(c),
+                    ..Default::default()
+                }),
+            hover: rule
+                .properties
+                .get("hover")
+                .and_then(|v| v.color())
+                .map(|c| InteractStyle {
+                    background: Some(c),
+                    ..Default::default()
+                }),
+            inactive: rule
+                .properties
+                .get("inactive")
+                .and_then(|v| v.color())
+                .map(|c| InteractStyle {
+                    background: Some(c),
+                    ..Default::default()
+                }),
+            disabled: rule
+                .properties
+                .get("disabled")
+                .and_then(|v| v.color())
+                .map(|c| InteractStyle {
+                    background: Some(c),
+                    ..Default::default()
+                }),
+        };
+        Ok(res)
     }
 }

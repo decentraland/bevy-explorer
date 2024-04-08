@@ -182,9 +182,9 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
         .entity(components.named("chat-entry"))
         .insert(ChatInput);
 
-    commands
-        .entity(components.named("chat-output"))
-        .insert(BackgroundColor(Color::rgba(0.0, 0.0, 0.25, 0.2)));
+    // commands
+    //     .entity(components.named("chat-output"))
+    //     .insert(BackgroundColor(Color::rgba(0.0, 0.0, 0.25, 0.2)));
 
     commands
         .entity(components.named("chat-output-inner"))
@@ -276,7 +276,7 @@ fn make_chat(
                     TextSection::new(
                         format!("{}: ", sender),
                         TextStyle {
-                            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
                             font_size: 15.0,
                             color: Color::YELLOW,
                         },
@@ -284,7 +284,7 @@ fn make_chat(
                     TextSection::new(
                         message,
                         TextStyle {
-                            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
                             font_size: 15.0,
                             color: Color::WHITE,
                         },
@@ -300,8 +300,16 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
     let SceneLogMessage {
         timestamp,
         level,
-        message,
+        mut message,
     } = log;
+
+    if message.len() > 1000 {
+        message = format!(
+            "{} ... [truncated]",
+            message.chars().take(1000).collect::<String>()
+        );
+    }
+
     commands
         .spawn((
             DisplayChatMessage {
@@ -314,7 +322,7 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
                 text: Text::from_sections([TextSection::new(
                     message,
                     TextStyle {
-                        font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                        font: asset_server.load("fonts/NotoSans-Bold.ttf"),
                         font_size: 15.0,
                         color: match level {
                             SceneLogLevel::Log => Color::WHITE,
@@ -333,14 +341,23 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
 fn display_chat(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut chatbox: Query<(Entity, &mut ChatBox)>,
+    mut chatbox: Query<(Entity, &mut ChatBox, Option<&Children>)>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
     contexts: Query<&RendererSceneContext>,
 ) {
-    let Ok((entity, mut chatbox)) = chatbox.get_single_mut() else {
+    let Ok((entity, mut chatbox, maybe_children)) = chatbox.get_single_mut() else {
         return;
     };
+
+    if let Some(children) = maybe_children {
+        if children.len() > 255 {
+            let mut iter = children.iter();
+            for _ in 0..children.len() - 255 {
+                commands.entity(*iter.next().unwrap()).despawn_recursive();
+            }
+        }
+    }
 
     if chatbox.active_tab == "Nearby" {
         if chatbox.active_chat_sink.is_none() {

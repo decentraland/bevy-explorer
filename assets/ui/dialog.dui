@@ -11,16 +11,16 @@
                 overflow-y: hidden;
                 align-items: center;
                 padding: 4vmin;
-                max-width: 80%;
+                max-width: 90%;
                 max-height: 80%;
             "
             corner-size="4vmin"
-            blend-size="1vmin"
+            blend-size="0.25vmin"
             border-size="2vmin"
-            border-color="#0000ff"
-            color="#8888cc77"
+            border-color="#1C298aff"
+            color="#aa1fc166"
         >
-            <large-text style="margin: 2.8vmin; text-align: center; color: white;" text="@title" />
+            <large-text style="margin: 2vmin; text-align: center; color: white;" text="@title" />
             <hr />
             <apply-children />
             <hr />

@@ -147,11 +147,14 @@ pub struct AppConfig {
     pub location: IVec2,
     pub previous_login: Option<PreviousLogin>,
     pub graphics: GraphicsSettings,
+    pub audio: AudioSettings,
     pub scene_threads: usize,
     pub scene_load_distance: f32,
     pub scene_unload_extra_distance: f32,
     pub sysinfo_visible: bool,
     pub scene_log_to_console: bool,
+    pub max_avatars: usize,
+    pub constrain_scene_ui: bool,
 }
 
 impl Default for AppConfig {
@@ -162,11 +165,14 @@ impl Default for AppConfig {
             location: IVec2::new(78, -7),
             previous_login: None,
             graphics: Default::default(),
+            audio: Default::default(),
             scene_threads: 4,
             scene_load_distance: 75.0,
             scene_unload_extra_distance: 25.0,
             sysinfo_visible: true,
             scene_log_to_console: false,
+            max_avatars: 100,
+            constrain_scene_ui: false,
         }
     }
 }
@@ -184,7 +190,9 @@ pub struct GraphicsSettings {
     // pub fullscreen_res: FullscreenResSetting,
     pub fog: FogSetting,
     pub bloom: BloomSetting,
+    pub ssao: SsaoSetting,
     pub oob: f32,
+    pub ambient_brightness: i32,
 }
 
 impl Default for GraphicsSettings {
@@ -194,14 +202,47 @@ impl Default for GraphicsSettings {
             log_fps: true,
             msaa: AaSetting::Msaa4x,
             fps_target: 60,
-            shadow_distance: 100.0,
+            shadow_distance: 200.0,
             shadow_settings: ShadowSetting::High,
             window: WindowSetting::Windowed,
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
             fog: FogSetting::Atmospheric,
             bloom: BloomSetting::Low,
+            ssao: SsaoSetting::Off,
             oob: 2.0,
+            ambient_brightness: 50,
         }
+    }
+}
+
+#[derive(Resource, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AudioSettings {
+    pub master: i32, // 0-100
+    pub voice: i32,
+    pub scene: i32,
+    pub system: i32,
+}
+
+impl Default for AudioSettings {
+    fn default() -> Self {
+        Self {
+            master: 100,
+            voice: 100,
+            scene: 100,
+            system: 100,
+        }
+    }
+}
+
+impl AudioSettings {
+    pub fn voice(&self) -> f32 {
+        (self.voice * self.master) as f32 / 10_000.0
+    }
+    pub fn scene(&self) -> f32 {
+        (self.scene * self.master) as f32 / 10_000.0
+    }
+    pub fn system(&self) -> f32 {
+        (self.system * self.master) as f32 / 10_000.0
     }
 }
 
@@ -241,6 +282,13 @@ pub enum FogSetting {
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum BloomSetting {
+    Off,
+    Low,
+    High,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SsaoSetting {
     Off,
     Low,
     High,

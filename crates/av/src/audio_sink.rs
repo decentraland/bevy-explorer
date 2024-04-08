@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use common::structs::{AudioDecoderError, PrimaryCamera, PrimaryUser};
+use common::structs::{AudioDecoderError, AudioSettings, PrimaryCamera, PrimaryUser};
 use comms::global_crdt::ForeignAudioSource;
 use kira::{manager::backend::DefaultBackend, sound::streaming::StreamingSoundData, tween::Tween};
 use scene_runner::{ContainingScene, SceneEntity};
@@ -55,6 +55,7 @@ pub fn spawn_audio_streams(
     mut audio_manager: NonSendMut<bevy_kira_audio::audio_output::AudioOutput<DefaultBackend>>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
+    settings: Res<AudioSettings>,
 ) {
     let containing_scenes = player
         .get_single()
@@ -85,7 +86,7 @@ pub fn spawn_audio_streams(
             }
         }
 
-        let volume = stream.volume;
+        let volume = stream.volume * settings.scene();
         if let Some(handle) = maybe_spawned.as_mut().and_then(|a| a.0.as_mut()) {
             if containing_scenes.contains(&scene.root) {
                 let _ = handle.set_volume(volume as f64, Tween::default());
@@ -108,6 +109,7 @@ pub fn spawn_and_locate_foreign_streams(
     )>,
     mut audio_manager: NonSendMut<bevy_kira_audio::audio_output::AudioOutput<DefaultBackend>>,
     receiver: Query<&GlobalTransform, With<PrimaryCamera>>,
+    settings: Res<AudioSettings>,
 ) {
     let Ok(receiver_transform) = receiver.get_single() else {
         return;
@@ -141,6 +143,8 @@ pub fn spawn_and_locate_foreign_streams(
             } else {
                 0.5
             };
+
+            let volume = volume * settings.voice();
 
             let _ = handle.set_volume(volume as f64, Tween::default());
             let _ = handle.set_panning(panning as f64, Tween::default());

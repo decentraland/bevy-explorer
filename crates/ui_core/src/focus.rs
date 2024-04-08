@@ -14,7 +14,7 @@ pub struct FocusPlugin;
 impl Plugin for FocusPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
-            Update,
+            PreUpdate,
             (apply_deferred, defocus, focus)
                 .chain()
                 .in_set(SceneSets::UiActions)
