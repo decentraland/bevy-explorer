@@ -1,6 +1,7 @@
 pub mod app_settings;
 pub mod change_realm;
 pub mod chat;
+pub mod crash_report;
 pub mod discover;
 pub mod emote_select;
 pub mod emotes;

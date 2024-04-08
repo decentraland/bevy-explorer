@@ -5,3 +5,4 @@ Cargo.lock
 /assets/scene_dump
 .vscode/settings.json
 config.json
+/log

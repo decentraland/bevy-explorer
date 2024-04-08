@@ -38,5 +38,7 @@ tokio = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+opener = { workspace = true }
+urlencoding = { workspace = true }
 
 copypasta = "0.10"

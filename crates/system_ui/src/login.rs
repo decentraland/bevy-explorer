@@ -1,4 +1,5 @@
 use bevy::{
+    app::AppExit,
     prelude::*,
     tasks::{IoTaskPool, Task},
     window::PrimaryWindow,
@@ -93,7 +94,12 @@ fn login(
                 .with_prop("reuse", LoginType::ExistingRemote.send_value_on::<Click>())
                 .with_prop("connect", LoginType::NewRemote.send_value_on::<Click>())
                 .with_prop("guest", LoginType::Guest.send_value_on::<Click>())
-                .with_prop("quit", On::<Click>::new(move || std::process::exit(0))),
+                .with_prop(
+                    "quit",
+                    On::<Click>::new(|mut e: EventWriter<AppExit>| {
+                        e.send_default();
+                    }),
+                ),
         )
         .unwrap();
 
