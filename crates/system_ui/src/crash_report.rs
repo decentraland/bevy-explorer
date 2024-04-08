@@ -5,8 +5,6 @@ use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::structs::Version;
 use ui_core::button::DuiButton;
 
-use crate::SystemUiRoot;
-
 pub struct CrashReportPlugin {
     pub file: PathBuf,
 }
@@ -23,7 +21,6 @@ pub struct CrashReport(PathBuf);
 
 fn setup(
     mut commands: Commands,
-    root: Res<SystemUiRoot>,
     dui: Res<DuiRegistry>,
     version: Res<Version>,
     report: Res<CrashReport>,
@@ -44,9 +41,7 @@ fn setup(
 
     println!("file: {:?}", file_a);
 
-    let components = commands
-        .entity(root.0)
-        .spawn_template(
+    let components = commands.spawn_template(
             &dui,
             "text-dialog",
             DuiProps::new()
