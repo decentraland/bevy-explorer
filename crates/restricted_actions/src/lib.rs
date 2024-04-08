@@ -82,7 +82,11 @@ pub fn move_player(
     containing_scene: ContainingScene,
 ) {
     for (root, translation, looking_at) in events.read().filter_map(|ev| match ev {
-        RpcCall::MovePlayer { scene, to, looking_at } => Some((scene, to, looking_at)),
+        RpcCall::MovePlayer {
+            scene,
+            to,
+            looking_at,
+        } => Some((scene, to, looking_at)),
         _ => None,
     }) {
         let Ok(scene) = scenes.get(*root) else {
@@ -116,8 +120,14 @@ pub fn move_player(
             debug!("player transform to {}", target_translation);
 
             if let Some(looking_at) = looking_at {
-                let rotation = Transform::IDENTITY.looking_at((*looking_at - *translation) * Vec3::new(1.0, 0.0, 1.0), Vec3::Y).rotation;
-                dynamics.velocity = rotation * player_transform.rotation.inverse() * dynamics.velocity;
+                let rotation = Transform::IDENTITY
+                    .looking_at(
+                        (*looking_at - *translation) * Vec3::new(1.0, 0.0, 1.0),
+                        Vec3::Y,
+                    )
+                    .rotation;
+                dynamics.velocity =
+                    rotation * player_transform.rotation.inverse() * dynamics.velocity;
 
                 player_transform.rotation = rotation;
                 debug!("player rotation to looking at {}", looking_at);
@@ -150,7 +160,9 @@ pub fn move_camera(
             return;
         }
 
-        let rotation = Transform::IDENTITY.looking_at(*translation - player.single().0.translation, Vec3::Y).rotation;
+        let rotation = Transform::IDENTITY
+            .looking_at(*translation - player.single().0.translation, Vec3::Y)
+            .rotation;
 
         let (yaw, pitch, roll) = rotation.to_euler(EulerRot::YXZ);
 
