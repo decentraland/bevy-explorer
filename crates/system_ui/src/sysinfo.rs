@@ -524,11 +524,14 @@ fn update_crosshair(
     mut crosshair: Query<&mut BackgroundColor, With<CrossHair>>,
 ) {
     if Some(locked.0) != *prev {
+        let Ok(mut bg) = crosshair.get_single_mut() else {
+            return;
+        };
         *prev = Some(locked.0);
         if locked.0 {
-            crosshair.single_mut().0.set_a(0.7);
+            bg.0.set_a(0.7);
         } else {
-            crosshair.single_mut().0.set_a(0.2);
+            bg.0.set_a(0.2);
         }
     }
 }
