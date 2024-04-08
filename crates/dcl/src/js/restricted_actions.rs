@@ -1,7 +1,4 @@
-use bevy::{
-    log::debug,
-    prelude::{Mat3, Quat, Vec3},
-};
+use bevy::log::debug;
 use common::rpc::RpcCall;
 use deno_core::{
     anyhow::{self, anyhow},
@@ -19,7 +16,7 @@ use dcl_component::{
     proto_components::sdk::components::{
         pb_avatar_emote_command::EmoteCommand, PbAvatarEmoteCommand,
     },
-    transform_and_parent::{DclQuat, DclTransformAndParent, DclTranslation},
+    transform_and_parent::{DclTransformAndParent, DclTranslation},
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
 
@@ -46,6 +43,7 @@ fn op_move_player_to(
     maybe_camera: Option<[f32; 3]>,
 ) {
     debug!("move player to {:?}", position);
+    let scene = op_state.borrow::<CrdtContext>().scene_id.0;
 
     // get current
     let inbound = &op_state.borrow::<RendererStore>().0;
@@ -64,62 +62,35 @@ fn op_move_player_to(
         .unwrap()
     };
 
-    let mut player_transform = get_transform(SceneEntityId::PLAYER);
-    let mut camera_transform = get_transform(SceneEntityId::CAMERA);
-
-    // update
-    let look_to = |direction: Vec3| -> DclQuat {
-        let back = -direction.try_normalize().unwrap_or(Vec3::Z);
-        let right = Vec3::Y
-            .cross(back)
-            .try_normalize()
-            .unwrap_or_else(|| Vec3::Y.any_orthonormal_vector());
-        let up = back.cross(right);
-        DclQuat::from_bevy_quat(Quat::from_mat3(&Mat3::from_cols(right, up, back)))
-    };
-
-    player_transform.translation = if absolute {
+    let to = if absolute {
         let origin = get_transform(SceneEntityId::WORLD_ORIGIN).translation;
         DclTranslation(position) - origin
     } else {
         DclTranslation(position)
-    };
-
-    if let Some(camera) = maybe_camera {
-        let target_offset = Vec3 {
-            x: camera[0] - position[0],
-            y: camera[1] - position[1],
-            z: position[2] - camera[2], // flip z
-        };
-        camera_transform.rotation = look_to(target_offset);
-        player_transform.rotation = look_to(target_offset * (Vec3::X + Vec3::Z));
     }
+    .to_bevy_translation();
 
-    //ensure entities
-    let context = op_state.borrow_mut::<CrdtContext>();
-    context.init(SceneEntityId::PLAYER);
-    context.init(SceneEntityId::CAMERA);
+    let looking_at = maybe_camera.map(|camera| {
+        if absolute {
+            let origin = get_transform(SceneEntityId::WORLD_ORIGIN).translation;
+            DclTranslation(camera) - origin
+        } else {
+            DclTranslation(camera)
+        }
+        .to_bevy_translation()
+    });
 
-    // write commands
-    let mut buf = Vec::default();
-    let outbound = op_state.borrow_mut::<CrdtStore>();
+    op_state.borrow_mut::<RpcCalls>().push(RpcCall::MovePlayer {
+        scene,
+        to,
+        looking_at,
+    });
 
-    DclWriter::new(&mut buf).write(&player_transform);
-    outbound.force_update(
-        SceneComponentId::TRANSFORM,
-        CrdtType::LWW_ANY,
-        SceneEntityId::PLAYER,
-        Some(&mut DclReader::new(&buf)),
-    );
-
-    if maybe_camera.is_some() {
-        DclWriter::new(&mut buf).write(&camera_transform);
-        outbound.force_update(
-            SceneComponentId::TRANSFORM,
-            CrdtType::LWW_ANY,
-            SceneEntityId::CAMERA,
-            Some(&mut DclReader::new(&buf)),
-        );
+    if let Some(looking_at) = looking_at {
+        op_state.borrow_mut::<RpcCalls>().push(RpcCall::MoveCamera {
+            scene,
+            to: looking_at,
+        });
     }
 }
 

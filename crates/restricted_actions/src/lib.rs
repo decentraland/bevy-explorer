@@ -81,8 +81,8 @@ pub fn move_player(
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
     containing_scene: ContainingScene,
 ) {
-    for (root, transform) in events.read().filter_map(|ev| match ev {
-        RpcCall::MovePlayer { scene, to } => Some((scene, to)),
+    for (root, translation, looking_at) in events.read().filter_map(|ev| match ev {
+        RpcCall::MovePlayer { scene, to, looking_at } => Some((scene, to, looking_at)),
         _ => None,
     }) {
         let Ok(scene) = scenes.get(*root) else {
@@ -103,20 +103,25 @@ pub fn move_player(
             return;
         }
 
-        let mut target_transform = *transform;
-        target_transform.translation +=
+        let mut target_translation = *translation;
+        target_translation +=
             (scene.base * IVec2::new(1, -1)).as_vec2().extend(0.0).xzy() * PARCEL_SIZE;
 
-        let target_scenes = containing_scene.get_position(target_transform.translation);
+        let target_scenes = containing_scene.get_position(target_translation);
         if !target_scenes.contains(root) {
             warn!("move player request from {root:?} was outside scene bounds");
         } else {
             let (_, mut player_transform, mut dynamics) = player.single_mut();
-            dynamics.velocity =
-                transform.rotation * player_transform.rotation.inverse() * dynamics.velocity;
+            player_transform.translation = target_translation;
+            debug!("player transform to {}", target_translation);
 
-            *player_transform = target_transform;
-            debug!("player transform to {:?}", target_transform);
+            if let Some(looking_at) = looking_at {
+                let rotation = Transform::IDENTITY.looking_at((*looking_at - *translation) * Vec3::new(1.0, 0.0, 1.0), Vec3::Y).rotation;
+                dynamics.velocity = rotation * player_transform.rotation.inverse() * dynamics.velocity;
+
+                player_transform.rotation = rotation;
+                debug!("player rotation to looking at {}", looking_at);
+            }
         }
     }
 }
@@ -124,26 +129,28 @@ pub fn move_player(
 pub fn move_camera(
     mut events: EventReader<RpcCall>,
     mut camera: Query<&mut PrimaryCamera>,
-    player: Query<Entity, With<PrimaryUser>>,
+    player: Query<(&Transform, Entity), With<PrimaryUser>>,
     containing_scene: ContainingScene,
 ) {
-    for (root, rotation) in events.read().filter_map(|ev| match ev {
+    for (root, translation) in events.read().filter_map(|ev| match ev {
         RpcCall::MoveCamera { scene, to } => Some((scene, to)),
         _ => None,
     }) {
         if !player
             .get_single()
             .ok()
-            .map_or(false, |e| containing_scene.get(e).contains(root))
+            .map_or(false, |(_, e)| containing_scene.get(e).contains(root))
         {
             warn!("invalid camera move request from non-containing scene");
             warn!("request from {root:?}");
             warn!(
                 "containing scenes {:?}",
-                player.get_single().map(|p| containing_scene.get(p))
+                player.get_single().map(|(_, p)| containing_scene.get(p))
             );
             return;
         }
+
+        let rotation = Transform::IDENTITY.looking_at(*translation - player.single().0.translation, Vec3::Y).rotation;
 
         let (yaw, pitch, roll) = rotation.to_euler(EulerRot::YXZ);
 

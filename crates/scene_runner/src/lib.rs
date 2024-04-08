@@ -378,7 +378,7 @@ fn update_scene_priority(
         })
         .filter_map(|(ent, transform, mut context)| {
             // TODO clamp to scene bounds instead of using distance to scene origin
-            let distance = (transform.translation() - player_translation).length();
+            let distance = (transform.translation() - player_translation).length_squared();
             context.priority = if active_scenes.contains(&ent) {
                 0.0
             } else {

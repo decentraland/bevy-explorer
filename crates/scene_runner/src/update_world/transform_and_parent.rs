@@ -9,7 +9,7 @@ use crate::{
     primary_entities::PrimaryEntities, DeletedSceneEntities, RendererSceneContext, SceneEntity,
     SceneLoopSchedule, TargetParent,
 };
-use common::{rpc::RpcCall, sets::SceneLoopSets};
+use common::sets::SceneLoopSets;
 use dcl_component::{
     transform_and_parent::DclTransformAndParent, DclReader, FromDclReader, SceneComponentId,
     SceneEntityId,
@@ -50,7 +50,7 @@ pub(crate) fn process_transform_and_parent_updates(
     )>,
     primaries: PrimaryEntities,
     mut scene_entities: Query<(&mut Transform, &mut TargetParent), With<SceneEntity>>,
-    mut restricted_actions: EventWriter<RpcCall>,
+    // mut restricted_actions: EventWriter<RpcCall>,
 ) {
     for (root, mut scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
         // remove crdt state for dead entities
@@ -115,16 +115,18 @@ pub(crate) fn process_transform_and_parent_updates(
 
             match scene_entity {
                 SceneEntityId::PLAYER => {
-                    restricted_actions.send(RpcCall::MovePlayer {
-                        scene: root,
-                        to: transform,
-                    });
+                    // scenes just modify the player transform for fun, so we can't do this...
+
+                    // restricted_actions.send(RpcCall::MovePlayer {
+                    //     scene: root,
+                    //     to: transform,
+                    // });
                 }
                 SceneEntityId::CAMERA => {
-                    restricted_actions.send(RpcCall::MoveCamera {
-                        scene: root,
-                        to: transform.rotation,
-                    });
+                    // restricted_actions.send(RpcCall::MoveCamera {
+                    //     scene: root,
+                    //     to: transform.rotation,
+                    // });
                 }
                 _ => {
                     // normal scene-space entity
