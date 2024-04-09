@@ -55,6 +55,7 @@ bevy = { version = "0.13", default-features = false, features=[
     "png",
     "hdr",
     "x11",
+    "wayland",
     "bevy_gizmos",
     "tonemapping_luts",
     "default_font",
