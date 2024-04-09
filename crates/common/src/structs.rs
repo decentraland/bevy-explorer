@@ -160,8 +160,9 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            server: "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-update-asset-pack-lib"
-                .to_owned(),
+            server:
+                "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-test-psquad-demo-latest"
+                    .to_owned(),
             location: IVec2::new(78, -7),
             previous_login: None,
             graphics: Default::default(),
