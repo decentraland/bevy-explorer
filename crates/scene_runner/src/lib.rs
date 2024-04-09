@@ -377,8 +377,12 @@ fn update_scene_priority(
             !context.in_flight && !context.broken && context.blocked.is_empty()
         })
         .filter_map(|(ent, transform, mut context)| {
-            // TODO clamp to scene bounds instead of using distance to scene origin
-            let distance = (transform.translation() - player_translation).length_squared();
+            // clamp to scene bounds instead of using distance to scene origin
+            let nearest_point = player_translation.xz().clamp(
+                transform.translation().xz() - Vec2::Y * PARCEL_SIZE,
+                transform.translation().xz() + Vec2::X * PARCEL_SIZE,
+            );
+            let distance = (nearest_point - player_translation.xz()).length_squared();
             context.priority = if active_scenes.contains(&ent) {
                 0.0
             } else {
