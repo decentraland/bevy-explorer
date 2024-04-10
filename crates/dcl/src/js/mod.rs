@@ -147,7 +147,10 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
     #[allow(unused_mut)]
     let mut runtime = JsRuntime::new(RuntimeOptions {
         v8_platform: if init {
-            v8::Platform::new(1, false).make_shared().into()
+            // v8::Platform::new(1, false).make_shared().into()
+            v8::Platform::new_single_threaded(false)
+                .make_shared()
+                .into()
         } else {
             None
         },

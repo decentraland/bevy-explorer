@@ -84,7 +84,18 @@ fn main() {
                 .join(f.path().file_stem().unwrap())
         });
 
-    File::create(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
+    let mut args = pico_args::Arguments::from_env();
+
+    let file_log = !args.contains("--console") && !cfg!(feature = "tracy");
+
+    if file_log {
+        File::create(SESSION_LOG.get().unwrap())
+            .expect("failed to create log file")
+            .write_all(format!("{}\n\n", SESSION_LOG.get().unwrap()).as_bytes())
+            .expect("failed to create log file");
+
+        File::create(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
+    }
 
     // warnings before log init must be stored and replayed later
     let mut warnings = Vec::default();
