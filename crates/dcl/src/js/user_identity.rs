@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use bevy::log::debug;
 use common::{profile::SerializedProfile, rpc::RpcCall};
-use deno_core::{anyhow, error::AnyError, op, Op, OpDecl, OpState};
+use deno_core::{anyhow, error::AnyError, op2, Op, OpDecl, OpState};
 use serde::Serialize;
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -43,7 +43,8 @@ pub struct UserData {
 
 pub struct UserEthAddress(pub String);
 
-#[op]
+#[op2(async)]
+#[serde]
 async fn op_get_user_data(state: Rc<RefCell<OpState>>) -> Result<UserData, AnyError> {
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<SerializedProfile, ()>>();
 
@@ -74,8 +75,12 @@ async fn op_get_user_data(state: Rc<RefCell<OpState>>) -> Result<UserData, AnyEr
     Ok(user_data)
 }
 
-#[op]
-async fn op_get_player_data(state: Rc<RefCell<OpState>>, id: String) -> Result<UserData, AnyError> {
+#[op2(async)]
+#[serde]
+async fn op_get_player_data(
+    state: Rc<RefCell<OpState>>,
+    #[string] id: String,
+) -> Result<UserData, AnyError> {
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<SerializedProfile, ()>>();
 
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;

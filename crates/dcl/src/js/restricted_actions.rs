@@ -1,9 +1,9 @@
-use bevy::log::debug;
+use bevy::{log::debug, math::IVec2};
 use common::rpc::RpcCall;
 use deno_core::{
     anyhow::{self, anyhow},
     error::AnyError,
-    op, Op, OpDecl, OpState,
+    op2, Op, OpDecl, OpState,
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -33,13 +33,16 @@ pub fn ops() -> Vec<OpDecl> {
     ]
 }
 
-#[op(v8)]
+#[op2]
 fn op_move_player_to(
     op_state: &mut OpState,
     absolute: bool,
-    position: [f32; 3],
-    maybe_camera: Option<[f32; 3]>,
+    #[serde] position: (f32, f32, f32),
+    #[serde] maybe_camera: Option<(f32, f32, f32)>,
 ) {
+    let position = [position.0, position.1, position.2];
+    let maybe_camera = maybe_camera.map(|cam| [cam.0, cam.1, cam.2]);
+
     debug!("move player to {:?}", position);
     let scene = op_state.borrow::<CrdtContext>().scene_id.0;
 
@@ -92,8 +95,8 @@ fn op_move_player_to(
     }
 }
 
-#[op]
-async fn op_teleport_to(state: Rc<RefCell<OpState>>, position: [i32; 2]) -> bool {
+#[op2(async)]
+async fn op_teleport_to(state: Rc<RefCell<OpState>>, #[serde] position: (i32, i32)) -> bool {
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     state
@@ -101,18 +104,18 @@ async fn op_teleport_to(state: Rc<RefCell<OpState>>, position: [i32; 2]) -> bool
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::TeleportPlayer {
             scene: Some(scene),
-            to: position.into(),
+            to: IVec2::new(position.0, position.1),
             response: sx.into(),
         });
 
     matches!(rx.await, Ok(Ok(_)))
 }
 
-#[op]
+#[op2(async)]
 async fn op_change_realm(
     state: Rc<RefCell<OpState>>,
-    realm: String,
-    message: Option<String>,
+    #[string] realm: String,
+    #[string] message: Option<String>,
 ) -> bool {
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
@@ -129,8 +132,8 @@ async fn op_change_realm(
     matches!(rx.await, Ok(Ok(_)))
 }
 
-#[op]
-async fn op_external_url(state: Rc<RefCell<OpState>>, url: String) -> bool {
+#[op2(async)]
+async fn op_external_url(state: Rc<RefCell<OpState>>, #[string] url: String) -> bool {
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     state
@@ -145,8 +148,8 @@ async fn op_external_url(state: Rc<RefCell<OpState>>, url: String) -> bool {
     matches!(rx.await, Ok(Ok(_)))
 }
 
-#[op]
-fn op_emote(op_state: &mut OpState, emote: String) {
+#[op2(fast)]
+fn op_emote(op_state: &mut OpState, #[string] emote: String) {
     let emote = PbAvatarEmoteCommand {
         emote_urn: emote,
         r#loop: false,
@@ -156,10 +159,10 @@ fn op_emote(op_state: &mut OpState, emote: String) {
     send_emote(op_state, emote);
 }
 
-#[op]
+#[op2(async)]
 async fn op_scene_emote(
     op_state: Rc<RefCell<OpState>>,
-    emote: String,
+    #[string] emote: String,
     looping: bool,
 ) -> Result<(), anyhow::Error> {
     let scene_info = scene_information(op_state.clone()).await?;
@@ -208,8 +211,11 @@ fn send_emote(op_state: &mut OpState, emote: PbAvatarEmoteCommand) {
     );
 }
 
-#[op]
-async fn op_open_nft_dialog(op_state: Rc<RefCell<OpState>>, urn: String) -> Result<(), AnyError> {
+#[op2(async)]
+async fn op_open_nft_dialog(
+    op_state: Rc<RefCell<OpState>>,
+    #[string] urn: String,
+) -> Result<(), AnyError> {
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
 
     {

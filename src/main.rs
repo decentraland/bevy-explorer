@@ -328,7 +328,10 @@ fn main() {
     // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
     // bevy_mod_debugdump::print_main_schedule(&mut app);
 
-    log_panics::init();
+    if file_log {
+        log_panics::init();
+    }
+
     app.run();
 
     if file_log {

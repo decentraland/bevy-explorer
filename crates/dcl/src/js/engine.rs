@@ -4,7 +4,7 @@ use bevy::{
     utils::tracing::span::EnteredSpan,
     utils::tracing::{debug, info, info_span, warn},
 };
-use deno_core::{op, Op, OpDecl, OpState};
+use deno_core::{op2, Op, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
 use tokio::sync::{broadcast::error::TryRecvError, mpsc::Receiver};
 
@@ -26,8 +26,8 @@ pub fn ops() -> Vec<OpDecl> {
 }
 
 // receive and process a buffer of crdt messages
-#[op(v8)]
-fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
+#[op2(fast)]
+fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, #[arraybuffer] messages: &[u8]) {
     crdt_send_to_renderer(op_state, messages)
 }
 
@@ -68,7 +68,8 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
     op_state.put(crdt_store);
 }
 
-#[op(v8)]
+#[op2(async)]
+#[serde]
 async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<OpState>>) -> Vec<Vec<u8>> {
     let mut receiver = op_state.borrow_mut().take::<Receiver<RendererResponse>>();
     let span = op_state.borrow_mut().take::<EnteredSpan>();
