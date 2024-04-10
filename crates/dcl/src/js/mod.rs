@@ -13,7 +13,13 @@ use tokio::sync::mpsc::Receiver;
 use ipfs::{IpfsResource, SceneJsFile};
 use wallet::Wallet;
 
-use crate::{js::engine::crdt_send_to_renderer, RpcCalls};
+use crate::{
+    js::{
+        engine::crdt_send_to_renderer,
+        runtime_gil::{lock_runtime, RuntimeGil},
+    },
+    RpcCalls,
+};
 
 #[cfg(feature = "inspect")]
 use crate::js::inspector::InspectorServer;
@@ -43,6 +49,7 @@ pub mod events;
 #[cfg(feature = "inspect")]
 pub mod inspector;
 pub mod player;
+pub mod runtime_gil;
 pub mod testing;
 
 // marker to indicate shutdown has been triggered
@@ -199,6 +206,9 @@ pub(crate) fn scene_thread(
     testing: bool,
 ) {
     let scene_context = CrdtContext::new(scene_id, scene_hash, testing);
+
+    let runtime_lock = lock_runtime();
+
     let (mut runtime, inspector) = create_runtime(false, inspect);
 
     // store handle
@@ -208,6 +218,7 @@ pub(crate) fn scene_thread(
     drop(guard);
 
     let state = runtime.op_state();
+    state.borrow_mut().put(runtime_lock);
 
     // store deno permission objects
     state.borrow_mut().put(TP);
@@ -310,6 +321,8 @@ pub(crate) fn scene_thread(
         return;
     }
 
+    state.borrow_mut().take::<RuntimeGil>();
+
     let start_time = std::time::Instant::now();
     let mut prev_time = start_time;
     let mut elapsed;
@@ -323,6 +336,8 @@ pub(crate) fn scene_thread(
             .borrow_mut()
             .put(SceneElapsedTime(elapsed.as_secs_f32()));
 
+        state.borrow_mut().put(lock_runtime());
+
         // run the onUpdate function
         let result = rt.block_on(async {
             run_script(&mut runtime, &script, "onUpdate", |scope| {
@@ -331,7 +346,13 @@ pub(crate) fn scene_thread(
             .await
         });
 
+        state.borrow_mut().take::<RuntimeGil>();
+
         if state.borrow().try_borrow::<ShuttingDown>().is_some() {
+            let lock = lock_runtime();
+            drop(runtime);
+            #[warn(clippy::drop_non_drop)]
+            drop(lock);
             return;
         }
 
@@ -340,6 +361,10 @@ pub(crate) fn scene_thread(
                 .borrow_mut()
                 .take::<SyncSender<SceneResponse>>()
                 .send(SceneResponse::Error(scene_id, format!("{e:?}")));
+            let lock = lock_runtime();
+            drop(runtime);
+            #[warn(clippy::drop_non_drop)]
+            drop(lock);
             return;
         }
     }

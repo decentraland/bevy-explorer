@@ -11,7 +11,10 @@ use tokio::sync::{broadcast::error::TryRecvError, mpsc::Receiver};
 use crate::{
     crdt::{append_component, put_component},
     interface::crdt_context::CrdtContext,
-    js::{RendererStore, ShuttingDown},
+    js::{
+        runtime_gil::{lock_runtime, RuntimeGil},
+        RendererStore, ShuttingDown,
+    },
     CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
     SceneLogMessage, SceneResponse,
 };
@@ -75,7 +78,9 @@ async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<OpState>>) -> Vec<Vec<u
     drop(span); // don't hold it over the await point so we get a clearer view of when js is running
 
     debug!("op_crdt_recv_from_renderer");
+    op_state.borrow_mut().take::<RuntimeGil>();
     let response = receiver.recv().await;
+    op_state.borrow_mut().put(lock_runtime());
 
     let mut op_state = op_state.borrow_mut();
     let span = info_span!("js update").entered();
