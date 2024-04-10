@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use bevy::log::debug;
 use common::rpc::RpcCall;
-use deno_core::{anyhow, op, JsBuffer, Op, OpDecl, OpState};
+use deno_core::{anyhow, op2, JsBuffer, Op, OpDecl, OpState};
 use serde::{Deserialize, Serialize};
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -27,8 +27,8 @@ pub fn ops() -> Vec<OpDecl> {
 
 struct BinaryBusReceiver(tokio::sync::mpsc::UnboundedReceiver<(String, Vec<u8>)>);
 
-#[op]
-async fn op_comms_send_string(state: Rc<RefCell<OpState>>, message: String) {
+#[op2(async)]
+async fn op_comms_send_string(state: Rc<RefCell<OpState>>, #[string] message: String) {
     debug!("op_comms_send_string");
     let mut state = state.borrow_mut();
     let scene = state.borrow::<CrdtContext>().scene_id.0;
@@ -39,10 +39,11 @@ async fn op_comms_send_string(state: Rc<RefCell<OpState>>, message: String) {
         .push(RpcCall::SendMessageBus { scene, data });
 }
 
-#[op]
+#[op2(async)]
+#[serde]
 async fn op_comms_send_binary(
     state: Rc<RefCell<OpState>>,
-    messages: Vec<JsBuffer>,
+    #[serde] messages: Vec<JsBuffer>,
 ) -> Result<Vec<Vec<u8>>, anyhow::Error> {
     debug!("op_comms_send_binary");
     let mut state = state.borrow_mut();

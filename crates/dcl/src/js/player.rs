@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use common::rpc::RpcCall;
-use deno_core::{op, Op, OpDecl, OpState};
+use deno_core::{op2, Op, OpDecl, OpState};
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
@@ -13,7 +13,8 @@ pub fn ops() -> Vec<OpDecl> {
     ]
 }
 
-#[op]
+#[op2(async)]
+#[serde]
 async fn op_get_connected_players(state: Rc<RefCell<OpState>>) -> Vec<String> {
     let (sx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();
 
@@ -27,7 +28,8 @@ async fn op_get_connected_players(state: Rc<RefCell<OpState>>) -> Vec<String> {
     rx.await.unwrap_or_default()
 }
 
-#[op]
+#[op2(async)]
+#[serde]
 async fn op_get_players_in_scene(state: Rc<RefCell<OpState>>) -> Vec<String> {
     let (sx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();
 

@@ -1,7 +1,7 @@
 use std::{sync::mpsc::SyncSender, time::Duration};
 
 use common::rpc::{CompareSnapshot, CompareSnapshotResult, RpcCall};
-use deno_core::{anyhow, error::AnyError, op, Op, OpDecl, OpState};
+use deno_core::{anyhow, error::AnyError, op2, Op, OpDecl, OpState};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot::{channel, error::TryRecvError};
 
@@ -22,7 +22,7 @@ pub fn ops() -> Vec<OpDecl> {
     ]
 }
 
-#[op]
+#[op2(fast)]
 fn op_testing_enabled(op_state: &mut OpState) -> bool {
     op_state.borrow::<CrdtContext>().testing
 }
@@ -50,8 +50,8 @@ pub struct SceneTestResult {
     pub total_time: f32,
 }
 
-#[op]
-fn op_log_test_plan(state: &mut OpState, body: SceneTestPlan) {
+#[op2]
+fn op_log_test_plan(state: &mut OpState, #[serde] body: SceneTestPlan) {
     let scene = state.borrow::<CrdtContext>().scene_id.0;
 
     state.borrow_mut::<RpcCalls>().push(RpcCall::TestPlan {
@@ -60,8 +60,8 @@ fn op_log_test_plan(state: &mut OpState, body: SceneTestPlan) {
     });
 }
 
-#[op]
-fn op_log_test_result(state: &mut OpState, body: SceneTestResult) {
+#[op2]
+fn op_log_test_result(state: &mut OpState, #[serde] body: SceneTestResult) {
     let scene = state.borrow::<CrdtContext>().scene_id.0;
 
     state.borrow_mut::<RpcCalls>().push(RpcCall::TestResult {
@@ -92,15 +92,20 @@ pub struct TakeAndCompareSnapshotResponse {
     pub grey_pixel_diff: Option<GreyPixelDiffResult>,
 }
 
-#[op]
+#[op2]
+#[serde]
 fn op_take_and_compare_snapshot(
     state: &mut OpState,
-    name: String,
-    camera_position: [f32; 3],
-    camera_target: [f32; 3],
-    snapshot_size: [u32; 2],
-    method: TestingScreenshotComparisonMethodRequest,
+    #[string] name: String,
+    #[serde] camera_position: (f32, f32, f32),
+    #[serde] camera_target: (f32, f32, f32),
+    #[serde] snapshot_size: (u32, u32),
+    #[serde] method: TestingScreenshotComparisonMethodRequest,
 ) -> Result<TakeAndCompareSnapshotResponse, AnyError> {
+    let camera_position = [camera_position.0, camera_position.1, camera_position.2];
+    let camera_target = [camera_target.0, camera_target.1, camera_target.2];
+    let snapshot_size = [snapshot_size.0, snapshot_size.1];
+
     let scene = state.borrow::<CrdtContext>().scene_id.0;
     let sender = state.borrow_mut::<SyncSender<SceneResponse>>();
 
