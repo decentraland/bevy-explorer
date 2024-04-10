@@ -237,27 +237,24 @@ fn main() {
                 })
                 .set(bevy::log::LogPlugin {
                     filter: "wgpu=error,naga=error".to_string(),
-                    update_subscriber: Some(
-                        move |_subscriber: BoxedSubscriber| -> BoxedSubscriber {
-                            #[cfg(not(feature = "tracy"))]
-                            {
-                                let (non_blocking, guard) = tracing_appender::non_blocking(
-                                    File::options()
-                                        .write(true)
-                                        .open(SESSION_LOG.get().unwrap())
-                                        .unwrap(),
-                                );
-                                let l = bevy::log::tracing_subscriber::fmt()
-                                    .with_ansi(false)
-                                    .with_writer(non_blocking)
-                                    .finish();
-                                Box::leak(Box::new(guard));
-                                Box::new(l)
-                            }
-                            #[cfg(feature = "tracy")]
-                            _subscriber
-                        },
-                    ),
+                    update_subscriber: if file_log {
+                        Some(move |_subscriber: BoxedSubscriber| -> BoxedSubscriber {
+                            let (non_blocking, guard) = tracing_appender::non_blocking(
+                                File::options()
+                                    .write(true)
+                                    .open(SESSION_LOG.get().unwrap())
+                                    .unwrap(),
+                            );
+                            let l = bevy::log::tracing_subscriber::fmt()
+                                .with_ansi(false)
+                                .with_writer(non_blocking)
+                                .finish();
+                            Box::leak(Box::new(guard));
+                            Box::new(l)
+                        }) 
+                    } else {
+                        None
+                    },
                     ..default()
                 })
                 .build()
@@ -344,7 +341,9 @@ fn main() {
     log_panics::init();
     app.run();
 
-    std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
+    if file_log {
+        std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
+    }
 }
 
 fn setup(
