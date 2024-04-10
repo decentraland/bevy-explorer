@@ -23,14 +23,13 @@ isahc = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-deno_core = "0.272"
-deno_fetch = "0.168"
-deno_webidl = "0.144"
-deno_web = "0.175"
-deno_url = "0.144"
-deno_console = "0.144"
-deno_websocket = "0.149"
-
+deno_core = "0.204"
+deno_fetch = "0.142"
+deno_webidl = "0.118"
+deno_web = "0.149"
+deno_url = "0.118"
+deno_console = "0.118"
+deno_websocket = "0.123"
 num-derive = "0.3"
 num = "0.4"
 num-traits = "0.2"

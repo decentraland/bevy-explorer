@@ -2,7 +2,7 @@ use common::rpc::{RPCSendableMessage, RpcCall};
 use deno_core::{
     anyhow::{self, anyhow},
     error::AnyError,
-    op2, Op, OpDecl, OpState,
+    op, Op, OpDecl, OpState,
 };
 use ethers_providers::{Provider, Ws};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
@@ -17,12 +17,11 @@ pub fn ops() -> Vec<OpDecl> {
     vec![op_send_async::DECL]
 }
 
-#[op2(async)]
-#[serde]
+#[op]
 async fn op_send_async(
     state: Rc<RefCell<OpState>>,
-    #[string] method: String,
-    #[string] params: String,
+    method: String,
+    params: String,
 ) -> Result<serde_json::Value, AnyError> {
     let params: Vec<serde_json::Value> = serde_json::from_str(&params)?;
 

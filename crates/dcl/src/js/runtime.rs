@@ -1,5 +1,5 @@
 use bevy::asset::io::AssetReader;
-use deno_core::{anyhow::anyhow, error::AnyError, futures::AsyncReadExt, op2, Op, OpDecl, OpState};
+use deno_core::{anyhow::anyhow, error::AnyError, futures::AsyncReadExt, op, Op, OpDecl, OpState};
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},
     IpfsResource,
@@ -25,11 +25,10 @@ struct ReadFileResponse {
     hash: String,
 }
 
-#[op2(async)]
-#[serde]
+#[op(v8)]
 async fn op_read_file(
     op_state: Rc<RefCell<OpState>>,
-    #[string] filename: String,
+    filename: String,
 ) -> Result<ReadFileResponse, AnyError> {
     let ipfs = op_state.borrow_mut().borrow::<IpfsResource>().clone();
     let hash = op_state.borrow_mut().borrow::<CrdtContext>().hash.clone();
@@ -61,8 +60,7 @@ pub struct ContentFileEntry {
     pub hash: String,
 }
 
-#[op2(async)]
-#[serde]
+#[op]
 async fn op_scene_information(
     op_state: Rc<RefCell<OpState>>,
 ) -> Result<SceneInfoResponse, AnyError> {
@@ -102,8 +100,7 @@ pub struct RealmInfoResponse {
     pub is_preview: bool,
 }
 
-#[op2(async)]
-#[serde]
+#[op]
 async fn op_realm_information(
     op_state: Rc<RefCell<OpState>>,
 ) -> Result<RealmInfoResponse, AnyError> {

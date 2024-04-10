@@ -68,6 +68,11 @@ fn main() {
         ))
         .unwrap();
     std::fs::create_dir_all("./log").unwrap();
+    File::create(SESSION_LOG.get().unwrap())
+        .expect("failed to create log file")
+        .write_all(format!("{}\n\n", SESSION_LOG.get().unwrap()).as_bytes())
+        .expect("failed to create log file");
+
     let crash_file = std::fs::read_dir("./log")
         .unwrap()
         .filter_map(|f| f.ok())
@@ -79,18 +84,7 @@ fn main() {
                 .join(f.path().file_stem().unwrap())
         });
 
-    let mut args = pico_args::Arguments::from_env();
-
-    let file_log = !args.contains("console") && !cfg!(feature = "tracy");
-
-    if file_log {
-        File::create(SESSION_LOG.get().unwrap())
-            .expect("failed to create log file")
-            .write_all(format!("{}\n\n", SESSION_LOG.get().unwrap()).as_bytes())
-            .expect("failed to create log file");
-
-        File::create(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
-    }
+    File::create(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
 
     // warnings before log init must be stored and replayed later
     let mut warnings = Vec::default();
@@ -104,6 +98,7 @@ fn main() {
                 .ok()
         })
         .unwrap_or_default();
+    let mut args = pico_args::Arguments::from_env();
 
     let final_config = AppConfig {
         server: args
@@ -231,9 +226,10 @@ fn main() {
                 })
                 .set(bevy::log::LogPlugin {
                     filter: "wgpu=error,naga=error".to_string(),
-                    update_subscriber: {
-                        if file_log {
-                            Some(move |_subscriber: BoxedSubscriber| -> BoxedSubscriber {
+                    update_subscriber: Some(
+                        move |_subscriber: BoxedSubscriber| -> BoxedSubscriber {
+                            #[cfg(not(feature = "tracy"))]
+                            {
                                 let (non_blocking, guard) = tracing_appender::non_blocking(
                                     File::options()
                                         .write(true)
@@ -246,11 +242,11 @@ fn main() {
                                     .finish();
                                 Box::leak(Box::new(guard));
                                 Box::new(l)
-                            })
-                        } else {
-                            None
-                        }
-                    },
+                            }
+                            #[cfg(feature = "tracy")]
+                            _subscriber
+                        },
+                    ),
                     ..default()
                 })
                 .build()
@@ -334,15 +330,10 @@ fn main() {
     // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
     // bevy_mod_debugdump::print_main_schedule(&mut app);
 
-    if file_log {
-        log_panics::init();
-    }
-
+    log_panics::init();
     app.run();
 
-    if file_log {
-        std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
-    }
+    std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
 }
 
 fn setup(
