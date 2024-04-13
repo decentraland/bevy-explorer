@@ -7,7 +7,7 @@ use bevy::{
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use collectibles::emotes::AvatarAnimations;
+use collectibles::{emotes::AvatarAnimations, EmoteUrn};
 use common::structs::PrimaryUser;
 use comms::profile::CurrentUserProfile;
 use ui_core::{
@@ -264,8 +264,10 @@ fn show_emote_ui(
 
         for emote in player_emotes {
             debug!("adding {}", emote.slot);
-            let h_thumb = emotes
-                .get_server(&emote.urn)
+
+            let h_thumb = EmoteUrn::new(&emote.urn)
+                .ok()
+                .and_then(|emote_urn| emotes.get_server(emote_urn))
                 .and_then(|anim| anim.thumbnail.clone())
                 .unwrap_or_else(|| {
                     debug!("didn't find {} in {:?}", emote.urn, emotes);
@@ -293,8 +295,9 @@ fn show_emote_ui(
         for emote in player_emotes {
             all_slots.remove(&emote.slot);
             let button = buttons.named(format!("emote_{}", emote.slot).as_str());
-            let name = emotes
-                .get_server(&emote.urn)
+            let name = EmoteUrn::new(&emote.urn)
+                .ok()
+                .and_then(|emote| emotes.get_server(emote))
                 .map(|e| e.name.clone())
                 .unwrap_or("???".to_owned());
             let name2 = name.clone();

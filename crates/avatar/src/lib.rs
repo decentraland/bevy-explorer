@@ -22,6 +22,7 @@ use collectibles::{
     wearables::{
         RequestedWearables, WearableCategory, WearableDefinition, WearablePointers, WearableUrn,
     },
+    EmoteUrn,
 };
 use colliders::AvatarColliderPlugin;
 use console::DoAddConsoleCommand;
@@ -524,7 +525,7 @@ fn update_render_avatar(
             .shape
             .body_shape
             .as_ref()
-            .map(WearableUrn::new)
+            .and_then(|b| WearableUrn::new(b).ok())
             .unwrap_or(base_wearables::default_bodyshape_urn());
 
         let body_data = match wearable_pointers.get(&body) {
@@ -541,7 +542,6 @@ fn update_render_avatar(
                 continue;
             }
         };
-        let body_shape_str = &body_data.meta.data.representations[0].body_shapes[0].to_lowercase();
 
         let ext = body_data.meta.data.representations[0]
             .main_file
@@ -558,7 +558,7 @@ fn update_render_avatar(
             .shape
             .wearables
             .iter()
-            .map(WearableUrn::new)
+            .flat_map(|w| WearableUrn::new(w).ok())
             .flat_map(|wearable| match wearable_pointers.get(&wearable) {
                 Some(Ok(data)) => Some(data),
                 Some(Err(())) => {
@@ -580,7 +580,7 @@ fn update_render_avatar(
         }
 
         // load wearable gtlf/images
-        let body_wearable = match WearableDefinition::new(body_data, &ipfas, "") {
+        let body_wearable = match WearableDefinition::new(body_data, &ipfas, None) {
             Some(body) => body,
             None => {
                 warn!("failed to load body shape, can't render");
@@ -590,7 +590,7 @@ fn update_render_avatar(
 
         let mut wearables = wearable_datas
             .into_iter()
-            .flat_map(|data| WearableDefinition::new(data, &ipfas, body_shape_str))
+            .flat_map(|data| WearableDefinition::new(data, &ipfas, Some(&body)))
             .map(|defn| (defn.category, defn))
             .collect::<HashMap<_, _>>();
 
@@ -601,7 +601,7 @@ fn update_render_avatar(
                     warn!("failed to load default renderable {:?}", default);
                     return None;
                 };
-                WearableDefinition::new(data, &ipfas, body_shape_str)
+                WearableDefinition::new(data, &ipfas, Some(&body))
             })
             .collect();
 
@@ -875,7 +875,7 @@ fn process_avatar(
                 let mut player = AnimationPlayer::default();
                 // play default idle anim to avoid t-posing
                 if let Some(clip) = animations
-                    .get_server("Idle_Male")
+                    .get_server(&EmoteUrn::new("Idle_Male").unwrap())
                     .and_then(|anim| anim.clips.values().next())
                 {
                     player.start(clip.clone());
@@ -1259,25 +1259,55 @@ fn debug_dump_avatar(
     console_relay: Res<ConsoleRelay>,
     wearable_pointers: Res<WearablePointers>,
     mut store: Local<HashSet<Handle<EntityDefinition>>>,
+    anims: Res<AvatarAnimations>,
 ) {
     if let Some(Ok(_)) = input.take() {
         let Ok(shape) = player.get_single() else {
             return;
         };
 
-        let hashes: Vec<_> = shape
+        let wearable_hashes: Vec<_> = shape
             .0
             .wearables
             .iter()
-            .flat_map(
-                |wearable| match wearable_pointers.hash(WearableUrn::new(wearable)) {
-                    Some(Ok(hash)) => Some(hash),
-                    _ => None,
-                },
-            )
+            .flat_map(|w| WearableUrn::new(w).ok())
+            .flat_map(|wearable| match wearable_pointers.hash(wearable) {
+                Some(Ok(hash)) => Some(hash),
+                _ => None,
+            })
             .collect();
 
-        for scene_hash in hashes {
+        let emote_hashes: Vec<_> = shape
+            .0
+            .emotes
+            .iter()
+            .map(|e| {
+                info!("0 {e:?}");
+                e
+            })
+            .flat_map(|e| EmoteUrn::new(e).ok())
+            .map(|e| {
+                info!("1 {e:?}");
+                e
+            })
+            .flat_map(|emote| anims.get_server(emote))
+            .map(|e| {
+                info!("2 {e:?}");
+                e
+            })
+            .flat_map(|anim| anim.hash.as_ref())
+            .map(|e| {
+                info!("3 {e:?}");
+                e
+            })
+            .map(|hash| hash.as_str())
+            .collect();
+
+        for (scene_hash, folder) in wearable_hashes
+            .into_iter()
+            .zip(std::iter::repeat("wearables"))
+            .chain(emote_hashes.into_iter().zip(std::iter::repeat("emotes")))
+        {
             let h_scene = ipfas.load_hash::<EntityDefinition>(scene_hash);
             let Some(def) = entity_definitions.get(&h_scene) else {
                 input.reply_failed("can't resolve wearable handle - try again in a few seconds");
@@ -1290,7 +1320,7 @@ fn debug_dump_avatar(
                 .cache_path()
                 .to_owned()
                 .join("scene_dump")
-                .join("wearables")
+                .join(folder)
                 .join(scene_hash);
             std::fs::create_dir_all(&dump_folder).unwrap();
 

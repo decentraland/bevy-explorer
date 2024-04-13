@@ -15,7 +15,7 @@ use bevy_dui::{
     DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry, DuiWalker,
 };
 use collectibles::{
-    base_wearables::{self, base_wearable_urns},
+    base_wearables::{self, base_wearable_urns, default_bodyshape_instance},
     wearables::{
         RequestedWearables, WearableCategory, WearableCollections, WearableInstance,
         WearableMetaAndHash, WearablePointers, WearableUrn,
@@ -235,7 +235,8 @@ fn set_wearables_content(
             None => {
                 let player_shape = &player.get_single().unwrap().0;
                 let body_instance =
-                    WearableInstance::new(player_shape.body_shape.as_ref().unwrap());
+                    WearableInstance::new(player_shape.body_shape.as_ref().unwrap())
+                        .unwrap_or_else(|_| default_bodyshape_instance());
                 let body_data = wearable_pointers
                     .get(body_instance.base())
                     .and_then(|data| data.ok())
@@ -252,7 +253,7 @@ fn set_wearables_content(
                     current_wearables: player_shape
                         .wearables
                         .iter()
-                        .map(WearableInstance::new)
+                        .flat_map(|w| WearableInstance::new(w).ok())
                         .flat_map(|wearable| {
                             wearable_pointers
                                 .get(wearable.base()) // TODO retry if not loaded?
@@ -483,13 +484,13 @@ fn get_owned_wearables(
                     let owned = settings
                         .owned_wearables
                         .iter()
-                        .map(|w| WearableEntry::owned(w.clone()))
+                        .flat_map(|w| WearableEntry::owned(w.clone()))
                         .collect::<Vec<_>>();
 
                     let mut collection_names = owned
                         .iter()
-                        .map(|w| w.instance.base().collection())
-                        .filter_map(|c| match collections.0.get(&c) {
+                        .flat_map(|w| w.instance.base().collection())
+                        .filter_map(|c| match collections.0.get(c) {
                             Some(name) => Some(name.clone()),
                             None => {
                                 debug!("collection not found: {c} not in {:?}", collections.0);
@@ -561,31 +562,32 @@ impl PartialEq for WearableEntry {
 }
 
 impl WearableEntry {
-    fn base(data: &WearableMetaAndHash) -> Self {
-        Self {
-            instance: WearableInstance::new(&data.meta.id),
+    fn base(data: &WearableMetaAndHash) -> Option<Self> {
+        Some(Self {
+            instance: WearableInstance::new(&data.meta.id).ok()?,
             name: data.meta.name.clone(),
             category: data.meta.data.category,
             rarity: Rarity::Free,
             individual_data: Default::default(),
-        }
+        })
     }
 
-    fn owned(owned: OwnedWearableData) -> Self {
-        Self {
+    fn owned(owned: OwnedWearableData) -> Option<Self> {
+        Some(Self {
             instance: WearableInstance::new_with_token(
-                owned.urn,
+                &owned.urn,
                 owned
                     .individual_data
                     .first()
                     .map(|data| data.token_id.clone()),
-            ),
+            )
+            .ok()?,
             name: owned.name,
             category: WearableCategory::from_str(&owned.category)
                 .unwrap_or(WearableCategory::UNKNOWN),
             rarity: Rarity::from(owned.rarity.as_str()),
             individual_data: owned.individual_data,
-        }
+        })
     }
 
     fn time(&self) -> i64 {
@@ -682,7 +684,7 @@ fn update_wearables_list(
         base_wearable_urns()
             .into_iter()
             .filter_map(|urn| wearable_pointers.get(&urn).unwrap_or(Err(())).ok())
-            .map(WearableEntry::base)
+            .flat_map(WearableEntry::base)
             .collect()
     };
 
@@ -691,7 +693,7 @@ fn update_wearables_list(
             .owned_wearables
             .iter()
             .cloned()
-            .map(WearableEntry::owned),
+            .flat_map(WearableEntry::owned),
     );
 
     if let Some(category) = settings.category {
@@ -699,8 +701,13 @@ fn update_wearables_list(
     }
 
     if let Some(collection) = &settings.collection {
-        wearables
-            .retain(|w| collections.0.get(&w.instance.base().collection()) == Some(collection));
+        wearables.retain(|w| {
+            w.instance
+                .base()
+                .collection()
+                .and_then(|c| collections.0.get(c))
+                == Some(collection)
+        });
     }
 
     if let Some(search) = &settings.search_filter {
@@ -870,7 +877,8 @@ fn update_wearable_item(
                                 debug!("found {:?} -> {data:?}", entry.instance);
                                 let fits = data.meta.data.representations.iter().any(|repr| {
                                     repr.body_shapes.iter().any(|shape| {
-                                        settings.body_shape.base() == &WearableUrn::new(shape)
+                                        Ok(settings.body_shape.base())
+                                            == WearableUrn::new(shape).as_ref()
                                     })
                                 }) || data.meta.data.category
                                     == WearableCategory::BODY_SHAPE;
@@ -924,9 +932,9 @@ fn update_wearable_item(
                     };
 
                     let fits = data.meta.data.representations.iter().any(|repr| {
-                        repr.body_shapes
-                            .iter()
-                            .any(|shape| settings.body_shape.base() == &WearableUrn::new(shape))
+                        repr.body_shapes.iter().any(|shape| {
+                            Ok(settings.body_shape.base()) == WearableUrn::new(shape).as_ref()
+                        })
                     }) || data.meta.data.category == WearableCategory::BODY_SHAPE;
 
                     let (image_color, rarity_color) = if fits {
@@ -1075,7 +1083,7 @@ fn update_selected_item(
                     .0
                     .wearables
                     .drain(..)
-                    .map(WearableInstance::new)
+                    .flat_map(|w| WearableInstance::new(&w).ok())
                     .collect::<HashSet<_>>();
                 if let Some((old_instance, _)) = prev {
                     if category != WearableCategory::BODY_SHAPE && !wearables.remove(&old_instance)

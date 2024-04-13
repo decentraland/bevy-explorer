@@ -1,16 +1,10 @@
-use std::{any::TypeId, collections::VecDeque, time::Duration};
+use std::{collections::VecDeque, time::Duration};
 
-use bevy::{
-    animation::RepeatAnimation,
-    asset::{LoadState, LoadedFolder},
-    gltf::Gltf,
-    math::Vec3Swizzles,
-    prelude::*,
-    utils::HashMap,
-};
+use bevy::{animation::RepeatAnimation, math::Vec3Swizzles, prelude::*, utils::HashMap};
 use bevy_console::ConsoleCommand;
-use collectibles::emotes::{
-    base_bodyshapes, urn_for_emote_specifier, AvatarAnimation, AvatarAnimations, EmoteLoadData,
+use collectibles::{
+    emotes::{base_bodyshapes, AvatarAnimations, EmoteLoadData},
+    EmoteUrn,
 };
 use common::{
     rpc::{RpcCall, RpcEventSender},
@@ -40,58 +34,6 @@ use scene_runner::{
 use crate::process_avatar;
 
 use super::AvatarDynamicState;
-
-use once_cell::sync::Lazy;
-
-struct DefaultAnim {
-    male: &'static str,
-    female: &'static str,
-    repeat: bool,
-}
-
-impl DefaultAnim {
-    fn new(male: &'static str, female: &'static str, repeat: bool) -> Self {
-        Self {
-            male,
-            female,
-            repeat,
-        }
-    }
-}
-
-static DEFAULT_ANIMATION_LOOKUP: Lazy<HashMap<&str, DefaultAnim>> = Lazy::new(|| {
-    HashMap::from_iter([
-        (
-            "handsair",
-            DefaultAnim::new("Hands_In_The_Air", "Hands_In_The_Air", false),
-        ),
-        ("wave", DefaultAnim::new("Wave_Male", "Wave_Female", false)),
-        (
-            "fistpump",
-            DefaultAnim::new("M_FistPump", "F_FistPump", false),
-        ),
-        (
-            "dance",
-            DefaultAnim::new("Dance_Male", "Dance_Female", true),
-        ),
-        (
-            "raiseHand",
-            DefaultAnim::new("Raise_Hand", "Raise_Hand", false),
-        ),
-        // "clap" defaults
-        (
-            "money",
-            DefaultAnim::new(
-                "Armature|Throw Money-Emote_v02|BaseLayer",
-                "Armature|Throw Money-Emote_v02|BaseLayer",
-                false,
-            ),
-        ),
-        // "kiss" defaults
-        ("headexplode", DefaultAnim::new("explode", "explode", false)),
-        // "shrug" defaults
-    ])
-});
 
 #[derive(Component)]
 pub struct AvatarAnimPlayer(pub Entity);
@@ -125,107 +67,12 @@ impl Plugin for AvatarAnimationPlugin {
         app.add_systems(
             Update,
             (
-                load_animations,
                 (read_player_emotes, broadcast_emote, receive_emotes).before(animate),
                 animate.after(process_avatar),
             )
                 .in_set(SceneSets::PostLoop),
         );
         app.add_console_command::<EmoteConsoleCommand, _>(emote_console_command);
-    }
-}
-
-#[derive(Default)]
-enum AnimLoadState {
-    #[default]
-    Init,
-    WaitingForFolder(Handle<LoadedFolder>),
-    WaitingForGltfs(Vec<Handle<Gltf>>),
-    Done,
-}
-
-#[allow(clippy::type_complexity)]
-fn load_animations(
-    asset_server: Res<AssetServer>,
-    gltfs: Res<Assets<Gltf>>,
-    mut state: Local<AnimLoadState>,
-    folders: Res<Assets<LoadedFolder>>,
-    mut animations: ResMut<AvatarAnimations>,
-) {
-    match &mut *state {
-        AnimLoadState::Init => {
-            *state = AnimLoadState::WaitingForFolder(asset_server.load_folder("animations"));
-        }
-        AnimLoadState::WaitingForFolder(h_folder) => {
-            if asset_server.load_state(h_folder.id()) == LoadState::Loaded {
-                let folder = folders.get(h_folder.id()).unwrap();
-                *state = AnimLoadState::WaitingForGltfs(
-                    folder
-                        .handles
-                        .iter()
-                        .filter(|h| h.type_id() == TypeId::of::<Gltf>())
-                        .map(|h| h.clone().typed())
-                        .collect(),
-                )
-            }
-        }
-        AnimLoadState::WaitingForGltfs(ref mut h_gltfs) => {
-            h_gltfs.retain(
-                |h_gltf| match gltfs.get(h_gltf).map(|gltf| &gltf.named_animations) {
-                    Some(anims) => {
-                        for (name, h_clip) in anims {
-                            let (name, repeat, is_male, is_female) = DEFAULT_ANIMATION_LOOKUP
-                                .iter()
-                                .find(|(_, anim)| anim.male == name || anim.female == name)
-                                .map(|(urn, anim)| {
-                                    (
-                                        urn.to_string(),
-                                        anim.repeat,
-                                        anim.male == name,
-                                        anim.female == name,
-                                    )
-                                })
-                                .unwrap_or((name.to_owned(), false, false, false));
-
-                            let anim = animations
-                                .0
-                                .entry(format!("urn:decentraland:off-chain:base-emotes:{}", name))
-                                .or_insert_with(|| AvatarAnimation {
-                                    name: name.clone(),
-                                    description: name.clone(),
-                                    clips: HashMap::from_iter(
-                                        base_bodyshapes()
-                                            .into_iter()
-                                            .map(|body| (body, h_clip.clone())),
-                                    ),
-                                    thumbnail: Some(
-                                        asset_server
-                                            .load(format!("animations/thumbnails/{name}_256.png")),
-                                    ),
-                                    repeat,
-                                });
-
-                            if is_female {
-                                anim.clips
-                                    .insert(base_bodyshapes().remove(0), h_clip.clone());
-                            }
-                            if is_male {
-                                anim.clips
-                                    .insert(base_bodyshapes().remove(1), h_clip.clone());
-                            }
-                            debug!("added animation {name}: {anim:?} from {:?}", h_clip.path());
-                        }
-                        false
-                    }
-                    None => true,
-                },
-            );
-
-            if h_gltfs.is_empty() {
-                *state = AnimLoadState::Done;
-            }
-        }
-        AnimLoadState::Done => {}
     }
 }
 
@@ -342,7 +189,7 @@ fn animate(
     mut players: Query<&mut AnimationPlayer>,
     animations: Res<AvatarAnimations>,
     mut velocities: Local<HashMap<Entity, Vec3>>,
-    mut playing: Local<HashMap<Entity, String>>,
+    mut playing: Local<HashMap<Entity, EmoteUrn>>,
     time: Res<Time>,
     anim_assets: Res<Assets<AnimationClip>>,
     mut emote_load_data: ResMut<EmoteLoadData>,
@@ -350,7 +197,7 @@ fn animate(
     let prior_velocities = std::mem::take(&mut *velocities);
     let prior_playing = std::mem::take(&mut *playing);
 
-    let mut play = |anim: &str,
+    let mut play = |anim: &EmoteUrn,
                     speed: f32,
                     ent: Entity,
                     restart: bool,
@@ -362,10 +209,7 @@ fn animate(
             .and_then(|anim| anim.clips.get(bodyshape))
         {
             if let Ok(mut player) = players.get_mut(ent) {
-                if restart && player.elapsed() == 0.75 {
-                    // what is this meant to do?
-                    player.start(clip.clone()).repeat();
-                } else if Some(anim) != prior_playing.get(&ent).map(String::as_str) || restart {
+                if Some(anim) != prior_playing.get(&ent) || restart {
                     player.play_with_transition(clip.clone(), Duration::from_millis(100));
                     if repeat {
                         player.repeat();
@@ -374,7 +218,9 @@ fn animate(
                     }
                 }
 
-                if anim == "Jump" && player.elapsed() >= 0.75 {
+                if anim.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
+                    && player.elapsed() >= 0.75
+                {
                     player.pause();
                 } else {
                     player.resume();
@@ -382,7 +228,8 @@ fn animate(
 
                 player.set_speed(speed);
                 playing.insert(ent, anim.to_owned());
-                return player.elapsed() > anim_assets.get(clip).map_or(f32::MAX, |c| c.duration());
+                return player.elapsed()
+                    >= anim_assets.get(clip).map_or(f32::MAX, |c| c.duration());
             }
         }
 
@@ -448,32 +295,26 @@ fn animate(
             emote_command: Some(EmoteCommand { emote_urn, r#loop }),
         }) = emote
         {
-            let (modified_emote_urn, repeat) = (urn_for_emote_specifier(&emote_urn), r#loop);
-
-            if play(
-                &modified_emote_urn,
-                1.0,
-                animplayer_ent.0,
-                false,
-                repeat,
-                &bodyshape,
-            ) && !repeat
-            {
-                // emote has finished, remove from the set so will resume default anim after
-                emotes.as_mut().unwrap().clear();
-                commands.entity(avatar_ent).insert(PlayingEmote::default());
+            if let Ok(emote) = EmoteUrn::new(&emote_urn) {
+                if play(&emote, 1.0, animplayer_ent.0, false, r#loop, &bodyshape) && !r#loop {
+                    // emote has finished, remove from the set so will resume default anim after
+                    emotes.as_mut().unwrap().clear();
+                    commands.entity(avatar_ent).insert(PlayingEmote::default());
+                } else {
+                    commands.entity(avatar_ent).insert(PlayingEmote(Some((
+                        emote_urn.to_owned(),
+                        min_playing_velocity,
+                    ))));
+                };
+                continue;
             } else {
-                commands.entity(avatar_ent).insert(PlayingEmote(Some((
-                    emote_urn.to_owned(),
-                    min_playing_velocity,
-                ))));
-            };
-            continue;
+                warn!("invalid emote from scene: {}", emote_urn);
+            }
         }
 
         if dynamic_state.ground_height > 0.2 {
             play(
-                "Jump",
+                &EmoteUrn::new("jump").unwrap(),
                 1.25,
                 animplayer_ent.0,
                 dynamic_state.velocity.y > 0.0,
@@ -488,7 +329,7 @@ fn animate(
         if damped_velocity_len.abs() > 0.1 {
             if damped_velocity_len.abs() < 2.0 {
                 play(
-                    "Walk",
+                    &EmoteUrn::new("walk").unwrap(),
                     directional_velocity_len / 1.5,
                     animplayer_ent.0,
                     false,
@@ -497,7 +338,7 @@ fn animate(
                 );
             } else {
                 play(
-                    "Run",
+                    &EmoteUrn::new("run").unwrap(),
                     directional_velocity_len / 4.5,
                     animplayer_ent.0,
                     false,
@@ -506,7 +347,14 @@ fn animate(
                 );
             }
         } else {
-            play("Idle_Male", 1.0, animplayer_ent.0, false, true, &bodyshape);
+            play(
+                &EmoteUrn::new("idle_male").unwrap(),
+                1.0,
+                animplayer_ent.0,
+                false,
+                true,
+                &bodyshape,
+            );
         }
     }
 }

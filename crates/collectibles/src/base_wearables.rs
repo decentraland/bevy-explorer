@@ -285,18 +285,26 @@ const BASE_WEARABLES: [&str; 278] = [
 pub fn base_wearable_urns() -> Vec<WearableUrn> {
     BASE_WEARABLES
         .iter()
-        .map(|wearable| {
-            format!("urn:decentraland:off-chain:base-avatars:{}", wearable).to_lowercase()
-        })
-        .map(WearableUrn::new)
+        .map(|wearable| format!("urn:decentraland:off-chain:base-avatars:{}", wearable))
+        .map(|w| WearableUrn::new(&w))
+        .map(Result::unwrap)
         .collect()
 }
 
 pub fn default_bodyshape_urn() -> WearableUrn {
-    WearableUrn::new(format!(
+    WearableUrn::new(&format!(
         "urn:decentraland:off-chain:base-avatars:{}",
         BASE_WEARABLES[0]
     ))
+    .unwrap()
+}
+
+pub fn default_bodyshape_instance() -> WearableInstance {
+    WearableInstance::new(&format!(
+        "urn:decentraland:off-chain:base-avatars:{}",
+        BASE_WEARABLES[0]
+    ))
+    .unwrap()
 }
 
 pub const CONTENT_URL: &str = "https://peer.decentraland.org/content/contents/";
@@ -330,4 +338,5 @@ pub fn default_wearables(body_shape: &WearableUrn) -> impl Iterator<Item = Weara
     }
     .into_iter()
     .map(WearableInstance::new)
+    .map(Result::unwrap)
 }

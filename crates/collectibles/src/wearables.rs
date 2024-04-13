@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use crate::{base_wearables, CollectibleInstance, CollectibleUrn};
+use crate::{base_wearables, CollectibleInstance, CollectibleType, CollectibleUrn};
 use anyhow::anyhow;
 use bevy::{
     gltf::{Gltf, GltfLoaderSettings},
@@ -34,6 +34,12 @@ pub struct WearableCollections(pub HashMap<String, String>);
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct WearableMarker;
+
+impl CollectibleType for WearableMarker {
+    fn base_collection() -> Option<&'static str> {
+        None
+    }
+}
 
 pub type WearableUrn = CollectibleUrn<WearableMarker>;
 pub type WearableInstance = CollectibleInstance<WearableMarker>;
@@ -127,7 +133,7 @@ impl WearableMeta {
         if let Some(repr) = self.data.representations.iter().find(|repr| {
             repr.body_shapes
                 .iter()
-                .any(|shape| body_shape == &WearableUrn::new(shape))
+                .any(|shape| Ok(body_shape) == WearableUrn::new(shape).as_ref())
         }) {
             // add hides from representation
             hides.extend(repr.override_hides.clone());
@@ -178,6 +184,7 @@ fn load_base_wearables(
                 .iter()
                 .map(ToString::to_string)
                 .collect();
+            debug!("base wearable pointers: {:?}", pointers);
             *task = Some(ipfas.ipfs().active_entities(
                 ipfs::ActiveEntitiesRequest::Pointers(pointers),
                 Some(base_wearables::BASE_URL),
@@ -217,6 +224,10 @@ fn load_base_wearables(
                         debug!("dungarees: {:?}", metadata);
                     }
                     for pointer in entity.pointers {
+                        let Ok(pointer) = WearableUrn::try_from(pointer.as_str()) else {
+                            warn!("bad pointer: {}", pointer);
+                            continue;
+                        };
                         wearable_pointers.insert(
                             pointer,
                             WearablePointerResult::Exists(WearableMetaAndHash {
@@ -420,19 +431,20 @@ impl WearableDefinition {
     pub fn new(
         data: &WearableMetaAndHash,
         ipfas: &IpfsAssetServer,
-        body_shape: &str,
+        body_shape: Option<&WearableUrn>,
     ) -> Option<WearableDefinition> {
-        let Some(representation) = (if body_shape.is_empty() {
-            Some(&data.meta.data.representations[0])
-        } else {
-            data.meta.data.representations.iter().find(|rep| {
-                rep.body_shapes
+        let representation = match body_shape {
+            Some(body_shape) => data.meta.data.representations.iter().find(|repr| {
+                repr.body_shapes
                     .iter()
-                    .any(|rep_shape| rep_shape.to_lowercase() == body_shape.to_lowercase())
-            })
-        }) else {
+                    .any(|shape| Ok(body_shape) == WearableUrn::new(shape).as_ref())
+            }),
+            None => Some(&data.meta.data.representations[0]),
+        };
+
+        let Some(representation) = representation else {
             warn!(
-                "no representation for body shape {body_shape}, {:?}",
+                "no representation for body shape {body_shape:?}, {:?}",
                 data.meta
             );
             return None;
@@ -444,7 +456,9 @@ impl WearableDefinition {
             return None;
         }
 
-        let hides = data.meta.hides(WearableInstance::new(body_shape).base());
+        let hides = body_shape
+            .map(|shape| data.meta.hides(shape))
+            .unwrap_or_default();
 
         let (model, texture, mask) = if category.is_texture {
             // don't validate the main file, as some base wearables have no extension on the main_file member (Eyebrows_09 e.g)
@@ -545,7 +559,12 @@ fn load_wearables(
                             continue;
                         }
                     };
-                    for pointer in entity.pointers.into_iter().map(WearableUrn::from) {
+                    for pointer in entity.pointers.into_iter() {
+                        let Ok(pointer) = WearableUrn::try_from(pointer.as_str()) else {
+                            warn!("bad pointer: {}", pointer);
+                            continue;
+                        };
+
                         debug!("{} -> {}", pointer, entity.id);
                         wearables.remove(&pointer);
                         wearable_pointers.insert(
