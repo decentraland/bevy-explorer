@@ -1,6 +1,10 @@
 use std::str::FromStr;
 
-use crate::{base_wearables, CollectibleInstance, CollectibleType, CollectibleUrn};
+use crate::{
+    base_wearables,
+    urn::{CollectibleInstance, CollectibleUrn},
+    CollectibleType,
+};
 use anyhow::anyhow;
 use bevy::{
     gltf::{Gltf, GltfLoaderSettings},

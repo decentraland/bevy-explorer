@@ -11,9 +11,12 @@ use comms::profile::UserProfile;
 use ipfs::{ActiveEntityTask, ContentMap, EntityDefinition, IpfsAssetServer};
 use serde::{Deserialize, Serialize};
 
-use crate::{CollectibleInstance, CollectibleType, CollectibleUrn, CollectibleUrnErr};
-
 use once_cell::sync::Lazy;
+
+use crate::{
+    urn::{CollectibleInstance, CollectibleUrn},
+    CollectibleType,
+};
 
 pub fn base_bodyshapes() -> Vec<String> {
     vec![
@@ -135,11 +138,7 @@ fn fetch_emotes(
         .iter()
         .flat_map(|p| p.content.avatar.emotes.as_ref())
         .flatten()
-        .filter_map(|AvatarEmote { urn, .. }| {
-            EmoteUrn::new(urn)
-                .map_err(|e| warn!("invalid emote: {} (parsing {})", e.msg, e.value))
-                .ok()
-        })
+        .filter_map(|AvatarEmote { urn, .. }| EmoteUrn::new(urn).ok())
         .collect::<HashSet<_>>();
 
     if let Some(result) = task.as_mut().and_then(|t| t.complete()) {
@@ -150,13 +149,10 @@ fn fetch_emotes(
                 }
 
                 defs.loaded.extend(res.iter().filter_map(|def| {
-                    def.pointers.first().cloned().and_then(|p| {
-                        EmoteUrn::try_from(p.as_str())
-                            .map_err(|e: CollectibleUrnErr| {
-                                warn!("invalid emote pointer: {} (parsing {})", e.msg, e.value)
-                            })
-                            .ok()
-                    })
+                    def.pointers
+                        .first()
+                        .cloned()
+                        .and_then(|p| EmoteUrn::try_from(p.as_str()).ok())
                 }));
                 defs.unprocessed.extend(res);
             }
