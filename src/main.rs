@@ -109,7 +109,6 @@ fn main() {
                 .ok()
         })
         .unwrap_or_default();
-    let mut args = pico_args::Arguments::from_env();
 
     let final_config = AppConfig {
         server: args
