@@ -33,6 +33,7 @@ impl Plugin for EmotesPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(CollectiblesTypePlugin::<Emote>::default());
         app.register_asset_loader(EmoteLoader);
+        app.register_asset_loader(EmoteMetaLoader);
         app.add_systems(Update, (load_animations,));
     }
 }
@@ -88,7 +89,7 @@ enum AnimLoadState {
 #[allow(clippy::type_complexity)]
 fn load_animations(
     asset_server: Res<AssetServer>,
-    gltfs: Res<Assets<Gltf>>,
+    mut gltfs: ResMut<Assets<Gltf>>,
     mut state: Local<AnimLoadState>,
     folders: Res<Assets<LoadedFolder>>,
     mut emotes: CollectibleManager<Emote>,
@@ -114,7 +115,7 @@ fn load_animations(
             h_gltfs.retain(
                 |h_gltf| match gltfs.get(h_gltf).map(|gltf| &gltf.named_animations) {
                     Some(anims) => {
-                        for (name, h_clip) in anims {
+                        for (name, h_clip) in anims.clone() {
                             let (name, repeat, is_male, is_female) = DEFAULT_ANIMATION_LOOKUP
                                 .iter()
                                 .find(|(_, anim)| anim.male == name || anim.female == name)
@@ -128,14 +129,28 @@ fn load_animations(
                                 })
                                 .unwrap_or((name.to_owned(), false, true, true));
 
+                            let new_gltf = Gltf {
+                                named_animations: HashMap::from_iter([("_Avatar".to_owned(), h_clip.clone())]),
+                                scenes: Default::default(),
+                                named_scenes: Default::default(),
+                                meshes: Default::default(),
+                                named_meshes: Default::default(),
+                                materials: Default::default(),
+                                named_materials: Default::default(),
+                                nodes: Default::default(),
+                                named_nodes: Default::default(),
+                                default_scene: Default::default(),
+                                animations: Default::default(),
+                                source: Default::default(),                                
+                            };
+                            let new_gltf = gltfs.add(new_gltf);
+
                             let urn = EmoteUrn::new(&name).unwrap();
-                            debug!("loaded default anim {:?}", urn);
+                            debug!("loaded default anim {:?} from {:?}", urn, h_gltf.path());
 
                             let emote = Emote {
-                                avatar_animation: h_clip.clone(),
+                                gltf: new_gltf,
                                 default_repeat: repeat,
-                                props: None,
-                                prop_animation: None,
                                 sound: None,
                             };
 
@@ -235,11 +250,21 @@ static DEFAULT_ANIMATION_LOOKUP: Lazy<HashMap<&str, DefaultAnim>> = Lazy::new(||
 
 #[derive(PartialEq, Eq, Hash, Debug, TypePath, Clone)]
 pub struct Emote {
-    pub avatar_animation: Handle<AnimationClip>,
+    pub gltf: Handle<Gltf>,
     pub default_repeat: bool,
-    pub props: Option<Handle<Gltf>>,
-    pub prop_animation: Option<Handle<AnimationClip>>,
     pub sound: Option<Handle<AudioSource>>,
+}
+
+impl Emote {
+    pub fn avatar_animation(&self, gltfs: &Assets<Gltf>) -> Option<Handle<AnimationClip>> {
+        gltfs
+            .get(self.gltf.id())?
+            .named_animations
+            .iter()
+            .find(|(name, _)| name.ends_with("_Avatar"))
+            .map(|(_, handle)| handle)
+            .cloned()
+    }
 }
 
 impl CollectibleType for Emote {
@@ -294,32 +319,7 @@ impl AssetLoader for EmoteLoader {
             let mut representations = HashMap::default();
 
             for representation in meta.emote_extended_data.representations.into_iter() {
-                let loaded_asset = load_context
-                    .load_direct(content_file_path(representation.main_file, &entity.id))
-                    .await?;
-
-                let gltf = loaded_asset
-                    .take::<Gltf>()
-                    .ok_or_else(|| anyhow!("emote gltf load failed"))?;
-                let avatar_animation = gltf
-                    .named_animations
-                    .iter()
-                    .find(|(name, _)| name.ends_with("_Avatar"))
-                    .map(|(_, handle)| handle)
-                    .ok_or(anyhow!("no animation"))?
-                    .clone();
-                let prop_animation = gltf
-                    .named_animations
-                    .iter()
-                    .find(|(name, _)| name.ends_with("_Prop"))
-                    .map(|(_, handle)| handle)
-                    .cloned();
-
-                let props = if !gltf.meshes.is_empty() {
-                    Some(load_context.get_label_handle("gltf"))
-                } else {
-                    None
-                };
+                let gltf = load_context.load(content_file_path(representation.main_file, &entity.id));
 
                 let sound = representation
                     .contents
@@ -327,16 +327,12 @@ impl AssetLoader for EmoteLoader {
                     .find(|f| f.ends_with(".mp3") || f.ends_with(".ogg"))
                     .map(|af| load_context.load(content_file_path(af, &entity.id)));
 
-                load_context.add_labeled_asset("gltf".to_owned(), gltf);
-
                 for body_shape in representation.body_shapes {
                     representations.insert(
                         body_shape.to_lowercase(),
                         Emote {
-                            avatar_animation: avatar_animation.clone(),
+                            gltf: gltf.clone(),
                             default_repeat: meta.emote_extended_data.loops,
-                            props: props.clone(),
-                            prop_animation: prop_animation.clone(),
                             sound: sound.clone(),
                         },
                     );
@@ -354,6 +350,54 @@ impl AssetLoader for EmoteLoader {
                     extra_data: (),
                 },
                 representations,
+            })
+        })
+    }
+}
+
+struct EmoteMetaLoader;
+
+impl AssetLoader for EmoteMetaLoader {
+    type Asset = CollectibleData<Emote>;
+
+    type Settings = ();
+
+    type Error = anyhow::Error;
+
+    fn load<'a>(
+        &'a self,
+        reader: &'a mut bevy::asset::io::Reader,
+        settings: &'a Self::Settings,
+        load_context: &'a mut bevy::asset::LoadContext,
+    ) -> bevy::utils::BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+        Box::pin(async move {
+            let mut entity = EntityDefinitionLoader
+                .load(reader, settings, load_context)
+                .await?;
+            let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
+            let meta = serde_json::from_value::<EmoteMeta>(metadata)?;
+
+            let thumbnail = load_context.load(content_file_path(&meta.thumbnail, &entity.id));
+
+            let available_representations = meta
+                .emote_extended_data
+                .representations
+                .into_iter()
+                .flat_map(|rep| {
+                    rep.body_shapes
+                        .into_iter()
+                        .map(|shape| shape.to_lowercase())
+                })
+                .collect();
+
+            Ok(CollectibleData {
+                thumbnail,
+                hash: entity.id,
+                urn: entity.pointers.pop().unwrap_or_default(),
+                name: meta.name,
+                description: meta.description,
+                available_representations,
+                extra_data: (),
             })
         })
     }

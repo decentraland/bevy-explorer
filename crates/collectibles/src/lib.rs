@@ -114,9 +114,12 @@ pub struct Collectibles<T: CollectibleType> {
 
 impl<T: CollectibleType> Collectibles<T> {
     pub fn retain(&mut self, frame: u32, f: impl Fn(&CollectibleUrn<T>) -> bool) {
+        let count = self.cache.len();
         self.cache
             .retain(|urn, (expiry, _)| *expiry >= frame || f(urn));
-        debug!("{} {} remain", self.cache.len(), std::any::type_name::<T>());
+        if self.cache.len() != count {
+            debug!("{}/{} {} remain", self.cache.len(), count, std::any::type_name::<T>());
+        }
     }
 }
 
@@ -348,7 +351,7 @@ pub fn request_collectibles<T: CollectibleType>(
                 warn!("failed to resolve entities: {e}");
             }
             None => {
-                debug!("waiting for wearable resolve");
+                debug!("waiting for collectible resolve");
                 *active_task = Some((task, requested_entities));
             }
         }

@@ -808,6 +808,7 @@ fn process_avatar(
     mut scene_materials: ResMut<Assets<SceneMaterial>>,
     mut mask_materials: ResMut<Assets<MaskMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
+    gltfs: Res<Assets<Gltf>>,
     attach_points: Query<&AttachPoints>,
     ui_view: Res<AvatarWorldUi>,
     dui: Res<DuiRegistry>,
@@ -860,7 +861,7 @@ fn process_avatar(
                 if let Some(clip) = emote_loader
                     .get_representation(EmoteUrn::new("Idle_Male").unwrap(), &def.body_shape)
                     .ok()
-                    .map(|rep| rep.avatar_animation.clone())
+                    .and_then(|rep| rep.avatar_animation(&gltfs))
                 {
                     player.start(clip.clone());
                 }

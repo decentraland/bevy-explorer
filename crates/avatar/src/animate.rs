@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, time::Duration};
 
-use bevy::{animation::RepeatAnimation, math::Vec3Swizzles, prelude::*, utils::HashMap};
+use bevy::{animation::RepeatAnimation, gltf::Gltf, math::Vec3Swizzles, prelude::*, utils::HashMap};
 use bevy_console::ConsoleCommand;
 use collectibles::{
     emotes::base_bodyshapes, CollectibleError, CollectibleManager, Emote, EmoteUrn,
@@ -191,6 +191,8 @@ fn animate(
     mut playing: Local<HashMap<Entity, EmoteUrn>>,
     time: Res<Time>,
     anim_assets: Res<Assets<AnimationClip>>,
+    clips: Res<Assets<AnimationClip>>,
+    gltfs: Res<Assets<Gltf>>,
 ) {
     let prior_velocities = std::mem::take(&mut *velocities);
     let prior_playing = std::mem::take(&mut *playing);
@@ -203,11 +205,24 @@ fn animate(
                     bodyshape: &str|
      -> bool {
         let clip = match emote_loader.get_representation(anim, bodyshape) {
-            Ok(emote) => emote.avatar_animation.clone(),
-            Err(CollectibleError::Failed)
-            | Err(CollectibleError::Missing)
-            | Err(CollectibleError::NoRepresentation) => return true,
-            Err(CollectibleError::Loading) => return false,
+            Ok(emote) => {
+                let Some(clip) = emote.avatar_animation(&gltfs) else {
+                    debug!("{} -> no clip", anim);
+                    return false;
+                };
+
+                clip
+            }
+            e @ Err(CollectibleError::Failed)
+            | e @ Err(CollectibleError::Missing)
+            | e @ Err(CollectibleError::NoRepresentation) => {
+                debug!("{} -> {:?}", anim, e);
+                return true;
+            }
+            Err(CollectibleError::Loading) => {
+                debug!("{} -> loading", anim);
+                return false;
+            }
         };
 
         let Ok(mut player) = players.get_mut(ent) else {
@@ -215,6 +230,11 @@ fn animate(
         };
 
         if Some(anim) != prior_playing.get(&ent) || restart {
+            if clips.get(&clip).is_some() {
+                debug!("~~play {:?}", clip);
+            } else {
+                debug!("~~NO NO NO NO play {:?}", clip);
+            }
             player.play_with_transition(clip.clone(), Duration::from_millis(100));
             if repeat {
                 player.repeat();
@@ -295,6 +315,7 @@ fn animate(
             emote_command: Some(EmoteCommand { emote_urn, r#loop }),
         }) = emote
         {
+            debug!("avatar play {}", emote_urn);
             if let Ok(emote) = EmoteUrn::new(&emote_urn) {
                 if play(&emote, 1.0, animplayer_ent.0, false, r#loop, &bodyshape) && !r#loop {
                     // emote has finished, remove from the set so will resume default anim after
