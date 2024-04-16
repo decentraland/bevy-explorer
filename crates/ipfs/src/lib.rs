@@ -204,6 +204,11 @@ impl ContentMap {
     pub fn new_single(file: String, hash: String) -> Self {
         Self(HashMap::from_iter([(file, hash)]))
     }
+
+    pub fn with(mut self, file: String, hash: String) -> Self {
+        self.0.insert(file.to_lowercase(), hash);
+        self
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

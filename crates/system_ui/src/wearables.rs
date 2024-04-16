@@ -16,10 +16,8 @@ use bevy_dui::{
 };
 use collectibles::{
     base_wearables::{self, base_wearable_urns, default_bodyshape_instance},
-    wearables::{
-        RequestedWearables, WearableCategory, WearableCollections, WearableInstance,
-        WearableMetaAndHash, WearablePointers, WearableUrn,
-    },
+    wearables::{Wearable, WearableCategory, WearableCollections, WearableInstance},
+    CollectibleData, CollectibleError, CollectibleManager,
 };
 use common::{
     structs::PrimaryUser,
@@ -153,7 +151,7 @@ pub struct WearablesSettings {
     pub collection: Option<String>,
     pub sort_by: SortBy,
     pub search_filter: Option<String>,
-    pub current_wearables: HashMap<WearableCategory, (WearableInstance, WearableMetaAndHash)>,
+    pub current_wearables: HashMap<WearableCategory, (WearableInstance, CollectibleData<Wearable>)>,
     pub owned_wearables: Vec<OwnedWearableData>,
     current_list: Vec<WearableEntry>,
     pub current_wearable_images: HashMap<WearableCategory, Entity>,
@@ -168,21 +166,18 @@ fn set_wearables_content(
         Option<&AvatarShape>,
         Ref<SettingsDialog>,
     )>,
-    mut q: Query<
-        (
-            Entity,
-            &SettingsTab,
-            Option<&mut WearablesSettings>,
-            Has<SelectItem>,
-        ),
-        Changed<SettingsTab>,
-    >,
+    mut q: Query<(
+        Entity,
+        &SettingsTab,
+        Option<&mut WearablesSettings>,
+        Has<SelectItem>,
+    )>,
     dui: Res<DuiRegistry>,
     mut booth: PhotoBooth,
     player: Query<&AvatarShape, (Without<SettingsDialog>, With<PrimaryUser>)>,
     mut prev_tab: Local<Option<SettingsTab>>,
     ipfas: IpfsAssetServer,
-    wearable_pointers: Res<WearablePointers>,
+    mut wearable_loader: CollectibleManager<Wearable>,
     mut e: EventWriter<GetOwnedWearables>,
 ) {
     if dialog.is_empty() {
@@ -197,7 +192,6 @@ fn set_wearables_content(
         if *prev_tab == Some(*tab) && !dialog.is_changed() {
             continue;
         }
-        *prev_tab = Some(*tab);
 
         if tab != &SettingsTab::Wearables {
             return;
@@ -237,16 +231,24 @@ fn set_wearables_content(
                 let body_instance =
                     WearableInstance::new(player_shape.body_shape.as_ref().unwrap())
                         .unwrap_or_else(|_| default_bodyshape_instance());
-                let body_data = wearable_pointers
-                    .get(body_instance.base())
-                    .and_then(|data| data.ok())
-                    .unwrap_or_else(|| {
-                        wearable_pointers
-                            .get(base_wearables::default_bodyshape_urn())
-                            .unwrap()
-                            .unwrap()
-                    })
-                    .clone();
+                let body = match wearable_loader.get_data(body_instance.base()) {
+                    Ok(body) => body.clone(),
+                    Err(CollectibleError::Loading) => {
+                        debug!("bail loading");
+                        return; // retry next frame
+                    }
+                    _ => {
+                        let Ok(default) =
+                            wearable_loader.get_data(base_wearables::default_bodyshape_urn())
+                        else {
+                            debug!("bail loading default");
+                            return;
+                        };
+                        default.clone()
+                    }
+                };
+
+                let mut all_loaded = true;
 
                 new_settings = WearablesSettings {
                     body_shape: body_instance.clone(),
@@ -254,16 +256,20 @@ fn set_wearables_content(
                         .wearables
                         .iter()
                         .flat_map(|w| WearableInstance::new(w).ok())
-                        .flat_map(|wearable| {
-                            wearable_pointers
-                                .get(wearable.base()) // TODO retry if not loaded?
-                                .and_then(|res| res.ok())
-                                .map(|data| (wearable, data))
+                        .flat_map(|instance| match wearable_loader.get_data(instance.base()) {
+                            Ok(w) => Some((instance, w.clone())),
+                            Err(CollectibleError::Loading) => {
+                                all_loaded = false;
+                                None
+                            }
+                            _ => None,
                         })
-                        .map(|(instance, data)| (data.meta.data.category, (instance, data.clone())))
+                        .map(|(instance, wearable)| {
+                            (wearable.extra_data.category, (instance, wearable))
+                        })
                         .chain(std::iter::once((
                             WearableCategory::BODY_SHAPE,
-                            (body_instance, body_data),
+                            (body_instance.clone(), body),
                         )))
                         .collect(),
                     only_collectibles: Default::default(),
@@ -275,6 +281,12 @@ fn set_wearables_content(
                     current_list: Default::default(),
                     current_wearable_images: Default::default(),
                 };
+
+                if !all_loaded {
+                    debug!("bail loading all");
+                    return;
+                }
+
                 commands.entity(ent).try_insert(new_settings.clone());
                 &new_settings
             }
@@ -292,11 +304,7 @@ fn set_wearables_content(
                 let wearable_img = wearable_settings
                     .current_wearables
                     .get(category)
-                    .map(|(_, data)| {
-                        ipfas
-                            .load_content_file(&data.meta.thumbnail, &data.hash)
-                            .unwrap()
-                    })
+                    .map(|(_, data)| data.thumbnail.clone())
                     .unwrap_or_else(|| empty_img.clone());
 
                 let content = commands
@@ -439,6 +447,7 @@ fn set_wearables_content(
         commands.entity(ent).try_insert(components);
 
         e.send_default();
+        *prev_tab = Some(*tab);
     }
 }
 
@@ -562,11 +571,11 @@ impl PartialEq for WearableEntry {
 }
 
 impl WearableEntry {
-    fn base(data: &WearableMetaAndHash) -> Option<Self> {
+    fn base(data: &CollectibleData<Wearable>) -> Option<Self> {
         Some(Self {
-            instance: WearableInstance::new(&data.meta.id).ok()?,
-            name: data.meta.name.clone(),
-            category: data.meta.data.category,
+            instance: WearableInstance::new(&data.urn).ok()?,
+            name: data.name.clone(),
+            category: data.extra_data.category,
             rarity: Rarity::Free,
             individual_data: Default::default(),
         })
@@ -666,27 +675,53 @@ impl Rarity {
 fn update_wearables_list(
     mut commands: Commands,
     dialog: Query<Ref<SettingsDialog>>,
-    mut q: Query<(&mut WearablesSettings, &DuiEntities, &SelectItem), Changed<WearablesSettings>>,
+    mut q: Query<(&mut WearablesSettings, &DuiEntities, &SelectItem)>,
     dui: Res<DuiRegistry>,
-    wearable_pointers: Res<WearablePointers>,
+    mut wearable_loader: CollectibleManager<Wearable>,
     asset_server: Res<AssetServer>,
     collections: Res<WearableCollections>,
+    mut retry: Local<bool>,
 ) {
     let Ok((mut settings, components, selected)) = q.get_single_mut() else {
         return;
     };
 
+    if !*retry && !settings.is_changed() {
+        debug!("not updating wearables here");
+        return;
+    }
+
     debug!("updating wearables here");
+
+    let mut all_base_loaded = true;
 
     let mut wearables = if settings.only_collectibles {
         Vec::default()
     } else {
         base_wearable_urns()
             .into_iter()
-            .filter_map(|urn| wearable_pointers.get(&urn).unwrap_or(Err(())).ok())
-            .flat_map(WearableEntry::base)
+            .filter_map(|urn| {
+                wearable_loader
+                    .get_data(&urn)
+                    .map_err(|e| {
+                        if matches!(e, CollectibleError::Loading) {
+                            all_base_loaded = false
+                        };
+                        e
+                    })
+                    .ok()
+                    .and_then(WearableEntry::base)
+            })
             .collect()
     };
+
+    if !all_base_loaded {
+        *retry = true;
+        debug!("exit due to base loads");
+        return;
+    }
+    *retry = false;
+    debug!("base loads done");
 
     wearables.extend(
         settings
@@ -850,10 +885,9 @@ pub enum WearableItemState {
 fn update_wearable_item(
     mut commands: Commands,
     mut q: Query<(Entity, &WearableEntry, &mut WearableItemState)>,
-    wearable_pointers: Res<WearablePointers>,
+    mut wearable_loader: CollectibleManager<Wearable>,
     ipfas: IpfsAssetServer,
     dui: Res<DuiRegistry>,
-    mut request_wearables: ResMut<RequestedWearables>,
     settings: Query<(Entity, &WearablesSettings)>,
     walker: DuiWalker,
 ) {
@@ -871,71 +905,59 @@ fn update_wearable_item(
             match &*state {
                 WearableItemState::PendingMeta(ix) => {
                     let ix = *ix;
-                    if let Some(result) = wearable_pointers.get(urn.base()) {
-                        match result {
-                            Ok(data) => {
-                                debug!("found {:?} -> {data:?}", entry.instance);
-                                let fits = data.meta.data.representations.iter().any(|repr| {
-                                    repr.body_shapes.iter().any(|shape| {
-                                        Ok(settings.body_shape.base())
-                                            == WearableUrn::new(shape).as_ref()
-                                    })
-                                }) || data.meta.data.category
-                                    == WearableCategory::BODY_SHAPE;
+                    match wearable_loader.get_data(urn.base()) {
+                        Ok(data) => {
+                            debug!("found {:?} -> {data:?}", entry.instance);
+                            let fits = entry.category == WearableCategory::BODY_SHAPE
+                                || data
+                                    .available_representations
+                                    .contains(settings.body_shape.base().as_str());
 
-                                *state = WearableItemState::PendingImage(
-                                    ipfas
-                                        .load_content_file(&data.meta.thumbnail, &data.hash)
-                                        .unwrap(),
-                                );
+                            *state = WearableItemState::PendingImage(data.thumbnail.clone());
 
-                                modified = true;
+                            modified = true;
 
-                                let Some(button_bg) = walker.walk(
-                                    settings_ent,
-                                    format!("items.tab {ix}.button-background"),
-                                ) else {
-                                    warn!("failed to find bg");
-                                    continue;
-                                };
+                            let Some(button_bg) = walker
+                                .walk(settings_ent, format!("items.tab {ix}.button-background"))
+                            else {
+                                warn!("failed to find bg");
+                                continue;
+                            };
 
-                                commands.entity(button_bg).try_insert(Enabled(fits));
-                            }
-                            Err(()) => {
-                                warn!("failed to load wearable");
-                                commands
-                                    .entity(ent)
-                                    .despawn_descendants()
-                                    .remove::<WearableItemState>()
-                                    .spawn_template(
-                                        &dui,
-                                        "wearable-item",
-                                        DuiProps::new()
-                                            .with_prop(
-                                                "image",
-                                                ipfas
-                                                    .asset_server()
-                                                    .load::<Image>("images/backback/empty.png"),
-                                            )
-                                            .with_prop("rarity-color", entry.rarity.hex_color()),
-                                    )
-                                    .unwrap();
-                            }
+                            commands.entity(button_bg).try_insert(Enabled(fits));
                         }
-                    } else {
-                        request_wearables.0.insert(urn.base().clone());
+                        Err(CollectibleError::Loading) => (),
+                        other => {
+                            warn!("failed to load wearable: {other:?}");
+                            commands
+                                .entity(ent)
+                                .despawn_descendants()
+                                .remove::<WearableItemState>()
+                                .spawn_template(
+                                    &dui,
+                                    "wearable-item",
+                                    DuiProps::new()
+                                        .with_prop(
+                                            "image",
+                                            ipfas
+                                                .asset_server()
+                                                .load::<Image>("images/backback/empty.png"),
+                                        )
+                                        .with_prop("rarity-color", entry.rarity.hex_color()),
+                                )
+                                .unwrap();
+                        }
                     }
                 }
                 WearableItemState::PendingImage(handle) => {
-                    let Some(Ok(data)) = wearable_pointers.get(urn.base()) else {
+                    let Ok(data) = wearable_loader.get_data(urn.base()) else {
                         panic!();
                     };
 
-                    let fits = data.meta.data.representations.iter().any(|repr| {
-                        repr.body_shapes.iter().any(|shape| {
-                            Ok(settings.body_shape.base()) == WearableUrn::new(shape).as_ref()
-                        })
-                    }) || data.meta.data.category == WearableCategory::BODY_SHAPE;
+                    let fits = entry.category == WearableCategory::BODY_SHAPE
+                        || data
+                            .available_representations
+                            .contains(settings.body_shape.base().as_str());
 
                     let (image_color, rarity_color) = if fits {
                         (Color::WHITE.to_hex_color(), entry.rarity.hex_color())
@@ -998,8 +1020,7 @@ fn update_selected_item(
     settings: Query<(Entity, Ref<WearablesSettings>, &DuiEntities, &SelectItem)>,
     avatar: Query<&AvatarShape, With<SettingsDialog>>,
     dui: Res<DuiRegistry>,
-    wearable_pointers: Res<WearablePointers>,
-    ipfas: IpfsAssetServer,
+    mut wearable_loader: CollectibleManager<Wearable>,
     mut retry: Local<bool>,
 ) {
     let Ok((settings_ent, settings, components, selection)) = settings.get_single() else {
@@ -1040,12 +1061,26 @@ fn update_selected_item(
         .collect::<HashSet<_>>();
 
     if let Some(sel) = current_selection {
-        let Some(Ok(data_ref)) = wearable_pointers.get(sel.instance.base()) else {
+        let body_shape = if sel.category == WearableCategory::BODY_SHAPE {
+            sel.instance.base().as_str()
+        } else {
+            settings.body_shape.base().as_str()
+        };
+        let Ok(wearable) = wearable_loader.get_representation(sel.instance.base(), body_shape)
+        else {
             *retry = true;
             return;
         };
+        let mut hides = wearable.hides.clone().into_iter().collect::<Vec<_>>();
+        hides.sort_unstable();
+
+        let Ok(data_ref) = wearable_loader.get_data(sel.instance.base()) else {
+            *retry = true;
+            return;
+        };
+
         let data = data_ref.clone();
-        let category = data.meta.data.category;
+        let category = sel.category;
         let instance = sel.instance.clone();
         let is_remove = worn.contains(&sel.instance);
 
@@ -1127,11 +1162,7 @@ fn update_selected_item(
                 let wearable_img = wearable_settings
                     .current_wearables
                     .get(&category)
-                    .map(|(_, data)| {
-                        ipfas
-                            .load_content_file(&data.meta.thumbnail, &data.hash)
-                            .unwrap()
-                    })
+                    .map(|(_, data)| data.thumbnail.clone())
                     .unwrap_or_else(|| empty_img.clone());
 
                 commands
@@ -1200,14 +1231,9 @@ fn update_selected_item(
                 "wearable-selection",
                 DuiProps::new()
                     .with_prop("rarity-color", sel.rarity.hex_color())
-                    .with_prop(
-                        "selection-image",
-                        ipfas
-                            .load_content_file::<Image>(&data_ref.meta.thumbnail, &data_ref.hash)
-                            .unwrap(),
-                    )
-                    .with_prop("title", data_ref.meta.name.clone())
-                    .with_prop("body", data_ref.meta.description.clone())
+                    .with_prop("selection-image", data_ref.thumbnail.clone())
+                    .with_prop("title", data_ref.name.clone())
+                    .with_prop("body", data_ref.description.clone())
                     .with_prop("label", label.to_owned())
                     .with_prop("enabled", enabled)
                     .with_prop("onclick", equip_action)
@@ -1216,9 +1242,6 @@ fn update_selected_item(
                     .with_prop("color-changed", color_picker_changed),
             )
             .unwrap();
-
-        let mut hides = Vec::from_iter(data_ref.meta.hides(settings.body_shape.base()));
-        hides.sort_unstable();
 
         for category in hides {
             let child = commands

@@ -1,21 +1,23 @@
-use std::any::TypeId;
+use std::{any::TypeId, path::PathBuf};
 
+use anyhow::anyhow;
 use bevy::{
-    asset::{LoadState, LoadedFolder},
+    asset::{AssetLoader, LoadState, LoadedFolder},
     gltf::Gltf,
     prelude::*,
-    utils::{hashbrown::HashSet, HashMap},
+    utils::HashMap,
 };
-use common::{profile::AvatarEmote, util::TaskExt};
-use comms::profile::UserProfile;
-use ipfs::{ActiveEntityTask, ContentMap, EntityDefinition, IpfsAssetServer};
+use ipfs::{
+    ipfs_path::{IpfsPath, IpfsType},
+    EntityDefinitionLoader,
+};
 use serde::{Deserialize, Serialize};
 
 use once_cell::sync::Lazy;
 
 use crate::{
     urn::{CollectibleInstance, CollectibleUrn},
-    CollectibleType,
+    Collectible, CollectibleData, CollectibleManager, CollectibleType, CollectiblesTypePlugin,
 };
 
 pub fn base_bodyshapes() -> Vec<String> {
@@ -29,31 +31,14 @@ pub struct EmotesPlugin;
 
 impl Plugin for EmotesPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<EmoteLoadData>();
-        app.init_resource::<AvatarAnimations>();
-        app.add_systems(
-            Update,
-            (
-                fetch_scene_emotes,
-                fetch_emotes,
-                fetch_emote_details,
-                load_animations,
-            ),
-        );
+        app.add_plugins(CollectiblesTypePlugin::<Emote>::default());
+        app.register_asset_loader(EmoteLoader);
+        app.add_systems(Update, (load_animations,));
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub struct EmoteMarker;
-
-impl CollectibleType for EmoteMarker {
-    fn base_collection() -> Option<&'static str> {
-        Some("urn:decentraland:off-chain:base-emotes")
-    }
-}
-
-pub type EmoteUrn = CollectibleUrn<EmoteMarker>;
-pub type EmoteInstance = CollectibleInstance<EmoteMarker>;
+pub type EmoteUrn = CollectibleUrn<Emote>;
+pub type EmoteInstance = CollectibleInstance<Emote>;
 
 impl EmoteUrn {
     pub fn scene_emote(&self) -> Option<&str> {
@@ -64,286 +49,31 @@ impl EmoteUrn {
     }
 }
 
-#[derive(Debug)]
-pub struct AvatarAnimation {
-    pub hash: Option<String>,
-    pub name: String,
-    pub description: String,
-    pub clips: HashMap<String, Handle<AnimationClip>>,
-    pub thumbnail: Option<Handle<Image>>,
-    pub repeat: bool,
-}
-
-#[derive(Resource, Default, Debug)]
-pub struct AvatarAnimations(pub HashMap<EmoteUrn, AvatarAnimation>);
-
-impl AvatarAnimations {
-    pub fn get_server(&self, urn: impl AsRef<EmoteUrn>) -> Option<&AvatarAnimation> {
-        let res = self.0.get(urn.as_ref());
-        if res.is_none() {
-            println!(
-                "failed to get {:?}, contents: {:?}",
-                urn.as_ref(),
-                self.0.keys().collect::<Vec<_>>()
-            );
-        }
-        res
-    }
-
-    pub fn get_scene_or_server(
-        &self,
-        urn: impl AsRef<EmoteUrn>,
-        load_data: &mut EmoteLoadData,
-    ) -> Option<&AvatarAnimation> {
-        let urn = urn.as_ref();
-        match self.0.get(urn) {
-            Some(anim) => Some(anim),
-            None => {
-                if urn.scene_emote().is_some() {
-                    load_data.requested_scene_emotes.insert(urn.clone());
-                }
-                None
-            }
-        }
-    }
-}
-
-#[derive(Resource, Default)]
-pub struct EmoteLoadData {
-    requested_scene_emotes: HashSet<EmoteUrn>,
-    unprocessed: Vec<EntityDefinition>,
-    loading_gltf: Vec<(EntityDefinition, Handle<Gltf>)>,
-    loaded: HashSet<EmoteUrn>,
-}
-
 #[derive(Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct EmoteMeta {
     name: String,
     description: String,
-    thumbnail: Option<String>,
+    // rarity: Rarity,
+    #[serde(rename = "emoteDataADR74")]
+    emote_extended_data: EmoteExtendedData,
+    thumbnail: String,
 }
 
-fn fetch_emotes(
-    profiles: Query<&UserProfile>,
-    mut defs: ResMut<EmoteLoadData>,
-    ipfas: IpfsAssetServer,
-    mut task: Local<Option<ActiveEntityTask>>,
-) {
-    if !ipfas.is_connected() {
-        return;
-    }
-
-    let required_emote_urns: HashSet<CollectibleUrn<EmoteMarker>> = profiles
-        .iter()
-        .flat_map(|p| p.content.avatar.emotes.as_ref())
-        .flatten()
-        .filter_map(|AvatarEmote { urn, .. }| EmoteUrn::new(urn).ok())
-        .collect::<HashSet<_>>();
-
-    if let Some(result) = task.as_mut().and_then(|t| t.complete()) {
-        match result {
-            Ok(res) => {
-                for def in res.iter() {
-                    debug!("found emote: {:#?}", def);
-                }
-
-                defs.loaded.extend(res.iter().filter_map(|def| {
-                    def.pointers
-                        .first()
-                        .cloned()
-                        .and_then(|p| EmoteUrn::try_from(p.as_str()).ok())
-                }));
-                defs.unprocessed.extend(res);
-            }
-            Err(e) => warn!("emote active entities task failed: {e}"),
-        }
-        *task = None;
-    }
-
-    if task.is_none() {
-        let missing_urns = required_emote_urns
-            .iter()
-            .filter(|urn| !defs.loaded.contains(*urn))
-            .map(ToString::to_string)
-            .collect::<Vec<_>>();
-        if !missing_urns.is_empty() {
-            debug!("fetching emotes: {missing_urns:?}");
-            *task = Some(
-                ipfas
-                    .ipfs()
-                    .active_entities(ipfs::ActiveEntitiesRequest::Pointers(missing_urns), None),
-            );
-        }
-    }
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct EmoteExtendedData {
+    representations: Vec<EmoteRepresentation>,
+    #[serde(rename = "loop")]
+    loops: bool,
 }
 
-fn fetch_scene_emotes(mut defs: ResMut<EmoteLoadData>) {
-    for scene_emote in std::mem::take(&mut defs.requested_scene_emotes) {
-        if !defs.loaded.contains(&scene_emote) {
-            // loaded, remove from requested list
-            // new
-            let Some(scene_emote) = scene_emote.scene_emote() else {
-                warn!("invalid scene emote {:?}", scene_emote);
-                continue;
-            };
-            let Some((hash, _)) = scene_emote.split_once('-') else {
-                warn!("malformed scene emote `{scene_emote}`");
-                continue;
-            };
-
-            defs.unprocessed.push(EntityDefinition {
-                id: format!("urn:decentraland:off-chain:scene-emote:{}", hash),
-                pointers: vec![format!(
-                    "urn:decentraland:off-chain:scene-emote:{}-true",
-                    hash
-                )],
-                content: ContentMap::new_single("scene_emote.glb".to_owned(), hash.to_owned()),
-                metadata: Some(
-                    serde_json::to_value(&EmoteMeta {
-                        name: format!("{}-true", hash.to_owned()),
-                        description: format!("{}-true", hash.to_owned()),
-                        thumbnail: None,
-                    })
-                    .unwrap(),
-                ),
-            });
-            defs.loaded.insert(
-                EmoteUrn::new(
-                    format!(
-                        "urn:decentraland:off-chain:scene-emote:{}-true",
-                        hash.to_owned()
-                    )
-                    .as_str(),
-                )
-                .unwrap(),
-            );
-
-            defs.unprocessed.push(EntityDefinition {
-                id: format!("urn:decentraland:off-chain:scene-emote:{}", hash),
-                pointers: vec![format!(
-                    "urn:decentraland:off-chain:scene-emote:{}-false",
-                    hash
-                )],
-                content: ContentMap::new_single("scene_emote.glb".to_owned(), hash.to_owned()),
-                metadata: Some(
-                    serde_json::to_value(&EmoteMeta {
-                        name: format!("{}-false", hash.to_owned()),
-                        description: format!("{}-false", hash.to_owned()),
-                        thumbnail: None,
-                    })
-                    .unwrap(),
-                ),
-            });
-            defs.loaded.insert(
-                EmoteUrn::new(
-                    format!(
-                        "urn:decentraland:off-chain:scene-emote:{}-false",
-                        hash.to_owned()
-                    )
-                    .as_str(),
-                )
-                .unwrap(),
-            );
-        }
-    }
-}
-
-fn fetch_emote_details(
-    mut defs: ResMut<EmoteLoadData>,
-    mut avatar_anims: ResMut<AvatarAnimations>,
-    ipfas: IpfsAssetServer,
-    gltfs: Res<Assets<Gltf>>,
-    clips: Res<Assets<AnimationClip>>,
-) {
-    for def in std::mem::take(&mut defs.unprocessed) {
-        // let metadata: EmoteMeta = def
-        //     .metadata
-        //     .and_then(|m| serde_json::from_value(m).ok())
-        //     .unwrap_or_default();
-
-        let Some(first_glb) = def
-            .content
-            .files()
-            .find(|f| f.to_lowercase().ends_with(".glb"))
-        else {
-            warn!("no glb found in emote content map");
-            continue;
-        };
-
-        ipfas
-            .ipfs()
-            .add_collection(def.id.clone(), def.content.clone(), None, None);
-        debug!("added collection {} -> {:?}", def.id, def.content);
-        debug!("loading gltf {}", first_glb);
-        let gltf = ipfas.load_content_file(first_glb, &def.id).unwrap();
-        defs.loading_gltf.push((def, gltf));
-    }
-
-    defs.loading_gltf = defs
-        .loading_gltf
-        .drain(..)
-        .flat_map(
-            |(def, h_gltf)| match ipfas.asset_server().load_state(&h_gltf) {
-                bevy::asset::LoadState::Loading => Some((def, h_gltf)),
-                bevy::asset::LoadState::Loaded => {
-                    let metadata: EmoteMeta = def
-                        .metadata
-                        .and_then(|m| serde_json::from_value(m).ok())
-                        .unwrap_or_default();
-                    let anims = &gltfs.get(h_gltf).unwrap().named_animations;
-                    let not_starting_pose_anims = anims
-                        .iter()
-                        .filter(|(name, _)| *name != "Starting_Pose")
-                        .filter(|(_, h_anim)| {
-                            clips
-                                .get(*h_anim)
-                                .map_or(false, |clip| clip.compatible_with(&Name::new("Armature")))
-                        })
-                        .collect::<Vec<_>>();
-                    if not_starting_pose_anims.len() != 1 {
-                        warn!(
-                            "{} anims has {} valid members ({:?}) of {} total",
-                            def.id,
-                            not_starting_pose_anims.len(),
-                            not_starting_pose_anims,
-                            anims.len(),
-                        );
-                    }
-                    let Some(urn) = def.pointers.first().and_then(|p| EmoteUrn::new(p).ok()) else {
-                        warn!("invalid emote pointer {:?}", def.pointers.first());
-                        return None;
-                    };
-                    if let Some(anim) = not_starting_pose_anims.first() {
-                        debug!("added emote {:?}", urn);
-                        avatar_anims.0.insert(
-                            urn,
-                            AvatarAnimation {
-                                hash: Some(def.id.clone()),
-                                name: metadata.name,
-                                description: metadata.description,
-                                clips: HashMap::from_iter(
-                                    base_bodyshapes()
-                                        .into_iter()
-                                        .map(|body| (body, anim.1.clone())),
-                                ),
-                                thumbnail: metadata
-                                    .thumbnail
-                                    .as_ref()
-                                    .map(|thumb| ipfas.load_content_file(thumb, &def.id).unwrap()),
-                                repeat: false, // TODO: parse extended data
-                            },
-                        );
-                    }
-                    None
-                }
-                bevy::asset::LoadState::NotLoaded | bevy::asset::LoadState::Failed => {
-                    warn!("failed to load animation gltf for {}", def.id);
-                    None
-                }
-            },
-        )
-        .collect();
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EmoteRepresentation {
+    pub body_shapes: Vec<String>,
+    pub main_file: String,
+    pub contents: Vec<String>,
 }
 
 #[derive(Default)]
@@ -361,8 +91,7 @@ fn load_animations(
     gltfs: Res<Assets<Gltf>>,
     mut state: Local<AnimLoadState>,
     folders: Res<Assets<LoadedFolder>>,
-    mut animations: ResMut<AvatarAnimations>,
-    mut defs: ResMut<EmoteLoadData>,
+    mut emotes: CollectibleManager<Emote>,
 ) {
     match &mut *state {
         AnimLoadState::Init => {
@@ -397,39 +126,48 @@ fn load_animations(
                                         anim.female == name,
                                     )
                                 })
-                                .unwrap_or((name.to_owned(), false, false, false));
+                                .unwrap_or((name.to_owned(), false, true, true));
 
                             let urn = EmoteUrn::new(&name).unwrap();
                             debug!("loaded default anim {:?}", urn);
 
-                            let anim = animations.0.entry(urn.clone()).or_insert_with(|| {
-                                AvatarAnimation {
-                                    hash: None,
-                                    name: name.clone(),
-                                    description: name.clone(),
-                                    clips: HashMap::from_iter(
-                                        base_bodyshapes()
-                                            .into_iter()
-                                            .map(|body| (body, h_clip.clone())),
-                                    ),
-                                    thumbnail: Some(
-                                        asset_server
-                                            .load(format!("animations/thumbnails/{name}_256.png")),
-                                    ),
-                                    repeat,
-                                }
-                            });
+                            let emote = Emote {
+                                avatar_animation: h_clip.clone(),
+                                default_repeat: repeat,
+                                props: None,
+                                prop_animation: None,
+                                sound: None,
+                            };
+
+                            let mut representations = HashMap::default();
 
                             if is_female {
-                                anim.clips
-                                    .insert(base_bodyshapes().remove(0), h_clip.clone());
+                                representations.insert(base_bodyshapes().remove(0), emote.clone());
                             }
                             if is_male {
-                                anim.clips
-                                    .insert(base_bodyshapes().remove(1), h_clip.clone());
+                                representations.insert(base_bodyshapes().remove(1), emote.clone());
                             }
-                            defs.loaded.insert(urn);
-                            debug!("added animation {name}: {anim:?} from {:?}", h_clip.path());
+
+                            let collectible = Collectible::<Emote> {
+                                data: CollectibleData {
+                                    hash: Default::default(),
+                                    urn: urn.as_str().to_string(),
+                                    thumbnail: asset_server
+                                        .load(format!("animations/thumbnails/{name}_256.png")),
+                                    available_representations: representations
+                                        .keys()
+                                        .cloned()
+                                        .collect(),
+                                    name: name.clone(),
+                                    description: Default::default(),
+                                    extra_data: (),
+                                },
+                                representations,
+                            };
+
+                            emotes.add_builtin(urn, collectible);
+
+                            debug!("added animation {name} from {:?}", h_clip.path());
                         }
                         false
                     }
@@ -494,3 +232,129 @@ static DEFAULT_ANIMATION_LOOKUP: Lazy<HashMap<&str, DefaultAnim>> = Lazy::new(||
         // "shrug" defaults
     ])
 });
+
+#[derive(PartialEq, Eq, Hash, Debug, TypePath, Clone)]
+pub struct Emote {
+    pub avatar_animation: Handle<AnimationClip>,
+    pub default_repeat: bool,
+    pub props: Option<Handle<Gltf>>,
+    pub prop_animation: Option<Handle<AnimationClip>>,
+    pub sound: Option<Handle<AudioSource>>,
+}
+
+impl CollectibleType for Emote {
+    type Meta = EmoteMeta;
+    type ExtraData = ();
+
+    fn base_collection() -> Option<&'static str> {
+        Some("urn:decentraland:off-chain:base-emotes")
+    }
+
+    fn extension() -> &'static str {
+        "emote"
+    }
+
+    fn data_extension() -> &'static str {
+        "emote_data"
+    }
+}
+
+pub struct EmoteLoader;
+
+fn content_file_path(file_path: impl Into<String>, content_hash: impl Into<String>) -> PathBuf {
+    let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+        content_hash.into(),
+        file_path.into(),
+    ));
+    PathBuf::from(&ipfs_path)
+}
+
+impl AssetLoader for EmoteLoader {
+    type Asset = Collectible<Emote>;
+
+    type Settings = ();
+
+    type Error = anyhow::Error;
+
+    fn load<'a>(
+        &'a self,
+        reader: &'a mut bevy::asset::io::Reader,
+        settings: &'a Self::Settings,
+        load_context: &'a mut bevy::asset::LoadContext,
+    ) -> bevy::utils::BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+        Box::pin(async move {
+            let mut entity = EntityDefinitionLoader
+                .load(reader, settings, load_context)
+                .await?;
+            let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
+            let meta = serde_json::from_value::<EmoteMeta>(metadata)?;
+
+            let thumbnail = load_context.load(content_file_path(&meta.thumbnail, &entity.id));
+
+            let mut representations = HashMap::default();
+
+            for representation in meta.emote_extended_data.representations.into_iter() {
+                let loaded_asset = load_context
+                    .load_direct(content_file_path(representation.main_file, &entity.id))
+                    .await?;
+
+                let gltf = loaded_asset
+                    .take::<Gltf>()
+                    .ok_or_else(|| anyhow!("emote gltf load failed"))?;
+                let avatar_animation = gltf
+                    .named_animations
+                    .iter()
+                    .find(|(name, _)| name.ends_with("_Avatar"))
+                    .map(|(_, handle)| handle)
+                    .ok_or(anyhow!("no animation"))?
+                    .clone();
+                let prop_animation = gltf
+                    .named_animations
+                    .iter()
+                    .find(|(name, _)| name.ends_with("_Prop"))
+                    .map(|(_, handle)| handle)
+                    .cloned();
+
+                let props = if !gltf.meshes.is_empty() {
+                    Some(load_context.get_label_handle("gltf"))
+                } else {
+                    None
+                };
+
+                let sound = representation
+                    .contents
+                    .iter()
+                    .find(|f| f.ends_with(".mp3") || f.ends_with(".ogg"))
+                    .map(|af| load_context.load(content_file_path(af, &entity.id)));
+
+                load_context.add_labeled_asset("gltf".to_owned(), gltf);
+
+                for body_shape in representation.body_shapes {
+                    representations.insert(
+                        body_shape.to_lowercase(),
+                        Emote {
+                            avatar_animation: avatar_animation.clone(),
+                            default_repeat: meta.emote_extended_data.loops,
+                            props: props.clone(),
+                            prop_animation: prop_animation.clone(),
+                            sound: sound.clone(),
+                        },
+                    );
+                }
+            }
+
+            Ok(Collectible {
+                data: CollectibleData {
+                    thumbnail,
+                    hash: entity.id,
+                    urn: entity.pointers.pop().unwrap_or_default(),
+                    name: meta.name,
+                    description: meta.description,
+                    available_representations: representations.keys().cloned().collect(),
+                    extra_data: (),
+                },
+                representations,
+            })
+        })
+    }
+}

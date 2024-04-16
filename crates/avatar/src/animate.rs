@@ -3,8 +3,7 @@ use std::{collections::VecDeque, time::Duration};
 use bevy::{animation::RepeatAnimation, math::Vec3Swizzles, prelude::*, utils::HashMap};
 use bevy_console::ConsoleCommand;
 use collectibles::{
-    emotes::{base_bodyshapes, AvatarAnimations, EmoteLoadData},
-    EmoteUrn,
+    emotes::base_bodyshapes, CollectibleError, CollectibleManager, Emote, EmoteUrn,
 };
 use common::{
     rpc::{RpcCall, RpcEventSender},
@@ -187,12 +186,11 @@ fn animate(
         &GlobalTransform,
     )>,
     mut players: Query<&mut AnimationPlayer>,
-    animations: Res<AvatarAnimations>,
+    mut emote_loader: CollectibleManager<Emote>,
     mut velocities: Local<HashMap<Entity, Vec3>>,
     mut playing: Local<HashMap<Entity, EmoteUrn>>,
     time: Res<Time>,
     anim_assets: Res<Assets<AnimationClip>>,
-    mut emote_load_data: ResMut<EmoteLoadData>,
 ) {
     let prior_velocities = std::mem::take(&mut *velocities);
     let prior_playing = std::mem::take(&mut *playing);
@@ -204,36 +202,38 @@ fn animate(
                     repeat: bool,
                     bodyshape: &str|
      -> bool {
-        if let Some(clip) = animations
-            .get_scene_or_server(anim, &mut emote_load_data)
-            .and_then(|anim| anim.clips.get(bodyshape))
-        {
-            if let Ok(mut player) = players.get_mut(ent) {
-                if Some(anim) != prior_playing.get(&ent) || restart {
-                    player.play_with_transition(clip.clone(), Duration::from_millis(100));
-                    if repeat {
-                        player.repeat();
-                    } else {
-                        player.set_repeat(RepeatAnimation::Never);
-                    }
-                }
+        let clip = match emote_loader.get_representation(anim, bodyshape) {
+            Ok(emote) => emote.avatar_animation.clone(),
+            Err(CollectibleError::Failed)
+            | Err(CollectibleError::Missing)
+            | Err(CollectibleError::NoRepresentation) => return true,
+            Err(CollectibleError::Loading) => return false,
+        };
 
-                if anim.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
-                    && player.elapsed() >= 0.75
-                {
-                    player.pause();
-                } else {
-                    player.resume();
-                }
+        let Ok(mut player) = players.get_mut(ent) else {
+            return false;
+        };
 
-                player.set_speed(speed);
-                playing.insert(ent, anim.to_owned());
-                return player.elapsed()
-                    >= anim_assets.get(clip).map_or(f32::MAX, |c| c.duration());
+        if Some(anim) != prior_playing.get(&ent) || restart {
+            player.play_with_transition(clip.clone(), Duration::from_millis(100));
+            if repeat {
+                player.repeat();
+            } else {
+                player.set_repeat(RepeatAnimation::Never);
             }
         }
 
-        false
+        if anim.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
+            && player.elapsed() >= 0.75
+        {
+            player.pause();
+        } else {
+            player.resume();
+        }
+
+        player.set_speed(speed);
+        playing.insert(ent, anim.to_owned());
+        player.elapsed() >= anim_assets.get(clip).map_or(f32::MAX, |c| c.duration())
     };
 
     for (avatar_ent, animplayer_ent, dynamic_state, mut emotes, profile, maybe_playing_emote, gt) in

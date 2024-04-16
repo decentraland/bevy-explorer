@@ -11,15 +11,39 @@ pub struct CollectibleUrnErr {
     value: String,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialOrd, Ord)]
 pub struct CollectibleUrn<T: CollectibleType> {
     urn: String,
     _p: PhantomData<fn() -> T>,
 }
 
+impl<T: CollectibleType> PartialEq for CollectibleUrn<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.urn == other.urn && self._p == other._p
+    }
+}
+
+impl<T: CollectibleType> Eq for CollectibleUrn<T> {}
+
 impl<T: CollectibleType> std::fmt::Display for CollectibleUrn<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.urn.fmt(f)
+    }
+}
+
+impl<T: CollectibleType> std::hash::Hash for CollectibleUrn<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.urn.hash(state);
+        self._p.hash(state);
+    }
+}
+
+impl<T: CollectibleType> Clone for CollectibleUrn<T> {
+    fn clone(&self) -> Self {
+        Self {
+            urn: self.urn.clone(),
+            _p: self._p,
+        }
     }
 }
 
@@ -149,10 +173,34 @@ impl<T: CollectibleType> CollectibleUrn<T> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Clone)]
+#[derive(Debug)]
 pub struct CollectibleInstance<T: CollectibleType> {
     base: CollectibleUrn<T>,
     token: Option<String>,
+}
+
+impl<T: CollectibleType> PartialEq for CollectibleInstance<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.base == other.base && self.token == other.token
+    }
+}
+
+impl<T: CollectibleType> Eq for CollectibleInstance<T> {}
+
+impl<T: CollectibleType> std::hash::Hash for CollectibleInstance<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.base.hash(state);
+        self.token.hash(state);
+    }
+}
+
+impl<T: CollectibleType> Clone for CollectibleInstance<T> {
+    fn clone(&self) -> Self {
+        Self {
+            base: self.base.clone(),
+            token: self.token.clone(),
+        }
+    }
 }
 
 impl<T: CollectibleType> TryFrom<&str> for CollectibleInstance<T> {

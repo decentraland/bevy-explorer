@@ -7,7 +7,7 @@ use bevy::{
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use collectibles::{emotes::AvatarAnimations, EmoteUrn};
+use collectibles::{CollectibleManager, Emote, EmoteUrn};
 use common::structs::PrimaryUser;
 use comms::profile::CurrentUserProfile;
 use ui_core::{
@@ -222,7 +222,7 @@ fn show_emote_ui(
     dui: Res<DuiRegistry>,
     window: Query<&Window, With<PrimaryWindow>>,
     profile: Res<CurrentUserProfile>,
-    emotes: Res<AvatarAnimations>,
+    mut emote_loader: CollectibleManager<Emote>,
     asset_server: Res<AssetServer>,
     buttons: Query<(&EmoteButton, &Interaction)>,
     player: Query<Entity, With<PrimaryUser>>,
@@ -267,10 +267,10 @@ fn show_emote_ui(
 
             let h_thumb = EmoteUrn::new(&emote.urn)
                 .ok()
-                .and_then(|emote_urn| emotes.get_server(emote_urn))
-                .and_then(|anim| anim.thumbnail.clone())
+                .and_then(|emote_urn| emote_loader.get_data(emote_urn).ok())
+                .map(|anim| anim.thumbnail.clone())
                 .unwrap_or_else(|| {
-                    debug!("didn't find {} in {:?}", emote.urn, emotes);
+                    debug!("didn't find {}", emote.urn);
                     asset_server.load("images/redx.png")
                 });
             props.insert_prop(format!("image_{}", emote.slot), h_thumb.clone())
@@ -297,7 +297,7 @@ fn show_emote_ui(
             let button = buttons.named(format!("emote_{}", emote.slot).as_str());
             let name = EmoteUrn::new(&emote.urn)
                 .ok()
-                .and_then(|emote| emotes.get_server(emote))
+                .and_then(|emote| emote_loader.get_data(emote).ok())
                 .map(|e| e.name.clone())
                 .unwrap_or("???".to_owned());
             let name2 = name.clone();
