@@ -275,12 +275,13 @@ fn show_emote_ui(
 
             let h_thumb = EmoteUrn::new(&emote.urn)
                 .ok()
-                .and_then(|emote_urn| {
-                    match emote_loader.get_data(emote_urn) {
-                        Ok(d) => Some(d),
-                        Err(CollectibleError::Loading) => {all_loaded = false; None},
-                        _ => None,
+                .and_then(|emote_urn| match emote_loader.get_data(emote_urn) {
+                    Ok(d) => Some(d),
+                    Err(CollectibleError::Loading) => {
+                        all_loaded = false;
+                        None
                     }
+                    _ => None,
                 })
                 .map(|anim| anim.thumbnail.clone())
                 .unwrap_or_else(|| {

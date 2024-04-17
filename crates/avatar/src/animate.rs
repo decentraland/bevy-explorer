@@ -184,16 +184,18 @@ pub struct ActiveEmote {
     restart: bool,
     repeat: bool,
     finished: bool,
+    transition_seconds: f32,
 }
 
 impl Default for ActiveEmote {
     fn default() -> Self {
         Self {
             urn: EmoteUrn::new("idle_male").unwrap(),
-            speed: Default::default(),
-            restart: Default::default(),
-            repeat: Default::default(),
-            finished: Default::default(),
+            speed: 1.0,
+            restart: false,
+            repeat: false,
+            finished: false,
+            transition_seconds: 0.2,
         }
     }
 }
@@ -269,75 +271,81 @@ fn animate(
                     "clear on motion {} > {}",
                     damped_velocity_len, playing_min_vel
                 );
+                if let Some(emotes) = emotes.as_mut() {
+                    emotes.clear();
+                }
                 requested_emote = None;
             } else {
                 current_emote_min_velocities
                     .insert(avatar_ent, damped_velocity_len.min(playing_min_vel));
             }
+
+            if active_emote.finished && !emotes_changed {
+                debug!("finished emoting {:?}", active_emote.urn);
+                requested_emote = None;
+
+                if let Some(emotes) = emotes.as_mut() {
+                    emotes.clear();
+                }
+            }
         } else {
             current_emote_min_velocities.insert(avatar_ent, damped_velocity_len);
         }
 
-        // clear given emotes if finished or cancelled
-        if active_emote.finished || requested_emote.is_none() {
-            if let Some(emotes) = emotes.as_mut() {
-                emotes.clear();
-            }
-            requested_emote = None;
-        };
-
         // play requested emote
-        if let Some(requested_emote) = requested_emote {
-            *active_emote = ActiveEmote {
+        *active_emote = if let Some(requested_emote) = requested_emote {
+            if emotes_changed {
+                debug!("starting emoting {:?}", requested_emote);
+            }
+            ActiveEmote {
                 urn: requested_emote,
-                speed: 1.0,
                 restart: emotes_changed,
                 repeat: request_loop,
-                finished: false,
-            };
-            continue;
-        }
-
-        // otherwise play a default emote baesd on motion
-        if dynamic_state.ground_height > 0.2 {
-            *active_emote = ActiveEmote {
-                urn: EmoteUrn::new("jump").unwrap(),
-                speed: 1.25,
-                restart: dynamic_state.velocity.y > 0.0,
-                repeat: true,
-                finished: false,
-            };
-            continue;
-        }
-
-        let directional_velocity_len = (damped_velocity * (Vec3::X + Vec3::Z)).dot(gt.forward());
-
-        if damped_velocity_len.abs() > 0.1 {
-            if damped_velocity_len.abs() < 2.0 {
-                *active_emote = ActiveEmote {
-                    urn: EmoteUrn::new("walk").unwrap(),
-                    speed: directional_velocity_len / 1.5,
-                    restart: false,
-                    repeat: true,
-                    finished: false,
-                };
-            } else {
-                *active_emote = ActiveEmote {
-                    urn: EmoteUrn::new("run").unwrap(),
-                    speed: directional_velocity_len / 4.5,
-                    restart: false,
-                    repeat: true,
-                    finished: false,
-                };
+                ..Default::default()
             }
         } else {
-            *active_emote = ActiveEmote {
-                urn: EmoteUrn::new("idle_male").unwrap(),
-                speed: 1.0,
-                restart: false,
-                repeat: true,
-                finished: false,
-            };
+            // otherwise play a default emote baesd on motion
+            if dynamic_state.ground_height > 0.2 {
+                ActiveEmote {
+                    urn: EmoteUrn::new("jump").unwrap(),
+                    speed: 1.25,
+                    // restart: dynamic_state.velocity.y > 0.0,
+                    repeat: true,
+                    transition_seconds: 0.1,
+                    ..Default::default()
+                }
+            } else {
+                let directional_velocity_len =
+                    (damped_velocity * (Vec3::X + Vec3::Z)).dot(gt.forward());
+
+                if damped_velocity_len.abs() > 0.1 {
+                    if damped_velocity_len.abs() < 2.0 {
+                        ActiveEmote {
+                            urn: EmoteUrn::new("walk").unwrap(),
+                            speed: directional_velocity_len / 1.5,
+                            restart: false,
+                            repeat: true,
+                            ..Default::default()
+                        }
+                    } else {
+                        ActiveEmote {
+                            urn: EmoteUrn::new("run").unwrap(),
+                            speed: directional_velocity_len / 4.5,
+                            restart: false,
+                            repeat: true,
+                            ..Default::default()
+                        }
+                    }
+                } else {
+                    ActiveEmote {
+                        urn: EmoteUrn::new("idle_male").unwrap(),
+                        speed: 1.0,
+                        restart: false,
+                        repeat: true,
+                        ..Default::default()
+                    }
+                }
+            }
         }
     }
 }
@@ -403,6 +411,7 @@ fn play_current_emote(
 
         if let Some(scene_emote) = active_emote.urn.scene_emote() {
             let Some((hash, _)) = scene_emote.split_once('-') else {
+                debug!("failed to split scene emote {scene_emote:?}");
                 active_emote.finished = true;
                 continue;
             };
@@ -485,8 +494,7 @@ fn play_current_emote(
                 );
                 active_emote.finished = true;
                 continue;
-    
-            },
+            }
             Ok(Some(clip)) => clip,
         };
 
@@ -502,7 +510,10 @@ fn play_current_emote(
                     continue;
                 }
 
-                let scene_rotated = spawned_extras.get_mut(&entity).map(|extras| &mut extras.scene_rotated).unwrap();
+                let scene_rotated = spawned_extras
+                    .get_mut(&entity)
+                    .map(|extras| &mut extras.scene_rotated)
+                    .unwrap();
                 if !*scene_rotated {
                     for spawned_ent in scene_spawner.iter_instance_entities(instance) {
                         if let Ok((transform, parent)) = transform_and_parent.get(spawned_ent) {
@@ -510,8 +521,10 @@ fn play_current_emote(
                                 // children of root nodes -> rotate
                                 if parent.get() == entity {
                                     let mut rotated = *transform;
-                                    rotated
-                                        .rotate_around(Vec3::ZERO, Quat::from_rotation_y(std::f32::consts::PI));
+                                    rotated.rotate_around(
+                                        Vec3::ZERO,
+                                        Quat::from_rotation_y(std::f32::consts::PI),
+                                    );
                                     commands.entity(spawned_ent).try_insert(rotated);
                                 }
                             }
@@ -525,12 +538,11 @@ fn play_current_emote(
                         continue;
                     };
 
-                    if let Some(prop_player) = scene_spawner
-                        .iter_instance_entities(instance)
-                        .find(|ent| {
-                            players.get(*ent).map_or(false, |(_, name)| {
-                                clip.compatible_with(name)
-                            })
+                    if let Some(prop_player) =
+                        scene_spawner.iter_instance_entities(instance).find(|ent| {
+                            players
+                                .get(*ent)
+                                .map_or(false, |(_, name)| clip.compatible_with(name))
                         })
                     {
                         prop_player_and_clip = Some((prop_player, prop_clip));
@@ -575,13 +587,15 @@ fn play_current_emote(
             }
         }
 
-        let end_duration = animations.get(clip.id()).map_or(f32::MAX, |c| c.duration());
-
         let play = |player: &mut AnimationPlayer,
                     clip: Handle<AnimationClip>,
                     active_emote: &ActiveEmote| {
             if Some(&active_emote.urn) != prior_playing.get(&ent) || active_emote.restart {
-                player.play_with_transition(clip.clone(), Duration::from_millis(100));
+                player.play_with_transition(
+                    clip.clone(),
+                    Duration::from_secs_f32(active_emote.transition_seconds),
+                );
+                player.seek_to(0.0);
                 if active_emote.repeat {
                     player.repeat();
                 } else {
@@ -598,15 +612,29 @@ fn play_current_emote(
             }
 
             player.set_speed(active_emote.speed);
+            // on my version of bevy animator this means "should go back to starting position when finished"
+            player.set_should_reset(false);
         };
 
         let Ok((mut player, _)) = players.get_mut(ent) else {
+            debug!("no player");
             active_emote.finished = true;
             continue;
         };
-        play(&mut player, clip, &active_emote);
+        play(&mut player, clip.clone(), &active_emote);
         active_emote.restart = false;
-        active_emote.finished = player.elapsed() >= end_duration;
+
+        if !active_emote.finished && player.is_finished() {
+            debug!("finished on seek time: {}", player.seek_time());
+            // we have to mess around to allow transitions to still apply even though the animation is finished.
+            // assuming a new animation is `play_with_transition`ed next frame, the speed and seek position
+            // here will only apply to the outgoing animation, and will allow it to be transitioned out smoothly.
+            // otherwise if we let it run to actual completion then it applies no weight when it is the outgoing transition.
+            let seek_time = player.seek_time() - 0.0001;
+            player.seek_to(seek_time);
+            player.set_speed(0.0);
+            active_emote.finished = true;
+        }
 
         if let Some((prop_player_ent, clip)) = prop_player_and_clip {
             if let Ok((mut player, _)) = players.get_mut(prop_player_ent) {
