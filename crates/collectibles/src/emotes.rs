@@ -1,16 +1,10 @@
-use std::{any::TypeId, path::PathBuf};
+use std::any::TypeId;
 
 use anyhow::anyhow;
 use bevy::{
-    asset::{AssetLoader, LoadState, LoadedFolder},
-    gltf::Gltf,
-    prelude::*,
-    utils::HashMap,
+    asset::{AssetLoader, LoadState, LoadedFolder}, gltf::Gltf, prelude::*, utils::HashMap
 };
-use ipfs::{
-    ipfs_path::{IpfsPath, IpfsType},
-    EntityDefinitionLoader,
-};
+use ipfs::EntityDefinitionLoader;
 use serde::{Deserialize, Serialize};
 
 use once_cell::sync::Lazy;
@@ -265,6 +259,29 @@ impl Emote {
             .map(|(_, handle)| handle)
             .cloned()
     }
+
+    pub fn prop_scene(&self, gltfs: &Assets<Gltf>) -> Option<Handle<Gltf>> {
+        let gltf = gltfs.get(self.gltf.id())?;
+        if gltf.meshes.is_empty() {
+            None
+        } else {
+            Some(self.gltf.clone())
+        }
+    }
+
+    pub fn prop_anim(&self, gltfs: &Assets<Gltf>) -> Option<Handle<AnimationClip>> {
+        gltfs
+            .get(self.gltf.id())?
+            .named_animations
+            .iter()
+            .find(|(name, _)| name.ends_with("_Prop"))
+            .map(|(_, handle)| handle)
+            .cloned()
+    }
+
+    pub fn audio(&self) -> Option<Handle<AudioSource>> {
+        self.sound.clone()
+    }
 }
 
 impl CollectibleType for Emote {
@@ -286,14 +303,6 @@ impl CollectibleType for Emote {
 
 pub struct EmoteLoader;
 
-fn content_file_path(file_path: impl Into<String>, content_hash: impl Into<String>) -> PathBuf {
-    let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
-        content_hash.into(),
-        file_path.into(),
-    ));
-    PathBuf::from(&ipfs_path)
-}
-
 impl AssetLoader for EmoteLoader {
     type Asset = Collectible<Emote>;
 
@@ -314,18 +323,18 @@ impl AssetLoader for EmoteLoader {
             let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
             let meta = serde_json::from_value::<EmoteMeta>(metadata)?;
 
-            let thumbnail = load_context.load(content_file_path(&meta.thumbnail, &entity.id));
+            let thumbnail = load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
 
             let mut representations = HashMap::default();
 
             for representation in meta.emote_extended_data.representations.into_iter() {
-                let gltf = load_context.load(content_file_path(representation.main_file, &entity.id));
+                let gltf = load_context.load(load_context.path().parent().unwrap().join(&representation.main_file));
 
                 let sound = representation
                     .contents
                     .iter()
                     .find(|f| f.ends_with(".mp3") || f.ends_with(".ogg"))
-                    .map(|af| load_context.load(content_file_path(af, &entity.id)));
+                    .map(|af| load_context.load(load_context.path().parent().unwrap().join(af)));
 
                 for body_shape in representation.body_shapes {
                     representations.insert(
@@ -377,7 +386,7 @@ impl AssetLoader for EmoteMetaLoader {
             let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
             let meta = serde_json::from_value::<EmoteMeta>(metadata)?;
 
-            let thumbnail = load_context.load(content_file_path(&meta.thumbnail, &entity.id));
+            let thumbnail = load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
 
             let available_representations = meta
                 .emote_extended_data

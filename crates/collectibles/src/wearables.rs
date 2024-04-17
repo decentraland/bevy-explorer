@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr};
+use std::str::FromStr;
 
 use crate::{
     urn::{CollectibleInstance, CollectibleUrn},
@@ -18,10 +18,7 @@ use isahc::AsyncReadResponseExt;
 use serde::Deserialize;
 
 use common::util::TaskExt;
-use ipfs::{
-    ipfs_path::{IpfsPath, IpfsType},
-    EntityDefinitionLoader,
-};
+use ipfs::EntityDefinitionLoader;
 
 pub struct WearablePlugin;
 
@@ -273,14 +270,6 @@ impl CollectibleType for Wearable {
     }
 }
 
-fn content_file_path(file_path: impl Into<String>, content_hash: impl Into<String>) -> PathBuf {
-    let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
-        content_hash.into(),
-        file_path.into(),
-    ));
-    PathBuf::from(&ipfs_path)
-}
-
 struct WearableLoader;
 
 impl AssetLoader for WearableLoader {
@@ -304,7 +293,7 @@ impl AssetLoader for WearableLoader {
             let meta = serde_json::from_value::<WearableMeta>(metadata)?;
 
             let category = meta.data.category;
-            let thumbnail = load_context.load(content_file_path(&meta.thumbnail, &entity.id));
+            let thumbnail = load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
 
             let mut representations = HashMap::default();
 
@@ -318,12 +307,12 @@ impl AssetLoader for WearableLoader {
                             f.to_lowercase().ends_with(".png")
                                 && !f.to_lowercase().ends_with("_mask.png")
                         })
-                        .map(|f| load_context.load(content_file_path(f, &entity.id)));
+                        .map(|f| load_context.load(load_context.path().parent().unwrap().join(f)));
                     let mask = representation
                         .contents
                         .iter()
                         .find(|f| f.to_lowercase().ends_with("_mask.png"))
-                        .map(|f| load_context.load(content_file_path(f, &entity.id)));
+                        .map(|f| load_context.load(load_context.path().parent().unwrap().join(f)));
 
                     (None, texture, mask)
                 } else {
@@ -335,7 +324,7 @@ impl AssetLoader for WearableLoader {
                     }
 
                     let model = load_context.load_with_settings::<Gltf, GltfLoaderSettings>(
-                        content_file_path(&representation.main_file, &entity.id),
+                        load_context.path().parent().unwrap().join(&representation.main_file),
                         |s| {
                             s.load_cameras = false;
                             s.load_lights = false;
@@ -429,7 +418,7 @@ impl AssetLoader for WearableMetaLoader {
             let meta = serde_json::from_value::<WearableMeta>(metadata)?;
 
             let category = meta.data.category;
-            let thumbnail = load_context.load(content_file_path(&meta.thumbnail, &entity.id));
+            let thumbnail = load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
 
             let available_representations = meta
                 .data
