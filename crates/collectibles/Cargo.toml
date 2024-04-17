@@ -15,6 +15,7 @@ scene_runner = { workspace = true }
 ipfs = { workspace = true }
 
 bevy = { workspace = true }
+bevy_kira_audio = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

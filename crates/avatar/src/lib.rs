@@ -861,7 +861,7 @@ fn process_avatar(
                 if let Some(clip) = emote_loader
                     .get_representation(EmoteUrn::new("Idle_Male").unwrap(), &def.body_shape)
                     .ok()
-                    .and_then(|rep| rep.avatar_animation(&gltfs))
+                    .and_then(|rep| rep.avatar_animation(&gltfs).ok()).flatten()
                 {
                     player.start(clip.clone());
                 }

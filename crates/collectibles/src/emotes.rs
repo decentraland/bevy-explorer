@@ -14,7 +14,8 @@ use once_cell::sync::Lazy;
 
 use crate::{
     urn::{CollectibleInstance, CollectibleUrn},
-    Collectible, CollectibleData, CollectibleManager, CollectibleType, CollectiblesTypePlugin,
+    Collectible, CollectibleData, CollectibleError, CollectibleManager, CollectibleType,
+    CollectiblesTypePlugin,
 };
 
 pub fn base_bodyshapes() -> Vec<String> {
@@ -252,41 +253,64 @@ static DEFAULT_ANIMATION_LOOKUP: Lazy<HashMap<&str, DefaultAnim>> = Lazy::new(||
 pub struct Emote {
     pub gltf: Handle<Gltf>,
     pub default_repeat: bool,
-    pub sound: Option<Handle<AudioSource>>,
+    pub sound: Option<Handle<bevy_kira_audio::AudioSource>>,
 }
 
 impl Emote {
-    pub fn avatar_animation(&self, gltfs: &Assets<Gltf>) -> Option<Handle<AnimationClip>> {
-        gltfs
-            .get(self.gltf.id())?
+    pub fn avatar_animation(
+        &self,
+        gltfs: &Assets<Gltf>,
+    ) -> Result<Option<Handle<AnimationClip>>, CollectibleError> {
+        Ok(gltfs
+            .get(self.gltf.id())
+            .ok_or(CollectibleError::Loading)?
             .named_animations
             .iter()
             .find(|(name, _)| name.ends_with("_Avatar"))
             .map(|(_, handle)| handle)
-            .cloned()
+            .cloned())
     }
 
-    pub fn prop_scene(&self, gltfs: &Assets<Gltf>) -> Option<Handle<Gltf>> {
-        let gltf = gltfs.get(self.gltf.id())?;
-        if gltf.meshes.is_empty() {
+    pub fn prop_scene(
+        &self,
+        gltfs: &Assets<Gltf>,
+    ) -> Result<Option<Handle<Scene>>, CollectibleError> {
+        let gltf = gltfs.get(self.gltf.id()).ok_or(CollectibleError::Loading)?;
+        Ok(if gltf.meshes.is_empty() {
             None
         } else {
-            Some(self.gltf.clone())
-        }
+            gltf.default_scene.clone()
+        })
     }
 
-    pub fn prop_anim(&self, gltfs: &Assets<Gltf>) -> Option<Handle<AnimationClip>> {
-        gltfs
-            .get(self.gltf.id())?
+    pub fn prop_anim(
+        &self,
+        gltfs: &Assets<Gltf>,
+    ) -> Result<Option<Handle<AnimationClip>>, CollectibleError> {
+        Ok(gltfs
+            .get(self.gltf.id())
+            .ok_or(CollectibleError::Loading)?
             .named_animations
             .iter()
             .find(|(name, _)| name.ends_with("_Prop"))
             .map(|(_, handle)| handle)
-            .cloned()
+            .cloned())
     }
 
-    pub fn audio(&self) -> Option<Handle<AudioSource>> {
-        self.sound.clone()
+    pub fn audio(
+        &self,
+        audio: &Assets<bevy_kira_audio::AudioSource>,
+    ) -> Result<Option<Handle<bevy_kira_audio::AudioSource>>, CollectibleError> {
+        self.sound
+            .as_ref()
+            .map(|s| {
+                if audio.get(s.id()).is_some() {
+                    Ok(Some(s.clone()))
+                } else {
+                    Err(CollectibleError::Loading)
+                }
+            })
+            .unwrap_or(Ok(None))
     }
 }
 
