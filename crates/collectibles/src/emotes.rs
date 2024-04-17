@@ -2,7 +2,10 @@ use std::any::TypeId;
 
 use anyhow::anyhow;
 use bevy::{
-    asset::{AssetLoader, LoadState, LoadedFolder}, gltf::Gltf, prelude::*, utils::HashMap
+    asset::{AssetLoader, LoadState, LoadedFolder},
+    gltf::Gltf,
+    prelude::*,
+    utils::HashMap,
 };
 use ipfs::EntityDefinitionLoader;
 use serde::{Deserialize, Serialize};
@@ -124,7 +127,10 @@ fn load_animations(
                                 .unwrap_or((name.to_owned(), false, true, true));
 
                             let new_gltf = Gltf {
-                                named_animations: HashMap::from_iter([("_Avatar".to_owned(), h_clip.clone())]),
+                                named_animations: HashMap::from_iter([(
+                                    "_Avatar".to_owned(),
+                                    h_clip.clone(),
+                                )]),
                                 scenes: Default::default(),
                                 named_scenes: Default::default(),
                                 meshes: Default::default(),
@@ -135,7 +141,7 @@ fn load_animations(
                                 named_nodes: Default::default(),
                                 default_scene: Default::default(),
                                 animations: Default::default(),
-                                source: Default::default(),                                
+                                source: Default::default(),
                             };
                             let new_gltf = gltfs.add(new_gltf);
 
@@ -323,12 +329,19 @@ impl AssetLoader for EmoteLoader {
             let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
             let meta = serde_json::from_value::<EmoteMeta>(metadata)?;
 
-            let thumbnail = load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
+            let thumbnail =
+                load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
 
             let mut representations = HashMap::default();
 
             for representation in meta.emote_extended_data.representations.into_iter() {
-                let gltf = load_context.load(load_context.path().parent().unwrap().join(&representation.main_file));
+                let gltf = load_context.load(
+                    load_context
+                        .path()
+                        .parent()
+                        .unwrap()
+                        .join(&representation.main_file),
+                );
 
                 let sound = representation
                     .contents
@@ -386,7 +399,8 @@ impl AssetLoader for EmoteMetaLoader {
             let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
             let meta = serde_json::from_value::<EmoteMeta>(metadata)?;
 
-            let thumbnail = load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
+            let thumbnail =
+                load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
 
             let available_representations = meta
                 .emote_extended_data

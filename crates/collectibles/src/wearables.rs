@@ -293,7 +293,8 @@ impl AssetLoader for WearableLoader {
             let meta = serde_json::from_value::<WearableMeta>(metadata)?;
 
             let category = meta.data.category;
-            let thumbnail = load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
+            let thumbnail =
+                load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
 
             let mut representations = HashMap::default();
 
@@ -324,7 +325,11 @@ impl AssetLoader for WearableLoader {
                     }
 
                     let model = load_context.load_with_settings::<Gltf, GltfLoaderSettings>(
-                        load_context.path().parent().unwrap().join(&representation.main_file),
+                        load_context
+                            .path()
+                            .parent()
+                            .unwrap()
+                            .join(&representation.main_file),
                         |s| {
                             s.load_cameras = false;
                             s.load_lights = false;
@@ -418,7 +423,8 @@ impl AssetLoader for WearableMetaLoader {
             let meta = serde_json::from_value::<WearableMeta>(metadata)?;
 
             let category = meta.data.category;
-            let thumbnail = load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
+            let thumbnail =
+                load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
 
             let available_representations = meta
                 .data

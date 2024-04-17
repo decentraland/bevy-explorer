@@ -63,8 +63,8 @@ pub enum PointerResult<T: CollectibleType> {
 
 #[derive(Asset, TypePath)]
 pub struct Collectible<T: CollectibleType> {
-    representations: HashMap<String, T>,
-    data: CollectibleData<T>,
+    pub representations: HashMap<String, T>,
+    pub data: CollectibleData<T>,
 }
 
 #[derive(Debug, Asset, TypePath)]
@@ -106,7 +106,12 @@ impl<T: CollectibleType> Collectibles<T> {
         self.cache
             .retain(|urn, (expiry, _)| *expiry >= frame || f(urn));
         if self.cache.len() != count {
-            debug!("{}/{} {} remain", self.cache.len(), count, std::any::type_name::<T>());
+            debug!(
+                "{}/{} {} remain",
+                self.cache.len(),
+                count,
+                std::any::type_name::<T>()
+            );
         }
     }
 }

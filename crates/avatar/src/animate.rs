@@ -1,11 +1,16 @@
 use std::{collections::VecDeque, time::Duration};
 
 use bevy::{
-    animation::RepeatAnimation, gltf::Gltf, math::Vec3Swizzles, prelude::*, utils::HashMap,
+    animation::RepeatAnimation,
+    gltf::Gltf,
+    math::Vec3Swizzles,
+    prelude::*,
+    utils::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
 use collectibles::{
-    emotes::base_bodyshapes, CollectibleError, CollectibleManager, Emote, EmoteUrn,
+    emotes::base_bodyshapes, Collectible, CollectibleData, CollectibleError, CollectibleManager,
+    Emote, EmoteUrn,
 };
 use common::{
     rpc::{RpcCall, RpcEventSender},
@@ -27,6 +32,7 @@ use dcl_component::{
     },
     SceneComponentId,
 };
+use ipfs::IpfsAssetServer;
 use scene_runner::{
     update_world::{transform_and_parent::ParentPositionSync, AddCrdtInterfaceExt},
     ContainerEntity, ContainingScene,
@@ -251,7 +257,10 @@ fn animate(
 
         // check / cancel requested emote
         if Some(&active_emote.urn) == requested_emote.as_ref() {
-            let playing_min_vel = prior_min_velocities.get(&avatar_ent).copied().unwrap_or_default();
+            let playing_min_vel = prior_min_velocities
+                .get(&avatar_ent)
+                .copied()
+                .unwrap_or_default();
             if damped_velocity_len * 0.9 > playing_min_vel {
                 // stop emotes on move
                 debug!(
@@ -260,7 +269,8 @@ fn animate(
                 );
                 requested_emote = None;
             } else {
-                current_emote_min_velocities.insert(avatar_ent, damped_velocity_len.min(playing_min_vel));
+                current_emote_min_velocities
+                    .insert(avatar_ent, damped_velocity_len.min(playing_min_vel));
             }
         } else {
             current_emote_min_velocities.insert(avatar_ent, damped_velocity_len);
@@ -330,13 +340,16 @@ fn animate(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn play_current_emote(
     mut q: Query<(&mut ActiveEmote, &UserProfile, &AvatarAnimPlayer)>,
     mut emote_loader: CollectibleManager<Emote>,
-    gltfs: Res<Assets<Gltf>>,
+    mut gltfs: ResMut<Assets<Gltf>>,
     animations: Res<Assets<AnimationClip>>,
     mut players: Query<&mut AnimationPlayer>,
     mut playing: Local<HashMap<Entity, EmoteUrn>>,
+    ipfas: IpfsAssetServer,
+    mut cached_gltf_handles: Local<HashSet<Handle<Gltf>>>,
 ) {
     let prior_playing = std::mem::take(&mut *playing);
 
@@ -344,14 +357,72 @@ fn play_current_emote(
         let ent = target_entity.0;
         let bodyshape = base_bodyshapes().remove(if profile.is_female() { 0 } else { 1 });
 
-        // if let Some(scene_emote) = active_emote.urn.scene_emote() {
+        if let Some(scene_emote) = active_emote.urn.scene_emote() {
+            let Some((hash, _)) = scene_emote.split_once('-') else {
+                active_emote.finished = true;
+                continue;
+            };
 
-        // }
+            if emote_loader
+                .get_representation(&active_emote.urn, bodyshape.as_str())
+                .is_err()
+            {
+                // load the gltf
+                let handle = ipfas.load_hash::<Gltf>(hash);
+                let Some(gltf) = gltfs.get_mut(handle.id()) else {
+                    if !cached_gltf_handles.contains(&handle) {
+                        cached_gltf_handles.insert(handle);
+                    }
+                    continue;
+                };
+
+                // fix up the gltf if possible/required
+                if !gltf.named_animations.keys().any(|k| k.ends_with("_Avatar")) {
+                    let Some(anim) = gltf.animations.first() else {
+                        warn!("scene emote has no animations");
+                        active_emote.finished = true;
+                        continue;
+                    };
+
+                    gltf.named_animations.insert("_Avatar".to_owned(), anim.clone());
+                }
+
+                // add repr
+                emote_loader.add_builtin(
+                    active_emote.urn.clone(),
+                    Collectible {
+                        representations: HashMap::from_iter([(
+                            bodyshape.to_owned(),
+                            Emote {
+                                gltf: handle,
+                                default_repeat: false,
+                                sound: None,
+                            },
+                        )]),
+                        data: CollectibleData::<Emote> {
+                            hash: hash.to_owned(),
+                            urn: active_emote.urn.as_str().to_owned(),
+                            thumbnail: ipfas.asset_server().load("images/redx.png"),
+                            available_representations: HashSet::from_iter([bodyshape.to_owned()]),
+                            name: active_emote.urn.to_string(),
+                            description: active_emote.urn.to_string(),
+                            extra_data: (),
+                        },
+                    },
+                );
+            }
+        }
 
         let clip = match emote_loader.get_representation(&active_emote.urn, bodyshape.as_str()) {
             Ok(emote) => {
                 let Some(clip) = emote.avatar_animation(&gltfs) else {
                     debug!("{} -> no clip", active_emote.urn);
+                    debug!(
+                        "available : {:?}",
+                        gltfs
+                            .get(emote.gltf.id())
+                            .map(|gltf| gltf.named_animations.keys().collect::<Vec<_>>())
+                    );
                     continue;
                 };
 
@@ -383,7 +454,8 @@ fn play_current_emote(
             }
         }
 
-        if active_emote.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump" && player.elapsed() >= 0.75
+        if active_emote.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
+            && player.elapsed() >= 0.75
         {
             player.pause();
         } else {
