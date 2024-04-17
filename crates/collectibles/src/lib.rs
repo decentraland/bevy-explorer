@@ -15,7 +15,7 @@ use bevy::{
 use common::util::TaskExt;
 pub use emotes::*;
 use ipfs::{
-    ipfs_path::{IpfsAsset, IpfsPath, IpfsType},
+    ipfs_path::{IpfsPath, IpfsType},
     ActiveEntityTask, IpfsAssetServer, IpfsModifier,
 };
 use serde::Deserialize;
@@ -89,18 +89,6 @@ impl<T: CollectibleType> Clone for CollectibleData<T> {
             description: self.description.clone(),
             extra_data: self.extra_data.clone(),
         }
-    }
-}
-
-impl<T: CollectibleType> IpfsAsset for Collectible<T> {
-    fn ext() -> &'static str {
-        T::extension()
-    }
-}
-
-impl<T: CollectibleType> IpfsAsset for CollectibleData<T> {
-    fn ext() -> &'static str {
-        T::data_extension()
     }
 }
 
