@@ -5,7 +5,7 @@ use bevy::{
     asset::{AssetLoader, LoadState, LoadedFolder},
     gltf::Gltf,
     prelude::*,
-    utils::HashMap,
+    utils::{HashMap, HashSet},
 };
 use ipfs::EntityDefinitionLoader;
 use serde::{Deserialize, Serialize};
@@ -84,6 +84,9 @@ enum AnimLoadState {
     Done,
 }
 
+#[derive(Resource)]
+pub struct BaseEmotes(pub HashSet<CollectibleUrn<Emote>>);
+
 #[allow(clippy::type_complexity)]
 fn load_animations(
     asset_server: Res<AssetServer>,
@@ -91,6 +94,7 @@ fn load_animations(
     mut state: Local<AnimLoadState>,
     folders: Res<Assets<LoadedFolder>>,
     mut emotes: CollectibleManager<Emote>,
+    mut base_emotes: ResMut<BaseEmotes>,
 ) {
     match &mut *state {
         AnimLoadState::Init => {
@@ -113,19 +117,33 @@ fn load_animations(
             h_gltfs.retain(
                 |h_gltf| match gltfs.get(h_gltf).map(|gltf| &gltf.named_animations) {
                     Some(anims) => {
-                        for (name, h_clip) in anims.clone() {
-                            let (name, repeat, is_male, is_female) = DEFAULT_ANIMATION_LOOKUP
+                        for (clip_name, h_clip) in anims.clone() {
+                            let Some((
+                                network_name,
+                                friendly_name,
+                                repeat,
+                                is_male,
+                                is_female,
+                                register_base,
+                            )) = DEFAULT_ANIMATION_LOOKUP
                                 .iter()
-                                .find(|(_, anim)| anim.male == name || anim.female == name)
+                                .find(|(_, anim)| {
+                                    anim.male.eq_ignore_ascii_case(&clip_name)
+                                        || anim.female.eq_ignore_ascii_case(&clip_name)
+                                })
                                 .map(|(urn, anim)| {
                                     (
                                         urn.to_string(),
+                                        anim.name,
                                         anim.repeat,
-                                        anim.male == name,
-                                        anim.female == name,
+                                        anim.male.eq_ignore_ascii_case(&clip_name),
+                                        anim.female.eq_ignore_ascii_case(&clip_name),
+                                        anim.register_base_emote,
                                     )
                                 })
-                                .unwrap_or((name.to_owned(), false, true, true));
+                            else {
+                                continue;
+                            };
 
                             let new_gltf = Gltf {
                                 named_animations: HashMap::from_iter([(
@@ -146,7 +164,7 @@ fn load_animations(
                             };
                             let new_gltf = gltfs.add(new_gltf);
 
-                            let urn = EmoteUrn::new(&name).unwrap();
+                            let urn = EmoteUrn::new(&network_name).unwrap();
                             debug!("loaded default anim {:?} from {:?}", urn, h_gltf.path());
 
                             let emote = Emote {
@@ -169,21 +187,25 @@ fn load_animations(
                                     hash: Default::default(),
                                     urn: urn.as_str().to_string(),
                                     thumbnail: asset_server
-                                        .load(format!("animations/thumbnails/{name}_256.png")),
+                                        .load(format!("animations/thumbnails/{network_name}.png")),
                                     available_representations: representations
                                         .keys()
                                         .cloned()
                                         .collect(),
-                                    name: name.clone(),
+                                    name: friendly_name.to_owned(),
                                     description: Default::default(),
                                     extra_data: (),
                                 },
                                 representations,
                             };
 
+                            if register_base {
+                                base_emotes.0.insert(urn.clone());
+                            }
+
                             emotes.add_builtin(urn, collectible);
 
-                            debug!("added animation {name} from {:?}", h_clip.path());
+                            debug!("added animation {network_name} from {:?}", h_clip.path());
                         }
                         false
                     }
@@ -202,15 +224,25 @@ fn load_animations(
 struct DefaultAnim {
     male: &'static str,
     female: &'static str,
+    name: &'static str,
     repeat: bool,
+    register_base_emote: bool,
 }
 
 impl DefaultAnim {
-    fn new(male: &'static str, female: &'static str, repeat: bool) -> Self {
+    fn new(
+        name: &'static str,
+        male: &'static str,
+        female: &'static str,
+        repeat: bool,
+        base: bool,
+    ) -> Self {
         Self {
+            name,
             male,
             female,
             repeat,
+            register_base_emote: base,
         }
     }
 }
@@ -218,34 +250,113 @@ impl DefaultAnim {
 static DEFAULT_ANIMATION_LOOKUP: Lazy<HashMap<&str, DefaultAnim>> = Lazy::new(|| {
     HashMap::from_iter([
         (
-            "handsair",
-            DefaultAnim::new("Hands_In_The_Air", "Hands_In_The_Air", false),
+            "wave",
+            DefaultAnim::new("Wave", "Wave_Male", "Wave_Female", false, true),
         ),
-        ("wave", DefaultAnim::new("Wave_Male", "Wave_Female", false)),
         (
             "fistpump",
-            DefaultAnim::new("M_FistPump", "F_FistPump", false),
+            DefaultAnim::new("Fist Pump", "M_FistPump", "F_FistPump", false, true),
         ),
         (
-            "dance",
-            DefaultAnim::new("Dance_Male", "Dance_Female", true),
+            "robot",
+            DefaultAnim::new("Robot", "M_RobotDance", "F_RobotDance", true, true),
         ),
         (
             "raiseHand",
-            DefaultAnim::new("Raise_Hand", "Raise_Hand", false),
+            DefaultAnim::new("Raise Hand", "Raise_Hand", "Raise_Hand", false, true),
         ),
-        // "clap" defaults
+        (
+            "clap",
+            DefaultAnim::new("Clap", "clap", "clap", false, true),
+        ),
         (
             "money",
             DefaultAnim::new(
+                "Money",
                 "Armature|Throw Money-Emote_v02|BaseLayer",
                 "Armature|Throw Money-Emote_v02|BaseLayer",
                 false,
+                true,
             ),
         ),
-        // "kiss" defaults
-        ("headexplode", DefaultAnim::new("explode", "explode", false)),
-        // "shrug" defaults
+        (
+            "kiss",
+            DefaultAnim::new("Kiss", "kiss", "kiss", false, true),
+        ),
+        (
+            "hammer",
+            DefaultAnim::new(
+                "Hammer",
+                "Armature|mchammer-dance_v02|BaseLayer",
+                "Armature|mchammer-dance_v02|BaseLayer",
+                true,
+                true,
+            ),
+        ),
+        (
+            "tik",
+            DefaultAnim::new(
+                "Tik",
+                "Armature|tik-tok-dance_v02|BaseLayer",
+                "Armature|tik-tok-dance_v02|BaseLayer",
+                true,
+                true,
+            ),
+        ),
+        (
+            "tektonik",
+            DefaultAnim::new(
+                "Tektonic",
+                "Armature|tektonik-dance_v01|BaseLayer",
+                "Armature|tektonik-dance_v01|BaseLayer",
+                true,
+                true,
+            ),
+        ),
+        (
+            "dontsee",
+            DefaultAnim::new("Don't See", "dont_wanna_see", "dont_wanna_see", false, true),
+        ),
+        (
+            "handsair",
+            DefaultAnim::new(
+                "Hands Air",
+                "Hands_In_The_Air",
+                "Hands_In_The_Air",
+                true,
+                true,
+            ),
+        ),
+        (
+            "shrug",
+            DefaultAnim::new("Shrug", "shrug", "shrug", false, true),
+        ),
+        (
+            "disco",
+            DefaultAnim::new("Disco", "disco_dance", "disco_dance", true, true),
+        ),
+        (
+            "headexplode",
+            DefaultAnim::new("Head Explode", "explode", "f_head_explode", false, true),
+        ),
+        (
+            "dance",
+            DefaultAnim::new("Dance", "Dance_Male", "Dance_Female", true, true),
+        ),
+        // base animations, not emotes
+        (
+            "idle_male",
+            DefaultAnim::new("idle_male", "Idle_Male", "Idle_Male", true, false),
+        ),
+        (
+            "walk",
+            DefaultAnim::new("walk", "Walk", "Walk", true, false),
+        ),
+        ("run", DefaultAnim::new("run", "Run", "Run", true, false)),
+        (
+            "jump",
+            DefaultAnim::new("jump", "Jump", "Jump", true, false),
+        ),
     ])
 });
 

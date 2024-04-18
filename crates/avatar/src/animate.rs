@@ -170,6 +170,7 @@ fn receive_emotes(mut commands: Commands, mut chat_events: EventReader<ChatEvent
             .split(' ')
             .next()
         {
+            debug!("adding remote emote: {}", emote_urn);
             commands
                 .entity(ev.sender)
                 .try_insert(EmoteList::new(emote_urn));
@@ -625,7 +626,7 @@ fn play_current_emote(
         active_emote.restart = false;
 
         if !active_emote.finished && player.is_finished() {
-            debug!("finished on seek time: {}", player.seek_time());
+            // debug!("finished on seek time: {}", player.seek_time());
             // we have to mess around to allow transitions to still apply even though the animation is finished.
             // assuming a new animation is `play_with_transition`ed next frame, the speed and seek position
             // here will only apply to the outgoing animation, and will allow it to be transitioned out smoothly.
