@@ -74,6 +74,12 @@ impl<T: CollectibleType> AsRef<CollectibleUrn<T>> for CollectibleUrn<T> {
 
 impl<T: CollectibleType> CollectibleUrn<T> {
     fn try_new_and_token(value: &str) -> Result<(Self, Option<String>), CollectibleUrnErr> {
+        if value.is_empty() {
+            return Err(CollectibleUrnErr {
+                msg: "empty urn",
+                value: String::default(),
+            });
+        }
         let mut urn = value.to_lowercase();
         let count = urn.chars().filter(|c| *c == ':').count();
         if count == 0 {

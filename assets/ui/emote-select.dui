@@ -1,0 +1,45 @@
+<define-template id="choose-emote-base">
+    <div style="
+        position-type: absolute;
+        left: '@left';
+        top: '@top';
+        align-items: center;
+        justify-content: center;
+    ">
+        <div style="flex-grow: 1; align-items: center; justify-content: space-around;">
+            <apply template="popup-layout" layout="@layout" />
+
+            <div style="position-type: absolute; width:16%; height: 24%; left:9.64%; top:78%;"> <emote-button id="emote_1" /><div image="@image_1" id="image_1" /></div>
+            <div style="position-type: absolute; width:16%; height: 24%; left:2.28%; top:54.33%;"> <emote-button id="emote_2" /><div image="@image_2" id="image_2" /></div>
+            <div style="position-type: absolute; width:16%; height: 24%; left:4.56%; top:30.63%;"> <emote-button id="emote_3" /><div image="@image_3" id="image_3" /></div>
+            <div style="position-type: absolute; width:16%; height: 24%; left:17.95%; top:8.12%;"> <emote-button id="emote_4" /><div image="@image_4" id="image_4" /></div>
+            <div style="position-type: absolute; width:16%; height: 24%; left:34.27%; top:-1.05%;"> <emote-button id="emote_5" /><div image="@image_5" id="image_5" /></div>
+            <div style="position-type: absolute; width:16%; height: 24%; left:49.73%; top:-1.05%;"> <emote-button id="emote_6" /><div image="@image_6" id="image_6" /></div>
+            <div style="position-type: absolute; width:16%; height: 24%; left:66.05%; top:8.12%;"> <emote-button id="emote_7" /><div image="@image_7" id="image_7" /></div>
+            <div style="position-type: absolute; width:16%; height: 24%; left:79.44%; top:30.63%;"> <emote-button id="emote_8" /><div image="@image_8" id="image_8" /></div>
+            <div style="position-type: absolute; width:16%; height: 24%; left:81.72%; top:54.33%;"> <emote-button id="emote_9" /><div image="@image_9" id="image_9" /></div>
+            <div style="position-type: absolute; width:16%; height: 24%; left:74.36%; top:78%;"> <emote-button id="emote_0" /><div image="@image_0" id="image_0" /></div>
+
+            <div style="position-type: absolute; left:10.88%; top:78.17%;"><med-text style="color: black;" text="1" /></div>
+            <div style="position-type: absolute; left:3.52%; top:54.5%;"><med-text style="color: black;" text="2" /></div>
+            <div style="position-type: absolute; left:5.8%; top:30.8%;"><med-text style="color: black;" text="3" /></div>
+            <div style="position-type: absolute; left:19.19%; top:8.29%;"><med-text style="color: black;" text="4" /></div>
+            <div style="position-type: absolute; left:35.51%; top:-0.88%;"><med-text style="color: black;" text="5" /></div>
+            <div style="position-type: absolute; left:50.97%; top:-0.88%;"><med-text style="color: black;" text="6" /></div>
+            <div style="position-type: absolute; left:67.29%; top:8.29%;"><med-text style="color: black;" text="7" /></div>
+            <div style="position-type: absolute; left:80.67%; top:30.8%;"><med-text style="color: black;" text="8" /></div>
+            <div style="position-type: absolute; left:82.96%; top:54.5%;"><med-text style="color: black;" text="9" /></div>
+            <div style="position-type: absolute; left:75.6%; top:78.17%;"><med-text style="color: black;" text="0" /></div>
+
+            <div style="left: 25%; right: 25%; width: 50%; max-width: 50%; align-self: center; align-items: center; flex-direction: row; flex-grow: 1;">
+                <div style="flex-grow: 1;" />
+                <large-text style="color: white; text-align: center;" id="output" text="" />
+                <div style="flex-grow: 1;" />
+            </div>
+        </div>
+    </div>
+</define-template>
+
+<define-template id="emote-button">
+    <div style="position-type: absolute; width: 100%; height: 100%;" image="images/emote-button-background.png" />
+</define-template>

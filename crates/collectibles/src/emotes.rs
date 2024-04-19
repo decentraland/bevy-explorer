@@ -29,6 +29,7 @@ pub struct EmotesPlugin;
 
 impl Plugin for EmotesPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<BaseEmotes>();
         app.add_plugins(CollectiblesTypePlugin::<Emote>::default());
         app.register_asset_loader(EmoteLoader);
         app.register_asset_loader(EmoteMetaLoader);
@@ -84,7 +85,7 @@ enum AnimLoadState {
     Done,
 }
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct BaseEmotes(pub HashSet<CollectibleUrn<Emote>>);
 
 #[allow(clippy::type_complexity)]

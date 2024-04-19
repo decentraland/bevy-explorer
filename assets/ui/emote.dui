@@ -1,45 +1,116 @@
-<define-template id="choose-emote-base">
-    <div style="
-        position-type: absolute;
-        left: '@left';
-        top: '@top';
-        align-items: center;
-        justify-content: center;
-    ">
-        <div style="flex-grow: 1; align-items: center; justify-content: space-around;">
-            <apply template="popup-layout" layout="@layout" />
-
-            <div style="position-type: absolute; width:16%; height: 24%; left:9.64%; top:78%;"> <emote-button id="emote_1" /><div image="@image_1" id="image_1" /></div>
-            <div style="position-type: absolute; width:16%; height: 24%; left:2.28%; top:54.33%;"> <emote-button id="emote_2" /><div image="@image_2" id="image_2" /></div>
-            <div style="position-type: absolute; width:16%; height: 24%; left:4.56%; top:30.63%;"> <emote-button id="emote_3" /><div image="@image_3" id="image_3" /></div>
-            <div style="position-type: absolute; width:16%; height: 24%; left:17.95%; top:8.12%;"> <emote-button id="emote_4" /><div image="@image_4" id="image_4" /></div>
-            <div style="position-type: absolute; width:16%; height: 24%; left:34.27%; top:-1.05%;"> <emote-button id="emote_5" /><div image="@image_5" id="image_5" /></div>
-            <div style="position-type: absolute; width:16%; height: 24%; left:49.73%; top:-1.05%;"> <emote-button id="emote_6" /><div image="@image_6" id="image_6" /></div>
-            <div style="position-type: absolute; width:16%; height: 24%; left:66.05%; top:8.12%;"> <emote-button id="emote_7" /><div image="@image_7" id="image_7" /></div>
-            <div style="position-type: absolute; width:16%; height: 24%; left:79.44%; top:30.63%;"> <emote-button id="emote_8" /><div image="@image_8" id="image_8" /></div>
-            <div style="position-type: absolute; width:16%; height: 24%; left:81.72%; top:54.33%;"> <emote-button id="emote_9" /><div image="@image_9" id="image_9" /></div>
-            <div style="position-type: absolute; width:16%; height: 24%; left:74.36%; top:78%;"> <emote-button id="emote_0" /><div image="@image_0" id="image_0" /></div>
-
-            <div style="position-type: absolute; left:10.88%; top:78.17%;"><med-text style="color: black;" text="1" /></div>
-            <div style="position-type: absolute; left:3.52%; top:54.5%;"><med-text style="color: black;" text="2" /></div>
-            <div style="position-type: absolute; left:5.8%; top:30.8%;"><med-text style="color: black;" text="3" /></div>
-            <div style="position-type: absolute; left:19.19%; top:8.29%;"><med-text style="color: black;" text="4" /></div>
-            <div style="position-type: absolute; left:35.51%; top:-0.88%;"><med-text style="color: black;" text="5" /></div>
-            <div style="position-type: absolute; left:50.97%; top:-0.88%;"><med-text style="color: black;" text="6" /></div>
-            <div style="position-type: absolute; left:67.29%; top:8.29%;"><med-text style="color: black;" text="7" /></div>
-            <div style="position-type: absolute; left:80.67%; top:30.8%;"><med-text style="color: black;" text="8" /></div>
-            <div style="position-type: absolute; left:82.96%; top:54.5%;"><med-text style="color: black;" text="9" /></div>
-            <div style="position-type: absolute; left:75.6%; top:78.17%;"><med-text style="color: black;" text="0" /></div>
-
-            <div style="left: 25%; right: 25%; width: 50%; max-width: 50%; align-self: center; align-items: center; flex-direction: row; flex-grow: 1;">
-                <div style="flex-grow: 1;" />
-                <large-text style="color: white; text-align: center;" id="output" text="" />
-                <div style="flex-grow: 1;" />
+<define-template id="emotes">
+    <div style="width: 100%; flex-grow: 1; flex-direction: row;">
+        <div id="background" style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%; background-color: #cccccc;" image="images/backpack/Background.jpeg" />
+        <div style="position-type: absolute; left: -20%, width: 70%; min-width: 70%; max-width: 70%; height: 100%;">
+            <photobooth booth-instance="@booth-instance" />
+            <!-- <div style="width: 100%; height: 100%; background-color: white; flex-grow: 1;" /> -->
+        </div>
+        <div style="position-type: absolute; width: 70%; left: 30%; height: 100%; flex-grow: 1; flex-direction: column; background-color: #00000066;">
+            <!-- emotes tool bar -->
+            <div id="tools" style="width: 100%;">
+                <div style="align-items: center; flex-direction: column; width: 25%; flex-grow: 1; margin: 1vmin;">
+                    <med-text style="align-self: center;" text="show only collectibles" />
+                    <div style="width: 4.2vmin; height: 2.8vmin;"><toggle ontoggle="@only-collectibles" toggled="@only-collectibles-set" /></div>
+                </div>
+                <space />
+                <div style="align-items: center; flex-direction: column; width: 25%; flex-grow: 1; margin: 1vmin;">
+                    <med-text style="align-self: center;" text="sort by" />
+                    <combo-box style="align-self: center; height: 2vmin; width: 100%;" options="@sort-by" selected="@initial-sort-by" onchanged="@sort-by-changed" allow-null="false" disabled="false" />
+                </div>
+                <div style="align-items: center; flex-direction: column; width: 25%; flex-grow: 1; margin: 1vmin;">
+                    <med-text style="align-self: center;" text="filter" />
+                    <text-entry style="align-self: center; height: 2vmin; width: 100%;" hint-text="🔍" initial-text="@initial-filter" onchanged="@filter-changed" />
+                </div>
+    
             </div>
+            <hr-thin />
+            <!-- body -->
+            <div style="width: 100%; max-width: 100%; height: 10%; flex-grow: 1; flex-direction: row;">
+                <!-- categories -->
+                <div style="width: 30%; height: 100%; max-width: 30%;">
+                    <vscroll>
+                        <tab-group id="slot-tabs" style="justify-content: center; flex-direction: row; flex-wrap: wrap" tabs="@slot-tabs" onchanged="@slot-changed" initial="@selected-slot" toggle="false" />
+                    </vscroll>
+                </div>
+                <!-- content -->
+                <div style="width: 70%; flex-grow: 1;">
+                    <div style="width: 100%; height: 100%; flex-direction: column">
+                        <!-- items -->
+                        <div style="width: 100%; height: 70%">
+                            <vscroll>
+                                <div id="items" style="width: 100%; flex-wrap: wrap;"/>
+                            </vscroll>
+                        </div>
+                        <hr />
+                        <!-- selected -->
+                        <div id="selected-item" style="width: 100%; height: 30%;" /> 
+                    </div>
+                </div>
+            </div>
+            <!-- buttons -->
+            <!-- <div style="width: 100%; background-color: #0000ff44;">
+                <space />
+                <button-set buttons="@buttons" />
+            </div> -->
         </div>
     </div>
 </define-template>
 
-<define-template id="emote-button">
-    <div style="position-type: absolute; width: 100%; height: 100%;" image="images/emote-button-background.png" />
+<define-template id="emote-slot">
+    <div style="width: 100%; height: 100%; flex-direction: row; border: 1vmin;">
+        <div style="width: 6vmin; height: 6vmin; min-width: 6vmin; min-height: 6vmin; ">
+            <med-text text="@slot-id" />
+        </div>
+        <div style="width: 6vmin; height: 6vmin; min-width: 6vmin; min-height: 6vmin">
+            <nineslice id="button-background" slice-image="images/button.png" slice-border="37.5%" slice-color="#aaaaff" />
+            <div id="item-image" image="@emote-img" />
+        </div>
+    </div>
+</define-template>
+
+<define-template id="emote-items">
+    <tab-group style="justify-content: center; flex-direction: row; flex-wrap: wrap" tabs="@tabs" onchanged="@onchanged" initial="@initial" />
+</define-template>
+
+<define-template id="emote-item">
+    <div style="width: 14vmin; height: 14vmin; min-width: 14vmin; min-height: 14vmin; padding: 0.2vmin; ">
+        <div id="rarity" style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%; background-color: '@rarity-color';" image="images/backpack/item_bg.png" />
+        <div image="@image" style="background-color: '@image-color'" />
+    </div>
+</define-template>
+
+<define-template id="emote-item-pending">
+    <div style="width: 14vmin; height: 14vmin; min-width: 14vmin; min-height: 14vmin; margin: 0.6vmin;">
+        <div id="background" style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%;" image="images/backpack/item_bg.png" />
+        <spinner />
+    </div>
+</define-template>
+
+<define-template id="emote-selection">
+    <div style="width: 100%; height: 100%; flex-grow: 1;" interact="true" focus="block">
+        <div style="margin: 0.5vmin; position-type: absolute; top: -1vmin; right: 1vmin; left: 1vmin; bottom: 1vmin;"> 
+            <nineslice slice-image="images/button.png" slice-border="37.5%" slice-color="#bbbbbb" />
+            <div style="flex-direction: row; flex-grow: 1; margin: 2vmin; ">
+                <div style="height: 100%; max-width: 10vmin; aspect-ratio: 1;">
+                    <div style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%; background-color: '@rarity-color';" image="images/backpack/item_bg.png" />
+                    <div image="@selection-image" />
+                </div>
+                <div style="flex-direction: column; height: 100%; flex-grow: 1;">
+                    <vscroll>
+                        <div style="flex-direction: column; flex-grow: 1;">
+                            <div style="flex-direction: column; width: 100%; height: auto; margin: 0vmin 1vmin 1vmin 1vmin; flex-grow: 1;">
+                                <large-text style="color: black; margin: 0vmin 1vmin 1vmin 1vmin;" text="@title" />
+                            </div>
+                            <div style="width: 100%; height: auto; margin: 1vmin; flex-grow: 1;">
+                                <med-text style="color: black; flex-grow: 1; width: 100%; margin: 1vmin;" text="@body" />
+                            </div>
+                        </div>
+                    </vscroll>
+                </div>
+                <div style="flex-direction: column; align-items: center;">
+                    <button label="@label" onclick="@onclick" />
+                </div>
+            </div>
+        </div>
+    </div>
 </define-template>

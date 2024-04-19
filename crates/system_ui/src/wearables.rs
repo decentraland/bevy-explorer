@@ -154,7 +154,6 @@ pub struct WearablesSettings {
     pub current_wearables: HashMap<WearableCategory, (WearableInstance, CollectibleData<Wearable>)>,
     pub owned_wearables: Vec<OwnedWearableData>,
     current_list: Vec<WearableEntry>,
-    pub current_wearable_images: HashMap<WearableCategory, Entity>,
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -194,6 +193,7 @@ fn set_wearables_content(
         }
 
         if tab != &SettingsTab::Wearables {
+            *prev_tab = Some(*tab);
             return;
         }
 
@@ -279,7 +279,6 @@ fn set_wearables_content(
                     search_filter: Default::default(),
                     owned_wearables: Default::default(),
                     current_list: Default::default(),
-                    current_wearable_images: Default::default(),
                 };
 
                 if !all_loaded {
@@ -835,7 +834,7 @@ fn update_wearables_list(
                     }),
                     ..Default::default()
                 }),
-                image: Some(asset_server.load("images/backpack/wearable_item_bg.png")),
+                image: Some(asset_server.load("images/backpack/item_bg.png")),
                 children: Some(content),
                 ..Default::default()
             }

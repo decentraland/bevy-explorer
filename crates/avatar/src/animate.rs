@@ -11,8 +11,7 @@ use bevy::{
 use bevy_console::ConsoleCommand;
 use bevy_kira_audio::AudioControl;
 use collectibles::{
-    emotes::base_bodyshapes, Collectible, CollectibleData, CollectibleError, CollectibleManager,
-    Emote, EmoteUrn,
+    Collectible, CollectibleData, CollectibleError, CollectibleManager, Emote, EmoteUrn,
 };
 use common::{
     rpc::{RpcCall, RpcEventSender},
@@ -20,10 +19,8 @@ use common::{
     structs::PrimaryUser,
 };
 use comms::{
-    chat_marker_things,
-    global_crdt::ChatEvent,
-    profile::{CurrentUserProfile, UserProfile},
-    NetworkMessage, Transport,
+    chat_marker_things, global_crdt::ChatEvent, profile::CurrentUserProfile, NetworkMessage,
+    Transport,
 };
 use console::DoAddConsoleCommand;
 use dcl::interface::ComponentPosition;
@@ -40,7 +37,7 @@ use scene_runner::{
     ContainerEntity, ContainingScene,
 };
 
-use crate::process_avatar;
+use crate::{process_avatar, AvatarDefinition};
 
 use super::AvatarDynamicState;
 
@@ -50,7 +47,7 @@ pub struct AvatarAnimPlayer(pub Entity);
 pub struct AvatarAnimationPlugin;
 
 #[derive(Component, Default, Deref, DerefMut, Debug, Clone)]
-pub struct EmoteList(VecDeque<PbAvatarEmoteCommand>);
+pub struct EmoteList(pub(crate) VecDeque<PbAvatarEmoteCommand>);
 
 impl EmoteList {
     pub fn new(emote_urn: impl Into<String>) -> Self {
@@ -372,7 +369,8 @@ impl SpawnedExtras {
 #[allow(clippy::too_many_arguments)]
 fn play_current_emote(
     mut commands: Commands,
-    mut q: Query<(Entity, &mut ActiveEmote, &UserProfile, &AvatarAnimPlayer)>,
+    mut q: Query<(Entity, &mut ActiveEmote, &AvatarAnimPlayer, &Children)>,
+    definitions: Query<&AvatarDefinition>,
     mut emote_loader: CollectibleManager<Emote>,
     mut gltfs: ResMut<Assets<Gltf>>,
     animations: Res<Assets<AnimationClip>>,
@@ -389,7 +387,16 @@ fn play_current_emote(
     let prior_playing = std::mem::take(&mut *playing);
     let mut prev_spawned_extras = std::mem::take(&mut *spawned_extras);
 
-    for (entity, mut active_emote, profile, target_entity) in q.iter_mut() {
+    for (entity, mut active_emote, target_entity, children) in q.iter_mut() {
+        let Some(definition) = children
+            .iter()
+            .flat_map(|c| definitions.get(*c).ok())
+            .next()
+        else {
+            warn!("no definition");
+            continue;
+        };
+
         // clean up old extras
         if let Some(extras) = prev_spawned_extras.remove(&entity) {
             if extras.urn != active_emote.urn {
@@ -408,7 +415,7 @@ fn play_current_emote(
         }
 
         let ent = target_entity.0;
-        let bodyshape = base_bodyshapes().remove(if profile.is_female() { 0 } else { 1 });
+        let bodyshape = &definition.body_shape;
 
         if let Some(scene_emote) = active_emote.urn.scene_emote() {
             let Some((hash, _)) = scene_emote.split_once('-') else {
@@ -529,6 +536,10 @@ fn play_current_emote(
                                     commands.entity(spawned_ent).try_insert(rotated);
                                 }
                             }
+                        }
+
+                        if let Some(layers) = definition.render_layer {
+                            commands.entity(spawned_ent).insert(layers);
                         }
                     }
                     *scene_rotated = true;

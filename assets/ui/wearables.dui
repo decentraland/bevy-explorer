@@ -78,14 +78,14 @@
 
 <define-template id="wearable-item">
     <div style="width: 14vmin; height: 14vmin; min-width: 14vmin; min-height: 14vmin; padding: 0.2vmin; ">
-        <div id="rarity" style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%; background-color: '@rarity-color';" image="images/backpack/wearable_item_bg.png" />
+        <div id="rarity" style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%; background-color: '@rarity-color';" image="images/backpack/item_bg.png" />
         <div image="@image" style="background-color: '@image-color'" />
     </div>
 </define-template>
 
 <define-template id="wearable-item-pending">
     <div style="width: 14vmin; height: 14vmin; min-width: 14vmin; min-height: 14vmin; margin: 0.6vmin;">
-        <div id="background" style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%;" image="images/backpack/wearable_item_bg.png" />
+        <div id="background" style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%;" image="images/backpack/item_bg.png" />
         <spinner />
     </div>
 </define-template>
@@ -96,7 +96,7 @@
             <nineslice slice-image="images/button.png" slice-border="37.5%" slice-color="#bbbbbb" />
             <div style="flex-direction: row; flex-grow: 1; margin: 2vmin; ">
                 <div style="height: 100%; max-width: 10vmin; aspect-ratio: 1;">
-                    <div style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%; background-color: '@rarity-color';" image="images/backpack/wearable_item_bg.png" />
+                    <div style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%; background-color: '@rarity-color';" image="images/backpack/item_bg.png" />
                     <div image="@selection-image" />
                 </div>
                 <div style="flex-direction: column; height: 100%; flex-grow: 1;">

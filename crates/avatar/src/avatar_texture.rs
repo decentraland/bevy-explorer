@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::VecDeque, path::PathBuf, sync::Arc};
 
 use anyhow::anyhow;
 use bevy::{
@@ -15,15 +15,17 @@ use bevy::{
     window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution},
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};
+use collectibles::{urn::CollectibleUrn, Emote};
 use common::{
     sets::SetupSets,
     structs::{AvatarTextureHandle, PrimaryPlayerRes},
 };
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
+use dcl_component::proto_components::sdk::components::PbAvatarEmoteCommand;
 use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 use ui_core::ui_actions::{DragData, Dragged, On};
 
-use crate::{AvatarDynamicState, AvatarSelection, AvatarShape};
+use crate::{animate::EmoteList, AvatarDynamicState, AvatarSelection, AvatarShape};
 
 pub struct AvatarTexturePlugin;
 
@@ -140,6 +142,14 @@ impl<'w, 's> PhotoBooth<'w, 's> {
         } else {
             error!("no booth avatar to update?");
         }
+    }
+
+    pub fn play_emote(&mut self, instance: &BoothInstance, emote: CollectibleUrn<Emote>) {
+        let mut list = VecDeque::new();
+        list.push_back(PbAvatarEmoteCommand{ emote_command: Some(dcl_component::proto_components::sdk::components::pb_avatar_emote_command::EmoteCommand { emote_urn: emote.to_string(), r#loop: false }) });
+        self.commands
+            .entity(*instance.avatar)
+            .try_insert(EmoteList(list));
     }
 }
 
