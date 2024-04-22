@@ -250,7 +250,7 @@ fn main() {
                                 .finish();
                             Box::leak(Box::new(guard));
                             Box::new(l)
-                        }) 
+                        })
                     } else {
                         None
                     },

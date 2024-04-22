@@ -43,7 +43,9 @@ pub struct ConsolePlugin {
 impl Plugin for ConsolePlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ConsoleConfiguration {
-            keys: vec![KeyCode::Backquote],
+            // keys: vec![KeyCode::Backquote],
+            // we don't want people using the actual console, just the command / print interface which gets piped to chat
+            keys: vec![],
             left_pos: 0.0,
             top_pos: 0.0,
             height: 100.0,

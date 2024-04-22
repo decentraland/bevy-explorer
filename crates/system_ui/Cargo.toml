@@ -42,3 +42,4 @@ opener = { workspace = true }
 urlencoding = { workspace = true }
 
 copypasta = "0.10"
+shlex = "1"

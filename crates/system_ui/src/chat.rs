@@ -1,5 +1,6 @@
 use bevy::{core::FrameCount, prelude::*};
 
+use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine};
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     dcl_assert,
@@ -14,6 +15,7 @@ use dcl::{SceneLogLevel, SceneLogMessage};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use input_manager::should_accept_key;
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene, Toaster};
+use shlex::Shlex;
 use ui_core::{
     button::{DuiButton, TabSelection},
     focus::Focus,
@@ -45,7 +47,7 @@ impl Plugin for ChatPanelPlugin {
 pub struct ChatboxContainer;
 
 // text line marker
-#[derive(Component)]
+#[derive(Component, Clone, Debug)]
 pub struct DisplayChatMessage {
     pub timestamp: f64,
     pub sender: Option<String>,
@@ -55,9 +57,9 @@ pub struct DisplayChatMessage {
 /// output widget
 #[derive(Component)]
 pub struct ChatBox {
-    chat_log: RingBuffer<(f64, String, String)>,
+    chat_log: RingBuffer<DisplayChatMessage>,
     active_tab: &'static str,
-    active_chat_sink: Option<RingBufferReceiver<(f64, String, String)>>,
+    active_chat_sink: Option<RingBufferReceiver<DisplayChatMessage>>,
     active_log_sink: Option<(Entity, RingBufferReceiver<SceneLogMessage>)>,
 }
 
@@ -245,53 +247,65 @@ fn append_chat_messages(
             .iter()
             .any(|marker| ev.message.starts_with(*marker))
     }) {
-        let Ok(profile) = users.get(ev.sender) else {
-            warn!("can't get profile for chat sender {:?}", ev.sender);
-            continue;
+        let sender = if ev.sender == Entity::PLACEHOLDER {
+            None
+        } else {
+            let Ok(profile) = users.get(ev.sender) else {
+                warn!("can't get profile for chat sender {:?}", ev.sender);
+                continue;
+            };
+            Some(profile.content.name.to_owned())
         };
 
-        chatbox.chat_log.send((
-            ev.timestamp,
-            profile.content.name.to_owned(),
-            ev.message.to_owned(),
-        ));
+        chatbox.chat_log.send(DisplayChatMessage {
+            timestamp: ev.timestamp,
+            sender,
+            message: ev.message.to_owned(),
+        });
     }
 }
 
 fn make_chat(
     commands: &mut Commands,
     asset_server: &AssetServer,
-    (timestamp, sender, message): (f64, String, String),
+    msg: DisplayChatMessage,
 ) -> Entity {
     commands
         .spawn((
-            DisplayChatMessage {
-                timestamp,
-                sender: Some(sender.clone()),
-                message: message.clone(),
-            },
             FontSize(0.0175),
             TextBundle {
                 text: Text::from_sections([
                     TextSection::new(
-                        format!("{}: ", sender),
+                        format!(
+                            "{}: ",
+                            msg.sender.clone().unwrap_or_else(|| "[SYSTEM]".to_owned())
+                        ),
                         TextStyle {
                             font: asset_server.load("fonts/NotoSans-Bold.ttf"),
                             font_size: 15.0,
-                            color: Color::YELLOW,
+                            color: if msg.sender.is_some() {
+                                Color::YELLOW
+                            } else {
+                                Color::GRAY
+                            },
                         },
                     ),
                     TextSection::new(
-                        message,
+                        msg.message.clone(),
                         TextStyle {
                             font: asset_server.load("fonts/NotoSans-Bold.ttf"),
                             font_size: 15.0,
-                            color: Color::WHITE,
+                            color: if msg.sender.is_some() {
+                                Color::WHITE
+                            } else {
+                                Color::GRAY
+                            },
                         },
                     ),
                 ]),
                 ..Default::default()
             },
+            msg,
         ))
         .id()
 }
@@ -427,6 +441,7 @@ fn display_chat(
 #[derive(Component)]
 pub struct ChatInput;
 
+#[allow(clippy::too_many_arguments)]
 fn emit_user_chat(
     mut chats: EventWriter<ChatEvent>,
     transports: Query<&Transport>,
@@ -434,6 +449,9 @@ fn emit_user_chat(
     time: Res<Time>,
     mut chat_input: Query<&mut TextEntry, With<ChatInput>>,
     chat_output: Query<&ChatBox>,
+    console_config: Res<ConsoleConfiguration>,
+    mut command_entered: EventWriter<ConsoleCommandEntered>,
+    mut console_lines: EventReader<PrintConsoleLine>,
 ) {
     let Ok(player) = player.get_single() else {
         return;
@@ -446,7 +464,36 @@ fn emit_user_chat(
     };
 
     for message in textbox.messages.drain(..) {
-        if output.active_tab == "Nearby" {
+        let sender = if message.starts_with('/') {
+            Entity::PLACEHOLDER
+        } else {
+            player
+        };
+
+        chats.send(ChatEvent {
+            timestamp: time.elapsed_seconds_f64(),
+            sender,
+            channel: output.active_tab.to_owned(),
+            message: message.clone(),
+        });
+
+        if message.starts_with('/') {
+            let mut args = Shlex::new(&message).collect::<Vec<_>>();
+
+            let command_name = args.remove(0);
+            debug!("Command entered: `{command_name}`, with args: `{args:?}`");
+
+            let command = console_config.commands.get(command_name.as_str());
+
+            if command.is_some() {
+                command_entered.send(ConsoleCommandEntered { command_name, args });
+            } else {
+                debug!(
+                    "Command not recognized, recognized commands: `{:?}`",
+                    console_config.commands.keys().collect::<Vec<_>>()
+                );
+            }
+        } else if output.active_tab == "Nearby" {
             for transport in transports.iter() {
                 let _ = transport
                     .sender
@@ -457,14 +504,16 @@ fn emit_user_chat(
                         })),
                     }));
             }
-
-            chats.send(ChatEvent {
-                timestamp: time.elapsed_seconds_f64(),
-                sender: player,
-                channel: output.active_tab.to_owned(),
-                message,
-            });
         }
+    }
+
+    for PrintConsoleLine { line } in console_lines.read() {
+        chats.send(ChatEvent {
+            timestamp: time.elapsed_seconds_f64(),
+            sender: Entity::PLACEHOLDER,
+            channel: "Nearby".to_owned(),
+            message: line.to_string(),
+        });
     }
 }
 
@@ -496,11 +545,11 @@ fn select_chat_tab(
                 msgs.push(make_chat(
                     &mut commands,
                     &asset_server,
-                    (
-                        time.elapsed_seconds_f64(),
-                        "System".to_owned(),
-                        format!("(missed {missed} prior messages)"),
-                    ),
+                    DisplayChatMessage {
+                        timestamp: time.elapsed_seconds_f64(),
+                        sender: None,
+                        message: format!("(missed {missed} prior messages)"),
+                    },
                 ));
             }
             for message in backlog.into_iter() {
