@@ -41,6 +41,7 @@ pub struct AvatarWireFormat {
     pub hair: Option<AvatarColor>,
     pub skin: Option<AvatarColor>,
     pub wearables: Vec<String>,
+    pub force_render: Option<Vec<String>>,
     pub emotes: Option<Vec<AvatarEmote>>,
     pub snapshots: Option<AvatarSnapshots>,
 }

@@ -86,7 +86,7 @@ impl<'w, 's> PhotoBooth<'w, 's> {
                 SpatialBundle::default(),
                 AvatarSelection {
                     scene: None,
-                    shape: shape.0,
+                    shape,
                     render_layers: Some(render_layers),
                     automatic_delete: false,
                 },
@@ -133,7 +133,7 @@ impl<'w, 's> PhotoBooth<'w, 's> {
 
     pub fn update_shape(&mut self, instance: &BoothInstance, new_shape: AvatarShape) {
         if let Ok(mut selection) = self.selections.get_mut(*instance.avatar) {
-            selection.shape = new_shape.0;
+            selection.shape = new_shape;
             if instance.snapshot_target.is_some() {
                 self.commands
                     .entity(*instance.avatar)

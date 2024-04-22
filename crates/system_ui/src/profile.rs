@@ -138,14 +138,14 @@ fn save_settings(
         }
 
         if let Some(avatar) = maybe_avatar {
-            profile.content.avatar.body_shape = avatar.0.body_shape.to_owned();
-            profile.content.avatar.hair = avatar.0.hair_color.map(AvatarColor::new);
-            profile.content.avatar.eyes = avatar.0.eye_color.map(AvatarColor::new);
-            profile.content.avatar.skin = avatar.0.skin_color.map(AvatarColor::new);
-            profile.content.avatar.wearables = avatar.0.wearables.to_vec();
+            profile.content.avatar.body_shape = avatar.shape.body_shape.to_owned();
+            profile.content.avatar.hair = avatar.shape.hair_color.map(AvatarColor::new);
+            profile.content.avatar.eyes = avatar.shape.eye_color.map(AvatarColor::new);
+            profile.content.avatar.skin = avatar.shape.skin_color.map(AvatarColor::new);
+            profile.content.avatar.wearables = avatar.shape.wearables.to_vec();
             profile.content.avatar.emotes = Some(
                 avatar
-                    .0
+                    .shape
                     .emotes
                     .iter()
                     .enumerate()

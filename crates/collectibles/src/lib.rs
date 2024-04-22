@@ -349,11 +349,15 @@ pub fn request_collectibles<T: CollectibleType>(
             }
         }
     } else {
-        let requested = collectibles.pointer_request.drain().collect::<HashSet<_>>();
+        let requested = std::mem::take(&mut collectibles.pointer_request);
+
+        let requested = requested
+            .into_iter()
+            .filter(|r| !collectibles.pointers.contains_key(r))
+            .collect::<HashSet<_>>();
 
         let pointers = requested
             .iter()
-            .filter(|r| !collectibles.pointers.contains_key(*r))
             .map(ToString::to_string)
             .collect::<Vec<_>>();
 

@@ -54,6 +54,7 @@ pub struct WearableData {
     pub category: WearableCategory,
     pub representations: Vec<WearableRepresentation>,
     pub hides: Vec<WearableCategory>,
+    pub replaces: Vec<WearableCategory>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -157,6 +158,9 @@ impl WearableCategory {
     pub const TOP_HEAD: WearableCategory = WearableCategory::model("top_head");
     pub const SKIN: WearableCategory = WearableCategory::model("skin");
 
+    // only used for hiding
+    pub const HEAD: WearableCategory = WearableCategory::model("head");
+
     const fn model(slot: &'static str) -> Self {
         Self {
             slot,
@@ -196,7 +200,7 @@ impl FromStr for WearableCategory {
             "earring" => Ok(Self::EARRING),
             "mask" => Ok(Self::MASK),
             "top_head" => Ok(Self::TOP_HEAD),
-            "head" => Ok(Self::TOP_HEAD), // legacy support
+            "head" => Ok(Self::HEAD),
             "tiara" => Ok(Self::TIARA),
             "helmet" => Ok(Self::HELMET),
             "skin" => Ok(Self::SKIN),
@@ -210,7 +214,8 @@ impl FromStr for WearableCategory {
 }
 
 impl WearableCategory {
-    pub fn iter() -> impl Iterator<Item = &'static WearableCategory> {
+    // does not include hide-only categories
+    pub fn iter() -> impl Iterator<Item = &'static Self> {
         [
             Self::BODY_SHAPE,
             Self::HAIR,
@@ -230,6 +235,31 @@ impl WearableCategory {
             Self::TIARA,
             Self::HELMET,
             Self::SKIN,
+        ]
+        .iter()
+    }
+
+    // does not include hide-only categories
+    pub fn hides_order() -> impl Iterator<Item = &'static Self> {
+        [
+            Self::SKIN,
+            Self::UPPER_BODY,
+            Self::HAND_WEAR,
+            Self::LOWER_BODY,
+            Self::FEET,
+            Self::HELMET,
+            Self::HAT,
+            Self::TOP_HEAD,
+            Self::MASK,
+            Self::EYEWEAR,
+            Self::EARRING,
+            Self::TIARA,
+            Self::HAIR,
+            Self::EYEBROWS,
+            Self::EYES,
+            Self::MOUTH,
+            Self::FACIAL_HAIR,
+            Self::BODY_SHAPE,
         ]
         .iter()
     }
@@ -341,12 +371,55 @@ impl AssetLoader for WearableLoader {
                 };
 
                 for body_shape in representation.body_shapes {
-                    let mut hides = HashSet::from_iter(meta.data.hides.clone());
-                    hides.extend(representation.override_hides.clone());
+                    let mut hides: HashSet<_> = if representation.override_hides.is_empty() {
+                        &meta.data.hides
+                    } else {
+                        &representation.override_hides
+                    }
+                    .iter()
+                    .copied()
+                    .collect();
 
-                    // add all hides for skin
+                    hides.extend(
+                        if representation.override_replaces.is_empty() {
+                            &meta.data.replaces
+                        } else {
+                            &representation.override_hides
+                        }
+                        .iter()
+                        .copied(),
+                    );
+
+                    // add extra hides
                     if category == WearableCategory::SKIN {
-                        hides.extend(WearableCategory::iter());
+                        hides.extend([
+                            WearableCategory::HEAD,
+                            WearableCategory::FACIAL_HAIR,
+                            WearableCategory::UPPER_BODY,
+                            WearableCategory::LOWER_BODY,
+                            WearableCategory::FEET,
+                            WearableCategory::HAND_WEAR,
+                            WearableCategory::BODY_SHAPE,
+                        ]);
+                    }
+
+                    // upper body or hide(upper body) -> hide hands
+                    if category == WearableCategory::UPPER_BODY
+                        || hides.contains(&WearableCategory::UPPER_BODY)
+                    {
+                        hides.insert(WearableCategory::HAND_WEAR);
+                    }
+
+                    // hide "head" pseudo-category -> hide a bunch of other stuff
+                    if hides.contains(&WearableCategory::HEAD) {
+                        hides.extend([
+                            WearableCategory::EYES,
+                            WearableCategory::EYEBROWS,
+                            WearableCategory::MOUTH,
+                            WearableCategory::FACIAL_HAIR,
+                            WearableCategory::MASK,
+                            WearableCategory::HAIR,
+                        ]);
                     }
 
                     // remove self

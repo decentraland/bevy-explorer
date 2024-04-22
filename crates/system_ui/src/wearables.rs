@@ -227,7 +227,7 @@ fn set_wearables_content(
                 settings.into_inner()
             }
             None => {
-                let player_shape = &player.get_single().unwrap().0;
+                let player_shape = &player.get_single().unwrap().shape;
                 let body_instance =
                     WearableInstance::new(player_shape.body_shape.as_ref().unwrap())
                         .unwrap_or_else(|_| default_bodyshape_instance());
@@ -1112,9 +1112,9 @@ fn update_selected_item(
                 dialog.modified = true;
 
                 // update wearables on avatar
-                let old_wearables = avatar.0.wearables.clone();
+                let old_wearables = avatar.shape.wearables.clone();
                 let mut wearables = avatar
-                    .0
+                    .shape
                     .wearables
                     .drain(..)
                     .flat_map(|w| WearableInstance::new(&w).ok())
@@ -1127,7 +1127,7 @@ fn update_selected_item(
                 }
                 match category {
                     WearableCategory::BODY_SHAPE => {
-                        avatar.0.body_shape = Some(instance.instance_urn());
+                        avatar.shape.body_shape = Some(instance.instance_urn());
                         wearable_settings.body_shape = instance.clone();
                     }
                     _ => {
@@ -1138,7 +1138,7 @@ fn update_selected_item(
                 }
                 let new_wearables = wearables.into_iter().map(|w| w.instance_urn()).collect();
                 debug!("wearables change\n{:?}\n{:?}", old_wearables, new_wearables);
-                avatar.0.wearables = new_wearables;
+                avatar.shape.wearables = new_wearables;
                 // and photobooth
                 booth.update_shape(booth_instance, avatar.clone());
 
@@ -1174,16 +1174,16 @@ fn update_selected_item(
             WearableCategory::EYEBROWS | WearableCategory::FACIAL_HAIR | WearableCategory::HAIR => {
                 (
                     "flex".to_owned(),
-                    Color::from(avatar.0.hair_color.unwrap_or_default()),
+                    Color::from(avatar.shape.hair_color.unwrap_or_default()),
                 )
             }
             WearableCategory::EYES => (
                 "flex".to_owned(),
-                Color::from(avatar.0.eye_color.unwrap_or_default()),
+                Color::from(avatar.shape.eye_color.unwrap_or_default()),
             ),
             WearableCategory::BODY_SHAPE => (
                 "flex".to_owned(),
-                Color::from(avatar.0.skin_color.unwrap_or_default()),
+                Color::from(avatar.shape.skin_color.unwrap_or_default()),
             ),
             _ => ("none".to_owned(), default()),
         };
@@ -1211,9 +1211,9 @@ fn update_selected_item(
                 let target = match category {
                     WearableCategory::EYEBROWS
                     | WearableCategory::FACIAL_HAIR
-                    | WearableCategory::HAIR => &mut avatar.0.hair_color,
-                    WearableCategory::EYES => &mut avatar.0.eye_color,
-                    WearableCategory::BODY_SHAPE => &mut avatar.0.skin_color,
+                    | WearableCategory::HAIR => &mut avatar.shape.hair_color,
+                    WearableCategory::EYES => &mut avatar.shape.eye_color,
+                    WearableCategory::BODY_SHAPE => &mut avatar.shape.skin_color,
                     _ => panic!(),
                 };
                 *target = Some(picker.get_linear().into());
