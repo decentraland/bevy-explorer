@@ -9,7 +9,9 @@ use common::{
     structs::{PrimaryCamera, PrimaryUser},
 };
 use console::DoAddConsoleCommand;
-use dynamics::{no_clip, NoClipCommand, UserClipping};
+use dynamics::{
+    jump_cmd, no_clip, speed_cmd, JumpCommand, NoClipCommand, SpeedCommand, UserClipping,
+};
 use input_manager::should_accept_key;
 use scene_runner::{update_world::avatar_modifier_area::PlayerModifiers, OutOfWorld};
 
@@ -48,6 +50,8 @@ impl Plugin for UserInputPlugin {
         app.insert_resource(UserClipping(true));
         app.init_resource::<CursorLocked>();
         app.add_console_command::<NoClipCommand, _>(no_clip);
+        app.add_console_command::<SpeedCommand, _>(speed_cmd);
+        app.add_console_command::<JumpCommand, _>(jump_cmd);
     }
 }
 

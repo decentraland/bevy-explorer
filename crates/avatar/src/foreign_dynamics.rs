@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use common::{dynamics::MAX_FALL_SPEED, util::QuatNormalizeExt};
+use common::util::QuatNormalizeExt;
 
 use comms::global_crdt::{ForeignPlayer, PlayerPositionEvent};
 use dcl_component::{transform_and_parent::DclTransformAndParent, SceneEntityId};
@@ -136,11 +136,13 @@ fn update_foreign_user_actual_position(
             let updated_y = target
                 .translation
                 .y
-                .max(actual.translation.y - MAX_FALL_SPEED * time.delta_seconds())
+                .max(actual.translation.y - 15.0 * time.delta_seconds())
                 .max(actual.translation.y - dynamic_state.ground_height);
 
             dynamic_state.ground_height += updated_y - actual.translation.y;
             actual.translation.y = updated_y;
         }
+
+        dynamic_state.force = dynamic_state.velocity.xz();
     }
 }

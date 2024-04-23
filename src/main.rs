@@ -364,7 +364,7 @@ fn setup(
                 )),
                 ..Default::default()
             },
-            PrimaryUser::default(),
+            config.player_settings.clone(),
             OutOfWorld,
             AvatarDynamicState::default(),
             GroundCollider::default(),
