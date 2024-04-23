@@ -57,6 +57,10 @@ pub fn spawn_audio_streams(
     player: Query<Entity, With<PrimaryUser>>,
     settings: Res<AudioSettings>,
 ) {
+    if audio_manager.manager.is_none() {
+        return;
+    }
+
     let containing_scenes = player
         .get_single()
         .ok()
@@ -111,6 +115,10 @@ pub fn spawn_and_locate_foreign_streams(
     receiver: Query<&GlobalTransform, With<PrimaryCamera>>,
     settings: Res<AudioSettings>,
 ) {
+    if audio_manager.manager.is_none() {
+        return;
+    }
+
     let Ok(receiver_transform) = receiver.get_single() else {
         return;
     };

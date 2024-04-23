@@ -6,7 +6,7 @@ use avatar::{avatar_texture::BoothInstance, AvatarShape};
 use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
-    profile::{AvatarColor, SerializedProfile},
+    profile::{AvatarColor, AvatarEmote, SerializedProfile},
     rpc::RpcCall,
     structs::AppConfig,
 };
@@ -22,7 +22,7 @@ use crate::{
     change_realm::{ChangeRealmDialog, UpdateRealmText},
     chat::BUTTON_SCALE,
     discover::DiscoverSettingsPlugin,
-    emotes::EmotesSettingsPlugin,
+    emotes::EmoteSettingsPlugin,
     profile_detail::ProfileDetail,
     wearables::WearableSettingsPlugin,
 };
@@ -38,7 +38,7 @@ impl Plugin for ProfileEditPlugin {
         app.add_plugins((
             DiscoverSettingsPlugin,
             WearableSettingsPlugin,
-            EmotesSettingsPlugin,
+            EmoteSettingsPlugin,
             AppSettingsPlugin,
         ));
     }
@@ -138,11 +138,29 @@ fn save_settings(
         }
 
         if let Some(avatar) = maybe_avatar {
-            profile.content.avatar.body_shape = avatar.0.body_shape.to_owned();
-            profile.content.avatar.hair = avatar.0.hair_color.map(AvatarColor::new);
-            profile.content.avatar.eyes = avatar.0.eye_color.map(AvatarColor::new);
-            profile.content.avatar.skin = avatar.0.skin_color.map(AvatarColor::new);
-            profile.content.avatar.wearables = avatar.0.wearables.to_vec();
+            profile.content.avatar.body_shape = avatar.shape.body_shape.to_owned();
+            profile.content.avatar.hair = avatar.shape.hair_color.map(AvatarColor::new);
+            profile.content.avatar.eyes = avatar.shape.eye_color.map(AvatarColor::new);
+            profile.content.avatar.skin = avatar.shape.skin_color.map(AvatarColor::new);
+            profile.content.avatar.wearables = avatar.shape.wearables.to_vec();
+            profile.content.avatar.emotes = Some(
+                avatar
+                    .shape
+                    .emotes
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(ix, e)| {
+                        (!e.is_empty()).then_some(AvatarEmote {
+                            slot: ix as u32,
+                            urn: if e.starts_with("urn:decentraland:off-chain:base-emotes") {
+                                e.rsplit_once(':').unwrap().1.to_string()
+                            } else {
+                                e.clone()
+                            },
+                        })
+                    })
+                    .collect(),
+            );
         }
 
         profile.version += 1;

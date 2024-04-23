@@ -86,7 +86,7 @@ impl EntityDefinitionLoader {
         reader: &'a mut Reader,
         _settings: &'a (),
         id_fn: impl FnOnce() -> String + Send + Sync + 'a,
-    ) -> bevy::utils::BoxedFuture<'a, Result<EntityDefinition, std::io::Error>> {
+    ) -> bevy::utils::BoxedFuture<'a, Result<EntityDefinition, anyhow::Error>> {
         Box::pin(async move {
             let mut bytes = Vec::default();
             reader.read_to_end(&mut bytes).await?;
@@ -127,7 +127,7 @@ impl EntityDefinitionLoader {
 impl AssetLoader for EntityDefinitionLoader {
     type Asset = EntityDefinition;
     type Settings = ();
-    type Error = std::io::Error;
+    type Error = anyhow::Error;
 
     fn load<'a>(
         &'a self,
@@ -203,6 +203,11 @@ impl ContentMap {
 
     pub fn new_single(file: String, hash: String) -> Self {
         Self(HashMap::from_iter([(file, hash)]))
+    }
+
+    pub fn with(mut self, file: String, hash: String) -> Self {
+        self.0.insert(file.to_lowercase(), hash);
+        self
     }
 }
 

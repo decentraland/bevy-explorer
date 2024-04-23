@@ -7,7 +7,7 @@ use bevy::{
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use collectibles::emotes::AvatarAnimations;
+use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};
 use common::structs::PrimaryUser;
 use comms::profile::CurrentUserProfile;
 use ui_core::{
@@ -136,7 +136,7 @@ pub struct EmoteDialog;
 #[derive(Component)]
 pub struct EmoteButton(String, u32);
 
-#[derive(Event)]
+#[derive(Event, Clone, Copy)]
 pub enum EmoteUiEvent {
     Show { coords: Option<Vec2> },
     Hide,
@@ -222,12 +222,18 @@ fn show_emote_ui(
     dui: Res<DuiRegistry>,
     window: Query<&Window, With<PrimaryWindow>>,
     profile: Res<CurrentUserProfile>,
-    emotes: Res<AvatarAnimations>,
+    mut emote_loader: CollectibleManager<Emote>,
     asset_server: Res<AssetServer>,
     buttons: Query<(&EmoteButton, &Interaction)>,
     player: Query<Entity, With<PrimaryUser>>,
+    mut retry: Local<Option<EmoteUiEvent>>,
 ) {
-    if let Some(ev) = events.read().last() {
+    let mut ev = events.read().last().copied();
+    if retry.is_some() {
+        ev = retry.take();
+    }
+
+    if let Some(ev) = ev {
         for ent in existing.iter() {
             commands.entity(ent).despawn_recursive();
 
@@ -244,7 +250,7 @@ fn show_emote_ui(
             return;
         };
 
-        let mut props = window.single().get_layout_props(1.5, 0.6, *coords);
+        let mut props = window.single().get_layout_props(1.5, 0.6, coords);
 
         let Some(player_emotes) = profile
             .profile
@@ -262,16 +268,32 @@ fn show_emote_ui(
             );
         }
 
+        let mut all_loaded = true;
+
         for emote in player_emotes {
             debug!("adding {}", emote.slot);
-            let h_thumb = emotes
-                .get_server(&emote.urn)
-                .and_then(|anim| anim.thumbnail.clone())
+
+            let h_thumb = EmoteUrn::new(&emote.urn)
+                .ok()
+                .and_then(|emote_urn| match emote_loader.get_data(emote_urn) {
+                    Ok(d) => Some(d),
+                    Err(CollectibleError::Loading) => {
+                        all_loaded = false;
+                        None
+                    }
+                    _ => None,
+                })
+                .map(|anim| anim.thumbnail.clone())
                 .unwrap_or_else(|| {
-                    debug!("didn't find {} in {:?}", emote.urn, emotes);
+                    debug!("didn't find {}", emote.urn);
                     asset_server.load("images/redx.png")
                 });
             props.insert_prop(format!("image_{}", emote.slot), h_thumb.clone())
+        }
+
+        if !all_loaded {
+            *retry = Some(ev);
+            return;
         }
 
         let buttons = commands
@@ -293,8 +315,9 @@ fn show_emote_ui(
         for emote in player_emotes {
             all_slots.remove(&emote.slot);
             let button = buttons.named(format!("emote_{}", emote.slot).as_str());
-            let name = emotes
-                .get_server(&emote.urn)
+            let name = EmoteUrn::new(&emote.urn)
+                .ok()
+                .and_then(|emote| emote_loader.get_data(emote).ok())
                 .map(|e| e.name.clone())
                 .unwrap_or("???".to_owned());
             let name2 = name.clone();

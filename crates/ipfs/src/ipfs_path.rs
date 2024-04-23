@@ -48,6 +48,12 @@ pub trait IpfsAsset: bevy::asset::Asset {
     fn ext() -> &'static str;
 }
 
+impl IpfsAsset for bevy::gltf::Gltf {
+    fn ext() -> &'static str {
+        "gltf"
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum IpfsType {
     ContentFile {

@@ -41,6 +41,7 @@ pub struct AvatarWireFormat {
     pub hair: Option<AvatarColor>,
     pub skin: Option<AvatarColor>,
     pub wearables: Vec<String>,
+    pub force_render: Option<Vec<String>>,
     pub emotes: Option<Vec<AvatarEmote>>,
     pub snapshots: Option<AvatarSnapshots>,
 }
@@ -83,7 +84,16 @@ impl Default for SerializedProfile {
                     \"urn:decentraland:off-chain:base-avatars:f_mouth_00\"
                 ],
                 \"emotes\":[
-                    {\"slot\": 0, \"urn\": \"headexplode\" }
+                    {\"slot\": 0, \"urn\": \"handsair\" },
+                    {\"slot\": 1, \"urn\": \"wave\" },
+                    {\"slot\": 2, \"urn\": \"fistpump\" },
+                    {\"slot\": 3, \"urn\": \"dance\" },
+                    {\"slot\": 4, \"urn\": \"raisehand\" },
+                    {\"slot\": 5, \"urn\": \"clap\" },
+                    {\"slot\": 6, \"urn\": \"money\" },
+                    {\"slot\": 7, \"urn\": \"kiss\" },
+                    {\"slot\": 8, \"urn\": \"headexplode\" },
+                    {\"slot\": 9, \"urn\": \"shrug\" }
                 ],
                 \"snapshots\": {
                     \"face256\":\"bafkreifxucgpg7w2rnnfevjzvlokojxnxqh7uvxhe2nwwyks4xr4unx4bu\",

@@ -1,8 +1,13 @@
 use std::str::FromStr;
 
-use crate::{base_wearables, CollectibleInstance, CollectibleUrn};
+use crate::{
+    urn::{CollectibleInstance, CollectibleUrn},
+    Collectible, CollectibleData, CollectibleType, Collectibles, CollectiblesTypePlugin,
+};
 use anyhow::anyhow;
 use bevy::{
+    asset::AssetLoader,
+    core::FrameCount,
     gltf::{Gltf, GltfLoaderSettings},
     prelude::*,
     render::render_asset::RenderAssetUsages,
@@ -13,102 +18,25 @@ use isahc::AsyncReadResponseExt;
 use serde::Deserialize;
 
 use common::util::TaskExt;
-use ipfs::{ActiveEntityTask, IpfsAssetServer, IpfsModifier};
+use ipfs::EntityDefinitionLoader;
 
 pub struct WearablePlugin;
 
 impl Plugin for WearablePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<WearablePointers>();
-        app.init_resource::<RequestedWearables>();
-        app.init_resource::<WearableCollections>();
-        app.add_systems(
-            Update,
-            (load_base_wearables, load_collections, load_wearables),
-        );
+        app.add_plugins(CollectiblesTypePlugin::<Wearable>::default())
+            .init_resource::<WearableCollections>();
+        app.register_asset_loader(WearableLoader);
+        app.register_asset_loader(WearableMetaLoader);
+        app.add_systems(Update, (load_collections, retain_wearables));
     }
 }
 
 #[derive(Resource, Default)]
 pub struct WearableCollections(pub HashMap<String, String>);
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub struct WearableMarker;
-
-pub type WearableUrn = CollectibleUrn<WearableMarker>;
-pub type WearableInstance = CollectibleInstance<WearableMarker>;
-
-#[derive(Debug, Clone)]
-pub struct WearableMetaAndHash {
-    pub meta: WearableMeta,
-    pub hash: String,
-}
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug)]
-enum WearablePointerResult {
-    Exists(WearableMetaAndHash),
-    Missing,
-}
-
-impl WearablePointerResult {
-    pub fn hash(&self) -> Result<&str, ()> {
-        match self {
-            WearablePointerResult::Exists(WearableMetaAndHash { hash, .. }) => Ok(hash),
-            WearablePointerResult::Missing => Err(()),
-        }
-    }
-
-    pub fn meta(&self) -> Result<&WearableMeta, ()> {
-        match self {
-            WearablePointerResult::Exists(WearableMetaAndHash { meta, .. }) => Ok(meta),
-            WearablePointerResult::Missing => Err(()),
-        }
-    }
-
-    pub fn get(&self) -> Result<&WearableMetaAndHash, ()> {
-        match self {
-            WearablePointerResult::Exists(mah) => Ok(mah),
-            WearablePointerResult::Missing => Err(()),
-        }
-    }
-}
-
-#[derive(Resource, Default, Debug)]
-pub struct WearablePointers {
-    data: HashMap<WearableUrn, WearablePointerResult>,
-}
-
-impl WearablePointers {
-    pub fn get(
-        &self,
-        collectible: impl AsRef<WearableUrn>,
-    ) -> Option<Result<&WearableMetaAndHash, ()>> {
-        self.data
-            .get(collectible.as_ref())
-            .map(WearablePointerResult::get)
-    }
-
-    pub fn meta(&self, collectible: impl AsRef<WearableUrn>) -> Option<Result<&WearableMeta, ()>> {
-        self.data
-            .get(collectible.as_ref())
-            .map(WearablePointerResult::meta)
-    }
-
-    pub fn hash(&self, collectible: impl AsRef<WearableUrn>) -> Option<Result<&str, ()>> {
-        self.data
-            .get(collectible.as_ref())
-            .map(WearablePointerResult::hash)
-    }
-
-    fn insert(&mut self, collectible: impl Into<WearableUrn>, wearable: WearablePointerResult) {
-        self.data.insert(collectible.into(), wearable);
-    }
-
-    pub fn contains_key(&self, collectible: impl AsRef<WearableUrn>) -> bool {
-        self.data.contains_key(collectible.as_ref())
-    }
-}
+pub type WearableUrn = CollectibleUrn<Wearable>;
+pub type WearableInstance = CollectibleInstance<Wearable>;
 
 #[derive(Deserialize, Debug, Component, Clone)]
 pub struct WearableMeta {
@@ -120,36 +48,13 @@ pub struct WearableMeta {
     pub data: WearableData,
 }
 
-impl WearableMeta {
-    pub fn hides(&self, body_shape: &CollectibleUrn<WearableMarker>) -> HashSet<WearableCategory> {
-        // hides from data
-        let mut hides = HashSet::from_iter(self.data.hides.clone());
-        if let Some(repr) = self.data.representations.iter().find(|repr| {
-            repr.body_shapes
-                .iter()
-                .any(|shape| body_shape == &WearableUrn::new(shape))
-        }) {
-            // add hides from representation
-            hides.extend(repr.override_hides.clone());
-        }
-
-        // add all hides for skin
-        if self.data.category == WearableCategory::SKIN {
-            hides.extend(WearableCategory::iter());
-        }
-
-        // remove self
-        hides.remove(&self.data.category);
-        hides
-    }
-}
-
 #[derive(Deserialize, Debug, Clone)]
 pub struct WearableData {
     pub tags: Vec<String>,
     pub category: WearableCategory,
     pub representations: Vec<WearableRepresentation>,
     pub hides: Vec<WearableCategory>,
+    pub replaces: Vec<WearableCategory>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -160,77 +65,6 @@ pub struct WearableRepresentation {
     pub override_replaces: Vec<WearableCategory>,
     pub override_hides: Vec<WearableCategory>,
     pub contents: Vec<String>,
-}
-
-fn load_base_wearables(
-    mut once: Local<bool>,
-    mut task: Local<Option<ActiveEntityTask>>,
-    mut wearable_pointers: ResMut<WearablePointers>,
-    ipfas: IpfsAssetServer,
-) {
-    if *once || ipfas.active_endpoint().is_none() {
-        return;
-    }
-
-    match *task {
-        None => {
-            let pointers = base_wearables::base_wearable_urns()
-                .iter()
-                .map(ToString::to_string)
-                .collect();
-            *task = Some(ipfas.ipfs().active_entities(
-                ipfs::ActiveEntitiesRequest::Pointers(pointers),
-                Some(base_wearables::BASE_URL),
-            ));
-        }
-        Some(ref mut active_task) => match active_task.complete() {
-            None => (),
-            Some(Err(e)) => {
-                warn!("failed to acquire base wearables: {e}");
-                *task = None;
-                *once = true;
-            }
-            Some(Ok(active_entities)) => {
-                debug!("first active entity: {:?}", active_entities.first());
-                for entity in active_entities {
-                    ipfas.ipfs().add_collection(
-                        entity.id.clone(),
-                        entity.content,
-                        Some(IpfsModifier {
-                            base_url: Some(base_wearables::CONTENT_URL.to_owned()),
-                        }),
-                        entity.metadata.as_ref().map(ToString::to_string),
-                    );
-
-                    let Some(metadata) = entity.metadata else {
-                        warn!("no metadata on wearable");
-                        continue;
-                    };
-                    let meta = match serde_json::from_value::<WearableMeta>(metadata.clone()) {
-                        Ok(data) => data,
-                        Err(e) => {
-                            warn!("failed to deserialize wearable data: {e}");
-                            continue;
-                        }
-                    };
-                    if meta.name.contains("dungarees") {
-                        debug!("dungarees: {:?}", metadata);
-                    }
-                    for pointer in entity.pointers {
-                        wearable_pointers.insert(
-                            pointer,
-                            WearablePointerResult::Exists(WearableMetaAndHash {
-                                meta: meta.clone(),
-                                hash: entity.id.clone(),
-                            }),
-                        );
-                    }
-                }
-                *task = None;
-                *once = true;
-            }
-        },
-    }
 }
 
 #[derive(Deserialize)]
@@ -324,6 +158,9 @@ impl WearableCategory {
     pub const TOP_HEAD: WearableCategory = WearableCategory::model("top_head");
     pub const SKIN: WearableCategory = WearableCategory::model("skin");
 
+    // only used for hiding
+    pub const HEAD: WearableCategory = WearableCategory::model("head");
+
     const fn model(slot: &'static str) -> Self {
         Self {
             slot,
@@ -363,7 +200,7 @@ impl FromStr for WearableCategory {
             "earring" => Ok(Self::EARRING),
             "mask" => Ok(Self::MASK),
             "top_head" => Ok(Self::TOP_HEAD),
-            "head" => Ok(Self::TOP_HEAD), // legacy support
+            "head" => Ok(Self::HEAD),
             "tiara" => Ok(Self::TIARA),
             "helmet" => Ok(Self::HELMET),
             "skin" => Ok(Self::SKIN),
@@ -377,7 +214,8 @@ impl FromStr for WearableCategory {
 }
 
 impl WearableCategory {
-    pub fn iter() -> impl Iterator<Item = &'static WearableCategory> {
+    // does not include hide-only categories
+    pub fn iter() -> impl Iterator<Item = &'static Self> {
         [
             Self::BODY_SHAPE,
             Self::HAIR,
@@ -401,198 +239,286 @@ impl WearableCategory {
         .iter()
     }
 
+    // does not include hide-only categories
+    pub fn hides_order() -> impl Iterator<Item = &'static Self> {
+        [
+            Self::SKIN,
+            Self::UPPER_BODY,
+            Self::HAND_WEAR,
+            Self::LOWER_BODY,
+            Self::FEET,
+            Self::HELMET,
+            Self::HAT,
+            Self::TOP_HEAD,
+            Self::MASK,
+            Self::EYEWEAR,
+            Self::EARRING,
+            Self::TIARA,
+            Self::HAIR,
+            Self::EYEBROWS,
+            Self::EYES,
+            Self::MOUTH,
+            Self::FACIAL_HAIR,
+            Self::BODY_SHAPE,
+        ]
+        .iter()
+    }
+
     pub fn index(&self) -> Option<usize> {
         Self::iter().position(|w| w == self)
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct WearableDefinition {
+#[derive(Debug, TypePath, Clone)]
+pub struct Wearable {
     pub category: WearableCategory,
     pub hides: HashSet<WearableCategory>,
     pub model: Option<Handle<Gltf>>,
     pub texture: Option<Handle<Image>>,
     pub mask: Option<Handle<Image>>,
-    pub thumbnail: Option<Handle<Image>>,
 }
 
-impl WearableDefinition {
-    pub fn new(
-        data: &WearableMetaAndHash,
-        ipfas: &IpfsAssetServer,
-        body_shape: &str,
-    ) -> Option<WearableDefinition> {
-        let Some(representation) = (if body_shape.is_empty() {
-            Some(&data.meta.data.representations[0])
-        } else {
-            data.meta.data.representations.iter().find(|rep| {
-                rep.body_shapes
+#[derive(Clone, Debug)]
+pub struct WearableExtraData {
+    pub category: WearableCategory,
+}
+
+impl CollectibleType for Wearable {
+    type Meta = WearableMeta;
+    type ExtraData = WearableExtraData;
+
+    fn base_collection() -> Option<&'static str> {
+        None
+    }
+
+    fn extension() -> &'static str {
+        "wearable"
+    }
+
+    fn data_extension() -> &'static str {
+        "wearable_data"
+    }
+}
+
+struct WearableLoader;
+
+impl AssetLoader for WearableLoader {
+    type Asset = Collectible<Wearable>;
+
+    type Settings = ();
+
+    type Error = anyhow::Error;
+
+    fn load<'a>(
+        &'a self,
+        reader: &'a mut bevy::asset::io::Reader,
+        settings: &'a Self::Settings,
+        load_context: &'a mut bevy::asset::LoadContext,
+    ) -> bevy::utils::BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+        Box::pin(async move {
+            let mut entity = EntityDefinitionLoader
+                .load(reader, settings, load_context)
+                .await?;
+            let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
+            let meta = serde_json::from_value::<WearableMeta>(metadata)?;
+
+            let category = meta.data.category;
+            let thumbnail =
+                load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
+
+            let mut representations = HashMap::default();
+
+            for representation in meta.data.representations.into_iter() {
+                let (model, texture, mask) = if category.is_texture {
+                    // don't validate the main file, as some base wearables have no extension on the main_file member (Eyebrows_09 e.g)
+                    let texture = representation
+                        .contents
+                        .iter()
+                        .find(|f| {
+                            f.to_lowercase().ends_with(".png")
+                                && !f.to_lowercase().ends_with("_mask.png")
+                        })
+                        .map(|f| load_context.load(load_context.path().parent().unwrap().join(f)));
+                    let mask = representation
+                        .contents
+                        .iter()
+                        .find(|f| f.to_lowercase().ends_with("_mask.png"))
+                        .map(|f| load_context.load(load_context.path().parent().unwrap().join(f)));
+
+                    (None, texture, mask)
+                } else {
+                    if !representation.main_file.to_lowercase().ends_with(".glb") {
+                        return Err(anyhow!(
+                            "expected .glb main file, found {}",
+                            representation.main_file
+                        ));
+                    }
+
+                    let model = load_context.load_with_settings::<Gltf, GltfLoaderSettings>(
+                        load_context
+                            .path()
+                            .parent()
+                            .unwrap()
+                            .join(&representation.main_file),
+                        |s| {
+                            s.load_cameras = false;
+                            s.load_lights = false;
+                            s.load_materials = RenderAssetUsages::RENDER_WORLD;
+                        },
+                    );
+
+                    (Some(model), None, None)
+                };
+
+                for body_shape in representation.body_shapes {
+                    let mut hides: HashSet<_> = if representation.override_hides.is_empty() {
+                        &meta.data.hides
+                    } else {
+                        &representation.override_hides
+                    }
                     .iter()
-                    .any(|rep_shape| rep_shape.to_lowercase() == body_shape.to_lowercase())
-            })
-        }) else {
-            warn!(
-                "no representation for body shape {body_shape}, {:?}",
-                data.meta
-            );
-            return None;
-        };
+                    .copied()
+                    .collect();
 
-        let category = data.meta.data.category;
-        if category == WearableCategory::UNKNOWN {
-            warn!("unknown wearable category");
-            return None;
-        }
+                    hides.extend(
+                        if representation.override_replaces.is_empty() {
+                            &meta.data.replaces
+                        } else {
+                            &representation.override_hides
+                        }
+                        .iter()
+                        .copied(),
+                    );
 
-        let hides = data.meta.hides(WearableInstance::new(body_shape).base());
+                    // add extra hides
+                    if category == WearableCategory::SKIN {
+                        hides.extend([
+                            WearableCategory::HEAD,
+                            WearableCategory::FACIAL_HAIR,
+                            WearableCategory::UPPER_BODY,
+                            WearableCategory::LOWER_BODY,
+                            WearableCategory::FEET,
+                            WearableCategory::HAND_WEAR,
+                            WearableCategory::BODY_SHAPE,
+                        ]);
+                    }
 
-        let (model, texture, mask) = if category.is_texture {
-            // don't validate the main file, as some base wearables have no extension on the main_file member (Eyebrows_09 e.g)
-            // if !representation.main_file.ends_with(".png") {
-            //     warn!(
-            //         "expected .png main file for category {}, found {}",
-            //         category.slot, representation.main_file
-            //     );
-            //     return None;
-            // }
+                    // upper body or hide(upper body) -> hide hands
+                    if category == WearableCategory::UPPER_BODY
+                        || hides.contains(&WearableCategory::UPPER_BODY)
+                    {
+                        hides.insert(WearableCategory::HAND_WEAR);
+                    }
 
-            let texture = representation
-                .contents
-                .iter()
-                .find(|f| {
-                    f.to_lowercase().ends_with(".png") && !f.to_lowercase().ends_with("_mask.png")
-                })
-                .and_then(|f| ipfas.load_content_file::<Image>(f, &data.hash).ok());
-            let mask = representation
-                .contents
-                .iter()
-                .find(|f| f.to_lowercase().ends_with("_mask.png"))
-                .and_then(|f| ipfas.load_content_file::<Image>(f, &data.hash).ok());
+                    // hide "head" pseudo-category -> hide a bunch of other stuff
+                    if hides.contains(&WearableCategory::HEAD) {
+                        hides.extend([
+                            WearableCategory::EYES,
+                            WearableCategory::EYEBROWS,
+                            WearableCategory::MOUTH,
+                            WearableCategory::FACIAL_HAIR,
+                            WearableCategory::MASK,
+                            WearableCategory::HAIR,
+                        ]);
+                    }
 
-            (None, texture, mask)
-        } else {
-            if !representation.main_file.to_lowercase().ends_with(".glb") {
-                warn!(
-                    "expected .glb main file, found {}",
-                    representation.main_file
-                );
-                return None;
+                    // remove self
+                    hides.remove(&category);
+
+                    representations.insert(
+                        body_shape.to_lowercase(),
+                        Wearable {
+                            category,
+                            hides,
+                            model: model.clone(),
+                            texture: texture.clone(),
+                            mask: mask.clone(),
+                        },
+                    );
+                }
             }
 
-            let model = ipfas
-                .load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
-                    &representation.main_file,
-                    &data.hash,
-                    |s| {
-                        s.load_cameras = false;
-                        s.load_lights = false;
-                        s.load_materials = RenderAssetUsages::RENDER_WORLD;
-                    },
-                )
-                .ok();
-
-            (model, None, None)
-        };
-
-        let thumbnail = ipfas
-            .load_content_file::<Image>(&data.meta.thumbnail, &data.hash)
-            .ok();
-
-        Some(Self {
-            category,
-            hides,
-            model,
-            texture,
-            mask,
-            thumbnail,
+            Ok(Collectible {
+                data: CollectibleData {
+                    thumbnail,
+                    hash: entity.id,
+                    urn: entity.pointers.pop().unwrap_or_default(),
+                    name: meta.name,
+                    description: meta.description,
+                    available_representations: representations.keys().cloned().collect(),
+                    extra_data: WearableExtraData { category },
+                },
+                representations,
+            })
         })
     }
 }
 
-#[derive(Resource, Default)]
-pub struct RequestedWearables(pub HashSet<WearableUrn>);
+#[derive(Component)]
+pub struct UsedWearables(pub HashSet<CollectibleUrn<Wearable>>);
 
-fn load_wearables(
-    mut requested_wearables: ResMut<RequestedWearables>,
-    mut wearable_task: Local<Option<(ActiveEntityTask, HashSet<WearableUrn>)>>,
-    mut wearable_pointers: ResMut<WearablePointers>,
-    ipfas: IpfsAssetServer,
+fn retain_wearables(
+    used: Query<&UsedWearables>,
+    mut collectibles: ResMut<Collectibles<Wearable>>,
+    frame: Res<FrameCount>,
 ) {
-    if let Some((mut task, mut wearables)) = wearable_task.take() {
-        match task.complete() {
-            Some(Ok(entities)) => {
-                debug!("got results: {:?}", entities.len());
+    let urns = used.iter().fold(
+        HashSet::<&CollectibleUrn<Wearable>>::default(),
+        |mut urns, used| {
+            urns.extend(used.0.iter());
+            urns
+        },
+    );
 
-                for entity in entities {
-                    ipfas.ipfs().add_collection(
-                        entity.id.clone(),
-                        entity.content,
-                        Some(IpfsModifier {
-                            base_url: Some(base_wearables::CONTENT_URL.to_owned()),
-                        }),
-                        entity.metadata.as_ref().map(ToString::to_string),
-                    );
+    collectibles.retain(frame.0, |urn| urns.contains(urn));
+}
 
-                    let Some(metadata) = entity.metadata else {
-                        warn!("no metadata on wearable");
-                        continue;
-                    };
-                    debug!("loaded wearable {:?} -> {:?}", entity.pointers, metadata);
-                    let meta = match serde_json::from_value::<WearableMeta>(metadata) {
-                        Ok(data) => data,
-                        Err(e) => {
-                            warn!("failed to deserialize wearable data: {e}");
-                            continue;
-                        }
-                    };
-                    for pointer in entity.pointers.into_iter().map(WearableUrn::from) {
-                        debug!("{} -> {}", pointer, entity.id);
-                        wearables.remove(&pointer);
-                        wearable_pointers.insert(
-                            pointer,
-                            WearablePointerResult::Exists(WearableMetaAndHash {
-                                meta: meta.clone(),
-                                hash: entity.id.clone(),
-                            }),
-                        );
-                    }
-                }
+struct WearableMetaLoader;
 
-                // any urns left in the hashset were requested but not returned
-                for urn in wearables {
-                    debug!("missing {urn}");
-                    wearable_pointers.insert(urn, WearablePointerResult::Missing);
-                }
-            }
-            Some(Err(e)) => {
-                warn!("failed to resolve entities: {e}");
-            }
-            None => {
-                debug!("waiting for wearable resolve");
-                *wearable_task = Some((task, wearables));
-            }
-        }
-    } else {
-        let base_wearables = HashSet::from_iter(base_wearables::base_wearable_urns());
-        let requested = requested_wearables
-            .0
-            .drain()
-            .filter(|r| !wearable_pointers.contains_key(r))
-            .filter(|urn| !base_wearables.contains(urn))
-            .collect::<HashSet<_>>();
-        let pointers = requested
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>();
+impl AssetLoader for WearableMetaLoader {
+    type Asset = CollectibleData<Wearable>;
 
-        if !requested.is_empty() {
-            debug!("requesting: {:?}", requested);
-            *wearable_task = Some((
-                ipfas
-                    .ipfs()
-                    .active_entities(ipfs::ActiveEntitiesRequest::Pointers(pointers), None),
-                requested,
-            ));
-        }
+    type Settings = ();
+
+    type Error = anyhow::Error;
+
+    fn load<'a>(
+        &'a self,
+        reader: &'a mut bevy::asset::io::Reader,
+        settings: &'a Self::Settings,
+        load_context: &'a mut bevy::asset::LoadContext,
+    ) -> bevy::utils::BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+        Box::pin(async move {
+            let mut entity = EntityDefinitionLoader
+                .load(reader, settings, load_context)
+                .await?;
+            let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
+            let meta = serde_json::from_value::<WearableMeta>(metadata)?;
+
+            let category = meta.data.category;
+            let thumbnail =
+                load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
+
+            let available_representations = meta
+                .data
+                .representations
+                .into_iter()
+                .flat_map(|rep| {
+                    rep.body_shapes
+                        .into_iter()
+                        .map(|shape| shape.to_lowercase())
+                })
+                .collect();
+
+            Ok(CollectibleData {
+                thumbnail,
+                hash: entity.id,
+                urn: entity.pointers.pop().unwrap_or_default(),
+                name: meta.name,
+                description: meta.description,
+                available_representations,
+                extra_data: WearableExtraData { category },
+            })
+        })
     }
 }
