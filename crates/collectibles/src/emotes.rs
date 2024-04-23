@@ -187,8 +187,13 @@ fn load_animations(
                                 data: CollectibleData {
                                     hash: Default::default(),
                                     urn: urn.as_str().to_string(),
-                                    thumbnail: asset_server
-                                        .load(format!("animations/thumbnails/{network_name}.png")),
+                                    thumbnail: if register_base {
+                                        asset_server.load(format!(
+                                            "animations/thumbnails/{network_name}.png"
+                                        ))
+                                    } else {
+                                        Handle::default()
+                                    },
                                     available_representations: representations
                                         .keys()
                                         .cloned()
