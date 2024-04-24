@@ -156,6 +156,8 @@ struct Slider {
     position: f32,
 }
 
+pub const BAR_WIDTH: f32 = 15.0;
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn update_scrollables(
     mut commands: Commands,
@@ -175,15 +177,23 @@ fn update_scrollables(
         &Interaction,
     )>,
     mut bars: Query<
-        (Entity, &ScrollBar, &mut Style, &Interaction),
+        (
+            Entity,
+            &ScrollBar,
+            &mut Style,
+            &Interaction,
+            &Node,
+            &GlobalTransform,
+        ),
         (Without<Scrollable>, Without<Slider>),
     >,
     mut sliders: Query<
-        (Entity, &mut Slider, &mut Style, &Interaction),
+        (Entity, &mut Slider, &mut Style),
         (Without<Scrollable>, Without<ScrollBar>),
     >,
     mut clicked_slider: Local<Option<(Entity, Vec2)>>,
     mut wheel: EventReader<MouseWheel>,
+    mouse_button_input: Res<ButtonInput<MouseButton>>,
 ) {
     #[derive(Copy, Clone, Debug)]
     enum UpdateSliderPosition {
@@ -205,9 +215,13 @@ fn update_scrollables(
     let Ok(window) = window.get_single() else {
         return;
     };
-    let cursor_position = window.cursor_position().unwrap_or_default();
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
 
-    let previously_clicked = std::mem::take(&mut *clicked_slider);
+    if mouse_button_input.just_released(MouseButton::Left) {
+        *clicked_slider = None;
+    }
 
     let mut vertical_scrollers = HashMap::default();
     let mut horizontal_scrollers = HashMap::default();
@@ -239,15 +253,17 @@ fn update_scrollables(
 
         // calculate deltas based on drag or mouse wheel in the parent container
         let mut new_slider_deltas = None;
-        if scrollable.drag && interaction == &Interaction::Pressed {
-            if let Some((prev_entity, prev_pos)) = previously_clicked.as_ref() {
+        if scrollable.drag {
+            if let Some((prev_entity, prev_pos)) = clicked_slider.as_ref() {
                 if prev_entity == &entity {
                     let delta = cursor_position - *prev_pos;
                     new_slider_deltas = Some(delta / slide_amount);
                 }
             }
 
-            *clicked_slider = Some((entity, cursor_position));
+            if interaction == &Interaction::Pressed {
+                *clicked_slider = Some((entity, cursor_position));
+            }
         }
         if scrollable.wheel {
             // we check only if the cursor is within our frame - this means scrollables can still be scrolled when
@@ -284,7 +300,8 @@ fn update_scrollables(
                         content: scroll_content.0,
                         slide_amount,
                         ratio: ratio.x,
-                        bar_position: ui_position * 0.0 + Vec2::new(5.0, parent_size.y - 10.0),
+                        bar_position: ui_position * 0.0
+                            + Vec2::new(BAR_WIDTH, parent_size.y - BAR_WIDTH - 5.0),
                         length: parent_size.x - 20.0,
                         start,
                         redraw,
@@ -305,7 +322,8 @@ fn update_scrollables(
                         content: scroll_content.0,
                         slide_amount,
                         ratio: ratio.y,
-                        bar_position: ui_position * 0.0 + Vec2::new(parent_size.x - 10.0, 5.0),
+                        bar_position: ui_position * 0.0
+                            + Vec2::new(parent_size.x - BAR_WIDTH - 5.0, BAR_WIDTH),
                         length: parent_size.y - 20.0,
                         start,
                         redraw,
@@ -321,7 +339,7 @@ fn update_scrollables(
     }
 
     // bars
-    for (entity, bar, mut style, interaction) in bars.iter_mut() {
+    for (entity, bar, mut style, interaction, node, transform) in bars.iter_mut() {
         let source = if bar.vertical {
             &mut vertical_scrollers
         } else {
@@ -338,17 +356,17 @@ fn update_scrollables(
             style.left = Val::Px(info.bar_position.x);
             style.top = Val::Px(info.bar_position.y);
             if bar.vertical {
-                style.width = Val::Px(5.0);
+                style.width = Val::Px(BAR_WIDTH);
                 style.height = Val::Px(info.length);
             } else {
                 style.width = Val::Px(info.length);
-                style.height = Val::Px(5.0);
+                style.height = Val::Px(BAR_WIDTH);
             }
-        } else if interaction == &Interaction::Pressed {
+        } else if interaction == &Interaction::Pressed
+            || clicked_slider.map_or(false, |(ent, _)| ent == bar.parent)
+        {
             // jump the slider to the clicked position
-            let (Val::Px(left), Val::Px(top)) = (style.left, style.top) else {
-                continue;
-            };
+            let Vec2 { x: left, y: top } = transform.translation().xy() - node.size() * 0.5;
             let relative_position = cursor_position - Vec2::new(left, top);
             let slider_len = info.length * info.ratio;
             let position = if bar.vertical {
@@ -361,7 +379,7 @@ fn update_scrollables(
     }
 
     // sliders
-    for (entity, mut slider, mut style, interaction) in sliders.iter_mut() {
+    for (entity, mut slider, mut style) in sliders.iter_mut() {
         let source = if slider.vertical {
             &mut vertical_scrollers
         } else {
@@ -378,24 +396,6 @@ fn update_scrollables(
         if info.redraw {
             // parent moved/resized or content moved/resized
             update_position = true;
-        } else if interaction == &Interaction::Pressed {
-            // use slider click in priority over bar or container
-            if let Some((prev_entity, prev_pos)) = previously_clicked.as_ref() {
-                if prev_entity == &entity {
-                    let delta = cursor_position - *prev_pos;
-                    let delta = if slider.vertical { delta.y } else { delta.x };
-
-                    if delta != 0.0 {
-                        let slider_len = info.length * info.ratio;
-                        let relative_delta = delta / (info.length - slider_len);
-
-                        slider.position = (slider.position + relative_delta).clamp(0.0, 1.0);
-                        update_position = true;
-                    }
-                }
-            }
-
-            *clicked_slider = Some((entity, cursor_position));
         } else if let Some(position) = info.update_slider {
             // the container or the bar have triggered a slider update
             slider.position = match position {
@@ -409,7 +409,7 @@ fn update_scrollables(
             // redraw slider
             let slider_len = info.length * info.ratio;
             if slider.vertical {
-                style.width = Val::Px(5.0);
+                style.width = Val::Px(BAR_WIDTH);
                 style.height = Val::Px(slider_len);
                 let slider_start =
                     info.bar_position.y + (info.length - slider_len) * slider.position;
@@ -417,7 +417,7 @@ fn update_scrollables(
                 style.top = Val::Px(slider_start);
             } else {
                 style.width = Val::Px(slider_len);
-                style.height = Val::Px(5.0);
+                style.height = Val::Px(BAR_WIDTH);
                 let slider_start =
                     info.bar_position.x + (info.length - slider_len) * slider.position;
                 style.left = Val::Px(slider_start);
@@ -440,9 +440,9 @@ fn update_scrollables(
     // create any required bars/sliders that we didn't find existing above
     let mut init_bar = |entity: Entity, info: ScrollInfo, vertical: bool| {
         let bar_size = if vertical {
-            (Val::Px(5.0), Val::Px(info.length))
+            (Val::Px(BAR_WIDTH), Val::Px(info.length))
         } else {
-            (Val::Px(info.length), Val::Px(5.0))
+            (Val::Px(info.length), Val::Px(BAR_WIDTH))
         };
 
         let children = [commands
@@ -482,7 +482,7 @@ fn update_scrollables(
             (
                 Val::Px(info.bar_position.x),
                 Val::Px(slider_start),
-                Val::Px(5.0),
+                Val::Px(BAR_WIDTH),
                 Val::Px(slider_len),
             )
         } else {
@@ -491,7 +491,7 @@ fn update_scrollables(
                 Val::Px(slider_start),
                 Val::Px(info.bar_position.y),
                 Val::Px(slider_len),
-                Val::Px(5.0),
+                Val::Px(BAR_WIDTH),
             )
         };
 
