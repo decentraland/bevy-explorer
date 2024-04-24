@@ -2,6 +2,8 @@ use bevy::{input::mouse::MouseWheel, prelude::*, utils::HashMap, window::Primary
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
 use common::util::TryPushChildrenEx;
 
+use crate::interact_style::{InteractStyle, InteractStyles};
+
 use super::ui_builder::SpawnSpacer;
 
 pub struct ScrollablePlugin;
@@ -456,7 +458,7 @@ fn update_scrollables(
                         height: bar_size.1,
                         ..Default::default()
                     },
-                    background_color: Color::GRAY.into(),
+                    background_color: Color::rgba(0.5, 0.5, 0.5, 0.2).into(),
                     z_index: ZIndex::Local(1),
                     ..Default::default()
                 },
@@ -465,6 +467,12 @@ fn update_scrollables(
                     vertical,
                 },
                 Interaction::default(),
+                InteractStyles {
+                    hover: Some(InteractStyle { background: Some(Color::GRAY), ..Default::default() }),
+                    press: Some(InteractStyle { background: Some(Color::GRAY), ..Default::default() }),
+                    inactive: Some(InteractStyle { background: Some(Color::rgba(0.5, 0.5, 0.5, 0.2)), ..Default::default() }),
+                    ..Default::default()
+                }
             ))
             .id()];
 
@@ -506,7 +514,7 @@ fn update_scrollables(
                         height,
                         ..Default::default()
                     },
-                    background_color: Color::WHITE.into(),
+                    background_color: Color::rgba(1.0, 1.0, 1.0, 0.2).into(),
                     z_index: ZIndex::Local(2),
                     ..Default::default()
                 },
@@ -516,6 +524,12 @@ fn update_scrollables(
                     position,
                 },
                 Interaction::default(),
+                InteractStyles {
+                    hover: Some(InteractStyle { background: Some(Color::WHITE), ..Default::default() }),
+                    press: Some(InteractStyle { background: Some(Color::WHITE), ..Default::default() }),
+                    inactive: Some(InteractStyle { background: Some(Color::rgba(1.0, 1.0, 1.0, 0.2)), ..Default::default() }),
+                    ..Default::default()
+                }
             ))
             .id()];
 
