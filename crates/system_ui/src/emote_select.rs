@@ -4,7 +4,7 @@ use bevy::{
     text::BreakLineOn,
     ui::FocusPolicy,
     utils::HashSet,
-    window::{PrimaryWindow, WindowResized},
+    window::{PrimaryWindow, WindowFocused, WindowResized},
 };
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};
@@ -82,6 +82,7 @@ fn handle_emote_key(
     existing: Query<&EmoteDialog>,
     buttons: Query<&EmoteButton>,
     mut press_time: Local<f32>,
+    mut lost_focus_events: EventReader<WindowFocused>,
 ) {
     if key_input.just_pressed(KeyCode::AltLeft) {
         if !existing.is_empty() {
@@ -101,6 +102,10 @@ fn handle_emote_key(
     }
 
     if key_input.just_released(KeyCode::AltLeft) && time.elapsed_seconds() > *press_time + 0.25 {
+        w.send(EmoteUiEvent::Hide);
+    }
+
+    if lost_focus_events.read().any(|ev| !ev.focused) {
         w.send(EmoteUiEvent::Hide);
     }
 
