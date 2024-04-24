@@ -2,7 +2,7 @@
     <div style="position-type: absolute; width: 100%; height: 100%; flex-grow: 1; flex-direction: row;">
         <div style="flex-direction: column; width: 70%; height: 100%">
             <vscroll>
-                <div id="settings" style="width: 100%; flex-direction: column;" />
+                <div id="settings" style="width: 100%; flex-direction: column; margin: 0px 2vmin 0px 0px;" />
             </vscroll>
         </div>
         <div style="width: 30%; height: 100%; flex-direction: column;">
