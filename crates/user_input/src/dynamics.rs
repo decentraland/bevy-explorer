@@ -41,7 +41,7 @@ use rapier3d_f64::control::{CharacterAutostep, CharacterLength, KinematicCharact
 
 use common::{
     dynamics::{
-        MAX_CLIMBABLE_INCLINE, MAX_STEP_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_GROUND_THRESHOLD,
+        MAX_CLIMBABLE_INCLINE, MAX_STEP_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS, PLAYER_GROUND_THRESHOLD
     },
     structs::PrimaryUser,
 };
@@ -220,7 +220,7 @@ pub fn update_user_position(
     }
 
     // check containing scenes
-    for scene in containing_scenes.get(user_ent) {
+    for scene in containing_scenes.get_area(user_ent, PLAYER_COLLIDER_RADIUS) {
         let Ok((context, mut collider_data)) = scene_datas.get_mut(scene) else {
             continue;
         };
