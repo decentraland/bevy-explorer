@@ -469,11 +469,20 @@ fn update_scrollables(
                 },
                 Interaction::default(),
                 InteractStyles {
-                    hover: Some(InteractStyle { background: Some(Color::GRAY), ..Default::default() }),
-                    press: Some(InteractStyle { background: Some(Color::GRAY), ..Default::default() }),
-                    inactive: Some(InteractStyle { background: Some(Color::rgba(0.5, 0.5, 0.5, 0.2)), ..Default::default() }),
+                    hover: Some(InteractStyle {
+                        background: Some(Color::GRAY),
+                        ..Default::default()
+                    }),
+                    press: Some(InteractStyle {
+                        background: Some(Color::GRAY),
+                        ..Default::default()
+                    }),
+                    inactive: Some(InteractStyle {
+                        background: Some(Color::rgba(0.5, 0.5, 0.5, 0.2)),
+                        ..Default::default()
+                    }),
                     ..Default::default()
-                }
+                },
             ))
             .id()];
 
@@ -526,11 +535,20 @@ fn update_scrollables(
                 },
                 Interaction::default(),
                 InteractStyles {
-                    hover: Some(InteractStyle { background: Some(Color::WHITE), ..Default::default() }),
-                    press: Some(InteractStyle { background: Some(Color::WHITE), ..Default::default() }),
-                    inactive: Some(InteractStyle { background: Some(Color::rgba(1.0, 1.0, 1.0, 0.2)), ..Default::default() }),
+                    hover: Some(InteractStyle {
+                        background: Some(Color::WHITE),
+                        ..Default::default()
+                    }),
+                    press: Some(InteractStyle {
+                        background: Some(Color::WHITE),
+                        ..Default::default()
+                    }),
+                    inactive: Some(InteractStyle {
+                        background: Some(Color::rgba(1.0, 1.0, 1.0, 0.2)),
+                        ..Default::default()
+                    }),
                     ..Default::default()
-                }
+                },
             ))
             .id()];
 

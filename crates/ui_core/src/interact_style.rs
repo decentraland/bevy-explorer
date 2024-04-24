@@ -143,7 +143,7 @@ impl DuiFromStr for InteractStyles {
                     background: Some(c),
                     ..Default::default()
                 }),
-                hover: rule
+            hover: rule
                 .properties
                 .get("hover")
                 .and_then(|v| v.color())

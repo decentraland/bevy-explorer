@@ -41,7 +41,8 @@ use rapier3d_f64::control::{CharacterAutostep, CharacterLength, KinematicCharact
 
 use common::{
     dynamics::{
-        MAX_CLIMBABLE_INCLINE, MAX_STEP_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS, PLAYER_GROUND_THRESHOLD
+        MAX_CLIMBABLE_INCLINE, MAX_STEP_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS,
+        PLAYER_GROUND_THRESHOLD,
     },
     structs::PrimaryUser,
 };
