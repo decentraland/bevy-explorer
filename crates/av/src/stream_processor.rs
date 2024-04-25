@@ -1,3 +1,4 @@
+use anyhow::bail;
 use bevy::{log::info, prelude::debug};
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::Packet;
@@ -15,6 +16,7 @@ pub enum AVCommand {
 }
 
 pub trait FfmpegContext {
+    fn is_live(&self) -> bool;
     fn stream_index(&self) -> Option<usize>;
     fn has_frame(&self) -> bool;
     fn buffered_time(&self) -> f64;
@@ -47,6 +49,11 @@ pub fn process_streams(
     };
 
     loop {
+        // check if all receivers were dropped
+        if streams.iter().all(|ctx| !ctx.is_live()) {
+            bail!("all streams disconnected without dispose command");
+        }
+
         // ensure frame available
         while !input_context.is_eof() && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
             update_state(VideoState::VsBuffering, streams);

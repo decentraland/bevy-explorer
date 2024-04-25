@@ -131,6 +131,10 @@ impl VideoContext {
 }
 
 impl FfmpegContext for VideoContext {
+    fn is_live(&self) -> bool {
+        !self.sink.is_closed()
+    }
+
     fn stream_index(&self) -> Option<usize> {
         Some(self.stream_index)
     }
@@ -163,9 +167,13 @@ impl FfmpegContext for VideoContext {
             self.buffer.len()
         );
         if let Some((index, frame)) = self.buffer.pop_front() {
-            let _ = self
+            if let Err(e) = self
                 .sink
-                .blocking_send(VideoData::Frame(frame, index as f64 / self.rate));
+                .blocking_send(VideoData::Frame(frame, index as f64 / self.rate))
+            {
+                error!("failed to send video frame: {e}");
+            }
+
             self.current_frame += 1;
         }
     }
