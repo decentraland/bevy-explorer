@@ -93,7 +93,7 @@ jobs:
         if: runner.os == 'macos'
         run: |
           brew install ffmpeg@6 pkg-config;
-          echo "PKG_CONFIG_PATH=/usr/local/opt/ffmpeg@6/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=/opt/homebrew/opt/ffmpeg@6/lib/pkgconfig" >> "$GITHUB_ENV"
       - name: install ffmpeg deps (windows)
         if: runner.os == 'windows' && matrix.os != 'self-hosted-windows'
         run: |
