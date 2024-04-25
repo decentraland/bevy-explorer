@@ -293,7 +293,7 @@ impl FfmpegContext for AudioContext {
     fn is_live(&self) -> bool {
         !self.sink.is_closed()
     }
-    
+
     fn stream_index(&self) -> Option<usize> {
         Some(self.stream_index)
     }
