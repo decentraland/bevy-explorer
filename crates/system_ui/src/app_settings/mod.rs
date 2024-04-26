@@ -26,6 +26,7 @@ use self::{
     },
     scene_threads::SceneThreadsSetting,
     shadow_settings::ShadowDistanceSetting,
+    video_threads::VideoThreadsSetting,
     volume_settings::{
         MasterVolumeSetting, SceneVolumeSetting, SystemVolumeSetting, VoiceVolumeSetting,
     },
@@ -48,6 +49,7 @@ pub mod player_settings;
 pub mod scene_threads;
 mod shadow_settings;
 pub mod ssao_setting;
+pub mod video_threads;
 pub mod volume_settings;
 pub mod window_settings;
 
@@ -77,11 +79,17 @@ impl Plugin for AppSettingsPlugin {
             apply_setting::<VoiceVolumeSetting>,
             apply_setting::<SystemVolumeSetting>,
             apply_setting::<ConstrainUiSetting>,
-            // apply_setting::<FullscreenResSetting>.after(apply_setting::<WindowSetting>),
+        ));
+        apply_schedule.add_systems((
+            apply_setting::<RunSpeedSetting>,
+            apply_setting::<FrictionSetting>,
+            apply_setting::<JumpSetting>,
+            apply_setting::<GravitySetting>,
+            apply_setting::<FallSpeedSetting>,
+            apply_setting::<VideoThreadsSetting>,
         ));
 
         app.insert_resource(ApplyAppSettingsSchedule(apply_schedule));
-        // app.init_resource::<MonitorResolutions>();
         app.add_systems(
             Update,
             (
@@ -170,6 +178,7 @@ fn set_app_settings_content(
             UnloadDistanceSetting::spawn_template(&mut commands, &dui, &config),
             FpsTargetSetting::spawn_template(&mut commands, &dui, &config),
             SceneThreadsSetting::spawn_template(&mut commands, &dui, &config),
+            VideoThreadsSetting::spawn_template(&mut commands, &dui, &config),
             MaxAvatarsSetting::spawn_template(&mut commands, &dui, &config),
             commands
                 .spawn_template(

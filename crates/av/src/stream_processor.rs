@@ -7,6 +7,7 @@ use tokio::sync::mpsc::error::TryRecvError;
 
 use crate::ffmpeg_util::{PacketIter, BUFFER_TIME};
 
+#[derive(Debug)]
 pub enum AVCommand {
     Play,
     Pause,
@@ -47,6 +48,8 @@ pub fn process_streams(
             last_state = state;
         }
     };
+
+    let mut tick = 0;
 
     loop {
         // check if all receivers were dropped
@@ -138,7 +141,14 @@ pub fn process_streams(
             );
             let now = Instant::now();
             let next_frame_time = play_instant + Duration::from_secs_f64(next_frame_time);
-            debug!("next frame time: {next_frame_time:?}/ now: {now:?}");
+
+            if tick % 25 == 0 {
+                debug!(
+                    "[{:?}] next frame time: {next_frame_time:?}/ now: {now:?}",
+                    std::thread::current().id()
+                );
+            }
+            tick += 1;
             let buffer_till_time = next_frame_time - Duration::from_millis(10);
             // preload frames
             while streams.iter().any(|ctx| ctx.buffered_time() < BUFFER_TIME)

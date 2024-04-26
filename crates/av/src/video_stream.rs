@@ -91,6 +91,10 @@ fn av_thread(
     path: String,
     hash: String,
 ) {
+    info!(
+        "spawned av thread {:?}, path {path}",
+        std::thread::current().id()
+    );
     let _span = tracing::info_span!("av-thread").entered();
     if let Err(e) = av_thread_inner(&ipfs, commands, frames.clone(), audio, path, hash) {
         let _ = frames.blocking_send(VideoData::State(VideoState::VsError));

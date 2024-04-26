@@ -162,6 +162,7 @@ pub struct AppConfig {
     pub max_avatars: usize,
     pub constrain_scene_ui: bool,
     pub player_settings: PrimaryUser,
+    pub max_videos: usize,
 }
 
 impl Default for AppConfig {
@@ -182,6 +183,7 @@ impl Default for AppConfig {
             max_avatars: 100,
             constrain_scene_ui: false,
             player_settings: Default::default(),
+            max_videos: 4,
         }
     }
 }
