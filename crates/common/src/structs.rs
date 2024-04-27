@@ -8,19 +8,25 @@ use serde::{Deserialize, Serialize};
 pub struct Version(pub String);
 
 // main user entity
-#[derive(Component)]
+#[derive(Component, Clone, Serialize, Deserialize)]
 pub struct PrimaryUser {
     pub walk_speed: f32,
     pub run_speed: f32,
     pub friction: f32,
+    pub gravity: f32,
+    pub jump_height: f32,
+    pub fall_speed: f32,
 }
 
 impl Default for PrimaryUser {
     fn default() -> Self {
         Self {
-            walk_speed: 12.0,
-            run_speed: 50.0,
-            friction: 500.0,
+            walk_speed: 4.0,
+            run_speed: 8.0,
+            friction: 6.0,
+            gravity: -10.0,
+            jump_height: 1.25,
+            fall_speed: -15.0,
         }
     }
 }
@@ -155,6 +161,9 @@ pub struct AppConfig {
     pub scene_log_to_console: bool,
     pub max_avatars: usize,
     pub constrain_scene_ui: bool,
+    pub player_settings: PrimaryUser,
+    pub max_videos: usize,
+    pub max_concurrent_remotes: usize,
 }
 
 impl Default for AppConfig {
@@ -174,6 +183,9 @@ impl Default for AppConfig {
             scene_log_to_console: false,
             max_avatars: 100,
             constrain_scene_ui: false,
+            player_settings: Default::default(),
+            max_videos: 4,
+            max_concurrent_remotes: 32,
         }
     }
 }

@@ -5,9 +5,9 @@ use common::structs::AppConfig;
 use super::{spawn_int_setting_template, AppSetting, IntAppSetting};
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct SceneThreadsSetting(i32);
+pub struct VideoThreadsSetting(i32);
 
-impl IntAppSetting for SceneThreadsSetting {
+impl IntAppSetting for VideoThreadsSetting {
     fn from_int(value: i32) -> Self {
         Self(value)
     }
@@ -17,7 +17,7 @@ impl IntAppSetting for SceneThreadsSetting {
     }
 
     fn min() -> i32 {
-        1
+        0
     }
 
     fn max() -> i32 {
@@ -25,23 +25,23 @@ impl IntAppSetting for SceneThreadsSetting {
     }
 }
 
-impl AppSetting for SceneThreadsSetting {
+impl AppSetting for VideoThreadsSetting {
     type Param = ();
 
     fn title() -> String {
-        "Scene Threads".to_owned()
+        "Max Videos".to_owned()
     }
 
     fn description(&self) -> String {
-        "Scene Threads\n\nNumber of threads to use for running scenes concurrently. A low number will result in infrequent updates to distant scenes. A high number will result in smoother distant scene update frequency, but will increase CPU usage and may impact overall framerate if it is set higher than half the core count of the CPU".to_string()
+        "Max AV Sources\n\nMaximum number of audio streams and videos to process simultaneously. Allowing more AV sources puts a higher burden on both CPU and GPU.\nIf scenes spawn more audio and video sources than this maximum, more distant sources from the player will be paused.".to_string()
     }
 
     fn save(&self, config: &mut AppConfig) {
-        config.scene_threads = self.0 as usize;
+        config.max_videos = self.0 as usize;
     }
 
     fn load(config: &AppConfig) -> Self {
-        Self(config.scene_threads as i32)
+        Self(config.max_videos as i32)
     }
 
     fn spawn_template(commands: &mut Commands, dui: &DuiRegistry, config: &AppConfig) -> Entity {
@@ -49,6 +49,6 @@ impl AppSetting for SceneThreadsSetting {
     }
 
     fn apply(&self, (): (), _: Commands) {
-        // handled in scene_runner
+        // handled in av
     }
 }

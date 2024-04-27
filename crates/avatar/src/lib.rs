@@ -138,6 +138,7 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>, mut view: ResMut
 
 #[derive(Component, Default)]
 pub struct AvatarDynamicState {
+    pub force: Vec2,
     pub velocity: Vec3,
     pub ground_height: f32,
 }

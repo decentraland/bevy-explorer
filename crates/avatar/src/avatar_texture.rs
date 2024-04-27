@@ -91,6 +91,7 @@ impl<'w, 's> PhotoBooth<'w, 's> {
                     automatic_delete: false,
                 },
                 AvatarDynamicState {
+                    force: Vec2::ZERO,
                     velocity: Vec3::ZERO,
                     ground_height: 0.0,
                 },

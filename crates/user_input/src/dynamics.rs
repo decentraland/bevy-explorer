@@ -41,7 +41,7 @@ use rapier3d_f64::control::{CharacterAutostep, CharacterLength, KinematicCharact
 
 use common::{
     dynamics::{
-        GRAVITY, MAX_CLIMBABLE_INCLINE, MAX_FALL_SPEED, MAX_STEP_HEIGHT, PLAYER_COLLIDER_OVERLAP,
+        MAX_CLIMBABLE_INCLINE, MAX_STEP_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS,
         PLAYER_GROUND_THRESHOLD,
     },
     structs::PrimaryUser,
@@ -57,6 +57,9 @@ use scene_runner::{
 #[derive(Resource)]
 pub struct UserClipping(pub bool);
 
+const TICK_TIME: f32 = 1.0 / 720.0;
+
+#[allow(clippy::too_many_arguments)]
 pub fn update_user_position(
     mut player: Query<
         (
@@ -74,6 +77,7 @@ pub fn update_user_position(
     _frame: Res<FrameCount>,
     manual_transform: Query<(&Transform, Option<&Parent>), Without<PrimaryUser>>,
     clip: Res<UserClipping>,
+    mut prev_excess_time: Local<f32>,
 ) {
     let Ok((user_ent, user, mut transform, mut dynamic_state, mut ground_collider)) =
         player.get_single_mut()
@@ -82,25 +86,45 @@ pub fn update_user_position(
     };
 
     let dt = time.delta_seconds();
-    // we apply half gravity before motion and half after to avoid (significant) max height difference due to frame rate
-    let half_g_force = dt * GRAVITY * 0.5;
-    if dynamic_state.velocity.y != 0.0 {
-        dynamic_state.velocity.y -= half_g_force;
+
+    let mut velocity = dynamic_state.velocity;
+    let force = (dynamic_state.force * user.friction).extend(0.0).xzy();
+
+    let mut elapsed = time.delta_seconds() + *prev_excess_time;
+    let mut target_motion = Vec3::ZERO;
+
+    let record_peak = velocity.y > 0.0;
+
+    while elapsed > TICK_TIME {
+        velocity.x = (velocity.x + force.x * TICK_TIME) * (-user.friction * TICK_TIME).exp();
+        velocity.z = (velocity.z + force.z * TICK_TIME) * (-user.friction * TICK_TIME).exp();
+        // no friction for y
+        velocity.y += user.gravity * TICK_TIME;
+
+        target_motion.x += velocity.x * TICK_TIME;
+        target_motion.z += velocity.z * TICK_TIME;
+        target_motion.y += if record_peak {
+            velocity.y.max(0.0) * TICK_TIME
+        } else {
+            velocity.y * TICK_TIME
+        };
+
+        elapsed -= TICK_TIME;
     }
+    *prev_excess_time = elapsed;
+
+    dynamic_state.velocity = velocity;
 
     // rotate towards velocity vec
-    let target_xz = dynamic_state.velocity.xz() * dt;
-    if target_xz.length() > 0.0 {
+    if dynamic_state.force.length() > 0.0 {
         let target_rotation = Transform::default()
-            .looking_at(dynamic_state.velocity * (Vec3::X + Vec3::Z), Vec3::Y)
+            .looking_at(dynamic_state.force.extend(0.0).xzy(), Vec3::Y)
             .rotation;
 
         transform.rotation = transform.rotation.lerp(target_rotation, dt * 10.0);
     }
 
-    let velocity_motion = dynamic_state.velocity * dt;
     let mut platform_motion = Vec3::default();
-    let mut target_motion = velocity_motion;
     let mut platform_handle: Option<(Entity, ColliderId)> = None;
     dynamic_state.ground_height = transform.translation.y;
 
@@ -197,7 +221,7 @@ pub fn update_user_position(
     }
 
     // check containing scenes
-    for scene in containing_scenes.get(user_ent) {
+    for scene in containing_scenes.get_area(user_ent, PLAYER_COLLIDER_RADIUS) {
         let Ok((context, mut collider_data)) = scene_datas.get_mut(scene) else {
             continue;
         };
@@ -226,7 +250,7 @@ pub fn update_user_position(
         "dynamics: {} -> {}, (velocity = {}, platform = {})",
         transform.translation,
         transform.translation + target_motion,
-        velocity_motion,
+        velocity,
         platform_motion
     );
 
@@ -262,22 +286,7 @@ pub fn update_user_position(
         dynamic_state.velocity.y = dynamic_state.velocity.y.max(0.0);
     } else if target_motion.y.abs() < (0.5 * dynamic_state.velocity.y * dt).abs() {
         // vertical motion was blocked by something, use the effective motion
-        dynamic_state.velocity.y = target_motion.y / dt - half_g_force;
-    } else {
-        dynamic_state.velocity.y -= half_g_force;
-    }
-
-    // cap fall speed
-    dynamic_state.velocity.y = dynamic_state.velocity.y.max(-MAX_FALL_SPEED);
-
-    // friction
-    let mult = user.friction.recip().powf(dt);
-    dynamic_state.velocity.x *= mult;
-    dynamic_state.velocity.z *= mult;
-
-    if dynamic_state.velocity.xz().length_squared() < 1e-3 {
-        dynamic_state.velocity.x = 0.0;
-        dynamic_state.velocity.z = 0.0;
+        dynamic_state.velocity.y = target_motion.y / dt;
     }
 }
 
@@ -293,5 +302,50 @@ pub(crate) fn no_clip(mut input: ConsoleCommand<NoClipCommand>, mut clip: ResMut
         let new_state = command.clip.unwrap_or(!clip.0);
         clip.0 = new_state;
         input.reply_ok(format!("clipping set to {}", clip.0));
+    }
+}
+
+// set speed and friction
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/speed")]
+pub(crate) struct SpeedCommand {
+    run: f32,
+    friction: f32,
+}
+
+pub(crate) fn speed_cmd(
+    mut input: ConsoleCommand<SpeedCommand>,
+    mut user: Query<&mut PrimaryUser>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let mut user = user.single_mut();
+        user.run_speed = command.run;
+        user.friction = command.friction;
+        input.reply_ok(format!(
+            "run speed: {}, friction: {}",
+            command.run, command.friction
+        ));
+    }
+}
+
+// set jump height, gravity, max fall speed
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/jump")]
+pub(crate) struct JumpCommand {
+    jump_height: f32,
+    gravity: f32,
+    fall_speed: f32,
+}
+
+pub(crate) fn jump_cmd(mut input: ConsoleCommand<JumpCommand>, mut user: Query<&mut PrimaryUser>) {
+    if let Some(Ok(command)) = input.take() {
+        let mut user = user.single_mut();
+        user.jump_height = command.jump_height;
+        user.gravity = -command.gravity;
+        user.fall_speed = -command.fall_speed;
+        input.reply_ok(format!(
+            "jump height: {}, gravity: -{}, max fallspeed: -{}",
+            command.jump_height, command.gravity, command.fall_speed
+        ));
     }
 }

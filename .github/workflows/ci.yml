@@ -14,7 +14,7 @@ jobs:
           override: true
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc
-        uses: arduino/setup-protoc@v1
+        uses: arduino/setup-protoc@master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
@@ -39,7 +39,7 @@ jobs:
           override: true
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc
-        uses: arduino/setup-protoc@v1
+        uses: arduino/setup-protoc@master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa, udev and xkb
@@ -77,7 +77,7 @@ jobs:
 #      - uses: Swatinem/rust-cache@v2
       - name: Install protoc
         if: matrix.os != 'self-hosted-windows'
-        uses: arduino/setup-protoc@v1
+        uses: arduino/setup-protoc@master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
@@ -93,7 +93,7 @@ jobs:
         if: runner.os == 'macos'
         run: |
           brew install ffmpeg@6 pkg-config;
-          echo "PKG_CONFIG_PATH=/usr/local/opt/ffmpeg@6/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=/opt/homebrew/opt/ffmpeg@6/lib/pkgconfig" >> "$GITHUB_ENV"
       - name: install ffmpeg deps (windows)
         if: runner.os == 'windows' && matrix.os != 'self-hosted-windows'
         run: |
@@ -129,7 +129,7 @@ jobs:
       - run: rustup component add rustfmt
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc
-        uses: arduino/setup-protoc@v1
+        uses: arduino/setup-protoc@master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
@@ -154,7 +154,7 @@ jobs:
       - run: rustup component add clippy
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc
-        uses: arduino/setup-protoc@v1
+        uses: arduino/setup-protoc@master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev

@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use bevy::{prelude::*, utils::tracing};
 use common::structs::AudioDecoderError;
@@ -91,6 +91,10 @@ fn av_thread(
     path: String,
     hash: String,
 ) {
+    info!(
+        "spawned av thread {:?}, path {path}",
+        std::thread::current().id()
+    );
     let _span = tracing::info_span!("av-thread").entered();
     if let Err(e) = av_thread_inner(&ipfs, commands, frames.clone(), audio, path, hash) {
         let _ = frames.blocking_send(VideoData::State(VideoState::VsError));
@@ -111,7 +115,7 @@ pub fn av_thread_inner(
     let _ = video.blocking_send(VideoData::State(VideoState::VsLoading));
     debug!("av thread spawned for {path} ...");
     let download = |url: &str| -> Result<String, anyhow::Error> {
-        let local_folder = PathBuf::from("assets/cache/video_downloads");
+        let local_folder = ipfas.cache_path().join("video_downloads");
         let local_path = local_folder.join(Path::new(urlencoding::encode(url).as_ref()));
 
         if std::fs::File::open(&local_path).is_err() {

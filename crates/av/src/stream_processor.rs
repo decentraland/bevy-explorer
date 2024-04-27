@@ -1,3 +1,4 @@
+use anyhow::bail;
 use bevy::{log::info, prelude::debug};
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::Packet;
@@ -6,6 +7,7 @@ use tokio::sync::mpsc::error::TryRecvError;
 
 use crate::ffmpeg_util::{PacketIter, BUFFER_TIME};
 
+#[derive(Debug)]
 pub enum AVCommand {
     Play,
     Pause,
@@ -15,6 +17,7 @@ pub enum AVCommand {
 }
 
 pub trait FfmpegContext {
+    fn is_live(&self) -> bool;
     fn stream_index(&self) -> Option<usize>;
     fn has_frame(&self) -> bool;
     fn buffered_time(&self) -> f64;
@@ -46,7 +49,14 @@ pub fn process_streams(
         }
     };
 
+    let mut tick = 0;
+
     loop {
+        // check if all receivers were dropped
+        if streams.iter().all(|ctx| !ctx.is_live()) {
+            bail!("all streams disconnected without dispose command");
+        }
+
         // ensure frame available
         while !input_context.is_eof() && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
             update_state(VideoState::VsBuffering, streams);
@@ -131,7 +141,14 @@ pub fn process_streams(
             );
             let now = Instant::now();
             let next_frame_time = play_instant + Duration::from_secs_f64(next_frame_time);
-            debug!("next frame time: {next_frame_time:?}/ now: {now:?}");
+
+            if tick % 25 == 0 {
+                debug!(
+                    "[{:?}] next frame time: {next_frame_time:?}/ now: {now:?}",
+                    std::thread::current().id()
+                );
+            }
+            tick += 1;
             let buffer_till_time = next_frame_time - Duration::from_millis(10);
             // preload frames
             while streams.iter().any(|ctx| ctx.buffered_time() < BUFFER_TIME)

@@ -20,6 +20,7 @@ pub struct InteractStyle {
 #[derive(Component, Clone, Default, Debug)]
 pub struct InteractStyles {
     pub active: Option<InteractStyle>,
+    pub press: Option<InteractStyle>,
     pub hover: Option<InteractStyle>,
     pub inactive: Option<InteractStyle>,
     pub disabled: Option<InteractStyle>,
@@ -76,6 +77,8 @@ fn set_interaction_style(
             &styles.disabled
         } else if maybe_active.map_or(false, |active| active.0) {
             &styles.active
+        } else if maybe_interaction == Some(&Interaction::Pressed) {
+            &styles.press
         } else if maybe_interaction == Some(&Interaction::Hovered) {
             &styles.hover
         } else {
@@ -143,6 +146,14 @@ impl DuiFromStr for InteractStyles {
             hover: rule
                 .properties
                 .get("hover")
+                .and_then(|v| v.color())
+                .map(|c| InteractStyle {
+                    background: Some(c),
+                    ..Default::default()
+                }),
+            press: rule
+                .properties
+                .get("press")
                 .and_then(|v| v.color())
                 .map(|c| InteractStyle {
                     background: Some(c),

@@ -21,6 +21,7 @@ use bevy::{
     prelude::*,
     render::view::ColorGrading,
     text::TextSettings,
+    window::WindowResolution,
 };
 use bevy_console::ConsoleCommand;
 
@@ -31,7 +32,7 @@ use common::{
         AppConfig, AttachPoints, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes,
         PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, Version,
     },
-    util::UtilsPlugin,
+    util::{project_directories, UtilsPlugin},
 };
 use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
@@ -49,7 +50,7 @@ use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
 use ipfs::IpfsIoPlugin;
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
-use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
+use system_ui::{crash_report::CrashReportPlugin, login::config_file, SystemUiPlugin};
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
 use user_input::UserInputPlugin;
@@ -61,19 +62,15 @@ static SESSION_LOG: OnceLock<String> = OnceLock::new();
 
 fn main() {
     let session_time: chrono::DateTime<chrono::Utc> = std::time::SystemTime::now().into();
+    let dirs = project_directories();
+    let log_dir = dirs.data_local_dir();
+    let session_log = log_dir.join(format!("{}.log", session_time.format("%Y%m%d-%H%M%S")));
     SESSION_LOG
-        .set(format!(
-            "./log/{}.log",
-            session_time.format("%Y%m%d-%H%M%S")
-        ))
+        .set(session_log.to_string_lossy().into_owned())
         .unwrap();
-    std::fs::create_dir_all("./log").unwrap();
-    File::create(SESSION_LOG.get().unwrap())
-        .expect("failed to create log file")
-        .write_all(format!("{}\n\n", SESSION_LOG.get().unwrap()).as_bytes())
-        .expect("failed to create log file");
+    std::fs::create_dir_all(log_dir).unwrap();
 
-    let crash_file = std::fs::read_dir("./log")
+    let crash_file = std::fs::read_dir(log_dir)
         .unwrap()
         .filter_map(|f| f.ok())
         .find(|f| f.path().extension().map(|oss| oss.to_string_lossy()) == Some("touch".into()))
@@ -101,7 +98,7 @@ fn main() {
     let mut warnings = Vec::default();
     let mut app = App::new();
 
-    let base_config: AppConfig = std::fs::read("config.json")
+    let base_config: AppConfig = std::fs::read(config_file())
         .ok()
         .and_then(|f| {
             serde_json::from_slice(&f)
@@ -179,36 +176,15 @@ fn main() {
         return;
     }
 
-    // std::fs::write(
-    //     "config.json.out",
-    //     serde_json::to_string(&final_config).unwrap(),
-    // )
-    // .unwrap();
-
     let present_mode = match final_config.graphics.vsync {
         true => bevy::window::PresentMode::AutoVsync,
         false => bevy::window::PresentMode::AutoNoVsync,
     };
 
-    // let msaa = match final_config.graphics.msaa {
-    //     1 => Msaa::Off,
-    //     2 => Msaa::Sample2,
-    //     4 => Msaa::Sample4,
-    //     8 => Msaa::Sample8,
-    //     _ => {
-    //         warnings.push(
-    //             "Invalid msaa sample count, must be one of (1, 2, 4, 8). Defaulting to Off"
-    //                 .to_owned(),
-    //         );
-    //         Msaa::Off
-    //     }
-    // };
-
     let bt = build_time_utc!("%Y-%m-%d %H:%M");
     let version = format!("{VERSION} ({bt})");
 
-    app //.insert_resource(msaa)
-        .insert_resource(Version(version))
+    app.insert_resource(Version(version.clone()))
         .insert_resource(TextSettings {
             soft_max_font_atlases: 4.try_into().unwrap(),
             allow_dynamic_font_size: true,
@@ -230,6 +206,8 @@ fn main() {
                     primary_window: Some(Window {
                         title: "Decentraland Bevy Explorer".to_owned(),
                         present_mode,
+                        resolution: WindowResolution::new(1280.0, 720.0)
+                            .with_scale_factor_override(1.0),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -260,6 +238,7 @@ fn main() {
                 .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
                     starting_realm: Some(final_config.server.clone()),
                     assets_root: Default::default(),
+                    num_slots: final_config.max_concurrent_remotes,
                 })
                 .add_before::<IpfsIoPlugin, _>(NftReaderPlugin),
         );
@@ -326,7 +305,7 @@ fn main() {
     app.add_console_command::<SceneThreadsCommand, _>(scene_threads);
     app.add_console_command::<FpsCommand, _>(set_fps);
 
-    info!("Bevy-Explorer version {}", VERSION);
+    info!("Bevy-Explorer version {}", version);
 
     // replay any warnings
     for warning in warnings {
@@ -364,7 +343,7 @@ fn setup(
                 )),
                 ..Default::default()
             },
-            PrimaryUser::default(),
+            config.player_settings.clone(),
             OutOfWorld,
             AvatarDynamicState::default(),
             GroundCollider::default(),

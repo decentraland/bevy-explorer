@@ -12,7 +12,10 @@ use common::structs::{
 };
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
-use crate::profile::{SettingsDialog, SettingsTab};
+use crate::{
+    login::config_file,
+    profile::{SettingsDialog, SettingsTab},
+};
 
 use self::{
     ambient_brightness_setting::AmbientSetting,
@@ -20,9 +23,14 @@ use self::{
     frame_rate::FpsTargetSetting,
     load_distance::{LoadDistanceSetting, UnloadDistanceSetting},
     max_avatars::MaxAvatarsSetting,
+    max_downloads::MaxDownloadsSetting,
     oob_setting::OobSetting,
+    player_settings::{
+        FallSpeedSetting, FrictionSetting, GravitySetting, JumpSetting, RunSpeedSetting,
+    },
     scene_threads::SceneThreadsSetting,
     shadow_settings::ShadowDistanceSetting,
+    video_threads::VideoThreadsSetting,
     volume_settings::{
         MasterVolumeSetting, SceneVolumeSetting, SystemVolumeSetting, VoiceVolumeSetting,
     },
@@ -40,10 +48,13 @@ pub mod fog_settings;
 pub mod frame_rate;
 pub mod load_distance;
 pub mod max_avatars;
+pub mod max_downloads;
 mod oob_setting;
+pub mod player_settings;
 pub mod scene_threads;
 mod shadow_settings;
 pub mod ssao_setting;
+pub mod video_threads;
 pub mod volume_settings;
 pub mod window_settings;
 
@@ -73,11 +84,18 @@ impl Plugin for AppSettingsPlugin {
             apply_setting::<VoiceVolumeSetting>,
             apply_setting::<SystemVolumeSetting>,
             apply_setting::<ConstrainUiSetting>,
-            // apply_setting::<FullscreenResSetting>.after(apply_setting::<WindowSetting>),
+        ));
+        apply_schedule.add_systems((
+            apply_setting::<RunSpeedSetting>,
+            apply_setting::<FrictionSetting>,
+            apply_setting::<JumpSetting>,
+            apply_setting::<GravitySetting>,
+            apply_setting::<FallSpeedSetting>,
+            apply_setting::<VideoThreadsSetting>,
+            apply_setting::<MaxDownloadsSetting>,
         ));
 
         app.insert_resource(ApplyAppSettingsSchedule(apply_schedule));
-        // app.init_resource::<MonitorResolutions>();
         app.add_systems(
             Update,
             (
@@ -166,7 +184,9 @@ fn set_app_settings_content(
             UnloadDistanceSetting::spawn_template(&mut commands, &dui, &config),
             FpsTargetSetting::spawn_template(&mut commands, &dui, &config),
             SceneThreadsSetting::spawn_template(&mut commands, &dui, &config),
+            VideoThreadsSetting::spawn_template(&mut commands, &dui, &config),
             MaxAvatarsSetting::spawn_template(&mut commands, &dui, &config),
+            MaxDownloadsSetting::spawn_template(&mut commands, &dui, &config),
             commands
                 .spawn_template(
                     &dui,
@@ -179,6 +199,19 @@ fn set_app_settings_content(
             SceneVolumeSetting::spawn_template(&mut commands, &dui, &config),
             VoiceVolumeSetting::spawn_template(&mut commands, &dui, &config),
             SystemVolumeSetting::spawn_template(&mut commands, &dui, &config),
+            commands
+                .spawn_template(
+                    &dui,
+                    "settings-header",
+                    DuiProps::new().with_prop("label", "Player Dynamics Settings".to_owned()),
+                )
+                .unwrap()
+                .root,
+            RunSpeedSetting::spawn_template(&mut commands, &dui, &config),
+            FrictionSetting::spawn_template(&mut commands, &dui, &config),
+            JumpSetting::spawn_template(&mut commands, &dui, &config),
+            GravitySetting::spawn_template(&mut commands, &dui, &config),
+            FallSpeedSetting::spawn_template(&mut commands, &dui, &config),
         ];
 
         commands
@@ -212,6 +245,9 @@ pub trait IntAppSetting: AppSetting + Sized + std::fmt::Debug {
     fn value(&self) -> i32;
     fn min() -> i32;
     fn max() -> i32;
+    fn display(&self) -> String {
+        format!("{}", self.value())
+    }
 }
 
 #[derive(Component)]
@@ -283,7 +319,7 @@ fn bump_int<S: IntAppSetting, const I: i32>(
     text.get_mut(entities.unwrap().named("setting-label"))
         .unwrap()
         .sections[0]
-        .value = format!("{}", next.value());
+        .value = next.display();
 
     dialog.modified = true;
 }
@@ -333,7 +369,7 @@ fn spawn_int_setting_template<S: IntAppSetting>(
             DuiProps::new()
                 .with_prop("title", S::title())
                 .with_prop("initial-offset", format!("{}%", initial_offset * 100.0))
-                .with_prop("label-initial", format!("{}", S::load(config).value()))
+                .with_prop("label-initial", S::load(config).display())
                 .with_prop("next", On::<ClickRepeat>::new(bump_int::<S, 1>))
                 .with_prop("prev", On::<ClickRepeat>::new(bump_int::<S, -1>)),
         )
@@ -392,7 +428,7 @@ fn spawn_int_setting_template<S: IntAppSetting>(
                 text.get_mut(entities.unwrap().named("setting-label"))
                     .unwrap()
                     .sections[0]
-                    .value = format!("{}", next.value());
+                    .value = next.display();
 
                 dialog.modified = true;
             },
@@ -415,8 +451,12 @@ fn apply_settings(world: &mut World) {
         },
     );
 
+    let config_file = config_file();
+    if let Some(folder) = config_file.parent() {
+        std::fs::create_dir_all(folder).unwrap();
+    }
     std::fs::write(
-        "config.json",
+        config_file,
         serde_json::to_string(world.resource::<AppConfig>()).unwrap(),
     )
     .unwrap();

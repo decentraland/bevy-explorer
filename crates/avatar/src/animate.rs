@@ -213,7 +213,13 @@ fn animate(
     mut velocities: Local<HashMap<Entity, Vec3>>,
     mut current_emote_min_velocities: Local<HashMap<Entity, f32>>,
     time: Res<Time>,
+    player: Query<&PrimaryUser>,
 ) {
+    let (gravity, jump_height) = player
+        .get_single()
+        .map(|p| (p.gravity, p.jump_height))
+        .unwrap_or((-20.0, 1.25));
+
     let prior_velocities = std::mem::take(&mut *velocities);
     let prior_min_velocities = std::mem::take(&mut *current_emote_min_velocities);
 
@@ -243,7 +249,8 @@ fn animate(
             .copied()
             .unwrap_or(Vec3::ZERO);
         let ratio = time.delta_seconds().clamp(0.0, 0.1) / 0.1;
-        let damped_velocity = dynamic_state.velocity * ratio + prior_velocity * (1.0 - ratio);
+        let damped_velocity =
+            dynamic_state.force.extend(0.0).xzy() * ratio + prior_velocity * (1.0 - ratio);
         let damped_velocity_len = damped_velocity.xz().length();
         velocities.insert(avatar_ent, damped_velocity);
 
@@ -304,10 +311,11 @@ fn animate(
         } else {
             // otherwise play a default emote baesd on motion
             if dynamic_state.ground_height > 0.2 {
+                let time_to_peak = (jump_height * -gravity * 2.0).sqrt() / -gravity;
+
                 ActiveEmote {
                     urn: EmoteUrn::new("jump").unwrap(),
-                    speed: 1.25,
-                    // restart: dynamic_state.velocity.y > 0.0,
+                    speed: time_to_peak.recip() * 0.75,
                     repeat: true,
                     transition_seconds: 0.1,
                     ..Default::default()
@@ -615,9 +623,11 @@ fn play_current_emote(
                 }
             }
 
+            // nasty hack for falling animation
             if active_emote.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
-                && player.elapsed() >= 0.75
+                && player.seek_time() >= 0.5833
             {
+                player.seek_to(0.5833);
                 player.pause();
             } else {
                 player.resume();

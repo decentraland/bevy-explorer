@@ -171,8 +171,13 @@ impl kira::sound::streaming::Decoder for FfmpegKiraBridge {
                     // maybe worth trying, but it just sleeps for 1ms anyway. we can do better by sleeping
                     // until a new frame arrives (typically 50ms+).
                     if frames.is_empty() {
-                        debug!("waiting for frames [step {}]", self.step);
-                        std::thread::sleep(Duration::from_secs_f64(self.frame_time / 10.0));
+                        debug!(
+                            "[{:?} waiting for frames [step {}], sleep {}s",
+                            std::thread::current().id(),
+                            self.step,
+                            self.frame_time.max(0.1)
+                        );
+                        std::thread::sleep(Duration::from_secs_f64(self.frame_time.max(0.1)));
                     } else {
                         return Ok(frames);
                     }
@@ -212,6 +217,7 @@ pub struct AudioContext {
 
     current_frame: usize,
     start_frame: usize,
+    dead: bool,
 }
 
 impl AudioContext {
@@ -285,11 +291,16 @@ impl AudioContext {
             current_frame: 0,
             start_frame: 0,
             rate: frame_rate,
+            dead: false,
         })
     }
 }
 
 impl FfmpegContext for AudioContext {
+    fn is_live(&self) -> bool {
+        !self.sink.is_closed()
+    }
+
     fn stream_index(&self) -> Option<usize> {
         Some(self.stream_index)
     }
@@ -312,13 +323,18 @@ impl FfmpegContext for AudioContext {
     }
 
     fn send_frame(&mut self) {
-        debug!(
-            "send audio frame {:?} [{} in buffer]",
-            self.current_frame,
-            self.buffer.len()
-        );
-        if let Err(e) = self.sink.blocking_send(self.buffer.pop_front().unwrap()) {
-            error!("failed to send audio frame: {e}");
+        if !self.dead {
+            debug!(
+                "send audio frame {:?} [{} in buffer]",
+                self.current_frame,
+                self.buffer.len()
+            );
+            if let Err(e) = self.sink.blocking_send(self.buffer.pop_front().unwrap()) {
+                error!("failed to send audio frame: {e}");
+                self.dead = true;
+            }
+        } else {
+            self.buffer.pop_front();
         }
         self.current_frame += 1;
     }

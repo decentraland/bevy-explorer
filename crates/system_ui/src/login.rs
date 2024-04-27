@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use bevy::{
     app::AppExit,
     prelude::*,
@@ -8,7 +10,7 @@ use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
     structs::{AppConfig, ChainLink, PreviousLogin},
-    util::TaskExt,
+    util::{project_directories, TaskExt},
 };
 use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
 use ethers_core::types::Address;
@@ -45,6 +47,10 @@ enum LoginType {
     Cancel,
 }
 
+pub fn config_file() -> PathBuf {
+    project_directories().config_dir().join("config.json")
+}
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn login(
     mut commands: Commands,
@@ -78,7 +84,7 @@ fn login(
 
     // create dialog
     if dialog.is_none() && final_task.is_none() {
-        let previous_login = std::fs::read("config.json")
+        let previous_login = std::fs::read(config_file())
             .ok()
             .and_then(|f| serde_json::from_slice::<AppConfig>(&f).ok())
             .unwrap_or_default()
@@ -169,7 +175,7 @@ fn login(
                 let ephemeral_key = local_wallet.signer().to_bytes().to_vec();
 
                 // store to app config
-                let mut config: AppConfig = std::fs::read("config.json")
+                let mut config: AppConfig = std::fs::read(config_file())
                     .ok()
                     .and_then(|f| serde_json::from_slice(&f).ok())
                     .unwrap_or_default();
@@ -178,8 +184,11 @@ fn login(
                     ephemeral_key,
                     auth: auth.clone(),
                 });
-                if let Err(e) =
-                    std::fs::write("config.json", serde_json::to_string(&config).unwrap())
+                let config_file = config_file();
+                if let Some(folder) = config_file.parent() {
+                    std::fs::create_dir_all(folder).unwrap();
+                }
+                if let Err(e) = std::fs::write(config_file, serde_json::to_string(&config).unwrap())
                 {
                     warn!("failed to write to config: {e}");
                 }
@@ -228,7 +237,7 @@ fn login(
             LoginType::ExistingRemote => {
                 info!("existing remote");
                 let ipfs = ipfas.ipfs().clone();
-                let previous_login = std::fs::read("config.json")
+                let previous_login = std::fs::read(config_file())
                     .ok()
                     .and_then(|f| serde_json::from_slice::<AppConfig>(&f).ok())
                     .unwrap()

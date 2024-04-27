@@ -10,8 +10,12 @@ use bevy::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
     },
+    utils::{FloatOrd, HashMap},
 };
-use common::sets::SceneSets;
+use common::{
+    sets::SceneSets,
+    structs::{AppConfig, PrimaryUser},
+};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{PbAudioStream, PbVideoEvent, PbVideoPlayer, VideoState},
@@ -21,7 +25,7 @@ use ipfs::IpfsResource;
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
-    ContainerEntity,
+    ContainerEntity, ContainingScene,
 };
 
 pub struct VideoPlayerPlugin;
@@ -146,24 +150,28 @@ fn play_videos(
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn update_video_players(
     mut commands: Commands,
-    video_players: Query<
-        (
-            Entity,
-            &ContainerEntity,
-            &AVPlayer,
-            Option<&VideoSink>,
-            Option<&VideoTextureOutput>,
-        ),
-        Changed<AVPlayer>,
-    >,
+    video_players: Query<(
+        Entity,
+        &ContainerEntity,
+        Ref<AVPlayer>,
+        Option<&VideoSink>,
+        Option<&VideoTextureOutput>,
+        &GlobalTransform,
+    )>,
     mut images: ResMut<Assets<Image>>,
     ipfs: Res<IpfsResource>,
     scenes: Query<&RendererSceneContext>,
+    config: Res<AppConfig>,
+    mut system_paused: Local<HashMap<Entity, Option<tokio::sync::mpsc::Sender<AVCommand>>>>,
+    containing_scene: ContainingScene,
+    user: Query<&GlobalTransform, With<PrimaryUser>>,
 ) {
-    for (ent, container, player, maybe_sink, maybe_texture) in video_players.iter() {
+    let mut previously_stopped = std::mem::take(&mut *system_paused);
+
+    for (ent, container, player, maybe_sink, maybe_texture, _) in video_players.iter() {
         if maybe_sink.map(|sink| &sink.source) != Some(&player.source.src) {
             let image_handle = match maybe_texture {
                 None => {
@@ -195,24 +203,84 @@ pub fn update_video_players(
                 context.hash.clone(),
                 image_handle,
                 player.source.volume.unwrap_or(1.0),
-                player.source.playing.unwrap_or(true),
+                false,
                 player.source.r#loop.unwrap_or(false),
             );
+            debug!(
+                "spawned av thread for scene @ {} (playing={})",
+                context.base,
+                player.source.playing.unwrap_or(true)
+            );
+            previously_stopped.insert(ent, Some(video_sink.command_sender.clone()));
             let video_output = VideoTextureOutput(video_sink.image.clone());
             commands
                 .entity(ent)
                 .try_insert((video_sink, video_output, audio_sink));
             debug!("{ent:?} has {}", player.source.src);
-        } else {
+        } else if player.is_changed() {
             let sink = maybe_sink.as_ref().unwrap();
             if player.source.playing.unwrap_or(true) {
-                let _ = sink.command_sender.try_send(AVCommand::Play);
+                debug!("scene requesting start for {ent:?}");
+                previously_stopped.insert(ent, None);
             } else {
+                debug!("scene stopping {ent:?}");
                 let _ = sink.command_sender.try_send(AVCommand::Pause);
             }
             let _ = sink
                 .command_sender
                 .try_send(AVCommand::Repeat(player.source.r#loop.unwrap_or(false)));
         }
+    }
+
+    // disable distant av
+    let Ok(user) = user.get_single() else {
+        return;
+    };
+
+    let containing_scenes = containing_scene.get_position(user.translation());
+
+    let mut sorted_players = video_players
+        .iter()
+        .filter_map(|(ent, container, player, _, _, transform)| {
+            if player.source.playing.unwrap_or(true) {
+                let in_scene = containing_scenes.contains(&container.root);
+                let distance = transform.translation().distance(user.translation());
+                Some((in_scene, distance, ent))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    // prioritise av in current scene (false < true), then by distance
+    sorted_players.sort_by_key(|(in_scene, distance, _)| (!in_scene, FloatOrd(*distance)));
+
+    let should_be_playing = sorted_players
+        .iter()
+        .take(config.max_videos)
+        .map(|(_, _, ent)| *ent);
+    let should_be_stopped = sorted_players
+        .iter()
+        .skip(config.max_videos)
+        .map(|(_, _, ent)| *ent);
+
+    for ent in should_be_playing {
+        if let Some(maybe_new_sender) = previously_stopped.get(&ent) {
+            let sender = maybe_new_sender
+                .as_ref()
+                .unwrap_or_else(|| &video_players.get(ent).unwrap().3.unwrap().command_sender);
+            debug!("starting {ent:?}");
+            let _ = sender.try_send(AVCommand::Play);
+        }
+    }
+
+    for ent in should_be_stopped {
+        if !previously_stopped.contains_key(&ent) {
+            if let Some(sink) = video_players.get(ent).unwrap().3 {
+                info!("system stopping {ent:?}");
+                let _ = sink.command_sender.try_send(AVCommand::Pause);
+            }
+        }
+        system_paused.insert(ent, None);
     }
 }

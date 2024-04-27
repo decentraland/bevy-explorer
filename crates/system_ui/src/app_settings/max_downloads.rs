@@ -1,13 +1,14 @@
 use bevy::prelude::*;
 use bevy_dui::DuiRegistry;
 use common::structs::AppConfig;
+use ipfs::IpfsAssetServer;
 
 use super::{spawn_int_setting_template, AppSetting, IntAppSetting};
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct SceneThreadsSetting(i32);
+pub struct MaxDownloadsSetting(i32);
 
-impl IntAppSetting for SceneThreadsSetting {
+impl IntAppSetting for MaxDownloadsSetting {
     fn from_int(value: i32) -> Self {
         Self(value)
     }
@@ -21,34 +22,34 @@ impl IntAppSetting for SceneThreadsSetting {
     }
 
     fn max() -> i32 {
-        32
+        64
     }
 }
 
-impl AppSetting for SceneThreadsSetting {
-    type Param = ();
+impl AppSetting for MaxDownloadsSetting {
+    type Param = IpfsAssetServer<'static, 'static>;
 
     fn title() -> String {
-        "Scene Threads".to_owned()
+        "Max Downloads".to_owned()
     }
 
     fn description(&self) -> String {
-        "Scene Threads\n\nNumber of threads to use for running scenes concurrently. A low number will result in infrequent updates to distant scenes. A high number will result in smoother distant scene update frequency, but will increase CPU usage and may impact overall framerate if it is set higher than half the core count of the CPU".to_string()
+        "Max Downloads\n\nMaximum number of simultaneous downloads to allow. Higher numbers may cause more PCIE/GPU memory pressure and more network usage, potentially leading to hiccups, but may also result in scenes loading faster.".to_string()
     }
 
     fn save(&self, config: &mut AppConfig) {
-        config.scene_threads = self.0 as usize;
+        config.max_concurrent_remotes = self.0 as usize;
     }
 
     fn load(config: &AppConfig) -> Self {
-        Self(config.scene_threads as i32)
+        Self(config.max_concurrent_remotes as i32)
     }
 
     fn spawn_template(commands: &mut Commands, dui: &DuiRegistry, config: &AppConfig) -> Entity {
         spawn_int_setting_template::<Self>(commands, dui, config)
     }
 
-    fn apply(&self, (): (), _: Commands) {
-        // handled in scene_runner
+    fn apply(&self, ipfas: IpfsAssetServer, _: Commands) {
+        ipfas.ipfs().set_concurrent_remote_count(self.0 as usize)
     }
 }
