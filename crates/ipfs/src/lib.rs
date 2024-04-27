@@ -416,7 +416,8 @@ impl Plugin for IpfsIoPlugin {
         let default_reader = FileAssetReader::new(file_path.clone());
         let cache_root = project_directories().data_local_dir().join("cache");
         info!("cache folder {cache_root:?}");
-        std::fs::create_dir_all(&cache_root).expect("failed to write to assets folder");
+        std::fs::create_dir_all(&cache_root)
+            .expect(format!("failed to write to assets folder {cache_root:?}").as_str());
 
         let ipfs_io = IpfsIo::new(Box::new(default_reader), cache_root, HashMap::default());
         let ipfs_io = Arc::new(ipfs_io);
