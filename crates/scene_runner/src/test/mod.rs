@@ -88,6 +88,7 @@ impl PluginGroup for TestPlugins {
             .add(IpfsIoPlugin {
                 assets_root: test_path.to_str().map(ToOwned::to_owned),
                 starting_realm: Default::default(),
+                num_slots: 8,
             })
             .add(AssetPlugin::default())
             .add(MeshPlugin)

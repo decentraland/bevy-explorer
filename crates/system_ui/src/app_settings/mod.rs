@@ -23,6 +23,7 @@ use self::{
     frame_rate::FpsTargetSetting,
     load_distance::{LoadDistanceSetting, UnloadDistanceSetting},
     max_avatars::MaxAvatarsSetting,
+    max_downloads::MaxDownloadsSetting,
     oob_setting::OobSetting,
     player_settings::{
         FallSpeedSetting, FrictionSetting, GravitySetting, JumpSetting, RunSpeedSetting,
@@ -47,6 +48,7 @@ pub mod fog_settings;
 pub mod frame_rate;
 pub mod load_distance;
 pub mod max_avatars;
+pub mod max_downloads;
 mod oob_setting;
 pub mod player_settings;
 pub mod scene_threads;
@@ -90,6 +92,7 @@ impl Plugin for AppSettingsPlugin {
             apply_setting::<GravitySetting>,
             apply_setting::<FallSpeedSetting>,
             apply_setting::<VideoThreadsSetting>,
+            apply_setting::<MaxDownloadsSetting>,
         ));
 
         app.insert_resource(ApplyAppSettingsSchedule(apply_schedule));
@@ -183,6 +186,7 @@ fn set_app_settings_content(
             SceneThreadsSetting::spawn_template(&mut commands, &dui, &config),
             VideoThreadsSetting::spawn_template(&mut commands, &dui, &config),
             MaxAvatarsSetting::spawn_template(&mut commands, &dui, &config),
+            MaxDownloadsSetting::spawn_template(&mut commands, &dui, &config),
             commands
                 .spawn_template(
                     &dui,

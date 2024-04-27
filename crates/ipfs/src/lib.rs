@@ -39,8 +39,6 @@ use console::DoAddConsoleCommand;
 
 use self::ipfs_path::{normalize_path, IpfsPath, IpfsType};
 
-const MAX_CONCURRENT_REQUESTS: usize = 8;
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TypedIpfsRef {
     pub file: String,
@@ -406,6 +404,7 @@ impl Default for ServerAbout {
 pub struct IpfsIoPlugin {
     pub assets_root: Option<String>,
     pub starting_realm: Option<String>,
+    pub num_slots: usize,
 }
 
 impl Plugin for IpfsIoPlugin {
@@ -424,7 +423,12 @@ impl Plugin for IpfsIoPlugin {
         std::fs::create_dir_all(&cache_root)
             .unwrap_or_else(|_| panic!("failed to write to assets folder {cache_root:?}"));
 
-        let ipfs_io = IpfsIo::new(Box::new(default_reader), cache_root, HashMap::default());
+        let ipfs_io = IpfsIo::new(
+            Box::new(default_reader),
+            cache_root,
+            HashMap::default(),
+            self.num_slots,
+        );
         let ipfs_io = Arc::new(ipfs_io);
         let passthrough = PassThroughReader {
             inner: ipfs_io.clone(),
@@ -569,6 +573,7 @@ pub struct IpfsContext {
     about: Option<ServerAbout>,
     modifiers: HashMap<String, IpfsModifier>,
     failed_remotes: HashMap<String, Instant>,
+    num_slots: usize,
 }
 
 pub struct IpfsIo {
@@ -587,6 +592,7 @@ impl IpfsIo {
         default_io: Box<dyn AssetReader>,
         default_fs_path: PathBuf,
         static_paths: HashMap<&'static str, &'static str>,
+        num_slots: usize,
     ) -> Self {
         let (sender, receiver) = tokio::sync::watch::channel(None);
 
@@ -595,10 +601,34 @@ impl IpfsIo {
             default_fs_path,
             realm_config_receiver: receiver,
             realm_config_sender: sender,
-            context: Default::default(),
-            request_slots: tokio::sync::Semaphore::new(MAX_CONCURRENT_REQUESTS),
+            context: RwLock::new(IpfsContext {
+                num_slots,
+                ..Default::default()
+            }),
+            request_slots: tokio::sync::Semaphore::new(num_slots),
             reqno: default(),
             static_files: static_paths,
+        }
+    }
+
+    pub fn set_concurrent_remote_count(&self, count: usize) {
+        let mut context = self.context.blocking_write();
+        if count == context.num_slots {
+            return;
+        }
+
+        if count > context.num_slots {
+            self.request_slots.add_permits(count - context.num_slots);
+            context.num_slots = count;
+        } else {
+            let freed = self.request_slots.forget_permits(context.num_slots - count);
+            if freed != context.num_slots - count {
+                // we couldn't free enough permits, never mind
+                warn!(
+                    "could only free {freed} permits, will catch up on settings apply or restart"
+                );
+            }
+            context.num_slots -= freed;
         }
     }
 

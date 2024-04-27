@@ -163,6 +163,7 @@ pub struct AppConfig {
     pub constrain_scene_ui: bool,
     pub player_settings: PrimaryUser,
     pub max_videos: usize,
+    pub max_concurrent_remotes: usize,
 }
 
 impl Default for AppConfig {
@@ -184,6 +185,7 @@ impl Default for AppConfig {
             constrain_scene_ui: false,
             player_settings: Default::default(),
             max_videos: 4,
+            max_concurrent_remotes: 32,
         }
     }
 }

@@ -238,6 +238,7 @@ fn main() {
                 .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
                     starting_realm: Some(final_config.server.clone()),
                     assets_root: Default::default(),
+                    num_slots: final_config.max_concurrent_remotes,
                 })
                 .add_before::<IpfsIoPlugin, _>(NftReaderPlugin),
         );
