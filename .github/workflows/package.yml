@@ -91,7 +91,7 @@ jobs:
             run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
           - name: install livekit deps
             if: runner.os == 'linux'
-            run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev
+            run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev fuse
           - name: install ffmpeg deps (linux)
             run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
             if: runner.os == 'linux'
