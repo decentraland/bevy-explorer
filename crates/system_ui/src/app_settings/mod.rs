@@ -12,7 +12,10 @@ use common::structs::{
 };
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
-use crate::profile::{SettingsDialog, SettingsTab};
+use crate::{
+    login::config_file,
+    profile::{SettingsDialog, SettingsTab},
+};
 
 use self::{
     ambient_brightness_setting::AmbientSetting,
@@ -444,8 +447,12 @@ fn apply_settings(world: &mut World) {
         },
     );
 
+    let config_file = config_file();
+    if let Some(folder) = config_file.parent() {
+        std::fs::create_dir_all(folder).unwrap();
+    }
     std::fs::write(
-        "config.json",
+        config_file,
         serde_json::to_string(world.resource::<AppConfig>()).unwrap(),
     )
     .unwrap();

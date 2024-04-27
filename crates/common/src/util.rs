@@ -213,3 +213,7 @@ fn despawn_with(mut commands: Commands, q: Query<(Entity, &DespawnWith)>) {
         }
     }
 }
+
+pub fn project_directories() -> directories::ProjectDirs {
+    directories::ProjectDirs::from("org", "decentraland", "BevyExplorer").unwrap()
+}

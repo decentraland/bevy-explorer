@@ -29,6 +29,7 @@ use bevy::{
     utils::HashMap,
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
+use common::util::project_directories;
 use ipfs_path::IpfsAsset;
 use isahc::{http::StatusCode, prelude::Configurable, AsyncReadResponseExt, RequestExt};
 use serde::{Deserialize, Serialize};
@@ -413,7 +414,8 @@ impl Plugin for IpfsIoPlugin {
 
         let file_path = self.assets_root.clone().unwrap_or("assets".to_owned());
         let default_reader = FileAssetReader::new(file_path.clone());
-        let cache_root = default_reader.root_path().join("cache");
+        let cache_root = project_directories().data_local_dir().join("cache");
+        info!("cache folder {cache_root:?}");
         std::fs::create_dir_all(&cache_root).expect("failed to write to assets folder");
 
         let ipfs_io = IpfsIo::new(Box::new(default_reader), cache_root, HashMap::default());

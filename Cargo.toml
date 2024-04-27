@@ -90,6 +90,7 @@ chrono = { version = "0.4.31", features = ["serde"] }
 bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "main-13" }
 bevy_ecss = { git = "https://github.com/robtfm/bevy_ecss", branch = "main-13" }
 bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "bevy-13-custom2", features=["flac", "mp3", "ogg", "wav"] }
+directories = "5"
 
 [dependencies]
 common = { workspace = true }
