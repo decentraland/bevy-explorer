@@ -414,10 +414,15 @@ impl Plugin for IpfsIoPlugin {
 
         let file_path = self.assets_root.clone().unwrap_or("assets".to_owned());
         let default_reader = FileAssetReader::new(file_path.clone());
-        let cache_root = project_directories().data_local_dir().join("cache");
+        let cache_root = if self.assets_root.is_some() {
+            // use app folder for unit tests
+            default_reader.root_path().join("cache")
+        } else {
+            project_directories().data_local_dir().join("cache")
+        };
         info!("cache folder {cache_root:?}");
         std::fs::create_dir_all(&cache_root)
-            .expect(format!("failed to write to assets folder {cache_root:?}").as_str());
+            .unwrap_or_else(|_| panic!("failed to write to assets folder {cache_root:?}"));
 
         let ipfs_io = IpfsIo::new(Box::new(default_reader), cache_root, HashMap::default());
         let ipfs_io = Arc::new(ipfs_io);
