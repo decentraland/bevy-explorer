@@ -95,17 +95,26 @@ fn main() {
     }
 
     // warnings before log init must be stored and replayed later
+    let mut infos = Vec::default();
     let mut warnings = Vec::default();
     let mut app = App::new();
 
-    let base_config: AppConfig = std::fs::read(config_file())
+    let config_file = config_file();
+    let base_config: AppConfig = std::fs::read(&config_file)
         .ok()
         .and_then(|f| {
+            infos.push(format!("config file loaded from {:?}", config_file));
             serde_json::from_slice(&f)
                 .map_err(|e| warnings.push(format!("failed to parse config.json: {e}")))
                 .ok()
         })
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            warnings.push(format!(
+                "config file not found at {:?}, generating default",
+                config_file
+            ));
+            Default::default()
+        });
 
     let final_config = AppConfig {
         server: args
@@ -307,7 +316,10 @@ fn main() {
 
     info!("Bevy-Explorer version {}", version);
 
-    // replay any warnings
+    // replay any logs
+    for info in infos {
+        info!(info);
+    }
     for warning in warnings {
         warn!(warning);
     }

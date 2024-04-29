@@ -20,6 +20,7 @@ use crate::{
 use self::{
     ambient_brightness_setting::AmbientSetting,
     constrain_ui::ConstrainUiSetting,
+    despawn_workaround::DespawnWorkaroundSetting,
     frame_rate::FpsTargetSetting,
     load_distance::{LoadDistanceSetting, UnloadDistanceSetting},
     max_avatars::MaxAvatarsSetting,
@@ -44,6 +45,7 @@ mod aa_settings;
 pub mod ambient_brightness_setting;
 mod bloom_settings;
 pub mod constrain_ui;
+pub mod despawn_workaround;
 pub mod fog_settings;
 pub mod frame_rate;
 pub mod load_distance;
@@ -93,6 +95,7 @@ impl Plugin for AppSettingsPlugin {
             apply_setting::<FallSpeedSetting>,
             apply_setting::<VideoThreadsSetting>,
             apply_setting::<MaxDownloadsSetting>,
+            apply_setting::<DespawnWorkaroundSetting>,
         ));
 
         app.insert_resource(ApplyAppSettingsSchedule(apply_schedule));
@@ -187,6 +190,7 @@ fn set_app_settings_content(
             VideoThreadsSetting::spawn_template(&mut commands, &dui, &config),
             MaxAvatarsSetting::spawn_template(&mut commands, &dui, &config),
             MaxDownloadsSetting::spawn_template(&mut commands, &dui, &config),
+            DespawnWorkaroundSetting::spawn_template(&mut commands, &dui, &config),
             commands
                 .spawn_template(
                     &dui,
