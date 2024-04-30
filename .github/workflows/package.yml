@@ -63,6 +63,7 @@ jobs:
 
         env:
             PACKAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.${{ startsWith(matrix.build_name, 'win') && 'zip' || 'tar.gz' }}
+            APPIMAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.AppImage
             CARGO_BUILD_DIR: target/release
 
         runs-on: ${{ matrix.os }}
@@ -159,8 +160,8 @@ jobs:
               chmod +x ./linuxdeploy-x86_64.AppImage
               chmod +x ./appimagetool-x86_64.AppImage
               ./linuxdeploy-x86_64.AppImage --appdir BevyExplorer.AppDir --output appimage --create-desktop-file --executable=../target/release/decentra-bevy --icon-file=decentra-bevy.png
-              mv ./decentra-bevy-x86_64.AppImage ./decentra-bevy-linux-x86_64.AppImage
-              gh release upload "${{ needs.create-release.outputs.tag_name }}" "./decentra-bevy-linux-x86_64.AppImage"
+              mv ./decentra-bevy-x86_64.AppImage ${{ env.APPIMAGE_FILE }}
+              gh release upload "${{ needs.create-release.outputs.tag_name }}" ${{ env.APPIMAGE_FILE }}
             env:
                 GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
