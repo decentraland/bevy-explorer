@@ -122,7 +122,7 @@ player_setting!(
     "Terminal velocity when falling, in m/s. Higher settings will result in eventually falling faster (if you start high enough).\nDefault 15m/s",
     |cfg: &mut PrimaryUser, val: f32| cfg.fall_speed = val,
     |cfg: &PrimaryUser| cfg.fall_speed,
-    -1.0,
+    -0.1,
     -100.0,
     -0.1
 );

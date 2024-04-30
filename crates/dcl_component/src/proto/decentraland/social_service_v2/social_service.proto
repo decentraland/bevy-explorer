@@ -1,0 +1,111 @@
+syntax = "proto3";
+package decentraland.social_service_v2;
+
+import "google/protobuf/empty.proto";
+
+// Errors
+
+message InvalidFriendshipAction {}
+
+message InternalServerError {}
+
+// Types
+
+message User { string address = 1; }
+
+message RequestResponse {
+  User user = 1;
+  int64 created_at = 2;
+  optional string message = 3;
+}
+
+message RequestPayload {
+  User user = 1;
+  optional string message = 3;
+}
+
+message Requests {
+  repeated RequestResponse requests = 1;
+}
+
+message AcceptResponse { User user = 1; }
+
+message AcceptPayload { User user = 1; }
+
+message RejectResponse { User user = 1; }
+
+message RejectPayload { User user = 1; }
+
+message DeleteResponse { User user = 1; }
+
+message DeletePayload { User user = 1; }
+
+message CancelResponse { User user = 1; }
+
+message CancelPayload { User user = 1; }
+
+message UpsertFriendshipPayload {
+  oneof action {
+    RequestPayload request = 1;
+    AcceptPayload accept = 2;
+    RejectPayload reject = 4;
+    DeletePayload delete = 5;
+    CancelPayload cancel = 6;
+  }
+}
+
+message MutualFriendsPayload {
+  User user = 1;
+}
+
+message UsersResponse {
+  repeated User users = 1;
+}
+
+message FriendshipRequestsResponse {
+  oneof response {
+    Requests requests = 1;
+    InternalServerError internal_server_error = 2;
+  }
+}
+
+message UpsertFriendshipResponse {
+  message Accepted {}
+  oneof response {
+    Accepted accepted = 1;
+    InvalidFriendshipAction invalid_friendship_action = 2;
+    InternalServerError internal_server_error = 3;
+  }
+}
+
+message FriendshipUpdate {
+  oneof update {
+    RequestResponse request = 1;
+    AcceptResponse accept = 2;
+    RejectResponse reject = 4;
+    DeleteResponse delete = 5;
+    CancelResponse cancel = 6;
+  }
+}
+
+service SocialService {  
+  // Get the list of friends for the authenticated user
+  rpc GetFriends(google.protobuf.Empty) returns (stream UsersResponse) {}
+
+  // Get the list of mutual friends between the authenticated user and the one in the parameter
+  rpc GetMutualFriends(MutualFriendsPayload) returns (stream UsersResponse) {}
+
+  // Get the pending friendship requests for the authenticated user
+  rpc GetPendingFriendshipRequests(google.protobuf.Empty) returns (FriendshipRequestsResponse) {}
+
+  // Get the sent friendship requests for the authenticated user
+  rpc GetSentFriendshipRequests(google.protobuf.Empty) returns (FriendshipRequestsResponse) {}
+
+  // Create or update friendship status: REQUEST, ACCEPT, REJECT, CANCEL, DELETE
+  rpc UpsertFriendship(UpsertFriendshipPayload)
+      returns (UpsertFriendshipResponse) {}
+
+  // Subscribe to updates of friendship status: REQUEST, ACCEPT, REJECT, CANCEL, DELETE
+  rpc SubscribeToFriendshipUpdates(google.protobuf.Empty)
+      returns (stream FriendshipUpdate) {}
+}

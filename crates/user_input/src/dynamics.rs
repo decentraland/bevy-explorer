@@ -288,6 +288,9 @@ pub fn update_user_position(
         // vertical motion was blocked by something, use the effective motion
         dynamic_state.velocity.y = target_motion.y / dt;
     }
+
+    // clamp to max fall speed
+    dynamic_state.velocity.y = dynamic_state.velocity.y.max(user.fall_speed);
 }
 
 // turn clipping on/off

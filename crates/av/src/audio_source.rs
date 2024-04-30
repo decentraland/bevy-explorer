@@ -153,6 +153,11 @@ fn update_audio(
                         AudioTween::default(),
                     );
                     playing_instance.set_playback_rate(playback_rate, AudioTween::default());
+                    if let Some(time) = audio_source.0.current_time {
+                        if let Some(err) = playing_instance.seek_to(time as f64) {
+                            warn!("seek error: {}", err);
+                        }
+                    }
                 }
                 None => {
                     let mut new_instance = &mut audio.play(state.handle.clone());
@@ -163,6 +168,10 @@ fn update_audio(
                         .with_volume(bevy_kira_audio::prelude::Volume::Amplitude(volume as f64));
                     new_instance =
                         new_instance.with_playback_rate(audio_source.0.pitch.unwrap_or(1.0) as f64);
+
+                    if let Some(time) = audio_source.0.current_time {
+                        new_instance.start_from(time as f64);
+                    }
 
                     commands.entity(ent).try_insert(AudioEmitter {
                         instances: vec![new_instance.handle()],
@@ -206,16 +215,22 @@ fn update_source_volume(
 
     for (scene, source, emitter, transform) in query.iter() {
         if current_scenes.contains(&scene.root) {
-            let sound_path = transform.translation() - receiver.translation();
-            let volume = (1. - sound_path.length() / 125.0).clamp(0., 1.).powi(2)
-                * source.0.volume.unwrap_or(1.0)
-                * settings.scene();
-
-            let panning = if sound_path.length() > f32::EPSILON {
-                let right_ear_angle = receiver.right().angle_between(sound_path);
-                (right_ear_angle.cos() + 1.) / 2.
+            let (volume, panning) = if source.0.global() {
+                (source.0.volume.unwrap_or(1.0), 0.5)
             } else {
-                0.5
+                let sound_path = transform.translation() - receiver.translation();
+                let volume = (1. - sound_path.length() / 125.0).clamp(0., 1.).powi(2)
+                    * source.0.volume.unwrap_or(1.0)
+                    * settings.scene();
+
+                let panning = if sound_path.length() > f32::EPSILON {
+                    let right_ear_angle = receiver.right().angle_between(sound_path);
+                    (right_ear_angle.cos() + 1.) / 2.
+                } else {
+                    0.5
+                };
+
+                (volume, panning)
             };
 
             for h_instance in &emitter.instances {

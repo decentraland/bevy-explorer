@@ -13,9 +13,7 @@ use crate::{
     CrdtStore,
 };
 use dcl_component::{
-    proto_components::sdk::components::{
-        pb_avatar_emote_command::EmoteCommand, PbAvatarEmoteCommand,
-    },
+    proto_components::sdk::components::PbAvatarEmoteCommand,
     transform_and_parent::{DclTransformAndParent, DclTranslation},
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
@@ -150,10 +148,9 @@ async fn op_external_url(state: Rc<RefCell<OpState>>, url: String) -> bool {
 #[op]
 fn op_emote(op_state: &mut OpState, emote: String) {
     let emote = PbAvatarEmoteCommand {
-        emote_command: Some(EmoteCommand {
-            emote_urn: emote,
-            r#loop: false,
-        }),
+        emote_urn: emote,
+        r#loop: false,
+        timestamp: 0,
     };
 
     send_emote(op_state, emote);
@@ -185,10 +182,9 @@ async fn op_scene_emote(
     let emote_urn = format!("urn:decentraland:off-chain:scene-emote:{emote_hash}-{looping}");
 
     let emote = PbAvatarEmoteCommand {
-        emote_command: Some(EmoteCommand {
-            emote_urn,
-            r#loop: looping,
-        }),
+        emote_urn,
+        r#loop: looping,
+        timestamp: 0,
     };
 
     send_emote(&mut op_state.borrow_mut(), emote);

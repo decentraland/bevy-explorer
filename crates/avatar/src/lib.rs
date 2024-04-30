@@ -172,7 +172,7 @@ fn update_avatar_info(
             player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
             &PbAvatarEquippedData {
                 wearable_urns: avatar.wearables.to_vec(),
-                emotes_urns: avatar
+                emote_urns: avatar
                     .emotes
                     .as_ref()
                     .unwrap_or(&Vec::default())

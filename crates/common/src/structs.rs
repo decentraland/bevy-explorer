@@ -164,6 +164,7 @@ pub struct AppConfig {
     pub player_settings: PrimaryUser,
     pub max_videos: usize,
     pub max_concurrent_remotes: usize,
+    pub despawn_workaround: bool,
 }
 
 impl Default for AppConfig {
@@ -186,6 +187,10 @@ impl Default for AppConfig {
             player_settings: Default::default(),
             max_videos: 4,
             max_concurrent_remotes: 32,
+            #[cfg(target_os = "linux")]
+            despawn_workaround: true,
+            #[cfg(not(target_os = "linux"))]
+            despawn_workaround: false,
         }
     }
 }

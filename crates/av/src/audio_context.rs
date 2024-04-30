@@ -352,4 +352,10 @@ impl FfmpegContext for AudioContext {
     fn update_state(&self, _state: VideoState) {
         // disregard
     }
+
+    fn clear(&mut self) {
+        self.buffer.clear();
+        self.current_frame = 0;
+        self.start_frame = 0;
+    }
 }

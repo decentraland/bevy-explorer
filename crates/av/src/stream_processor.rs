@@ -27,6 +27,7 @@ pub trait FfmpegContext {
     fn reset_start_frame(&mut self);
     fn seconds_till_next_frame(&self) -> f64;
     fn update_state(&self, state: VideoState);
+    fn clear(&mut self);
 }
 
 // pumps packets through stream contexts keeping them in sync
@@ -113,9 +114,13 @@ pub fn process_streams(
                 start_instant = None;
             }
             Ok(AVCommand::Repeat(r)) => repeat = r,
-            Ok(AVCommand::Seek(_time)) => {
-                todo!();
-                // tbd
+            Ok(AVCommand::Seek(time)) => {
+                for stream in streams.iter_mut() {
+                    stream.clear();
+                }
+                input_context.seek_to(time);
+                update_state(VideoState::VsSeeking, streams);
+                continue;
             }
             Err(TryRecvError::Empty) => (),
             Err(TryRecvError::Disconnected) | Ok(AVCommand::Dispose) => return Ok(()),
