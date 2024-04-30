@@ -7,6 +7,7 @@ pub trait PacketIter {
     fn try_next(&mut self) -> Option<(usize, Packet)>;
     fn blocking_next(&mut self) -> Option<(usize, Packet)>;
     fn reset(&mut self);
+    fn seek_to(&mut self, time: f64);
 }
 
 // input stream wrapper allows reloading
@@ -111,6 +112,28 @@ impl PacketIter for InputWrapper {
             let path = self.path.clone();
             std::thread::spawn(move || {
                 if let Ok(input) = ffmpeg_next::format::input(&path) {
+                    let _ = sx.send(input);
+                }
+            });
+            self.input = None;
+            self.pending_input = Some(rx);
+        }
+
+        self.is_eof = false;
+    }
+
+    fn seek_to(&mut self, time: f64) {
+        let Some(input) = self.get_input(false) else {
+            return;
+        };
+
+        if input.seek((time * 1000000.0) as i64, ..).is_err() {
+            // reload
+            let (sx, rx) = tokio::sync::oneshot::channel();
+            let path = self.path.clone();
+            std::thread::spawn(move || {
+                if let Ok(mut input) = ffmpeg_next::format::input(&path) {
+                    let _ = input.seek((time * 1000000.0) as i64, ..);
                     let _ = sx.send(input);
                 }
             });

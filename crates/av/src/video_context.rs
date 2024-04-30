@@ -193,4 +193,11 @@ impl FfmpegContext for VideoContext {
     fn update_state(&self, state: VideoState) {
         let _ = self.sink.blocking_send(VideoData::State(state));
     }
+
+    fn clear(&mut self) {
+        self.buffer.clear();
+        self.current_frame = 0;
+        self.start_frame = 0;
+        self.next_store_frame = 0;
+    }
 }

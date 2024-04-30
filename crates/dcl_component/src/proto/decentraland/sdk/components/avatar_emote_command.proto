@@ -7,10 +7,7 @@ option (common.ecs_component_id) = 1088;
 // AvatarEmoteCommand is a grow only value set, used to signal the renderer about
 // avatar emotes playback.
 message PBAvatarEmoteCommand {
-  message EmoteCommand {
-    string emote_urn = 1;
-    bool loop = 2;
-  }
-
-  EmoteCommand emote_command = 1;
+  string emote_urn = 1;
+  bool loop = 2;
+  uint32 timestamp = 3;          // monotonic counter
 }

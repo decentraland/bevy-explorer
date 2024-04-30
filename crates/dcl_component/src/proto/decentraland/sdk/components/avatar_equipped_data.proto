@@ -9,5 +9,5 @@ option (common.ecs_component_id) = 1091;
 // data.
 message PBAvatarEquippedData {
   repeated string wearable_urns = 1;
-  repeated string emotes_urns = 2;
+  repeated string emote_urns = 2;
 }

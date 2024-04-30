@@ -2,21 +2,14 @@ syntax = "proto3";
 package decentraland.kernel.apis;
 
 import "decentraland/common/content_mapping.proto";
+import "decentraland/sdk/components/realm_info.proto";
 
 // This API will contain all the information related to the world runtime.
 // Things related to the user, players or the scene itself has they own api, and
 // won't live here. (UserIdentity, Players, ParcelIdentity)
 
-message RealmInfo {
-  string base_url = 1;
-  string realm_name = 2;
-  int32 network_id = 3;
-  string comms_adapter = 4;
-  bool is_preview = 5;
-}
-
 message GetRealmResponse {
-  optional RealmInfo realm_info = 1;
+  optional decentraland.sdk.components.PBRealmInfo realm_info = 1;
 }
 
 message GetWorldTimeResponse {
@@ -72,7 +65,7 @@ service RuntimeService {
   rpc ReadFile(ReadFileRequest) returns (ReadFileResponse) {}
   // Returns information about the current scene. This is the replacement of GetBootstrapData
   rpc GetSceneInformation(CurrentSceneEntityRequest) returns (CurrentSceneEntityResponse) {}
-  
-  // Provides information about the explorer 
+
+  // Provides information about the explorer
   rpc GetExplorerInformation(GetExplorerInformationRequest) returns (GetExplorerInformationResponse) {}
 }

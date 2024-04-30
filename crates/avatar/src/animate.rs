@@ -27,7 +27,7 @@ use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::{
         kernel::comms::rfc4::{self, Chat},
-        sdk::components::{pb_avatar_emote_command::EmoteCommand, PbAvatarEmoteCommand},
+        sdk::components::PbAvatarEmoteCommand,
     },
     SceneComponentId,
 };
@@ -52,10 +52,9 @@ pub struct EmoteList(pub(crate) VecDeque<PbAvatarEmoteCommand>);
 impl EmoteList {
     pub fn new(emote_urn: impl Into<String>) -> Self {
         Self(VecDeque::from_iter([PbAvatarEmoteCommand {
-            emote_command: Some(EmoteCommand {
-                emote_urn: emote_urn.into(),
-                r#loop: false,
-            }),
+            emote_urn: emote_urn.into(),
+            r#loop: false,
+            timestamp: 0,
         }]))
     }
 }
@@ -121,10 +120,7 @@ fn broadcast_emote(
     }
 
     for list in q.iter() {
-        if let Some(PbAvatarEmoteCommand {
-            emote_command: Some(EmoteCommand { emote_urn, .. }),
-        }) = list.back()
-        {
+        if let Some(PbAvatarEmoteCommand { emote_urn, .. }) = list.back() {
             if last.as_ref() != Some(emote_urn) {
                 *count += 1;
                 debug!("sending emote: {emote_urn:?} {}", *count);
@@ -255,14 +251,15 @@ fn animate(
         velocities.insert(avatar_ent, damped_velocity);
 
         // get requested emote
-        let (mut requested_emote, request_loop) = if let Some(PbAvatarEmoteCommand {
-            emote_command: Some(EmoteCommand { emote_urn, r#loop }),
-        }) = emote
-        {
-            (EmoteUrn::new(emote_urn.as_str()).ok(), r#loop)
-        } else {
-            (None, false)
-        };
+        let (mut requested_emote, request_loop) =
+            if let Some(PbAvatarEmoteCommand {
+                emote_urn, r#loop, ..
+            }) = emote
+            {
+                (EmoteUrn::new(emote_urn.as_str()).ok(), r#loop)
+            } else {
+                (None, false)
+            };
 
         // check / cancel requested emote
         if Some(&active_emote.urn) == requested_emote.as_ref() {
