@@ -1,5 +1,4 @@
-// use async_tungstenite::tungstenite::client::IntoClientRequest;
-// use isahc::http::HeaderValue;
+#![allow(unused_imports)]
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -7,6 +6,7 @@ use async_tungstenite::tungstenite::{
     client::IntoClientRequest,
     http::{HeaderValue, Uri},
 };
+#[cfg(feature="livekit")]
 use livekit::{
     options::TrackPublishOptions,
     track::{LocalAudioTrack, LocalTrack, TrackSource},
@@ -23,6 +23,7 @@ fn test_tls() {
     let _ = isahc::get("https://www.google.com/").unwrap();
 }
 
+#[cfg(feature="livekit")]
 #[test]
 fn test_livekit() {
     let mut wallet = Wallet::default();

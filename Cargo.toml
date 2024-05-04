@@ -6,11 +6,14 @@ edition = "2021"
 #![windows_subsystem]
 
 [features]
+default = ["livekit", "ffmpeg"]
 dcl-assert = []
 gen-tests = []
 tracy = ["bevy/trace_tracy"]
 inspect = ["dcl/inspect"]
 hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
+livekit = ["comms/livekit"]
+ffmpeg = ["av/ffmpeg"]
 
 [workspace]
 members = ["crates/*"]
