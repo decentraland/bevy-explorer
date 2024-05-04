@@ -72,13 +72,6 @@ impl AsH160 for String {
     }
 }
 
-trait Unit {
-    // discard result (to avoid warnings about must-use errors, and allow single-line closures that cannot return values)
-    fn unit(&self) {}
-}
-
-impl<T> Unit for T {}
-
 /// a struct for buffering a certain amount of history and providing a subscription mechanism for updates
 #[derive(Debug)]
 pub struct RingBuffer<T: Clone + std::fmt::Debug> {

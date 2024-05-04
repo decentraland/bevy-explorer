@@ -4,7 +4,8 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use bevy::prelude::*;
 use common::structs::ChainLink;
-use ethers_core::types::{transaction::eip2718::TypedTransaction, Address, Signature};
+// use ethers_core::types::transaction::eip2718::TypedTransaction;
+use ethers_core::types::{Address, Signature};
 use ethers_signers::{LocalWallet, Signer, WalletError};
 use isahc::http::Uri;
 use serde::{Deserialize, Serialize};
@@ -104,14 +105,14 @@ pub(crate) trait ObjSafeWalletSigner {
         delegates: &[ChainLink],
     ) -> Result<SimpleAuthChain, WalletError>;
 
-    /// Signs the transaction
-    async fn sign_transaction(&self, message: &TypedTransaction) -> Result<Signature, WalletError>;
+    // /// Signs the transaction
+    // async fn sign_transaction(&self, message: &TypedTransaction) -> Result<Signature, WalletError>;
 
     /// Returns the signer's Ethereum Address
     fn address(&self) -> Address;
 
-    /// Returns the signer's chain id
-    fn chain_id(&self) -> u64;
+    // /// Returns the signer's chain id
+    // fn chain_id(&self) -> u64;
 }
 
 #[async_trait]
@@ -131,17 +132,17 @@ impl ObjSafeWalletSigner for LocalWallet {
         ))
     }
 
-    async fn sign_transaction(&self, message: &TypedTransaction) -> Result<Signature, WalletError> {
-        Signer::sign_transaction(self, message).await
-    }
+    // async fn sign_transaction(&self, message: &TypedTransaction) -> Result<Signature, WalletError> {
+    //     Signer::sign_transaction(self, message).await
+    // }
 
     fn address(&self) -> Address {
         Signer::address(self)
     }
 
-    fn chain_id(&self) -> u64 {
-        Signer::chain_id(self)
-    }
+    // fn chain_id(&self) -> u64 {
+    //     Signer::chain_id(self)
+    // }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

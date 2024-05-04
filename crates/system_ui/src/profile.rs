@@ -65,9 +65,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     ));
 }
 
-#[derive(Component)]
-struct ProfileWindow;
-
 pub struct InfoDialog;
 
 impl InfoDialog {
