@@ -3,7 +3,7 @@ use common::rpc::RpcCall;
 use deno_core::{
     anyhow::{self, anyhow},
     error::AnyError,
-    op2, Op, OpDecl, OpState,
+    op2, OpDecl, OpState,
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -23,25 +23,34 @@ use super::{runtime::scene_information, RpcCalls};
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
     vec![
-        op_move_player_to::DECL,
-        op_teleport_to::DECL,
-        op_change_realm::DECL,
-        op_external_url::DECL,
-        op_emote::DECL,
-        op_scene_emote::DECL,
-        op_open_nft_dialog::DECL,
+        op_move_player_to(),
+        op_teleport_to(),
+        op_change_realm(),
+        op_external_url(),
+        op_emote(),
+        op_scene_emote(),
+        op_open_nft_dialog(),
     ]
 }
 
-#[op2]
+#[op2(fast)]
 fn op_move_player_to(
     op_state: &mut OpState,
     absolute: bool,
-    #[serde] position: (f32, f32, f32),
-    #[serde] maybe_camera: Option<(f32, f32, f32)>,
+    position_x: f32, 
+    position_y: f32, 
+    position_z: f32,
+    camera: bool,
+    maybe_camera_x: f32, 
+    maybe_camera_y: f32,
+    maybe_camera_z: f32,
 ) {
-    let position = [position.0, position.1, position.2];
-    let maybe_camera = maybe_camera.map(|cam| [cam.0, cam.1, cam.2]);
+    let position = [position_x, position_y, position_z];
+    let maybe_camera = if camera {
+        Some([maybe_camera_x, maybe_camera_y, maybe_camera_z])
+    } else {
+        None
+    };
 
     debug!("move player to {:?}", position);
     let scene = op_state.borrow::<CrdtContext>().scene_id.0;
@@ -96,7 +105,7 @@ fn op_move_player_to(
 }
 
 #[op2(async)]
-async fn op_teleport_to(state: Rc<RefCell<OpState>>, #[serde] position: (i32, i32)) -> bool {
+async fn op_teleport_to(state: Rc<RefCell<OpState>>, position_x: i32, position_y: i32) -> bool {
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     state
@@ -104,7 +113,7 @@ async fn op_teleport_to(state: Rc<RefCell<OpState>>, #[serde] position: (i32, i3
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::TeleportPlayer {
             scene: Some(scene),
-            to: IVec2::new(position.0, position.1),
+            to: IVec2::new(position_x, position_y),
             response: sx.into(),
         });
 

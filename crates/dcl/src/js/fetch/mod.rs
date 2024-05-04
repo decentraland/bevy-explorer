@@ -8,10 +8,11 @@ use deno_core::{
     anyhow::{self, anyhow},
     error::{type_error, AnyError},
     futures::{FutureExt, TryStreamExt},
-    op2, AsyncRefCell, BufView, ByteString, CancelHandle, JsBuffer, Op, OpDecl, OpState, Resource,
+    op2, AsyncRefCell, BufView, ByteString, CancelHandle, JsBuffer, OpDecl, OpState, Resource,
     ResourceId,
 };
 use deno_fetch::FetchPermissions;
+use deno_net::NetPermissions;
 use deno_web::TimersPermission;
 use http::{
     header::{ACCEPT_ENCODING, CONTENT_LENGTH, HOST, RANGE},
@@ -51,18 +52,38 @@ impl TimersPermission for TP {
     }
 }
 
+pub struct NP;
+impl NetPermissions for NP {
+    fn check_net<T: AsRef<str>>(
+        &mut self,
+        _host: &(T, Option<u16>),
+        _api_name: &str,
+      ) -> Result<(), AnyError> {
+        Ok(())
+    }
+
+    fn check_read(&mut self, _p: &std::path::Path, _api_name: &str) -> Result<(), AnyError> {
+        Ok(())
+    }
+
+    fn check_write(&mut self, _p: &std::path::Path, _api_name: &str)
+        -> Result<(), AnyError> {
+        Ok(())
+    }
+}
+
 // list of op declarations
 pub fn override_ops() -> Vec<OpDecl> {
     vec![
-        op_fetch::DECL,
-        op_fetch_send::DECL,
-        op_fetch_custom_client::DECL,
+        op_fetch(),
+        op_fetch_send(),
+        op_fetch_custom_client(),
     ]
 }
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![op_signed_fetch_headers::DECL]
+    vec![op_signed_fetch_headers()]
 }
 
 struct IsahcFetchRequestResource {

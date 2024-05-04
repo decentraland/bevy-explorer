@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use bevy::log::debug;
 use common::rpc::RpcCall;
-use deno_core::{anyhow, op2, JsBuffer, Op, OpDecl, OpState};
+use deno_core::{anyhow, op2, JsBuffer, OpDecl, OpState};
 use serde::{Deserialize, Serialize};
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -22,7 +22,7 @@ pub struct MessageBusMessage {
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![op_comms_send_string::DECL, op_comms_send_binary::DECL]
+    vec![op_comms_send_string(), op_comms_send_binary()]
 }
 
 struct BinaryBusReceiver(tokio::sync::mpsc::UnboundedReceiver<(String, Vec<u8>)>);

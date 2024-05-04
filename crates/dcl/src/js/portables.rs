@@ -2,7 +2,7 @@ use common::rpc::{PortableLocation, RpcCall, SpawnResponse};
 use deno_core::{
     anyhow::{self, anyhow},
     error::AnyError,
-    op2, Op, OpDecl, OpState,
+    op2, OpDecl, OpState,
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -13,9 +13,9 @@ use super::RpcCalls;
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
     vec![
-        op_portable_spawn::DECL,
-        op_portable_list::DECL,
-        op_portable_kill::DECL,
+        op_portable_spawn(),
+        op_portable_list(),
+        op_portable_kill(),
     ]
 }
 

@@ -1,15 +1,15 @@
 use std::{cell::RefCell, rc::Rc};
 
 use common::rpc::RpcCall;
-use deno_core::{op2, Op, OpDecl, OpState};
+use deno_core::{op2, OpDecl, OpState};
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
     vec![
-        op_get_connected_players::DECL,
-        op_get_players_in_scene::DECL,
+        op_get_connected_players(),
+        op_get_players_in_scene(),
     ]
 }
 

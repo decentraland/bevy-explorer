@@ -2,14 +2,14 @@ use std::{cell::RefCell, rc::Rc};
 
 use bevy::log::debug;
 use common::{profile::SerializedProfile, rpc::RpcCall};
-use deno_core::{anyhow, error::AnyError, op2, Op, OpDecl, OpState};
+use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use serde::Serialize;
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![op_get_user_data::DECL, op_get_player_data::DECL]
+    vec![op_get_user_data(), op_get_player_data()]
 }
 
 #[derive(Serialize, Debug)]

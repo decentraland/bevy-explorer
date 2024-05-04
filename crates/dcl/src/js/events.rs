@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use bevy::utils::tracing::{debug, warn};
 use common::rpc::RpcCall;
-use deno_core::{op2, Op, OpDecl, OpState};
+use deno_core::{op2, OpDecl, OpState};
 use serde::Serialize;
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -10,9 +10,9 @@ use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
     vec![
-        op_subscribe::DECL,
-        op_unsubscribe::DECL,
-        op_send_batch::DECL,
+        op_subscribe(),
+        op_unsubscribe(),
+        op_send_batch(),
     ]
 }
 

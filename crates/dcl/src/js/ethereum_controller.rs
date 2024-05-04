@@ -2,7 +2,7 @@ use common::rpc::{RPCSendableMessage, RpcCall};
 use deno_core::{
     anyhow::{self, anyhow},
     error::AnyError,
-    op2, Op, OpDecl, OpState,
+    op2, OpDecl, OpState,
 };
 use ethers_providers::{Provider, Ws};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
@@ -14,7 +14,7 @@ const PROVIDER_URL: &str = "wss://rpc.decentraland.org/mainnet?project=kernel-lo
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![op_send_async::DECL]
+    vec![op_send_async()]
 }
 
 #[op2(async)]

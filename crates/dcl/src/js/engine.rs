@@ -4,7 +4,7 @@ use bevy::{
     utils::tracing::span::EnteredSpan,
     utils::tracing::{debug, info, info_span, warn},
 };
-use deno_core::{op2, Op, OpDecl, OpState};
+use deno_core::{op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
 use tokio::sync::{broadcast::error::TryRecvError, mpsc::Receiver};
 
@@ -20,8 +20,8 @@ use dcl_component::DclReader;
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
     vec![
-        op_crdt_send_to_renderer::DECL,
-        op_crdt_recv_from_renderer::DECL,
+        op_crdt_send_to_renderer(),
+        op_crdt_recv_from_renderer(),
     ]
 }
 

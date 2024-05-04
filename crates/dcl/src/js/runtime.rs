@@ -1,5 +1,5 @@
 use bevy::asset::io::AssetReader;
-use deno_core::{anyhow::anyhow, error::AnyError, futures::AsyncReadExt, op2, Op, OpDecl, OpState};
+use deno_core::{anyhow::anyhow, error::AnyError, futures::AsyncReadExt, op2, OpDecl, OpState};
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},
     IpfsResource,
@@ -12,9 +12,9 @@ use crate::interface::crdt_context::CrdtContext;
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
     vec![
-        op_read_file::DECL,
-        op_scene_information::DECL,
-        op_realm_information::DECL,
+        op_read_file(),
+        op_scene_information(),
+        op_realm_information(),
     ]
 }
 

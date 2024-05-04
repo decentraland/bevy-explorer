@@ -5,7 +5,7 @@ use deno_core::{
     anyhow::anyhow,
     ascii_str,
     error::{generic_error, AnyError},
-    include_js_files, op2, v8, Extension, JsRuntime, Op, OpDecl, OpState, PollEventLoopOptions,
+    include_js_files, op2, v8, Extension, JsRuntime, OpDecl, OpState, PollEventLoopOptions,
     RuntimeOptions,
 };
 use deno_websocket::WebSocketPermissions;
@@ -23,7 +23,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 #[cfg(not(feature = "inspect"))]
 pub struct InspectorServer;
 
-use self::fetch::{FP, TP};
+use self::fetch::{FP, TP, NP};
 
 use super::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
@@ -72,6 +72,7 @@ impl WebSocketPermissions for WebSocketPerms {
 
 pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<InspectorServer>) {
     // add fetch stack
+    let net = deno_net::deno_net::init_ops_and_esm::<NP>(None, None);
     let web = deno_web::deno_web::init_ops_and_esm::<TP>(
         std::sync::Arc::new(deno_web::BlobStore::default()),
         None,
@@ -86,7 +87,7 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
         None,
     );
 
-    let mut ops = vec![op_require::DECL, op_log::DECL, op_error::DECL];
+    let mut ops = vec![op_require(), op_log(), op_error()];
 
     let op_sets: [Vec<deno_core::OpDecl>; 11] = [
         engine::ops(),
@@ -152,7 +153,7 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
         } else {
             None
         },
-        extensions: vec![webidl, url, console, web, fetch, websocket, ext],
+        extensions: vec![webidl, url, console, web, net, fetch, websocket, ext],
         inspector: inspect,
         ..Default::default()
     });

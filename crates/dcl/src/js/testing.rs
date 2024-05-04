@@ -1,7 +1,7 @@
 use std::{sync::mpsc::SyncSender, time::Duration};
 
 use common::rpc::{CompareSnapshot, CompareSnapshotResult, RpcCall};
-use deno_core::{anyhow, error::AnyError, op2, Op, OpDecl, OpState};
+use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot::{channel, error::TryRecvError};
 
@@ -15,10 +15,10 @@ pub struct TestPlan {
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
     vec![
-        op_testing_enabled::DECL,
-        op_take_and_compare_snapshot::DECL,
-        op_log_test_result::DECL,
-        op_log_test_plan::DECL,
+        op_testing_enabled(),
+        op_take_and_compare_snapshot(),
+        op_log_test_result(),
+        op_log_test_plan(),
     ]
 }
 

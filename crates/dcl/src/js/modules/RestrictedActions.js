@@ -1,14 +1,14 @@
 module.exports.movePlayerTo = async function (body) { 
     if ("cameraTarget" in body) {
-        Deno.core.ops.op_move_player_to(false, [body.newRelativePosition.x, body.newRelativePosition.y, body.newRelativePosition.z], [body.cameraTarget.x, body.cameraTarget.y, body.cameraTarget.z]);
+        Deno.core.ops.op_move_player_to(false, body.newRelativePosition.x, body.newRelativePosition.y, body.newRelativePosition.z, true, body.cameraTarget.x, body.cameraTarget.y, body.cameraTarget.z);
     } else {
-        Deno.core.ops.op_move_player_to(false, [body.newRelativePosition.x, body.newRelativePosition.y, body.newRelativePosition.z]);
+        Deno.core.ops.op_move_player_to(false, body.newRelativePosition.x, body.newRelativePosition.y, body.newRelativePosition.z, false, 0, 0, 0);
     }
     return {} 
 }
 
 module.exports.teleportTo = async function (body) { 
-    await Deno.core.ops.op_teleport_to([Number(body.worldCoordinates.x), Number(body.worldCoordinates.y)]);
+    await Deno.core.ops.op_teleport_to(Number(body.worldCoordinates.x), Number(body.worldCoordinates.y));
     return {} 
 }
 
