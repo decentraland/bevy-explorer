@@ -1,5 +1,6 @@
 use std::{sync::mpsc::SyncSender, time::Duration};
 
+use bevy::log::debug;
 use common::rpc::{CompareSnapshot, CompareSnapshotResult, RpcCall};
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use serde::{Deserialize, Serialize};
@@ -24,6 +25,7 @@ pub fn ops() -> Vec<OpDecl> {
 
 #[op2(fast)]
 fn op_testing_enabled(op_state: &mut OpState) -> bool {
+    debug!("op_testing_enabled");
     op_state.borrow::<CrdtContext>().testing
 }
 
@@ -52,6 +54,7 @@ pub struct SceneTestResult {
 
 #[op2]
 fn op_log_test_plan(state: &mut OpState, #[serde] body: SceneTestPlan) {
+    debug!("op_log_test_plan");
     let scene = state.borrow::<CrdtContext>().scene_id.0;
 
     state.borrow_mut::<RpcCalls>().push(RpcCall::TestPlan {
@@ -62,6 +65,7 @@ fn op_log_test_plan(state: &mut OpState, #[serde] body: SceneTestPlan) {
 
 #[op2]
 fn op_log_test_result(state: &mut OpState, #[serde] body: SceneTestResult) {
+    debug!("op_log_test_results");
     let scene = state.borrow::<CrdtContext>().scene_id.0;
 
     state.borrow_mut::<RpcCalls>().push(RpcCall::TestResult {
@@ -102,6 +106,7 @@ fn op_take_and_compare_snapshot(
     #[serde] snapshot_size: (u32, u32),
     #[serde] method: TestingScreenshotComparisonMethodRequest,
 ) -> Result<TakeAndCompareSnapshotResponse, AnyError> {
+    debug!("op_take_and_compare_snapshot");
     let camera_position = [camera_position.0, camera_position.1, camera_position.2];
     let camera_target = [camera_target.0, camera_target.1, camera_target.2];
     let snapshot_size = [snapshot_size.0, snapshot_size.1];

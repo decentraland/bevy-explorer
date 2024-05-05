@@ -124,7 +124,6 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
 
     let ext = Extension {
         name: "decentraland",
-        deps: &["deno_fetch"],
         ops: ops.into(),
         esm_files: include_js_files!(
             BevyExplorer
@@ -436,6 +435,7 @@ fn op_require(
 
 #[op2(fast)]
 fn op_log(state: Rc<RefCell<OpState>>, #[string] message: String) {
+    debug!("op_log {}", message);
     let time = state.borrow().borrow::<SceneElapsedTime>().0;
     state
         .borrow_mut()
@@ -449,6 +449,7 @@ fn op_log(state: Rc<RefCell<OpState>>, #[string] message: String) {
 
 #[op2(fast)]
 fn op_error(state: Rc<RefCell<OpState>>, #[string] message: String) {
+    debug!("op_error");
     let time = state.borrow().borrow::<SceneElapsedTime>().0;
     state
         .borrow_mut()

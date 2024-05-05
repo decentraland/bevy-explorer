@@ -106,6 +106,7 @@ fn op_move_player_to(
 
 #[op2(async)]
 async fn op_teleport_to(state: Rc<RefCell<OpState>>, position_x: i32, position_y: i32) -> bool {
+    debug!("op_teleport_to");
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     state
@@ -126,6 +127,7 @@ async fn op_change_realm(
     #[string] realm: String,
     #[string] message: Option<String>,
 ) -> bool {
+    debug!("op_change_realm");
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     state
@@ -143,6 +145,7 @@ async fn op_change_realm(
 
 #[op2(async)]
 async fn op_external_url(state: Rc<RefCell<OpState>>, #[string] url: String) -> bool {
+    debug!("op_external_url");
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     state
@@ -159,6 +162,7 @@ async fn op_external_url(state: Rc<RefCell<OpState>>, #[string] url: String) -> 
 
 #[op2(fast)]
 fn op_emote(op_state: &mut OpState, #[string] emote: String) {
+    debug!("op_emote");
     let emote = PbAvatarEmoteCommand {
         emote_urn: emote,
         r#loop: false,
@@ -174,6 +178,7 @@ async fn op_scene_emote(
     #[string] emote: String,
     looping: bool,
 ) -> Result<(), anyhow::Error> {
+    debug!("op_scene_emote");
     let scene_info = scene_information(op_state.clone()).await?;
 
     let emote = emote.to_lowercase();
@@ -225,6 +230,7 @@ async fn op_open_nft_dialog(
     op_state: Rc<RefCell<OpState>>,
     #[string] urn: String,
 ) -> Result<(), AnyError> {
+    debug!("op_open_nft_dialog");
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
 
     {

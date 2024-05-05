@@ -112,6 +112,8 @@ fn op_subscribe(state: &mut OpState, #[string] id: &str) {
 
 #[op2(fast)]
 fn op_unsubscribe(state: &mut OpState, #[string] id: &str) {
+    debug!("op_unsubscribe {id}");
+
     macro_rules! unregister {
         ($id: expr, $state: expr, $marker: ty) => {{
             if id == <$marker as EventType>::label() {
@@ -151,6 +153,7 @@ struct EventGeneric {
 #[op2]
 #[serde]
 fn op_send_batch(state: &mut OpState) -> Vec<Event> {
+    debug!("op_send_batch");
     let mut results = Vec::default();
 
     macro_rules! poll {

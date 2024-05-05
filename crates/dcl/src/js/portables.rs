@@ -1,3 +1,4 @@
+use bevy::log::debug;
 use common::rpc::{PortableLocation, RpcCall, SpawnResponse};
 use deno_core::{
     anyhow::{self, anyhow},
@@ -26,6 +27,7 @@ async fn op_portable_spawn(
     #[string] pid: Option<String>,
     #[string] ens: Option<String>,
 ) -> Result<SpawnResponse, AnyError> {
+    debug!("op_portable_spawn");
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<SpawnResponse, String>>();
 
     let location = match (pid, ens) {
@@ -55,6 +57,7 @@ async fn op_portable_kill(
     state: Rc<RefCell<OpState>>,
     #[string] pid: String,
 ) -> Result<bool, AnyError> {
+    debug!("op_portable_kill");
     let (sx, rx) = tokio::sync::oneshot::channel::<bool>();
 
     // might not be a urn, who even knows
@@ -73,6 +76,7 @@ async fn op_portable_kill(
 #[op2(async)]
 #[serde]
 async fn op_portable_list(state: Rc<RefCell<OpState>>) -> Vec<SpawnResponse> {
+    debug!("op_portable_list");
     let (sx, rx) = tokio::sync::oneshot::channel::<Vec<SpawnResponse>>();
 
     state

@@ -75,7 +75,7 @@ impl NetPermissions for NP {
 // list of op declarations
 pub fn override_ops() -> Vec<OpDecl> {
     vec![
-        op_fetch(),
+        op_fetch::<FP>(),
         op_fetch_send(),
         op_fetch_custom_client(),
     ]
@@ -104,16 +104,20 @@ pub struct IsahcFetchReturn {
 #[op2]
 #[serde]
 #[allow(clippy::too_many_arguments)]
-pub fn op_fetch(
+pub fn op_fetch<FP>(
     state: &mut OpState,
-    #[serde] method: ByteString,
+    #[string] method: String,
     #[string] url: String,
-    #[serde] headers: Vec<(ByteString, ByteString)>,
+    #[serde] headers: Vec<(String, String)>,
     #[smi] client_rid: Option<u32>,
     has_body: bool,
     #[buffer] data: Option<JsBuffer>,
     #[smi] resource: Option<ResourceId>,
-) -> Result<IsahcFetchReturn, AnyError> {
+) -> Result<IsahcFetchReturn, AnyError>
+where
+  FP: FetchPermissions + 'static,
+{
+    debug!("op_fetch");
     // TODO scene permissions
 
     let client = if let Some(rid) = client_rid {
@@ -123,8 +127,13 @@ pub fn op_fetch(
         None
     };
 
+    if method.len() > 50 {
+        debug!("bad method {}", method.len());
+        anyhow::bail!("nope");
+    }
+
     let mut request = isahc::Request::builder().uri(url.clone());
-    let method = Method::from_bytes(&method)?;
+    let method = Method::from_bytes(method.as_bytes())?;
 
     let (request_body_rid, body_bytes) = if has_body {
         match (data, resource) {
@@ -154,8 +163,8 @@ pub fn op_fetch(
     request = request.method(method);
 
     for (key, value) in headers {
-        let name = HeaderName::from_bytes(&key).map_err(|err| type_error(err.to_string()))?;
-        let v = HeaderValue::from_bytes(&value).map_err(|err| type_error(err.to_string()))?;
+        let name = HeaderName::from_bytes(key.as_bytes()).map_err(|err| type_error(err.to_string()))?;
+        let v = HeaderValue::from_bytes(value.as_bytes()).map_err(|err| type_error(err.to_string()))?;
 
         if matches!(name, RANGE) {
             request = request.header(name, v);
@@ -201,6 +210,7 @@ pub async fn op_fetch_send(
     state: Rc<RefCell<OpState>>,
     #[smi] rid: ResourceId,
 ) -> Result<FetchResponse, AnyError> {
+    debug!("op_fetch_send");
     let request = state
         .borrow_mut()
         .resource_table
@@ -302,6 +312,7 @@ pub fn op_fetch_custom_client(
     state: &mut OpState,
     #[serde] args: CreateHttpClientOptions,
 ) -> Result<ResourceId, AnyError> {
+    debug!("op_fetch_custom_client");
     let mut builder = isahc::HttpClient::builder();
     if let Some(proxy) = args.proxy {
         builder = builder.proxy(Uri::try_from(proxy.url).ok());
@@ -354,6 +365,7 @@ pub async fn op_signed_fetch_headers(
     #[string] uri: String,
     #[string] method: Option<String>,
 ) -> Result<Vec<(String, String)>, AnyError> {
+    debug!("op_signed_fetch_headers");
     if Uri::try_from(&uri)?.scheme_str() != Some("https") {
         anyhow::bail!("URL scheme must be `https`")
     }

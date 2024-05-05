@@ -1,5 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
+use bevy::log::debug;
 use common::rpc::RpcCall;
 use deno_core::{op2, OpDecl, OpState};
 
@@ -16,6 +17,7 @@ pub fn ops() -> Vec<OpDecl> {
 #[op2(async)]
 #[serde]
 async fn op_get_connected_players(state: Rc<RefCell<OpState>>) -> Vec<String> {
+    debug!("op_get_connected_players");
     let (sx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();
 
     state
@@ -31,6 +33,8 @@ async fn op_get_connected_players(state: Rc<RefCell<OpState>>) -> Vec<String> {
 #[op2(async)]
 #[serde]
 async fn op_get_players_in_scene(state: Rc<RefCell<OpState>>) -> Vec<String> {
+    debug!("op_get_players_in_scene");
+
     let (sx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();
 
     {

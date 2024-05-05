@@ -1,3 +1,4 @@
+use bevy::log::debug;
 use common::rpc::{RPCSendableMessage, RpcCall};
 use deno_core::{
     anyhow::{self, anyhow},
@@ -24,6 +25,7 @@ async fn op_send_async(
     #[string] method: String,
     #[string] params: String,
 ) -> Result<serde_json::Value, AnyError> {
+    debug!("op_send_async");
     let params: Vec<serde_json::Value> = serde_json::from_str(&params)?;
 
     match method.as_str() {

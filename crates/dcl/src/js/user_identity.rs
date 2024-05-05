@@ -49,7 +49,7 @@ async fn op_get_user_data(state: Rc<RefCell<OpState>>) -> Result<UserData, AnyEr
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<SerializedProfile, ()>>();
 
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
-    debug!("[{scene:?}] -> get_user_data");
+    debug!("[{scene:?}] -> op_get_user_data");
 
     state
         .borrow_mut()
@@ -84,7 +84,7 @@ async fn op_get_player_data(
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<SerializedProfile, ()>>();
 
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
-    debug!("[{scene:?}] -> get_player_data");
+    debug!("[{scene:?}] -> op_get_player_data");
 
     state
         .borrow_mut()
