@@ -80,7 +80,7 @@ impl IpfsAsset for SceneJsFile {
 pub struct EntityDefinitionLoader;
 
 impl EntityDefinitionLoader {
-    fn load_internal<'a>(
+    pub fn load_internal<'a>(
         &'a self,
         reader: &'a mut Reader,
         _settings: &'a (),
