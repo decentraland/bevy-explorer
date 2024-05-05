@@ -231,9 +231,16 @@ fn main() {
                                     .open(SESSION_LOG.get().unwrap())
                                     .unwrap(),
                             );
+
+                            let default_filter = { format!("{},{}", bevy::log::Level::INFO, "wgpu=error,naga=error") };
+                            let filter_layer = bevy::log::tracing_subscriber::EnvFilter::try_from_default_env()
+                                .or_else(|_| bevy::log::tracing_subscriber::EnvFilter::try_new(&default_filter))
+                                .unwrap();                            
+
                             let l = bevy::log::tracing_subscriber::fmt()
                                 .with_ansi(false)
                                 .with_writer(non_blocking)
+                                .with_env_filter(filter_layer)
                                 .finish();
                             Box::leak(Box::new(guard));
                             Box::new(l)

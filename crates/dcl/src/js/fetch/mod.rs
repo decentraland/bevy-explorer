@@ -254,6 +254,7 @@ pub async fn op_fetch_send(
             size: content_length,
         });
 
+    debug!("request response [{:?} bytes]", content_length);
     Ok(FetchResponse {
         status: status.as_u16(),
         status_text: status.canonical_reason().unwrap_or("").to_string(),

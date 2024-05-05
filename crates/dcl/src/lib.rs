@@ -30,12 +30,14 @@ impl SceneId {
 }
 
 // message from scene describing new and deleted entities
+#[derive(Debug)]
 pub struct SceneCensus {
     pub scene_id: SceneId,
     pub born: HashSet<SceneEntityId>,
     pub died: HashSet<SceneEntityId>,
 }
 
+#[derive(Debug)]
 pub struct SceneElapsedTime(pub f32);
 
 // data from renderer to scene
@@ -48,6 +50,7 @@ type RpcCalls = Vec<RpcCall>;
 
 #[allow(clippy::large_enum_variant)] // we don't care since the error case is very rare
                                      // data from scene to renderer
+#[derive(Debug)]
 pub enum SceneResponse {
     Error(SceneId, String),
     Ok(
@@ -115,3 +118,4 @@ pub fn spawn_scene(
 
     main_sx
 }
+

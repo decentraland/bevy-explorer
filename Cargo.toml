@@ -131,6 +131,11 @@ chrono = { workspace = true }
 tracing-appender = "0.2.3"
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 
+# break_test dependencies
+futures-lite = { workspace = true }
+dcl_component = { workspace = true }
+tokio = { workspace = true }
+
 [build-dependencies]
 prost-build = "0.11.8"
 

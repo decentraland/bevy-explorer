@@ -218,7 +218,7 @@ pub enum SceneIpfsLocation {
 
 #[derive(Resource, Clone)]
 pub struct IpfsResource {
-    inner: Arc<IpfsIo>,
+    pub inner: Arc<IpfsIo>,
 }
 
 impl std::ops::Deref for IpfsResource {
@@ -657,9 +657,14 @@ impl IpfsIo {
     }
 
     async fn set_realm_inner(&self, new_realm: String) -> Result<(), anyhow::Error> {
-        info!("disconnecting");
         self.realm_config_sender.send(None).expect("channel closed");
-        self.context.write().await.about = None;
+        let mut write = self.context.write().await;
+        if write.about.is_some() {
+            info!("disconnecting");
+        }
+        
+        write.about = None;
+        drop(write);
 
         let mut about = isahc::get_async(format!("{new_realm}/about"))
             .await
