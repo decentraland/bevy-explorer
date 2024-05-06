@@ -11,6 +11,6 @@ module.exports.sendBinary = async function (body) {
 
     const data = (await Deno.core.ops.op_comms_recv_binary()).map((item) => new Uint8Array(item));
     return {
-        data: []
+        data
     }
 }
