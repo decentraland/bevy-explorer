@@ -99,6 +99,7 @@ pub fn spawn_scene(
 
     std::thread::Builder::new()
         .name(format!("scene thread {:?}", id.0))
+        .stack_size(8388608)
         .spawn(move || {
             scene_thread(
                 scene_hash,
