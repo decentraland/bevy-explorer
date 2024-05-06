@@ -135,7 +135,7 @@ fn save_settings(
         }
 
         if let Some(avatar) = maybe_avatar {
-            profile.content.avatar.body_shape = avatar.shape.body_shape.to_owned();
+            profile.content.avatar.body_shape.clone_from(&avatar.shape.body_shape);
             profile.content.avatar.hair = avatar.shape.hair_color.map(AvatarColor::new);
             profile.content.avatar.eyes = avatar.shape.eye_color.map(AvatarColor::new);
             profile.content.avatar.skin = avatar.shape.skin_color.map(AvatarColor::new);
@@ -164,7 +164,7 @@ fn save_settings(
         profile.content.version = profile.version as i64;
 
         if let Some(booth) = maybe_booth {
-            current_profile.snapshots = booth.snapshot_target.clone();
+            current_profile.snapshots.clone_from(&booth.snapshot_target);
         }
 
         current_profile.is_deployed = false;

@@ -34,6 +34,7 @@ pub fn ops() -> Vec<OpDecl> {
 }
 
 #[op2(fast)]
+#[allow(clippy::too_many_arguments)]
 fn op_move_player_to(
     op_state: &mut OpState,
     absolute: bool,

@@ -775,7 +775,7 @@ fn update_wearables_list(
         return;
     }
 
-    settings.current_list = wearables.clone();
+    settings.current_list.clone_from(&wearables);
 
     let worn = settings
         .current_wearables

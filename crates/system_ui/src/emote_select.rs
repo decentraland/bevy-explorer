@@ -336,7 +336,7 @@ fn show_emote_ui(
                             bg.0 = Color::rgb(1.0, 1.0, 1.50);
                         }
                         if let Ok(mut text) = text.get_mut(output) {
-                            text.sections[0].value = name.clone();
+                            text.sections[0].value.clone_from(&name);
                             text.linebreak_behavior = BreakLineOn::WordBoundary;
                         }
                     },

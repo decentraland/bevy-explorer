@@ -676,7 +676,7 @@ impl IpfsIo {
         let about = about.json::<ServerAbout>().await.map_err(|e| anyhow!(e))?;
 
         let mut write = self.context.write().await;
-        write.base_url = new_realm.clone();
+        write.base_url.clone_from(&new_realm);
         write.about = Some(about.clone());
         self.realm_config_sender
             .send(Some((new_realm, about)))
