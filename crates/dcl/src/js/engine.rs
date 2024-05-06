@@ -19,10 +19,7 @@ use dcl_component::DclReader;
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![
-        op_crdt_send_to_renderer(),
-        op_crdt_recv_from_renderer(),
-    ]
+    vec![op_crdt_send_to_renderer(), op_crdt_recv_from_renderer()]
 }
 
 // receive and process a buffer of crdt messages

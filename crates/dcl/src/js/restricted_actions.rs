@@ -37,11 +37,11 @@ pub fn ops() -> Vec<OpDecl> {
 fn op_move_player_to(
     op_state: &mut OpState,
     absolute: bool,
-    position_x: f32, 
-    position_y: f32, 
+    position_x: f32,
+    position_y: f32,
     position_z: f32,
     camera: bool,
-    maybe_camera_x: f32, 
+    maybe_camera_x: f32,
     maybe_camera_y: f32,
     maybe_camera_z: f32,
 ) {

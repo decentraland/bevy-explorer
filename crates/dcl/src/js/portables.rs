@@ -13,11 +13,7 @@ use super::RpcCalls;
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![
-        op_portable_spawn(),
-        op_portable_list(),
-        op_portable_kill(),
-    ]
+    vec![op_portable_spawn(), op_portable_list(), op_portable_kill()]
 }
 
 #[op2(async)]

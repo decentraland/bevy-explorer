@@ -1,12 +1,32 @@
 use std::{env::args, path::PathBuf, str::FromStr, sync::Arc};
 
-use bevy::{asset::{io::file::FileAssetReader, AsyncReadExt}, core::TaskPoolOptions, ecs::entity::Entity, log::info, math::IVec2, transform::components::Transform, utils::HashMap};
-use common::{structs::{IVec2Arg, SceneMeta}, util::project_directories};
-use dcl::{interface::{CrdtComponentInterfaces, CrdtStore, CrdtType}, spawn_scene, SceneId};
-use dcl_component::{transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId, SceneEntityId};
-use futures_lite::future::block_on;
-use ipfs::{ipfs_path::{IpfsPath, IpfsType}, EntityDefinition, EntityDefinitionLoader, IpfsIo, IpfsResource, SceneJsFile};
 use bevy::asset::io::AssetReader;
+use bevy::{
+    asset::{io::file::FileAssetReader, AsyncReadExt},
+    core::TaskPoolOptions,
+    ecs::entity::Entity,
+    log::info,
+    math::IVec2,
+    transform::components::Transform,
+    utils::HashMap,
+};
+use common::{
+    structs::{IVec2Arg, SceneMeta},
+    util::project_directories,
+};
+use dcl::{
+    interface::{CrdtComponentInterfaces, CrdtStore, CrdtType},
+    spawn_scene, SceneId,
+};
+use dcl_component::{
+    transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
+    SceneEntityId,
+};
+use futures_lite::future::block_on;
+use ipfs::{
+    ipfs_path::{IpfsPath, IpfsType},
+    EntityDefinition, EntityDefinitionLoader, IpfsIo, IpfsResource, SceneJsFile,
+};
 
 fn break_everything(parcel: IVec2, urn: Option<String>) {
     TaskPoolOptions::default().create_default_pools();
@@ -16,23 +36,30 @@ fn break_everything(parcel: IVec2, urn: Option<String>) {
 
     let default_reader = FileAssetReader::new("assets");
     let cache_root = project_directories().data_local_dir().join("cache");
-    let ipfs_io = IpfsIo::new(
-        Box::new(default_reader),
-        cache_root,
-        HashMap::default(),
-        32,
-    );
+    let ipfs_io = IpfsIo::new(Box::new(default_reader), cache_root, HashMap::default(), 32);
     let ipfs_io = Arc::new(ipfs_io);
-    block_on(ipfs_io.set_realm("https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-test-psquad-demo-latest".to_owned()));
+    block_on(
+        ipfs_io.set_realm(
+            "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-test-psquad-demo-latest"
+                .to_owned(),
+        ),
+    );
     // block_on(ipfs_io.set_realm("https://realm-provider.decentraland.org/main".to_owned()));
-    
+
     let entity = if let Some(urn) = urn {
         let ipfs_path = &IpfsPath::new_from_urn::<EntityDefinition>(&urn).unwrap();
         let pathbuf = PathBuf::from(ipfs_path);
         let mut reader = block_on(ipfs_io.read(&pathbuf)).unwrap();
-        block_on(EntityDefinitionLoader.load_internal(&mut reader, &(), || ipfs_path.context_free_hash().unwrap().unwrap())).unwrap()
+        block_on(EntityDefinitionLoader.load_internal(&mut reader, &(), || {
+            ipfs_path.context_free_hash().unwrap().unwrap()
+        }))
+        .unwrap()
     } else {
-        let entities = block_on(ipfs_io.active_entities(ipfs::ActiveEntitiesRequest::Pointers(vec![format!("{},{}", parcel.x, parcel.y)]), None)).unwrap();
+        let entities = block_on(ipfs_io.active_entities(
+            ipfs::ActiveEntitiesRequest::Pointers(vec![format!("{},{}", parcel.x, parcel.y)]),
+            None,
+        ))
+        .unwrap();
         entities.into_iter().next().unwrap()
     };
 
@@ -47,9 +74,16 @@ fn break_everything(parcel: IVec2, urn: Option<String>) {
     ipfs_io.add_collection(scene_hash.clone(), entity.content, None, Some(meta_str));
 
     let ipfs_path = PathBuf::from(&if is_sdk7 {
-        IpfsPath::new(IpfsType::ContentFile { content_hash: scene_hash.clone(), file_path: scene_js_file.clone() })
+        IpfsPath::new(IpfsType::ContentFile {
+            content_hash: scene_hash.clone(),
+            file_path: scene_js_file.clone(),
+        })
     } else {
-        info!("no sdk6 - expected {:?} found {:?}", Some("7".to_owned()), meta.runtime_version);
+        info!(
+            "no sdk6 - expected {:?} found {:?}",
+            Some("7".to_owned()),
+            meta.runtime_version
+        );
         info!("meta: {:#?}", meta);
         return;
         // IpfsPath::new_from_url("https://renderer-artifacts.decentraland.org/sdk6-adaption-layer/main/index.min.js", "js")
@@ -69,7 +103,9 @@ fn break_everything(parcel: IVec2, urn: Option<String>) {
 
     let (_gusx, gurx) = tokio::sync::broadcast::channel(10);
 
-    let ipfs_res = IpfsResource{ inner: ipfs_io.clone() };
+    let ipfs_res = IpfsResource {
+        inner: ipfs_io.clone(),
+    };
 
     let wallet = wallet::Wallet::default();
 
@@ -105,7 +141,9 @@ fn break_everything(parcel: IVec2, urn: Option<String>) {
     }
 
     loop {
-        sender.blocking_send(dcl::RendererResponse::Ok(crdt_store.take_updates())).unwrap();
+        sender
+            .blocking_send(dcl::RendererResponse::Ok(crdt_store.take_updates()))
+            .unwrap();
         info!("sent");
         let received = rx.recv().unwrap();
         info!("received {:?}", received);
@@ -121,7 +159,7 @@ fn main() {
     let default_filter = { format!("{},{}", bevy::log::Level::INFO, "wgpu=error,naga=error") };
     let filter_layer = bevy::log::tracing_subscriber::EnvFilter::try_from_default_env()
         .or_else(|_| bevy::log::tracing_subscriber::EnvFilter::try_new(&default_filter))
-        .unwrap();                            
+        .unwrap();
 
     let l = bevy::log::tracing_subscriber::fmt()
         // .with_ansi(false)

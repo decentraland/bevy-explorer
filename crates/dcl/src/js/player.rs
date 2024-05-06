@@ -8,10 +8,7 @@ use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![
-        op_get_connected_players(),
-        op_get_players_in_scene(),
-    ]
+    vec![op_get_connected_players(), op_get_players_in_scene()]
 }
 
 #[op2(async)]

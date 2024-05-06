@@ -58,7 +58,7 @@ impl NetPermissions for NP {
         &mut self,
         _host: &(T, Option<u16>),
         _api_name: &str,
-      ) -> Result<(), AnyError> {
+    ) -> Result<(), AnyError> {
         Ok(())
     }
 
@@ -66,19 +66,14 @@ impl NetPermissions for NP {
         Ok(())
     }
 
-    fn check_write(&mut self, _p: &std::path::Path, _api_name: &str)
-        -> Result<(), AnyError> {
+    fn check_write(&mut self, _p: &std::path::Path, _api_name: &str) -> Result<(), AnyError> {
         Ok(())
     }
 }
 
 // list of op declarations
 pub fn override_ops() -> Vec<OpDecl> {
-    vec![
-        op_fetch::<FP>(),
-        op_fetch_send(),
-        op_fetch_custom_client(),
-    ]
+    vec![op_fetch::<FP>(), op_fetch_send(), op_fetch_custom_client()]
 }
 
 // list of op declarations
@@ -115,7 +110,7 @@ pub fn op_fetch<FP>(
     #[smi] resource: Option<ResourceId>,
 ) -> Result<IsahcFetchReturn, AnyError>
 where
-  FP: FetchPermissions + 'static,
+    FP: FetchPermissions + 'static,
 {
     debug!("op_fetch");
     // TODO scene permissions
@@ -163,8 +158,10 @@ where
     request = request.method(method);
 
     for (key, value) in headers {
-        let name = HeaderName::from_bytes(key.as_bytes()).map_err(|err| type_error(err.to_string()))?;
-        let v = HeaderValue::from_bytes(value.as_bytes()).map_err(|err| type_error(err.to_string()))?;
+        let name =
+            HeaderName::from_bytes(key.as_bytes()).map_err(|err| type_error(err.to_string()))?;
+        let v =
+            HeaderValue::from_bytes(value.as_bytes()).map_err(|err| type_error(err.to_string()))?;
 
         if matches!(name, RANGE) {
             request = request.header(name, v);

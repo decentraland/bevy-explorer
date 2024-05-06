@@ -662,7 +662,7 @@ impl IpfsIo {
         if write.about.is_some() {
             info!("disconnecting");
         }
-        
+
         write.about = None;
         drop(write);
 

@@ -23,7 +23,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 #[cfg(not(feature = "inspect"))]
 pub struct InspectorServer;
 
-use self::fetch::{FP, TP, NP};
+use self::fetch::{FP, NP, TP};
 
 use super::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},

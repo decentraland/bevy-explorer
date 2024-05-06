@@ -9,11 +9,7 @@ use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![
-        op_subscribe(),
-        op_unsubscribe(),
-        op_send_batch(),
-    ]
+    vec![op_subscribe(), op_unsubscribe(), op_send_batch()]
 }
 
 struct EventReceiver<T: EventType> {

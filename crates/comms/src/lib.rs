@@ -2,7 +2,7 @@ pub mod archipelago;
 pub mod broadcast_position;
 pub mod global_crdt;
 
-#[cfg(feature="livekit")]
+#[cfg(feature = "livekit")]
 pub mod livekit_room;
 
 pub mod profile;
@@ -31,7 +31,7 @@ use self::{
     websocket_room::{StartWsRoom, WebsocketRoomPlugin},
 };
 
-#[cfg(feature="livekit")]
+#[cfg(feature = "livekit")]
 use self::livekit_room::{LivekitPlugin, StartLivekit};
 
 pub mod chat_marker_things {
@@ -53,7 +53,7 @@ impl Plugin for CommsPlugin {
             UserProfilePlugin,
         ));
 
-        #[cfg(feature="livekit")]
+        #[cfg(feature = "livekit")]
         app.add_plugins(LivekitPlugin);
 
         app.add_systems(Update, process_realm_change);
@@ -139,10 +139,10 @@ fn process_realm_change(
 
 #[derive(SystemParam)]
 pub struct AdapterManager<'w, 's> {
-    #[cfg(feature="livekit")]
+    #[cfg(feature = "livekit")]
     commands: Commands<'w, 's>,
     ws_room_events: EventWriter<'w, StartWsRoom>,
-    #[cfg(feature="livekit")]
+    #[cfg(feature = "livekit")]
     livekit_events: EventWriter<'w, StartLivekit>,
     archipelago_events: EventWriter<'w, StartArchipelago>,
     // can't use event writer due to conflict on Res<Events>
@@ -169,7 +169,7 @@ impl<'w, 's> AdapterManager<'w, 's> {
                     address: address.to_owned(),
                 });
             }
-            #[cfg(feature="livekit")]
+            #[cfg(feature = "livekit")]
             "livekit" => {
                 let entity = self.commands.spawn_empty().id();
                 self.livekit_events.send(StartLivekit {
@@ -178,7 +178,7 @@ impl<'w, 's> AdapterManager<'w, 's> {
                 });
                 return Some(entity);
             }
-            #[cfg(not(feature="livekit"))]
+            #[cfg(not(feature = "livekit"))]
             "livekit" => {
                 info!("livekit not enabled: comms offline");
             }
