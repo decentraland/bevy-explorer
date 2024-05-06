@@ -145,6 +145,6 @@ bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.13-dcl" }
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
 parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "try_convex" }
 rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }
-# serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_204_hotfix" }
+serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_278_hotfix" }
 wgpu = { git = "https://github.com/robtfm/wgpu", branch = "0.19-device-pool" }
 naga = { git = "https://github.com/robtfm/wgpu", branch = "0.19-device-pool" }
