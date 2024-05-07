@@ -331,6 +331,9 @@ pub(crate) fn scene_thread(
         });
 
         if state.borrow().try_borrow::<ShuttingDown>().is_some() {
+            rt.block_on(async move {
+                drop(runtime);
+            });
             return;
         }
 
@@ -340,6 +343,9 @@ pub(crate) fn scene_thread(
                 .borrow_mut()
                 .take::<SyncSender<SceneResponse>>()
                 .send(SceneResponse::Error(scene_id, format!("{e:?}")));
+            rt.block_on(async move {
+                drop(runtime);
+            });
             return;
         }
     }

@@ -1,6 +1,7 @@
-use std::sync::{mpsc::SyncSender, Mutex};
+use std::{panic::{self, AssertUnwindSafe}, sync::{mpsc::SyncSender, Mutex}};
 
 use bevy::{
+    log::error,
     prelude::Entity,
     utils::{HashMap, HashSet},
 };
@@ -101,19 +102,25 @@ pub fn spawn_scene(
         .name(format!("scene thread {:?}", id.0))
         .stack_size(8388608)
         .spawn(move || {
-            scene_thread(
-                scene_hash,
-                id,
-                scene_js,
-                crdt_component_interfaces,
-                renderer_sender,
-                thread_rx,
-                global_update_receiver,
-                ipfs,
-                wallet,
-                inspect,
-                testing,
-            )
+            let thread_result = panic::catch_unwind(AssertUnwindSafe(|| {
+                scene_thread(
+                    scene_hash,
+                    id,
+                    scene_js,
+                    crdt_component_interfaces,
+                    renderer_sender,
+                    thread_rx,
+                    global_update_receiver,
+                    ipfs,
+                    wallet,
+                    inspect,
+                    testing,
+                )
+            }));
+
+            if let Err(e) = thread_result {
+                error!("[{id:?}] caught scene thread panic: {e:?}");
+            }
         })
         .unwrap();
 
