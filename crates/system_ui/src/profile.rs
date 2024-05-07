@@ -135,7 +135,11 @@ fn save_settings(
         }
 
         if let Some(avatar) = maybe_avatar {
-            profile.content.avatar.body_shape.clone_from(&avatar.shape.body_shape);
+            profile
+                .content
+                .avatar
+                .body_shape
+                .clone_from(&avatar.shape.body_shape);
             profile.content.avatar.hair = avatar.shape.hair_color.map(AvatarColor::new);
             profile.content.avatar.eyes = avatar.shape.eye_color.map(AvatarColor::new);
             profile.content.avatar.skin = avatar.shape.skin_color.map(AvatarColor::new);
