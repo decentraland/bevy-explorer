@@ -1,4 +1,7 @@
-use std::{panic::{self, AssertUnwindSafe}, sync::{mpsc::SyncSender, Mutex}};
+use std::{
+    panic::{self, AssertUnwindSafe},
+    sync::{mpsc::SyncSender, Mutex},
+};
 
 use bevy::{
     log::error,
