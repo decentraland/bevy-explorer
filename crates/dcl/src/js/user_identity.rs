@@ -2,14 +2,14 @@ use std::{cell::RefCell, rc::Rc};
 
 use bevy::log::debug;
 use common::{profile::SerializedProfile, rpc::RpcCall};
-use deno_core::{anyhow, error::AnyError, op, Op, OpDecl, OpState};
+use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use serde::Serialize;
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![op_get_user_data::DECL, op_get_player_data::DECL]
+    vec![op_get_user_data(), op_get_player_data()]
 }
 
 #[derive(Serialize, Debug)]
@@ -43,12 +43,13 @@ pub struct UserData {
 
 pub struct UserEthAddress(pub String);
 
-#[op]
+#[op2(async)]
+#[serde]
 async fn op_get_user_data(state: Rc<RefCell<OpState>>) -> Result<UserData, AnyError> {
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<SerializedProfile, ()>>();
 
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
-    debug!("[{scene:?}] -> get_user_data");
+    debug!("[{scene:?}] -> op_get_user_data");
 
     state
         .borrow_mut()
@@ -74,12 +75,16 @@ async fn op_get_user_data(state: Rc<RefCell<OpState>>) -> Result<UserData, AnyEr
     Ok(user_data)
 }
 
-#[op]
-async fn op_get_player_data(state: Rc<RefCell<OpState>>, id: String) -> Result<UserData, AnyError> {
+#[op2(async)]
+#[serde]
+async fn op_get_player_data(
+    state: Rc<RefCell<OpState>>,
+    #[string] id: String,
+) -> Result<UserData, AnyError> {
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<SerializedProfile, ()>>();
 
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
-    debug!("[{scene:?}] -> get_player_data");
+    debug!("[{scene:?}] -> op_get_player_data");
 
     state
         .borrow_mut()

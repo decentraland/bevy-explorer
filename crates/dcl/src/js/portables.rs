@@ -1,8 +1,9 @@
+use bevy::log::debug;
 use common::rpc::{PortableLocation, RpcCall, SpawnResponse};
 use deno_core::{
     anyhow::{self, anyhow},
     error::AnyError,
-    op, Op, OpDecl, OpState,
+    op2, OpDecl, OpState,
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -12,19 +13,17 @@ use super::RpcCalls;
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![
-        op_portable_spawn::DECL,
-        op_portable_list::DECL,
-        op_portable_kill::DECL,
-    ]
+    vec![op_portable_spawn(), op_portable_list(), op_portable_kill()]
 }
 
-#[op]
+#[op2(async)]
+#[serde]
 async fn op_portable_spawn(
     state: Rc<RefCell<OpState>>,
-    pid: Option<String>,
-    ens: Option<String>,
+    #[string] pid: Option<String>,
+    #[string] ens: Option<String>,
 ) -> Result<SpawnResponse, AnyError> {
+    debug!("op_portable_spawn");
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<SpawnResponse, String>>();
 
     let location = match (pid, ens) {
@@ -49,8 +48,12 @@ async fn op_portable_spawn(
         .map_err(|e| anyhow!(e))
 }
 
-#[op]
-async fn op_portable_kill(state: Rc<RefCell<OpState>>, pid: String) -> Result<bool, AnyError> {
+#[op2(async)]
+async fn op_portable_kill(
+    state: Rc<RefCell<OpState>>,
+    #[string] pid: String,
+) -> Result<bool, AnyError> {
+    debug!("op_portable_kill");
     let (sx, rx) = tokio::sync::oneshot::channel::<bool>();
 
     // might not be a urn, who even knows
@@ -66,8 +69,10 @@ async fn op_portable_kill(state: Rc<RefCell<OpState>>, pid: String) -> Result<bo
     rx.await.map_err(|e| anyhow::anyhow!(e))
 }
 
-#[op]
+#[op2(async)]
+#[serde]
 async fn op_portable_list(state: Rc<RefCell<OpState>>) -> Vec<SpawnResponse> {
+    debug!("op_portable_list");
     let (sx, rx) = tokio::sync::oneshot::channel::<Vec<SpawnResponse>>();
 
     state

@@ -1,8 +1,9 @@
+use bevy::log::debug;
 use common::rpc::{RPCSendableMessage, RpcCall};
 use deno_core::{
     anyhow::{self, anyhow},
     error::AnyError,
-    op, Op, OpDecl, OpState,
+    op2, OpDecl, OpState,
 };
 use ethers_providers::{Provider, Ws};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
@@ -14,15 +15,17 @@ const PROVIDER_URL: &str = "wss://rpc.decentraland.org/mainnet?project=kernel-lo
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
-    vec![op_send_async::DECL]
+    vec![op_send_async()]
 }
 
-#[op]
+#[op2(async)]
+#[serde]
 async fn op_send_async(
     state: Rc<RefCell<OpState>>,
-    method: String,
-    params: String,
+    #[string] method: String,
+    #[string] params: String,
 ) -> Result<serde_json::Value, AnyError> {
+    debug!("op_send_async");
     let params: Vec<serde_json::Value> = serde_json::from_str(&params)?;
 
     match method.as_str() {

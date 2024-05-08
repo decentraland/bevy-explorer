@@ -1,6 +1,10 @@
-use std::sync::{mpsc::SyncSender, Mutex};
+use std::{
+    panic::{self, AssertUnwindSafe},
+    sync::{mpsc::SyncSender, Mutex},
+};
 
 use bevy::{
+    log::error,
     prelude::Entity,
     utils::{HashMap, HashSet},
 };
@@ -30,12 +34,14 @@ impl SceneId {
 }
 
 // message from scene describing new and deleted entities
+#[derive(Debug)]
 pub struct SceneCensus {
     pub scene_id: SceneId,
     pub born: HashSet<SceneEntityId>,
     pub died: HashSet<SceneEntityId>,
 }
 
+#[derive(Debug)]
 pub struct SceneElapsedTime(pub f32);
 
 // data from renderer to scene
@@ -47,7 +53,8 @@ pub enum RendererResponse {
 type RpcCalls = Vec<RpcCall>;
 
 #[allow(clippy::large_enum_variant)] // we don't care since the error case is very rare
-                                     // data from scene to renderer
+// data from scene to renderer
+#[derive(Debug)]
 pub enum SceneResponse {
     Error(SceneId, String),
     Ok(
@@ -96,20 +103,27 @@ pub fn spawn_scene(
 
     std::thread::Builder::new()
         .name(format!("scene thread {:?}", id.0))
+        .stack_size(8388608)
         .spawn(move || {
-            scene_thread(
-                scene_hash,
-                id,
-                scene_js,
-                crdt_component_interfaces,
-                renderer_sender,
-                thread_rx,
-                global_update_receiver,
-                ipfs,
-                wallet,
-                inspect,
-                testing,
-            )
+            let thread_result = panic::catch_unwind(AssertUnwindSafe(|| {
+                scene_thread(
+                    scene_hash,
+                    id,
+                    scene_js,
+                    crdt_component_interfaces,
+                    renderer_sender,
+                    thread_rx,
+                    global_update_receiver,
+                    ipfs,
+                    wallet,
+                    inspect,
+                    testing,
+                )
+            }));
+
+            if let Err(e) = thread_result {
+                error!("[{id:?}] caught scene thread panic: {e:?}");
+            }
         })
         .unwrap();
 

@@ -5,7 +5,8 @@ use deno_core::{
     anyhow::anyhow,
     ascii_str,
     error::{generic_error, AnyError},
-    include_js_files, op, v8, Extension, JsRuntime, Op, OpDecl, OpState, RuntimeOptions,
+    include_js_files, op2, v8, Extension, JsRuntime, OpDecl, OpState, PollEventLoopOptions,
+    RuntimeOptions,
 };
 use deno_websocket::WebSocketPermissions;
 use tokio::sync::mpsc::Receiver;
@@ -22,7 +23,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 #[cfg(not(feature = "inspect"))]
 pub struct InspectorServer;
 
-use self::fetch::{FP, TP};
+use self::fetch::{FP, NP, TP};
 
 use super::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
@@ -71,6 +72,7 @@ impl WebSocketPermissions for WebSocketPerms {
 
 pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<InspectorServer>) {
     // add fetch stack
+    let net = deno_net::deno_net::init_ops_and_esm::<NP>(None, None);
     let web = deno_web::deno_web::init_ops_and_esm::<TP>(
         std::sync::Arc::new(deno_web::BlobStore::default()),
         None,
@@ -78,14 +80,14 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
     let webidl = deno_webidl::deno_webidl::init_ops_and_esm();
     let url = deno_url::deno_url::init_ops_and_esm();
     let console = deno_console::deno_console::init_ops_and_esm();
-    let fetch = deno_fetch::deno_fetch::init_js_only::<FP>();
+    let fetch = deno_fetch::deno_fetch::init_ops_and_esm::<FP>(deno_fetch::Options::default());
     let websocket = deno_websocket::deno_websocket::init_ops_and_esm::<WebSocketPerms>(
         "bevy-explorer".to_owned(),
         None,
         None,
     );
 
-    let mut ops = vec![op_require::DECL, op_log::DECL, op_error::DECL];
+    let mut ops = vec![op_require(), op_log(), op_error()];
 
     let op_sets: [Vec<deno_core::OpDecl>; 11] = [
         engine::ops(),
@@ -122,7 +124,6 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
 
     let ext = Extension {
         name: "decentraland",
-        deps: &["deno_fetch"],
         ops: ops.into(),
         esm_files: include_js_files!(
             BevyExplorer
@@ -151,7 +152,7 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
         } else {
             None
         },
-        extensions: vec![webidl, url, console, web, fetch, websocket, ext],
+        extensions: vec![webidl, url, console, web, net, fetch, websocket, ext],
         inspector: inspect,
         ..Default::default()
     });
@@ -300,6 +301,7 @@ pub(crate) fn scene_thread(
 
     if let Err(e) = result {
         // ignore failure to send failure
+        error!("[{scene_id:?}] onStart err: {e:?}");
         let _ = state
             .borrow_mut()
             .take::<SyncSender<SceneResponse>>()
@@ -329,14 +331,21 @@ pub(crate) fn scene_thread(
         });
 
         if state.borrow().try_borrow::<ShuttingDown>().is_some() {
+            rt.block_on(async move {
+                drop(runtime);
+            });
             return;
         }
 
         if let Err(e) = result {
+            error!("[{scene_id:?}] onUpdate err: {e:?}");
             let _ = state
                 .borrow_mut()
                 .take::<SyncSender<SceneResponse>>()
                 .send(SceneResponse::Error(scene_id, format!("{e:?}")));
+            rt.block_on(async move {
+                drop(runtime);
+            });
             return;
         }
     }
@@ -384,15 +393,19 @@ async fn run_script(
         v8::Global::new(scope, res)
     };
 
-    let f = runtime.resolve_value(promise);
-    f.await.map(|_| ())
+    let f = runtime.resolve(promise);
+    runtime
+        .with_event_loop_promise(f, PollEventLoopOptions::default())
+        .await
+        .map(|_| ())
 }
 
 // synchronously returns a string containing JS code from the file system
-#[op(v8)]
+#[op2]
+#[string]
 fn op_require(
     state: Rc<RefCell<OpState>>,
-    module_spec: String,
+    #[string] module_spec: String,
 ) -> Result<String, deno_core::error::AnyError> {
     debug!("require(\"{module_spec}\")");
 
@@ -426,10 +439,10 @@ fn op_require(
     }
 }
 
-#[op(v8)]
-fn op_log(state: Rc<RefCell<OpState>>, message: String) {
+#[op2(fast)]
+fn op_log(state: Rc<RefCell<OpState>>, #[string] message: String) {
+    debug!("op_log {}", message);
     let time = state.borrow().borrow::<SceneElapsedTime>().0;
-    // info!(message);
     state
         .borrow_mut()
         .borrow_mut::<Vec<SceneLogMessage>>()
@@ -440,8 +453,9 @@ fn op_log(state: Rc<RefCell<OpState>>, message: String) {
         })
 }
 
-#[op(v8)]
-fn op_error(state: Rc<RefCell<OpState>>, message: String) {
+#[op2(fast)]
+fn op_error(state: Rc<RefCell<OpState>>, #[string] message: String) {
+    debug!("op_error");
     let time = state.borrow().borrow::<SceneElapsedTime>().0;
     state
         .borrow_mut()

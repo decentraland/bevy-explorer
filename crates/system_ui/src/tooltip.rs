@@ -54,7 +54,7 @@ pub fn update_tooltip(
     for (key, content) in tips.0.iter() {
         match active_tips.entry(key) {
             Entry::Occupied(mut o) => {
-                o.get_mut().0 = content.clone();
+                o.get_mut().0.clone_from(content);
             }
             Entry::Vacant(v) => {
                 v.insert((content.clone(), 0.0));

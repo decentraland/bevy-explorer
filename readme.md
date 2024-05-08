@@ -14,23 +14,28 @@ This project's goals are to:
 
 1. Clone the repo using `git clone https://github.com/decentraland/bevy-explorer`
 2. Install [rust](https://www.rust-lang.org/tools/install)
-3. download and install third party libraries
+3. Download and install third party libraries
     - on linux:
+      - *note: the linux build is temporarily disabled due to conflicting imports in webrtc and deno. we hope this will be resolved soon*
       - Install alsa and udev: `sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev`
       - Install ffmpeg deps: `sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev`
       - Install Livekit deps: `sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev`
-    - on macos: `brew install ffmpeg pkg-config`
+    - on macos: 
+      - `brew install ffmpeg@6 pkg-config`
+      - `export PKG_CONFIG_PATH=/opt/homebrew/opt/ffmpeg@6/lib/pkgconfig`
     - on windows: 
-      - download and unzip `https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full-shared.7z`
+      - download and unzip `https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-6.0-full_build-shared.7z`
       - set `LIBCLANG_PATH` = `path to LLVM\x64\bin` (this is packaged with visual studio, or can be downloaded separately)
       - set `FFMPEG_DIR` = `root folder where ffmpeg has been unzipped`
       - add `ffmpeg\bin` to your `PATH`
 4. Install [protoc](https://github.com/protocolbuffers/protobuf/releases)
-5. `cargo run --release`
+5. `cargo run --release --bin decentra-bevy`
+
+We try to keep these instructions up to date, but the [github ci](.github/workflows/ci.yml) is the most accurate source of build information.
 
 # Arguments
 
-`cargo run --release -- [--server serverpath] [--location location] [--vsync true|false] [--log_fps true|false] [--msaa 1|2|4|8] [--threads u32] [--distance f32]`
+`cargo run --release --bin decentra-bevy -- [options]`
 
 `--server https://sdk-test-scenes.decentraland.zone`
 - specify the content server, defaults to the sdk test server.
@@ -66,6 +71,9 @@ This project's goals are to:
 
 `--inspect <scene_hash>`
 - when the scene with the input hash is first loaded, the js runtime will pause waiting for a debugger session (such as `chrome://inspect`) to connect, and allow you to debug the scene code. requires a build with --features "inspect"
+
+`--console`
+- output logs to console instead of to file
 
 # Testing
 

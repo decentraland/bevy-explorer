@@ -699,7 +699,7 @@ fn update_emotes_list(
         return;
     }
 
-    settings.current_list = emotes.clone();
+    settings.current_list.clone_from(&emotes);
 
     let worn = settings
         .current_emotes

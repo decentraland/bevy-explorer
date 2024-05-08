@@ -1,5 +1,5 @@
-use bevy::asset::io::AssetReader;
-use deno_core::{anyhow::anyhow, error::AnyError, futures::AsyncReadExt, op, Op, OpDecl, OpState};
+use bevy::{asset::io::AssetReader, log::debug};
+use deno_core::{anyhow::anyhow, error::AnyError, futures::AsyncReadExt, op2, OpDecl, OpState};
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},
     IpfsResource,
@@ -12,9 +12,9 @@ use crate::interface::crdt_context::CrdtContext;
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
     vec![
-        op_read_file::DECL,
-        op_scene_information::DECL,
-        op_realm_information::DECL,
+        op_read_file(),
+        op_scene_information(),
+        op_realm_information(),
     ]
 }
 
@@ -25,11 +25,13 @@ struct ReadFileResponse {
     hash: String,
 }
 
-#[op(v8)]
+#[op2(async)]
+#[serde]
 async fn op_read_file(
     op_state: Rc<RefCell<OpState>>,
-    filename: String,
+    #[string] filename: String,
 ) -> Result<ReadFileResponse, AnyError> {
+    debug!("op_read_file");
     let ipfs = op_state.borrow_mut().borrow::<IpfsResource>().clone();
     let hash = op_state.borrow_mut().borrow::<CrdtContext>().hash.clone();
     let ipfs_path = IpfsPath::new(IpfsType::new_content_file(hash, filename));
@@ -60,10 +62,12 @@ pub struct ContentFileEntry {
     pub hash: String,
 }
 
-#[op]
+#[op2(async)]
+#[serde]
 async fn op_scene_information(
     op_state: Rc<RefCell<OpState>>,
 ) -> Result<SceneInfoResponse, AnyError> {
+    debug!("op_scene_information");
     scene_information(op_state).await
 }
 
@@ -100,10 +104,12 @@ pub struct RealmInfoResponse {
     pub is_preview: bool,
 }
 
-#[op]
+#[op2(async)]
+#[serde]
 async fn op_realm_information(
     op_state: Rc<RefCell<OpState>>,
 ) -> Result<RealmInfoResponse, AnyError> {
+    debug!("op_realm_information");
     realm_information(op_state).await
 }
 

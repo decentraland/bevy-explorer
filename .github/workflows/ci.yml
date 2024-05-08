@@ -65,7 +65,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [self-hosted-windows, ubuntu-latest, macos-latest]
+        os: [self-hosted-windows, macos-latest]
+        # linux disabled until i figure out the multiple symbol definitions issue (webrtc and v8 both use abseil)
+#        os: [self-hosted-windows, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2

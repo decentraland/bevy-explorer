@@ -41,7 +41,7 @@ pub fn update_mic(
             stream.0 = None;
 
             if !mic_state.enabled {
-                *last_name = "disabled".to_owned();
+                "disabled".clone_into(&mut last_name);
                 return;
             }
 
@@ -88,6 +88,6 @@ pub fn update_mic(
 
     // faild to find input - drop old stream
     stream.0 = None;
-    *last_name = "no device".to_owned();
+    "no device".clone_into(&mut last_name);
     mic_state.available = false;
 }

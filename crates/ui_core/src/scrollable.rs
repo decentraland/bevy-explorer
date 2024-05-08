@@ -77,9 +77,6 @@ impl SpawnScrollable for ChildBuilder<'_> {
     }
 }
 
-#[derive(Component)]
-struct TempMarker;
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ScrollDirection {
     Vertical(StartPosition),
