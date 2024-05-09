@@ -51,8 +51,8 @@ pub struct ShuttingDown;
 
 pub struct RendererStore(pub CrdtStore);
 
-pub struct WebSocketPerms{
-    preview: bool
+pub struct WebSocketPerms {
+    preview: bool,
 }
 
 impl WebSocketPermissions for WebSocketPerms {
