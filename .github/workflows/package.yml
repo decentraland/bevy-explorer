@@ -116,7 +116,7 @@ jobs:
           - name: Cargo build (non-linux)
             run: cargo build --release --bin decentra-bevy
           - name: Cargo build (linux)
-            run: cargo build --release --bin decentra-bevy --no-default-features --features="ffmpeg"
+            run: cargo build --release --bin decentra-bevy --no-default-features --features "ffmpeg"
 
           - name: Package common
             run: |
