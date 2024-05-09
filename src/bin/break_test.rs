@@ -128,6 +128,7 @@ fn break_everything(parcel: IVec2, urn: Option<String>) {
         SceneId(Entity::from_raw(0)),
         false,
         false,
+        false,
     );
 
     let mut crdt_store = CrdtStore::default();

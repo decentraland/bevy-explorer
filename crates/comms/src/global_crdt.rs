@@ -43,7 +43,7 @@ impl Plugin for GlobalCrdtPlugin {
             ext_receiver,
             ext_sender,
             int_sender,
-            context: CrdtContext::new(SceneId::DUMMY, "Global Crdt".into(), false),
+            context: CrdtContext::new(SceneId::DUMMY, "Global Crdt".into(), false, false),
             store: Default::default(),
             lookup: Default::default(),
         });

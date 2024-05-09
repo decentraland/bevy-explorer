@@ -195,8 +195,9 @@ pub(crate) fn scene_thread(
     wallet: Wallet,
     inspect: bool,
     testing: bool,
+    preview: bool,
 ) {
-    let scene_context = CrdtContext::new(scene_id, scene_hash, testing);
+    let scene_context = CrdtContext::new(scene_id, scene_hash, testing, preview);
     let (mut runtime, inspector) = create_runtime(false, inspect);
 
     // store handle

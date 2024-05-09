@@ -15,7 +15,7 @@ use common::{
     structs::{AppConfig, IVec2Arg, SceneLoadDistance, SceneMeta},
     util::{TaskExt, TryPushChildrenEx},
 };
-use comms::global_crdt::GlobalCrdtState;
+use comms::{global_crdt::GlobalCrdtState, preview::PreviewMode};
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
     spawn_scene, SceneElapsedTime, SceneId, SceneResponse,
@@ -371,7 +371,8 @@ pub(crate) fn load_scene_javascript(
 
         if let Some(serialized_crdt) = maybe_serialized_crdt {
             // add main.crdt
-            let mut context = CrdtContext::new(scene_id, renderer_context.hash.clone(), false);
+            let mut context =
+                CrdtContext::new(scene_id, renderer_context.hash.clone(), false, false);
             let mut stream = DclReader::new(&serialized_crdt);
             initial_crdt.process_message_stream(
                 &mut context,
@@ -495,6 +496,7 @@ pub(crate) fn initialize_scene(
     ipfs: Res<IpfsResource>,
     wallet: Res<Wallet>,
     testing_data: Res<TestingData>,
+    preview_mode: Res<PreviewMode>,
 ) {
     for (root, mut state, h_code, mut context) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
@@ -553,6 +555,7 @@ pub(crate) fn initialize_scene(
                 .as_ref()
                 .map_or(false, |inspect_hash| inspect_hash == &context.hash),
             testing_data.test_mode,
+            preview_mode.is_preview,
         );
 
         // mark context as in flight so we wait for initial RPC requests

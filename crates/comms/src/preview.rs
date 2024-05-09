@@ -21,7 +21,7 @@ pub struct PreviewPlugin;
 impl Plugin for PreviewPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<PreviewCommand>()
-            .add_systems(Update, connect_preview_server);
+            .add_systems(PostUpdate, connect_preview_server.after(ipfs::change_realm));
     }
 }
 

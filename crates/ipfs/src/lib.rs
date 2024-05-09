@@ -511,7 +511,7 @@ pub struct CurrentRealm {
 }
 
 #[allow(clippy::type_complexity)]
-fn change_realm(
+pub fn change_realm(
     mut change_realm_requests: EventReader<ChangeRealmEvent>,
     ipfs: Res<IpfsResource>,
     mut realm_change: Local<Option<tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>>>,
