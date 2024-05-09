@@ -65,9 +65,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [self-hosted-windows, macos-latest]
-        # linux disabled until i figure out the multiple symbol definitions issue (webrtc and v8 both use abseil)
-#        os: [self-hosted-windows, ubuntu-latest, macos-latest]
+        os: [self-hosted-windows, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
@@ -112,6 +110,11 @@ jobs:
         with:
           command: test
           args: --all --release
+      - uses: actions-rs/cargo@v1
+        if: runner.os == 'linux'
+        with:
+          command: test
+          args: --all --release --no-default-features --features="ffmpeg"
       - uses: actions-rs/cargo@v1
         if: runner.os != 'windows'
         with:
