@@ -10,7 +10,7 @@ use common::util::TaskExt;
 use futures_util::StreamExt;
 use ipfs::CurrentRealm;
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct PreviewMode {
     pub server: Option<String>,
     pub is_preview: bool,
