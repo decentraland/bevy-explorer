@@ -51,7 +51,9 @@ pub struct ShuttingDown;
 
 pub struct RendererStore(pub CrdtStore);
 
-pub struct WebSocketPerms;
+pub struct WebSocketPerms{
+    preview: bool
+}
 
 impl WebSocketPermissions for WebSocketPerms {
     fn check_net_url(
@@ -62,7 +64,7 @@ impl WebSocketPermissions for WebSocketPerms {
         // TODO scene permissions
 
         // must use `wss`
-        if url.scheme() == "wss" {
+        if self.preview || url.scheme() == "wss" {
             Ok(())
         } else {
             Err(anyhow!("URL scheme must be `wss`"))
@@ -246,7 +248,7 @@ pub(crate) fn scene_thread(
         .put(runtime.v8_isolate().thread_safe_handle());
 
     // store websocket permissions object
-    state.borrow_mut().put(WebSocketPerms);
+    state.borrow_mut().put(WebSocketPerms { preview });
 
     if inspector.is_some() {
         let _ = state

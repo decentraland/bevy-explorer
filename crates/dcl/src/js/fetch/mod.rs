@@ -363,7 +363,9 @@ pub async fn op_signed_fetch_headers(
     #[string] method: Option<String>,
 ) -> Result<Vec<(String, String)>, AnyError> {
     debug!("op_signed_fetch_headers");
-    if Uri::try_from(&uri)?.scheme_str() != Some("https") {
+
+    let is_preview = state.borrow().borrow::<CrdtContext>().preview;
+    if !is_preview && Uri::try_from(&uri)?.scheme_str() != Some("https") {
         anyhow::bail!("URL scheme must be `https`")
     }
 
