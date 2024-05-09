@@ -114,8 +114,10 @@ jobs:
     
               
           - name: Cargo build (non-linux)
+            if: runner.os != 'linux'
             run: cargo build --release --bin decentra-bevy
           - name: Cargo build (linux)
+            if: runner.os == 'linux'
             run: cargo build --release --bin decentra-bevy --no-default-features --features "ffmpeg"
 
           - name: Package common

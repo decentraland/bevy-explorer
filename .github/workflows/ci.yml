@@ -116,10 +116,10 @@ jobs:
           command: test
           args: --all --release --no-default-features --features "ffmpeg"
       - uses: actions-rs/cargo@v1
-        if: runner.os != 'windows'
+        if: runner.os == 'macos'
         with:
           command: test
-          args: --all
+          args: --all --release
       
   fmt:
     name: Rustfmt
