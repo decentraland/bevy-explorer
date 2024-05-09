@@ -45,7 +45,7 @@ use scene_runner::{
 
 use av::AudioPlugin;
 use avatar::AvatarPlugin;
-use comms::CommsPlugin;
+use comms::{preview::PreviewMode, CommsPlugin};
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
 use ipfs::IpfsIoPlugin;
@@ -172,6 +172,8 @@ fn main() {
     let no_gltf = args.contains("--no_gltf");
     let no_fog = args.contains("--no_fog");
 
+    let is_preview = args.contains("--preview");
+
     let remaining = args.finish();
     if !remaining.is_empty() {
         println!(
@@ -259,6 +261,7 @@ fn main() {
                 })
                 .build()
                 .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
+                    preview: is_preview,
                     starting_realm: Some(final_config.server.clone()),
                     assets_root: Default::default(),
                     num_slots: final_config.max_concurrent_remotes,
@@ -270,6 +273,11 @@ fn main() {
         app.add_plugins(FrameTimeDiagnosticsPlugin)
             .add_plugins(LogDiagnosticsPlugin::default());
     }
+
+    app.insert_resource(PreviewMode {
+        server: is_preview.then_some(final_config.server.clone()),
+        is_preview,
+    });
 
     app.insert_resource(SceneLoadDistance {
         load: final_config.scene_load_distance,

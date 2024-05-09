@@ -402,6 +402,7 @@ impl Default for ServerAbout {
 }
 
 pub struct IpfsIoPlugin {
+    pub preview: bool,
     pub assets_root: Option<String>,
     pub starting_realm: Option<String>,
     pub num_slots: usize,
@@ -424,6 +425,7 @@ impl Plugin for IpfsIoPlugin {
             .unwrap_or_else(|_| panic!("failed to write to assets folder {cache_root:?}"));
 
         let ipfs_io = IpfsIo::new(
+            self.preview,
             Box::new(default_reader),
             cache_root,
             HashMap::default(),
@@ -577,6 +579,7 @@ pub struct IpfsContext {
 }
 
 pub struct IpfsIo {
+    is_preview: bool, // determines whether we always retry failed assets immediately
     default_io: Box<dyn AssetReader>,
     default_fs_path: PathBuf,
     realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>,
@@ -589,6 +592,7 @@ pub struct IpfsIo {
 
 impl IpfsIo {
     pub fn new(
+        is_preview: bool,
         default_io: Box<dyn AssetReader>,
         default_fs_path: PathBuf,
         static_paths: HashMap<&'static str, &'static str>,
@@ -597,6 +601,7 @@ impl IpfsIo {
         let (sender, receiver) = tokio::sync::watch::channel(None);
 
         Self {
+            is_preview,
             default_io,
             default_fs_path,
             realm_config_receiver: receiver,
@@ -968,10 +973,11 @@ impl AssetReader for IpfsIo {
 
             if let Some(fail_time) = fail_time {
                 // wait 10 secs before retrying failed assets
-                if Instant::now()
-                    .checked_duration_since(fail_time)
-                    .unwrap_or_default()
-                    > Duration::from_secs(10)
+                if self.is_preview
+                    || Instant::now()
+                        .checked_duration_since(fail_time)
+                        .unwrap_or_default()
+                        > Duration::from_secs(10)
                 {
                     self.context.write().await.failed_remotes.remove(&remote);
                 } else {

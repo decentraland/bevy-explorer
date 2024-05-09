@@ -5,6 +5,7 @@ pub mod global_crdt;
 #[cfg(feature = "livekit")]
 pub mod livekit_room;
 
+pub mod preview;
 pub mod profile;
 pub mod signed_login;
 #[cfg(test)]
@@ -16,6 +17,7 @@ use std::marker::PhantomData;
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bimap::BiMap;
 use ethers_core::types::Address;
+use preview::PreviewPlugin;
 use signed_login::{SignedLoginPlugin, StartSignedLogin};
 use tokio::sync::mpsc::Sender;
 
@@ -51,6 +53,7 @@ impl Plugin for CommsPlugin {
             BroadcastPositionPlugin,
             GlobalCrdtPlugin,
             UserProfilePlugin,
+            PreviewPlugin,
         ));
 
         #[cfg(feature = "livekit")]

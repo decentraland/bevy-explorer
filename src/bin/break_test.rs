@@ -36,7 +36,13 @@ fn break_everything(parcel: IVec2, urn: Option<String>) {
 
     let default_reader = FileAssetReader::new("assets");
     let cache_root = project_directories().data_local_dir().join("cache");
-    let ipfs_io = IpfsIo::new(Box::new(default_reader), cache_root, HashMap::default(), 32);
+    let ipfs_io = IpfsIo::new(
+        true,
+        Box::new(default_reader),
+        cache_root,
+        HashMap::default(),
+        32,
+    );
     let ipfs_io = Arc::new(ipfs_io);
     block_on(
         ipfs_io.set_realm(

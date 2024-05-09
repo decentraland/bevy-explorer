@@ -86,6 +86,7 @@ impl PluginGroup for TestPlugins {
             .add(HierarchyPlugin::default())
             .add(DiagnosticsPlugin::default())
             .add(IpfsIoPlugin {
+                preview: false,
                 assets_root: test_path.to_str().map(ToOwned::to_owned),
                 starting_realm: Default::default(),
                 num_slots: 8,
