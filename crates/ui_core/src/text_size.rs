@@ -12,7 +12,7 @@ pub struct TextSizePlugin;
 impl Plugin for TextSizePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup)
-            .add_systems(PostUpdate, update_fontsize);
+            .add_systems(Update, update_fontsize);
     }
 }
 
@@ -50,7 +50,7 @@ impl DuiTemplate for TextTemplate {
 #[derive(Component)]
 pub struct FontSize(pub f32);
 
-fn update_fontsize(
+pub fn update_fontsize(
     mut q: Query<(&mut Text, Ref<FontSize>)>,
     mut resized: EventReader<WindowResized>,
     window: Query<&Window, With<PrimaryWindow>>,

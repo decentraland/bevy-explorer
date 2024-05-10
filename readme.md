@@ -16,10 +16,10 @@ This project's goals are to:
 2. Install [rust](https://www.rust-lang.org/tools/install)
 3. Download and install third party libraries
     - on linux:
-      - *note: the linux build is temporarily disabled due to conflicting imports in webrtc and deno. we hope this will be resolved soon*
+      - *note: livekit networking (main-realm transport) in the linux build is temporarily disabled due to conflicting imports in webrtc and deno. we hope this will be resolved soon*
       - Install alsa and udev: `sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev`
       - Install ffmpeg deps: `sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev`
-      - Install Livekit deps: `sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev`
+      - (*not needed currently*) Install Livekit deps: `sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev`
     - on macos: 
       - `brew install ffmpeg@6 pkg-config`
       - `export PKG_CONFIG_PATH=/opt/homebrew/opt/ffmpeg@6/lib/pkgconfig`

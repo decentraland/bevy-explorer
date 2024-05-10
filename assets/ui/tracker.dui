@@ -1,0 +1,20 @@
+<define-template id="tracker">
+    <div style="flex-direction: column; width: 100%;">
+        <div style="flex-direction: row; width: 100%; align-content: space-between:">
+            <med-text id="stats" style="left: 1vmin; margin: 1vmin;" text="Scene Stats" />
+            <space />
+            <button image="images/redx.png" onclick="@toggle" image-width="3vmin" image-height="3vmin" />
+        </div>
+        <div id="content" style="flex-direction: row; margin: 0px 2vmin 2vmin 2vmin;">
+            <div id="labels" style="flex-direction: column; width: 70%">
+                <med-text text="hello?" />
+            </div>
+            <div id="values" style="flex-direction: column; width: 30%" />
+        </div>
+        <button label="Inspect" onclick="@inspect" enabled="@inspect-enabled" />
+    </div>
+</define-template>
+
+<define-template id="tracker-item">
+    <div style="align-content: center"><small-text text="@label" /></div>
+</define-template>

@@ -4,30 +4,39 @@ use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     math::Vec3Swizzles,
     prelude::*,
+    render::mesh::Indices,
     text::JustifyText,
     ui::FocusPolicy,
 };
 
 use bevy_console::ConsoleCommand;
-use bevy_dui::{DuiCommandsExt, DuiEntities, DuiRegistry};
+use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     sets::SetupSets,
     structs::{AppConfig, PrimaryUser, Version},
 };
-use comms::{global_crdt::ForeignPlayer, Transport};
+use comms::{
+    global_crdt::ForeignPlayer,
+    preview::{PreviewCommand, PreviewMode},
+    Transport,
+};
 use console::DoAddConsoleCommand;
 use ipfs::CurrentRealm;
 use scene_material::SceneMaterial;
 use scene_runner::{
-    initialize_scene::{SceneLoading, PARCEL_SIZE},
+    initialize_scene::{SceneLoading, TestingData, PARCEL_SIZE},
     renderer_context::RendererSceneContext,
-    update_world::{gltf_container::GltfLoadingCount, ComponentTracker, TrackComponents},
-    ContainingScene, DebugInfo,
+    update_world::{
+        gltf_container::{GltfLoadingCount, SceneResourceLookup},
+        ComponentTracker, TrackComponents,
+    },
+    ContainerEntity, ContainingScene, DebugInfo, Toaster,
 };
 use ui_core::{
     bound_node::BoundedImageMaterial,
     stretch_uvs_image::StretchUvMaterial,
-    ui_actions::{Click, EventCloneExt},
+    text_size::update_fontsize,
+    ui_actions::{Click, EventCloneExt, On},
     BODY_TEXT_STYLE, TITLE_TEXT_STYLE,
 };
 use user_input::CursorLocked;
@@ -53,9 +62,11 @@ impl Plugin for SysInfoPanelPlugin {
             (
                 update_scene_load_state,
                 update_minimap,
+                update_tracker,
                 update_map_visibilty,
                 update_crosshair,
-            ),
+            )
+                .before(update_fontsize),
         );
         app.add_systems(
             OnEnter::<ui_core::State>(ui_core::State::Ready),
@@ -222,6 +233,9 @@ pub(crate) fn setup(
 #[derive(Component)]
 pub struct Minimap;
 
+#[derive(Component)]
+pub struct Tracker(bool);
+
 #[allow(clippy::too_many_arguments)]
 fn update_scene_load_state(
     q: Query<Entity, With<SysInfoMarker>>,
@@ -336,7 +350,12 @@ fn update_scene_load_state(
     }
 }
 
-fn setup_minimap(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegistry>) {
+fn setup_minimap(
+    mut commands: Commands,
+    root: Res<SystemUiRoot>,
+    dui: Res<DuiRegistry>,
+    preview: Res<PreviewMode>,
+) {
     let components = commands
         .entity(root.0)
         .spawn_template(&dui, "minimap", Default::default())
@@ -351,6 +370,49 @@ fn setup_minimap(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRe
         Interaction::default(),
         ShowSettingsEvent(SettingsTab::Map).send_value_on::<Click>(),
     ));
+
+    if preview.server.is_some() {
+        let tracker = commands
+            .entity(components.root)
+            .spawn_template(
+                &dui,
+                "tracker",
+                DuiProps::new().with_prop(
+                    "toggle",
+                    On::<Click>::new(|mut trackers: Query<&mut Tracker>| {
+                        for mut tracker in trackers.iter_mut() {
+                            tracker.0 = !tracker.0;
+                        }
+                    })
+                ).with_prop(
+                    "inspect",
+                    On::<Click>::new(|
+                        mut reload: EventWriter<PreviewCommand>,
+                        mut test_data: ResMut<TestingData>,
+                        containing_scene: ContainingScene,
+                        scenes: Query<&RendererSceneContext>,
+                        player: Query<Entity, With<PrimaryUser>>,
+                        mut toaster: Toaster,
+                    | {
+                        let Ok(player) = player.get_single() else {
+                            return;
+                        };
+                        let Some(scene) = containing_scene.get_parcel_oow(player) else {
+                            return;
+                        };
+                        let Ok(scene) = scenes.get(scene) else {
+                            return;
+                        };
+                        test_data.inspect_hash = Some(scene.hash.clone());
+                        reload.send(PreviewCommand::ReloadScene { hash: scene.hash.clone() });
+                        toaster.add_toast("inspector", "Please open chrome and navigate to \"chrome://inspect\" to attach a debugger");
+                    })
+                )
+                .with_prop("inspect-enabled", cfg!(feature = "inspect")),
+            )
+            .unwrap();
+        commands.entity(tracker.root).insert(Tracker(true));
+    }
 }
 
 fn update_minimap(
@@ -360,6 +422,7 @@ fn update_minimap(
     containing_scene: ContainingScene,
     scenes: Query<(&RendererSceneContext, Option<&GltfLoadingCount>)>,
     mut text: Query<&mut Text>,
+    preview: Res<PreviewMode>,
 ) {
     let Ok((player, gt)) = player.get_single() else {
         return;
@@ -375,6 +438,11 @@ fn update_minimap(
     let title = scene
         .map(|(context, _)| context.title.clone())
         .unwrap_or("???".to_owned());
+    let title = if preview.is_preview {
+        format!("[ Preview Mode ]\n{title}")
+    } else {
+        title
+    };
     let sdk = scene.map(|(context, _)| context.sdk_version).unwrap_or("");
     let state = scene
         .map(|(context, gltf_count)| {
@@ -400,6 +468,131 @@ fn update_minimap(
         if let Ok(mut text) = text.get_mut(components.named("position")) {
             text.sections[0].value = format!("({},{})   {sdk}   {state}", parcel.x, parcel.y);
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn update_tracker(
+    mut commands: Commands,
+    mut q: Query<(Ref<Tracker>, &DuiEntities)>,
+    stats: Query<&SceneResourceLookup>,
+    f: Res<FrameCount>,
+    player: Query<Entity, With<PrimaryUser>>,
+    containing_scene: ContainingScene,
+    dui: Res<DuiRegistry>,
+    mesh_handles: Query<(&Handle<Mesh>, &ContainerEntity, &Visibility)>,
+    material_handles: Query<(&Handle<SceneMaterial>, &ContainerEntity, &Visibility)>,
+    scene_entities: Query<&ContainerEntity>,
+    meshes: Res<Assets<Mesh>>,
+    materials: Res<Assets<SceneMaterial>>,
+    diagnostics: Res<DiagnosticsStore>,
+) {
+    let Ok((tracker, entities)) = q.get_single_mut() else {
+        return;
+    };
+
+    if f.0 % 100 != 0 && !tracker.is_changed() {
+        return;
+    }
+
+    commands
+        .entity(entities.named("labels"))
+        .despawn_descendants();
+    commands
+        .entity(entities.named("values"))
+        .despawn_descendants();
+
+    if !tracker.0 {
+        return;
+    }
+
+    let Ok(player) = player.get_single() else {
+        return;
+    };
+
+    let scenes = containing_scene.get(player);
+    let Some(scene) = scenes.iter().next() else {
+        return;
+    };
+
+    let Ok(resource_lookup) = stats.get(*scene) else {
+        return;
+    };
+
+    let mut display_data = Vec::default();
+
+    if let Some(fps) = diagnostics.get(&FrameTimeDiagnosticsPlugin::FPS) {
+        display_data.push(("FPS", fps.smoothed().unwrap_or_default() as usize));
+    }
+
+    display_data.push((
+        "Unique Gltf Meshes",
+        resource_lookup
+            .meshes
+            .values()
+            .filter(|c| meshes.get(c.mesh_id).is_some())
+            .count(),
+    ));
+    display_data.push((
+        "Visible Mesh Count",
+        mesh_handles
+            .iter()
+            .filter(|(_, c, v)| &c.root == scene && !matches!(v, Visibility::Hidden))
+            .count(),
+    ));
+    display_data.push((
+        "Visible Triangle Count",
+        mesh_handles
+            .iter()
+            .filter(|(_, c, v)| &c.root == scene && !matches!(v, Visibility::Hidden))
+            .flat_map(|(h, _, _)| meshes.get(h.id()))
+            .map(|mesh| {
+                mesh.indices()
+                    .map(Indices::len)
+                    .unwrap_or_else(|| mesh.attributes().next().unwrap().1.len())
+                    / 3
+            })
+            .sum(),
+    ));
+
+    display_data.push((
+        "Unique Gltf Materials",
+        resource_lookup
+            .materials
+            .values()
+            .filter(|h| materials.get(h.id()).is_some())
+            .count(),
+    ));
+    display_data.push((
+        "Visible Material Count",
+        material_handles
+            .iter()
+            .filter(|(_, c, v)| &c.root == scene && !matches!(v, Visibility::Hidden))
+            .count(),
+    ));
+
+    display_data.push((
+        "Total Entities",
+        scene_entities.iter().filter(|c| &c.root == scene).count(),
+    ));
+
+    for (key, value) in display_data {
+        commands
+            .entity(entities.named("labels"))
+            .spawn_template(
+                &dui,
+                "tracker-item",
+                DuiProps::new().with_prop("label", key.to_string()),
+            )
+            .unwrap();
+        commands
+            .entity(entities.named("values"))
+            .spawn_template(
+                &dui,
+                "tracker-item",
+                DuiProps::new().with_prop("label", format!("{}", value)),
+            )
+            .unwrap();
     }
 }
 

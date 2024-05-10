@@ -263,14 +263,14 @@ fn update_gltf(
 }
 
 pub struct CachedMeshData {
-    mesh_id: AssetId<Mesh>,
+    pub mesh_id: AssetId<Mesh>,
     maybe_collider: Option<Handle<Mesh>>,
 }
 
 #[derive(Component, Default)]
 pub struct SceneResourceLookup {
-    materials: HashMap<Handle<StandardMaterial>, Handle<SceneMaterial>>,
-    meshes: HashMap<u64, CachedMeshData>,
+    pub materials: HashMap<Handle<StandardMaterial>, Handle<SceneMaterial>>,
+    pub meshes: HashMap<u64, CachedMeshData>,
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -666,6 +666,12 @@ fn update_ready_gltfs(
                     current_state: LoadingState::Finished as i32,
                 },
             );
+
+            *tracker.0.entry("Live Meshes").or_default() = resource_lookup
+                .meshes
+                .iter()
+                .filter(|(_, data)| meshes.get(data.mesh_id).is_some())
+                .count();
         }
     }
 }
