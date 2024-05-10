@@ -269,9 +269,11 @@ fn main() {
                 .add_before::<IpfsIoPlugin, _>(NftReaderPlugin),
         );
 
+    if final_config.graphics.log_fps || is_preview {
+        app.add_plugins(FrameTimeDiagnosticsPlugin);
+    }
     if final_config.graphics.log_fps {
-        app.add_plugins(FrameTimeDiagnosticsPlugin)
-            .add_plugins(LogDiagnosticsPlugin::default());
+        app.add_plugins(LogDiagnosticsPlugin::default());
     }
 
     app.insert_resource(PreviewMode {
