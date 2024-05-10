@@ -12,7 +12,10 @@ use common::{
     structs::{AppConfig, ChainLink, PreviousLogin},
     util::{project_directories, TaskExt},
 };
-use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
+use comms::{
+    preview::PreviewMode,
+    profile::{get_remote_profile, CurrentUserProfile, UserProfile},
+};
 use ethers_core::types::Address;
 use ethers_signers::LocalWallet;
 use ipfs::{CurrentRealm, IpfsAssetServer};
@@ -71,6 +74,8 @@ fn login(
     mut toaster: Toaster,
     dui: Res<DuiRegistry>,
     mut window: Query<&mut Window, With<PrimaryWindow>>,
+    preview: Res<PreviewMode>,
+    config: Res<AppConfig>,
 ) {
     // cleanup if we're done
     if wallet.address().is_some() {
@@ -80,6 +85,37 @@ fn login(
         *dialog = None;
         *final_task = None;
         return;
+    }
+
+    if preview.server.is_some() && final_task.is_none() {
+        if let Some(previous_login) = config.previous_login.clone() {
+            let ipfs = ipfas.ipfs().clone();
+            *final_task = Some(IoTaskPool::get().spawn(async move {
+                let PreviousLogin {
+                    root_address,
+                    ephemeral_key,
+                    auth,
+                } = previous_login;
+
+                let profile = get_remote_profile(root_address, ipfs).await.ok();
+                let local_wallet = LocalWallet::from_bytes(&ephemeral_key).unwrap();
+
+                Ok((previous_login.root_address, local_wallet, auth, profile))
+            }));
+        } else {
+            wallet.finalize_as_guest();
+            current_profile.profile = Some(UserProfile {
+                version: 0,
+                content: SerializedProfile {
+                    eth_address: format!("{:#x}", wallet.address().unwrap()),
+                    user_id: Some(format!("{:#x}", wallet.address().unwrap())),
+                    ..Default::default()
+                },
+                base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
+            });
+            current_profile.is_deployed = true;
+            return;
+        }
     }
 
     // create dialog
