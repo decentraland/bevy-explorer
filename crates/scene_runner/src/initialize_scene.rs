@@ -1044,12 +1044,10 @@ fn animate_ready_scene(
                     .mesh()
                     .scaled_by(Vec3::splat(PARCEL_SIZE)),
             ),
-            materials.add(
-                StandardMaterial {
-                    base_color_texture: Some(asset_server.load("images/grid.png")),
-                    ..Default::default()
-                }
-            )
+            materials.add(StandardMaterial {
+                base_color_texture: Some(asset_server.load("images/grid.png")),
+                ..Default::default()
+            }),
         ));
     }
 
@@ -1114,7 +1112,15 @@ fn animate_ready_scene(
                             .spawn(PbrBundle {
                                 mesh: handles.as_ref().unwrap().0.clone(),
                                 material: handles.as_ref().unwrap().1.clone(),
-                                transform: Transform::from_translation(position + Vec3::new(PARCEL_SIZE * 0.5, -0.01, PARCEL_SIZE * -0.5)).looking_at(position + Vec3::new(PARCEL_SIZE * 0.5, -2.0, -PARCEL_SIZE * 0.5), Vec3::Z),
+                                transform: Transform::from_translation(
+                                    position
+                                        + Vec3::new(PARCEL_SIZE * 0.5, -0.01, PARCEL_SIZE * -0.5),
+                                )
+                                .looking_at(
+                                    position
+                                        + Vec3::new(PARCEL_SIZE * 0.5, -2.0, -PARCEL_SIZE * 0.5),
+                                    Vec3::Z,
+                                ),
                                 ..Default::default()
                             })
                             .id(),
