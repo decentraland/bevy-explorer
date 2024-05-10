@@ -1019,7 +1019,7 @@ pub fn process_scene_lifecycle(
 pub struct SceneHash(pub String);
 
 #[derive(Component)]
-pub struct LoadingQuad(bool, bool);
+pub struct LoadingQuad(bool);
 
 fn animate_ready_scene(
     mut q: Query<(
@@ -1030,25 +1030,35 @@ fn animate_ready_scene(
     )>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<LoadingMaterial>>,
+    mut loading_materials: ResMut<Assets<LoadingMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     loading_quads: Query<(), With<LoadingQuad>>,
     preview: Res<PreviewMode>,
-    mut loading_tile: Query<(&mut Transform, &mut LoadingQuad), Without<RendererSceneContext>>,
+    mut handles: Local<Option<(Handle<Mesh>, Handle<StandardMaterial>)>>,
+    asset_server: Res<AssetServer>,
 ) {
+    if handles.is_none() {
+        *handles = Some((
+            meshes.add(
+                Rectangle::default()
+                    .mesh()
+                    .scaled_by(Vec3::splat(PARCEL_SIZE)),
+            ),
+            materials.add(
+                StandardMaterial {
+                    base_color_texture: Some(asset_server.load("images/grid.png")),
+                    ..Default::default()
+                }
+            )
+        ));
+    }
+
     for (root, mut transform, ctx, children) in q.iter_mut() {
         if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken) {
             if transform.translation.y == -1000.0 {
                 for child in children.map(|c| c.iter()).unwrap_or_default() {
                     if loading_quads.get(*child).is_ok() {
-                        if preview.server.is_some() {
-                            if let Ok((mut transform, mut loading)) = loading_tile.get_mut(*child) {
-                                transform.translation.y = 0.02;
-                                transform.scale.y = 0.04;
-                                loading.1 = false;
-                            }
-                        } else {
-                            commands.entity(*child).despawn_recursive();
-                        }
+                        commands.entity(*child).despawn_recursive();
                     }
                 }
             }
@@ -1080,12 +1090,8 @@ fn animate_ready_scene(
                             commands
                                 .spawn((
                                     MaterialMeshBundle {
-                                        mesh: meshes.add(
-                                            Rectangle::default()
-                                                .mesh()
-                                                .scaled_by(Vec3::splat(PARCEL_SIZE)),
-                                        ),
-                                        material: materials.add(LoadingMaterial::default()),
+                                        mesh: handles.as_ref().unwrap().0.clone(),
+                                        material: loading_materials.add(LoadingMaterial::default()),
                                         transform: Transform::from_translation(
                                             position
                                                 + position_offset * PARCEL_SIZE
@@ -1094,12 +1100,25 @@ fn animate_ready_scene(
                                         .looking_at(position + middle + Vec3::Y * 1000.0, Vec3::Y),
                                         ..Default::default()
                                     },
-                                    LoadingQuad(is_x, true),
+                                    LoadingQuad(is_x),
                                     NotShadowCaster,
                                 ))
                                 .id(),
                         );
                     }
+                }
+
+                if preview.is_preview {
+                    children.push(
+                        commands
+                            .spawn(PbrBundle {
+                                mesh: handles.as_ref().unwrap().0.clone(),
+                                material: handles.as_ref().unwrap().1.clone(),
+                                transform: Transform::from_translation(position + Vec3::new(PARCEL_SIZE * 0.5, -0.01, PARCEL_SIZE * -0.5)).looking_at(position + Vec3::new(PARCEL_SIZE * 0.5, -2.0, -PARCEL_SIZE * 0.5), Vec3::Z),
+                                ..Default::default()
+                            })
+                            .id(),
+                    );
                 }
             }
 
@@ -1149,7 +1168,7 @@ fn update_loading_quads(
             mat.player_pos = player_translation.extend(if active { 1.0 } else { 0.0 })
         }
 
-        trans.translation.y = player_translation.y + if loading.1 { 1000.0 } else { 0.0 };
+        trans.translation.y = player_translation.y + 1000.0;
 
         if active {
             local_prev_active.insert(h_mat.id());
