@@ -1021,6 +1021,7 @@ pub struct SceneHash(pub String);
 #[derive(Component)]
 pub struct LoadingQuad(bool);
 
+#[allow(clippy::too_many_arguments)]
 fn animate_ready_scene(
     mut q: Query<(
         Entity,
