@@ -348,6 +348,7 @@ pub(crate) fn load_scene_javascript(
             1.0,
             config.scene_log_to_console,
             if is_sdk7 { "sdk7" } else { "sdk6" },
+            false,
         );
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?})");
 
@@ -541,6 +542,12 @@ pub(crate) fn initialize_scene(
         ));
 
         let scene_id = context.scene_id;
+
+        let inspected = testing_data
+            .inspect_hash
+            .as_ref()
+            .map_or(false, |inspect_hash| inspect_hash == &context.hash);
+
         let main_sx = spawn_scene(
             context.hash.clone(),
             js_file.clone(),
@@ -550,16 +557,14 @@ pub(crate) fn initialize_scene(
             ipfs.clone(),
             wallet.clone(),
             scene_id,
-            testing_data
-                .inspect_hash
-                .as_ref()
-                .map_or(false, |inspect_hash| inspect_hash == &context.hash),
+            inspected,
             testing_data.test_mode,
             preview_mode.is_preview,
         );
 
         // mark context as in flight so we wait for initial RPC requests
         context.in_flight = true;
+        context.inspected = inspected;
 
         commands
             .entity(root)
@@ -1014,7 +1019,7 @@ pub fn process_scene_lifecycle(
 pub struct SceneHash(pub String);
 
 #[derive(Component)]
-pub struct LoadingQuad(bool);
+pub struct LoadingQuad(bool, bool);
 
 fn animate_ready_scene(
     mut q: Query<(
@@ -1027,13 +1032,23 @@ fn animate_ready_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<LoadingMaterial>>,
     loading_quads: Query<(), With<LoadingQuad>>,
+    preview: Res<PreviewMode>,
+    mut loading_tile: Query<(&mut Transform, &mut LoadingQuad), Without<RendererSceneContext>>,
 ) {
     for (root, mut transform, ctx, children) in q.iter_mut() {
         if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken) {
             if transform.translation.y == -1000.0 {
                 for child in children.map(|c| c.iter()).unwrap_or_default() {
                     if loading_quads.get(*child).is_ok() {
-                        commands.entity(*child).despawn_recursive();
+                        if preview.server.is_some() {
+                            if let Ok((mut transform, mut loading)) = loading_tile.get_mut(*child) {
+                                transform.translation.y = 0.02;
+                                transform.scale.y = 0.04;
+                                loading.1 = false;
+                            }
+                        } else {
+                            commands.entity(*child).despawn_recursive();
+                        }
                     }
                 }
             }
@@ -1079,7 +1094,7 @@ fn animate_ready_scene(
                                         .looking_at(position + middle + Vec3::Y * 1000.0, Vec3::Y),
                                         ..Default::default()
                                     },
-                                    LoadingQuad(is_x),
+                                    LoadingQuad(is_x, true),
                                     NotShadowCaster,
                                 ))
                                 .id(),
@@ -1134,7 +1149,7 @@ fn update_loading_quads(
             mat.player_pos = player_translation.extend(if active { 1.0 } else { 0.0 })
         }
 
-        trans.translation.y = player_translation.y + 1000.0;
+        trans.translation.y = player_translation.y + if loading.1 { 1000.0 } else { 0.0 };
 
         if active {
             local_prev_active.insert(h_mat.id());

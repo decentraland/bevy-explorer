@@ -22,7 +22,7 @@ use ipfs::{
 use crate::{
     initialize_scene::{LiveScenes, PortableScenes},
     renderer_context::RendererSceneContext,
-    ContainingScene,
+    ContainingScene, Toaster,
 };
 
 pub struct SceneUtilPlugin;
@@ -203,10 +203,18 @@ fn handle_preview_command(
     mut events: EventReader<PreviewCommand>,
     mut live_scenes: ResMut<LiveScenes>,
     mut portables: ResMut<PortableScenes>,
+    scenes: Query<&RendererSceneContext>,
+    mut toaster: Toaster,
 ) {
     for command in events.read() {
         match command {
             PreviewCommand::ReloadScene { hash } => {
+                if let Some(ctx) = live_scenes.0.get(hash).and_then(|e| scenes.get(*e).ok()) {
+                    if ctx.inspected {
+                        toaster.add_toast("reload-inspected", "Scene has updated but an inspector is attached. To force the reload type \"/reload\" in the chat window");
+                        continue;
+                    }
+                };
                 live_scenes.0.remove(hash);
                 portables.0.remove(hash);
             }
