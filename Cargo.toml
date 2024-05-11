@@ -6,7 +6,7 @@ edition = "2021"
 #![windows_subsystem]
 
 [features]
-default = ["livekit", "ffmpeg"]
+default = ["livekit", "ffmpeg", "inspect"]
 dcl-assert = []
 gen-tests = []
 tracy = ["bevy/trace_tracy"]
