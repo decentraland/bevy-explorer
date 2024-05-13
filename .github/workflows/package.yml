@@ -114,7 +114,10 @@ jobs:
     
               
           - name: Cargo build (non-linux)
-            if: runner.os != 'linux'
+            if: runner.os == 'windows'
+            run: cargo build --release --bin decentra-bevy -j8
+          - name: Cargo build (non-linux)
+            if: runner.os == 'macos'
             run: cargo build --release --bin decentra-bevy
           - name: Cargo build (linux)
             if: runner.os == 'linux'
