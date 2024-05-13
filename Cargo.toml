@@ -15,6 +15,9 @@ hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
 livekit = ["comms/livekit"]
 ffmpeg = ["av/ffmpeg"]
 
+[profile.release]
+codegen-units = 1
+
 [workspace]
 members = ["crates/*"]
 
