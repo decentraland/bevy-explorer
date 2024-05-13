@@ -98,6 +98,7 @@ pub fn spawn_scene(
     id: SceneId,
     inspect: bool,
     testing: bool,
+    preview: bool,
 ) -> Sender<RendererResponse> {
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
 
@@ -118,6 +119,7 @@ pub fn spawn_scene(
                     wallet,
                     inspect,
                     testing,
+                    preview,
                 )
             }));
 

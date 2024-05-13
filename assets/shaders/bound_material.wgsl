@@ -11,6 +11,7 @@
 struct SceneBounds {
     bounds: vec4<f32>,
     distance: f32,
+    show_outside: u32,
 }
 
 @group(2) @binding(100)
@@ -55,15 +56,20 @@ fn fragment(
     let outside_amt = max(max(max(0.0, bounds.bounds.x - world_position.x), max(world_position.x - bounds.bounds.z, bounds.bounds.y - world_position.z)), world_position.z - bounds.bounds.w);
 
     var noise = 0.05;
+    var should_discard = false;
     if outside_amt > 0.00 {
         if outside_amt < bounds.distance {
             noise = simplex_noise_3d(world_position * 2.0 + globals.time * vec3(0.2, 0.16, 0.24)) * 0.5 + 0.55;
             if noise < (outside_amt - 0.125) / 2.0 {
-                discard;
+                should_discard = true;
             }
         } else if outside_amt > 0.05 {
-            discard;
+            should_discard = true;
         }
+    }
+
+    if should_discard && bounds.show_outside == 0 {
+        discard;
     }
 
     // alpha discard
@@ -77,8 +83,13 @@ fn fragment(
         out.color = pbr_input.material.base_color;
     }
 
-    if noise < outside_amt / 2.0 {
-        out.color = mix(out.color, vec4(10.0, 1.0, 0.0, 1.0), (outside_amt / 2.0 - noise) / 0.125);
+    if should_discard {
+        out.color.a = out.color.a * 0.5;
+        out.color.r = 4.0;
+    } else {
+        if noise < outside_amt / 2.0 {
+            out.color = mix(out.color, vec4(10.0, 1.0, 0.0, 1.0), (outside_amt / 2.0 - noise) / 0.125);
+        }
     }
 
     // apply in-shader post processing (fog, alpha-premultiply, and also tonemapping, debanding if the camera is non-hdr)

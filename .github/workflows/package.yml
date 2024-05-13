@@ -113,9 +113,15 @@ jobs:
               Add-Content $env:GITHUB_ENV "FFMPEG_DIR=c:\ffmpeg-6.0`n"
     
               
-          - name: Cargo build
-            run: cargo build --release
-#            run: cargo build --release ${{ matrix.target && '--target' }} ${{ matrix.target }}
+          - name: Cargo build (non-linux)
+            if: runner.os == 'windows'
+            run: cargo build --release --bin decentra-bevy -j8
+          - name: Cargo build (non-linux)
+            if: runner.os == 'macos'
+            run: cargo build --release --bin decentra-bevy
+          - name: Cargo build (linux)
+            if: runner.os == 'linux'
+            run: cargo build --release --bin decentra-bevy --no-default-features --features "ffmpeg"
 
           - name: Package common
             run: |

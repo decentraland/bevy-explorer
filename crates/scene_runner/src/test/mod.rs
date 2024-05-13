@@ -39,7 +39,7 @@ use common::{
     rpc::RpcCall,
     structs::{AppConfig, GraphicsSettings, PrimaryCamera, SceneLoadDistance, ToolTips},
 };
-use comms::CommsPlugin;
+use comms::{preview::PreviewMode, CommsPlugin};
 use console::{self, ConsolePlugin};
 use dcl::{
     crdt::lww::CrdtLWWState,
@@ -86,6 +86,7 @@ impl PluginGroup for TestPlugins {
             .add(HierarchyPlugin::default())
             .add(DiagnosticsPlugin::default())
             .add(IpfsIoPlugin {
+                preview: false,
                 assets_root: test_path.to_str().map(ToOwned::to_owned),
                 starting_realm: Default::default(),
                 num_slots: 8,
@@ -129,6 +130,7 @@ fn init_test_app(entity_json: &str) -> App {
         load: 1.0,
         unload: 0.0,
     });
+    app.init_resource::<PreviewMode>();
     app.finish();
 
     let mut test_path = std::env::current_dir().unwrap();

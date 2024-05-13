@@ -396,7 +396,7 @@ fn process_crdt_go_updates<
 }
 
 #[derive(Component, Default, Debug)]
-pub struct ComponentTracker(BTreeMap<&'static str, usize>);
+pub struct ComponentTracker(pub BTreeMap<&'static str, usize>);
 
 pub fn track_components<C: Component, const ALLOW_UNALLOCATED: bool>(
     q: Query<Option<&ContainerEntity>, With<C>>,

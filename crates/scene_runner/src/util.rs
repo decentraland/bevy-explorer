@@ -11,6 +11,7 @@ use bevy::{
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use clap::builder::StyledStr;
 use common::structs::PrimaryUser;
+use comms::preview::PreviewCommand;
 use console::DoAddConsoleCommand;
 use futures_lite::AsyncReadExt;
 use ipfs::{
@@ -21,7 +22,7 @@ use ipfs::{
 use crate::{
     initialize_scene::{LiveScenes, PortableScenes},
     renderer_context::RendererSceneContext,
-    ContainingScene,
+    ContainingScene, Toaster,
 };
 
 pub struct SceneUtilPlugin;
@@ -32,7 +33,7 @@ impl Plugin for SceneUtilPlugin {
         app.insert_resource(ConsoleRelay { send, recv });
         app.add_console_command::<DebugDumpScene, _>(debug_dump_scene);
         app.add_console_command::<ReloadCommand, _>(reload_command);
-        app.add_systems(Update, console_relay);
+        app.add_systems(Update, (console_relay, handle_preview_command));
     }
 }
 
@@ -175,15 +176,48 @@ fn debug_dump_scene(
 
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/reload")]
-struct ReloadCommand;
+struct ReloadCommand {
+    hash: Option<String>,
+}
 
 fn reload_command(
     mut input: ConsoleCommand<ReloadCommand>,
     mut live_scenes: ResMut<LiveScenes>,
     mut portables: ResMut<PortableScenes>,
 ) {
-    if let Some(Ok(_)) = input.take() {
-        live_scenes.0.clear();
-        portables.0.clear();
+    if let Some(Ok(ReloadCommand { hash })) = input.take() {
+        match hash {
+            Some(hash) => {
+                live_scenes.0.remove(&hash);
+                portables.0.remove(&hash);
+            }
+            None => {
+                live_scenes.0.clear();
+                portables.0.clear();
+            }
+        }
+    }
+}
+
+fn handle_preview_command(
+    mut events: EventReader<PreviewCommand>,
+    mut live_scenes: ResMut<LiveScenes>,
+    mut portables: ResMut<PortableScenes>,
+    scenes: Query<&RendererSceneContext>,
+    mut toaster: Toaster,
+) {
+    for command in events.read() {
+        match command {
+            PreviewCommand::ReloadScene { hash } => {
+                if let Some(ctx) = live_scenes.0.get(hash).and_then(|e| scenes.get(*e).ok()) {
+                    if ctx.inspected {
+                        toaster.add_toast("reload-inspected", "Scene has updated but an inspector is attached. To force the reload type \"/reload\" in the chat window");
+                        continue;
+                    }
+                };
+                live_scenes.0.remove(hash);
+                portables.0.remove(hash);
+            }
+        }
     }
 }

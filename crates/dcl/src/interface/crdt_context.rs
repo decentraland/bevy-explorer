@@ -11,6 +11,7 @@ pub struct CrdtContext {
     pub scene_id: SceneId,
     pub hash: String,
     pub testing: bool,
+    pub preview: bool,
     live_entities: LiveTable,
     nascent: HashSet<SceneEntityId>,
     death_row: HashSet<SceneEntityId>,
@@ -18,11 +19,12 @@ pub struct CrdtContext {
 }
 
 impl CrdtContext {
-    pub fn new(scene_id: SceneId, hash: String, testing: bool) -> Self {
+    pub fn new(scene_id: SceneId, hash: String, testing: bool, preview: bool) -> Self {
         Self {
             scene_id,
             hash,
             testing,
+            preview,
             live_entities: Vec::from_iter(std::iter::repeat((0, false)).take(u16::MAX as usize)),
             nascent: Default::default(),
             death_row: Default::default(),

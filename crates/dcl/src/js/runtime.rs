@@ -124,6 +124,8 @@ pub async fn realm_information(
     let base_url = base_url.strip_suffix("/content").unwrap_or(&base_url);
     let config = info.configurations.unwrap_or_default();
 
+    let is_preview = op_state.borrow().borrow::<CrdtContext>().preview;
+
     Ok(RealmInfoResponse {
         base_url: base_url.to_owned(),
         realm_name: config.realm_name.unwrap_or_default(),
@@ -132,6 +134,6 @@ pub async fn realm_information(
             .comms
             .and_then(|c| c.adapter.or(c.fixed_adapter))
             .unwrap_or_default(),
-        is_preview: false,
+        is_preview,
     })
 }

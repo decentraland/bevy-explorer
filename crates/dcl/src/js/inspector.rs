@@ -303,8 +303,7 @@ async fn server(
     // Create the server manually so it can use the Local Executor
     let mut server_handler = pin!(hyper::server::Builder::new(
         hyper::server::conn::AddrIncoming::bind(&host).unwrap_or_else(|e| {
-            eprintln!("Cannot start inspector server: {e}.");
-            process::exit(1);
+            panic!("Cannot start inspector server: {e}.");
         }),
         hyper::server::conn::Http::new().with_executor(LocalExecutor),
     )
@@ -313,8 +312,7 @@ async fn server(
         shutdown_server_rx.await.ok();
     })
     .unwrap_or_else(|err| {
-        eprintln!("Cannot start inspector server: {err}.");
-        process::exit(1);
+        panic!("Cannot start inspector server: {err}.");
     })
     .fuse());
 

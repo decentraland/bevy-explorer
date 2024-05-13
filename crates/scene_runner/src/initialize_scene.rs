@@ -15,7 +15,7 @@ use common::{
     structs::{AppConfig, IVec2Arg, SceneLoadDistance, SceneMeta},
     util::{TaskExt, TryPushChildrenEx},
 };
-use comms::global_crdt::GlobalCrdtState;
+use comms::{global_crdt::GlobalCrdtState, preview::PreviewMode};
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
     spawn_scene, SceneElapsedTime, SceneId, SceneResponse,
@@ -348,6 +348,7 @@ pub(crate) fn load_scene_javascript(
             1.0,
             config.scene_log_to_console,
             if is_sdk7 { "sdk7" } else { "sdk6" },
+            false,
         );
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?})");
 
@@ -371,7 +372,8 @@ pub(crate) fn load_scene_javascript(
 
         if let Some(serialized_crdt) = maybe_serialized_crdt {
             // add main.crdt
-            let mut context = CrdtContext::new(scene_id, renderer_context.hash.clone(), false);
+            let mut context =
+                CrdtContext::new(scene_id, renderer_context.hash.clone(), false, false);
             let mut stream = DclReader::new(&serialized_crdt);
             initial_crdt.process_message_stream(
                 &mut context,
@@ -495,6 +497,7 @@ pub(crate) fn initialize_scene(
     ipfs: Res<IpfsResource>,
     wallet: Res<Wallet>,
     testing_data: Res<TestingData>,
+    preview_mode: Res<PreviewMode>,
 ) {
     for (root, mut state, h_code, mut context) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
@@ -539,6 +542,12 @@ pub(crate) fn initialize_scene(
         ));
 
         let scene_id = context.scene_id;
+
+        let inspected = testing_data
+            .inspect_hash
+            .as_ref()
+            .map_or(false, |inspect_hash| inspect_hash == &context.hash);
+
         let main_sx = spawn_scene(
             context.hash.clone(),
             js_file.clone(),
@@ -548,15 +557,14 @@ pub(crate) fn initialize_scene(
             ipfs.clone(),
             wallet.clone(),
             scene_id,
-            testing_data
-                .inspect_hash
-                .as_ref()
-                .map_or(false, |inspect_hash| inspect_hash == &context.hash),
+            inspected,
             testing_data.test_mode,
+            preview_mode.is_preview,
         );
 
         // mark context as in flight so we wait for initial RPC requests
         context.in_flight = true;
+        context.inspected = inspected;
 
         commands
             .entity(root)
@@ -1013,6 +1021,7 @@ pub struct SceneHash(pub String);
 #[derive(Component)]
 pub struct LoadingQuad(bool);
 
+#[allow(clippy::too_many_arguments)]
 fn animate_ready_scene(
     mut q: Query<(
         Entity,
@@ -1022,9 +1031,27 @@ fn animate_ready_scene(
     )>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<LoadingMaterial>>,
+    mut loading_materials: ResMut<Assets<LoadingMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     loading_quads: Query<(), With<LoadingQuad>>,
+    preview: Res<PreviewMode>,
+    mut handles: Local<Option<(Handle<Mesh>, Handle<StandardMaterial>)>>,
+    asset_server: Res<AssetServer>,
 ) {
+    if handles.is_none() {
+        *handles = Some((
+            meshes.add(
+                Rectangle::default()
+                    .mesh()
+                    .scaled_by(Vec3::splat(PARCEL_SIZE)),
+            ),
+            materials.add(StandardMaterial {
+                base_color_texture: Some(asset_server.load("images/grid.png")),
+                ..Default::default()
+            }),
+        ));
+    }
+
     for (root, mut transform, ctx, children) in q.iter_mut() {
         if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken) {
             if transform.translation.y == -1000.0 {
@@ -1062,12 +1089,8 @@ fn animate_ready_scene(
                             commands
                                 .spawn((
                                     MaterialMeshBundle {
-                                        mesh: meshes.add(
-                                            Rectangle::default()
-                                                .mesh()
-                                                .scaled_by(Vec3::splat(PARCEL_SIZE)),
-                                        ),
-                                        material: materials.add(LoadingMaterial::default()),
+                                        mesh: handles.as_ref().unwrap().0.clone(),
+                                        material: loading_materials.add(LoadingMaterial::default()),
                                         transform: Transform::from_translation(
                                             position
                                                 + position_offset * PARCEL_SIZE
@@ -1082,6 +1105,27 @@ fn animate_ready_scene(
                                 .id(),
                         );
                     }
+                }
+
+                if preview.is_preview {
+                    children.push(
+                        commands
+                            .spawn(PbrBundle {
+                                mesh: handles.as_ref().unwrap().0.clone(),
+                                material: handles.as_ref().unwrap().1.clone(),
+                                transform: Transform::from_translation(
+                                    position
+                                        + Vec3::new(PARCEL_SIZE * 0.5, -0.01, PARCEL_SIZE * -0.5),
+                                )
+                                .looking_at(
+                                    position
+                                        + Vec3::new(PARCEL_SIZE * 0.5, -2.0, -PARCEL_SIZE * 0.5),
+                                    Vec3::Z,
+                                ),
+                                ..Default::default()
+                            })
+                            .id(),
+                    );
                 }
             }
 
