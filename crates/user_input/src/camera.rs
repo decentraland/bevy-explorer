@@ -12,8 +12,11 @@ use scene_runner::{
     renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
     ContainingScene,
 };
+use tween::SystemTween;
 
 use crate::CursorLocked;
+
+static TRANSITION_TIME: f32 = 0.5;
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn update_camera(
@@ -133,20 +136,29 @@ pub fn update_camera(
 }
 
 pub fn update_camera_position(
-    mut camera: Query<(&mut Transform, &PrimaryCamera)>,
+    mut commands: Commands,
+    mut camera: Query<(
+        Entity,
+        &mut Transform,
+        &PrimaryCamera,
+        Option<&mut SystemTween>,
+    )>,
     mut player: Query<&Transform, (With<PrimaryUser>, Without<PrimaryCamera>)>,
     containing_scene: ContainingScene,
     mut scene_colliders: Query<(&RendererSceneContext, &mut SceneColliderData)>,
+    mut prev_override: Local<Option<CameraOverride>>,
 ) {
-    let (Ok(player_transform), Ok((mut camera_transform, options))) =
+    let (Ok(player_transform), Ok((camera_ent, mut camera_transform, options, maybe_tween))) =
         (player.get_single_mut(), camera.get_single_mut())
     else {
         return;
     };
 
+    let mut target_transform = *camera_transform;
+
     if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.as_ref() {
-        *camera_transform = cine.origin.compute_transform();
-        camera_transform.rotation *=
+        target_transform = cine.origin.compute_transform();
+        target_transform.rotation *=
             Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
     } else {
         let distance = match options.scene_override {
@@ -154,21 +166,21 @@ pub fn update_camera_position(
             _ => options.distance,
         };
 
-        camera_transform.rotation =
+        target_transform.rotation =
             Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
 
-        let xz_plane = (camera_transform.rotation.mul_vec3(-Vec3::Z) * Vec3::new(1.0, 0.0, 1.0))
+        let xz_plane = (target_transform.rotation.mul_vec3(-Vec3::Z) * Vec3::new(1.0, 0.0, 1.0))
             .normalize_or_zero()
             * distance.clamp(0.0, 1.0);
         let player_head = player_transform.translation
             + Vec3::Y * 1.81
-            + camera_transform
+            + target_transform
                 .rotation
                 .mul_vec3(Vec3::new(1.0, -0.4, 0.0))
                 * distance.clamp(0.0, 0.5)
             + xz_plane;
 
-        let target_direction = camera_transform.rotation.mul_vec3(Vec3::Z * 5.0 * distance);
+        let target_direction = target_transform.rotation.mul_vec3(Vec3::Z * 5.0 * distance);
         let mut distance = target_direction.length();
         if target_direction.y + player_head.y < 0.1 {
             distance = distance * (player_head.y - 0.1) / -target_direction.y;
@@ -199,6 +211,21 @@ pub fn update_camera_position(
             }
         }
 
-        camera_transform.translation = player_head + target_direction * distance;
+        target_transform.translation = player_head + target_direction * distance;
+    }
+
+    if prev_override.as_ref().map(std::mem::discriminant)
+        != options.scene_override.as_ref().map(std::mem::discriminant)
+    {
+        prev_override.clone_from(&options.scene_override);
+        commands.entity(camera_ent).try_insert(SystemTween {
+            target: target_transform,
+            time: TRANSITION_TIME,
+        });
+    } else if let Some(mut tween) = maybe_tween {
+        // bypass change detection so the tween state doesn't reset
+        tween.bypass_change_detection().target = target_transform;
+    } else {
+        *camera_transform = target_transform;
     }
 }
