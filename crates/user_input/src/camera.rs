@@ -111,10 +111,13 @@ pub fn update_camera(
                 options.roll += dt * 1.0;
             } else if key_input.pressed(options.key_roll_right) {
                 options.roll -= dt * 1.0;
-            } else if options.roll > 0.0 {
-                options.roll = (options.roll - dt * 0.25).max(0.0);
-            } else {
-                options.roll = (options.roll + dt * 0.25).min(0.0);
+            } else if allow_cam_distance {
+                // decay roll if not in cinematic mode
+                if options.roll > 0.0 {
+                    options.roll = (options.roll - dt * 0.25).max(0.0);
+                } else {
+                    options.roll = (options.roll + dt * 0.25).min(0.0);
+                }
             }
         }
 
