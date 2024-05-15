@@ -115,13 +115,18 @@ pub fn update_user_position(
 
     dynamic_state.velocity = velocity;
 
-    // rotate towards velocity vec
-    if dynamic_state.force.length() > 0.0 {
-        let target_rotation = Transform::default()
-            .looking_at(dynamic_state.force.extend(0.0).xzy(), Vec3::Y)
-            .rotation;
+    if dynamic_state.tank {
+        // rotate as instructed
+        transform.rotation *= Quat::from_rotation_y(dynamic_state.rotate * time.delta_seconds());
+    } else {
+        // rotate towards velocity vec
+        if dynamic_state.force.length() > 0.0 {
+            let target_rotation = Transform::default()
+                .looking_at(dynamic_state.force.extend(0.0).xzy(), Vec3::Y)
+                .rotation;
 
-        transform.rotation = transform.rotation.lerp(target_rotation, dt * 10.0);
+            transform.rotation = transform.rotation.lerp(target_rotation, dt * 10.0);
+        }
     }
 
     let mut platform_motion = Vec3::default();

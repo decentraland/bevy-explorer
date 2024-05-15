@@ -24,14 +24,15 @@ pub fn update_camera(
     mouse_button_input: Res<ButtonInput<MouseButton>>,
     key_input: Res<ButtonInput<KeyCode>>,
     mut move_toggled: Local<bool>,
-    mut camera: Query<(&mut Transform, &mut PrimaryCamera)>,
+    mut camera: Query<(&Transform, &mut PrimaryCamera)>,
     mut locked_cursor_position: Local<Option<Vec2>>,
     accept_input: Res<AcceptInput>,
     mut cursor_locked: ResMut<CursorLocked>,
+    mut cinematic_initial: Local<Option<(f32, f32, f32, f32)>>,
 ) {
     let dt = time.delta_seconds();
 
-    let Ok((mut camera_transform, mut options)) = camera.get_single_mut() else {
+    let Ok((camera_transform, mut options)) = camera.get_single_mut() else {
         return;
     };
 
@@ -43,20 +44,19 @@ pub fn update_camera(
         options.initialized = true;
     }
 
-    if accept_input.key {
-        if key_input.just_pressed(options.keyboard_key_enable_mouse) {
-            *move_toggled = !*move_toggled;
-        }
+    let mut allow_cam_move = true;
+    let mut allow_cam_distance = true;
 
-        if key_input.pressed(options.key_roll_left) {
-            options.roll += dt * 1.0;
-        } else if key_input.pressed(options.key_roll_right) {
-            options.roll -= dt * 1.0;
-        } else if options.roll > 0.0 {
-            options.roll = (options.roll - dt * 0.25).max(0.0);
-        } else {
-            options.roll = (options.roll + dt * 0.25).min(0.0);
+    // record/reset cinematic start state
+    if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.clone() {
+        if cinematic_initial.is_none() {
+            *cinematic_initial = Some((options.yaw, options.pitch, options.roll, options.distance));
+            (options.yaw, options.pitch, options.roll) = (0.0, 0.0, 0.0);
         }
+        allow_cam_move = cine.camera_control;
+        allow_cam_distance = false;
+    } else if let Some(initial) = cinematic_initial.take() {
+        (options.yaw, options.pitch, options.roll, options.distance) = initial;
     }
 
     // Handle mouse input
@@ -99,22 +99,37 @@ pub fn update_camera(
         }
     }
 
-    if accept_input.mouse {
-        if let Some(event) = wheel_events.read().last() {
-            if event.y > 0.0 {
-                options.distance = 0f32.max((options.distance - 0.05) * 0.9);
-            } else if event.y < 0.0 {
-                options.distance = 100f32.min((options.distance / 0.9) + 0.05);
+    if allow_cam_move {
+        if accept_input.key {
+            if key_input.just_pressed(options.keyboard_key_enable_mouse) {
+                *move_toggled = !*move_toggled;
+            }
+
+            if key_input.pressed(options.key_roll_left) {
+                options.roll += dt * 1.0;
+            } else if key_input.pressed(options.key_roll_right) {
+                options.roll -= dt * 1.0;
+            } else if options.roll > 0.0 {
+                options.roll = (options.roll - dt * 0.25).max(0.0);
+            } else {
+                options.roll = (options.roll + dt * 0.25).min(0.0);
+            }
+        }
+
+        options.pitch = (options.pitch - mouse_delta.y * options.sensitivity / 1000.0)
+            .clamp(-PI / 2.1, PI / 2.1);
+        options.yaw -= mouse_delta.x * options.sensitivity / 1000.0;
+
+        if accept_input.mouse && allow_cam_distance {
+            if let Some(event) = wheel_events.read().last() {
+                if event.y > 0.0 {
+                    options.distance = 0f32.max((options.distance - 0.05) * 0.9);
+                } else if event.y < 0.0 {
+                    options.distance = 100f32.min((options.distance / 0.9) + 0.05);
+                }
             }
         }
     }
-
-    // Apply look update
-    options.pitch =
-        (options.pitch - mouse_delta.y * options.sensitivity / 1000.0).clamp(-PI / 2.1, PI / 2.1);
-    options.yaw -= mouse_delta.x * options.sensitivity / 1000.0;
-    camera_transform.rotation =
-        Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
 }
 
 pub fn update_camera_position(
@@ -129,13 +144,18 @@ pub fn update_camera_position(
         return;
     };
 
-    if let Some(CameraOverride::Cinematic(transform)) = options.scene_override {
-        *camera_transform = transform;
+    if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.as_ref() {
+        *camera_transform = cine.origin.compute_transform();
+        camera_transform.rotation *=
+            Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
     } else {
         let distance = match options.scene_override {
             Some(CameraOverride::Distance(d)) => d,
             _ => options.distance,
         };
+
+        camera_transform.rotation =
+            Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
 
         let xz_plane = (camera_transform.rotation.mul_vec3(-Vec3::Z) * Vec3::new(1.0, 0.0, 1.0))
             .normalize_or_zero()

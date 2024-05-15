@@ -2,7 +2,7 @@ use bevy::{math::Vec3Swizzles, prelude::*};
 
 use common::{
     dynamics::PLAYER_GROUND_THRESHOLD,
-    structs::{PrimaryCamera, PrimaryUser},
+    structs::{CameraOverride, CinematicControl, PrimaryCamera, PrimaryUser},
 };
 
 use avatar::AvatarDynamicState;
@@ -11,11 +11,11 @@ use input_manager::InputManager;
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub(crate) fn update_user_velocity(
-    camera: Query<&Transform, With<PrimaryCamera>>,
-    mut player: Query<(&mut AvatarDynamicState, &PrimaryUser)>,
+    camera: Query<(&Transform, &PrimaryCamera)>,
+    mut player: Query<(&Transform, &mut AvatarDynamicState, &PrimaryUser)>,
     input: InputManager,
 ) {
-    let (Ok((mut dynamic_state, user)), Ok(camera_transform)) =
+    let (Ok((player_transform, mut dynamic_state, user)), Ok((camera_transform, options))) =
         (player.get_single_mut(), camera.get_single())
     else {
         return;
@@ -44,7 +44,19 @@ pub(crate) fn update_user_velocity(
     }
 
     // Apply movement update
+    let (relative_transform, rotate) =
+        if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.as_ref() {
+            match cine.avatar_control {
+                CinematicControl::None => return,
+                CinematicControl::Relative => (camera_transform, false),
+                CinematicControl::Tank => (player_transform, true),
+            }
+        } else {
+            (camera_transform, false)
+        };
+
     dynamic_state.force = Vec2::ZERO;
+
     if axis_input != Vec2::ZERO {
         let max_speed = if !input.is_down(InputAction::IaWalk) {
             user.run_speed
@@ -54,15 +66,22 @@ pub(crate) fn update_user_velocity(
         axis_input = axis_input.normalize();
 
         let ground = Vec3::X + Vec3::Z;
-        let forward = (Vec3::from(camera_transform.forward()) * ground)
+        let forward = (Vec3::from(relative_transform.forward()) * ground)
             .xz()
             .normalize_or_zero();
-        let right = (Vec3::from(camera_transform.right()) * ground)
+        let right = (Vec3::from(relative_transform.right()) * ground)
             .xz()
             .normalize_or_zero();
 
-        axis_input = right * axis_input.x + forward * axis_input.y;
-
-        dynamic_state.force = axis_input * max_speed;
+        let mut axis_output = forward * axis_input.y;
+        if rotate {
+            dynamic_state.tank = true;
+            dynamic_state.rotate = axis_input.x;
+        } else {
+            dynamic_state.tank = false;
+            dynamic_state.rotate = 0.0;
+            axis_output += right * axis_input.x;
+        }
+        dynamic_state.force = axis_output * max_speed;
     }
 }

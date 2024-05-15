@@ -93,9 +93,24 @@ pub struct PrimaryCamera {
     pub scene_override: Option<CameraOverride>,
 }
 
+#[derive(Clone, Debug)]
+pub struct CinematicSettings {
+    pub origin: GlobalTransform,
+    pub avatar_control: CinematicControl,
+    pub camera_control: bool,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum CinematicControl {
+    None,
+    Relative,
+    Tank,
+}
+
+#[derive(Clone, Debug)]
 pub enum CameraOverride {
     Distance(f32),
-    Cinematic(Transform),
+    Cinematic(CinematicSettings),
 }
 
 impl Default for PrimaryCamera {

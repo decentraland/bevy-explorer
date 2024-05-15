@@ -9,7 +9,7 @@ import "decentraland/sdk/components/common/id.proto";
 option (common.ecs_component_id) = 1071;
 
 // The CameraModeArea component can be attached to an Entity to define a region of space where 
-// the player's camera mode (1st-person or 3rd-person) is overridden.
+// the player's camera mode (1st-person, 3rd-person or cinematic) is overridden.
 //
 // The Entity's Transform position determines the center-point of the region, while its size is 
 // given as a vector in the `area` property below. The Transform rotation is applied, but the scale 
@@ -19,7 +19,20 @@ option (common.ecs_component_id) = 1071;
 //
 // Note that, while commonly used to delineate a 2D area in a scene (hence the name), the region
 // is actually a 3D volume.
+//
+// When mode is set to CtCinematic, the optional cinematic_entity must also be provided. The  
+// Position and Rotation components of the cinematic_entity's Transform then define the origin and
+// direction of the cinematic camera.
 message PBCameraModeArea {
-  decentraland.common.Vector3 area = 1; // the 3D size of the region
-  common.CameraType mode = 2;           // the camera mode to enforce
+  decentraland.common.Vector3 area = 1;                       // the 3D size of the region
+  common.CameraType mode = 2;                                 // the camera mode to enforce
+  optional uint32 cinematic_entity = 3;                       // entity that defines the cinematic camera transform. required when mode = CtCinematic
+  optional CinematicControlType cinematic_avatar_control = 4; // allow avatars to move in cinematic mode. defaults to CCT_NONE
+  optional bool cinematic_camera_control = 5;                 // allow the camera to be rotated in cinematic mode. defaults to false
+}
+
+enum CinematicControlType {
+  CCT_NONE = 0;     // avatar cannot be moved while in cinematic mode
+  CCT_RELATIVE = 1; // avatar moves relative to the camera origin
+  CCT_TANK = 2;     // avatar moves like a tank: left/right rotate the player, forward/backward advance/retreat the player
 }

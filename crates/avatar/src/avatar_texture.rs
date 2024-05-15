@@ -94,6 +94,8 @@ impl<'w, 's> PhotoBooth<'w, 's> {
                     force: Vec2::ZERO,
                     velocity: Vec3::ZERO,
                     ground_height: 0.0,
+                    tank: false,
+                    rotate: 0.0,
                 },
                 BoothAvatar,
             ))

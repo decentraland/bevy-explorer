@@ -141,6 +141,8 @@ pub struct AvatarDynamicState {
     pub force: Vec2,
     pub velocity: Vec3,
     pub ground_height: f32,
+    pub tank: bool,
+    pub rotate: f32,
 }
 
 // send received avatar info into scenes
