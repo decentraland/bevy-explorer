@@ -52,7 +52,8 @@ pub fn update_camera(
     if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.clone() {
         if cinematic_initial.is_none() {
             *cinematic_initial = Some((options.yaw, options.pitch, options.roll, options.distance));
-            (options.yaw, options.pitch, options.roll) = (0.0, 0.0, 0.0);
+            let rotation = cine.origin.to_scale_rotation_translation().1;
+            (options.yaw, options.pitch, options.roll) = rotation.to_euler(EulerRot::YXZ);
         }
         allow_cam_move = cine.camera_control;
         allow_cam_distance = false;
@@ -155,8 +156,8 @@ pub fn update_camera_position(
     let mut target_transform = *camera_transform;
 
     if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.as_ref() {
-        target_transform = cine.origin.compute_transform();
-        target_transform.rotation *=
+        target_transform.translation = cine.origin.translation();
+        target_transform.rotation =
             Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
     } else {
         let distance = match options.scene_override {
