@@ -14,9 +14,7 @@ use scene_runner::{
 };
 use tween::SystemTween;
 
-use crate::CursorLocked;
-
-static TRANSITION_TIME: f32 = 0.5;
+use crate::{CursorLocked, TRANSITION_TIME};
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn update_camera(

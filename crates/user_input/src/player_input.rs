@@ -9,11 +9,15 @@ use avatar::AvatarDynamicState;
 use dcl_component::proto_components::sdk::components::common::InputAction;
 use input_manager::InputManager;
 
+use crate::TRANSITION_TIME;
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub(crate) fn update_user_velocity(
     camera: Query<(&Transform, &PrimaryCamera)>,
     mut player: Query<(&Transform, &mut AvatarDynamicState, &PrimaryUser)>,
     input: InputManager,
+    mut tankiness: Local<f32>,
+    time: Res<Time>,
 ) {
     let (Ok((player_transform, mut dynamic_state, user)), Ok((camera_transform, options))) =
         (player.get_single_mut(), camera.get_single())
@@ -57,6 +61,14 @@ pub(crate) fn update_user_velocity(
 
     dynamic_state.force = Vec2::ZERO;
 
+    if rotate {
+        *tankiness = (*tankiness + time.delta_seconds() / TRANSITION_TIME).min(1.0);
+        dynamic_state.tank = true;
+    } else {
+        *tankiness = (*tankiness - time.delta_seconds() / TRANSITION_TIME).max(0.0);
+        dynamic_state.tank = false;
+    }
+
     if axis_input != Vec2::ZERO {
         let max_speed = if !input.is_down(InputAction::IaWalk) {
             user.run_speed
@@ -74,14 +86,9 @@ pub(crate) fn update_user_velocity(
             .normalize_or_zero();
 
         let mut axis_output = forward * axis_input.y;
-        if rotate {
-            dynamic_state.tank = true;
-            dynamic_state.rotate = axis_input.x;
-        } else {
-            dynamic_state.tank = false;
-            dynamic_state.rotate = 0.0;
-            axis_output += right * axis_input.x;
-        }
+        dynamic_state.rotate = -axis_input.x * *tankiness * 3.0;
+        axis_output += right * axis_input.x * (1.0 - *tankiness);
+
         dynamic_state.force = axis_output * max_speed;
     }
 }

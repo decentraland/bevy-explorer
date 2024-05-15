@@ -21,6 +21,8 @@ use self::{
     player_input::update_user_velocity,
 };
 
+static TRANSITION_TIME: f32 = 0.5;
+
 // plugin to pass user input messages to the scene
 pub struct UserInputPlugin;
 
