@@ -103,6 +103,7 @@ pub fn setup_primary_profile(
                         base_url: profile.base_url.clone(),
                     },
                 )),
+                protocol_version: 999,
             };
             for transport in &transports {
                 let _ = transport
@@ -208,6 +209,7 @@ fn request_missing_profiles(
                         profile_version: player.profile_version,
                     },
                 )),
+                protocol_version: 999,
             };
             match transport
                 .sender
@@ -270,6 +272,7 @@ pub fn process_profile_events(
                                     base_url: current_profile.base_url.clone(),
                                 },
                             )),
+                            protocol_version: 999,
                         };
                         let _ = transport
                             .sender

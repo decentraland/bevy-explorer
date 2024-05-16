@@ -310,6 +310,7 @@ async fn archipelago_handler_inner(
         while let Some(next) = receiver.recv().await {
             let Ok(rfc4::Packet {
                 message: Some(rfc4::packet::Message::Position(pos)),
+                ..
             }) = DclReader::new(&next.data).read()
             else {
                 // skip non-position messages

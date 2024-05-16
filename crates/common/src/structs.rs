@@ -16,6 +16,9 @@ pub struct PrimaryUser {
     pub gravity: f32,
     pub jump_height: f32,
     pub fall_speed: f32,
+    pub control_type: AvatarControl,
+    pub turn_speed: f32,
+    pub block_weighted_movement: bool,
 }
 
 impl Default for PrimaryUser {
@@ -27,6 +30,9 @@ impl Default for PrimaryUser {
             gravity: -10.0,
             jump_height: 1.25,
             fall_speed: -15.0,
+            control_type: AvatarControl::Relative,
+            turn_speed: PI,
+            block_weighted_movement: false,
         }
     }
 }
@@ -93,15 +99,19 @@ pub struct PrimaryCamera {
     pub scene_override: Option<CameraOverride>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct CinematicSettings {
     pub origin: GlobalTransform,
-    pub avatar_control: CinematicControl,
-    pub camera_control: bool,
+    pub allow_manual_rotation: bool,
+    pub yaw_range: Option<f32>,
+    pub pitch_range: Option<f32>,
+    pub roll_range: Option<f32>,
+    pub zoom_min: Option<f32>,
+    pub zoom_max: Option<f32>,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub enum CinematicControl {
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum AvatarControl {
     None,
     Relative,
     Tank,

@@ -839,6 +839,7 @@ fn send_scene_messages(
                 scene_id: hash.0.clone(),
                 data: data.clone(),
             })),
+            protocol_version: 999,
         };
 
         for transport in transports.iter() {

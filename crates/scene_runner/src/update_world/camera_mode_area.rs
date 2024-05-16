@@ -7,9 +7,7 @@ use common::{
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{
-    proto_components::sdk::components::{
-        common::CameraType, CinematicControlType, PbCameraModeArea,
-    },
+    proto_components::sdk::components::{common::CameraType, PbCameraModeArea},
     SceneComponentId, SceneEntityId,
 };
 
@@ -121,12 +119,12 @@ fn update_camera_mode_area(
                     camera.scene_override = Some(CameraOverride::Distance(1.0))
                 }
                 CameraType::CtCinematic => {
-                    let Some(target_entity) =
-                        area.0.cinematic_entity.map(SceneEntityId::from_proto_u32)
-                    else {
-                        warn!("no target entity");
+                    let Some(cinematic_settings) = area.0.cinematic_settings.as_ref() else {
+                        warn!("no cinematic settings");
                         return;
                     };
+                    let target_entity =
+                        SceneEntityId::from_proto_u32(cinematic_settings.camera_entity);
                     let Ok(ctx) = contexts.get(scene_ent.root) else {
                         warn!("no scene");
                         return;
@@ -141,18 +139,14 @@ fn update_camera_mode_area(
                     };
                     camera.scene_override = Some(CameraOverride::Cinematic(CinematicSettings {
                         origin,
-                        avatar_control: match area.0.cinematic_avatar_control() {
-                            CinematicControlType::CctNone => {
-                                common::structs::CinematicControl::None
-                            }
-                            CinematicControlType::CctRelative => {
-                                common::structs::CinematicControl::Relative
-                            }
-                            CinematicControlType::CctTank => {
-                                common::structs::CinematicControl::Tank
-                            }
-                        },
-                        camera_control: area.0.cinematic_camera_control(),
+                        allow_manual_rotation: cinematic_settings
+                            .allow_manual_rotation
+                            .unwrap_or_default(),
+                        yaw_range: cinematic_settings.yaw_range,
+                        pitch_range: cinematic_settings.pitch_range,
+                        roll_range: cinematic_settings.roll_range,
+                        zoom_min: cinematic_settings.zoom_min,
+                        zoom_max: cinematic_settings.zoom_max,
                     }));
                 }
             }

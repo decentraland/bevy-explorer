@@ -417,6 +417,9 @@ pub fn process_transport_updates(
                 }
             }
             PlayerMessage::PlayerData(Message::Voice(_)) => (),
+            PlayerMessage::PlayerData(Message::Movement(_)) => (),
+            PlayerMessage::PlayerData(Message::PlayerEmote(_)) => (),
+            PlayerMessage::PlayerData(Message::SceneEmote(_)) => (),
         }
     }
 }

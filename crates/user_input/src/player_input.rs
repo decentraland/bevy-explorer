@@ -2,28 +2,38 @@ use bevy::{math::Vec3Swizzles, prelude::*};
 
 use common::{
     dynamics::PLAYER_GROUND_THRESHOLD,
-    structs::{CameraOverride, CinematicControl, PrimaryCamera, PrimaryUser},
+    structs::{AvatarControl, PrimaryCamera, PrimaryUser},
 };
 
 use avatar::AvatarDynamicState;
 use dcl_component::proto_components::sdk::components::common::InputAction;
 use input_manager::InputManager;
+use scene_runner::update_world::avatar_modifier_area::PlayerModifiers;
 
 use crate::TRANSITION_TIME;
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub(crate) fn update_user_velocity(
-    camera: Query<(&Transform, &PrimaryCamera)>,
-    mut player: Query<(&Transform, &mut AvatarDynamicState, &PrimaryUser)>,
+    camera: Query<&Transform, With<PrimaryCamera>>,
+    mut player: Query<(
+        &Transform,
+        &mut AvatarDynamicState,
+        &PrimaryUser,
+        Option<&PlayerModifiers>,
+    )>,
     input: InputManager,
     mut tankiness: Local<f32>,
     time: Res<Time>,
 ) {
-    let (Ok((player_transform, mut dynamic_state, user)), Ok((camera_transform, options))) =
+    let (Ok((player_transform, mut dynamic_state, user, maybe_modifiers)), Ok(camera_transform)) =
         (player.get_single_mut(), camera.get_single())
     else {
         return;
     };
+
+    let user = maybe_modifiers
+        .map(|m| m.combine(user))
+        .unwrap_or_else(|| user.clone());
 
     // Handle key input
     if input.is_down(InputAction::IaJump)
@@ -48,18 +58,14 @@ pub(crate) fn update_user_velocity(
     }
 
     // Apply movement update
-    let (relative_transform, rotate) =
-        if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.as_ref() {
-            match cine.avatar_control {
-                CinematicControl::None => return,
-                CinematicControl::Relative => (camera_transform, false),
-                CinematicControl::Tank => (player_transform, true),
-            }
-        } else {
-            (camera_transform, false)
-        };
+    let (relative_transform, rotate) = match user.control_type {
+        AvatarControl::None => return,
+        AvatarControl::Relative => (camera_transform, false),
+        AvatarControl::Tank => (player_transform, true),
+    };
 
     dynamic_state.force = Vec2::ZERO;
+    dynamic_state.rotate = 0.0;
 
     if rotate {
         *tankiness = (*tankiness + time.delta_seconds() / TRANSITION_TIME).min(1.0);
@@ -70,7 +76,7 @@ pub(crate) fn update_user_velocity(
     }
 
     if axis_input != Vec2::ZERO {
-        let max_speed = if !input.is_down(InputAction::IaWalk) {
+        let max_speed = if !input.is_down(InputAction::IaWalk) || user.block_weighted_movement {
             user.run_speed
         } else {
             user.walk_speed

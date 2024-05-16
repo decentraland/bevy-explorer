@@ -20,19 +20,24 @@ option (common.ecs_component_id) = 1071;
 // Note that, while commonly used to delineate a 2D area in a scene (hence the name), the region
 // is actually a 3D volume.
 //
-// When mode is set to CtCinematic, the optional cinematic_entity must also be provided. The  
-// Position and Rotation components of the cinematic_entity's Transform then define the origin and
-// direction of the cinematic camera.
+// When mode is set to CtCinematic, the cinematic_settings field must also be provided.
 message PBCameraModeArea {
   decentraland.common.Vector3 area = 1;                       // the 3D size of the region
   common.CameraType mode = 2;                                 // the camera mode to enforce
-  optional uint32 cinematic_entity = 3;                       // entity that defines the cinematic camera transform. required when mode = CtCinematic
-  optional CinematicControlType cinematic_avatar_control = 4; // allow avatars to move in cinematic mode. defaults to CCT_NONE
-  optional bool cinematic_camera_control = 5;                 // allow the camera to be rotated in cinematic mode. defaults to false
+  optional CinematicSettings cinematic_settings = 3;
 }
 
-enum CinematicControlType {
-  CCT_NONE = 0;     // avatar cannot be moved while in cinematic mode
-  CCT_RELATIVE = 1; // avatar moves relative to the camera origin
-  CCT_TANK = 2;     // avatar moves like a tank: left/right rotate the player, forward/backward advance/retreat the player
+message CinematicSettings {
+  uint32 camera_entity = 1;           // Entity that defines the cinematic camera transform.
+                                      // Position -> camera's position
+                                      // Rotation -> camera's direction
+                                      // scale.z -> zoom level
+                                      // scale.x and scale.y -> unused
+  optional bool allow_manual_rotation = 2; // whether the user can move the camera's rotation. default false
+  optional float yaw_range = 3;       // how far the camera can rotate around the y-axis / look left/right, in radians. default unrestricted
+  optional float pitch_range = 4;     // how far the camera can rotate around the x-axis / look up-down, in radians. default unrestricted
+                                      // note: cameras can never look up/down further than Vec3::Y
+  optional float roll_range = 5;      // how far the camera can rotate around the z-axis / tilt, in radians. default unrestricted
+  optional float zoom_min = 6;        // minimum zoom level. must be greater than 0. defaults to the input zoom level
+  optional float zoom_max = 7;        // maximum zoom level. must be greater than 0. defaults to the input zoom level
 }

@@ -1,4 +1,4 @@
-use std::f32::consts::PI;
+use std::f32::consts::{FRAC_PI_4, PI};
 
 use bevy::{
     input::mouse::{MouseMotion, MouseWheel},
@@ -17,6 +17,16 @@ use tween::SystemTween;
 use crate::{CursorLocked, TRANSITION_TIME};
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+
+pub struct CinematicInitialData {
+    base_yaw: f32,
+    base_pitch: f32,
+    base_roll: f32,
+    base_distance: f32,
+    cinematic_transform: GlobalTransform,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn update_camera(
     time: Res<Time>,
     mut windows: Query<&mut Window>,
@@ -29,7 +39,7 @@ pub fn update_camera(
     mut locked_cursor_position: Local<Option<Vec2>>,
     accept_input: Res<AcceptInput>,
     mut cursor_locked: ResMut<CursorLocked>,
-    mut cinematic_initial: Local<Option<(f32, f32, f32, f32)>>,
+    mut cinematic_data: Local<Option<CinematicInitialData>>,
 ) {
     let dt = time.delta_seconds();
 
@@ -46,19 +56,62 @@ pub fn update_camera(
     }
 
     let mut allow_cam_move = true;
-    let mut allow_cam_distance = true;
+
+    let mut yaw_range = None;
+    let mut pitch_range = None;
+    let mut roll_range = None;
+    let mut zoom_range = None;
+    let mut roll_base = 0.0;
 
     // record/reset cinematic start state
     if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.clone() {
-        if cinematic_initial.is_none() {
-            *cinematic_initial = Some((options.yaw, options.pitch, options.roll, options.distance));
-            let rotation = cine.origin.to_scale_rotation_translation().1;
-            (options.yaw, options.pitch, options.roll) = rotation.to_euler(EulerRot::YXZ);
+        let (scale, rotation, _) = cine.origin.to_scale_rotation_translation();
+        let (cinematic_yaw, cinematic_pitch, cinematic_roll) = rotation.to_euler(EulerRot::YXZ);
+
+        match cinematic_data.as_mut() {
+            None => {
+                *cinematic_data = Some(CinematicInitialData {
+                    base_yaw: options.yaw,
+                    base_pitch: options.pitch,
+                    base_roll: options.roll,
+                    base_distance: options.distance,
+                    cinematic_transform: cine.origin,
+                });
+
+                (options.yaw, options.pitch, options.roll, options.distance) =
+                    (cinematic_yaw, cinematic_pitch, cinematic_roll, scale.z);
+            }
+            Some(ref mut existing) => {
+                if existing.cinematic_transform != cine.origin {
+                    // reset for updated transform
+                    (options.yaw, options.pitch, options.roll, options.distance) =
+                        (cinematic_yaw, cinematic_pitch, cinematic_roll, scale.z);
+                    existing.cinematic_transform = cine.origin;
+                }
+            }
         }
-        allow_cam_move = cine.camera_control;
-        allow_cam_distance = false;
-    } else if let Some(initial) = cinematic_initial.take() {
-        (options.yaw, options.pitch, options.roll, options.distance) = initial;
+
+        allow_cam_move = cine.allow_manual_rotation;
+        yaw_range = cine
+            .yaw_range
+            .map(|r| (cinematic_yaw - r..cinematic_yaw + r));
+        pitch_range = cine
+            .pitch_range
+            .map(|r| (cinematic_pitch - r..cinematic_pitch + r));
+        roll_range = cine
+            .roll_range
+            .map(|r| (cinematic_roll - r..cinematic_roll + r));
+        zoom_range = Some(
+            cine.zoom_min.unwrap_or(scale.z).max(0.3)..cine.zoom_max.unwrap_or(scale.z).min(100.0),
+        );
+        roll_base = cinematic_roll;
+    } else if let Some(initial) = cinematic_data.take() {
+        (options.yaw, options.pitch, options.roll, options.distance) = (
+            initial.base_yaw,
+            initial.base_pitch,
+            initial.base_roll,
+            initial.base_distance,
+        );
     }
 
     // Handle mouse input
@@ -111,27 +164,40 @@ pub fn update_camera(
                 options.roll += dt * 1.0;
             } else if key_input.pressed(options.key_roll_right) {
                 options.roll -= dt * 1.0;
-            } else if allow_cam_distance {
+            } else {
                 // decay roll if not in cinematic mode
-                if options.roll > 0.0 {
-                    options.roll = (options.roll - dt * 0.25).max(0.0);
+                if options.roll > roll_base {
+                    options.roll = (options.roll - dt * 0.25).max(roll_base);
                 } else {
-                    options.roll = (options.roll + dt * 0.25).min(0.0);
+                    options.roll = (options.roll + dt * 0.25).min(roll_base);
                 }
+            }
+            if let Some(roll_range) = roll_range {
+                options.roll = options.roll.clamp(roll_range.start, roll_range.end);
             }
         }
 
         options.pitch = (options.pitch - mouse_delta.y * options.sensitivity / 1000.0)
             .clamp(-PI / 2.1, PI / 2.1);
-        options.yaw -= mouse_delta.x * options.sensitivity / 1000.0;
+        if let Some(pitch_range) = pitch_range {
+            options.pitch = options.pitch.clamp(pitch_range.start, pitch_range.end);
+        }
 
-        if accept_input.mouse && allow_cam_distance {
+        options.yaw -= mouse_delta.x * options.sensitivity / 1000.0;
+        if let Some(yaw_range) = yaw_range {
+            options.yaw = options.yaw.clamp(yaw_range.start, yaw_range.end);
+        }
+
+        if accept_input.mouse {
             if let Some(event) = wheel_events.read().last() {
-                if event.y > 0.0 {
+                if (event.y > 0.0) == zoom_range.is_none() {
                     options.distance = 0f32.max((options.distance - 0.05) * 0.9);
-                } else if event.y < 0.0 {
+                } else {
                     options.distance = 100f32.min((options.distance / 0.9) + 0.05);
                 }
+            }
+            if let Some(zoom_range) = zoom_range {
+                options.distance = options.distance.clamp(zoom_range.start, zoom_range.end);
             }
         }
     }
@@ -143,6 +209,7 @@ pub fn update_camera_position(
         Entity,
         &mut Transform,
         &PrimaryCamera,
+        &mut Projection,
         Option<&mut SystemTween>,
     )>,
     mut player: Query<&Transform, (With<PrimaryUser>, Without<PrimaryCamera>)>,
@@ -150,8 +217,10 @@ pub fn update_camera_position(
     mut scene_colliders: Query<(&RendererSceneContext, &mut SceneColliderData)>,
     mut prev_override: Local<Option<CameraOverride>>,
 ) {
-    let (Ok(player_transform), Ok((camera_ent, mut camera_transform, options, maybe_tween))) =
-        (player.get_single_mut(), camera.get_single_mut())
+    let (
+        Ok(player_transform),
+        Ok((camera_ent, mut camera_transform, options, mut projection, maybe_tween)),
+    ) = (player.get_single_mut(), camera.get_single_mut())
     else {
         return;
     };
@@ -162,7 +231,24 @@ pub fn update_camera_position(
         target_transform.translation = cine.origin.translation();
         target_transform.rotation =
             Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
+        let target_fov = FRAC_PI_4 / options.distance;
+        let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
+        else {
+            panic!();
+        };
+        if *fov != target_fov {
+            *fov = target_fov;
+        }
     } else {
+        let target_fov = FRAC_PI_4;
+        let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
+        else {
+            panic!();
+        };
+        if *fov != target_fov {
+            *fov = target_fov;
+        }
+
         let distance = match options.scene_override {
             Some(CameraOverride::Distance(d)) => d,
             _ => options.distance,

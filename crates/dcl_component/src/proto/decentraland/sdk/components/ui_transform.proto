@@ -145,4 +145,5 @@ message PBUiTransform {
   float padding_bottom = 51;
   
   optional PointerFilterMode pointer_filter = 52; // default: PointerFilterMode.PFM_NONE
+  optional float opacity = 53; // default: 1
 }

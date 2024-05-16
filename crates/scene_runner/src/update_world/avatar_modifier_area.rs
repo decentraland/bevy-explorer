@@ -3,12 +3,14 @@ use bevy::{prelude::*, utils::HashMap};
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     sets::SceneSets,
-    structs::PrimaryUser,
+    structs::{AvatarControl, PrimaryUser},
 };
 use comms::global_crdt::ForeignPlayer;
 use dcl::interface::ComponentPosition;
 use dcl_component::{
-    proto_components::sdk::components::{AvatarModifierType, PbAvatarModifierArea},
+    proto_components::sdk::components::{
+        AvatarControlType, AvatarModifierType, PbAvatarModifierArea,
+    },
     SceneComponentId,
 };
 use wallet::Wallet;
@@ -51,6 +53,31 @@ impl Plugin for AvatarModifierAreaPlugin {
 pub struct PlayerModifiers {
     pub hide: bool,
     pub hide_profile: bool,
+    pub walk_speed: Option<f32>,
+    pub run_speed: Option<f32>,
+    pub friction: Option<f32>,
+    pub gravity: Option<f32>,
+    pub jump_height: Option<f32>,
+    pub fall_speed: Option<f32>,
+    pub control_type: Option<AvatarControl>,
+    pub turn_speed: Option<f32>,
+    pub block_weighted_movement: bool,
+}
+
+impl PlayerModifiers {
+    pub fn combine(&self, user: &PrimaryUser) -> PrimaryUser {
+        PrimaryUser {
+            walk_speed: self.walk_speed.unwrap_or(user.walk_speed),
+            run_speed: self.run_speed.unwrap_or(user.run_speed),
+            friction: self.friction.unwrap_or(user.friction),
+            gravity: self.gravity.unwrap_or(user.gravity),
+            jump_height: self.jump_height.unwrap_or(user.jump_height),
+            fall_speed: self.fall_speed.unwrap_or(user.fall_speed),
+            control_type: self.control_type.unwrap_or(user.control_type),
+            turn_speed: self.turn_speed.unwrap_or(user.turn_speed),
+            block_weighted_movement: self.block_weighted_movement || user.block_weighted_movement,
+        }
+    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -83,8 +110,7 @@ fn update_avatar_modifier_area(
             continue;
         };
 
-        modifiers.hide = false;
-        modifiers.hide_profile = false;
+        *modifiers = PlayerModifiers::default();
 
         let containing_scenes = containing_scene.get(player);
         let player_position = gt.translation();
@@ -132,6 +158,26 @@ fn update_avatar_modifier_area(
                     .0
                     .modifiers
                     .contains(&(AvatarModifierType::AmtDisablePassports as i32));
+
+                if let Some(ref movement) = area.0.movement_settings {
+                    if movement.control_mode.is_some() {
+                        modifiers.control_type = Some(match movement.control_mode() {
+                            AvatarControlType::CctNone => AvatarControl::None,
+                            AvatarControlType::CctRelative => AvatarControl::Relative,
+                            AvatarControlType::CctTank => AvatarControl::Tank,
+                        })
+                    }
+
+                    modifiers.run_speed = movement.run_speed;
+                    modifiers.friction = movement.friction;
+                    modifiers.gravity = movement.gravity;
+                    modifiers.jump_height = movement.jump_height;
+                    modifiers.fall_speed = movement.max_fall_speed;
+                    modifiers.turn_speed = movement.turn_speed;
+                    modifiers.walk_speed = movement.walk_speed;
+                    modifiers.block_weighted_movement =
+                        !(movement.allow_weighted_movement.unwrap_or(true));
+                }
             }
         }
     }

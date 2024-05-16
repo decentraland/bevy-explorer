@@ -14,7 +14,11 @@ message Packet {
     Chat chat = 5;
     Scene scene = 6;
     Voice voice = 7;
+    Movement movement = 8;
+    PlayerEmote player_emote = 9;
+    SceneEmote scene_emote = 10;
   }
+  uint32 protocol_version = 11;
 }
 
 message Position {
@@ -29,6 +33,39 @@ message Position {
   float rotation_y = 7;
   float rotation_z = 8;
   float rotation_w = 9;
+}
+
+message Movement {
+  // command number
+  float timestamp = 1;
+  // world position
+  float position_x = 2;
+  float position_y = 3;
+  float position_z = 4;
+  // velocity
+  float velocity_x = 5;
+  float velocity_y = 6;
+  float velocity_z = 7;
+  // animations
+  float movement_blend_value = 8;
+  float slide_blend_value = 9;
+  bool is_grounded = 10;
+  bool is_jumping = 11;
+  bool is_long_jump = 12;
+  bool is_long_fall = 13;
+  bool is_falling = 14;
+
+  bool is_stunned = 15;
+}
+
+message PlayerEmote {
+  uint32 incremental_id = 1;
+  string urn = 2;
+}
+
+message SceneEmote {
+  string scene_entity_id = 1;
+  string source = 2;
 }
 
 message AnnounceProfileVersion {

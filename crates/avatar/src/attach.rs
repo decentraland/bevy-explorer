@@ -81,6 +81,13 @@ pub fn update_attached(
             AvatarAnchorPointType::AaptNameTag => attach_points.nametag,
             AvatarAnchorPointType::AaptLeftHand => attach_points.left_hand,
             AvatarAnchorPointType::AaptRightHand => attach_points.right_hand,
+            _ => {
+                warn!(
+                    "unimplemented attach point {:?}",
+                    attach.0.anchor_point_id()
+                );
+                continue;
+            }
         };
 
         commands
