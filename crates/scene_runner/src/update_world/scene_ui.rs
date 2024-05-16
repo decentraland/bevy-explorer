@@ -128,6 +128,7 @@ pub struct UiTransform {
     position: UiRect,
     margin: UiRect,
     padding: UiRect,
+    opacity: f32,
     // debug: PbUiTransform,
 }
 
@@ -259,6 +260,7 @@ impl From<PbUiTransform> for UiTransform {
                 padding_bottom,
                 Val::Px(0.0)
             ),
+            opacity: value.opacity.unwrap_or(1.0),
         }
     }
 }
@@ -609,7 +611,7 @@ fn layout_scene_ui(
                         DespawnWith(ent),
                     ))
                     .id();
-                processed_nodes.insert(SceneEntityId::ROOT, Some(root));
+                processed_nodes.insert(SceneEntityId::ROOT, (Some(root), 1.0));
 
                 let mut modified = true;
                 while modified && !unprocessed_uis.is_empty() {
@@ -631,13 +633,13 @@ fn layout_scene_ui(
                             }
 
                             // if our parent is not added (or is hidden), we can't process this node
-                            let Some(parent) = processed_nodes.get(&ui_transform.parent) else {
+                            let Some((parent, opacity)) = processed_nodes.get(&ui_transform.parent) else {
                                 return true;
                             };
 
                             // if we're hidden or our parent is hidden, bail here
                             if parent.is_none() || ui_transform.display == Display::None {
-                                processed_nodes.insert(*scene_id, None);
+                                processed_nodes.insert(*scene_id, (None, *opacity));
                                 modified = true;
                                 return false;
                             }
@@ -673,6 +675,8 @@ fn layout_scene_ui(
                             };
                             debug!("{:?} style: {:?}", scene_id, ui_transform);
                             debug!("{:?}, {:?}, {:?}, {:?}, {:?}", maybe_background, maybe_text, maybe_pointer_events, maybe_ui_input, maybe_dropdown);
+                            let total_opacity = opacity * ui_transform.opacity;
+                            let opacity_array = [1.0, 1.0, 1.0, total_opacity];
                             commands.entity(parent).with_children(|commands| {
                                 let ent_cmds = &mut commands.spawn(NodeBundle::default());
                                 // we ues entity id as zindex. this is rubbish but mimics the foundation behaviour for multiple overlapping root nodes.
@@ -691,6 +695,7 @@ fn layout_scene_ui(
                                             match texture_mode {
                                                 BackgroundTextureMode::NineSlices(rect) => {
                                                     ent_cmds.remove::<BackgroundColor>();
+                                                    let background_color = background.color.map(|c| {c * opacity_array});
                                                     ent_cmds.with_children(|c| {
                                                         c.spawn((
                                                             NodeBundle {
@@ -706,7 +711,7 @@ fn layout_scene_ui(
                                                             Ui9Slice{
                                                                 image: image.image,
                                                                 center_region: rect.into(),
-                                                                tint: background.color.map(BackgroundColor),
+                                                                tint: background_color.map(BackgroundColor),
                                                             },
                                                         ));
                                                     });
@@ -723,6 +728,7 @@ fn layout_scene_ui(
                                                             },
                                                             ..Default::default()
                                                         }).with_children(|c| {
+                                                            let color = background.color.unwrap_or(Color::WHITE) * opacity_array;
                                                             c.spawn((
                                                                 NodeBundle{
                                                                     style: Style {
@@ -733,7 +739,7 @@ fn layout_scene_ui(
                                                                     },
                                                                     ..Default::default()
                                                                 },
-                                                                stretch_uvs.add(StretchUvMaterial{ image: image.image.clone(), uvs: *uvs, color: background.color.unwrap_or(Color::WHITE).as_linear_rgba_f32().into() })
+                                                                stretch_uvs.add(StretchUvMaterial{ image: image.image.clone(), uvs: *uvs, color: color.as_linear_rgba_f32().into() })
                                                             ));
                                                         });
                                                     });
@@ -781,6 +787,7 @@ fn layout_scene_ui(
                                                                         flip_x: false,
                                                                         flip_y: false,
                                                                     },
+                                                                    background_color: Color::rgba(1.0, 1.0, 1.0, total_opacity).into(),
                                                                     ..Default::default()
                                                                 });
                                                                 c.spacer();
@@ -806,7 +813,7 @@ fn layout_scene_ui(
                                     let text = make_text_section(
                                         ui_text.text.as_str(),
                                         ui_text.font_size * 1.3,
-                                        ui_text.color,
+                                        ui_text.color * total_opacity,
                                         ui_text.font,
                                         ui_text.h_align,
                                         false,
@@ -1032,7 +1039,7 @@ fn layout_scene_ui(
                                 }
 
                                 ent_cmds.insert(style);
-                                processed_nodes.insert(*scene_id, Some(ent_cmds.id()));
+                                processed_nodes.insert(*scene_id, (Some(ent_cmds.id()), total_opacity));
                             });
 
                             // mark to continue and remove from unprocessed
