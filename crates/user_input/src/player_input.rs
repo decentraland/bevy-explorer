@@ -92,7 +92,7 @@ pub(crate) fn update_user_velocity(
             .normalize_or_zero();
 
         let mut axis_output = forward * axis_input.y;
-        dynamic_state.rotate = -axis_input.x * *tankiness * 3.0;
+        dynamic_state.rotate = -axis_input.x * *tankiness * user.turn_speed;
         axis_output += right * axis_input.x * (1.0 - *tankiness);
 
         dynamic_state.force = axis_output * max_speed;
