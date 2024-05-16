@@ -74,7 +74,7 @@ fn update_camera_mode_area(
                 PLAYER_COLLIDER_RADIUS,
                 PLAYER_COLLIDER_HEIGHT,
                 PLAYER_COLLIDER_RADIUS,
-            );
+            ) * if area.0.use_collider_range.unwrap_or(true) { 1.0 } else { 0.0 };
 
         // check bounds
         player_relative_position.clamp(-area, area) == player_relative_position

@@ -25,6 +25,7 @@ message PBCameraModeArea {
   decentraland.common.Vector3 area = 1;                       // the 3D size of the region
   common.CameraType mode = 2;                                 // the camera mode to enforce
   optional CinematicSettings cinematic_settings = 3;
+  optional bool use_collider_range = 4;                       // if true, the player will be considered inside the area when they are within 0.3m of the area. default true
 }
 
 message CinematicSettings {

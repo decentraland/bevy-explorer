@@ -24,6 +24,7 @@ message PBAvatarModifierArea {
   repeated string exclude_ids = 2;           // user IDs that can enter and remain unaffected
   repeated AvatarModifierType modifiers = 3; // list of modifiers to apply
   optional AvatarMovementSettings movement_settings = 4;
+  optional bool use_collider_range = 5;      // if true, the player will be considered inside the area when they are within 0.3m of the area. default true
 }
 
 // AvatarModifierType is an effect that should be applied to avatars inside the region.
@@ -42,7 +43,7 @@ message AvatarMovementSettings {
   optional float max_fall_speed = 6;         // max fall speed in m/s. should normally be negative
   optional float turn_speed = 7;             // speed the player turns in tank mode, in radians/s
   optional float walk_speed = 8;             // speed the player walks at, in m/s
-  optional bool allow_weighted_movement = 9; // wherther to allow player to move at a slower speed (e.g. with a walk-key or when using a gamepad/joystick). defaults to true  
+  optional bool allow_weighted_movement = 9; // whether to allow player to move at a slower speed (e.g. with a walk-key or when using a gamepad/joystick). defaults to true  
 }
 
 enum AvatarControlType {
