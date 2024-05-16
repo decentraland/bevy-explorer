@@ -329,7 +329,7 @@ fn animate(
                     (damped_velocity * (Vec3::X + Vec3::Z)).dot(gt.forward());
 
                 if damped_velocity_len.abs() > 0.1 {
-                    if damped_velocity_len.abs() < 2.0 {
+                    if damped_velocity_len.abs() <= 2.5 {
                         ActiveEmote {
                             urn: EmoteUrn::new("walk").unwrap(),
                             speed: directional_velocity_len / 1.5,
