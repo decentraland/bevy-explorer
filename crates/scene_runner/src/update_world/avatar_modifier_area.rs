@@ -137,7 +137,11 @@ fn update_avatar_modifier_area(
                         PLAYER_COLLIDER_RADIUS,
                         PLAYER_COLLIDER_HEIGHT,
                         PLAYER_COLLIDER_RADIUS,
-                    ) * if area.0.use_collider_range.unwrap_or(true) { 1.0 } else { 0.0 };
+                    ) * if area.0.use_collider_range.unwrap_or(true) {
+                        1.0
+                    } else {
+                        0.0
+                    };
 
                 // check bounds
                 if player_relative_position.clamp(-region, region) != player_relative_position {
