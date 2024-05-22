@@ -1,0 +1,10 @@
+[package]
+name = "analytics"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
