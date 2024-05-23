@@ -1,10 +1,12 @@
+use serde::Serialize;
+
 #[derive(Serialize)]
 pub struct SegmentMetricEventBody {
+    #[serde(rename = "type")]
+    r#type: String,
     event: String,
     #[serde(rename = "userId")]
     user_id: String,
-    #[serde(rename = "writeKey")]
-    write_key: String,
     properties: serde_json::Value,
 }
 
@@ -12,19 +14,33 @@ pub struct SegmentMetricEventBody {
 // Same for all events sent from the explorer
 pub struct SegmentEventCommonExplorerFields {
     // User’s wallet id, even for guests.
-    dcl_eth_address: String,
+    pub dcl_eth_address: String,
     // If the user is a guest or not.
-    dcl_is_guest: bool,
+    pub dcl_is_guest: bool,
     // Realm where the user is connected.
-    realm: String,
+    pub realm: String,
     // Current user position.
-    position: String,
+    pub position: String,
     // What type of client was used to render the world (Web/Native/VR)
-    dcl_renderer_type: String,
+    pub dcl_renderer_type: String,
     // Explorer’s unique session id.
-    session_id: String,
+    pub session_id: String,
     // Explorer’s release used.
-    renderer_version: String,
+    pub renderer_version: String,
+}
+
+impl SegmentEventCommonExplorerFields {
+    pub fn new(session_id: String) -> Self {
+        Self {
+            dcl_eth_address: "".into(),
+            dcl_is_guest: true,
+            realm: "".into(),
+            position: "".into(),
+            dcl_renderer_type: "dao-bevy".into(),
+            session_id,
+            renderer_version: env!("BEVY_EXPLORER_VERSION").into(),
+        }
+    }
 }
 
 pub enum SegmentEvent {
@@ -38,49 +54,50 @@ pub enum SegmentEvent {
 #[derive(Serialize)]
 pub struct SegmentEventPerformanceMetrics {
     // Total number of frames measured for this event.
-    samples: u32,
+    pub samples: u32,
     // Total length of the performance report.
-    total_time: f32,
+    pub total_time: f32,
     // Amount of hiccups in 1000 frames.
-    hiccups_in_thousand_frames: u32,
+    pub hiccups_in_thousand_frames: u32,
     // Total time length of hiccups measured in seconds.
-    hiccups_time: f32,
+    pub hiccups_time: f32,
     // Minimum delta (difference) between frames in milliseconds
-    min_frame_time: f32,
+    pub min_frame_time: f32,
     // Maximum delta (difference) between frames in milliseconds
-    max_frame_time: f32,
+    pub max_frame_time: f32,
     // Average delta (difference) between frames in milliseconds
-    mean_frame_time: f32,
+    pub mean_frame_time: f32,
     // Median delta (difference) between frames in milliseconds
-    median_frame_time: f32,
+    pub median_frame_time: f32,
     // Percentile 1 of the delta (difference) between frames in milliseconds
-    p1_frame_time: f32,
+    pub p1_frame_time: f32,
     // Percentile 5 of the delta (difference) between frames in milliseconds
-    p5_frame_time: f32,
+    pub p5_frame_time: f32,
     // Percentile 10 of the delta (difference) between frames in milliseconds
-    p10_frame_time: f32,
+    pub p10_frame_time: f32,
     // Percentile 20 of the delta (difference) between frames in milliseconds
-    p20_frame_time: f32,
+    pub p20_frame_time: f32,
     // Percentile 50 of the delta (difference) between frames in milliseconds
-    p50_frame_time: f32,
+    pub p50_frame_time: f32,
     // Percentile 75 of the delta (difference) between frames in milliseconds
-    p75_frame_time: f32,
+    pub p75_frame_time: f32,
     // Percentile 80 of the delta (difference) between frames in milliseconds
-    p80_frame_time: f32,
+    pub p80_frame_time: f32,
     // Percentile 90 of the delta (difference) between frames in milliseconds
-    p90_frame_time: f32,
+    pub p90_frame_time: f32,
     // Percentile 95 of the delta (difference) between frames in milliseconds
-    p95_frame_time: f32,
+    pub p95_frame_time: f32,
     // Percentile 99 of the delta (difference) between frames in milliseconds
-    p99_frame_time: f32,
+    pub p99_frame_time: f32,
     // How many users where nearby the current user
-    player_count: u32,
+    pub player_count: i32,
     // Javascript heap memory used by the scenes in kilo bytes
-    used_jsheap_size: u32,
+    pub used_jsheap_size: i32,
     // Memory used only by the explorer in kilo bytes
-    memory_usage: u32,
+    pub memory_usage: i32,
 }
 
+#[derive(Serialize)]
 pub struct SegmentEventExplorerError {
     // Generic or Fatal.
     error_type: String,
@@ -90,6 +107,7 @@ pub struct SegmentEventExplorerError {
     error_stack: String,
 }
 
+#[derive(Serialize)]
 pub struct SegmentEventExplorerSceneLoadTimes {
     // Unique hash for the scene.
     scene_hash: String,
@@ -100,11 +118,13 @@ pub struct SegmentEventExplorerSceneLoadTimes {
 }
 
 // TODO: maybe important what realm?
+#[derive(Serialize)]
 pub struct SegmentEventExplorerMoveToParcel {
     // Parcel where the user is coming from.
     old_parcel: String,
 }
 
+#[derive(Serialize)]
 pub struct SegmentEventSystemInfoReport {
     // Processor used by the user.
     processor_type: String,
@@ -118,13 +138,12 @@ pub struct SegmentEventSystemInfoReport {
     system_memory_size_mb: u32,
 }
 
-pub fn build_segment_event(
+pub fn build_segment_event_batch_item(
     user_id: String,
-    write_key: String,
-    common: SegmentEventCommonExplorerFields,
-    event: SegmentEvent,
+    common: &SegmentEventCommonExplorerFields,
+    event_data: SegmentEvent,
 ) -> SegmentMetricEventBody {
-    let (event, event_properties) = match event {
+    let (event_name, event_properties) = match event_data {
         SegmentEvent::PerformanceMetrics(event) => (
             "Performance Metrics".to_string(),
             serde_json::to_value(event).unwrap(),
@@ -147,54 +166,16 @@ pub fn build_segment_event(
         ),
     };
 
-    let properties = serde_json::to_value(event);
+    let mut properties = serde_json::to_value(common).unwrap();
     // merge specific event properties with common properties
-    for (k, v) in event_properties {
-        properties[k] = v;
+    for (k, v) in event_properties.as_object().unwrap().iter() {
+        properties[k] = v.clone();
     }
 
     SegmentMetricEventBody {
-        event,
+        r#type: "track".to_string(),
+        event: event_name,
         user_id,
-        write_key,
         properties,
     }
 }
-
-// {
-//     "event": "Performance Metrics",
-//     "userId": "019mr8mf4r",
-//     "writeKey": "syp64BBsJUd6SHQRKv6b9G4Lgt3ny8Q8",
-//     "properties": {
-//         "dcl_eth_address": "0xD3971C8E02d7237d5B6dAC8292a9C99291C35bB4",
-//         "dcl_is_guest": false,
-//         "realm": "main",
-//         "position": "0,0",
-//         "dcl_renderer_type": "dao-bevy",
-//         "session_id": "IWow2niw2311efioWE2NI23Ow432efn32iowe4334f",
-//         "renderer_version": "bevy-1.0.0-commit-6c9d340b612549c3a4152423f37dde2a8b441d5d",
-
-//         "samples": 1000,
-//         "total_time": 16.67,
-//         "hiccups_in_thousand_frames": 10,
-//         "hiccups_time": 0.15,
-//         "min_frame_time": 8.16,
-//         "max_frame_time": 120.1,
-//         "mean_frame_time": 16.67,
-//         "median_frame_time": 16.67,
-//         "p1_frame_time": 16.67,
-//         "p5_frame_time": 16.67,
-//         "p10_frame_time": 16.67,
-//         "p20_frame_time": 16.67,
-//         "p50_frame_time": 16.67,
-//         "p75_frame_time": 16.67,
-//         "p80_frame_time": 16.67,
-//         "p90_frame_time": 16.67,
-//         "p95_frame_time": 16.67,
-//         "p99_frame_time": 16.67,
-
-//         "player_count": 0,
-//         "used_jsheap_size": 564213124,
-//         "memory_usage": 1243156789
-//     }
-// }

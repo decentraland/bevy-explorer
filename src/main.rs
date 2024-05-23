@@ -2,6 +2,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 use std::{fs::File, io::Write, sync::OnceLock};
 
+use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use build_time::build_time_utc;
 use mimalloc::MiMalloc;
 
@@ -21,6 +22,7 @@ use bevy::{
     prelude::*,
     render::view::ColorGrading,
     text::TextSettings,
+    utils::uuid,
     window::WindowResolution,
 };
 use bevy_console::ConsoleCommand;
@@ -275,6 +277,13 @@ fn main() {
     if final_config.graphics.log_fps {
         app.add_plugins(LogDiagnosticsPlugin::default());
     }
+
+    // Analytics
+    app.add_plugins(MetricsPlugin);
+    app.insert_resource(SegmentConfig::new(
+        final_config.user_id.clone(),
+        uuid::Uuid::new_v4().to_string(),
+    ));
 
     app.insert_resource(PreviewMode {
         server: is_preview.then_some(final_config.server.clone()),

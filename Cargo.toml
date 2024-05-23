@@ -25,6 +25,7 @@ opt-level = 3
 members = ["crates/*"]
 
 [workspace.dependencies]
+analytics = { path="crates/analytics" }
 common = { path="crates/common" }
 avatar = { path="crates/avatar" }
 comms = { path="crates/comms" }
@@ -102,6 +103,7 @@ bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = 
 directories = "5"
 
 [dependencies]
+analytics = { workspace = true }
 common = { workspace = true }
 avatar = { workspace = true }
 comms = { workspace = true }
