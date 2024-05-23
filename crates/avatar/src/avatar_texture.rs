@@ -3,6 +3,10 @@ use std::{collections::VecDeque, path::PathBuf, sync::Arc};
 use anyhow::anyhow;
 use bevy::{
     core::FrameCount,
+    core_pipeline::{
+        bloom::BloomSettings,
+        prepass::{DepthPrepass, NormalPrepass},
+    },
     ecs::system::SystemParam,
     prelude::*,
     render::{
@@ -295,6 +299,12 @@ fn add_booth_camera(
                     ..Default::default()
                 },
                 render_layers,
+                BloomSettings {
+                    intensity: 0.15,
+                    ..BloomSettings::OLD_SCHOOL
+                },
+                DepthPrepass,
+                NormalPrepass,
             ))
             .id(),
         );

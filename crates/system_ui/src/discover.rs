@@ -407,7 +407,10 @@ fn update_page(
         return;
     };
 
-    let Ok((cont_ent, children)) = content.get(components.named("items")) else {
+    let Some((cont_ent, children)) = components
+        .get_named("items")
+        .and_then(|e| content.get(e).ok())
+    else {
         warn!("no content node");
         return;
     };

@@ -1,4 +1,9 @@
-use bevy::{core::FrameCount, prelude::*, render::render_resource::Extent3d, utils::HashMap};
+use bevy::{
+    core::FrameCount,
+    prelude::*,
+    render::render_resource::Extent3d,
+    utils::{HashMap, HashSet},
+};
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
@@ -12,6 +17,7 @@ use rapier3d_f64::{
     na::Isometry,
     prelude::{ColliderBuilder, SharedShape},
 };
+use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_RED};
 use scene_runner::{
     update_scene::pointer_results::{PointerTarget, UiPointerTarget},
     update_world::{
@@ -24,7 +30,7 @@ use ui_core::button::DuiButton;
 
 use crate::{
     avatar_texture::{LiveBooths, PhotoBooth, PROFILE_UI_RENDERLAYER},
-    AvatarShape,
+    AvatarMaterials, AvatarShape,
 };
 
 pub struct AvatarColliderPlugin;
@@ -108,16 +114,21 @@ fn update_avatar_collider_actions(
     mut colliders: ResMut<AvatarColliders>,
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
     windows: Query<&Window>,
-    accept_input: Res<AcceptInput>,
-    pointer_target: Res<PointerTarget>,
-    frame: Res<FrameCount>,
+    (accept_input, pointer_target, frame): (Res<AcceptInput>, Res<PointerTarget>, Res<FrameCount>),
     mut tooltips: ResMut<ToolTips>,
-    profiles: Query<(&ForeignPlayer, &UserProfile, &PlayerModifiers)>,
+    profiles: Query<(
+        &ForeignPlayer,
+        &UserProfile,
+        &PlayerModifiers,
+        Ref<AvatarMaterials>,
+    )>,
     mouse_input: Res<ButtonInput<MouseButton>>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
     mut photo_booth: PhotoBooth,
     dui: Res<DuiRegistry>,
+    mut hilighted_materials: Local<HashSet<AssetId<SceneMaterial>>>,
+    mut scene_materials: ResMut<Assets<SceneMaterial>>,
 ) {
     // gather any event receivers
     for sender in subscribe_events.read().filter_map(|ev| match ev {
@@ -171,6 +182,13 @@ fn update_avatar_collider_actions(
         .map(|info| (info.position.unwrap_or(camera_translation) - camera_translation).length())
         .unwrap_or(f32::MAX);
 
+    // reset old mats
+    for mat in hilighted_materials.drain() {
+        if let Some(mat) = scene_materials.get_mut(mat) {
+            mat.extension.data.flags &= !SCENE_MATERIAL_OUTLINE_RED;
+        }
+    }
+
     if let Some(avatar_target) = colliders.collider_data.cast_ray_nearest(
         frame.0,
         ray.origin,
@@ -180,21 +198,31 @@ fn update_avatar_collider_actions(
         true,
     ) {
         let avatar = colliders.lookup.get(&avatar_target.id).unwrap();
+        let Ok((player, profile, modifiers, materials)) = profiles.get(*avatar) else {
+            return;
+        };
+
+        // check modifier
+        if modifiers.hide_profile {
+            return;
+        }
+
+        // hilight selected mats
+        if materials.0 != *hilighted_materials {
+            for id in materials.0.iter() {
+                if let Some(mat) = scene_materials.get_mut(*id) {
+                    mat.extension.data.flags |= SCENE_MATERIAL_OUTLINE_RED;
+                    hilighted_materials.insert(*id);
+                }
+            }
+        }
+
         tooltips.0.insert(
             "avatar_pointer",
             vec![("Middle Click : Profile".to_owned(), true)],
         );
 
         if mouse_input.just_pressed(MouseButton::Middle) {
-            let Ok((player, profile, modifiers)) = profiles.get(*avatar) else {
-                return;
-            };
-
-            // check modifier
-            if modifiers.hide_profile {
-                return;
-            }
-
             // send event
             let event = json!({
                 "userId": format!("{:#x}", player.address),

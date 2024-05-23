@@ -22,7 +22,7 @@ use comms::{
 };
 use console::DoAddConsoleCommand;
 use ipfs::CurrentRealm;
-use scene_material::SceneMaterial;
+use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE};
 use scene_runner::{
     initialize_scene::{SceneLoading, TestingData, PARCEL_SIZE},
     renderer_context::RendererSceneContext,
@@ -648,12 +648,13 @@ fn entity_count(
     meshes: Res<Assets<Mesh>>,
     textures: Res<Assets<Image>>,
     ui_nodes: Query<(), With<Node>>,
-    scene_mats: Query<(), With<Handle<SceneMaterial>>>,
+    scene_mats: Query<&Handle<SceneMaterial>>,
     std_mats: Query<(), With<Handle<StandardMaterial>>>,
     mask_mats: Query<(), With<Handle<MaskMaterial>>>,
     uv_mats: Query<(), With<Handle<StretchUvMaterial>>>,
     bound_mats: Query<(), With<Handle<BoundedImageMaterial>>>,
     textshape_mats: Query<(), With<Handle<TextShapeMaterial>>>,
+    mats: Res<Assets<SceneMaterial>>,
 ) {
     if f.0 % 100 == 0 {
         let entities = q.iter().count();
@@ -662,13 +663,21 @@ fn entity_count(
         let ui_nodes = ui_nodes.iter().count();
         debug!("{entities} ents, {meshes} meshes, {textures} textures, {ui_nodes} ui nodes");
 
+        let outlined = scene_mats
+            .iter()
+            .filter(|m| {
+                mats.get(m.id())
+                    .map(|m| (m.extension.data.flags & SCENE_MATERIAL_OUTLINE) != 0)
+                    .unwrap_or(false)
+            })
+            .count();
         let scene_mats = scene_mats.iter().count();
         let std_mats = std_mats.iter().count();
         let mask_mats = mask_mats.iter().count();
         let uv_mats = uv_mats.iter().count();
         let bound_mats = bound_mats.iter().count();
         let textshape_mats = textshape_mats.iter().count();
-        debug!("scene {scene_mats}, std {std_mats}, mask: {mask_mats}, uv: {uv_mats}, bound: {bound_mats}, text: {textshape_mats}");
+        debug!("scene {scene_mats} ({outlined} outlined), std {std_mats}, mask: {mask_mats}, uv: {uv_mats}, bound: {bound_mats}, text: {textshape_mats}");
     }
 }
 

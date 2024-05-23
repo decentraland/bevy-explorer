@@ -60,7 +60,9 @@ impl AppSetting for SsaoSetting {
         }
 
         match (msaa_res.samples() > 1, self) {
-            (_, SsaoSetting::Off) | (true, _) => cmds.remove::<ScreenSpaceAmbientOcclusionBundle>(),
+            (_, SsaoSetting::Off) | (true, _) => {
+                cmds.remove::<ScreenSpaceAmbientOcclusionSettings>()
+            }
             (false, SsaoSetting::Low) => cmds.insert(ScreenSpaceAmbientOcclusionBundle {
                 settings: ScreenSpaceAmbientOcclusionSettings {
                     quality_level: bevy::pbr::ScreenSpaceAmbientOcclusionQualityLevel::Medium,

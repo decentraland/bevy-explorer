@@ -5,14 +5,21 @@
     pbr_bindings::{material, emissive_texture, emissive_sampler},
     pbr_types::STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT,
     mesh_view_bindings::{globals, view},
+    pbr_types,
 }
 #import "shaders/simplex.wgsl"::simplex_noise_3d
+#import "shaders/outline.wgsl"::apply_outline
 
 struct SceneBounds {
     bounds: vec4<f32>,
     distance: f32,
-    show_outside: u32,
+    flags: u32,
 }
+
+const SHOW_OUTSIDE: u32 = 1u;
+//const OUTLINE: u32 = 2u; // replaced by OUTLINE shader def
+const OUTLINE_RED: u32 = 4u;
+const OUTLINE_FORCE: u32 = 8u;
 
 @group(2) @binding(100)
 var<uniform> bounds: SceneBounds;
@@ -21,9 +28,21 @@ var<uniform> bounds: SceneBounds;
 fn fragment(
     in: VertexOutput,
     @builtin(front_facing) is_front: bool,
+#ifdef OUTLINE
+#ifdef MULTISAMPLED
+    @builtin(sample_index) sample_index: u32,
+#endif
+#endif
 ) -> FragmentOutput {
     // generate a PbrInput struct from the StandardMaterial bindings
     var pbr_input = pbr_input_from_standard_material(in, is_front);
+    var out: FragmentOutput;
+
+#ifdef OUTLINE
+#ifndef MULTISAMPLED
+    let sample_index = 0u;
+#endif
+#endif
 
     // apply emmissive multiplier
     // dcl uses default 2.0 intensity. we also override bevy_pbr base emissive rules so that 
@@ -68,14 +87,13 @@ fn fragment(
         }
     }
 
-    if should_discard && bounds.show_outside == 0 {
+    if should_discard && ((bounds.flags & SHOW_OUTSIDE) == 0) {
         discard;
     }
 
     // alpha discard
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
 
-    var out: FragmentOutput;
     // apply lighting
     if (pbr_input.material.flags & bevy_pbr::pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u {
         out.color = apply_pbr_lighting(pbr_input);
@@ -91,6 +109,18 @@ fn fragment(
             out.color = mix(out.color, vec4(10.0, 1.0, 0.0, 1.0), (outside_amt / 2.0 - noise) / 0.125);
         }
     }
+
+#ifdef OUTLINE
+    let alpha_mode = material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_RESERVED_BITS;
+    if (alpha_mode == pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_OPAQUE) || ((bounds.flags & OUTLINE_FORCE) != 0u) {
+        out.color = apply_outline(
+            in.position,
+            out.color, 
+            (bounds.flags & OUTLINE_RED) != 0u,
+            sample_index,
+        );
+    }
+#endif
 
     // apply in-shader post processing (fog, alpha-premultiply, and also tonemapping, debanding if the camera is non-hdr)
     // note this does not include fullscreen postprocessing effects like bloom.

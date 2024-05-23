@@ -848,6 +848,9 @@ fn spawn_scenes(
     }
 }
 
+#[derive(Component)]
+pub struct AvatarMaterials(pub HashSet<AssetId<SceneMaterial>>);
+
 // update materials and hide base parts
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn process_avatar(
@@ -967,10 +970,13 @@ fn process_avatar(
                         mat.base_color
                     };
 
-                    let new_mat = SceneMaterial::unbounded(StandardMaterial {
-                        base_color,
-                        ..mat.clone()
-                    });
+                    let new_mat = SceneMaterial::unbounded_outlined(
+                        StandardMaterial {
+                            base_color,
+                            ..mat.clone()
+                        },
+                        false,
+                    );
                     let instance_mat = instance_scene_materials
                         .entry(h_mat.clone_weak())
                         .or_insert_with(|| scene_materials.add(new_mat));
@@ -1015,8 +1021,8 @@ fn process_avatar(
                                 .remove::<Handle<SceneMaterial>>();
                         } else {
                             debug!("no mask for {suffix}");
-                            let material =
-                                scene_materials.add(SceneMaterial::unbounded(StandardMaterial {
+                            let material = scene_materials.add(SceneMaterial::unbounded_outlined(
+                                StandardMaterial {
                                     base_color: if no_mask_means_ignore_color {
                                         Color::WHITE
                                     } else {
@@ -1025,7 +1031,9 @@ fn process_avatar(
                                     base_color_texture: wearable.texture.clone(),
                                     alpha_mode: AlphaMode::Blend,
                                     ..Default::default()
-                                }));
+                                },
+                                true,
+                            ));
                             commands.entity(scene_ent).try_insert(material);
                         };
                         *vis = Visibility::Inherited;
@@ -1168,10 +1176,13 @@ fn process_avatar(
                             mat.base_color
                         };
 
-                        let new_mat = SceneMaterial::unbounded(StandardMaterial {
-                            base_color,
-                            ..mat.clone()
-                        });
+                        let new_mat = SceneMaterial::unbounded_outlined(
+                            StandardMaterial {
+                                base_color,
+                                ..mat.clone()
+                            },
+                            false,
+                        );
                         let instance_mat = instance_scene_materials
                             .entry(h_mat.clone_weak())
                             .or_insert_with(|| scene_materials.add(new_mat));
@@ -1211,6 +1222,12 @@ fn process_avatar(
         commands
             .entity(avatar_ent)
             .try_insert((AvatarProcessed, Visibility::Inherited));
+
+        commands
+            .entity(root_player_entity.get())
+            .insert(AvatarMaterials(
+                instance_scene_materials.values().map(|h| h.id()).collect(),
+            ));
 
         if def.render_layer.is_none() {
             // add nametag

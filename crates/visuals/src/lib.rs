@@ -1,6 +1,7 @@
 use std::f32::consts::{FRAC_PI_2, TAU};
 
 use bevy::{
+    core_pipeline::Skybox,
     pbr::{wireframe::WireframePlugin, DirectionalLightShadowMap},
     prelude::*,
     render::render_asset::RenderAssetBytesPerFrame,
@@ -80,21 +81,24 @@ fn daylight_cycle(
     mut atmosphere: AtmosphereMut<Nishita>,
     mut sun: Query<(&mut Transform, &mut DirectionalLight)>,
     time: Res<Time>,
-    camera: Query<&PrimaryCamera>,
+    mut camera: Query<(&PrimaryCamera, &mut Skybox)>,
     scene_distance: Res<SceneLoadDistance>,
 ) {
     let t = ((TAU * 0.15 + time.elapsed_seconds_wrapped() / 200.0) % TAU) * 0.6 - TAU * 0.05;
     let rotation = Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0);
     atmosphere.sun_position = rotation * Vec3::Z;
 
+    let Ok((camera, mut skybox)) = camera.get_single_mut() else {
+        return;
+    };
+    skybox.brightness = 4000.0 * t.sin().clamp(0.0, 0.5);
+
     if let Ok((mut light_trans, mut directional)) = sun.get_single_mut() {
         light_trans.rotation = rotation;
         directional.illuminance = t.sin().max(0.0).powf(2.0) * 10_000.0;
 
         if let Ok(mut fog) = fog.get_single_mut() {
-            let distance = scene_distance.load
-                + scene_distance.unload
-                + camera.get_single().map(|c| c.distance).unwrap_or_default() * 5.0;
+            let distance = scene_distance.load + scene_distance.unload + camera.distance * 5.0;
             match setting.graphics.fog {
                 FogSetting::Off => {
                     fog.falloff = FogFalloff::from_visibility_squared(distance * 200.0);
