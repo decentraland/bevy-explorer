@@ -68,6 +68,16 @@ use world_ui::WorldUiPlugin;
 
 static SESSION_LOG: OnceLock<String> = OnceLock::new();
 
+pub fn version() -> String {
+    format!(
+        "{}{}",
+        env!("BEVY_EXPLORER_VERSION"),
+        (env!("BEVY_EXPLORER_LOCAL_MODIFICATION") == "true")
+            .then_some(format!("-{}", build_time_utc!("%Y-%m-%d %H:%M")))
+            .unwrap_or_default()
+    )
+}
+
 fn main() {
     let session_time: chrono::DateTime<chrono::Utc> = std::time::SystemTime::now().into();
     let dirs = project_directories();
@@ -201,8 +211,8 @@ fn main() {
         false => bevy::window::PresentMode::AutoNoVsync,
     };
 
-    let bt = build_time_utc!("%Y-%m-%d %H:%M");
-    let version = format!("{VERSION} ({bt})");
+    let version_hash = version();
+    let version = format!("{VERSION} ({version_hash})");
 
     app.insert_resource(Version(version.clone()))
         .insert_resource(TextSettings {
@@ -290,6 +300,7 @@ fn main() {
     app.insert_resource(SegmentConfig::new(
         final_config.user_id.clone(),
         uuid::Uuid::new_v4().to_string(),
+        version_hash,
     ));
 
     app.insert_resource(PreviewMode {

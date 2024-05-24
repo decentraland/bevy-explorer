@@ -30,7 +30,7 @@ pub struct SegmentEventCommonExplorerFields {
 }
 
 impl SegmentEventCommonExplorerFields {
-    pub fn new(session_id: String) -> Self {
+    pub fn new(session_id: String, version: String) -> Self {
         Self {
             dcl_eth_address: "".into(),
             dcl_is_guest: true,
@@ -38,7 +38,7 @@ impl SegmentEventCommonExplorerFields {
             position: "".into(),
             dcl_renderer_type: "dao-bevy".into(),
             session_id,
-            renderer_version: env!("BEVY_EXPLORER_VERSION").into(),
+            renderer_version: version,
         }
     }
 }

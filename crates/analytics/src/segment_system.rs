@@ -52,10 +52,10 @@ impl SegmentMetricsEvents {
 }
 
 impl SegmentConfig {
-    pub fn new(user_id: String, session_id: String) -> Self {
+    pub fn new(user_id: String, session_id: String, version: String) -> Self {
         Self {
             user_id,
-            common: SegmentEventCommonExplorerFields::new(session_id),
+            common: SegmentEventCommonExplorerFields::new(session_id, version),
             write_key: "syp64BBsJUd6SHQRKv6b9G4Lgt3ny8Q8".into(),
         }
     }
