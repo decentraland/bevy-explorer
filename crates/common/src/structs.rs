@@ -1,6 +1,9 @@
 use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr};
 
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{
+    prelude::*,
+    utils::{uuid, HashMap},
+};
 use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
 
@@ -190,6 +193,7 @@ pub struct AppConfig {
     pub max_videos: usize,
     pub max_concurrent_remotes: usize,
     pub despawn_workaround: bool,
+    pub user_id: String,
 }
 
 impl Default for AppConfig {
@@ -216,6 +220,7 @@ impl Default for AppConfig {
             despawn_workaround: true,
             #[cfg(not(target_os = "linux"))]
             despawn_workaround: false,
+            user_id: uuid::Uuid::new_v4().to_string(),
         }
     }
 }
