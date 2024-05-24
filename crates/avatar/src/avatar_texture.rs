@@ -355,17 +355,20 @@ fn update_booth_image(
     q: Query<(&Node, &UiImage), With<BoothImage>>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    for (node, image) in q.iter() {
+    for (node, h_image) in q.iter() {
         let node_size = node.size();
-        let Some(image) = images.get_mut(image.texture.id()) else {
+        let Some(image) = images.get(h_image.texture.id()) else {
             continue;
         };
         if image.size() != node_size.as_uvec2() {
-            image.resize(Extent3d {
-                width: (node_size.x as u32).max(1),
-                height: (node_size.y as u32).max(1),
-                ..Default::default()
-            });
+            images
+                .get_mut(h_image.texture.id())
+                .unwrap()
+                .resize(Extent3d {
+                    width: (node_size.x as u32).max(1),
+                    height: (node_size.y as u32).max(1),
+                    ..Default::default()
+                });
         }
     }
 }
