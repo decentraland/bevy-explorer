@@ -106,12 +106,9 @@ impl MaterialExtension for SceneBound {
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
         let data = key.bind_group_data;
         if data.outline {
-            descriptor
-                .fragment
-                .as_mut()
-                .unwrap()
-                .shader_defs
-                .push("OUTLINE".into());
+            if let Some(fragment) = descriptor.fragment.as_mut() {
+                fragment.shader_defs.push("OUTLINE".into());
+            }
         }
         Ok(())
     }

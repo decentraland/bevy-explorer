@@ -100,6 +100,7 @@ fn main() {
             .expect("failed to create log file");
 
         File::create(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
+        println!("log file: {}", SESSION_LOG.get().unwrap());
     }
 
     // warnings before log init must be stored and replayed later

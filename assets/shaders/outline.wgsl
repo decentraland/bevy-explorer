@@ -33,6 +33,7 @@ fn apply_outline(position: vec4<f32>, color_in: vec4<f32>, hilight: bool, sample
         edge1 = true;
     }
 
+#ifdef NORMAL_PREPASS
     let nd = 1.0;
     let nmid = prepass_normal(position, sample_index);
     let npxpy = prepass_normal(position + vec4<f32>(nd, nd, 0.0, 0.0), sample_index);
@@ -45,6 +46,7 @@ fn apply_outline(position: vec4<f32>, color_in: vec4<f32>, hilight: bool, sample
     if length(nmid - nexpected) + length(nmid - nexpected2) > 0.4 {
         edge2 = true;
     }
+#endif
 
     var hi = 0.0;
     if hilight {
