@@ -138,7 +138,7 @@ fn send_segment_metric_event(
     }
 }
 
-async fn send_segment_batch(write_key: &str, events: &Vec<String>) -> Result<(), anyhow::Error> {
+async fn send_segment_batch(write_key: &str, events: &[String]) -> Result<(), anyhow::Error> {
     let json_body = format!(
         "{{\"writeKey\":\"{}\",\"batch\":[{}]}}",
         write_key,

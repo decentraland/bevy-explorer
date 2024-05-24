@@ -34,7 +34,7 @@ fn metrics_frame_system(
     mut frame_data: ResMut<Frame>,
     mut metrics: ResMut<SegmentMetricsEvents>,
 ) {
-    let dt = 1000.0 * time.delta_seconds() as f32;
+    let dt = 1000.0 * time.delta_seconds();
     frame_data.sum_dt += dt;
     frame_data.dt_ms_vec.push(dt);
     if dt > HICCUP_THRESHOLD_MS {
@@ -50,7 +50,7 @@ fn metrics_frame_system(
 
         let n_samples = frame_data.dt_ms_vec.len();
         let median_frame_time = frame_data.dt_ms_vec[n_samples / 2];
-        let p1_frame_time = frame_data.dt_ms_vec[(n_samples * 1) / 100];
+        let p1_frame_time = frame_data.dt_ms_vec[n_samples / 100];
         let p5_frame_time = frame_data.dt_ms_vec[(n_samples * 5) / 100];
         let p10_frame_time = frame_data.dt_ms_vec[(n_samples * 10) / 100];
         let p20_frame_time = frame_data.dt_ms_vec[(n_samples * 20) / 100];
