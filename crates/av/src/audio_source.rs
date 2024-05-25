@@ -1,4 +1,4 @@
-use bevy::{prelude::*, utils::HashSet};
+use bevy::{prelude::*, utils::{HashMap, HashSet}};
 use bevy_kira_audio::{
     prelude::{AudioEmitter, AudioReceiver},
     AudioControl, AudioInstance, AudioTween,
@@ -119,8 +119,9 @@ fn update_audio(
 
         if audio_source.0.playing() {
             debug!(
-                "play {:?} @ {} vs {}",
+                "play {:?} @ [{:?}] {} vs {}",
                 audio_source.0,
+                ent,
                 egt.translation(),
                 gt.translation()
             );
@@ -195,13 +196,14 @@ fn update_audio(
 }
 
 fn update_source_volume(
-    query: Query<(&SceneEntity, &AudioSource, &AudioEmitter, &GlobalTransform)>,
+    query: Query<(Entity, &SceneEntity, &AudioSource, &AudioEmitter, &GlobalTransform)>,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
     mut prev_scenes: Local<HashSet<Entity>>,
     receiver: Query<&GlobalTransform, With<AudioReceiver>>,
     settings: Res<AudioSettings>,
+    mut all_instances: Local<HashMap<Entity, Vec<Handle<AudioInstance>>>>,
 ) {
     let current_scenes = player
         .get_single()
@@ -213,7 +215,9 @@ fn update_source_volume(
         return;
     };
 
-    for (scene, source, emitter, transform) in query.iter() {
+    let mut prev_instances = std::mem::take(&mut *all_instances);
+
+    for (ent, scene, source, emitter, transform) in query.iter() {
         if current_scenes.contains(&scene.root) {
             let (volume, panning) = if source.0.global() {
                 (source.0.volume.unwrap_or(1.0), 0.5)
@@ -240,11 +244,35 @@ fn update_source_volume(
                 }
             }
         } else if prev_scenes.contains(&scene.root) {
+            debug!("stop [{:?}]", ent);
             for h_instance in &emitter.instances {
                 if let Some(instance) = audio_instances.get_mut(h_instance) {
                     instance.set_volume(0.0, AudioTween::default());
                 }
             }
+        }
+
+        // remove old audios
+        if let Some(prev_instances) = prev_instances.remove(&ent) {
+            let current_ids = emitter.instances.iter().map(|h| h.id()).collect::<HashSet<_>>();
+
+            for h_instance in prev_instances {
+                if !current_ids.contains(&h_instance.id()) {
+                    if let Some(instance) = audio_instances.get_mut(h_instance) {
+                        instance.stop(AudioTween::default());
+                    }    
+                }
+            }
+        }
+
+        all_instances.insert(ent, emitter.instances.clone());
+    }
+
+    for (_ent, prev_instances) in prev_instances {
+        for h_instance in prev_instances {
+            if let Some(instance) = audio_instances.get_mut(h_instance) {
+                instance.stop(AudioTween::default());
+            }    
         }
     }
 
