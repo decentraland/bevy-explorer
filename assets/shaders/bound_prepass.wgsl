@@ -3,7 +3,7 @@
     prepass_io::{Vertex, VertexOutput, FragmentOutput},
     mesh_view_bindings::{view, previous_view_proj},
     pbr_fragment::pbr_input_from_standard_material,
-    pbr_functions::alpha_discard,
+    pbr_prepass_functions::prepass_alpha_discard,
 }
 #import bevy_render::globals::Globals;
 
@@ -74,8 +74,7 @@ fn fragment(
         }
     }
 
-    let pbr_input = pbr_input_from_standard_material(in, is_front);
-    alpha_discard(pbr_input.material, pbr_input.material.base_color);
+    prepass_alpha_discard(in);
 
     return out;
 }
