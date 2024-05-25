@@ -32,6 +32,7 @@ once_cell = { workspace = true }
 rapier3d-f64 = { workspace = true }
 urlencoding = { workspace = true }
 itertools = { workspace = true }
+analytics = { workspace = true }
 
 petgraph = "0.6.3"
 spin_sleep = "1.1.1"

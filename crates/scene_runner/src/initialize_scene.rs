@@ -1,5 +1,6 @@
 use std::{collections::VecDeque, num::ParseIntError, str::FromStr};
 
+use analytics::segment_system::{SegmentConfig, SegmentMetricsEvents};
 use bevy::{
     asset::{io::Reader, AssetLoader, LoadContext},
     math::Vec3Swizzles,
@@ -652,6 +653,7 @@ pub fn process_realm_change(
     current_realm: Res<CurrentRealm>,
     // mut pointers: ResMut<ScenePointers>,
     mut live_scenes: ResMut<LiveScenes>,
+    mut segment_config: Option<ResMut<SegmentConfig>>,
 ) {
     if current_realm.is_changed() {
         info!("realm change `{}`! purging scenes", current_realm.address);
@@ -694,6 +696,10 @@ pub fn process_realm_change(
             live_scenes
                 .0
                 .retain(|hash, _| realm_scene_ids.contains_key(hash));
+        }
+
+        if let Some(ref mut segment_config) = segment_config {
+            segment_config.update_realm(current_realm.address.clone());
         }
     }
 }

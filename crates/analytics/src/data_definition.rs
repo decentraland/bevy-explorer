@@ -31,12 +31,14 @@ pub struct SegmentEventCommonExplorerFields {
 
 impl SegmentEventCommonExplorerFields {
     pub fn new(session_id: String, version: String) -> Self {
+        let dcl_renderer_type = format!("dao-bevy-{}", std::env::consts::OS);
+
         Self {
             dcl_eth_address: "".into(),
             dcl_is_guest: true,
             realm: "".into(),
             position: "".into(),
-            dcl_renderer_type: "dao-bevy".into(),
+            dcl_renderer_type,
             session_id,
             renderer_version: version,
         }
@@ -47,7 +49,7 @@ pub enum SegmentEvent {
     PerformanceMetrics(SegmentEventPerformanceMetrics),
     ExplorerError(SegmentEventExplorerError),
     ExplorerSceneLoadTimes(SegmentEventExplorerSceneLoadTimes),
-    ExplorerMoveToParcel(SegmentEventExplorerMoveToParcel),
+    ExplorerMoveToParcel(String, SegmentEventExplorerMoveToParcel),
     SystemInfoReport(SegmentEventSystemInfoReport),
 }
 
@@ -121,7 +123,7 @@ pub struct SegmentEventExplorerSceneLoadTimes {
 #[derive(Serialize)]
 pub struct SegmentEventExplorerMoveToParcel {
     // Parcel where the user is coming from.
-    old_parcel: String,
+    pub old_parcel: String,
 }
 
 #[derive(Serialize)]
@@ -143,26 +145,31 @@ pub fn build_segment_event_batch_item(
     common: &SegmentEventCommonExplorerFields,
     event_data: SegmentEvent,
 ) -> SegmentMetricEventBody {
-    let (event_name, event_properties) = match event_data {
+    let (event_name, event_properties, override_position) = match event_data {
         SegmentEvent::PerformanceMetrics(event) => (
             "Performance Metrics".to_string(),
             serde_json::to_value(event).unwrap(),
+            None,
         ),
         SegmentEvent::ExplorerError(event) => (
             "Explorer Error".to_string(),
             serde_json::to_value(event).unwrap(),
+            None,
         ),
         SegmentEvent::ExplorerSceneLoadTimes(event) => (
             "Explorer Scene Load Times".to_string(),
             serde_json::to_value(event).unwrap(),
+            None,
         ),
-        SegmentEvent::ExplorerMoveToParcel(event) => (
+        SegmentEvent::ExplorerMoveToParcel(current_position, event) => (
             "Explorer Move To Parcel".to_string(),
             serde_json::to_value(event).unwrap(),
+            Some(current_position),
         ),
         SegmentEvent::SystemInfoReport(event) => (
             "System Info Report".to_string(),
             serde_json::to_value(event).unwrap(),
+            None,
         ),
     };
 
@@ -170,6 +177,10 @@ pub fn build_segment_event_batch_item(
     // merge specific event properties with common properties
     for (k, v) in event_properties.as_object().unwrap().iter() {
         properties[k] = v.clone();
+    }
+
+    if let Some(position) = override_position {
+        properties["position"] = serde_json::Value::String(position);
     }
 
     SegmentMetricEventBody {
