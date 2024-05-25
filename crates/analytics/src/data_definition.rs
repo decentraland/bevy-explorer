@@ -100,11 +100,11 @@ pub struct SegmentEventPerformanceMetrics {
 #[derive(Serialize)]
 pub struct SegmentEventExplorerError {
     // Generic or Fatal.
-    error_type: String,
+    pub error_type: String,
     // Error description.
-    error_message: String,
+    pub error_message: String,
     // Error’s stack
-    error_stack: String,
+    pub error_stack: String,
 }
 
 #[derive(Serialize)]

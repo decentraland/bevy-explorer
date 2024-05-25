@@ -1,9 +1,7 @@
-use std::path::PathBuf;
+use std::{io::Read, path::PathBuf};
 
+use analytics::{data_definition::SegmentEventExplorerError, segment_system::SegmentMetricsEvents};
 use bevy::prelude::*;
-use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
-use common::structs::Version;
-use ui_core::button::DuiButton;
 
 pub struct CrashReportPlugin {
     pub file: PathBuf,
@@ -19,45 +17,39 @@ impl Plugin for CrashReportPlugin {
 #[derive(Resource)]
 pub struct CrashReport(PathBuf);
 
-fn setup(
-    mut commands: Commands,
-    dui: Res<DuiRegistry>,
-    version: Res<Version>,
-    report: Res<CrashReport>,
-) {
-    let version = version.0.clone();
-    let subject = format!("bevy explorer crash-report version {version}");
-    let subject = urlencoding::encode(&subject);
-    let body = format!("please attach (or copy-paste) `{}` (sorry i know this is rubbish).\n\nAnd please add any extra relevant info about what happened.\n\n Thanks!", report.0.to_string_lossy());
-    let body = urlencoding::encode(&body);
-    let address = "rob.macdonald@bevydev.co.uk";
-    let mailto = format!("mailto:{address}?subject={subject}&body={body}");
+fn setup(report: Res<CrashReport>, mut metrics: ResMut<SegmentMetricsEvents>) {
+    let mut f = match std::fs::File::open(&report.0) {
+        Ok(f) => f,
+        Err(e) => {
+            warn!("failed to open log for crash report: {e}");
+            return;
+        }
+    };
+    let mut buf = Vec::default();
+    if let Err(e) = f.read_to_end(&mut buf) {
+        warn!("failed to read log for crash report: {e}");
+        return;
+    }
 
-    let file_a = report.0.parent().unwrap().join(format!(
+    let start = buf.len().saturating_sub(31000);
+    let Ok(error_message) = std::str::from_utf8(&buf[start..]) else {
+        warn!("failed to convert crash log to utf8");
+        return;
+    };
+
+    metrics.add_event(analytics::data_definition::SegmentEvent::ExplorerError(
+        SegmentEventExplorerError {
+            error_type: "Crash".to_owned(),
+            error_message: error_message.to_owned(),
+            error_stack: String::default(),
+        },
+    ));
+
+    let touch = report.0.parent().unwrap().join(format!(
         "{}.touch",
         report.0.file_name().unwrap().to_string_lossy()
     ));
-    let file_b = file_a.clone();
+    std::fs::remove_file(touch.clone()).unwrap();
 
-    println!("file: {:?}", file_a);
-
-    let components = commands.spawn_template(
-            &dui,
-            "text-dialog",
-            DuiProps::new()
-                .with_prop("title", "Crashed".to_owned())
-                .with_prop("body", "It looks like the application crashed, would you like to send a crash report?\nThis will open a mail client, the reporting mechanism will be improved in future".to_owned())
-                .with_prop(
-                    "buttons",
-                    vec![
-                        DuiButton::new_enabled_and_close("Don't Send", move || { std::fs::remove_file(file_a.clone()).unwrap(); }),
-                        DuiButton::new_enabled_and_close("Send", move || { opener::open(mailto.clone()).unwrap(); std::fs::remove_file(file_b.clone()).unwrap(); }),
-                    ],
-                ),
-        )
-        .unwrap();
-
-    commands
-        .entity(components.root)
-        .insert(ZIndex::Global(1000));
+    info!("crash report sent");
 }
