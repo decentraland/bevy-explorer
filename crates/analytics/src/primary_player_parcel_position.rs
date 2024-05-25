@@ -1,8 +1,6 @@
 // Write a system that fetch the primary player parcel position and send it to the server
 
-use crate::data_definition::{
-    SegmentEvent, SegmentEventExplorerMoveToParcel, SegmentEventPerformanceMetrics,
-};
+use crate::data_definition::{SegmentEvent, SegmentEventExplorerMoveToParcel};
 use crate::segment_system::{SegmentConfig, SegmentMetricsEvents};
 use bevy::prelude::*;
 use common::structs::PrimaryUser;

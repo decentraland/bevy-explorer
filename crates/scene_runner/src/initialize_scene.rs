@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, num::ParseIntError, str::FromStr};
 
-use analytics::segment_system::{SegmentConfig, SegmentMetricsEvents};
+use analytics::segment_system::SegmentConfig;
 use bevy::{
     asset::{io::Reader, AssetLoader, LoadContext},
     math::Vec3Swizzles,
