@@ -1,4 +1,7 @@
-use bevy::{prelude::*, utils::{HashMap, HashSet}};
+use bevy::{
+    prelude::*,
+    utils::{HashMap, HashSet},
+};
 use bevy_kira_audio::{
     prelude::{AudioEmitter, AudioReceiver},
     AudioControl, AudioInstance, AudioTween,
@@ -195,8 +198,15 @@ fn update_audio(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_source_volume(
-    query: Query<(Entity, &SceneEntity, &AudioSource, &AudioEmitter, &GlobalTransform)>,
+    query: Query<(
+        Entity,
+        &SceneEntity,
+        &AudioSource,
+        &AudioEmitter,
+        &GlobalTransform,
+    )>,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
@@ -254,13 +264,17 @@ fn update_source_volume(
 
         // remove old audios
         if let Some(prev_instances) = prev_instances.remove(&ent) {
-            let current_ids = emitter.instances.iter().map(|h| h.id()).collect::<HashSet<_>>();
+            let current_ids = emitter
+                .instances
+                .iter()
+                .map(|h| h.id())
+                .collect::<HashSet<_>>();
 
             for h_instance in prev_instances {
                 if !current_ids.contains(&h_instance.id()) {
                     if let Some(instance) = audio_instances.get_mut(h_instance) {
                         instance.stop(AudioTween::default());
-                    }    
+                    }
                 }
             }
         }
@@ -272,7 +286,7 @@ fn update_source_volume(
         for h_instance in prev_instances {
             if let Some(instance) = audio_instances.get_mut(h_instance) {
                 instance.stop(AudioTween::default());
-            }    
+            }
         }
     }
 
