@@ -28,6 +28,7 @@ use self::{
     oob_setting::OobSetting,
     player_settings::{
         FallSpeedSetting, FrictionSetting, GravitySetting, JumpSetting, RunSpeedSetting,
+        WalkSpeedSetting,
     },
     scene_threads::SceneThreadsSetting,
     shadow_settings::ShadowDistanceSetting,
@@ -89,6 +90,7 @@ impl Plugin for AppSettingsPlugin {
         ));
         apply_schedule.add_systems((
             apply_setting::<RunSpeedSetting>,
+            apply_setting::<WalkSpeedSetting>,
             apply_setting::<FrictionSetting>,
             apply_setting::<JumpSetting>,
             apply_setting::<GravitySetting>,
@@ -212,6 +214,7 @@ fn set_app_settings_content(
                 .unwrap()
                 .root,
             RunSpeedSetting::spawn_template(&mut commands, &dui, &config),
+            WalkSpeedSetting::spawn_template(&mut commands, &dui, &config),
             FrictionSetting::spawn_template(&mut commands, &dui, &config),
             JumpSetting::spawn_template(&mut commands, &dui, &config),
             GravitySetting::spawn_template(&mut commands, &dui, &config),
