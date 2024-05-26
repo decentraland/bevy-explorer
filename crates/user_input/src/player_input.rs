@@ -57,15 +57,15 @@ pub(crate) fn update_user_velocity(
         axis_input.x -= 1.0;
     }
 
+    dynamic_state.force = Vec2::ZERO;
+    dynamic_state.rotate = 0.0;
+
     // Apply movement update
     let (relative_transform, rotate) = match user.control_type {
         AvatarControl::None => return,
         AvatarControl::Relative => (camera_transform, false),
         AvatarControl::Tank => (player_transform, true),
     };
-
-    dynamic_state.force = Vec2::ZERO;
-    dynamic_state.rotate = 0.0;
 
     if rotate {
         *tankiness = (*tankiness + time.delta_seconds() / TRANSITION_TIME).min(1.0);
