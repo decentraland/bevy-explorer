@@ -56,7 +56,7 @@ impl SegmentConfig {
         Self {
             user_id,
             common: SegmentEventCommonExplorerFields::new(session_id, version),
-            write_key: "syp64BBsJUd6SHQRKv6b9G4Lgt3ny8Q8".into(),
+            write_key: "EAdAcIyGP6lIQAfpFF2BXpNzpj7XNWMm".into(),
         }
     }
 
