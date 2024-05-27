@@ -23,9 +23,9 @@ pub fn primary_player_parcel_position_system(
     if parcel_position != *last_parcel_position {
         let current = format!(
             "{},{}",
-            last_parcel_position.x as i32, last_parcel_position.y as i32
+            last_parcel_position.x, last_parcel_position.y
         );
-        let next = format!("{},{}", parcel_position.x as i32, parcel_position.y as i32);
+        let next = format!("{},{}", parcel_position.x, parcel_position.y);
         metrics.add_event(SegmentEvent::ExplorerMoveToParcel(
             next.clone(),
             SegmentEventExplorerMoveToParcel {
