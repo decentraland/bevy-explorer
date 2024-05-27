@@ -14,6 +14,7 @@ use dynamics::{
 };
 use input_manager::should_accept_key;
 use scene_runner::{update_world::avatar_modifier_area::PlayerModifiers, OutOfWorld};
+use tween::update_system_tween;
 
 use self::{
     camera::{update_camera, update_camera_position},
@@ -44,7 +45,9 @@ impl Plugin for UserInputPlugin {
                 update_user_position
                     .after(tween::update_tween)
                     .after(restricted_actions::move_player),
-                update_camera_position.after(restricted_actions::move_camera),
+                update_camera_position
+                    .after(restricted_actions::move_camera)
+                    .before(update_system_tween),
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),
