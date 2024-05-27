@@ -34,6 +34,8 @@
                 <med-text text="waiting for ... " />
                 <med-text text="@load-state" id="load-state" />
             </div>
+            <hr />
+            <button label="Change Realm" onclick="@cancel" />
         </bounds>
     </div>
 </define-template>
