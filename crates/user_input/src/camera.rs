@@ -1,8 +1,13 @@
-use std::f32::consts::{FRAC_PI_4, PI};
+use std::{
+    f32::consts::{FRAC_PI_4, PI},
+    marker::PhantomData,
+};
 
 use bevy::{
+    ecs::system::SystemParam,
     input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
+    utils::HashMap,
     window::CursorGrabMode,
 };
 
@@ -26,13 +31,58 @@ pub struct CinematicInitialData {
     cinematic_transform: GlobalTransform,
 }
 
+#[derive(SystemParam)]
+pub struct MouseInteractionState<'w, 's> {
+    mouse_button_input: Res<'w, ButtonInput<MouseButton>>,
+    states: Local<'s, HashMap<MouseButton, (ClickState, f32)>>,
+    time: Res<'w, Time>,
+    #[system_param(ignore)]
+    _p: PhantomData<&'s ()>,
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ClickState {
+    #[default]
+    None,
+    Clicked,
+    Held,
+    Released,
+}
+
+impl<'w, 's> MouseInteractionState<'w, 's> {
+    pub fn update(&mut self, button: MouseButton) -> ClickState {
+        let state = self.states.entry(button).or_default();
+
+        match state.0 {
+            ClickState::None | ClickState::Released => {
+                if self.mouse_button_input.just_pressed(button) {
+                    *state = (ClickState::Held, self.time.elapsed_seconds());
+                } else {
+                    state.0 = ClickState::None;
+                }
+            }
+            ClickState::Held => {
+                if self.mouse_button_input.just_released(button) {
+                    if self.time.elapsed_seconds() - state.1 > 0.25 {
+                        state.0 = ClickState::Released;
+                    } else {
+                        state.0 = ClickState::Clicked;
+                    }
+                }
+            }
+            ClickState::Clicked => state.0 = ClickState::Released,
+        }
+
+        state.0
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn update_camera(
     time: Res<Time>,
     mut windows: Query<&mut Window>,
     mut mouse_events: EventReader<MouseMotion>,
     mut wheel_events: EventReader<MouseWheel>,
-    mouse_button_input: Res<ButtonInput<MouseButton>>,
     key_input: Res<ButtonInput<KeyCode>>,
     mut move_toggled: Local<bool>,
     mut camera: Query<(&Transform, &mut PrimaryCamera)>,
@@ -40,6 +90,7 @@ pub fn update_camera(
     accept_input: Res<AcceptInput>,
     mut cursor_locked: ResMut<CursorLocked>,
     mut cinematic_data: Local<Option<CinematicInitialData>>,
+    mut mb_state: MouseInteractionState,
 ) {
     let dt = time.delta_seconds();
 
@@ -115,10 +166,16 @@ pub fn update_camera(
     }
 
     // Handle mouse input
+    let mut state = mb_state.update(options.mouse_key_enable_mouse);
+    if key_input.just_pressed(KeyCode::Escape) && *move_toggled {
+        // override
+        state = ClickState::Released;
+        *move_toggled = false;
+    }
+
     let mut mouse_delta = Vec2::ZERO;
-    if accept_input.mouse && mouse_button_input.pressed(options.mouse_key_enable_mouse)
-        || *move_toggled
-    {
+
+    if accept_input.mouse && state == ClickState::Held || *move_toggled {
         for mut window in &mut windows {
             if !window.focused {
                 continue;
@@ -141,11 +198,7 @@ pub fn update_camera(
         }
     }
 
-    if mouse_button_input.just_released(options.mouse_key_enable_mouse)
-        || (accept_input.key
-            && key_input.just_pressed(options.keyboard_key_enable_mouse)
-            && !*move_toggled)
-    {
+    if state == ClickState::Released {
         for mut window in &mut windows {
             window.cursor.grab_mode = CursorGrabMode::None;
             window.cursor.visible = true;
@@ -155,11 +208,11 @@ pub fn update_camera(
     }
 
     if allow_cam_move {
-        if accept_input.key {
-            if key_input.just_pressed(options.keyboard_key_enable_mouse) {
-                *move_toggled = !*move_toggled;
-            }
+        if state == ClickState::Clicked {
+            *move_toggled = !*move_toggled;
+        }
 
+        if accept_input.key {
             if key_input.pressed(options.key_roll_left) {
                 options.roll += dt * 1.0;
             } else if key_input.pressed(options.key_roll_right) {
@@ -193,7 +246,7 @@ pub fn update_camera(
                 if (event.y > 0.0) == zoom_range.is_none() {
                     options.distance = 0f32.max((options.distance - 0.05) * 0.9);
                 } else {
-                    options.distance = 100f32.min((options.distance / 0.9) + 0.05);
+                    options.distance = 50f32.min((options.distance / 0.9) + 0.05);
                 }
             }
             if let Some(zoom_range) = zoom_range {

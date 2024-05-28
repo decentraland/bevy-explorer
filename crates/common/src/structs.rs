@@ -88,7 +88,6 @@ pub struct AvatarTextureHandle(pub Handle<Image>);
 pub struct PrimaryCamera {
     // settings
     pub mouse_key_enable_mouse: MouseButton,
-    pub keyboard_key_enable_mouse: KeyCode,
     pub key_roll_left: KeyCode,
     pub key_roll_right: KeyCode,
     pub distance: f32,
@@ -130,7 +129,6 @@ impl Default for PrimaryCamera {
     fn default() -> Self {
         Self {
             mouse_key_enable_mouse: MouseButton::Right,
-            keyboard_key_enable_mouse: KeyCode::KeyM,
             sensitivity: 5.0,
             initialized: Default::default(),
             yaw: Default::default(),
