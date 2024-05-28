@@ -25,7 +25,7 @@ use comms::{
 };
 use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
-use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, ServerAbout};
+use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, IpfsAssetServer, ServerAbout};
 use isahc::{http::StatusCode, AsyncReadResponseExt};
 use nft::asset_source::Nft;
 use scene_runner::{
@@ -49,26 +49,28 @@ impl Plugin for RestrictedActionsPlugin {
         app.add_systems(
             Update,
             (
-                move_player,
-                move_camera,
-                change_realm,
-                external_url,
-                spawn_portable,
-                kill_portable,
-                list_portables,
-                get_user_data,
-                get_connected_players,
-                get_players_in_scene,
-                event_player_connected,
-                event_player_disconnected,
-                event_player_moved_scene,
-                event_scene_ready,
-                send_scene_messages,
-                teleport_player,
-                handle_out_of_world,
-                open_nft_dialog,
-                show_nft_dialog,
-                handle_eth_async,
+                (
+                    move_player,
+                    move_camera,
+                    change_realm,
+                    external_url,
+                    spawn_portable,
+                    kill_portable,
+                    list_portables,
+                    get_user_data,
+                    get_connected_players,
+                    get_players_in_scene,
+                    event_player_connected,
+                    event_player_disconnected,
+                    event_player_moved_scene,
+                    event_scene_ready,
+                    send_scene_messages,
+                    teleport_player,
+                    handle_out_of_world,
+                    open_nft_dialog,
+                    show_nft_dialog,
+                ),
+                (handle_eth_async, handle_texture_size),
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -1025,4 +1027,43 @@ pub fn handle_eth_async(
             true
         }
     })
+}
+
+#[allow(clippy::type_complexity)]
+pub fn handle_texture_size(
+    mut events: EventReader<RpcCall>,
+    ipfas: IpfsAssetServer,
+    scenes: Query<&RendererSceneContext>,
+    mut pending: Local<Vec<(Handle<Image>, RpcResultSender<Result<Vec2, String>>)>>,
+    images: Res<Assets<Image>>,
+) {
+    for (scene, src, response) in events.read().filter_map(|ev| match ev {
+        RpcCall::GetTextureSize {
+            scene,
+            src,
+            response,
+        } => Some((scene, src, response)),
+        _ => None,
+    }) {
+        let Ok(scene_hash) = scenes.get(*scene).map(|ctx| &ctx.hash) else {
+            response.send(Err("Scene not found".to_owned()));
+            continue;
+        };
+        let h_image = ipfas.load_content_file::<Image>(src, scene_hash).unwrap();
+        pending.push((h_image, response.clone()));
+    }
+
+    pending.retain_mut(|(h_image, response)| {
+        if let Some(image) = images.get(h_image.id()) {
+            response.send(Ok(image.size_f32()));
+            return false;
+        }
+
+        if let LoadState::Loading = ipfas.asset_server().load_state(h_image.id()) {
+            true
+        } else {
+            response.send(Err("asset load failed".to_owned()));
+            false
+        }
+    });
 }
