@@ -75,8 +75,8 @@ fn login(
     mut toaster: Toaster,
     dui: Res<DuiRegistry>,
     mut window: Query<&mut Window, With<PrimaryWindow>>,
-    preview: Res<PreviewMode>,
-    config: Res<AppConfig>,
+    _preview: Res<PreviewMode>,
+    _config: Res<AppConfig>,
 ) {
     // cleanup if we're done
     if wallet.address().is_some() {
@@ -88,6 +88,8 @@ fn login(
         return;
     }
 
+    // auto-login in preview mode disabled for now
+    /*
     if preview.server.is_some() && final_task.is_none() {
         if let Some(previous_login) = config.previous_login.clone() {
             let ipfs = ipfas.ipfs().clone();
@@ -119,6 +121,7 @@ fn login(
             return;
         }
     }
+    */
 
     // create dialog
     if dialog.is_none() && final_task.is_none() {
