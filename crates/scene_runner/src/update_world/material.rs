@@ -304,6 +304,8 @@ fn update_materials(
                     base_color_texture: base_color_texture.map(|t| t.image),
                     emissive_texture: emissive_texture.map(|t| t.image),
                     normal_map_texture: normal_map_texture.map(|t| t.image),
+                    double_sided: true,
+                    cull_mode: None,
                     ..defn.material.clone()
                 },
                 extension: SceneBound::new(bounds, config.graphics.oob),
