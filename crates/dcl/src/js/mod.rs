@@ -38,6 +38,7 @@ pub mod restricted_actions;
 pub mod runtime;
 pub mod user_identity;
 
+pub mod adaption_layer_helper;
 pub mod comms;
 pub mod ethereum_controller;
 pub mod events;
@@ -91,7 +92,7 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
 
     let mut ops = vec![op_require(), op_log(), op_error()];
 
-    let op_sets: [Vec<deno_core::OpDecl>; 11] = [
+    let op_sets: [Vec<deno_core::OpDecl>; 12] = [
         engine::ops(),
         restricted_actions::ops(),
         runtime::ops(),
@@ -103,6 +104,7 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
         comms::ops(),
         testing::ops(),
         ethereum_controller::ops(),
+        adaption_layer_helper::ops(),
     ];
 
     // add plugin registrations
@@ -436,6 +438,9 @@ fn op_require(
         "~system/Testing" => Ok(include_str!("modules/Testing.js").to_owned()),
         "~system/UserActionModule" => Ok(include_str!("modules/UserActionModule.js").to_owned()),
         "~system/UserIdentity" => Ok(include_str!("modules/UserIdentity.js").to_owned()),
+        "~system/AdaptationLayerHelper" => {
+            Ok(include_str!("modules/AdaptationLayerHelper.js").to_owned())
+        }
         _ => Err(generic_error(format!(
             "invalid module request `{module_spec}`"
         ))),

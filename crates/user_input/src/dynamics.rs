@@ -50,7 +50,10 @@ use common::{
 use avatar::AvatarDynamicState;
 use scene_runner::{
     renderer_context::RendererSceneContext,
-    update_world::mesh_collider::{ColliderId, GroundCollider, SceneColliderData},
+    update_world::{
+        avatar_modifier_area::PlayerModifiers,
+        mesh_collider::{ColliderId, GroundCollider, SceneColliderData},
+    },
     ContainingScene, OutOfWorld,
 };
 
@@ -59,12 +62,13 @@ pub struct UserClipping(pub bool);
 
 const TICK_TIME: f32 = 1.0 / 720.0;
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn update_user_position(
     mut player: Query<
         (
             Entity,
             &PrimaryUser,
+            Option<&PlayerModifiers>,
             &mut Transform,
             &mut AvatarDynamicState,
             &mut GroundCollider,
@@ -79,11 +83,21 @@ pub fn update_user_position(
     clip: Res<UserClipping>,
     mut prev_excess_time: Local<f32>,
 ) {
-    let Ok((user_ent, user, mut transform, mut dynamic_state, mut ground_collider)) =
-        player.get_single_mut()
+    let Ok((
+        user_ent,
+        user,
+        maybe_modifiers,
+        mut transform,
+        mut dynamic_state,
+        mut ground_collider,
+    )) = player.get_single_mut()
     else {
         return;
     };
+
+    let user = maybe_modifiers
+        .map(|m| m.combine(user))
+        .unwrap_or_else(|| user.clone());
 
     let dt = time.delta_seconds();
 
@@ -115,13 +129,18 @@ pub fn update_user_position(
 
     dynamic_state.velocity = velocity;
 
-    // rotate towards velocity vec
-    if dynamic_state.force.length() > 0.0 {
-        let target_rotation = Transform::default()
-            .looking_at(dynamic_state.force.extend(0.0).xzy(), Vec3::Y)
-            .rotation;
+    if dynamic_state.tank {
+        // rotate as instructed
+        transform.rotation *= Quat::from_rotation_y(dynamic_state.rotate * time.delta_seconds());
+    } else {
+        // rotate towards velocity vec
+        if dynamic_state.force.length() > 0.0 {
+            let target_rotation = Transform::default()
+                .looking_at(dynamic_state.force.extend(0.0).xzy(), Vec3::Y)
+                .rotation;
 
-        transform.rotation = transform.rotation.lerp(target_rotation, dt * 10.0);
+            transform.rotation = transform.rotation.lerp(target_rotation, dt * 10.0);
+        }
     }
 
     let mut platform_motion = Vec3::default();

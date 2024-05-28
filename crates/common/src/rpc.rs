@@ -203,4 +203,9 @@ pub enum RpcCall {
         scene: Entity,
         response: RpcResultSender<Result<serde_json::Value, String>>,
     },
+    GetTextureSize {
+        scene: Entity,
+        src: String,
+        response: RpcResultSender<Result<Vec2, String>>,
+    },
 }

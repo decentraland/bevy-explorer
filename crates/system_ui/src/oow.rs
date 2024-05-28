@@ -5,7 +5,10 @@ use scene_runner::{
     renderer_context::RendererSceneContext, update_world::gltf_container::GltfLoadingCount,
     ContainingScene, OutOfWorld,
 };
+use ui_core::ui_actions::{Click, EventDefaultExt};
 use wallet::Wallet;
+
+use crate::change_realm::ChangeRealmDialog;
 
 pub struct OowUiPlugin;
 
@@ -82,7 +85,8 @@ fn set_oow(
                         "out-of-world",
                         DuiProps::new()
                             .with_prop("title", title_text)
-                            .with_prop("load-state", state_text),
+                            .with_prop("load-state", state_text)
+                            .with_prop("cancel", ChangeRealmDialog::send_default_on::<Click>()),
                     )
                     .unwrap()
                     .root,

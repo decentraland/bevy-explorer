@@ -33,7 +33,10 @@ use dcl_component::{
 };
 use ipfs::IpfsAssetServer;
 use scene_runner::{
-    update_world::{transform_and_parent::ParentPositionSync, AddCrdtInterfaceExt},
+    update_world::{
+        avatar_modifier_area::PlayerModifiers, transform_and_parent::ParentPositionSync,
+        AddCrdtInterfaceExt,
+    },
     ContainerEntity, ContainingScene,
 };
 
@@ -129,6 +132,7 @@ fn broadcast_emote(
                         message: format!("{}{} {}", chat_marker_things::EMOTE, emote_urn, *count),
                         timestamp: time.elapsed_seconds_f64(),
                     })),
+                    protocol_version: 999,
                 };
 
                 for transport in transports.iter() {
@@ -209,12 +213,15 @@ fn animate(
     mut velocities: Local<HashMap<Entity, Vec3>>,
     mut current_emote_min_velocities: Local<HashMap<Entity, f32>>,
     time: Res<Time>,
-    player: Query<&PrimaryUser>,
+    player: Query<(&PrimaryUser, Option<&PlayerModifiers>)>,
 ) {
     let (gravity, jump_height) = player
         .get_single()
+        .map(|(p, m)| m.map(|m| m.combine(p)).unwrap_or(p.clone()))
         .map(|p| (p.gravity, p.jump_height))
         .unwrap_or((-20.0, 1.25));
+    let gravity = gravity.min(-0.1);
+    let jump_height = jump_height.max(0.1);
 
     let prior_velocities = std::mem::take(&mut *velocities);
     let prior_min_velocities = std::mem::take(&mut *current_emote_min_velocities);
@@ -322,7 +329,7 @@ fn animate(
                     (damped_velocity * (Vec3::X + Vec3::Z)).dot(gt.forward());
 
                 if damped_velocity_len.abs() > 0.1 {
-                    if damped_velocity_len.abs() < 2.0 {
+                    if damped_velocity_len.abs() <= 2.5 {
                         ActiveEmote {
                             urn: EmoteUrn::new("walk").unwrap(),
                             speed: directional_velocity_len / 1.5,

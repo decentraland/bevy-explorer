@@ -23,10 +23,31 @@ message PBAvatarModifierArea {
   decentraland.common.Vector3 area = 1;      // the 3D size of the region
   repeated string exclude_ids = 2;           // user IDs that can enter and remain unaffected
   repeated AvatarModifierType modifiers = 3; // list of modifiers to apply
+  optional AvatarMovementSettings movement_settings = 4;
+  optional bool use_collider_range = 5;      // if true, the player will be considered inside the area when they are within 0.3m of the area. default true
 }
 
 // AvatarModifierType is an effect that should be applied to avatars inside the region.
 enum AvatarModifierType {
   AMT_HIDE_AVATARS = 0;      // avatars are invisible
   AMT_DISABLE_PASSPORTS = 1; // selecting (e.g. clicking) an avatar will not bring up their profile.
+}
+
+message AvatarMovementSettings {
+  optional AvatarControlType control_mode = 1;
+  // if not explicitly set, the following properties default to user's preference settings
+  optional float run_speed = 2;              // speed the player moves at, in m/s
+  optional float friction = 3;               // how fast the player gets up to speed or comes to rest. higher = more responsive
+  optional float gravity = 4;                // how fast the player accelerates vertically when not on a solid surface, in m/s. should normally be negative
+  optional float jump_height = 5;            // how high the player can jump, in meters. should normally be positive. gravity must have the same sign for jumping to be possible
+  optional float max_fall_speed = 6;         // max fall speed in m/s. should normally be negative
+  optional float turn_speed = 7;             // speed the player turns in tank mode, in radians/s
+  optional float walk_speed = 8;             // speed the player walks at, in m/s
+  optional bool allow_weighted_movement = 9; // whether to allow player to move at a slower speed (e.g. with a walk-key or when using a gamepad/joystick). defaults to true  
+}
+
+enum AvatarControlType {
+  CCT_NONE = 0;     // avatar cannot move
+  CCT_RELATIVE = 1; // avatar moves relative to the camera origin
+  CCT_TANK = 2;     // avatar moves like a tank: left/right rotate the player, forward/backward advance/retreat the player
 }

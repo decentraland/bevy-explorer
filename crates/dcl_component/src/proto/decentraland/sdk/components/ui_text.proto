@@ -17,4 +17,6 @@ message PBUiText {
   optional common.TextAlignMode text_align = 3;  // alignment within the bounds (default: center)
   optional common.Font font = 4;                 // font for the text (default: sans-serif)
   optional int32 font_size = 5;                  // size of the text (default: 10)
+  optional float outline_width = 6;              // width of the outline (default: 0)
+  optional decentraland.common.Color4 outline_color = 7; // RGBA color of the outline (default: opaque black)
 }

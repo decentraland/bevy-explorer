@@ -206,7 +206,7 @@ pub struct SystemTweenData {
     start_time: f32,
 }
 
-fn update_system_tween(
+pub fn update_system_tween(
     mut commands: Commands,
     mut q: Query<(
         Entity,

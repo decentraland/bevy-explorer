@@ -84,6 +84,17 @@ player_setting!(
 );
 
 player_setting!(
+    WalkSpeedSetting,
+    "Walk Speed",
+    "Walking speed in m/s.",
+    |cfg: &mut PrimaryUser, val: f32| cfg.walk_speed = val,
+    |cfg: &PrimaryUser| cfg.walk_speed,
+    1.0,
+    20.0,
+    0.1
+);
+
+player_setting!(
     FrictionSetting,
     "Ground Friction",
     "Traction of the ground. A higher value results in faster starting/stopping, and a lower value simulates a more slippery surface.\nDefault 6",

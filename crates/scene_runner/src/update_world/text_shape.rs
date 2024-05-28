@@ -87,7 +87,7 @@ bevy: not implemented
 
 */
 
-use bevy::{prelude::*, text::BreakLineOn, utils::hashbrown::HashMap};
+use bevy::{core::FrameCount, prelude::*, text::BreakLineOn, utils::hashbrown::HashMap};
 use common::{
     sets::SceneLoopSets,
     util::{DespawnWith, TryPushChildrenEx},
@@ -147,12 +147,14 @@ fn update_text_shapes(
     query: Query<(Entity, &SceneEntity, &TextShape, Option<&PriorTextShapeUi>), Changed<TextShape>>,
     mut removed: RemovedComponents<TextShape>,
     scenes: Query<(&RendererSceneContext, Option<&SceneWorldUi>)>,
+    frame: Res<FrameCount>,
 ) {
     // remove deleted ui nodes
     for e in removed.read() {
         if let Some(mut commands) = commands.get_entity(e) {
             commands.remove::<WorldUi>();
         }
+        debug!("[{}] kill textshape {e:?}", frame.0);
     }
 
     let mut new_world_uis: HashMap<Entity, SceneWorldUi> = HashMap::default();
@@ -337,6 +339,8 @@ fn update_text_shapes(
                 ui_node,
             },
         ));
+
+        debug!("[{}] textshape {ent:?}", frame.0);
     }
 }
 

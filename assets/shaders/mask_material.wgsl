@@ -3,6 +3,7 @@
     pbr_fragment::pbr_input_from_vertex_output,
     pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
 }
+#import "shaders/outline.wgsl"::apply_outline
 
 struct MaskMaterial {
     color: vec4<f32>,
@@ -23,7 +24,14 @@ var mask_sampler: sampler;
 fn fragment(
     in: VertexOutput,
     @builtin(front_facing) is_front: bool,
+#ifdef MULTISAMPLED
+    @builtin(sample_index) sample_index: u32,
+#endif
 ) -> FragmentOutput {
+#ifndef MULTISAMPLED
+    let sample_index = 0u;
+#endif
+
     var pbr_input = pbr_input_from_vertex_output(in, is_front, false);
 
     let mask = textureSample(mask_texture, mask_sampler, in.uv);
@@ -37,6 +45,14 @@ fn fragment(
     var out: FragmentOutput;
     // apply lighting
     out.color = apply_pbr_lighting(pbr_input);
+
+    out.color = apply_outline(
+        in.position,
+        out.color, 
+        false,
+        sample_index,
+    );
+
     // apply in-shader post processing (fog, alpha-premultiply, and also tonemapping, debanding if the camera is non-hdr)
     // note this does not include fullscreen postprocessing effects like bloom.
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);

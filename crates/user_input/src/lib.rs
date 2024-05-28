@@ -13,13 +13,20 @@ use dynamics::{
     jump_cmd, no_clip, speed_cmd, JumpCommand, NoClipCommand, SpeedCommand, UserClipping,
 };
 use input_manager::should_accept_key;
-use scene_runner::{update_world::avatar_modifier_area::PlayerModifiers, OutOfWorld};
+use scene_runner::{
+    update_world::{
+        avatar_modifier_area::PlayerModifiers, camera_mode_area::update_camera_mode_area,
+    },
+    OutOfWorld,
+};
 
 use self::{
     camera::{update_camera, update_camera_position},
     dynamics::update_user_position,
     player_input::update_user_velocity,
 };
+
+static TRANSITION_TIME: f32 = 0.5;
 
 // plugin to pass user input messages to the scene
 pub struct UserInputPlugin;
@@ -42,7 +49,9 @@ impl Plugin for UserInputPlugin {
                 update_user_position
                     .after(tween::update_tween)
                     .after(restricted_actions::move_player),
-                update_camera_position.after(restricted_actions::move_camera),
+                update_camera_position
+                    .after(restricted_actions::move_camera)
+                    .before(update_camera_mode_area),
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),

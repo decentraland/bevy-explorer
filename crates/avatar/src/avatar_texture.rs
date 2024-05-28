@@ -3,6 +3,10 @@ use std::{collections::VecDeque, path::PathBuf, sync::Arc};
 use anyhow::anyhow;
 use bevy::{
     core::FrameCount,
+    core_pipeline::{
+        bloom::BloomSettings,
+        prepass::{DepthPrepass, NormalPrepass},
+    },
     ecs::system::SystemParam,
     prelude::*,
     render::{
@@ -94,6 +98,8 @@ impl<'w, 's> PhotoBooth<'w, 's> {
                     force: Vec2::ZERO,
                     velocity: Vec3::ZERO,
                     ground_height: 0.0,
+                    tank: false,
+                    rotate: 0.0,
                 },
                 BoothAvatar,
             ))
@@ -293,6 +299,12 @@ fn add_booth_camera(
                     ..Default::default()
                 },
                 render_layers,
+                BloomSettings {
+                    intensity: 0.15,
+                    ..BloomSettings::OLD_SCHOOL
+                },
+                DepthPrepass,
+                NormalPrepass,
             ))
             .id(),
         );
@@ -343,17 +355,20 @@ fn update_booth_image(
     q: Query<(&Node, &UiImage), With<BoothImage>>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    for (node, image) in q.iter() {
+    for (node, h_image) in q.iter() {
         let node_size = node.size();
-        let Some(image) = images.get_mut(image.texture.id()) else {
+        let Some(image) = images.get(h_image.texture.id()) else {
             continue;
         };
         if image.size() != node_size.as_uvec2() {
-            image.resize(Extent3d {
-                width: (node_size.x as u32).max(1),
-                height: (node_size.y as u32).max(1),
-                ..Default::default()
-            });
+            images
+                .get_mut(h_image.texture.id())
+                .unwrap()
+                .resize(Extent3d {
+                    width: (node_size.x as u32).max(1),
+                    height: (node_size.y as u32).max(1),
+                    ..Default::default()
+                });
         }
     }
 }

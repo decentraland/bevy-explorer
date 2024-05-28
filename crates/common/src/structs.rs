@@ -1,6 +1,9 @@
 use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr};
 
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{
+    prelude::*,
+    utils::{uuid, HashMap},
+};
 use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
 
@@ -16,17 +19,23 @@ pub struct PrimaryUser {
     pub gravity: f32,
     pub jump_height: f32,
     pub fall_speed: f32,
+    pub control_type: AvatarControl,
+    pub turn_speed: f32,
+    pub block_weighted_movement: bool,
 }
 
 impl Default for PrimaryUser {
     fn default() -> Self {
         Self {
-            walk_speed: 4.0,
+            walk_speed: 2.5,
             run_speed: 8.0,
             friction: 6.0,
             gravity: -10.0,
             jump_height: 1.25,
             fall_speed: -15.0,
+            control_type: AvatarControl::Relative,
+            turn_speed: PI,
+            block_weighted_movement: false,
         }
     }
 }
@@ -79,7 +88,6 @@ pub struct AvatarTextureHandle(pub Handle<Image>);
 pub struct PrimaryCamera {
     // settings
     pub mouse_key_enable_mouse: MouseButton,
-    pub keyboard_key_enable_mouse: KeyCode,
     pub key_roll_left: KeyCode,
     pub key_roll_right: KeyCode,
     pub distance: f32,
@@ -93,16 +101,34 @@ pub struct PrimaryCamera {
     pub scene_override: Option<CameraOverride>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct CinematicSettings {
+    pub origin: GlobalTransform,
+    pub allow_manual_rotation: bool,
+    pub yaw_range: Option<f32>,
+    pub pitch_range: Option<f32>,
+    pub roll_range: Option<f32>,
+    pub zoom_min: Option<f32>,
+    pub zoom_max: Option<f32>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum AvatarControl {
+    None,
+    Relative,
+    Tank,
+}
+
+#[derive(Clone, Debug)]
 pub enum CameraOverride {
     Distance(f32),
-    Cinematic(Transform),
+    Cinematic(CinematicSettings),
 }
 
 impl Default for PrimaryCamera {
     fn default() -> Self {
         Self {
             mouse_key_enable_mouse: MouseButton::Right,
-            keyboard_key_enable_mouse: KeyCode::KeyM,
             sensitivity: 5.0,
             initialized: Default::default(),
             yaw: Default::default(),
@@ -165,6 +191,7 @@ pub struct AppConfig {
     pub max_videos: usize,
     pub max_concurrent_remotes: usize,
     pub despawn_workaround: bool,
+    pub user_id: String,
 }
 
 impl Default for AppConfig {
@@ -191,6 +218,7 @@ impl Default for AppConfig {
             despawn_workaround: true,
             #[cfg(not(target_os = "linux"))]
             despawn_workaround: false,
+            user_id: uuid::Uuid::new_v4().to_string(),
         }
     }
 }

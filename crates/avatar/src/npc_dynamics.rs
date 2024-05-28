@@ -58,9 +58,9 @@ fn update_npc_velocity(
             .unwrap_or(current_translation.y);
 
         commands.entity(ent).insert(AvatarDynamicState {
-            force: Vec2::ZERO,
             velocity,
             ground_height,
+            ..Default::default()
         });
     }
 }

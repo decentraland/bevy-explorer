@@ -1,4 +1,5 @@
 use bevy::{
+    ecs::system::SystemParam,
     prelude::*,
     transform::systems::{propagate_transforms, sync_simple_transforms},
     utils::{Entry, HashMap, HashSet},
@@ -122,12 +123,12 @@ pub(crate) fn process_transform_and_parent_updates(
                     //     to: transform,
                     // });
                 }
-                SceneEntityId::CAMERA => {
-                    // restricted_actions.send(RpcCall::MoveCamera {
-                    //     scene: root,
-                    //     to: transform.rotation,
-                    // });
-                }
+                // SceneEntityId::CAMERA => {
+                // restricted_actions.send(RpcCall::MoveCamera {
+                //     scene: root,
+                //     to: transform.rotation,
+                // });
+                // }
                 _ => {
                     // normal scene-space entity
                     let Some(entity) = scene_context.bevy_entity(scene_entity) else {
@@ -235,36 +236,49 @@ pub struct ParentPositionSync(pub Entity);
 fn parent_position_sync(
     mut syncees: Query<(&mut Transform, &ParentPositionSync, &Parent)>,
     globals: Query<&GlobalTransform>,
-    locals: Query<(&Transform, Option<&Parent>), Without<ParentPositionSync>>,
+    gt_helper: TransformHelperExcl<ParentPositionSync>,
 ) {
     for (mut transform, sync, parent) in syncees.iter_mut() {
         let Ok(parent_transform) = globals.get(parent.get()) else {
             continue;
         };
-        let Ok((sync_transform, maybe_parent)) = locals.get(sync.0) else {
-            continue;
-        };
 
-        let mut transforms = vec![sync_transform];
-        let mut pointer = maybe_parent;
-        while let Some(next_parent) = pointer {
-            let Ok((next_transform, next_parent)) = locals.get(next_parent.get()) else {
-                break;
-            };
+        *transform = gt_helper
+            .compute_global_transform(sync.0)
+            .unwrap()
+            .reparented_to(parent_transform)
+            .with_scale(transform.scale);
+    }
+}
 
-            transforms.push(next_transform);
-            pointer = next_parent;
+/// System parameter for computing up-to-date [`GlobalTransform`]s.
+///
+/// Computing an entity's [`GlobalTransform`] can be expensive so it is recommended
+/// you use the [`GlobalTransform`] component stored on the entity, unless you need
+/// a [`GlobalTransform`] that reflects the changes made to any [`Transform`]s since
+/// the last time the transform propagation systems ran.
+#[derive(SystemParam)]
+pub struct TransformHelperExcl<'w, 's, T: Component> {
+    parent_query: Query<'w, 's, &'static Parent, Without<T>>,
+    transform_query: Query<'w, 's, &'static Transform, Without<T>>,
+}
+
+impl<'w, 's, T: Component> TransformHelperExcl<'w, 's, T> {
+    /// Computes the [`GlobalTransform`] of the given entity from the [`Transform`] component on it and its ancestors.
+    pub fn compute_global_transform(
+        &self,
+        entity: Entity,
+    ) -> Result<GlobalTransform, anyhow::Error> {
+        let transform = self.transform_query.get(entity)?;
+
+        let mut global_transform = GlobalTransform::from(*transform);
+
+        for entity in self.parent_query.iter_ancestors(entity) {
+            let transform = self.transform_query.get(entity)?;
+
+            global_transform = *transform * global_transform;
         }
 
-        let mut final_target = GlobalTransform::default();
-        while let Some(next_transform) = transforms.pop() {
-            final_target = final_target.mul_transform(*next_transform);
-        }
-
-        let (_, final_rotation, final_translation) = final_target.to_scale_rotation_translation();
-        *transform = GlobalTransform::from(
-            Transform::from_translation(final_translation).with_rotation(final_rotation),
-        )
-        .reparented_to(parent_transform);
+        Ok(global_transform)
     }
 }

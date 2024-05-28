@@ -18,10 +18,14 @@ ffmpeg = ["av/ffmpeg"]
 [profile.release]
 codegen-units = 1
 
+[profile.dev.package."*"]
+opt-level = 3
+
 [workspace]
 members = ["crates/*"]
 
 [workspace.dependencies]
+analytics = { path="crates/analytics" }
 common = { path="crates/common" }
 avatar = { path="crates/avatar" }
 comms = { path="crates/comms" }
@@ -99,6 +103,7 @@ bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = 
 directories = "5"
 
 [dependencies]
+analytics = { workspace = true }
 common = { workspace = true }
 avatar = { workspace = true }
 comms = { workspace = true }
@@ -148,6 +153,4 @@ bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.13-dcl" }
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
 parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "try_convex" }
 rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }
-serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_278_hotfix" }
-wgpu = { git = "https://github.com/robtfm/wgpu", branch = "0.19-device-pool" }
-naga = { git = "https://github.com/robtfm/wgpu", branch = "0.19-device-pool" }
+serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_280_hotfix" }

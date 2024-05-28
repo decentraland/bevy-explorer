@@ -1,4 +1,5 @@
 use bevy::{
+    core::FrameCount,
     pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster},
     prelude::*,
     render::{
@@ -13,7 +14,7 @@ use bevy::{
     ui::UiSystem,
     utils::HashMap,
 };
-use common::{structs::AppConfig, util::TryPushChildrenEx};
+use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
 use scene_material::{SceneBound, SceneMaterial};
 
 pub struct WorldUiPlugin;
@@ -21,7 +22,7 @@ pub struct WorldUiPlugin;
 impl Plugin for WorldUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<TextShapeMaterial>::default());
-        app.add_systems(Update, add_worldui_materials);
+        app.add_systems(Update, add_worldui_materials.in_set(SceneSets::PostLoop));
         app.add_systems(
             PostUpdate,
             update_worldui_materials
@@ -86,6 +87,7 @@ pub fn add_worldui_materials(
     config: Res<AppConfig>,
     views: Query<&Camera>,
     mats: Query<&Handle<TextShapeMaterial>>,
+    frame: Res<FrameCount>,
 ) {
     for (ent, wui, maybe_children) in q.iter() {
         let Ok(view) = views.get(wui.view) else {
@@ -144,7 +146,7 @@ pub fn add_worldui_materials(
             }
         }
 
-        debug!("wui {} -> {:?}", wui.dbg, wui.ui_node);
+        debug!("[{}] wui {} -> {:?}", frame.0, wui.dbg, wui.ui_node);
 
         commands.entity(ent).try_push_children(&[quad]);
     }
@@ -162,6 +164,7 @@ pub fn update_worldui_materials(
     >,
     mut mats: ResMut<Assets<TextShapeMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    frame: Res<FrameCount>,
 ) {
     let mut target_sizes: HashMap<AssetId<Image>, UVec2> = HashMap::default();
 
@@ -177,7 +180,9 @@ pub fn update_worldui_materials(
         let bottomright = translation.xy() + node.size() / 2.0;
         mat.extension.data.uvs = Vec4::new(topleft.x, topleft.y, bottomright.x, bottomright.y);
         debug!(
-            "{ent:?} uvs set to {} (size: {}, translation: {})",
+            "[{}] img {:?}, {ent:?} uvs set to {} (size: {}, translation: {})",
+            frame.0,
+            ref_mat.1,
             mat.extension.data.uvs,
             node.size(),
             translation.xy()
@@ -188,14 +193,14 @@ pub fn update_worldui_materials(
     }
 
     for (id, req_size) in target_sizes.into_iter() {
-        let Some(image) = images.get_mut(id) else {
+        let Some(image) = images.get(id) else {
             warn!("no image");
             continue;
         };
 
         if image.size().cmplt(req_size).any() {
             debug!("resized to {}", req_size);
-            image.resize(Extent3d {
+            images.get_mut(id).unwrap().resize(Extent3d {
                 width: req_size.x,
                 height: req_size.y,
                 depth_or_array_layers: 1,

@@ -42,9 +42,9 @@ jobs:
         strategy:
             matrix:
                 include:
-                  # linux disabled until i figure out the multiple symbol definitions issue (webrtc and v8 both use abseil)
-                  # - build_name: linux-x86_64
-                  #   os: ubuntu-latest
+                  # linux livekit disabled until i figure out the multiple symbol definitions issue (webrtc and v8 both use abseil)
+                  - build_name: linux-x86_64
+                    os: ubuntu-latest
 
                   - build_name: macos-m1m2
                     os: macos-14-xlarge
@@ -113,15 +113,15 @@ jobs:
               Add-Content $env:GITHUB_ENV "FFMPEG_DIR=c:\ffmpeg-6.0`n"
     
               
-          - name: Cargo build (non-linux)
+          - name: Cargo build (windows)
             if: runner.os == 'windows'
             run: cargo build --release --bin decentra-bevy -j8
-          - name: Cargo build (non-linux)
+          - name: Cargo build (macos)
             if: runner.os == 'macos'
             run: cargo build --release --bin decentra-bevy
           - name: Cargo build (linux)
             if: runner.os == 'linux'
-            run: cargo build --release --bin decentra-bevy --no-default-features --features "ffmpeg"
+            run: cargo build --release --bin decentra-bevy --no-default-features --features "ffmpeg,inspect"
 
           - name: Package common
             run: |

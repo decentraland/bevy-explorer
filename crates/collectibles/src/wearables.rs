@@ -347,9 +347,11 @@ impl AssetLoader for WearableLoader {
 
                     (None, texture, mask)
                 } else {
-                    if !representation.main_file.to_lowercase().ends_with(".glb") {
+                    if !representation.main_file.to_lowercase().ends_with(".glb")
+                        && !representation.main_file.to_lowercase().ends_with(".gltf")
+                    {
                         return Err(anyhow!(
-                            "expected .glb main file, found {}",
+                            "expected .gl[b|tf] main file, found {}",
                             representation.main_file
                         ));
                     }

@@ -201,7 +201,11 @@ pub fn update_mesh(
                     .map(|c| c.bounds)
                     .unwrap_or_default();
                 materials.add(SceneMaterial {
-                    base: Default::default(),
+                    base: StandardMaterial {
+                        double_sided: true,
+                        cull_mode: None,
+                        ..Default::default()
+                    },
                     extension: SceneBound::new(bounds, config.graphics.oob),
                 })
             });

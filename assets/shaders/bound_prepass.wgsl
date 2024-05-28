@@ -2,6 +2,8 @@
     prepass_bindings,
     prepass_io::{Vertex, VertexOutput, FragmentOutput},
     mesh_view_bindings::{view, previous_view_proj},
+    pbr_fragment::pbr_input_from_standard_material,
+    pbr_prepass_functions::prepass_alpha_discard,
 }
 #import bevy_render::globals::Globals;
 
@@ -20,7 +22,10 @@ var<uniform> bounds: SceneBounds;
 
 #ifdef PREPASS_FRAGMENT
 @fragment
-fn fragment(in: VertexOutput) -> FragmentOutput {
+fn fragment(
+    in: VertexOutput, 
+    @builtin(front_facing) is_front: bool
+) -> FragmentOutput {
     var out: FragmentOutput;
 
 #ifdef NORMAL_PREPASS
@@ -68,6 +73,8 @@ fn fragment(in: VertexOutput) -> FragmentOutput {
             discard;
         }
     }
+
+    prepass_alpha_discard(in);
 
     return out;
 }

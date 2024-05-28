@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use analytics::segment_system::SegmentConfig;
 use bevy::{
     app::AppExit,
     prelude::*,
@@ -61,7 +62,7 @@ fn login(
     mut wallet: ResMut<Wallet>,
     mut current_profile: ResMut<CurrentUserProfile>,
     mut init_task: Local<Option<Task<Result<RemoteEphemeralRequest, anyhow::Error>>>>,
-
+    mut segment_config: ResMut<SegmentConfig>,
     mut final_task: Local<
         Option<
             Task<
@@ -74,8 +75,8 @@ fn login(
     mut toaster: Toaster,
     dui: Res<DuiRegistry>,
     mut window: Query<&mut Window, With<PrimaryWindow>>,
-    preview: Res<PreviewMode>,
-    config: Res<AppConfig>,
+    _preview: Res<PreviewMode>,
+    _config: Res<AppConfig>,
 ) {
     // cleanup if we're done
     if wallet.address().is_some() {
@@ -87,6 +88,8 @@ fn login(
         return;
     }
 
+    // auto-login in preview mode disabled for now
+    /*
     if preview.server.is_some() && final_task.is_none() {
         if let Some(previous_login) = config.previous_login.clone() {
             let ipfs = ipfas.ipfs().clone();
@@ -104,6 +107,7 @@ fn login(
             }));
         } else {
             wallet.finalize_as_guest();
+            segment_config.update_identity(format!("{:#x}", wallet.address().unwrap()), true);
             current_profile.profile = Some(UserProfile {
                 version: 0,
                 content: SerializedProfile {
@@ -117,6 +121,7 @@ fn login(
             return;
         }
     }
+    */
 
     // create dialog
     if dialog.is_none() && final_task.is_none() {
@@ -230,6 +235,7 @@ fn login(
                 }
 
                 wallet.finalize(root_address, local_wallet, auth);
+                segment_config.update_identity(format!("{:#x}", wallet.address().unwrap()), false);
                 if let Some(profile) = profile {
                     toaster.add_toast("login profile", "Profile loaded");
                     current_profile.profile = Some(profile);
@@ -326,6 +332,7 @@ fn login(
                     "Warning: Guest profile will not persist beyond the current session",
                 );
                 wallet.finalize_as_guest();
+                segment_config.update_identity(format!("{:#x}", wallet.address().unwrap()), true);
                 current_profile.profile = Some(UserProfile {
                     version: 0,
                     content: SerializedProfile {

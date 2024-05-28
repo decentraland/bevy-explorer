@@ -3,15 +3,15 @@ use bevy::{prelude::*, utils::HashSet};
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     sets::SceneSets,
-    structs::{CameraOverride, PrimaryCamera, PrimaryUser},
+    structs::{CameraOverride, CinematicSettings, PrimaryCamera, PrimaryUser},
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::sdk::components::{common::CameraType, PbCameraModeArea},
-    SceneComponentId,
+    SceneComponentId, SceneEntityId,
 };
 
-use crate::{ContainingScene, SceneEntity, Toaster};
+use crate::{renderer_context::RendererSceneContext, ContainingScene, SceneEntity, Toaster};
 
 use super::AddCrdtInterfaceExt;
 
@@ -37,13 +37,16 @@ impl Plugin for CameraModeAreaPlugin {
     }
 }
 
-fn update_camera_mode_area(
+#[allow(clippy::too_many_arguments)]
+pub fn update_camera_mode_area(
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     containing_scene: ContainingScene,
     areas: Query<(Entity, &SceneEntity, &CameraModeArea, &GlobalTransform)>,
+    contexts: Query<&RendererSceneContext>,
     mut current_areas: Local<Vec<Entity>>,
     mut camera: Query<&mut PrimaryCamera>,
     mut toaster: Toaster,
+    gt_helper: TransformHelper,
 ) {
     let Ok(mut camera) = camera.get_single_mut() else {
         return;
@@ -71,7 +74,11 @@ fn update_camera_mode_area(
                 PLAYER_COLLIDER_RADIUS,
                 PLAYER_COLLIDER_HEIGHT,
                 PLAYER_COLLIDER_RADIUS,
-            );
+            ) * if area.0.use_collider_range.unwrap_or(true) {
+                1.0
+            } else {
+                0.0
+            };
 
         // check bounds
         player_relative_position.clamp(-area, area) == player_relative_position
@@ -106,7 +113,7 @@ fn update_camera_mode_area(
     // apply last-entered
     match current_areas.last() {
         Some(area_ent) => {
-            let area = areas.get(*area_ent).unwrap().2;
+            let (_, scene_ent, area, _) = areas.get(*area_ent).unwrap();
 
             match area.0.mode() {
                 CameraType::CtFirstPerson => {
@@ -116,8 +123,35 @@ fn update_camera_mode_area(
                     camera.scene_override = Some(CameraOverride::Distance(1.0))
                 }
                 CameraType::CtCinematic => {
-                    warn!("cinematic camera not supported");
-                    camera.scene_override = None;
+                    let Some(cinematic_settings) = area.0.cinematic_settings.as_ref() else {
+                        warn!("no cinematic settings");
+                        return;
+                    };
+                    let target_entity =
+                        SceneEntityId::from_proto_u32(cinematic_settings.camera_entity);
+                    let Ok(ctx) = contexts.get(scene_ent.root) else {
+                        warn!("no scene");
+                        return;
+                    };
+                    let Some(cam) = ctx.bevy_entity(target_entity) else {
+                        warn!("no scene cam");
+                        return;
+                    };
+                    let Ok(origin) = gt_helper.compute_global_transform(cam) else {
+                        warn!("failed to get gt");
+                        return;
+                    };
+                    camera.scene_override = Some(CameraOverride::Cinematic(CinematicSettings {
+                        origin,
+                        allow_manual_rotation: cinematic_settings
+                            .allow_manual_rotation
+                            .unwrap_or_default(),
+                        yaw_range: cinematic_settings.yaw_range,
+                        pitch_range: cinematic_settings.pitch_range,
+                        roll_range: cinematic_settings.roll_range,
+                        zoom_min: cinematic_settings.zoom_min,
+                        zoom_max: cinematic_settings.zoom_max,
+                    }));
                 }
             }
             toaster.add_toast("camera_mode_area", "The scene has enforced the camera view");

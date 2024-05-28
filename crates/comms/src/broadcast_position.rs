@@ -57,6 +57,7 @@ fn broadcast_position(
     debug!("sending position: {position_packet:?}");
     let packet = rfc4::Packet {
         message: Some(rfc4::packet::Message::Position(position_packet)),
+        protocol_version: 999,
     };
 
     for transport in transports.iter() {
