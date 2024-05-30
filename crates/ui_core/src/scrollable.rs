@@ -188,7 +188,8 @@ fn update_scrollables(
         (Entity, &mut Slider, &mut Style),
         (Without<Scrollable>, Without<ScrollBar>),
     >,
-    mut clicked_slider: Local<Option<(Entity, Vec2)>>,
+    mut clicked_slider: Local<Option<Entity>>,
+    mut clicked_scrollable: Local<Option<(Entity, Vec2)>>,
     mut wheel: EventReader<MouseWheel>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
 ) {
@@ -221,6 +222,7 @@ fn update_scrollables(
 
     if mouse_button_input.just_released(MouseButton::Left) {
         *clicked_slider = None;
+        *clicked_scrollable = None;
     }
 
     let mut vertical_scrollers = HashMap::default();
@@ -254,7 +256,7 @@ fn update_scrollables(
         // calculate deltas based on drag or mouse wheel in the parent container
         let mut new_slider_deltas = None;
         if scrollable.drag {
-            if let Some((prev_entity, prev_pos)) = clicked_slider.as_ref() {
+            if let Some((prev_entity, prev_pos)) = clicked_scrollable.as_ref() {
                 if prev_entity == &entity {
                     let delta = cursor_position - *prev_pos;
                     new_slider_deltas = Some(delta / slide_amount);
@@ -262,7 +264,7 @@ fn update_scrollables(
             }
 
             if interaction == &Interaction::Pressed {
-                *clicked_slider = Some((entity, cursor_position));
+                *clicked_scrollable = Some((entity, cursor_position));
             }
         }
         if scrollable.wheel {
@@ -363,7 +365,7 @@ fn update_scrollables(
                 style.height = Val::Px(bar_width);
             }
         } else if interaction == &Interaction::Pressed
-            || clicked_slider.map_or(false, |(ent, _)| ent == bar.parent)
+            || clicked_slider.map_or(false, |ent| ent == entity)
         {
             // jump the slider to the clicked position
             let Vec2 { x: left, y: top } = transform.translation().xy() - node.size() * 0.5;
@@ -375,6 +377,7 @@ fn update_scrollables(
                 (relative_position.x - slider_len * 0.5) / (info.length - slider_len)
             };
             info.update_slider = Some(UpdateSliderPosition::Abs(position));
+            *clicked_slider = Some(entity);
         }
     }
 
