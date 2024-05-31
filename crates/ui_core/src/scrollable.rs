@@ -255,7 +255,7 @@ fn update_scrollables(
 
         // calculate deltas based on drag or mouse wheel in the parent container
         let mut new_slider_deltas = None;
-        if scrollable.drag {
+        if scrollable.drag && clicked_slider.is_none() {
             if let Some((prev_entity, prev_pos)) = clicked_scrollable.as_ref() {
                 if prev_entity == &entity {
                     let delta = cursor_position - *prev_pos;
@@ -584,14 +584,25 @@ impl DuiTemplate for ScrollableTemplate {
             .take::<Scrollable>("scroll-settings")?
             .unwrap_or_default();
 
+        let mut results = Ok(Default::default());
+        let content = props.take::<Entity>("content")?.unwrap_or_else(|| {
+            let mut root_cmds = commands.commands();
+            let mut content_cmds = root_cmds.spawn(NodeBundle {
+                style: Style {
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+
+            results = ctx.apply_children(&mut content_cmds);
+            content_cmds.id()
+        });
+
         let panel_size = match scrollable.direction {
             ScrollDirection::Vertical(_) => (Val::Percent(100.0), Val::Px(100000.0)),
             ScrollDirection::Horizontal(_) => (Val::Px(100000.0), Val::Percent(100.0)),
             ScrollDirection::Both(_, _) => (Val::Px(100000.0), Val::Px(100000.0)),
         };
-
-        let mut content = Entity::PLACEHOLDER;
-        let mut results = Ok(Default::default());
 
         commands
             .insert(NodeBundle {
@@ -618,19 +629,7 @@ impl DuiTemplate for ScrollableTemplate {
                     },
                     ..Default::default()
                 })
-                .with_children(|commands| {
-                    // TODO need one more layer for bidirectional scrolling
-                    let mut content_cmds = commands.spawn(NodeBundle {
-                        style: Style {
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    });
-
-                    results = ctx.apply_children(&mut content_cmds);
-                    content = content_cmds.id();
-                    commands.spacer();
-                });
+                .push_children(&[content]);
             });
 
         commands.try_insert((Interaction::default(), scrollable, ScrollContent(content)));
