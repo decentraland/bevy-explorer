@@ -1051,13 +1051,9 @@ fn layout_scene_ui(
                                     align_content: ui_transform.align_content,
                                     align_items: ui_transform.align_items,
                                     flex_wrap: ui_transform.wrap,
-                                    flex_shrink: ui_transform.shrink,
                                     flex_direction: ui_transform.flex_direction,
                                     justify_content: ui_transform.justify_content,
                                     overflow: ui_transform.overflow,
-                                    display: ui_transform.display,
-                                    min_width: ui_transform.min_size.width,
-                                    min_height: ui_transform.min_size.height,
                                     ..Default::default()
                                 };
 
