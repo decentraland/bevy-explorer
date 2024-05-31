@@ -1058,7 +1058,7 @@ fn layout_scene_ui(
                                     display: ui_transform.display,
                                     min_width: ui_transform.min_size.width,
                                     min_height: ui_transform.min_size.height,
-                                    ..Default::default()    
+                                    ..Default::default()
                                 };
 
                                 let id = processed_nodes.get_mut(scene_id).unwrap().0.as_mut().unwrap();
