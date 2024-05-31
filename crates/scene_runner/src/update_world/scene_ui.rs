@@ -5,6 +5,7 @@ use bevy::{
     ui::FocusPolicy,
     utils::{HashMap, HashSet},
 };
+use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use input_manager::MouseInteractionComponent;
 
 use crate::{
@@ -31,6 +32,7 @@ use dcl_component::{
 use ui_core::{
     combo_box::ComboBox,
     nine_slice::Ui9Slice,
+    scrollable::{ScrollDirection, Scrollable, StartPosition},
     stretch_uvs_image::StretchUvMaterial,
     textentry::TextEntry,
     ui_actions::{DataChanged, HoverEnter, HoverExit, On},
@@ -119,6 +121,7 @@ pub struct UiTransform {
     flex_direction: FlexDirection,
     justify_content: JustifyContent,
     overflow: Overflow,
+    scroll: bool,
     display: Display,
     basis: Val,
     grow: f32,
@@ -195,12 +198,9 @@ impl From<PbUiTransform> for UiTransform {
             overflow: match value.overflow() {
                 YgOverflow::YgoVisible => Overflow::DEFAULT,
                 YgOverflow::YgoHidden => Overflow::clip(),
-                YgOverflow::YgoScroll => {
-                    // TODO: map to scroll area
-                    warn!("ui overflow scroll not implemented");
-                    Overflow::clip()
-                }
+                YgOverflow::YgoScroll => Overflow::clip(),
             },
+            scroll: value.overflow() == YgOverflow::YgoScroll,
             display: match value.display() {
                 YgDisplay::YgdFlex => Display::Flex,
                 YgDisplay::YgdNone => Display::None,
@@ -517,6 +517,7 @@ fn layout_scene_ui(
     resolver: TextureResolver,
     mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
     config: Res<AppConfig>,
+    dui: Res<DuiRegistry>,
 ) {
     let current_scenes = player
         .get_single()
@@ -673,6 +674,7 @@ fn layout_scene_ui(
                                 padding: ui_transform.padding,
                                 ..Default::default()
                             };
+
                             debug!("{:?} style: {:?}", scene_id, ui_transform);
                             debug!("{:?}, {:?}, {:?}, {:?}, {:?}", maybe_background, maybe_text, maybe_pointer_events, maybe_ui_input, maybe_dropdown);
                             let total_opacity = opacity * ui_transform.opacity;
@@ -1041,6 +1043,43 @@ fn layout_scene_ui(
                                 ent_cmds.insert(style);
                                 processed_nodes.insert(*scene_id, (Some(ent_cmds.id()), total_opacity));
                             });
+
+                            // if it's a scrollable, embed any child content in a labyrinthine tower of divs
+                            if ui_transform.scroll {
+                                // copy child-affecting style members onto the inner pane
+                                let inner_style = Style {
+                                    align_content: ui_transform.align_content,
+                                    align_items: ui_transform.align_items,
+                                    flex_wrap: ui_transform.wrap,
+                                    flex_shrink: ui_transform.shrink,
+                                    flex_direction: ui_transform.flex_direction,
+                                    justify_content: ui_transform.justify_content,
+                                    overflow: ui_transform.overflow,
+                                    display: ui_transform.display,
+                                    min_width: ui_transform.min_size.width,
+                                    min_height: ui_transform.min_size.height,
+                                    ..Default::default()    
+                                };
+
+                                let id = processed_nodes.get_mut(scene_id).unwrap().0.as_mut().unwrap();
+                                let content_pane = commands.spawn(NodeBundle::default()).insert(inner_style).id();
+                                commands.entity(*id)
+                                    .insert(FocusPolicy::Block)
+                                    .spawn_template(
+                                        &dui,
+                                        "scrollable-base", 
+                                        DuiProps::new().with_prop(
+                                            "scroll-settings",
+                                            Scrollable::new()
+                                                .with_direction(ScrollDirection::Both(StartPosition::Start, StartPosition::Start))
+                                                .with_drag(true)
+                                                .with_wheel(true),
+                                            )
+                                            .with_prop("content", content_pane)
+                                    ).unwrap();
+
+                                *id = content_pane;
+                            }
 
                             // mark to continue and remove from unprocessed
                             modified = true;
