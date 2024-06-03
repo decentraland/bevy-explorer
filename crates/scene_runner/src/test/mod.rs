@@ -15,6 +15,7 @@ use bevy::{
     time::TimePlugin,
     utils::{HashMap, Instant},
 };
+use bevy_dui::DuiPlugin;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use scene_material::SceneBoundPlugin;
@@ -99,6 +100,7 @@ impl PluginGroup for TestPlugins {
             .add(ConsolePlugin { add_egui: false })
             .add(WalletPlugin)
             .add(CommsPlugin)
+            .add(DuiPlugin)
     }
 }
 
