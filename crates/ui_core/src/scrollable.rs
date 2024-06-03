@@ -2,7 +2,11 @@ use bevy::{input::mouse::MouseWheel, prelude::*, utils::HashMap, window::Primary
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
 use common::util::TryPushChildrenEx;
 
-use crate::interact_style::{InteractStyle, InteractStyles};
+use crate::{
+    interact_style::{InteractStyle, InteractStyles},
+    ui_actions::DataChanged,
+    ModifyComponentExt, ModifyDefaultComponentExt,
+};
 
 use super::ui_builder::SpawnSpacer;
 
@@ -77,7 +81,7 @@ impl SpawnScrollable for ChildBuilder<'_> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum ScrollDirection {
     Vertical(StartPosition),
     Horizontal(StartPosition),
@@ -90,12 +94,13 @@ impl Default for ScrollDirection {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum StartPosition {
     Start,
     #[default]
     Center,
     End,
+    Explicit(f32),
 }
 
 impl ScrollDirection {
@@ -111,6 +116,12 @@ impl ScrollDirection {
             _ => None,
         }
     }
+}
+
+#[derive(Component, Default, Debug)]
+pub struct ScrollPosition {
+    pub h: f32,
+    pub v: f32,
 }
 
 #[derive(Component, Default)]
@@ -432,8 +443,23 @@ fn update_scrollables(
             let offset = info.slide_amount * -slider.position;
             if slider.vertical {
                 style.top = Val::Px(offset.y);
+                let position = slider.position;
+                commands
+                    .entity(slider.parent)
+                    .remove::<DataChanged>()
+                    .try_insert(DataChanged)
+                    .modify_component(move |pos: &mut ScrollPosition| {
+                        pos.v = position;
+                    });
             } else {
                 style.left = Val::Px(offset.x);
+                let position = slider.position;
+                commands
+                    .entity(slider.parent)
+                    .insert(DataChanged)
+                    .modify_component(move |pos: &mut ScrollPosition| {
+                        pos.h = position;
+                    });
             }
         }
 
@@ -492,6 +518,7 @@ fn update_scrollables(
             StartPosition::Start => 0.0,
             StartPosition::Center => 0.5,
             StartPosition::End => 1.0,
+            StartPosition::Explicit(v) => v.clamp(0.0, 1.0),
         };
         let slider_len = info.length * info.ratio;
 
@@ -558,8 +585,20 @@ fn update_scrollables(
         let offset = info.slide_amount * -position;
         if vertical {
             style.top = Val::Px(offset.y);
+            commands
+                .entity(entity)
+                .default_and_modify_component(move |pos: &mut ScrollPosition| {
+                    pos.v = position;
+                })
+                .insert(DataChanged);
         } else {
             style.left = Val::Px(offset.x);
+            commands
+                .entity(entity)
+                .default_and_modify_component(move |pos: &mut ScrollPosition| {
+                    pos.h = position;
+                })
+                .insert(DataChanged);
         }
     };
 

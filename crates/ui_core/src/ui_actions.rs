@@ -178,6 +178,10 @@ impl ActionMarker for DataChanged {
     fn activate(param: <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool {
         param.map(|p| p.is_changed()).unwrap_or(false)
     }
+
+    fn repeat_activate() -> bool {
+        true
+    }
 }
 
 #[derive(Component)]

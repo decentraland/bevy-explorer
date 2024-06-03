@@ -32,10 +32,10 @@ use dcl_component::{
 use ui_core::{
     combo_box::ComboBox,
     nine_slice::Ui9Slice,
-    scrollable::{ScrollDirection, Scrollable, StartPosition},
+    scrollable::{ScrollDirection, ScrollPosition, Scrollable, StartPosition},
     stretch_uvs_image::StretchUvMaterial,
     textentry::TextEntry,
-    ui_actions::{DataChanged, HoverEnter, HoverExit, On},
+    ui_actions::{DataChanged, HoverEnter, HoverExit, On, UiCaller},
     ui_builder::SpawnSpacer,
 };
 
@@ -416,6 +416,9 @@ impl From<PbUiDropdown> for UiDropdown {
 #[derive(Component, Debug)]
 pub struct UiDropdownPersistentState(isize);
 
+#[derive(Component, Debug, Copy, Clone)]
+pub struct UiScrollablePersistentState(f32, f32);
+
 impl Plugin for SceneUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_crdt_lww_component::<PbUiTransform, UiTransform>(
@@ -514,6 +517,7 @@ fn layout_scene_ui(
     current_uis: Query<(Entity, &SceneUiRoot)>,
     ui_input_state: Query<&UiInputPersistentState>,
     ui_dropdown_state: Query<&UiDropdownPersistentState>,
+    ui_scrollable_state: Query<&UiScrollablePersistentState>,
     resolver: TextureResolver,
     mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
     config: Res<AppConfig>,
@@ -1046,6 +1050,11 @@ fn layout_scene_ui(
 
                             // if it's a scrollable, embed any child content in a labyrinthine tower of divs
                             if ui_transform.scroll {
+                                let state = match ui_scrollable_state.get(*node) {
+                                    Ok(state) => *state,
+                                    Err(_) => UiScrollablePersistentState(0.0, 0.0),
+                                };
+
                                 // copy child-affecting style members onto the inner pane
                                 let inner_style = Style {
                                     align_content: ui_transform.align_content,
@@ -1059,7 +1068,8 @@ fn layout_scene_ui(
 
                                 let id = processed_nodes.get_mut(scene_id).unwrap().0.as_mut().unwrap();
                                 let content_pane = commands.spawn(NodeBundle::default()).insert(inner_style).id();
-                                commands.entity(*id)
+                                let node_copy = *node;
+                                let scrollable = commands.entity(*id)
                                     .insert(FocusPolicy::Block)
                                     .spawn_template(
                                         &dui,
@@ -1067,14 +1077,29 @@ fn layout_scene_ui(
                                         DuiProps::new().with_prop(
                                             "scroll-settings",
                                             Scrollable::new()
-                                                .with_direction(ScrollDirection::Both(StartPosition::Start, StartPosition::Start))
+                                                .with_direction(ScrollDirection::Both(StartPosition::Explicit(state.0), StartPosition::Explicit(state.1)))
                                                 .with_drag(true)
                                                 .with_wheel(true),
                                             )
                                             .with_prop("content", content_pane)
-                                    ).unwrap();
+                                    ).unwrap().root;
+
+                                commands.entity(scrollable).insert(On::<DataChanged>::new(move |caller: Res<UiCaller>, pos: Query<&ScrollPosition>, mut q: Query<&mut UiScrollablePersistentState>| {
+                                    let Ok(pos) = pos.get(caller.0) else {
+                                        warn!("no scroll");
+                                        return;
+                                    };
+                                    let Ok(mut state) = q.get_mut(node_copy) else {
+                                        warn!("no state");
+                                        return;
+                                    };
+                                    state.0 = pos.h;
+                                    state.1 = pos.v;
+                                }));
 
                                 *id = content_pane;
+
+                                commands.entity(*node).try_insert(state);
                             }
 
                             // mark to continue and remove from unprocessed
@@ -1095,6 +1120,19 @@ fn layout_scene_ui(
             }
         } else {
             ui_data.current_node = None;
+        }
+    }
+}
+
+pub trait ValAsPx {
+    fn as_px(&self) -> f32;
+}
+
+impl ValAsPx for Val {
+    fn as_px(&self) -> f32 {
+        match self {
+            Val::Px(px) => *px,
+            _ => 0.0,
         }
     }
 }

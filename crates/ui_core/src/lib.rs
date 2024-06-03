@@ -248,6 +248,59 @@ impl<'a> ModifyComponentExt for EntityCommands<'a> {
     }
 }
 
+pub struct ModifyDefaultComponent<C: Component + Default, F: FnOnce(&mut C) + Send + Sync + 'static>
+{
+    func: F,
+    _p: PhantomData<fn() -> C>,
+}
+
+impl<C: Component + Default, F: FnOnce(&mut C) + Send + Sync + 'static> EntityCommand
+    for ModifyDefaultComponent<C, F>
+{
+    fn apply(self, id: Entity, world: &mut World) {
+        if let Some(mut c) = world.get_mut::<C>(id) {
+            (self.func)(&mut *c)
+        } else if let Some(mut entity) = world.get_entity_mut(id) {
+            let mut v = C::default();
+            (self.func)(&mut v);
+            entity.insert(v);
+        }
+    }
+}
+
+impl<C: Component + Default, F: FnOnce(&mut C) + Send + Sync + 'static>
+    ModifyDefaultComponent<C, F>
+{
+    fn new(func: F) -> Self {
+        Self {
+            func,
+            _p: PhantomData,
+        }
+    }
+}
+
+pub trait ModifyDefaultComponentExt {
+    fn default_and_modify_component<
+        C: Component + Default,
+        F: FnOnce(&mut C) + Send + Sync + 'static,
+    >(
+        &mut self,
+        func: F,
+    ) -> &mut Self;
+}
+
+impl<'a> ModifyDefaultComponentExt for EntityCommands<'a> {
+    fn default_and_modify_component<
+        C: Component + Default,
+        F: FnOnce(&mut C) + Send + Sync + 'static,
+    >(
+        &mut self,
+        func: F,
+    ) -> &mut Self {
+        self.add(ModifyDefaultComponent::new(func))
+    }
+}
+
 // blocker for egui elements to prevent interaction fallthrough
 #[derive(Component)]
 struct Blocker;
