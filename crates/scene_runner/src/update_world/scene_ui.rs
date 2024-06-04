@@ -1018,7 +1018,13 @@ fn layout_scene_ui(
                                     }
 
                                     ent_cmds.insert((
-                                        ComboBox::new(dropdown.0.empty_label.clone().unwrap_or_default(), &dropdown.0.options, dropdown.0.accept_empty, dropdown.0.disabled, initial_selection),
+                                        ComboBox::new(
+                                            dropdown.0.empty_label.clone().unwrap_or_default(),
+                                            &dropdown.0.options,
+                                            dropdown.0.accept_empty,
+                                            dropdown.0.disabled,
+                                            initial_selection
+                                        ).with_id(node),
                                         On::<DataChanged>::new(move |
                                             mut commands: Commands,
                                             combo: Query<(Entity, &ComboBox)>,

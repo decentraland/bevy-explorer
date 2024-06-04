@@ -456,7 +456,7 @@ fn update_scrollables(
                 let position = slider.position;
                 commands
                     .entity(slider.parent)
-                    .insert(DataChanged)
+                    .try_insert(DataChanged)
                     .modify_component(move |pos: &mut ScrollPosition| {
                         pos.h = position;
                     });
@@ -590,7 +590,7 @@ fn update_scrollables(
                 .default_and_modify_component(move |pos: &mut ScrollPosition| {
                     pos.v = position;
                 })
-                .insert(DataChanged);
+                .try_insert(DataChanged);
         } else {
             style.left = Val::Px(offset.x);
             commands
@@ -598,7 +598,7 @@ fn update_scrollables(
                 .default_and_modify_component(move |pos: &mut ScrollPosition| {
                     pos.h = position;
                 })
-                .insert(DataChanged);
+                .try_insert(DataChanged);
         }
     };
 

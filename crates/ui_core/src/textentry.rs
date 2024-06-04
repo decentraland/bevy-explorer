@@ -3,7 +3,10 @@ use crate::{
     ui_actions::{DataChanged, On},
     ModifyComponentExt,
 };
-use bevy::{math::Vec3Swizzles, prelude::*, utils::HashSet, window::PrimaryWindow};
+use bevy::{
+    math::Vec3Swizzles, prelude::*, transform::TransformSystem, utils::HashSet,
+    window::PrimaryWindow,
+};
 use bevy_dui::{DuiRegistry, DuiTemplate};
 use bevy_egui::{
     egui::{self, TextEdit},
@@ -43,8 +46,10 @@ pub struct TextEntryPlugin;
 
 impl Plugin for TextEntryPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup)
-            .add_systems(Update, update_text_entry_components);
+        app.add_systems(Startup, setup).add_systems(
+            PostUpdate,
+            update_text_entry_components.after(TransformSystem::TransformPropagate),
+        );
     }
 }
 

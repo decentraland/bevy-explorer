@@ -305,7 +305,7 @@ impl DuiTemplate for DuiTabGroupTemplate {
                                 }
 
                                 if let Some(mut cmd) = commands.get_entity(id) {
-                                    cmd.insert(DataChanged);
+                                    cmd.try_insert(DataChanged);
                                 }
                             },
                         ),
