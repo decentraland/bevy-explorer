@@ -1,6 +1,6 @@
 use bevy::{input::mouse::MouseWheel, prelude::*, utils::HashMap, window::PrimaryWindow};
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
-use common::util::TryPushChildrenEx;
+use common::{sets::SceneSets, util::TryPushChildrenEx};
 
 use crate::{
     interact_style::{InteractStyle, InteractStyles},
@@ -15,7 +15,7 @@ pub struct ScrollablePlugin;
 impl Plugin for ScrollablePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup)
-            .add_systems(Update, update_scrollables);
+            .add_systems(Update, update_scrollables.after(SceneSets::PostLoop));
     }
 }
 
@@ -442,7 +442,7 @@ fn update_scrollables(
             let mut style = nodes.get_mut(info.content).unwrap().1;
             let offset = info.slide_amount * -slider.position;
             if slider.vertical {
-                style.top = Val::Px(offset.y);
+                style.top = Val::Px(offset.y.floor());
                 let position = slider.position;
                 commands
                     .entity(slider.parent)
@@ -452,7 +452,7 @@ fn update_scrollables(
                         pos.v = position;
                     });
             } else {
-                style.left = Val::Px(offset.x);
+                style.left = Val::Px(offset.x.floor());
                 let position = slider.position;
                 commands
                     .entity(slider.parent)
@@ -584,7 +584,7 @@ fn update_scrollables(
         let mut style = nodes.get_mut(info.content).unwrap().1;
         let offset = info.slide_amount * -position;
         if vertical {
-            style.top = Val::Px(offset.y);
+            style.top = Val::Px(offset.y.floor());
             commands
                 .entity(entity)
                 .default_and_modify_component(move |pos: &mut ScrollPosition| {
@@ -592,7 +592,7 @@ fn update_scrollables(
                 })
                 .try_insert(DataChanged);
         } else {
-            style.left = Val::Px(offset.x);
+            style.left = Val::Px(offset.x.floor());
             commands
                 .entity(entity)
                 .default_and_modify_component(move |pos: &mut ScrollPosition| {
