@@ -22,7 +22,10 @@ use dcl_component::{
         self,
         common::{texture_union, BorderRect, TextureUnion},
         sdk::components::{
-            self, PbUiBackground, PbUiDropdown, PbUiDropdownResult, PbUiInput, PbUiInputResult, PbUiScrollResult, PbUiText, PbUiTransform, YgAlign, YgDisplay, YgFlexDirection, YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap
+            self, scroll_position_value, PbUiBackground, PbUiDropdown, PbUiDropdownResult,
+            PbUiInput, PbUiInputResult, PbUiScrollResult, PbUiText, PbUiTransform,
+            ScrollPositionValue, YgAlign, YgDisplay, YgFlexDirection, YgJustify, YgOverflow,
+            YgPositionType, YgUnit, YgWrap,
         },
     },
     SceneComponentId, SceneEntityId,
@@ -30,11 +33,14 @@ use dcl_component::{
 use ui_core::{
     combo_box::ComboBox,
     nine_slice::Ui9Slice,
-    scrollable::{ScrollDirection, ScrollPosition, Scrollable, StartPosition},
+    scrollable::{
+        ScrollDirection, ScrollPosition, ScrollTarget, ScrollTargetEvent, Scrollable, StartPosition,
+    },
     stretch_uvs_image::StretchUvMaterial,
     textentry::TextEntry,
     ui_actions::{DataChanged, HoverEnter, HoverExit, On, UiCaller},
     ui_builder::SpawnSpacer,
+    ModifyComponentExt,
 };
 
 use super::{material::TextureResolver, pointer_events::PointerEvents, AddCrdtInterfaceExt};
@@ -108,6 +114,7 @@ macro_rules! rect {
 
 #[derive(Component, Debug, Clone)]
 pub struct UiTransform {
+    element_id: Option<String>,
     parent: SceneEntityId,
     right_of: SceneEntityId,
     align_content: AlignContent,
@@ -120,6 +127,9 @@ pub struct UiTransform {
     justify_content: JustifyContent,
     overflow: Overflow,
     scroll: bool,
+    scroll_h_visible: bool,
+    scroll_v_visible: bool,
+    scroll_position: Option<ScrollPositionValue>,
     display: Display,
     basis: Val,
     grow: f32,
@@ -130,13 +140,13 @@ pub struct UiTransform {
     margin: UiRect,
     padding: UiRect,
     opacity: f32,
-    // debug: PbUiTransform,
 }
 
 impl From<PbUiTransform> for UiTransform {
     fn from(value: PbUiTransform) -> Self {
         Self {
             // debug: value.clone(),
+            element_id: value.element_id.clone(),
             parent: SceneEntityId::from_proto_u32(value.parent as u32),
             right_of: SceneEntityId::from_proto_u32(value.right_of as u32),
             align_content: match value.align_content() {
@@ -199,6 +209,17 @@ impl From<PbUiTransform> for UiTransform {
                 YgOverflow::YgoScroll => Overflow::clip(),
             },
             scroll: value.overflow() == YgOverflow::YgoScroll,
+            scroll_position: value.scroll_position.clone(),
+            scroll_h_visible: [
+                components::ShowScrollBar::SsbBoth,
+                components::ShowScrollBar::SsbOnlyHorizontal,
+            ]
+            .contains(&value.scroll_visible()),
+            scroll_v_visible: [
+                components::ShowScrollBar::SsbBoth,
+                components::ShowScrollBar::SsbOnlyVertical,
+            ]
+            .contains(&value.scroll_visible()),
             display: match value.display() {
                 YgDisplay::YgdFlex => Display::Flex,
                 YgDisplay::YgdNone => Display::None,
@@ -414,11 +435,12 @@ impl From<PbUiDropdown> for UiDropdown {
 #[derive(Component, Debug)]
 pub struct UiDropdownPersistentState(isize);
 
-#[derive(Component, Debug, Copy, Clone)]
+#[derive(Component, Debug, Clone)]
 pub struct UiScrollablePersistentState {
     root: Entity,
     scrollable: Entity,
     content: Entity,
+    position: Option<ScrollPositionValue>,
 }
 
 impl Plugin for SceneUiPlugin {
@@ -505,7 +527,7 @@ fn layout_scene_ui(
     mut commands: Commands,
     mut scene_uis: Query<(Entity, &mut SceneUiData)>,
     player: Query<Entity, With<PrimaryUser>>,
-    containing_scene: ContainingScene,
+    (containing_scene, resolver): (ContainingScene, TextureResolver),
     ui_nodes: Query<(
         &SceneEntity,
         &UiTransform,
@@ -520,12 +542,11 @@ fn layout_scene_ui(
     ui_input_state: Query<&UiInputPersistentState>,
     ui_dropdown_state: Query<&UiDropdownPersistentState>,
     ui_scrollable_state: Query<(Entity, &UiScrollablePersistentState)>,
-    resolver: TextureResolver,
     mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
-    config: Res<AppConfig>,
-    dui: Res<DuiRegistry>,
+    (config, dui): (Res<AppConfig>, Res<DuiRegistry>),
     children: Query<&Children>,
     styles: Query<&Style>,
+    mut scroll_to: EventWriter<ScrollTargetEvent>,
 ) {
     let current_scenes = player
         .get_single()
@@ -588,6 +609,9 @@ fn layout_scene_ui(
                     commands.entity(node).despawn_recursive();
                 }
 
+                // pending scroll events
+                let mut target_scroll_events = HashMap::default();
+
                 // collect ui data
                 let mut deleted_nodes = HashSet::default();
                 let mut unprocessed_uis =
@@ -627,6 +651,8 @@ fn layout_scene_ui(
                 // scene_id -> Option<Entity>
                 // if scene_id is display::None, it will be present here (so that right-of works) but with a None value
                 let mut processed_nodes = HashMap::new();
+
+                let mut named_nodes = HashMap::new();
 
                 let root_style = if config.constrain_scene_ui {
                     Style {
@@ -728,6 +754,10 @@ fn layout_scene_ui(
                             let ui_entity = commands.spawn(NodeBundle::default()).id();
                             commands.entity(parent).add_child(ui_entity);
                             let mut ent_cmds = commands.entity(ui_entity);
+
+                            if let Some(name) = ui_transform.element_id.clone() {
+                                named_nodes.insert(name, ent_cmds.id());
+                            }
 
                             // we use entity id as zindex. this is rubbish but mimics the foundation behaviour for multiple overlapping root nodes.
                             ent_cmds.insert(ZIndex::Local(scene_id.id as i32));
@@ -1100,12 +1130,27 @@ fn layout_scene_ui(
                             if ui_transform.scroll {
                                 let id = processed_nodes.get_mut(scene_id).unwrap().0.as_mut().unwrap();
                                 ent_cmds.insert(FocusPolicy::Block);
-                                let (content, pos) = match salvaged_scrollables.remove(node) {
+                                let (scrollable, content, pos, event) = match salvaged_scrollables.remove(node) {
                                     Some((state, prev_pos)) => {
+                                        // reuse existing
                                         ent_cmds.add_child(state.scrollable);
-                                        (state.content, prev_pos)
+                                        // send event if there's a new target
+                                        let event = if ui_transform.scroll_position.is_some() && ui_transform.scroll_position != state.position {
+                                            ui_transform.scroll_position.clone()
+                                        } else {
+                                            None
+                                        };
+                                        // update current target (deferred)
+                                        if ui_transform.scroll_position != state.position {
+                                            let pos = ui_transform.scroll_position.clone();
+                                            ent_cmds.commands().entity(*node).modify_component(move |state: &mut UiScrollablePersistentState| {
+                                                state.position = pos;
+                                            });
+                                        }
+                                        (state.scrollable, state.content, prev_pos, event)
                                     },
                                     None => {
+                                        // create new
                                         let content = ent_cmds.commands().spawn(NodeBundle::default()).id();
 
                                         let scrollable = ent_cmds.spawn_template(
@@ -1114,10 +1159,10 @@ fn layout_scene_ui(
                                                 DuiProps::new().with_prop(
                                                     "scroll-settings",
                                                     Scrollable::new()
-                                                        // TODO use given initial
                                                         .with_direction(ScrollDirection::Both(StartPosition::Explicit(0.0), StartPosition::Explicit(0.0)))
                                                         .with_drag(true)
-                                                        .with_wheel(true),
+                                                        .with_wheel(true)
+                                                        .with_bars_visible(ui_transform.scroll_h_visible, ui_transform.scroll_v_visible),
                                                     )
                                                     .with_prop("content", content)
                                             ).unwrap().root;
@@ -1137,24 +1182,35 @@ fn layout_scene_ui(
                                                     warn!("failed to get context on scrollable update");
                                                     return;
                                                 };
-        
+
                                                 context.update_crdt(SceneComponentId::UI_SCROLL_RESULT, CrdtType::LWW_ENT, scene_id, &PbUiScrollResult {
                                                     value: Some(Vec2::new(pos.h, pos.v).into())
                                                 });
                                             }),
                                         );
-                                        
 
                                         let state = UiScrollablePersistentState {
                                             root: ent,
                                             scrollable,
                                             content,
+                                            position: ui_transform.scroll_position.clone(),
                                         };
                                         ent_cmds.commands().entity(*node).try_insert(state);
-                                        (content, (0.0, 0.0))
+                                        (scrollable, content, (0.0, 0.0), ui_transform.scroll_position.clone())
                                     }
                                 };
                                 *id = content;
+
+                                if let Some(ScrollPositionValue{ value: Some(target) }) = event {
+                                    match target {
+                                        scroll_position_value::Value::Position(vec) => {
+                                            scroll_to.send(ScrollTargetEvent { scrollable, position: ScrollTarget::Literal(Vec2::from(&vec)) });
+                                        },
+                                        scroll_position_value::Value::Reference(target) => {
+                                            target_scroll_events.insert(scrollable, target);
+                                        },
+                                    }
+                                }
 
                                 // copy child-affecting style members onto the inner pane
                                 let inner_style = Style {
@@ -1192,6 +1248,18 @@ fn layout_scene_ui(
                 // remove any unused salvaged scrollables
                 for ent in salvaged_scrollables.keys() {
                     commands.entity(*ent).despawn_recursive();
+                }
+
+                // send any pending events
+                for (scrollable, target) in target_scroll_events {
+                    if let Some(target) = named_nodes.get(&target) {
+                        scroll_to.send(ScrollTargetEvent {
+                            scrollable,
+                            position: ScrollTarget::Entity(*target),
+                        });
+                    } else {
+                        warn!("scroll to target `{target}` not found");
+                    }
                 }
             }
         } else {

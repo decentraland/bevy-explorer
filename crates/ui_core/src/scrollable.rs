@@ -1,6 +1,9 @@
-use bevy::{input::mouse::MouseWheel, prelude::*, utils::HashMap, window::PrimaryWindow};
+use bevy::{
+    input::mouse::MouseWheel, prelude::*, transform::TransformSystem, utils::HashMap,
+    window::PrimaryWindow,
+};
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
-use common::{sets::SceneSets, util::TryPushChildrenEx};
+use common::util::TryPushChildrenEx;
 
 use crate::{
     interact_style::{InteractStyle, InteractStyles},
@@ -15,7 +18,11 @@ pub struct ScrollablePlugin;
 impl Plugin for ScrollablePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup)
-            .add_systems(Update, update_scrollables.after(SceneSets::PostLoop));
+            .add_systems(
+                PostUpdate,
+                update_scrollables.after(TransformSystem::TransformPropagate),
+            )
+            .add_event::<ScrollTargetEvent>();
     }
 }
 
@@ -124,12 +131,27 @@ pub struct ScrollPosition {
     pub v: f32,
 }
 
-#[derive(Component, Default)]
+#[derive(Component)]
 pub struct Scrollable {
     pub direction: ScrollDirection,
     pub drag: bool,
     pub wheel: bool,
     content_size: Vec2,
+    pub horizontal_bar: bool,
+    pub vertical_bar: bool,
+}
+
+impl Default for Scrollable {
+    fn default() -> Self {
+        Self {
+            direction: Default::default(),
+            drag: Default::default(),
+            wheel: Default::default(),
+            content_size: Default::default(),
+            horizontal_bar: true,
+            vertical_bar: true,
+        }
+    }
 }
 
 impl Scrollable {
@@ -148,6 +170,26 @@ impl Scrollable {
     pub fn with_wheel(self, wheel: bool) -> Self {
         Self { wheel, ..self }
     }
+
+    pub fn with_bars_visible(self, horizontal_bar: bool, vertical_bar: bool) -> Self {
+        Self {
+            horizontal_bar,
+            vertical_bar,
+            ..self
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ScrollTarget {
+    Literal(Vec2),
+    Entity(Entity),
+}
+
+#[derive(Event, Debug)]
+pub struct ScrollTargetEvent {
+    pub scrollable: Entity,
+    pub position: ScrollTarget,
 }
 
 #[derive(Component)]
@@ -174,6 +216,7 @@ fn update_scrollables(
         (&Node, &mut Style, Option<&Children>),
         (Without<Scrollable>, Without<ScrollBar>, Without<Slider>),
     >,
+    positions: Query<(&Node, &Transform, &Parent, &GlobalTransform)>,
     mut scrollables: Query<(
         Entity,
         &mut Scrollable,
@@ -203,6 +246,7 @@ fn update_scrollables(
     mut clicked_scrollable: Local<Option<(Entity, Vec2)>>,
     mut wheel: EventReader<MouseWheel>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
+    mut events: EventReader<ScrollTargetEvent>,
 ) {
     #[derive(Copy, Clone, Debug)]
     enum UpdateSliderPosition {
@@ -219,7 +263,13 @@ fn update_scrollables(
         start: StartPosition,
         redraw: bool,
         update_slider: Option<UpdateSliderPosition>,
+        visible: bool,
     }
+
+    let mut events = events
+        .read()
+        .map(|ev| (ev.scrollable, ev.position))
+        .collect::<HashMap<_, _>>();
 
     let Ok(window) = window.get_single() else {
         return;
@@ -263,6 +313,32 @@ fn update_scrollables(
         let ratio = parent_size / child_size;
         let ui_position = transform.translation().truncate() - parent_size * 0.5;
         let slide_amount = child_size - parent_size;
+
+        // calculate based on event
+        let mut new_slider_abses: Option<Vec2> = None;
+        if let Some(position) = events.remove(&entity) {
+            match position {
+                ScrollTarget::Literal(pos) => {
+                    new_slider_abses = Some(pos);
+                }
+                ScrollTarget::Entity(e) => {
+                    if let Ok((_, transform, parent, gt)) = positions.get(e) {
+                        if parent.get() != scroll_content.0 {
+                            warn!("scroll target is not in scrollable contents");
+                        } else {
+                            let overflow = (child_size - parent_size).max(Vec2::ONE);
+                            let abs_mid = (transform.translation.xy() + overflow * 0.5)
+                                .clamp(Vec2::ZERO, overflow)
+                                / overflow;
+                            new_slider_abses = Some(abs_mid);
+                            debug!("child pos: {} ({}) -> parent size: {parent_size}, child_size: {child_size}, abs {:?}", transform.translation.xy(), gt.translation().xy(), abs_mid);
+                        }
+                    } else {
+                        warn!("scroll target not found");
+                    }
+                }
+            }
+        }
 
         // calculate deltas based on drag or mouse wheel in the parent container
         let mut new_slider_deltas = None;
@@ -318,7 +394,10 @@ fn update_scrollables(
                         length: parent_size.x - 20.0,
                         start,
                         redraw,
-                        update_slider: new_slider_deltas.map(|d| UpdateSliderPosition::Rel(-d.x)),
+                        update_slider: new_slider_abses
+                            .map(|a| UpdateSliderPosition::Abs(a.x))
+                            .or(new_slider_deltas.map(|d| UpdateSliderPosition::Rel(-d.x))),
+                        visible: scrollable.horizontal_bar,
                     },
                 );
             }
@@ -340,7 +419,10 @@ fn update_scrollables(
                         length: parent_size.y - 20.0,
                         start,
                         redraw,
-                        update_slider: new_slider_deltas.map(|d| UpdateSliderPosition::Rel(-d.y)),
+                        update_slider: new_slider_abses
+                            .map(|a| UpdateSliderPosition::Abs(a.y))
+                            .or(new_slider_deltas.map(|d| UpdateSliderPosition::Rel(-d.y))),
+                        visible: scrollable.vertical_bar,
                     },
                 );
             }
@@ -362,6 +444,12 @@ fn update_scrollables(
         let Some(info) = source.get_mut(&bar.parent) else {
             commands.entity(entity).despawn_recursive();
             continue;
+        };
+
+        style.display = if info.visible {
+            Display::Flex
+        } else {
+            Display::None
         };
 
         if info.redraw {
@@ -407,15 +495,15 @@ fn update_scrollables(
         // if anything changes we will redraw the slider and re-paginate the content
         let mut update_position = false;
 
-        if info.redraw {
-            // parent moved/resized or content moved/resized
-            update_position = true;
-        } else if let Some(position) = info.update_slider {
+        if let Some(position) = info.update_slider {
             // the container or the bar have triggered a slider update
             slider.position = match position {
                 UpdateSliderPosition::Abs(p) => p.clamp(0.0, 1.0),
                 UpdateSliderPosition::Rel(r) => (slider.position + r).clamp(0.0, 1.0),
             };
+            update_position = true;
+        } else if info.redraw {
+            // parent moved/resized or content moved/resized
             update_position = true;
         }
 
@@ -513,12 +601,17 @@ fn update_scrollables(
 
         commands.entity(entity).try_push_children(&children);
 
-        let position = match info.start {
+        let mut position = match info.start {
             StartPosition::Start => 0.0,
             StartPosition::Center => 0.5,
             StartPosition::End => 1.0,
             StartPosition::Explicit(v) => v.clamp(0.0, 1.0),
         };
+
+        if let Some(UpdateSliderPosition::Abs(val)) = info.update_slider {
+            position = val;
+        }
+
         let slider_len = info.length * info.ratio;
 
         let (left, top, width, height) = if vertical {

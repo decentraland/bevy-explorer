@@ -108,6 +108,14 @@ impl From<bevy::prelude::Vec2> for common::Vector2 {
         }
     }
 }
+impl From<&common::Vector2> for bevy::prelude::Vec2 {
+    fn from(value: &common::Vector2) -> Self {
+        Self {
+            x: value.x,
+            y: value.y,
+        }
+    }
+}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}
