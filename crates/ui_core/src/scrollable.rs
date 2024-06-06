@@ -446,7 +446,6 @@ fn update_scrollables(
                 let position = slider.position;
                 commands
                     .entity(slider.parent)
-                    .remove::<DataChanged>()
                     .try_insert(DataChanged)
                     .modify_component(move |pos: &mut ScrollPosition| {
                         pos.v = position;

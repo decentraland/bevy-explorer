@@ -22,9 +22,7 @@ use dcl_component::{
         self,
         common::{texture_union, BorderRect, TextureUnion},
         sdk::components::{
-            self, PbUiBackground, PbUiDropdown, PbUiDropdownResult, PbUiInput, PbUiInputResult,
-            PbUiText, PbUiTransform, YgAlign, YgDisplay, YgFlexDirection, YgJustify, YgOverflow,
-            YgPositionType, YgUnit, YgWrap,
+            self, PbUiBackground, PbUiDropdown, PbUiDropdownResult, PbUiInput, PbUiInputResult, PbUiScrollResult, PbUiText, PbUiTransform, YgAlign, YgDisplay, YgFlexDirection, YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap
         },
     },
     SceneComponentId, SceneEntityId,
@@ -32,10 +30,10 @@ use dcl_component::{
 use ui_core::{
     combo_box::ComboBox,
     nine_slice::Ui9Slice,
-    scrollable::{ScrollDirection, Scrollable, StartPosition},
+    scrollable::{ScrollDirection, ScrollPosition, Scrollable, StartPosition},
     stretch_uvs_image::StretchUvMaterial,
     textentry::TextEntry,
-    ui_actions::{DataChanged, HoverEnter, HoverExit, On},
+    ui_actions::{DataChanged, HoverEnter, HoverExit, On, UiCaller},
     ui_builder::SpawnSpacer,
 };
 
@@ -1123,6 +1121,29 @@ fn layout_scene_ui(
                                                     )
                                                     .with_prop("content", content)
                                             ).unwrap().root;
+                                        let scene_id = *scene_id;
+
+                                        ent_cmds.commands().entity(scrollable).insert(
+                                            On::<DataChanged>::new(move |
+                                                caller: Res<UiCaller>,
+                                                position: Query<&ScrollPosition>,
+                                                mut context: Query<&mut RendererSceneContext>,
+                                            | {
+                                                let Ok(pos) = position.get(caller.0) else {
+                                                    warn!("failed to get scroll pos on scrollable update");
+                                                    return;
+                                                };
+                                                let Ok(mut context) = context.get_mut(ent) else {
+                                                    warn!("failed to get context on scrollable update");
+                                                    return;
+                                                };
+        
+                                                context.update_crdt(SceneComponentId::UI_SCROLL_RESULT, CrdtType::LWW_ENT, scene_id, &PbUiScrollResult {
+                                                    value: Some(Vec2::new(pos.h, pos.v).into())
+                                                });
+                                            }),
+                                        );
+                                        
 
                                         let state = UiScrollablePersistentState {
                                             root: ent,
