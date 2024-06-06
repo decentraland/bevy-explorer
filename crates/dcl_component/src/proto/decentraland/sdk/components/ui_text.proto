@@ -19,4 +19,5 @@ message PBUiText {
   optional int32 font_size = 5;                  // size of the text (default: 10)
   optional float outline_width = 6;              // width of the outline (default: 0)
   optional decentraland.common.Color4 outline_color = 7; // RGBA color of the outline (default: opaque black)
+  optional bool text_wrapping = 8;               // wrap text when the border is reached (default false)
 }

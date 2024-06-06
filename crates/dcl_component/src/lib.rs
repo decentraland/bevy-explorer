@@ -108,6 +108,7 @@ impl SceneComponentId {
     pub const UI_DROPDOWN: SceneComponentId = SceneComponentId(1094);
     pub const UI_INPUT_RESULT: SceneComponentId = SceneComponentId(1095);
     pub const UI_DROPDOWN_RESULT: SceneComponentId = SceneComponentId(1096);
+    pub const UI_SCROLL_RESULT: SceneComponentId = SceneComponentId(1097);
 
     pub const TWEEN: SceneComponentId = SceneComponentId(1102);
     pub const TWEEN_STATE: SceneComponentId = SceneComponentId(1103);

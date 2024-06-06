@@ -3,6 +3,7 @@ syntax = "proto3";
 package decentraland.sdk.components;
 
 import "decentraland/sdk/components/common/id.proto";
+import "decentraland/common/vectors.proto";
 
 option (common.ecs_component_id) = 1050;
 
@@ -79,6 +80,20 @@ enum PointerFilterMode {
   PFM_BLOCK = 1;
 }
 
+enum ShowScrollBar {
+  SSB_BOTH = 0;
+  SSB_ONLY_VERTICAL = 1;
+  SSB_ONLY_HORIZONTAL = 2;
+  SSB_HIDDEN = 3;
+}
+
+message ScrollPositionValue {
+  oneof value {
+    decentraland.common.Vector2 position = 1;
+    string reference = 2;
+  }
+}
+
 message PBUiTransform {
   int32 parent = 1;
   int32 right_of = 2;
@@ -146,4 +161,9 @@ message PBUiTransform {
   
   optional PointerFilterMode pointer_filter = 52; // default: PointerFilterMode.PFM_NONE
   optional float opacity = 53; // default: 1
+
+  optional string element_id = 54; // default empty
+
+  optional ScrollPositionValue scroll_position = 55; // default position=(0,0)
+  optional ShowScrollBar scroll_visible = 56; // default ShowScrollBar.SSB_BOTH
 }

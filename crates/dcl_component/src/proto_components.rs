@@ -83,6 +83,7 @@ impl DclProtoComponent for sdk::components::PbUiInput {}
 impl DclProtoComponent for sdk::components::PbUiInputResult {}
 impl DclProtoComponent for sdk::components::PbUiDropdown {}
 impl DclProtoComponent for sdk::components::PbUiDropdownResult {}
+impl DclProtoComponent for sdk::components::PbUiScrollResult {}
 impl DclProtoComponent for sdk::components::PbTextShape {}
 impl DclProtoComponent for sdk::components::PbPointerLock {}
 impl DclProtoComponent for sdk::components::PbCameraMode {}
@@ -96,6 +97,17 @@ impl DclProtoComponent for sdk::components::PbAvatarModifierArea {}
 impl DclProtoComponent for sdk::components::PbNftShape {}
 impl DclProtoComponent for sdk::components::PbTween {}
 impl DclProtoComponent for sdk::components::PbTweenState {}
+
+// VECTOR2 conversions
+impl Copy for common::Vector2 {}
+impl From<bevy::prelude::Vec2> for common::Vector2 {
+    fn from(value: bevy::prelude::Vec2) -> Self {
+        Self {
+            x: value.x,
+            y: value.y,
+        }
+    }
+}
 
 // VECTOR3 conversions
 impl Copy for common::Vector3 {}
