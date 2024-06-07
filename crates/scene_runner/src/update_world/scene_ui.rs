@@ -32,13 +32,14 @@ use dcl_component::{
 };
 use ui_core::{
     combo_box::ComboBox,
+    focus::{Focus, FocusIsNotReallyNew},
     nine_slice::Ui9Slice,
     scrollable::{
         ScrollDirection, ScrollPosition, ScrollTarget, ScrollTargetEvent, Scrollable, StartPosition,
     },
     stretch_uvs_image::StretchUvMaterial,
     textentry::TextEntry,
-    ui_actions::{DataChanged, HoverEnter, HoverExit, On, UiCaller},
+    ui_actions::{DataChanged, Defocus, HoverEnter, HoverExit, On, Submit, UiCaller},
     ui_builder::SpawnSpacer,
     ModifyComponentExt,
 };
@@ -421,6 +422,7 @@ impl From<PbUiInput> for UiInput {
 #[derive(Component)]
 pub struct UiInputPersistentState {
     content: String,
+    focus: bool,
 }
 
 #[derive(Component, Debug)]
@@ -1012,17 +1014,20 @@ fn layout_scene_ui(
                             }
 
                             if let Some(input) = maybe_ui_input {
-                                debug!("input: {:?}", input.0);
-
                                 let node = *node;
                                 let ui_node = ent_cmds.id();
                                 let scene_id = *scene_id;
 
-                                let content = match ui_input_state.get(node) {
-                                    Ok(state) => state.content.clone(),
-                                    Err(_) => input.0.value.clone().unwrap_or_default(),
+                                let (content, focus) = match ui_input_state.get(node) {
+                                    Ok(state) => (state.content.clone(), state.focus),
+                                    Err(_) => {
+                                        ent_cmds.commands().entity(node).try_insert(UiInputPersistentState{content: input.0.value.clone().unwrap_or_default(), focus: false});
+                                        (input.0.value.clone().unwrap_or_default(), false)
+                                    }
                                 };
                                 let font_size = input.0.font_size.unwrap_or(12);
+
+                                debug!("{:?} input: {:?} - {:?}", ent_cmds.id(), input.0, content);
 
                                 //ensure we use max width if not given
                                 if style.width == Val::Px(0.0) {
@@ -1032,6 +1037,33 @@ fn layout_scene_ui(
                                 if style.height == Val::Px(0.0) {
                                     style.height = Val::Px(font_size as f32 * 1.3);
                                 }
+
+                                let data_handler = move |
+                                    In(submit): In<bool>,
+                                    mut commands: Commands,
+                                    entry: Query<&TextEntry>,
+                                    mut context: Query<&mut RendererSceneContext>,
+                                    time: Res<Time>,
+                                    caller: Res<UiCaller>,
+                                | {
+                                    println!("callback on {:?}", caller.0);
+                                    let Ok(entry) = entry.get(ui_node) else {
+                                        warn!("failed to get text node on UiInput update");
+                                        return;
+                                    };
+                                    let Ok(mut context) = context.get_mut(ent) else {
+                                        warn!("failed to get context on UiInput update");
+                                        return;
+                                    };
+
+                                    context.update_crdt(SceneComponentId::UI_INPUT_RESULT, CrdtType::LWW_ENT, scene_id, &PbUiInputResult {
+                                        value: entry.content.clone(),
+                                        is_submit: Some(submit),
+                                    });
+                                    context.last_action_event = Some(time.elapsed_seconds());
+                                    // store persistent state to the scene entity
+                                    commands.entity(node).try_insert(UiInputPersistentState{content: entry.content.clone(), focus: true});
+                                };
 
                                 ent_cmds.insert((
                                     FocusPolicy::Block,
@@ -1045,30 +1077,27 @@ fn layout_scene_ui(
                                         id_entity: Some(node),
                                         ..Default::default()
                                     },
-                                    On::<DataChanged>::new(move |
-                                        mut commands: Commands,
-                                        entry: Query<&TextEntry>,
-                                        mut context: Query<&mut RendererSceneContext>,
-                                        time: Res<Time>,
-                                    | {
-                                        let Ok(entry) = entry.get(ui_node) else {
-                                            warn!("failed to get text node on UiInput update");
+                                    On::<DataChanged>::new((|| false).pipe(data_handler)),
+                                    On::<Submit>::new((|| true).pipe(data_handler)),
+                                    On::<Focus>::new(move |mut q: Query<&mut UiInputPersistentState>| {
+                                        let Ok(mut state) = q.get_mut(node) else {
+                                            warn!("failed to get node state on focus");
                                             return;
                                         };
-                                        let Ok(mut context) = context.get_mut(ent) else {
-                                            warn!("failed to get context on UiInput update");
+                                        state.focus = true;
+                                    }),
+                                    On::<Defocus>::new(move |mut q: Query<&mut UiInputPersistentState>| {
+                                        let Ok(mut state) = q.get_mut(node) else {
+                                            warn!("failed to get node state on defocus");
                                             return;
                                         };
-
-                                        context.update_crdt(SceneComponentId::UI_INPUT_RESULT, CrdtType::LWW_ENT, scene_id, &PbUiInputResult {
-                                            value: entry.content.clone(),
-                                            is_submit: None,
-                                        });
-                                        context.last_action_event = Some(time.elapsed_seconds());
-                                        // store persistent state to the scene entity
-                                        commands.entity(node).try_insert(UiInputPersistentState{content: entry.content.clone()});
+                                        state.focus = false;
                                     }),
                                 ));
+
+                                if focus {
+                                    ent_cmds.insert((Focus, FocusIsNotReallyNew));
+                                }
                             }
 
                             if let Some(dropdown) = maybe_dropdown {

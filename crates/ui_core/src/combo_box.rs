@@ -3,7 +3,7 @@ use std::{any::type_name, str::FromStr};
 use anyhow::anyhow;
 use bevy::{math::Vec3Swizzles, prelude::*, transform::TransformSystem, window::PrimaryWindow};
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
-use bevy_egui::{egui, EguiContext};
+use bevy_egui::{egui, EguiContext, EguiSet};
 
 use crate::{
     ui_actions::{DataChanged, On},
@@ -60,7 +60,9 @@ impl Plugin for ComboBoxPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup).add_systems(
             PostUpdate,
-            update_comboboxen.after(TransformSystem::TransformPropagate),
+            update_comboboxen
+                .after(TransformSystem::TransformPropagate)
+                .before(EguiSet::ProcessOutput),
         );
     }
 }
