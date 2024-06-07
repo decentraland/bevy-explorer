@@ -463,10 +463,9 @@ fn update_scrollables(
                 style.width = Val::Px(info.length);
                 style.height = Val::Px(bar_width);
             }
-        } 
-        
-        if interaction == &Interaction::Pressed
-            || clicked_slider.map_or(false, |ent| ent == entity)
+        }
+
+        if interaction == &Interaction::Pressed || clicked_slider.map_or(false, |ent| ent == entity)
         {
             // jump the slider to the clicked position
             let Vec2 { x: left, y: top } = transform.translation().xy() - node.size() * 0.5;
