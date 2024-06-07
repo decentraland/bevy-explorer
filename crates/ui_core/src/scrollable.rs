@@ -463,7 +463,9 @@ fn update_scrollables(
                 style.width = Val::Px(info.length);
                 style.height = Val::Px(bar_width);
             }
-        } else if interaction == &Interaction::Pressed
+        } 
+        
+        if interaction == &Interaction::Pressed
             || clicked_slider.map_or(false, |ent| ent == entity)
         {
             // jump the slider to the clicked position
