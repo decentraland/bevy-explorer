@@ -134,8 +134,7 @@ jobs:
             if: runner.os == 'macos'
             run: |
                 brew install dylibbundler
-                mv package ${{ env.CARGO_BUILD_DIR }}
-                cd ${{ env.CARGO_BUILD_DIR }}
+                mv ${{ env.CARGO_BUILD_DIR }}/decentra-bevy .
                 dylibbundler -cd -b -x decentra-bevy -d ./libs
                 mkdir bin
                 mv decentra-bevy bin
