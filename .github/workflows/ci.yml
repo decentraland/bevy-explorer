@@ -120,7 +120,9 @@ jobs:
         with:
           command: test
           args: --all --release
-      
+      - uses: mxschmitt/action-tmate@v3
+        if: runner.os == 'macos'
+          
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest

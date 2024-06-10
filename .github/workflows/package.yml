@@ -133,21 +133,12 @@ jobs:
           - name: Package Macos
             if: runner.os == 'macos'
             run: |
-                install_name_tool -change /opt/homebrew/opt/ffmpeg\@6/lib/libavutil.58.dylib "@executable_path/libavutil.58.dylib" ${{ env.CARGO_BUILD_DIR }}/decentra-bevy
-                install_name_tool -change /opt/homebrew/opt/ffmpeg\@6/lib/libavformat.60.dylib "@executable_path/libavformat.60.dylib" ${{ env.CARGO_BUILD_DIR }}/decentra-bevy
-                install_name_tool -change /opt/homebrew/opt/ffmpeg\@6/lib/libavfilter.9.dylib "@executable_path/libavfilter.9.dylib" ${{ env.CARGO_BUILD_DIR }}/decentra-bevy
-                install_name_tool -change /opt/homebrew/opt/ffmpeg\@6/lib/libavdevice.60.dylib "@executable_path/libavdevice.60.dylib" ${{ env.CARGO_BUILD_DIR }}/decentra-bevy
-                install_name_tool -change /opt/homebrew/opt/ffmpeg\@6/lib/libswscale.7.dylib "@executable_path/libswscale.7.dylib" ${{ env.CARGO_BUILD_DIR }}/decentra-bevy
-                install_name_tool -change /opt/homebrew/opt/ffmpeg\@6/lib/libswresample.4.dylib "@executable_path/libswresample.4.dylib" ${{ env.CARGO_BUILD_DIR }}/decentra-bevy
-                install_name_tool -change /opt/homebrew/opt/ffmpeg\@6/lib/libavcodec.60.dylib "@executable_path/libavcodec.60.dylib" ${{ env.CARGO_BUILD_DIR }}/decentra-bevy
-                cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy package/decentra-bevy
-                cp /opt/homebrew/opt/ffmpeg\@6/lib/libavutil.58.dylib package
-                cp /opt/homebrew/opt/ffmpeg\@6/lib/libavformat.60.dylib package
-                cp /opt/homebrew/opt/ffmpeg\@6/lib/libavfilter.9.dylib package
-                cp /opt/homebrew/opt/ffmpeg\@6/lib/libavdevice.60.dylib package
-                cp /opt/homebrew/opt/ffmpeg\@6/lib/libswscale.7.dylib package
-                cp /opt/homebrew/opt/ffmpeg\@6/lib/libswresample.4.dylib package
-                cp /opt/homebrew/opt/ffmpeg\@6/lib/libavcodec.60.dylib package
+                brew install dylibbundler
+                mv package ${{ env.CARGO_BUILD_DIR }}
+                cd ${{ env.CARGO_BUILD_DIR }}
+                dylibbundler -cd -b -x decentra-bevy -d ./libs
+                cp decentra-bevy package/decentra-bevy
+                mv ./libs package
                 cd package
                 tar -czvf ../${{ env.PACKAGE_FILE }} *            
 
