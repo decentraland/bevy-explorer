@@ -6,6 +6,7 @@ use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
 use common::util::TryPushChildrenEx;
 
 use crate::{
+    bound_node::{BoundedNode, BoundedNodeBundle, NodeBounds},
     interact_style::{InteractStyle, InteractStyles},
     ui_actions::DataChanged,
     ModifyComponentExt, ModifyDefaultComponentExt,
@@ -275,7 +276,7 @@ fn update_scrollables(
         return;
     };
 
-    let bar_width = (window.width() * 0.01).ceil();
+    let bar_width = (window.width().min(window.height()) * 0.01).ceil();
 
     let Some(cursor_position) = window.cursor_position() else {
         return;
@@ -391,7 +392,7 @@ fn update_scrollables(
                         ratio: ratio.x,
                         bar_position: ui_position * 0.0
                             + Vec2::new(bar_width, parent_size.y - bar_width - 5.0),
-                        length: parent_size.x - 20.0,
+                        length: parent_size.x - bar_width * 3.0,
                         start,
                         redraw,
                         update_slider: new_slider_abses
@@ -416,7 +417,7 @@ fn update_scrollables(
                         ratio: ratio.y,
                         bar_position: ui_position * 0.0
                             + Vec2::new(parent_size.x - bar_width - 5.0, bar_width),
-                        length: parent_size.y - 20.0,
+                        length: parent_size.y - bar_width * 3.0,
                         start,
                         redraw,
                         update_slider: new_slider_abses
@@ -564,7 +565,18 @@ fn update_scrollables(
 
         let children = [commands
             .spawn((
-                NodeBundle {
+                NodeBounds {
+                    corner_size: Val::Px(bar_width * 0.25),
+                    corner_blend_size: Val::Px(bar_width * 0.125),
+                    border_size: Val::Px(bar_width * 0.25),
+                    border_color: Color::NONE,
+                    ..Default::default()
+                },
+                BoundedNodeBundle {
+                    bounded: BoundedNode {
+                        image: None,
+                        color: Color::rgba(0.5, 0.5, 0.5, 0.2).into(),
+                    },
                     style: Style {
                         position_type: PositionType::Absolute,
                         left: Val::Px(info.bar_position.x),
@@ -573,7 +585,6 @@ fn update_scrollables(
                         height: bar_size.1,
                         ..Default::default()
                     },
-                    background_color: Color::rgba(0.5, 0.5, 0.5, 0.2).into(),
                     z_index: ZIndex::Local(1),
                     ..Default::default()
                 },
@@ -584,15 +595,15 @@ fn update_scrollables(
                 Interaction::default(),
                 InteractStyles {
                     hover: Some(InteractStyle {
-                        background: Some(Color::GRAY),
+                        background: Some(Color::rgba(0.3, 0.3, 0.3, 0.8)),
                         ..Default::default()
                     }),
                     press: Some(InteractStyle {
-                        background: Some(Color::GRAY),
+                        background: Some(Color::rgba(0.3, 0.3, 0.3, 0.8)),
                         ..Default::default()
                     }),
                     inactive: Some(InteractStyle {
-                        background: Some(Color::rgba(0.5, 0.5, 0.5, 0.2)),
+                        background: Some(Color::rgba(0.3, 0.3, 0.3, 0.5)),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -635,7 +646,18 @@ fn update_scrollables(
 
         let children = [commands
             .spawn((
-                NodeBundle {
+                NodeBounds {
+                    corner_size: Val::Px(bar_width * 0.25),
+                    corner_blend_size: Val::Px(bar_width * 0.125),
+                    border_size: Val::Px(bar_width * 0.25),
+                    border_color: Color::NONE,
+                    ..Default::default()
+                },
+                BoundedNodeBundle {
+                    bounded: BoundedNode {
+                        image: None,
+                        color: Color::rgba(1.0, 1.0, 1.0, 0.2).into(),
+                    },
                     style: Style {
                         position_type: PositionType::Absolute,
                         left,
@@ -644,7 +666,6 @@ fn update_scrollables(
                         height,
                         ..Default::default()
                     },
-                    background_color: Color::rgba(1.0, 1.0, 1.0, 0.2).into(),
                     z_index: ZIndex::Local(2),
                     ..Default::default()
                 },
@@ -664,7 +685,7 @@ fn update_scrollables(
                         ..Default::default()
                     }),
                     inactive: Some(InteractStyle {
-                        background: Some(Color::rgba(1.0, 1.0, 1.0, 0.2)),
+                        background: Some(Color::rgba(1.0, 1.0, 1.0, 0.5)),
                         ..Default::default()
                     }),
                     ..Default::default()
