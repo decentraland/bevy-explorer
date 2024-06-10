@@ -566,9 +566,9 @@ fn update_scrollables(
         let children = [commands
             .spawn((
                 NodeBounds {
-                    corner_size: Val::Px(bar_width * 0.25),
+                    corner_size: Val::Px(bar_width * 0.5),
                     corner_blend_size: Val::Px(bar_width * 0.125),
-                    border_size: Val::Px(bar_width * 0.25),
+                    border_size: Val::Px(bar_width * 0.125),
                     border_color: Color::NONE,
                     ..Default::default()
                 },
@@ -647,9 +647,9 @@ fn update_scrollables(
         let children = [commands
             .spawn((
                 NodeBounds {
-                    corner_size: Val::Px(bar_width * 0.25),
+                    corner_size: Val::Px(bar_width * 0.5),
                     corner_blend_size: Val::Px(bar_width * 0.125),
-                    border_size: Val::Px(bar_width * 0.25),
+                    border_size: Val::Px(bar_width * 0.125),
                     border_color: Color::NONE,
                     ..Default::default()
                 },
