@@ -276,7 +276,7 @@ fn update_scrollables(
         return;
     };
 
-    let bar_width = (window.width().min(window.height()) * 0.01).ceil();
+    let bar_width = (window.width().min(window.height()) * 0.02).ceil();
 
     let Some(cursor_position) = window.cursor_position() else {
         return;
@@ -567,7 +567,6 @@ fn update_scrollables(
             .spawn((
                 NodeBounds {
                     corner_size: Val::Px(bar_width * 0.5),
-                    corner_blend_size: Val::Px(bar_width * 0.125),
                     border_size: Val::Px(bar_width * 0.125),
                     border_color: Color::NONE,
                     ..Default::default()
@@ -648,8 +647,7 @@ fn update_scrollables(
             .spawn((
                 NodeBounds {
                     corner_size: Val::Px(bar_width * 0.5),
-                    corner_blend_size: Val::Px(bar_width * 0.125),
-                    border_size: Val::Px(bar_width * 0.125),
+                    border_size: Val::Px(bar_width * 0.25),
                     border_color: Color::NONE,
                     ..Default::default()
                 },
