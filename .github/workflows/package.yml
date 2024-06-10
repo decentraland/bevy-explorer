@@ -137,8 +137,10 @@ jobs:
                 mv package ${{ env.CARGO_BUILD_DIR }}
                 cd ${{ env.CARGO_BUILD_DIR }}
                 dylibbundler -cd -b -x decentra-bevy -d ./libs
-                cp decentra-bevy package/decentra-bevy
-                mv ./libs package
+                mkdir bin
+                mv decentra-bevy bin
+                mv bin package
+                mv libs package
                 cd package
                 tar -czvf ../${{ env.PACKAGE_FILE }} *            
 
