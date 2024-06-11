@@ -56,7 +56,7 @@ pub static FONTS: OnceCell<HashMap<(FontName, WeightName), Handle<Font>>> = Once
 pub enum FontName {
     Mono,
     Sans,
-    Serif
+    Serif,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
@@ -64,7 +64,7 @@ pub enum WeightName {
     Regular,
     Bold,
     Italic,
-    BoldItalic
+    BoldItalic,
 }
 
 pub fn user_font(name: FontName, weight: WeightName) -> Handle<Font> {
@@ -117,22 +117,52 @@ fn setup(
     {
         use FontName::*;
         use WeightName::*;
-        FONTS.set(
-            HashMap::from_iter([
-                ((Mono, Regular), asset_server.load("fonts/NotoSansMono-Regular.ttf")),
-                ((Mono, Bold), asset_server.load("fonts/NotoSansMono-Bold.ttf")),
-                ((Mono, Italic), asset_server.load("fonts/NotoSansMono-Regular.ttf")),
-                ((Mono, BoldItalic), asset_server.load("fonts/NotoSansMono-Bold.ttf")),
-                ((Sans, Regular), asset_server.load("fonts/NotoSans-Regular.ttf")),
+        FONTS
+            .set(HashMap::from_iter([
+                (
+                    (Mono, Regular),
+                    asset_server.load("fonts/NotoSansMono-Regular.ttf"),
+                ),
+                (
+                    (Mono, Bold),
+                    asset_server.load("fonts/NotoSansMono-Bold.ttf"),
+                ),
+                (
+                    (Mono, Italic),
+                    asset_server.load("fonts/NotoSansMono-Regular.ttf"),
+                ),
+                (
+                    (Mono, BoldItalic),
+                    asset_server.load("fonts/NotoSansMono-Bold.ttf"),
+                ),
+                (
+                    (Sans, Regular),
+                    asset_server.load("fonts/NotoSans-Regular.ttf"),
+                ),
                 ((Sans, Bold), asset_server.load("fonts/NotoSans-Bold.ttf")),
-                ((Sans, Italic), asset_server.load("fonts/NotoSans-Italic.ttf")),
-                ((Sans, BoldItalic), asset_server.load("fonts/NotoSans-BoldItalic.ttf")),
-                ((Serif, Regular), asset_server.load("fonts/NotoSerif-Regular.ttf")),
+                (
+                    (Sans, Italic),
+                    asset_server.load("fonts/NotoSans-Italic.ttf"),
+                ),
+                (
+                    (Sans, BoldItalic),
+                    asset_server.load("fonts/NotoSans-BoldItalic.ttf"),
+                ),
+                (
+                    (Serif, Regular),
+                    asset_server.load("fonts/NotoSerif-Regular.ttf"),
+                ),
                 ((Serif, Bold), asset_server.load("fonts/NotoSerif-Bold.ttf")),
-                ((Serif, Italic), asset_server.load("fonts/NotoSerif-Italic.ttf")),
-                ((Serif, BoldItalic), asset_server.load("fonts/NotoSerif-BoldItalic.ttf")),
-            ])
-        ).unwrap();
+                (
+                    (Serif, Italic),
+                    asset_server.load("fonts/NotoSerif-Italic.ttf"),
+                ),
+                (
+                    (Serif, BoldItalic),
+                    asset_server.load("fonts/NotoSerif-BoldItalic.ttf"),
+                ),
+            ]))
+            .unwrap();
     }
 
     TITLE_TEXT_STYLE

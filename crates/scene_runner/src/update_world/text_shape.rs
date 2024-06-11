@@ -362,8 +362,7 @@ pub fn make_text_section(
         }
     };
 
-    // todo split by <b>s
-
+    // split by <b>s and <i>s
     let mut b_count = 0usize;
     let mut i_count = 0usize;
     let mut b_offset = text.find("<b>");

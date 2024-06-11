@@ -370,6 +370,7 @@ pub struct UiText {
     pub v_align: VAlign,
     pub font: proto_components::sdk::components::common::Font,
     pub font_size: f32,
+    pub wrapping: bool,
 }
 
 impl From<PbUiText> for UiText {
@@ -406,6 +407,7 @@ impl From<PbUiText> for UiText {
             },
             font: value.font(),
             font_size: value.font_size.unwrap_or(10) as f32,
+            wrapping: value.text_wrapping(),
         }
     }
 }
@@ -898,7 +900,7 @@ fn layout_scene_ui(
                                     ui_text.color * total_opacity,
                                     ui_text.font,
                                     ui_text.h_align,
-                                    false,
+                                    ui_text.wrapping,
                                 );
 
                                 // with text nodes the axis sizes are unusual. 
