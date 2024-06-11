@@ -46,14 +46,30 @@ use self::{
     ui_actions::UiActionPlugin,
 };
 
-pub static TEXT_SHAPE_FONT_SANS: OnceCell<Handle<Font>> = OnceCell::new();
-pub static TEXT_SHAPE_FONT_SERIF: OnceCell<Handle<Font>> = OnceCell::new();
-pub static TEXT_SHAPE_FONT_MONO: OnceCell<Handle<Font>> = OnceCell::new();
 pub static TITLE_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
 pub static BODY_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
-pub static BUTTON_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
-pub static BUTTON_DISABLED_TEXT_STYLE: OnceCell<TextStyle> = OnceCell::new();
 pub static HOVER_TEXT_STYLE: OnceCell<[TextStyle; 10]> = OnceCell::new();
+
+pub static FONTS: OnceCell<HashMap<(FontName, WeightName), Handle<Font>>> = OnceCell::new();
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
+pub enum FontName {
+    Mono,
+    Sans,
+    Serif
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
+pub enum WeightName {
+    Regular,
+    Bold,
+    Italic,
+    BoldItalic
+}
+
+pub fn user_font(name: FontName, weight: WeightName) -> Handle<Font> {
+    FONTS.get().unwrap().get(&(name, weight)).unwrap().clone()
+}
 
 pub struct UiCorePlugin;
 
@@ -98,15 +114,27 @@ fn setup(
     dui.register_template("button-set", DuiButtonSetTemplate);
     dui.register_template("tab-group", DuiTabGroupTemplate);
 
-    TEXT_SHAPE_FONT_SANS
-        .set(asset_server.load("fonts/NotoSans-Regular.ttf"))
-        .unwrap();
-    TEXT_SHAPE_FONT_SERIF
-        .set(asset_server.load("fonts/NotoSerif-Regular.ttf"))
-        .unwrap();
-    TEXT_SHAPE_FONT_MONO
-        .set(asset_server.load("fonts/NotoMono-Regular.ttf"))
-        .unwrap();
+    {
+        use FontName::*;
+        use WeightName::*;
+        FONTS.set(
+            HashMap::from_iter([
+                ((Mono, Regular), asset_server.load("fonts/NotoSansMono-Regular.ttf")),
+                ((Mono, Bold), asset_server.load("fonts/NotoSansMono-Bold.ttf")),
+                ((Mono, Italic), asset_server.load("fonts/NotoSansMono-Regular.ttf")),
+                ((Mono, BoldItalic), asset_server.load("fonts/NotoSansMono-Bold.ttf")),
+                ((Sans, Regular), asset_server.load("fonts/NotoSans-Regular.ttf")),
+                ((Sans, Bold), asset_server.load("fonts/NotoSans-Bold.ttf")),
+                ((Sans, Italic), asset_server.load("fonts/NotoSans-Italic.ttf")),
+                ((Sans, BoldItalic), asset_server.load("fonts/NotoSans-BoldItalic.ttf")),
+                ((Serif, Regular), asset_server.load("fonts/NotoSerif-Regular.ttf")),
+                ((Serif, Bold), asset_server.load("fonts/NotoSerif-Bold.ttf")),
+                ((Serif, Italic), asset_server.load("fonts/NotoSerif-Italic.ttf")),
+                ((Serif, BoldItalic), asset_server.load("fonts/NotoSerif-BoldItalic.ttf")),
+            ])
+        ).unwrap();
+    }
+
     TITLE_TEXT_STYLE
         .set(TextStyle {
             font: asset_server.load("fonts/NotoSans-Bold.ttf"),
@@ -119,20 +147,6 @@ fn setup(
             font: asset_server.load("fonts/NotoSans-Regular.ttf"),
             font_size: 15.0,
             color: Color::BLACK,
-        })
-        .unwrap();
-    BUTTON_TEXT_STYLE
-        .set(TextStyle {
-            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
-            font_size: 20.0,
-            color: Color::BLACK,
-        })
-        .unwrap();
-    BUTTON_DISABLED_TEXT_STYLE
-        .set(TextStyle {
-            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
-            font_size: 20.0,
-            color: Color::GRAY,
         })
         .unwrap();
     HOVER_TEXT_STYLE

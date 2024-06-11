@@ -97,9 +97,7 @@ use dcl_component::{
     proto_components::sdk::components::{common::TextAlignMode, PbTextShape},
     SceneComponentId,
 };
-use ui_core::{
-    ui_builder::SpawnSpacer, TEXT_SHAPE_FONT_MONO, TEXT_SHAPE_FONT_SANS, TEXT_SHAPE_FONT_SERIF,
-};
+use ui_core::{ui_builder::SpawnSpacer, user_font, FontName, WeightName};
 use world_ui::{spawn_world_ui_view, WorldUi};
 
 use crate::{renderer_context::RendererSceneContext, SceneEntity};
@@ -354,28 +352,95 @@ pub fn make_text_section(
 ) -> Text {
     let text = text.replace("\\n", "\n");
 
+    let font_name = match font {
+        dcl_component::proto_components::sdk::components::common::Font::FSansSerif => {
+            FontName::Serif
+        }
+        dcl_component::proto_components::sdk::components::common::Font::FSerif => FontName::Sans,
+        dcl_component::proto_components::sdk::components::common::Font::FMonospace => {
+            FontName::Mono
+        }
+    };
+
     // todo split by <b>s
-    let sections = vec![TextSection::new(
-        text,
-        TextStyle {
-            font: match font {
-                dcl_component::proto_components::sdk::components::common::Font::FSansSerif => {
-                    &TEXT_SHAPE_FONT_SANS
-                }
-                dcl_component::proto_components::sdk::components::common::Font::FSerif => {
-                    &TEXT_SHAPE_FONT_SERIF
-                }
-                dcl_component::proto_components::sdk::components::common::Font::FMonospace => {
-                    &TEXT_SHAPE_FONT_MONO
-                }
+
+    let mut b_count = 0usize;
+    let mut i_count = 0usize;
+    let mut b_offset = text.find("<b>");
+    let mut i_offset = text.find("<i>");
+    let mut xb_offset = text.find("</b>");
+    let mut xi_offset = text.find("</i>");
+    let mut section_start = 0;
+
+    let mut sections = Vec::default();
+
+    loop {
+        let section_end = [b_offset, i_offset, xb_offset, xi_offset]
+            .iter()
+            .fold(usize::MAX, |c, o| c.min(o.unwrap_or(c)));
+        let weight = match (b_count, i_count) {
+            (0, 0) => WeightName::Regular,
+            (0, _) => WeightName::Italic,
+            (_, 0) => WeightName::Bold,
+            (_, _) => WeightName::BoldItalic,
+        };
+
+        if section_end == usize::MAX {
+            sections.push(TextSection::new(
+                &text[section_start..],
+                TextStyle {
+                    font: user_font(font_name, weight),
+                    font_size,
+                    color,
+                },
+            ));
+            break;
+        }
+
+        sections.push(TextSection::new(
+            &text[section_start..section_end],
+            TextStyle {
+                font: user_font(font_name, weight),
+                font_size,
+                color,
+            },
+        ));
+
+        match &text[section_end..section_end + 3] {
+            "<b>" => {
+                b_count += 1;
+                b_offset = text[section_end + 1..]
+                    .find("<b>")
+                    .map(|v| v + section_end + 1);
+                section_start = section_end + 3;
             }
-            .get()
-            .unwrap()
-            .clone(),
-            font_size,
-            color,
-        },
-    )];
+            "<i>" => {
+                i_count += 1;
+                i_offset = text[section_end + 1..]
+                    .find("<i>")
+                    .map(|v| v + section_end + 1);
+                section_start = section_end + 3;
+            }
+            "</b" => {
+                b_count = b_count.saturating_sub(1);
+                xb_offset = text[section_end + 1..]
+                    .find("</b>")
+                    .map(|v| v + section_end + 1);
+                section_start = section_end + 4;
+            }
+            "</i" => {
+                i_count = i_count.saturating_sub(1);
+                xi_offset = text[section_end + 1..]
+                    .find("</i>")
+                    .map(|v| v + section_end + 1);
+                section_start = section_end + 4;
+            }
+            _ => {
+                error!("{}", &text[section_end..=section_end + 2]);
+                panic!()
+            }
+        }
+    }
 
     Text {
         sections,
