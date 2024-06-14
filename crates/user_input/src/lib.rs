@@ -57,15 +57,11 @@ impl Plugin for UserInputPlugin {
                 .in_set(SceneSets::PostLoop),
         );
         app.insert_resource(UserClipping(true));
-        app.init_resource::<CursorLocked>();
         app.add_console_command::<NoClipCommand, _>(no_clip);
         app.add_console_command::<SpeedCommand, _>(speed_cmd);
         app.add_console_command::<JumpCommand, _>(jump_cmd);
     }
 }
-
-#[derive(Resource, Default)]
-pub struct CursorLocked(pub bool);
 
 fn manage_player_visibility(
     camera: Query<&GlobalTransform, With<PrimaryCamera>>,

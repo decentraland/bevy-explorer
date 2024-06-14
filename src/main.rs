@@ -370,7 +370,7 @@ fn main() {
 
     // replay any logs
     for info in infos {
-        info!(info);
+        info!("{}", info);
     }
     for warning in warnings {
         warn!(warning);

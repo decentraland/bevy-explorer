@@ -39,7 +39,6 @@ use ui_core::{
     ui_actions::{Click, EventCloneExt, On},
     BODY_TEXT_STYLE, TITLE_TEXT_STYLE,
 };
-use user_input::CursorLocked;
 use world_ui::TextShapeMaterial;
 
 use crate::{
@@ -53,6 +52,7 @@ pub struct SysInfoPanelPlugin;
 
 impl Plugin for SysInfoPanelPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<CursorLocked>();
         app.add_systems(
             Startup,
             setup.in_set(SetupSets::Main).after(SetupSets::Init),
@@ -78,6 +78,9 @@ impl Plugin for SysInfoPanelPlugin {
         app.add_console_command::<TrackComponentCommand, _>(set_track_components);
     }
 }
+
+#[derive(Resource, Default)]
+pub struct CursorLocked(pub bool);
 
 #[derive(Component)]
 struct SysInfoMarker;

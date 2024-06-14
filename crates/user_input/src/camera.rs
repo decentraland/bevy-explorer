@@ -19,7 +19,7 @@ use scene_runner::{
 };
 use tween::SystemTween;
 
-use crate::{CursorLocked, TRANSITION_TIME};
+use crate::TRANSITION_TIME;
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 
@@ -88,7 +88,7 @@ pub fn update_camera(
     mut camera: Query<(&Transform, &mut PrimaryCamera)>,
     mut locked_cursor_position: Local<Option<Vec2>>,
     accept_input: Res<AcceptInput>,
-    mut cursor_locked: ResMut<CursorLocked>,
+    mut cursor_locked: ResMut<system_ui::sysinfo::CursorLocked>,
     mut cinematic_data: Local<Option<CinematicInitialData>>,
     mut mb_state: MouseInteractionState,
 ) {

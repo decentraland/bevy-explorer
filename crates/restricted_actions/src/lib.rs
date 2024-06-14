@@ -15,7 +15,7 @@ use common::{
     profile::SerializedProfile,
     rpc::{PortableLocation, RpcCall, RpcEventSender, RpcResultSender, SpawnResponse},
     sets::SceneSets,
-    structs::{PrimaryCamera, PrimaryUser},
+    structs::{PermissionType, PrimaryCamera, PrimaryUser},
     util::TaskExt,
 };
 use comms::{
@@ -37,6 +37,7 @@ use scene_runner::{
     ContainingScene, SceneEntity,
 };
 use serde_json::json;
+use system_ui::permissions::Permission;
 use teleport::{handle_out_of_world, teleport_player};
 use ui_core::button::DuiButton;
 use wallet::{browser_auth::remote_send_async, Wallet};
@@ -245,11 +246,8 @@ fn change_realm(
 }
 
 fn external_url(
-    mut commands: Commands,
     mut events: EventReader<RpcCall>,
-    containing_scene: ContainingScene,
-    player: Query<Entity, With<PrimaryUser>>,
-    dui: Res<DuiRegistry>,
+    mut perms: Permission<(RpcResultSender<Result<(), String>>, String)>,
 ) {
     for (scene, url, response) in events.read().filter_map(|ev| match ev {
         RpcCall::ExternalUrl {
@@ -259,47 +257,21 @@ fn external_url(
         } => Some((scene, url, response)),
         _ => None,
     }) {
-        if !player
-            .get_single()
-            .ok()
-            .map_or(false, |e| containing_scene.get(e).contains(scene))
-        {
-            warn!("invalid changeRealm request from non-containing scene");
-            return;
-        }
+        perms.check(
+            PermissionType::OpenUrl,
+            *scene,
+            (response.clone(), url.clone()),
+            Some(url.clone()),
+        );
+    }
 
-        let url = url.clone();
-        let response_ok = response.clone();
-        let response_fail = response.clone();
+    for (response, url) in perms.drain_success() {
+        let result = opener::open(Path::new(&url)).map_err(|e| e.to_string());
+        response.send(result);
+    }
 
-        commands
-            .spawn_template(
-                &dui,
-                "text-dialog",
-                DuiProps::new()
-                    .with_prop("title", "Open External Link".to_owned())
-                    .with_prop(
-                        "body",
-                        format!(
-                            "The scene wants to display a link in an external application\n`{}`",
-                            url.clone(),
-                        ),
-                    )
-                    .with_prop(
-                        "buttons",
-                        vec![
-                            DuiButton::new_enabled_and_close("Ok", move || {
-                                let result =
-                                    opener::open(Path::new(&url)).map_err(|e| e.to_string());
-                                response_ok.send(result);
-                            }),
-                            DuiButton::new_enabled_and_close("Cancel", move || {
-                                response_fail.send(Err(String::default()));
-                            }),
-                        ],
-                    ),
-            )
-            .unwrap();
+    for (response, _) in perms.drain_fail() {
+        response.send(Err(String::default()));
     }
 }
 

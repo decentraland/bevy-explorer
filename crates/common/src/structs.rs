@@ -192,6 +192,9 @@ pub struct AppConfig {
     pub max_concurrent_remotes: usize,
     pub despawn_workaround: bool,
     pub user_id: String,
+    pub default_permissions: HashMap<PermissionType, PermissionValue>,
+    pub realm_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
+    pub scene_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
 }
 
 impl Default for AppConfig {
@@ -219,7 +222,31 @@ impl Default for AppConfig {
             #[cfg(not(target_os = "linux"))]
             despawn_workaround: false,
             user_id: uuid::Uuid::new_v4().to_string(),
+            default_permissions: Default::default(),
+            realm_permissions: Default::default(),
+            scene_permissions: Default::default(),
         }
+    }
+}
+
+impl AppConfig {
+    pub fn get_permission(
+        &self,
+        ty: PermissionType,
+        realm: impl AsRef<str>,
+        scene: impl AsRef<str>,
+    ) -> PermissionValue {
+        self.scene_permissions
+            .get(scene.as_ref())
+            .and_then(|map| map.get(&ty))
+            .or_else(|| {
+                self.realm_permissions
+                    .get(realm.as_ref())
+                    .and_then(|map| map.get(&ty))
+            })
+            .or_else(|| self.default_permissions.get(&ty))
+            .copied()
+            .unwrap_or(PermissionValue::Ask)
     }
 }
 
@@ -454,4 +481,31 @@ pub struct SceneMeta {
     pub scene: SceneMetaScene,
     pub runtime_version: Option<String>,
     pub spawn_points: Option<Vec<SpawnPoint>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PermissionValue {
+    Allow,
+    Deny,
+    Ask,
+    // top level default = ask
+    Default,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PermissionType {
+    MovePlayer,
+    ForceCamera,
+    PlayEmote,
+    SetLocomotion,
+    HideAvatars,
+    DisableVoice,
+    Teleport,
+    ChangeRealm,
+    SpawnPortable,
+    KillPortables,
+    Web3,
+    Fetch,
+    Websocket,
+    OpenUrl,
 }

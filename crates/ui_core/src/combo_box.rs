@@ -195,7 +195,7 @@ impl DuiTemplate for DuiComboBoxTemplate {
             options: props
                 .take::<Vec<String>>("options")?
                 .ok_or(anyhow!("no options for combobox"))?,
-            selected: props.take::<isize>("selected")?.unwrap_or(-1),
+            selected: props.take_as::<isize>(ctx, "selected")?.unwrap_or(-1),
             allow_null: props.take_as::<bool>(ctx, "allow-null")?.unwrap_or(false),
             disabled: props.take_as::<bool>(ctx, "disabled")?.unwrap_or(false),
             id_entity: None,
@@ -230,6 +230,7 @@ macro_rules! impl_dui_str {
 impl_dui_str!(bool);
 impl_dui_str!(u32);
 impl_dui_str!(usize);
+impl_dui_str!(isize);
 
 impl DuiFromStr for Val {
     fn from_str(_: &DuiContext, value: &str) -> Result<Self, anyhow::Error>
