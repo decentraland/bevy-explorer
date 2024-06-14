@@ -471,7 +471,7 @@ fn update_scrollables(
             // jump the slider to the clicked position
             let Vec2 { x: left, y: top } = transform.translation().xy() - node.size() * 0.5;
             let relative_position = cursor_position - Vec2::new(left, top);
-            let slider_len = info.length * info.ratio;
+            let slider_len = (info.length * info.ratio).max(bar_width);
             let position = if bar.vertical {
                 (relative_position.y - slider_len * 0.5) / (info.length - slider_len)
             } else {
@@ -511,7 +511,7 @@ fn update_scrollables(
 
         if update_position {
             // redraw slider
-            let slider_len = info.length * info.ratio;
+            let slider_len = (info.length * info.ratio).max(bar_width);
             if slider.vertical {
                 style.width = Val::Px(bar_width);
                 style.height = Val::Px(slider_len);
@@ -623,7 +623,7 @@ fn update_scrollables(
             position = val;
         }
 
-        let slider_len = info.length * info.ratio;
+        let slider_len = (info.length * info.ratio).max(bar_width);
 
         let (left, top, width, height) = if vertical {
             let slider_start = info.bar_position.y + (info.length - slider_len) * position;
