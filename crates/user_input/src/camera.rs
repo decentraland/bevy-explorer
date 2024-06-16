@@ -3,6 +3,7 @@ use std::{
     marker::PhantomData,
 };
 
+use avatar::AvatarDynamicState;
 use bevy::{
     ecs::system::SystemParam,
     input::mouse::{MouseMotion, MouseWheel},
@@ -256,6 +257,7 @@ pub fn update_camera(
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn update_camera_position(
     mut commands: Commands,
     mut camera: Query<(
@@ -265,13 +267,16 @@ pub fn update_camera_position(
         &mut Projection,
         Option<&mut SystemTween>,
     )>,
-    mut player: Query<&Transform, (With<PrimaryUser>, Without<PrimaryCamera>)>,
+    mut player: Query<
+        (&Transform, &AvatarDynamicState),
+        (With<PrimaryUser>, Without<PrimaryCamera>),
+    >,
     containing_scene: ContainingScene,
     mut scene_colliders: Query<(&RendererSceneContext, &mut SceneColliderData)>,
     mut prev_override: Local<Option<CameraOverride>>,
 ) {
     let (
-        Ok(player_transform),
+        Ok((player_transform, dynamic_state)),
         Ok((camera_ent, mut camera_transform, options, mut projection, maybe_tween)),
     ) = (player.get_single_mut(), camera.get_single_mut())
     else {
@@ -293,7 +298,7 @@ pub fn update_camera_position(
             *fov = target_fov;
         }
     } else {
-        let target_fov = FRAC_PI_4;
+        let target_fov = (dynamic_state.velocity.length() / 4.0).clamp(1.0, 1.0) * FRAC_PI_4;
         let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
         else {
             panic!();

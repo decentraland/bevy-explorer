@@ -492,7 +492,7 @@ pub enum PermissionValue {
     Default,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum PermissionType {
     MovePlayer,
     ForceCamera,

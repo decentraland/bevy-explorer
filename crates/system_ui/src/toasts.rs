@@ -35,7 +35,7 @@ fn update_toasts(
 
     let mut prev_displays = std::mem::take(&mut *displays);
 
-    for (key, toast) in &toasts.0 {
+    for (key, toast) in &mut toasts.0 {
         let Some(maybe_ent) = prev_displays.remove(key) else {
             let components = commands
                 .entity(toaster_ent)
@@ -46,6 +46,11 @@ fn update_toasts(
                 )
                 .unwrap();
             displays.insert(key.clone(), Some(components.root));
+            if let Some(on_click) = toast.on_click.take() {
+                commands
+                    .entity(components.root)
+                    .insert((Interaction::default(), on_click));
+            }
             continue;
         };
 

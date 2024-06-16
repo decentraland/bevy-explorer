@@ -7,7 +7,7 @@ use common::{
     structs::{AppConfig, PermissionType, PermissionValue, PrimaryPlayerRes},
 };
 use ipfs::CurrentRealm;
-use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
+use scene_runner::{renderer_context::RendererSceneContext, ContainingScene, Toaster};
 use tokio::sync::{
     oneshot::{channel, error::TryRecvError, Receiver},
     OwnedSemaphorePermit, Semaphore,
@@ -15,10 +15,13 @@ use tokio::sync::{
 use ui_core::{
     button::DuiButton,
     combo_box::ComboBox,
-    ui_actions::{DataChanged, On, UiCaller},
+    ui_actions::{Click, DataChanged, EventCloneExt, On, UiCaller},
 };
 
-use crate::login::config_file;
+use crate::{
+    login::config_file,
+    profile::{SettingsTab, ShowSettingsEvent},
+};
 
 #[derive(Resource)]
 pub struct ActiveDialog(Arc<Semaphore>);
@@ -84,6 +87,8 @@ pub struct Permission<'w, 's, T: Send + Sync + 'static> {
     player: Res<'w, PrimaryPlayerRes>,
     scenes: Query<'w, 's, &'static RendererSceneContext>,
     manager: ResMut<'w, PermissionManager>,
+    toaster: Toaster<'w, 's>,
+    ty: Local<'s, Option<PermissionType>>,
 }
 
 impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
@@ -94,6 +99,7 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
         value: T,
         additional: Option<String>,
     ) {
+        *self.ty = Some(ty);
         if !self.containing_scenes.get(self.player.0).contains(&scene) {
             return;
         }
@@ -129,10 +135,27 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
                 Err(TryRecvError::Empty) => Some((value, rx)),
             })
             .collect();
+
+        if !self.success.is_empty() {
+            let ty = self.ty.unwrap();
+            self.toaster.add_clicky_toast(
+                format!("{:?}", ty),
+                ty.on_success(),
+                ShowSettingsEvent(SettingsTab::Discover).send_value_on::<Click>(),
+            );
+        }
         self.success.drain(..)
     }
 
     pub fn drain_fail(&mut self) -> impl Iterator<Item = T> + '_ {
+        if !self.fail.is_empty() {
+            let ty = self.ty.unwrap();
+            self.toaster.add_clicky_toast(
+                format!("{:?}", ty),
+                ty.on_fail(),
+                ShowSettingsEvent(SettingsTab::Discover).send_value_on::<Click>(),
+            );
+        }
         self.fail.drain(..)
     }
 }
@@ -190,7 +213,7 @@ fn update_permissions(
             continue;
         };
 
-        let (title, body) = req.ty.data();
+        let (title, body) = req.ty.title_and_description();
         let title = format!("Permission Request - {} - {}", name, title);
         let body = match req.additional {
             Some(add) => format!("{body}\n{add}"),
@@ -314,12 +337,16 @@ pub struct PermissionDialog {
     realm: String,
 }
 
-trait PopupDisplay {
-    fn data(&self) -> (String, String);
+trait PermissionStrings {
+    fn title_and_description(&self) -> (String, String);
+
+    fn on_success(&self) -> &str;
+
+    fn on_fail(&self) -> &str;
 }
 
-impl PopupDisplay for PermissionType {
-    fn data(&self) -> (String, String) {
+impl PermissionStrings for PermissionType {
+    fn title_and_description(&self) -> (String, String) {
         let (t, b) = match self {
             PermissionType::MovePlayer => ("Move Avatar", "The scene wants permission to move your avatar within the scene bounds"),
             PermissionType::ForceCamera => ("Force Camera", "The scene wants permission to temporarily change the camera view"),
@@ -338,5 +365,56 @@ impl PopupDisplay for PermissionType {
         };
 
         (t.to_owned(), b.to_owned())
+    }
+
+    fn on_success(&self) -> &str {
+        match self {
+            PermissionType::MovePlayer => "The scene has moved your avatar",
+            PermissionType::ForceCamera => "The scene has enforced the camera view",
+            PermissionType::PlayEmote => "The scene has made your avatar perform an emote",
+            PermissionType::SetLocomotion => "The scene has enforced your locomotion settings",
+            PermissionType::HideAvatars => "The scene is hiding some avatars",
+            PermissionType::DisableVoice => "The scene has disabled voice communications",
+            PermissionType::Teleport => "The scene has teleported you to a new location",
+            PermissionType::ChangeRealm => "The scene has teleported you to a new realm",
+            PermissionType::SpawnPortable => "The scene has spawned a portable experience",
+            PermissionType::KillPortables => "The scene has managed your active portables",
+            PermissionType::Web3 => "The scene has initiated a web3 transaction",
+            PermissionType::Fetch => "The scene is fetching remote data",
+            PermissionType::Websocket => "The scene has opened a websocket",
+            PermissionType::OpenUrl => "The scene has opened a url in your browser",
+        }
+    }
+    fn on_fail(&self) -> &str {
+        match self {
+            PermissionType::MovePlayer => "The scene was blocked from moving your avatar",
+            PermissionType::ForceCamera => "The scene was blocked from enforcing the camera view",
+            PermissionType::PlayEmote => {
+                "The scene was blocked from making your avatar perform an emote"
+            }
+            PermissionType::SetLocomotion => {
+                "The scene was blocked from enforcing your locomotion settings"
+            }
+            PermissionType::HideAvatars => "The scene was blocked from hiding some avatars",
+            PermissionType::DisableVoice => {
+                "The scene was blocked from disabling voice communications"
+            }
+            PermissionType::Teleport => {
+                "The scene was blocked from teleporting you to a new location"
+            }
+            PermissionType::ChangeRealm => {
+                "The scene was blocked from teleporting you to a new realm"
+            }
+            PermissionType::SpawnPortable => {
+                "The scene was blocked from spawning a portable experience"
+            }
+            PermissionType::KillPortables => {
+                "The scene was blocked from managing your active portables"
+            }
+            PermissionType::Web3 => "The scene was blocked from initiating a web3 transaction",
+            PermissionType::Fetch => "The scene was blocked from fetching remote data",
+            PermissionType::Websocket => "The scene was blocked from opening a websocket",
+            PermissionType::OpenUrl => "The scene was blocked from opening a url in your browser",
+        }
     }
 }
