@@ -173,6 +173,8 @@ where
         }
     }
 
+    request = request.header("User-Agent", "DCLExplorer/0.1");
+
     let request_rid = state.resource_table.add(IsahcFetchRequestResource {
         body_bytes,
         client,
