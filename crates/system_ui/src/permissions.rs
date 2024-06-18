@@ -1,420 +1,230 @@
-use std::{collections::VecDeque, sync::Arc};
-
-use bevy::{ecs::system::SystemParam, prelude::*, utils::HashMap};
-use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
-use common::{
-    rpc::RpcResultSender,
-    structs::{AppConfig, PermissionType, PermissionValue, PrimaryPlayerRes},
-};
+use bevy::prelude::*;
+use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
+use common::structs::{AppConfig, PermissionType, PermissionValue, PrimaryPlayerRes};
 use ipfs::CurrentRealm;
-use scene_runner::{renderer_context::RendererSceneContext, ContainingScene, Toaster};
-use tokio::sync::{
-    oneshot::{channel, error::TryRecvError, Receiver},
-    OwnedSemaphorePermit, Semaphore,
-};
+use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
 use ui_core::{
-    button::DuiButton,
-    combo_box::ComboBox,
-    ui_actions::{Click, DataChanged, EventCloneExt, On, UiCaller},
+    bound_node::BoundedNode,
+    interact_style::set_interaction_style,
+    ui_actions::{Click, HoverEnter, On, UiCaller},
+    ModifyComponentExt,
 };
 
 use crate::{
-    login::config_file,
-    profile::{SettingsTab, ShowSettingsEvent},
+    permission_manager::{PermissionLevel, PermissionStrings},
+    profile::{SettingsDialog, SettingsTab},
 };
 
-#[derive(Resource)]
-pub struct ActiveDialog(Arc<Semaphore>);
+pub struct PermissionSettingsPlugin;
 
-pub struct PermissionPlugin;
-
-impl Plugin for PermissionPlugin {
+impl Plugin for PermissionSettingsPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ActiveDialog(Arc::new(Semaphore::new(1))))
-            .init_resource::<PermissionManager>()
-            .add_systems(PostUpdate, update_permissions);
-    }
-}
-
-#[derive(Clone)]
-pub enum PermissionLevel {
-    Scene(String),
-    Realm(String),
-    Global,
-}
-
-struct PermissionRequest {
-    realm: String,
-    scene: String,
-    additional: Option<String>,
-    ty: PermissionType,
-    sender: RpcResultSender<bool>,
-}
-
-#[derive(Resource, Default)]
-struct PermissionManager {
-    pending: VecDeque<PermissionRequest>,
-}
-
-impl PermissionManager {
-    fn request(
-        &mut self,
-        ty: PermissionType,
-        realm: String,
-        scene: String,
-        additional: Option<String>,
-    ) -> Receiver<bool> {
-        let (sender, receiver) = channel();
-        self.pending.push_back(PermissionRequest {
-            realm,
-            scene,
-            ty,
-            sender: RpcResultSender::new(sender),
-            additional,
-        });
-        receiver
-    }
-}
-
-#[derive(SystemParam)]
-pub struct Permission<'w, 's, T: Send + Sync + 'static> {
-    success: Local<'s, Vec<T>>,
-    fail: Local<'s, Vec<T>>,
-    pending: Local<'s, Vec<(T, Receiver<bool>)>>,
-    config: Res<'w, AppConfig>,
-    realm: Res<'w, CurrentRealm>,
-    containing_scenes: ContainingScene<'w, 's>,
-    player: Res<'w, PrimaryPlayerRes>,
-    scenes: Query<'w, 's, &'static RendererSceneContext>,
-    manager: ResMut<'w, PermissionManager>,
-    toaster: Toaster<'w, 's>,
-    ty: Local<'s, Option<PermissionType>>,
-}
-
-impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
-    pub fn check(
-        &mut self,
-        ty: PermissionType,
-        scene: Entity,
-        value: T,
-        additional: Option<String>,
-    ) {
-        *self.ty = Some(ty);
-        if !self.containing_scenes.get(self.player.0).contains(&scene) {
-            return;
-        }
-        let Ok(hash) = self.scenes.get(scene).map(|ctx| &ctx.hash) else {
-            return;
-        };
-        match self.config.get_permission(ty, &self.realm.address, hash) {
-            common::structs::PermissionValue::Allow => self.success.push(value),
-            common::structs::PermissionValue::Deny => self.fail.push(value),
-            common::structs::PermissionValue::Ask | common::structs::PermissionValue::Default => {
-                self.pending.push((
-                    value,
-                    self.manager
-                        .request(ty, self.realm.address.clone(), hash.clone(), additional),
-                ));
-            }
-        }
-    }
-
-    pub fn drain_success(&mut self) -> impl Iterator<Item = T> + '_ {
-        *self.pending = self
-            .pending
-            .drain(..)
-            .flat_map(|(value, mut rx)| match rx.try_recv() {
-                Ok(true) => {
-                    self.success.push(value);
-                    None
-                }
-                Ok(false) | Err(TryRecvError::Closed) => {
-                    self.fail.push(value);
-                    None
-                }
-                Err(TryRecvError::Empty) => Some((value, rx)),
-            })
-            .collect();
-
-        if !self.success.is_empty() {
-            let ty = self.ty.unwrap();
-            self.toaster.add_clicky_toast(
-                format!("{:?}", ty),
-                ty.on_success(),
-                ShowSettingsEvent(SettingsTab::Discover).send_value_on::<Click>(),
-            );
-        }
-        self.success.drain(..)
-    }
-
-    pub fn drain_fail(&mut self) -> impl Iterator<Item = T> + '_ {
-        if !self.fail.is_empty() {
-            let ty = self.ty.unwrap();
-            self.toaster.add_clicky_toast(
-                format!("{:?}", ty),
-                ty.on_fail(),
-                ShowSettingsEvent(SettingsTab::Discover).send_value_on::<Click>(),
-            );
-        }
-        self.fail.drain(..)
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn update_permissions(
-    mut commands: Commands,
-    mut manager: ResMut<PermissionManager>,
-    active_dialog: Res<ActiveDialog>,
-    current_realm: Res<CurrentRealm>,
-    containing_scene: ContainingScene,
-    player: Res<PrimaryPlayerRes>,
-    scenes: Query<&RendererSceneContext>,
-    dui: Res<DuiRegistry>,
-    config: Res<AppConfig>,
-) {
-    if manager.pending.is_empty() {
-        return;
-    }
-
-    if config.is_changed() {
-        manager.pending.retain(
-            |req| match config.get_permission(req.ty, &req.realm, &req.scene) {
-                PermissionValue::Allow => {
-                    req.sender.clone().send(true);
-                    false
-                }
-                PermissionValue::Deny => {
-                    req.sender.clone().send(false);
-                    false
-                }
-                _ => true,
-            },
+        app.add_systems(
+            Update,
+            set_permission_settings_content.before(set_interaction_style),
         );
-    }
-
-    let permit = match active_dialog.0.clone().try_acquire_owned() {
-        Ok(p) => p,
-        Err(_) => return,
-    };
-
-    let active_scenes = containing_scene
-        .get(player.0)
-        .into_iter()
-        .flat_map(|e| scenes.get(e).ok())
-        .map(|ctx| (ctx.hash.as_str(), ctx.title.as_str()))
-        .collect::<HashMap<_, _>>();
-
-    while let Some(req) = manager.pending.pop_front() {
-        if req.realm != current_realm.address {
-            continue;
-        }
-
-        let Some(name) = active_scenes.get(req.scene.as_str()) else {
-            continue;
-        };
-
-        let (title, body) = req.ty.title_and_description();
-        let title = format!("Permission Request - {} - {}", name, title);
-        let body = match req.additional {
-            Some(add) => format!("{body}\n{add}"),
-            None => body,
-        };
-
-        let send = |value: PermissionValue| {
-            let sender = req.sender.clone();
-            let ty = req.ty;
-            move |mut config: ResMut<AppConfig>, dialog: Query<&PermissionDialog>| {
-                sender.send(matches!(value, PermissionValue::Allow));
-                let Some(level) = dialog.get_single().ok().and_then(|p| p.level.as_ref()) else {
-                    warn!("no perm");
-                    return;
-                };
-                match level {
-                    PermissionLevel::Scene(scene) => config
-                        .scene_permissions
-                        .entry(scene.clone())
-                        .or_default()
-                        .insert(ty, value),
-                    PermissionLevel::Realm(realm) => config
-                        .realm_permissions
-                        .entry(realm.clone())
-                        .or_default()
-                        .insert(ty, value),
-                    PermissionLevel::Global => config.default_permissions.insert(ty, value),
-                };
-                let config_file = config_file();
-                if let Some(folder) = config_file.parent() {
-                    std::fs::create_dir_all(folder).unwrap();
-                }
-                if let Err(e) =
-                    std::fs::write(config_file, serde_json::to_string(&*config).unwrap())
-                {
-                    warn!("failed to write to config: {e}");
-                }
-            }
-        };
-
-        let popup = commands
-            .spawn_template(
-                &dui,
-                "permission-text-dialog",
-                DuiProps::default()
-                    .with_prop("title", title)
-                    .with_prop("body", body)
-                    .with_prop(
-                        "buttons",
-                        vec![
-                            DuiButton::new_enabled_and_close("Allow", send(PermissionValue::Allow)),
-                            DuiButton::new_enabled_and_close("Deny", send(PermissionValue::Deny)),
-                        ],
-                    )
-                    .with_prop(
-                        "buttons2",
-                        vec![DuiButton::new_enabled_and_close(
-                            "Manage Permissions",
-                            || {
-                                println!("todo");
-                            },
-                        )],
-                    )
-                    .with_prop(
-                        "options",
-                        [
-                            "Once",
-                            "Always for Scene",
-                            "Always for Realm",
-                            "Always for All",
-                        ]
-                        .into_iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>(),
-                    )
-                    .with_prop(
-                        "option-changed",
-                        On::<DataChanged>::new(
-                            |mut dialog: Query<&mut PermissionDialog>,
-                             caller: Res<UiCaller>,
-                             combo: Query<&ComboBox>| {
-                                let Ok(mut dialog) = dialog.get_single_mut() else {
-                                    warn!("no dialog");
-                                    return;
-                                };
-
-                                let Ok(combo) = combo.get(caller.0) else {
-                                    warn!("no combo");
-                                    return;
-                                };
-
-                                dialog.level = match combo.selected {
-                                    0 => None,
-                                    1 => Some(PermissionLevel::Scene(dialog.scene.clone())),
-                                    2 => Some(PermissionLevel::Realm(dialog.realm.clone())),
-                                    3 => Some(PermissionLevel::Global),
-                                    _ => unreachable!(),
-                                };
-
-                                warn!("ok");
-                            },
-                        ),
-                    ),
-            )
-            .unwrap();
-        commands.entity(popup.root).insert(PermissionDialog {
-            permit,
-            level: None,
-            scene: req.scene,
-            realm: req.realm,
-        });
-        break;
     }
 }
 
 #[derive(Component)]
-pub struct PermissionDialog {
-    pub permit: OwnedSemaphorePermit,
-    level: Option<PermissionLevel>,
-    scene: String,
-    realm: String,
-}
+pub struct PermissionSettingsDetail(pub AppConfig);
 
-trait PermissionStrings {
-    fn title_and_description(&self) -> (String, String);
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn set_permission_settings_content(
+    mut commands: Commands,
+    dialog: Query<(Entity, Option<&PermissionSettingsDetail>), With<SettingsDialog>>,
+    q: Query<(Entity, &SettingsTab), Changed<SettingsTab>>,
+    current_settings: Res<AppConfig>,
+    mut prev_tab: Local<Option<SettingsTab>>,
+    dui: Res<DuiRegistry>,
+    asset_server: Res<AssetServer>,
+    containing_scene: ContainingScene,
+    player: Res<PrimaryPlayerRes>,
+    realm: Res<CurrentRealm>,
+    scenes: Query<&RendererSceneContext>,
+) {
+    if dialog.is_empty() {
+        *prev_tab = None;
+    }
 
-    fn on_success(&self) -> &str;
-
-    fn on_fail(&self) -> &str;
-}
-
-impl PermissionStrings for PermissionType {
-    fn title_and_description(&self) -> (String, String) {
-        let (t, b) = match self {
-            PermissionType::MovePlayer => ("Move Avatar", "The scene wants permission to move your avatar within the scene bounds"),
-            PermissionType::ForceCamera => ("Force Camera", "The scene wants permission to temporarily change the camera view"),
-            PermissionType::PlayEmote => ("Play Emote", "The scene wants permission to make your avatar perform an emote"),
-            PermissionType::SetLocomotion => ("Set Locomotion", "The scene wants permission to temporarily modify your avatar's locomotion settings"),
-            PermissionType::HideAvatars => ("Hide Avatars", "The scene wants permission to temporarily hide player avatars"),
-            PermissionType::DisableVoice => ("Disable Voice", "The scene wants permission to temporarily disable voice chat"),
-            PermissionType::Teleport => ("Teleport", "The scene wants permission to teleport you to a new location"),
-            PermissionType::ChangeRealm => ("Change Realm", "The scene wants permission to move you to a new realm"),
-            PermissionType::SpawnPortable => ("Spawn Portable Experience", "The scene wants permission to spawn a portable experience"),
-            PermissionType::KillPortables => ("Manage Portable Experiences", "The scene wants permission to manage your active portable experiences"),
-            PermissionType::Web3 => ("Web3 Transaction", "The scene wants permission to initiate a web3 transaction with your wallet"),
-            PermissionType::Fetch => ("Fetch Data", "The scene wants permission to fetch data from a remote server"),
-            PermissionType::Websocket => ("Open Websocket", "The scene wants permission to open a socket to a remote server"),
-            PermissionType::OpenUrl => ("Open Url", "The scene wants permission to open a url in your browser"),
+    for (ent, tab) in q.iter() {
+        let Ok((settings_entity, maybe_settings)) = dialog.get_single() else {
+            return;
         };
 
-        (t.to_owned(), b.to_owned())
-    }
+        if prev_tab.as_ref() == Some(tab) {
+            continue;
+        }
+        *prev_tab = Some(*tab);
 
-    fn on_success(&self) -> &str {
-        match self {
-            PermissionType::MovePlayer => "The scene has moved your avatar",
-            PermissionType::ForceCamera => "The scene has enforced the camera view",
-            PermissionType::PlayEmote => "The scene has made your avatar perform an emote",
-            PermissionType::SetLocomotion => "The scene has enforced your locomotion settings",
-            PermissionType::HideAvatars => "The scene is hiding some avatars",
-            PermissionType::DisableVoice => "The scene has disabled voice communications",
-            PermissionType::Teleport => "The scene has teleported you to a new location",
-            PermissionType::ChangeRealm => "The scene has teleported you to a new realm",
-            PermissionType::SpawnPortable => "The scene has spawned a portable experience",
-            PermissionType::KillPortables => "The scene has managed your active portables",
-            PermissionType::Web3 => "The scene has initiated a web3 transaction",
-            PermissionType::Fetch => "The scene is fetching remote data",
-            PermissionType::Websocket => "The scene has opened a websocket",
-            PermissionType::OpenUrl => "The scene has opened a url in your browser",
+        if tab != &SettingsTab::Permissions {
+            return;
         }
-    }
-    fn on_fail(&self) -> &str {
-        match self {
-            PermissionType::MovePlayer => "The scene was blocked from moving your avatar",
-            PermissionType::ForceCamera => "The scene was blocked from enforcing the camera view",
-            PermissionType::PlayEmote => {
-                "The scene was blocked from making your avatar perform an emote"
+
+        let config = match maybe_settings {
+            Some(s) => s.0.clone(),
+            None => {
+                commands
+                    .entity(settings_entity)
+                    .insert(PermissionSettingsDetail(current_settings.clone()));
+                current_settings.clone()
             }
-            PermissionType::SetLocomotion => {
-                "The scene was blocked from enforcing your locomotion settings"
+        };
+
+        commands.entity(ent).despawn_descendants();
+        let components = commands
+            .entity(ent)
+            .apply_template(&dui, "permissions-tab", DuiProps::new())
+            .unwrap();
+
+        let spawn_setting = |props: DuiProps,
+                             ty: PermissionType,
+                             level: PermissionLevel,
+                             enabled: bool|
+         -> DuiProps {
+            let current_value = match &level {
+                PermissionLevel::Scene(s) => {
+                    config.scene_permissions.get(s).and_then(|sp| sp.get(&ty))
+                }
+                PermissionLevel::Realm(r) => {
+                    config.realm_permissions.get(r).and_then(|sp| sp.get(&ty))
+                }
+                PermissionLevel::Global => Some(
+                    config
+                        .default_permissions
+                        .get(&ty)
+                        .unwrap_or(&PermissionValue::Ask),
+                ),
+            };
+
+            let image = match current_value {
+                Some(PermissionValue::Allow) => "tick.png",
+                Some(PermissionValue::Deny) => "redx.png",
+                Some(PermissionValue::Ask) => "ask.png",
+                None => "next.png",
+            };
+
+            let label = match &level {
+                PermissionLevel::Scene(_) => "scene",
+                PermissionLevel::Realm(_) => "realm",
+                PermissionLevel::Global => "global",
+            };
+
+            props
+                .with_prop(
+                    format!("{label}-image"),
+                    asset_server.load::<Image>(format!("images/{image}")),
+                )
+                .with_prop(format!("{label}-enabled"), enabled)
+                .with_prop(
+                    format!("{label}-click"),
+                    On::<Click>::new(
+                        move |mut config: Query<(
+                            &mut SettingsDialog,
+                            &mut PermissionSettingsDetail,
+                        )>,
+                              caller: Res<UiCaller>,
+                              mut commands: Commands,
+                              asset_server: Res<AssetServer>| {
+                            let Ok((mut dialog, mut config)) = config.get_single_mut() else {
+                                warn!("no config");
+                                return;
+                            };
+
+                            let dict = match &level {
+                                PermissionLevel::Scene(s) => {
+                                    config.0.scene_permissions.entry(s.clone()).or_default()
+                                }
+                                PermissionLevel::Realm(r) => {
+                                    config.0.realm_permissions.entry(r.clone()).or_default()
+                                }
+                                PermissionLevel::Global => &mut config.0.default_permissions,
+                            };
+
+                            let current_value = dict.get(&ty);
+
+                            let (next, image) = match (current_value, &level) {
+                                (None, _)
+                                | (Some(PermissionValue::Ask), PermissionLevel::Global) => {
+                                    (Some(PermissionValue::Allow), "tick.png")
+                                }
+                                (Some(PermissionValue::Allow), _) => {
+                                    (Some(PermissionValue::Deny), "redx.png")
+                                }
+                                (Some(PermissionValue::Deny), _) => {
+                                    (Some(PermissionValue::Ask), "ask.png")
+                                }
+                                (Some(PermissionValue::Ask), _) => (None, "next.png"),
+                            };
+
+                            if let Some(next) = next {
+                                dict.insert(ty, next);
+                            } else {
+                                dict.remove(&ty);
+                            }
+
+                            let new_image = asset_server.load::<Image>(format!("images/{image}"));
+                            commands.entity(caller.0).modify_component(
+                                move |node: &mut BoundedNode| {
+                                    println!("update img");
+                                    node.image = Some(new_image);
+                                },
+                            );
+
+                            dialog.modified = true;
+                        },
+                    ),
+                )
+        };
+
+        // TODO make a way to specify the scene
+        let scene = containing_scene
+            .get_parcel(player.0)
+            .and_then(|scene_ent| scenes.get(scene_ent).ok())
+            .map(|ctx| ctx.hash.clone());
+
+        let realm = realm.address.clone();
+
+        let mut spawn_row = |ty: PermissionType| -> Entity {
+            let mut props = DuiProps::default().with_prop("permission-name", ty.title().to_owned());
+            if let Some(scene) = scene.as_ref() {
+                props = spawn_setting(props, ty, PermissionLevel::Scene(scene.clone()), true);
+            } else {
+                props = spawn_setting(props, ty, PermissionLevel::Scene(String::default()), false);
             }
-            PermissionType::HideAvatars => "The scene was blocked from hiding some avatars",
-            PermissionType::DisableVoice => {
-                "The scene was blocked from disabling voice communications"
-            }
-            PermissionType::Teleport => {
-                "The scene was blocked from teleporting you to a new location"
-            }
-            PermissionType::ChangeRealm => {
-                "The scene was blocked from teleporting you to a new realm"
-            }
-            PermissionType::SpawnPortable => {
-                "The scene was blocked from spawning a portable experience"
-            }
-            PermissionType::KillPortables => {
-                "The scene was blocked from managing your active portables"
-            }
-            PermissionType::Web3 => "The scene was blocked from initiating a web3 transaction",
-            PermissionType::Fetch => "The scene was blocked from fetching remote data",
-            PermissionType::Websocket => "The scene was blocked from opening a websocket",
-            PermissionType::OpenUrl => "The scene was blocked from opening a url in your browser",
-        }
+            props = spawn_setting(props, ty, PermissionLevel::Realm(realm.clone()), true);
+            props = spawn_setting(props, ty, PermissionLevel::Global, true);
+            let ent = commands
+                .spawn_template(&dui, "permission", props)
+                .unwrap()
+                .root;
+
+            commands.entity(ent).insert(On::<HoverEnter>::new(
+                move |mut q: Query<&mut Text, With<PermissionSettingDescription>>| {
+                    q.get_single_mut().unwrap().sections[0].value = ty.description();
+                },
+            ));
+
+            ent
+        };
+
+        let children = vec![
+            spawn_row(PermissionType::MovePlayer),
+            spawn_row(PermissionType::ForceCamera),
+            spawn_row(PermissionType::Teleport),
+            spawn_row(PermissionType::OpenUrl),
+            spawn_row(PermissionType::Web3),
+        ];
+
+        commands
+            .entity(components.named("permissions-box"))
+            .push_children(&children);
+
+        commands
+            .entity(components.named("permission-description"))
+            .insert(PermissionSettingDescription);
     }
 }
+
+#[derive(Component)]
+pub struct PermissionSettingDescription;

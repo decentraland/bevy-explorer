@@ -38,7 +38,7 @@ impl Plugin for InteractStylePlugin {
 }
 
 #[allow(clippy::type_complexity)]
-fn set_interaction_style(
+pub fn set_interaction_style(
     mut q: Query<
         (
             Entity,

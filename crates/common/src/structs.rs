@@ -488,8 +488,6 @@ pub enum PermissionValue {
     Allow,
     Deny,
     Ask,
-    // top level default = ask
-    Default,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]

@@ -12,6 +12,7 @@ use common::{
 };
 use comms::profile::CurrentUserProfile;
 use ipfs::{ChangeRealmEvent, CurrentRealm};
+use tokio::sync::OwnedSemaphorePermit;
 use ui_core::{
     button::{DuiButton, TabSelection},
     ui_actions::{Click, DataChanged, EventCloneExt, EventDefaultExt, On, UiCaller},
@@ -23,6 +24,8 @@ use crate::{
     chat::BUTTON_SCALE,
     discover::DiscoverSettingsPlugin,
     emotes::EmoteSettingsPlugin,
+    permission_manager::ActiveDialog,
+    permissions::{PermissionSettingsDetail, PermissionSettingsPlugin},
     profile_detail::ProfileDetail,
     wearables::WearableSettingsPlugin,
 };
@@ -40,6 +43,7 @@ impl Plugin for ProfileEditPlugin {
             WearableSettingsPlugin,
             EmoteSettingsPlugin,
             AppSettingsPlugin,
+            PermissionSettingsPlugin,
         ));
     }
 }
@@ -89,6 +93,7 @@ pub struct SettingsDialog {
     pub modified: bool,
     pub profile: SerializedProfile,
     pub on_close: Option<OnCloseEvent>,
+    _permit: OwnedSemaphorePermit,
 }
 
 #[derive(Clone)]
@@ -109,6 +114,7 @@ fn save_settings(
             Option<&ProfileDetail>,
             Option<&BoothInstance>,
             Option<&AppSettingsDetail>,
+            Option<&PermissionSettingsDetail>,
         ),
         With<SettingsDialog>,
     >,
@@ -118,7 +124,7 @@ fn save_settings(
         return;
     };
 
-    let Ok((dialog_ent, maybe_avatar, maybe_detail, maybe_booth, maybe_settings)) =
+    let Ok((dialog_ent, maybe_avatar, maybe_detail, maybe_booth, maybe_settings, maybe_perms)) =
         modified.get_single()
     else {
         error!("no dialog");
@@ -127,6 +133,18 @@ fn save_settings(
 
     if let Some(settings) = maybe_settings {
         *config = settings.0.clone();
+    }
+
+    if let Some(perms) = maybe_perms {
+        config
+            .scene_permissions
+            .clone_from(&perms.0.scene_permissions);
+        config
+            .realm_permissions
+            .clone_from(&perms.0.realm_permissions);
+        config
+            .default_permissions
+            .clone_from(&perms.0.default_permissions);
     }
 
     if maybe_detail.is_some() || maybe_avatar.is_some() {
@@ -266,6 +284,7 @@ pub fn close_settings(
 #[derive(Event, Clone)]
 pub struct ShowSettingsEvent(pub SettingsTab);
 
+#[allow(clippy::too_many_arguments)]
 pub fn show_settings(
     mut commands: Commands,
     dui: Res<DuiRegistry>,
@@ -273,8 +292,10 @@ pub fn show_settings(
     current_profile: Res<CurrentUserProfile>,
     mut ev: EventReader<ShowSettingsEvent>,
     existing: Query<(), With<SettingsDialog>>,
+    active_dialog: Res<ActiveDialog>,
+    mut pending: Local<Option<SettingsTab>>,
 ) {
-    let Some(ev) = ev.read().last() else {
+    let Some(tab) = ev.read().last().map(|ev| ev.0).or(pending.take()) else {
         return;
     };
 
@@ -282,13 +303,23 @@ pub fn show_settings(
         return;
     }
 
-    let title_initial = match ev.0 {
+    let permit = match active_dialog.0.clone().try_acquire_owned() {
+        Ok(p) => p,
+        Err(_) => {
+            // resend
+            *pending = Some(tab);
+            return;
+        }
+    };
+
+    let title_initial = match tab {
         SettingsTab::Discover => 0usize,
         SettingsTab::ProfileDetail => 1,
         SettingsTab::Wearables => 2,
         SettingsTab::Emotes => 3,
         SettingsTab::Map => 4,
         SettingsTab::Settings => 5,
+        SettingsTab::Permissions => 6,
     };
 
     let Some(profile) = &current_profile.profile.as_ref() else {
@@ -300,6 +331,7 @@ pub fn show_settings(
         modified: false,
         profile: profile.content.clone(),
         on_close: None,
+        _permit: permit,
     });
     // let root_id = root.id();
 
@@ -339,6 +371,11 @@ pub fn show_settings(
             enabled: true,
             ..Default::default()
         },
+        DuiButton {
+            label: Some("Permissions".to_owned()),
+            enabled: true,
+            ..Default::default()
+        },
     ];
 
     props.insert_prop(
@@ -373,6 +410,7 @@ pub fn show_settings(
                     3 => SettingsTab::Emotes,
                     4 => SettingsTab::Map,
                     5 => SettingsTab::Settings,
+                    6 => SettingsTab::Permissions,
                     _ => panic!(),
                 }
             },
@@ -387,7 +425,7 @@ pub fn show_settings(
         .insert(UpdateRealmText);
     commands
         .entity(components.named("settings-content"))
-        .insert(ev.0);
+        .insert(tab);
 
     //start on the wearables tab
 }
@@ -401,6 +439,7 @@ pub enum SettingsTab {
     Map,
     Discover,
     Settings,
+    Permissions,
 }
 
 #[derive(Event, Default)]

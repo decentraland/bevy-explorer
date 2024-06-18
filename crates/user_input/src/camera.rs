@@ -18,6 +18,7 @@ use scene_runner::{
     renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
     ContainingScene,
 };
+use system_ui::permission_manager::ActiveDialog;
 use tween::SystemTween;
 
 use crate::TRANSITION_TIME;
@@ -90,6 +91,7 @@ pub fn update_camera(
     mut locked_cursor_position: Local<Option<Vec2>>,
     accept_input: Res<AcceptInput>,
     mut cursor_locked: ResMut<system_ui::sysinfo::CursorLocked>,
+    active_dialog: Res<ActiveDialog>,
     mut cinematic_data: Local<Option<CinematicInitialData>>,
     mut mb_state: MouseInteractionState,
 ) {
@@ -176,7 +178,10 @@ pub fn update_camera(
 
     let mut mouse_delta = Vec2::ZERO;
 
-    if accept_input.mouse && state == ClickState::Held || *move_toggled {
+    let in_dialog = active_dialog.0.available_permits() == 0;
+    let lock = !in_dialog && (accept_input.mouse && state == ClickState::Held || *move_toggled);
+
+    if lock {
         for mut window in &mut windows {
             if !window.focused {
                 continue;
@@ -184,7 +189,9 @@ pub fn update_camera(
 
             window.cursor.grab_mode = CursorGrabMode::Locked;
             window.cursor.visible = false;
-            cursor_locked.0 = true;
+            if !in_dialog {
+                cursor_locked.0 = true;
+            }
 
             #[cfg(target_os = "windows")]
             {
@@ -199,11 +206,13 @@ pub fn update_camera(
         }
     }
 
-    if state == ClickState::Released {
+    if state == ClickState::Released || in_dialog {
         for mut window in &mut windows {
             window.cursor.grab_mode = CursorGrabMode::None;
             window.cursor.visible = true;
-            cursor_locked.0 = false;
+            if !in_dialog {
+                cursor_locked.0 = false;
+            }
             *locked_cursor_position = None;
         }
     }

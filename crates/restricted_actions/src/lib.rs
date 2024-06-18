@@ -37,7 +37,7 @@ use scene_runner::{
     ContainingScene, SceneEntity,
 };
 use serde_json::json;
-use system_ui::permissions::Permission;
+use system_ui::permission_manager::Permission;
 use teleport::{handle_out_of_world, teleport_player};
 use ui_core::button::DuiButton;
 use wallet::{browser_auth::remote_send_async, Wallet};

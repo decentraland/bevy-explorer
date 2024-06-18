@@ -1,0 +1,43 @@
+<define-template id="permissions-tab">
+    <div style="position-type: absolute; width: 100%; height: 100%; flex-grow: 1; flex-direction: row;">
+        <div style="flex-direction: column; width: 70%; height: 100%">
+            <div id="header">
+                <div style="width: 40%" />
+                <med-text style="width: 20%; align-self: center; color: black" text="Current Scene" />
+                <med-text style="width: 20%; align-self: center; color: black" text="Current Realm" />
+                <med-text style="width: 20%; align-self: center; color: black" text="Global" />                
+            </div>
+            <!-- <vscroll> -->
+                <div id="permissions-box" style="width: 100%; flex-direction: column; margin: 0px 2vmin 0px 0px;" />
+            <!-- </vscroll> -->
+        </div>
+        <div style="width: 30%; height: 100%; flex-direction: column;">
+            <hr />
+            <large-text text="Permission Info" />
+            <hr-thin />
+            <vscroll>
+                <div style="margin: 1vmin">
+                    <med-text text="Hover a permission to show a description" id="permission-description" style="color: black" />
+                </div>
+            </vscroll>
+        </div>
+    </div>
+</define-template>
+
+<define-template id="permission">
+    <div style="flex-direction: column; width: 100%;">
+        <div>
+            <med-text style="width: 40%; align-self: flex-end; color: black;" text = "@permission-name" />
+            <div style="width: 20%;">
+                <button image-width="5vmin" image-height="5vmin" image="@scene-image" onclick="@scene-click" enabled="@scene-enabled" />
+            </div>
+            <div style="width: 20%;">
+                <button image-width="5vmin" image-height="5vmin" image="@realm-image" onclick="@realm-click" />
+            </div>
+            <div style="width: 20%;">
+                <button image-width="5vmin" image-height="5vmin" image="@global-image" onclick="@global-click" />
+            </div>
+        </div>
+    </div>
+    <hr-thin />
+</define-template>

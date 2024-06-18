@@ -460,13 +460,18 @@ impl<E: Event + Default> EventDefaultExt for E {
 
 pub trait EventCloneExt {
     fn send_value_on<A: ActionMarker>(self) -> On<A>;
+    fn send_value(self) -> impl FnMut(EventWriter<Self>);
 }
 
 impl<E: Event + Clone> EventCloneExt for E {
     fn send_value_on<A: ActionMarker>(self) -> On<A> {
-        On::<A>::new(move |mut e: EventWriter<Self>| {
+        On::<A>::new(Self::send_value(self))
+    }
+
+    fn send_value(self) -> impl FnMut(EventWriter<Self>) {
+        move |mut e: EventWriter<Self>| {
             e.send(self.clone());
-        })
+        }
     }
 }
 
