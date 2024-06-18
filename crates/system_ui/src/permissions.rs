@@ -166,7 +166,6 @@ fn set_permission_settings_content(
                             let new_image = asset_server.load::<Image>(format!("images/{image}"));
                             commands.entity(caller.0).modify_component(
                                 move |node: &mut BoundedNode| {
-                                    println!("update img");
                                     node.image = Some(new_image);
                                 },
                             );
