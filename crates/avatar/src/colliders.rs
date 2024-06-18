@@ -9,7 +9,7 @@ use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
-    structs::{PrimaryCamera, ToolTips},
+    structs::{ActiveDialog, PrimaryCamera, ToolTips},
 };
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
 use input_manager::AcceptInput;
@@ -114,7 +114,12 @@ fn update_avatar_collider_actions(
     mut colliders: ResMut<AvatarColliders>,
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
     windows: Query<&Window>,
-    (accept_input, pointer_target, frame): (Res<AcceptInput>, Res<PointerTarget>, Res<FrameCount>),
+    (accept_input, pointer_target, frame, active_dialog): (
+        Res<AcceptInput>,
+        Res<PointerTarget>,
+        Res<FrameCount>,
+        Res<ActiveDialog>,
+    ),
     mut tooltips: ResMut<ToolTips>,
     profiles: Query<(
         &ForeignPlayer,
@@ -244,7 +249,12 @@ fn update_avatar_collider_actions(
                 false,
             );
 
-            commands
+            let Some(permit) = active_dialog.try_acquire() else {
+                warn!("can't open profile with other active dialog");
+                return;
+            };
+
+            let components = commands
                 .spawn_template(
                     &dui,
                     "foreign-profile",
@@ -255,6 +265,8 @@ fn update_avatar_collider_actions(
                         .with_prop("buttons", vec![DuiButton::close("Ok")]),
                 )
                 .unwrap();
+
+            commands.entity(components.root).insert(permit);
         }
     }
 

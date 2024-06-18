@@ -8,11 +8,10 @@ use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::{AvatarColor, AvatarEmote, SerializedProfile},
     rpc::RpcCall,
-    structs::AppConfig,
+    structs::{ActiveDialog, AppConfig},
 };
 use comms::profile::CurrentUserProfile;
 use ipfs::{ChangeRealmEvent, CurrentRealm};
-use tokio::sync::OwnedSemaphorePermit;
 use ui_core::{
     button::{DuiButton, TabSelection},
     ui_actions::{Click, DataChanged, EventCloneExt, EventDefaultExt, On, UiCaller},
@@ -24,7 +23,6 @@ use crate::{
     chat::BUTTON_SCALE,
     discover::DiscoverSettingsPlugin,
     emotes::EmoteSettingsPlugin,
-    permission_manager::ActiveDialog,
     permissions::{PermissionSettingsDetail, PermissionSettingsPlugin},
     profile_detail::ProfileDetail,
     wearables::WearableSettingsPlugin,
@@ -93,7 +91,6 @@ pub struct SettingsDialog {
     pub modified: bool,
     pub profile: SerializedProfile,
     pub on_close: Option<OnCloseEvent>,
-    _permit: OwnedSemaphorePermit,
 }
 
 #[derive(Clone)]
@@ -303,13 +300,10 @@ pub fn show_settings(
         return;
     }
 
-    let permit = match active_dialog.0.clone().try_acquire_owned() {
-        Ok(p) => p,
-        Err(_) => {
-            // resend
-            *pending = Some(tab);
-            return;
-        }
+    let Some(permit) = active_dialog.try_acquire() else {
+        // resend
+        *pending = Some(tab);
+        return;
     };
 
     let title_initial = match tab {
@@ -327,12 +321,14 @@ pub fn show_settings(
         return;
     };
 
-    let mut root = commands.spawn(SettingsDialog {
-        modified: false,
-        profile: profile.content.clone(),
-        on_close: None,
-        _permit: permit,
-    });
+    let mut root = commands.spawn((
+        SettingsDialog {
+            modified: false,
+            profile: profile.content.clone(),
+            on_close: None,
+        },
+        permit,
+    ));
     // let root_id = root.id();
 
     let mut props = DuiProps::new();

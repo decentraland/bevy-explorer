@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr};
+use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr, sync::Arc};
 
 use bevy::{
     prelude::*,
@@ -6,6 +6,7 @@ use bevy::{
 };
 use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 #[derive(Resource)]
 pub struct Version(pub String);
@@ -511,4 +512,32 @@ pub enum PermissionType {
     Fetch,
     Websocket,
     OpenUrl,
+}
+
+#[derive(Resource)]
+pub struct ActiveDialog(Arc<Semaphore>);
+
+impl Default for ActiveDialog {
+    fn default() -> Self {
+        Self(Arc::new(Semaphore::new(1)))
+    }
+}
+
+impl ActiveDialog {
+    pub fn try_acquire(&self) -> Option<DialogPermit> {
+        self.0
+            .clone()
+            .try_acquire_owned()
+            .ok()
+            .map(|p| DialogPermit { _p: p })
+    }
+
+    pub fn in_use(&self) -> bool {
+        self.0.available_permits() == 0
+    }
+}
+
+#[derive(Component)]
+pub struct DialogPermit {
+    _p: OwnedSemaphorePermit,
 }

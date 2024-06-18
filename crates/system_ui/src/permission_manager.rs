@@ -1,17 +1,14 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::collections::VecDeque;
 
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     rpc::RpcResultSender,
-    structs::{AppConfig, PermissionType, PermissionValue, PrimaryPlayerRes},
+    structs::{ActiveDialog, AppConfig, PermissionType, PermissionValue, PrimaryPlayerRes},
 };
 use ipfs::CurrentRealm;
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene, Toaster};
-use tokio::sync::{
-    oneshot::{channel, error::TryRecvError, Receiver},
-    OwnedSemaphorePermit, Semaphore,
-};
+use tokio::sync::oneshot::{channel, error::TryRecvError, Receiver};
 use ui_core::{
     button::DuiButton,
     combo_box::ComboBox,
@@ -24,15 +21,11 @@ use crate::{
     profile::{SettingsTab, ShowSettingsEvent},
 };
 
-#[derive(Resource)]
-pub struct ActiveDialog(pub Arc<Semaphore>);
-
 pub struct PermissionPlugin;
 
 impl Plugin for PermissionPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ActiveDialog(Arc::new(Semaphore::new(1))))
-            .init_resource::<PermissionManager>()
+        app.init_resource::<PermissionManager>()
             .add_systems(PostUpdate, update_permissions);
     }
 }
@@ -242,9 +235,8 @@ fn update_permissions(
         });
     }
 
-    let permit = match active_dialog.0.clone().try_acquire_owned() {
-        Ok(p) => p,
-        Err(_) => return,
+    let Some(permit) = active_dialog.try_acquire() else {
+        return;
     };
 
     while let Some(req) = manager.pending.pop_front() {
@@ -392,13 +384,15 @@ fn update_permissions(
                     ),
             )
             .unwrap();
-        commands.entity(popup.root).insert(PermissionDialog {
+        commands.entity(popup.root).insert((
             permit,
-            level: None,
-            scene: req.scene,
-            hash: hash.to_owned(),
-            realm: req.realm.clone(),
-        });
+            PermissionDialog {
+                level: None,
+                scene: req.scene,
+                hash: hash.to_owned(),
+                realm: req.realm.clone(),
+            },
+        ));
         pending.push((cancel_rx, popup.root, Some(req)));
         break;
     }
@@ -406,7 +400,6 @@ fn update_permissions(
 
 #[derive(Component)]
 pub struct PermissionDialog {
-    pub permit: OwnedSemaphorePermit,
     level: Option<PermissionLevel>,
     scene: Entity,
     hash: String,

@@ -12,13 +12,12 @@ use bevy::{
     window::CursorGrabMode,
 };
 
-use common::structs::{CameraOverride, PrimaryCamera, PrimaryUser};
+use common::structs::{ActiveDialog, CameraOverride, PrimaryCamera, PrimaryUser};
 use input_manager::AcceptInput;
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
     ContainingScene,
 };
-use system_ui::permission_manager::ActiveDialog;
 use tween::SystemTween;
 
 use crate::TRANSITION_TIME;
@@ -178,7 +177,7 @@ pub fn update_camera(
 
     let mut mouse_delta = Vec2::ZERO;
 
-    let in_dialog = active_dialog.0.available_permits() == 0;
+    let in_dialog = active_dialog.in_use();
     let lock = !in_dialog && (accept_input.mouse && state == ClickState::Held || *move_toggled);
 
     if lock {

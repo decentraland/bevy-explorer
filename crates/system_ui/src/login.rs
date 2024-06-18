@@ -10,7 +10,7 @@ use bevy::{
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
-    structs::{AppConfig, ChainLink, PreviousLogin},
+    structs::{ActiveDialog, AppConfig, ChainLink, PreviousLogin},
     util::{project_directories, TaskExt},
 };
 use comms::{
@@ -77,6 +77,7 @@ fn login(
     mut window: Query<&mut Window, With<PrimaryWindow>>,
     _preview: Res<PreviewMode>,
     _config: Res<AppConfig>,
+    active_dialog: Res<ActiveDialog>,
 ) {
     // cleanup if we're done
     if wallet.address().is_some() {
@@ -125,13 +126,17 @@ fn login(
 
     // create dialog
     if dialog.is_none() && final_task.is_none() {
+        let Some(permit) = active_dialog.try_acquire() else {
+            return;
+        };
+
         let previous_login = std::fs::read(config_file())
             .ok()
             .and_then(|f| serde_json::from_slice::<AppConfig>(&f).ok())
             .unwrap_or_default()
             .previous_login;
 
-        let mut dlg = commands.spawn_empty();
+        let mut dlg = commands.spawn(permit);
         *dialog = Some(dlg.id());
         dlg.apply_template(
             &dui,

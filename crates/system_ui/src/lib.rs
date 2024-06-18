@@ -21,7 +21,10 @@ pub mod wearables;
 use bevy::prelude::*;
 
 use change_realm::ChangeRealmPlugin;
-use common::{sets::SetupSets, structs::UiRoot};
+use common::{
+    sets::SetupSets,
+    structs::{ActiveDialog, UiRoot},
+};
 use emote_select::EmoteUiPlugin;
 use input_manager::MouseInteractionComponent;
 use login::LoginPlugin;
@@ -39,7 +42,8 @@ pub struct SystemUiPlugin;
 
 impl Plugin for SystemUiPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(SystemUiRoot(Entity::PLACEHOLDER));
+        app.insert_resource(SystemUiRoot(Entity::PLACEHOLDER))
+            .init_resource::<ActiveDialog>();
         app.add_systems(
             Startup,
             setup.in_set(SetupSets::Init).before(SetupSets::Main),
