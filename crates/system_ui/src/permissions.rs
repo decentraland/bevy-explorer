@@ -1,11 +1,15 @@
 use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
-    structs::{AppConfig, PermissionType, PermissionValue, PrimaryPlayerRes},
+    structs::{AppConfig, PermissionType, PermissionValue, PrimaryPlayerRes, SettingsTab},
     util::FireEventEx,
 };
 use ipfs::CurrentRealm;
-use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
+use scene_runner::{
+    permissions::{PermissionLevel, PermissionStrings},
+    renderer_context::RendererSceneContext,
+    ContainingScene,
+};
 use ui_core::{
     bound_node::BoundedNode,
     interact_style::set_interaction_style,
@@ -14,10 +18,7 @@ use ui_core::{
     ModifyComponentExt,
 };
 
-use crate::{
-    permission_manager::{PermissionLevel, PermissionStrings},
-    profile::{SettingsDialog, SettingsTab},
-};
+use crate::profile::SettingsDialog;
 
 pub struct PermissionSettingsPlugin;
 

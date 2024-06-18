@@ -541,3 +541,18 @@ impl ActiveDialog {
 pub struct DialogPermit {
     _p: OwnedSemaphorePermit,
 }
+
+#[derive(Component, Default, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsTab {
+    ProfileDetail,
+    #[default]
+    Wearables,
+    Emotes,
+    Map,
+    Discover,
+    Settings,
+    Permissions,
+}
+
+#[derive(Event, Clone)]
+pub struct ShowSettingsEvent(pub SettingsTab);

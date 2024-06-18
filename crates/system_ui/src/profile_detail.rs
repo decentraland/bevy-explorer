@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use common::profile::SerializedProfile;
+use common::{profile::SerializedProfile, structs::SettingsTab};
 use comms::profile::CurrentUserProfile;
 use ui_core::{
     button::{DuiButton, TabSelection},
@@ -10,7 +10,7 @@ use ui_core::{
     ui_actions::{DataChanged, On, UiCaller},
 };
 
-use crate::profile::{SettingsDialog, SettingsTab};
+use crate::profile::SettingsDialog;
 
 pub struct ProfileDetailPlugin;
 

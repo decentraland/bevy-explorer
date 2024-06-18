@@ -13,7 +13,7 @@ use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     sets::SetupSets,
-    structs::{AppConfig, PrimaryUser, Version},
+    structs::{AppConfig, PrimaryUser, SettingsTab, ShowSettingsEvent, Version},
 };
 use comms::{
     global_crdt::ForeignPlayer,
@@ -41,10 +41,7 @@ use ui_core::{
 };
 use world_ui::TextShapeMaterial;
 
-use crate::{
-    map::MapTexture,
-    profile::{SettingsTab, ShowSettingsEvent},
-};
+use crate::map::MapTexture;
 
 use super::SystemUiRoot;
 

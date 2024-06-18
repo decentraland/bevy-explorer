@@ -32,12 +32,12 @@ use scene_runner::{
     initialize_scene::{
         LiveScenes, PortableScenes, PortableSource, SceneHash, SceneLoading, PARCEL_SIZE,
     },
+    permissions::Permission,
     renderer_context::RendererSceneContext,
     update_world::gltf_container::{GltfDefinition, GltfProcessed},
     ContainingScene, SceneEntity,
 };
 use serde_json::json;
-use system_ui::permission_manager::Permission;
 use teleport::{handle_out_of_world, teleport_player};
 use ui_core::button::DuiButton;
 use wallet::{browser_auth::remote_send_async, Wallet};

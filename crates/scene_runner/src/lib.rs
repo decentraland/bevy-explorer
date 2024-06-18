@@ -48,6 +48,7 @@ use self::{
 
 pub mod automatic_testing;
 pub mod initialize_scene;
+pub mod permissions;
 pub mod primary_entities;
 pub mod renderer_context;
 #[cfg(test)]

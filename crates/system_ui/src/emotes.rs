@@ -18,7 +18,10 @@ use collectibles::{
     wearables::WearableInstance,
     BaseEmotes, CollectibleData, CollectibleError, CollectibleManager,
 };
-use common::{structs::PrimaryUser, util::TaskExt};
+use common::{
+    structs::{PrimaryUser, SettingsTab},
+    util::TaskExt,
+};
 use comms::profile::CurrentUserProfile;
 use ipfs::IpfsAssetServer;
 use isahc::ReadResponseExt;
@@ -33,7 +36,7 @@ use ui_core::{
     ui_actions::{Click, DataChanged, Enabled, On, UiCaller},
 };
 
-use crate::profile::{SettingsDialog, SettingsTab};
+use crate::profile::SettingsDialog;
 
 pub struct EmoteSettingsPlugin;
 

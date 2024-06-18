@@ -7,7 +7,11 @@ use bevy::{
     utils::HashSet,
 };
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use common::{rpc::RpcCall, structs::IVec2Arg, util::TaskExt};
+use common::{
+    rpc::RpcCall,
+    structs::{IVec2Arg, SettingsTab},
+    util::TaskExt,
+};
 use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, IpfsAssetServer};
 use isahc::AsyncReadResponseExt;
 use serde::Deserialize;
@@ -20,7 +24,7 @@ use ui_core::{
     ModifyComponentExt,
 };
 
-use crate::profile::{close_settings, OnCloseEvent, SettingsDialog, SettingsTab};
+use crate::profile::{close_settings, OnCloseEvent, SettingsDialog};
 
 pub struct DiscoverSettingsPlugin;
 

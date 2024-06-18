@@ -9,7 +9,7 @@ use bevy::{
 };
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
-    structs::PrimaryUser,
+    structs::{PrimaryUser, SettingsTab},
     util::{TaskExt, TryPushChildrenEx},
 };
 use ipfs::ipfs_path::IpfsPath;
@@ -24,7 +24,7 @@ use ui_core::{
 
 use crate::{
     discover::{spawn_discover_popup, DiscoverPage, DiscoverPages},
-    profile::{SettingsDialog, SettingsTab},
+    profile::SettingsDialog,
 };
 
 #[derive(Component)]

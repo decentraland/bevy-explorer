@@ -8,7 +8,7 @@ use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::{AvatarColor, AvatarEmote, SerializedProfile},
     rpc::RpcCall,
-    structs::{ActiveDialog, AppConfig},
+    structs::{ActiveDialog, AppConfig, SettingsTab, ShowSettingsEvent},
 };
 use comms::profile::CurrentUserProfile;
 use ipfs::{ChangeRealmEvent, CurrentRealm};
@@ -278,9 +278,6 @@ pub fn close_settings(
     }
 }
 
-#[derive(Event, Clone)]
-pub struct ShowSettingsEvent(pub SettingsTab);
-
 #[allow(clippy::too_many_arguments)]
 pub fn show_settings(
     mut commands: Commands,
@@ -424,18 +421,6 @@ pub fn show_settings(
         .insert(tab);
 
     //start on the wearables tab
-}
-
-#[derive(Component, Default, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsTab {
-    ProfileDetail,
-    #[default]
-    Wearables,
-    Emotes,
-    Map,
-    Discover,
-    Settings,
-    Permissions,
 }
 
 #[derive(Event, Default)]

@@ -10,11 +10,11 @@ use scene_runner::{
     initialize_scene::{
         LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, PARCEL_SIZE,
     },
+    permissions::Permission,
     renderer_context::RendererSceneContext,
     update_world::mesh_collider::SceneColliderData,
     OutOfWorld,
 };
-use system_ui::permission_manager::Permission;
 use wallet::Wallet;
 
 pub fn teleport_player(
