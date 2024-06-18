@@ -1,11 +1,15 @@
 use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use common::structs::{AppConfig, PermissionType, PermissionValue, PrimaryPlayerRes};
+use common::{
+    structs::{AppConfig, PermissionType, PermissionValue, PrimaryPlayerRes},
+    util::FireEventEx,
+};
 use ipfs::CurrentRealm;
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
 use ui_core::{
     bound_node::BoundedNode,
     interact_style::set_interaction_style,
+    scrollable::{ScrollTarget, ScrollTargetEvent},
     ui_actions::{Click, HoverEnter, On, UiCaller},
     ModifyComponentExt,
 };
@@ -19,7 +23,7 @@ pub struct PermissionSettingsPlugin;
 
 impl Plugin for PermissionSettingsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
+        app.init_resource::<PermissionTarget>().add_systems(
             Update,
             set_permission_settings_content.before(set_interaction_style),
         );
@@ -28,6 +32,12 @@ impl Plugin for PermissionSettingsPlugin {
 
 #[derive(Component)]
 pub struct PermissionSettingsDetail(pub AppConfig);
+
+#[derive(Resource, Default)]
+pub struct PermissionTarget {
+    pub scene: Option<Entity>,
+    pub ty: Option<PermissionType>,
+}
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn set_permission_settings_content(
@@ -42,6 +52,7 @@ fn set_permission_settings_content(
     player: Res<PrimaryPlayerRes>,
     realm: Res<CurrentRealm>,
     scenes: Query<&RendererSceneContext>,
+    target: Res<PermissionTarget>,
 ) {
     if dialog.is_empty() {
         *prev_tab = None;
@@ -71,10 +82,50 @@ fn set_permission_settings_content(
             }
         };
 
+        let scene_ent = match &target.scene {
+            None => containing_scene.get_parcel(player.0),
+            Some(scene) => {
+                println!("using scene!");
+                Some(*scene)
+            }
+        };
+        let (scene_hash, scene_name, is_portable) = scene_ent
+            .and_then(|scene_ent| scenes.get(scene_ent).ok())
+            .map(|ctx| {
+                (
+                    Some(ctx.hash.clone()),
+                    Some(ctx.title.clone()),
+                    ctx.is_portable,
+                )
+            })
+            .unwrap_or((None, None, false));
+
+        let realm_address = if is_portable {
+            "<portable>".to_owned()
+        } else {
+            realm.address.clone()
+        };
+
         commands.entity(ent).despawn_descendants();
         let components = commands
             .entity(ent)
-            .apply_template(&dui, "permissions-tab", DuiProps::new())
+            .apply_template(
+                &dui,
+                "permissions-tab",
+                DuiProps::new()
+                    .with_prop(
+                        "scene",
+                        scene_name.clone().unwrap_or_else(|| "<none>".to_owned()),
+                    )
+                    .with_prop(
+                        "realm",
+                        realm
+                            .config
+                            .realm_name
+                            .clone()
+                            .unwrap_or_else(|| "<unnamed>".into()),
+                    ),
+            )
             .unwrap();
 
         let spawn_setting = |props: DuiProps,
@@ -83,9 +134,10 @@ fn set_permission_settings_content(
                              enabled: bool|
          -> DuiProps {
             let current_value = match &level {
-                PermissionLevel::Scene(s) => {
-                    config.scene_permissions.get(s).and_then(|sp| sp.get(&ty))
-                }
+                PermissionLevel::Scene(_, hash) => config
+                    .scene_permissions
+                    .get(hash)
+                    .and_then(|sp| sp.get(&ty)),
                 PermissionLevel::Realm(r) => {
                     config.realm_permissions.get(r).and_then(|sp| sp.get(&ty))
                 }
@@ -105,7 +157,7 @@ fn set_permission_settings_content(
             };
 
             let label = match &level {
-                PermissionLevel::Scene(_) => "scene",
+                PermissionLevel::Scene(..) => "scene",
                 PermissionLevel::Realm(_) => "realm",
                 PermissionLevel::Global => "global",
             };
@@ -132,8 +184,8 @@ fn set_permission_settings_content(
                             };
 
                             let dict = match &level {
-                                PermissionLevel::Scene(s) => {
-                                    config.0.scene_permissions.entry(s.clone()).or_default()
+                                PermissionLevel::Scene(_, hash) => {
+                                    config.0.scene_permissions.entry(hash.clone()).or_default()
                                 }
                                 PermissionLevel::Realm(r) => {
                                     config.0.realm_permissions.entry(r.clone()).or_default()
@@ -176,43 +228,96 @@ fn set_permission_settings_content(
                 )
         };
 
-        // TODO make a way to specify the scene
-        let scene = containing_scene
-            .get_parcel(player.0)
-            .and_then(|scene_ent| scenes.get(scene_ent).ok())
-            .map(|ctx| ctx.hash.clone());
+        let mut target_entity = None;
 
-        let realm = realm.address.clone();
-
-        let mut spawn_row = |ty: PermissionType| -> Entity {
+        let mut spawn_row = |ty: PermissionType, commands: &mut Commands| -> Entity {
+            let hilight = target.ty == Some(ty);
             let mut props = DuiProps::default().with_prop("permission-name", ty.title().to_owned());
-            if let Some(scene) = scene.as_ref() {
-                props = spawn_setting(props, ty, PermissionLevel::Scene(scene.clone()), true);
+            if let Some(hash) = scene_hash.as_ref() {
+                props = spawn_setting(
+                    props,
+                    ty,
+                    PermissionLevel::Scene(scene_ent.unwrap(), hash.clone()),
+                    true,
+                );
             } else {
-                props = spawn_setting(props, ty, PermissionLevel::Scene(String::default()), false);
+                props = spawn_setting(
+                    props,
+                    ty,
+                    PermissionLevel::Scene(Entity::PLACEHOLDER, String::default()),
+                    false,
+                );
             }
-            props = spawn_setting(props, ty, PermissionLevel::Realm(realm.clone()), true);
+            if is_portable {
+                props = spawn_setting(
+                    props,
+                    ty,
+                    PermissionLevel::Realm("<portable>".to_owned()),
+                    false,
+                );
+            } else {
+                props = spawn_setting(
+                    props,
+                    ty,
+                    PermissionLevel::Realm(realm_address.clone()),
+                    true,
+                );
+            }
             props = spawn_setting(props, ty, PermissionLevel::Global, true);
             let ent = commands
                 .spawn_template(&dui, "permission", props)
                 .unwrap()
                 .root;
 
-            commands.entity(ent).insert(On::<HoverEnter>::new(
-                move |mut q: Query<&mut Text, With<PermissionSettingDescription>>| {
-                    q.get_single_mut().unwrap().sections[0].value = ty.description();
-                },
+            commands.entity(ent).insert((
+                Interaction::default(),
+                On::<HoverEnter>::new(
+                    move |mut q: Query<&mut Text, With<PermissionSettingDescription>>| {
+                        q.get_single_mut().unwrap().sections[0].value = ty.description();
+                    },
+                ),
             ));
+
+            if hilight {
+                commands
+                    .entity(ent)
+                    .insert(BackgroundColor(Color::rgba(1.0, 1.0, 1.0, 0.1)));
+                target_entity = Some(ent);
+            }
 
             ent
         };
 
+        let spawn_header = |text: &str, commands: &mut Commands| -> Entity {
+            commands
+                .spawn_template(
+                    &dui,
+                    "settings-header",
+                    DuiProps::new().with_prop("label", text.to_owned()),
+                )
+                .unwrap()
+                .root
+        };
+
         let children = vec![
-            spawn_row(PermissionType::MovePlayer),
-            spawn_row(PermissionType::ForceCamera),
-            spawn_row(PermissionType::Teleport),
-            spawn_row(PermissionType::OpenUrl),
-            spawn_row(PermissionType::Web3),
+            spawn_header("Gameplay", &mut commands),
+            spawn_row(PermissionType::MovePlayer, &mut commands),
+            spawn_row(PermissionType::ForceCamera, &mut commands),
+            spawn_row(PermissionType::PlayEmote, &mut commands),
+            spawn_row(PermissionType::SetLocomotion, &mut commands),
+            spawn_row(PermissionType::HideAvatars, &mut commands),
+            spawn_row(PermissionType::DisableVoice, &mut commands),
+            spawn_header("Navigation", &mut commands),
+            spawn_row(PermissionType::Teleport, &mut commands),
+            spawn_row(PermissionType::ChangeRealm, &mut commands),
+            spawn_header("Portable Experiences", &mut commands),
+            spawn_row(PermissionType::SpawnPortable, &mut commands),
+            spawn_row(PermissionType::KillPortables, &mut commands),
+            spawn_header("Communication", &mut commands),
+            spawn_row(PermissionType::Web3, &mut commands),
+            spawn_row(PermissionType::Fetch, &mut commands),
+            spawn_row(PermissionType::Websocket, &mut commands),
+            spawn_row(PermissionType::OpenUrl, &mut commands),
         ];
 
         commands
@@ -222,6 +327,13 @@ fn set_permission_settings_content(
         commands
             .entity(components.named("permission-description"))
             .insert(PermissionSettingDescription);
+
+        if let Some(target) = target_entity {
+            commands.fire_event(ScrollTargetEvent {
+                scrollable: components.named("scrollable"),
+                position: ScrollTarget::Entity(target),
+            });
+        }
     }
 }
 

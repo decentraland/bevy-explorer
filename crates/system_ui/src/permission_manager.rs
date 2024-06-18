@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, sync::Arc};
 
-use bevy::{ecs::system::SystemParam, prelude::*, utils::HashMap};
+use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     rpc::RpcResultSender,
@@ -20,6 +20,7 @@ use ui_core::{
 
 use crate::{
     login::config_file,
+    permissions::PermissionTarget,
     profile::{SettingsTab, ShowSettingsEvent},
 };
 
@@ -38,14 +39,15 @@ impl Plugin for PermissionPlugin {
 
 #[derive(Clone)]
 pub enum PermissionLevel {
-    Scene(String),
+    Scene(Entity, String),
     Realm(String),
     Global,
 }
 
 struct PermissionRequest {
     realm: String,
-    scene: String,
+    scene: Entity,
+    is_portable: bool,
     additional: Option<String>,
     ty: PermissionType,
     sender: RpcResultSender<bool>,
@@ -61,13 +63,15 @@ impl PermissionManager {
         &mut self,
         ty: PermissionType,
         realm: String,
-        scene: String,
+        scene: Entity,
+        is_portable: bool,
         additional: Option<String>,
     ) -> Receiver<bool> {
         let (sender, receiver) = channel();
         self.pending.push_back(PermissionRequest {
             realm,
             scene,
+            is_portable,
             ty,
             sender: RpcResultSender::new(sender),
             additional,
@@ -103,17 +107,29 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
         if !self.containing_scenes.get(self.player.0).contains(&scene) {
             return;
         }
-        let Ok(hash) = self.scenes.get(scene).map(|ctx| &ctx.hash) else {
+        let Ok((hash, is_portable)) = self
+            .scenes
+            .get(scene)
+            .map(|ctx| (&ctx.hash, ctx.is_portable))
+        else {
             return;
         };
-        match self.config.get_permission(ty, &self.realm.address, hash) {
+        match self
+            .config
+            .get_permission(ty, &self.realm.address, hash, is_portable)
+        {
             common::structs::PermissionValue::Allow => self.success.push(value),
             common::structs::PermissionValue::Deny => self.fail.push(value),
             common::structs::PermissionValue::Ask => {
                 self.pending.push((
                     value,
-                    self.manager
-                        .request(ty, self.realm.address.clone(), hash.clone(), additional),
+                    self.manager.request(
+                        ty,
+                        self.realm.address.clone(),
+                        scene,
+                        is_portable,
+                        additional,
+                    ),
                 ));
             }
         }
@@ -160,7 +176,7 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_permissions(
     mut commands: Commands,
     mut manager: ResMut<PermissionManager>,
@@ -171,24 +187,36 @@ fn update_permissions(
     scenes: Query<&RendererSceneContext>,
     dui: Res<DuiRegistry>,
     config: Res<AppConfig>,
-    mut pending: Local<Vec<(Receiver<()>, Option<PermissionRequest>)>>,
+    // scene cancel, dialog Entity, original request
+    mut pending: Local<Vec<(Receiver<()>, Entity, Option<PermissionRequest>)>>,
 ) {
-    pending.retain_mut(|(cancel_rx, req)| {
+    let active_scenes = containing_scene.get(player.0);
+
+    pending.retain_mut(|(cancel_rx, ent, req)| {
+        // check if dialog has been cancelled ("manage permissions") or completed
         match cancel_rx.try_recv() {
             Ok(()) => {
                 // cancelled, readd
                 manager.pending.push_front(req.take().unwrap());
-                false
+                return false;
             }
             Err(TryRecvError::Closed) => {
                 // completed, drop
-                false
+                return false;
             }
             Err(TryRecvError::Empty) => {
                 // not completed or cancelled, retain
-                true
             }
         }
+
+        // kill dialogs where the scene is no longer active
+        if !active_scenes.contains(&req.as_ref().unwrap().scene) {
+            commands.entity(*ent).despawn_recursive();
+            req.take().unwrap().sender.send(false);
+            return false;
+        }
+
+        true
     });
 
     if manager.pending.is_empty() {
@@ -196,8 +224,11 @@ fn update_permissions(
     }
 
     if config.is_changed() {
-        manager.pending.retain(
-            |req| match config.get_permission(req.ty, &req.realm, &req.scene) {
+        manager.pending.retain(|req| {
+            let Ok(hash) = scenes.get(req.scene).map(|ctx| &ctx.hash) else {
+                return false;
+            };
+            match config.get_permission(req.ty, &req.realm, hash, req.is_portable) {
                 PermissionValue::Allow => {
                     req.sender.clone().send(true);
                     false
@@ -207,8 +238,8 @@ fn update_permissions(
                     false
                 }
                 _ => true,
-            },
-        );
+            }
+        });
     }
 
     let permit = match active_dialog.0.clone().try_acquire_owned() {
@@ -216,19 +247,16 @@ fn update_permissions(
         Err(_) => return,
     };
 
-    let active_scenes = containing_scene
-        .get(player.0)
-        .into_iter()
-        .flat_map(|e| scenes.get(e).ok())
-        .map(|ctx| (ctx.hash.as_str(), ctx.title.as_str()))
-        .collect::<HashMap<_, _>>();
-
     while let Some(req) = manager.pending.pop_front() {
         if req.realm != current_realm.address {
             continue;
         }
 
-        let Some(name) = active_scenes.get(req.scene.as_str()) else {
+        if !active_scenes.contains(&req.scene) {
+            continue;
+        }
+
+        let Ok((hash, name)) = scenes.get(req.scene).map(|ctx| (&ctx.hash, &ctx.title)) else {
             continue;
         };
 
@@ -251,9 +279,9 @@ fn update_permissions(
                     return;
                 };
                 match level {
-                    PermissionLevel::Scene(scene) => config
+                    PermissionLevel::Scene(_, hash) => config
                         .scene_permissions
-                        .entry(scene.clone())
+                        .entry(hash.clone())
                         .or_default()
                         .insert(ty, value),
                     PermissionLevel::Realm(realm) => config
@@ -275,6 +303,9 @@ fn update_permissions(
             }
         };
 
+        let is_portable = req.is_portable;
+        let scene_ent = req.scene;
+        let ty = req.ty;
         let popup = commands
             .spawn_template(
                 &dui,
@@ -293,31 +324,41 @@ fn update_permissions(
                         "buttons2",
                         vec![DuiButton::new_enabled_and_close(
                             "Manage Permissions",
-                            ShowSettingsEvent(SettingsTab::Permissions)
-                                .send_value()
-                                .pipe(move || {
-                                    cancel_sx.clone().send(());
-                                }),
+                            (move |mut target: ResMut<PermissionTarget>| {
+                                target.scene = Some(scene_ent);
+                                target.ty = Some(ty);
+                            })
+                            .pipe(ShowSettingsEvent(SettingsTab::Permissions).send_value())
+                            .pipe(move || {
+                                cancel_sx.clone().send(());
+                            }),
                         )],
                     )
                     .with_prop(
                         "options",
-                        [
-                            "Once",
-                            "Always for Scene",
-                            "Always for Realm",
-                            "Always for All",
-                        ]
-                        .into_iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>(),
+                        if is_portable {
+                            ["Once", "Always for Scene", "Always for All"]
+                                .into_iter()
+                                .map(ToString::to_string)
+                                .collect::<Vec<_>>()
+                        } else {
+                            [
+                                "Once",
+                                "Always for Scene",
+                                "Always for Realm",
+                                "Always for All",
+                            ]
+                            .into_iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                        },
                     )
                     .with_prop(
                         "option-changed",
                         On::<DataChanged>::new(
-                            |mut dialog: Query<&mut PermissionDialog>,
-                             caller: Res<UiCaller>,
-                             combo: Query<&ComboBox>| {
+                            move |mut dialog: Query<&mut PermissionDialog>,
+                                  caller: Res<UiCaller>,
+                                  combo: Query<&ComboBox>| {
                                 let Ok(mut dialog) = dialog.get_single_mut() else {
                                     warn!("no dialog");
                                     return;
@@ -330,8 +371,17 @@ fn update_permissions(
 
                                 dialog.level = match combo.selected {
                                     0 => None,
-                                    1 => Some(PermissionLevel::Scene(dialog.scene.clone())),
-                                    2 => Some(PermissionLevel::Realm(dialog.realm.clone())),
+                                    1 => Some(PermissionLevel::Scene(
+                                        dialog.scene,
+                                        dialog.hash.clone(),
+                                    )),
+                                    2 => {
+                                        if is_portable {
+                                            Some(PermissionLevel::Global)
+                                        } else {
+                                            Some(PermissionLevel::Realm(dialog.realm.clone()))
+                                        }
+                                    }
                                     3 => Some(PermissionLevel::Global),
                                     _ => unreachable!(),
                                 };
@@ -345,10 +395,11 @@ fn update_permissions(
         commands.entity(popup.root).insert(PermissionDialog {
             permit,
             level: None,
-            scene: req.scene.clone(),
+            scene: req.scene,
+            hash: hash.to_owned(),
             realm: req.realm.clone(),
         });
-        pending.push((cancel_rx, Some(req)));
+        pending.push((cancel_rx, popup.root, Some(req)));
         break;
     }
 }
@@ -357,7 +408,8 @@ fn update_permissions(
 pub struct PermissionDialog {
     pub permit: OwnedSemaphorePermit,
     level: Option<PermissionLevel>,
-    scene: String,
+    scene: Entity,
+    hash: String,
     realm: String,
 }
 

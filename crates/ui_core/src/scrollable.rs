@@ -323,20 +323,28 @@ fn update_scrollables(
                     new_slider_abses = Some(pos);
                 }
                 ScrollTarget::Entity(e) => {
-                    if let Ok((_, transform, parent, gt)) = positions.get(e) {
-                        if parent.get() != scroll_content.0 {
-                            warn!("scroll target is not in scrollable contents");
-                        } else {
-                            let overflow = (child_size - parent_size).max(Vec2::ONE);
-                            let abs_mid = (transform.translation.xy() + overflow * 0.5)
-                                .clamp(Vec2::ZERO, overflow)
-                                / overflow;
-                            new_slider_abses = Some(abs_mid);
-                            debug!("child pos: {} ({}) -> parent size: {parent_size}, child_size: {child_size}, abs {:?}", transform.translation.xy(), gt.translation().xy(), abs_mid);
+                    let mut translation = Vec2::ZERO;
+
+                    let mut i = e;
+                    loop {
+                        let Ok((_, transform, parent, _)) = positions.get(i) else {
+                            warn!("scroll target not found");
+                            translation = Vec2::ZERO;
+                            break;
+                        };
+
+                        translation += transform.translation.xy();
+                        if parent.get() == scroll_content.0 {
+                            break;
                         }
-                    } else {
-                        warn!("scroll target not found");
+                        i = parent.get();
                     }
+
+                    let overflow = (child_size - parent_size).max(Vec2::ONE);
+                    let abs_mid =
+                        (translation + overflow * 0.5).clamp(Vec2::ZERO, overflow) / overflow;
+                    new_slider_abses = Some(abs_mid);
+                    debug!("{translation} -> parent size: {parent_size}, child_size: {child_size}, abs {abs_mid:?}");
                 }
             }
         }

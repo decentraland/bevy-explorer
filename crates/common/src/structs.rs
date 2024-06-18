@@ -235,14 +235,19 @@ impl AppConfig {
         ty: PermissionType,
         realm: impl AsRef<str>,
         scene: impl AsRef<str>,
+        is_portable: bool,
     ) -> PermissionValue {
         self.scene_permissions
             .get(scene.as_ref())
             .and_then(|map| map.get(&ty))
             .or_else(|| {
-                self.realm_permissions
-                    .get(realm.as_ref())
-                    .and_then(|map| map.get(&ty))
+                if is_portable {
+                    self.realm_permissions
+                        .get(realm.as_ref())
+                        .and_then(|map| map.get(&ty))
+                } else {
+                    None
+                }
             })
             .or_else(|| self.default_permissions.get(&ty))
             .copied()
