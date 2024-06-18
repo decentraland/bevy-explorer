@@ -1,7 +1,9 @@
 use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
-    structs::{AppConfig, PermissionType, PermissionValue, PrimaryPlayerRes, SettingsTab},
+    structs::{
+        AppConfig, PermissionTarget, PermissionType, PermissionValue, PrimaryPlayerRes, SettingsTab,
+    },
     util::FireEventEx,
 };
 use ipfs::CurrentRealm;
@@ -33,12 +35,6 @@ impl Plugin for PermissionSettingsPlugin {
 
 #[derive(Component)]
 pub struct PermissionSettingsDetail(pub AppConfig);
-
-#[derive(Resource, Default)]
-pub struct PermissionTarget {
-    pub scene: Option<Entity>,
-    pub ty: Option<PermissionType>,
-}
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn set_permission_settings_content(
@@ -86,8 +82,13 @@ fn set_permission_settings_content(
         let scene_ent = match &target.scene {
             None => containing_scene.get_parcel(player.0),
             Some(scene) => {
-                println!("using scene!");
-                Some(*scene)
+                if scenes.get(*scene).is_ok() {
+                    println!("using scene!");
+                    Some(*scene)
+                } else {
+                    println!("scene invalid!");
+                    containing_scene.get_parcel(player.0)
+                }
             }
         };
         let (scene_hash, scene_name, is_portable) = scene_ent

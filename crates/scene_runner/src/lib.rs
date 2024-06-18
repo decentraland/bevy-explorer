@@ -169,7 +169,7 @@ impl<'w, 's> Toaster<'w, 's> {
         self.do_add_toast(key, message, Some(on_click))
     }
 
-    pub fn clear_toast(&mut self, key: &'static str) {
+    pub fn clear_toast(&mut self, key: &str) {
         self.toasts.0.remove(key);
     }
 }

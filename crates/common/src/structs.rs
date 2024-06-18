@@ -556,3 +556,9 @@ pub enum SettingsTab {
 
 #[derive(Event, Clone)]
 pub struct ShowSettingsEvent(pub SettingsTab);
+
+#[derive(Resource, Default)]
+pub struct PermissionTarget {
+    pub scene: Option<Entity>,
+    pub ty: Option<PermissionType>,
+}

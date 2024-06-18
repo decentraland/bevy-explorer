@@ -4,11 +4,14 @@ use crate::{renderer_context::RendererSceneContext, ContainingScene, Toaster};
 use bevy::{ecs::system::SystemParam, prelude::*};
 use common::{
     rpc::RpcResultSender,
-    structs::{AppConfig, PermissionType, PrimaryPlayerRes, SettingsTab, ShowSettingsEvent},
+    structs::{
+        AppConfig, PermissionTarget, PermissionType, PrimaryPlayerRes, SettingsTab,
+        ShowSettingsEvent,
+    },
 };
 use ipfs::CurrentRealm;
 use tokio::sync::oneshot::{channel, error::TryRecvError, Receiver};
-use ui_core::ui_actions::{Click, EventCloneExt};
+use ui_core::ui_actions::{Click, EventCloneExt, On};
 
 #[derive(Clone)]
 pub enum PermissionLevel {
@@ -53,22 +56,32 @@ impl PermissionManager {
     }
 }
 
+#[allow(clippy::type_complexity)]
 #[derive(SystemParam)]
 pub struct Permission<'w, 's, T: Send + Sync + 'static> {
-    success: Local<'s, Vec<T>>,
-    fail: Local<'s, Vec<T>>,
-    pending: Local<'s, Vec<(T, Receiver<bool>)>>,
+    success: Local<'s, Vec<(T, PermissionType, Entity)>>,
+    fail: Local<'s, Vec<(T, PermissionType, Entity)>>,
+    pending: Local<'s, Vec<(T, PermissionType, Entity, Receiver<bool>)>>,
     config: Res<'w, AppConfig>,
     realm: Res<'w, CurrentRealm>,
     containing_scenes: ContainingScene<'w, 's>,
     player: Res<'w, PrimaryPlayerRes>,
     scenes: Query<'w, 's, &'static RendererSceneContext>,
     manager: ResMut<'w, PermissionManager>,
-    toaster: Toaster<'w, 's>,
-    ty: Local<'s, Option<PermissionType>>,
+    pub toaster: Toaster<'w, 's>,
 }
 
 impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
+    fn get_hash(&self, scene: Entity) -> Option<(&str, bool)> {
+        if !self.containing_scenes.get(self.player.0).contains(&scene) {
+            return None;
+        }
+        self.scenes
+            .get(scene)
+            .map(|ctx| (ctx.hash.as_str(), ctx.is_portable))
+            .ok()
+    }
+
     pub fn check(
         &mut self,
         ty: PermissionType,
@@ -76,26 +89,20 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
         value: T,
         additional: Option<String>,
     ) {
-        *self.ty = Some(ty);
-        if !self.containing_scenes.get(self.player.0).contains(&scene) {
-            return;
-        }
-        let Ok((hash, is_portable)) = self
-            .scenes
-            .get(scene)
-            .map(|ctx| (&ctx.hash, ctx.is_portable))
-        else {
+        let Some((hash, is_portable)) = self.get_hash(scene) else {
             return;
         };
         match self
             .config
             .get_permission(ty, &self.realm.address, hash, is_portable)
         {
-            common::structs::PermissionValue::Allow => self.success.push(value),
-            common::structs::PermissionValue::Deny => self.fail.push(value),
+            common::structs::PermissionValue::Allow => self.success.push((value, ty, scene)),
+            common::structs::PermissionValue::Deny => self.fail.push((value, ty, scene)),
             common::structs::PermissionValue::Ask => {
                 self.pending.push((
                     value,
+                    ty,
+                    scene,
                     self.manager.request(
                         ty,
                         self.realm.address.clone(),
@@ -108,44 +115,62 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
         }
     }
 
-    pub fn drain_success(&mut self) -> impl Iterator<Item = T> + '_ {
+    fn update_pending(&mut self) {
         *self.pending = self
             .pending
             .drain(..)
-            .flat_map(|(value, mut rx)| match rx.try_recv() {
+            .flat_map(|(value, ty, scene, mut rx)| match rx.try_recv() {
                 Ok(true) => {
-                    self.success.push(value);
+                    self.success.push((value, ty, scene));
                     None
                 }
                 Ok(false) | Err(TryRecvError::Closed) => {
-                    self.fail.push(value);
+                    self.fail.push((value, ty, scene));
                     None
                 }
-                Err(TryRecvError::Empty) => Some((value, rx)),
+                Err(TryRecvError::Empty) => Some((value, ty, scene, rx)),
             })
             .collect();
+    }
 
-        if !self.success.is_empty() {
-            let ty = self.ty.unwrap();
+    pub fn drain_success(&mut self) -> impl Iterator<Item = T> + '_ {
+        self.update_pending();
+
+        if let Some(last) = self.success.last() {
+            let (_, ty, scene) = last;
+            let (ty, scene) = (*ty, *scene);
             self.toaster.add_clicky_toast(
                 format!("{:?}", ty),
                 ty.on_success(),
-                ShowSettingsEvent(SettingsTab::Permissions).send_value_on::<Click>(),
+                On::<Click>::new(
+                    (move |mut target: ResMut<PermissionTarget>| {
+                        target.scene = Some(scene);
+                        target.ty = Some(ty);
+                    })
+                    .pipe(ShowSettingsEvent(SettingsTab::Permissions).send_value()),
+                ),
             );
         }
-        self.success.drain(..)
+        self.success.drain(..).map(|(value, _, _)| value)
     }
 
     pub fn drain_fail(&mut self) -> impl Iterator<Item = T> + '_ {
-        if !self.fail.is_empty() {
-            let ty = self.ty.unwrap();
+        if let Some(last) = self.fail.last() {
+            let (_, ty, scene) = last;
+            let (ty, scene) = (*ty, *scene);
             self.toaster.add_clicky_toast(
                 format!("{:?}", ty),
                 ty.on_fail(),
-                ShowSettingsEvent(SettingsTab::Permissions).send_value_on::<Click>(),
+                On::<Click>::new(
+                    (move |mut target: ResMut<PermissionTarget>| {
+                        target.scene = Some(scene);
+                        target.ty = Some(ty);
+                    })
+                    .pipe(ShowSettingsEvent(SettingsTab::Permissions).send_value()),
+                ),
             );
         }
-        self.fail.drain(..)
+        self.fail.drain(..).map(|(value, _, _)| value)
     }
 }
 

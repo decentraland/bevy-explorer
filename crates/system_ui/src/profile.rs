@@ -8,7 +8,7 @@ use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::{AvatarColor, AvatarEmote, SerializedProfile},
     rpc::RpcCall,
-    structs::{ActiveDialog, AppConfig, SettingsTab, ShowSettingsEvent},
+    structs::{ActiveDialog, AppConfig, PermissionTarget, SettingsTab, ShowSettingsEvent},
 };
 use comms::profile::CurrentUserProfile;
 use ipfs::{ChangeRealmEvent, CurrentRealm};
@@ -63,7 +63,13 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             ..Default::default()
         },
         Interaction::default(),
-        ShowSettingsEvent(SettingsTab::Discover).send_value_on::<Click>(),
+        On::<Click>::new(
+            (move |mut target: ResMut<PermissionTarget>| {
+                target.scene = None;
+                target.ty = None;
+            })
+            .pipe(ShowSettingsEvent(SettingsTab::Discover).send_value()),
+        ),
     ));
 }
 

@@ -3,7 +3,8 @@ use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     rpc::RpcResultSender,
     structs::{
-        ActiveDialog, AppConfig, PermissionValue, PrimaryPlayerRes, SettingsTab, ShowSettingsEvent,
+        ActiveDialog, AppConfig, PermissionTarget, PermissionValue, PrimaryPlayerRes, SettingsTab,
+        ShowSettingsEvent,
     },
 };
 use ipfs::CurrentRealm;
@@ -19,7 +20,7 @@ use ui_core::{
     ui_actions::{DataChanged, EventCloneExt, On, UiCaller},
 };
 
-use crate::{login::config_file, permissions::PermissionTarget};
+use crate::login::config_file;
 
 pub struct PermissionPlugin;
 
@@ -128,7 +129,7 @@ fn update_permissions(
             move |mut config: ResMut<AppConfig>, dialog: Query<&PermissionDialog>| {
                 sender.send(matches!(value, PermissionValue::Allow));
                 let Some(level) = dialog.get_single().ok().and_then(|p| p.level.as_ref()) else {
-                    warn!("no perm");
+                    debug!("no perm");
                     return;
                 };
                 match level {

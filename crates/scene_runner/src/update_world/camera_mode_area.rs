@@ -3,7 +3,7 @@ use bevy::{prelude::*, utils::HashSet};
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     sets::SceneSets,
-    structs::{CameraOverride, CinematicSettings, PrimaryCamera, PrimaryUser},
+    structs::{CameraOverride, CinematicSettings, PermissionType, PrimaryCamera, PrimaryUser},
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{
@@ -11,7 +11,9 @@ use dcl_component::{
     SceneComponentId, SceneEntityId,
 };
 
-use crate::{renderer_context::RendererSceneContext, ContainingScene, SceneEntity, Toaster};
+use crate::{
+    permissions::Permission, renderer_context::RendererSceneContext, ContainingScene, SceneEntity,
+};
 
 use super::AddCrdtInterfaceExt;
 
@@ -37,16 +39,22 @@ impl Plugin for CameraModeAreaPlugin {
     }
 }
 
+pub enum PermissionState {
+    Resolved(bool),
+    NotRequested,
+    Pending,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn update_camera_mode_area(
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     containing_scene: ContainingScene,
     areas: Query<(Entity, &SceneEntity, &CameraModeArea, &GlobalTransform)>,
     contexts: Query<&RendererSceneContext>,
-    mut current_areas: Local<Vec<Entity>>,
+    mut current_areas: Local<Vec<(Entity, PermissionState)>>,
     mut camera: Query<&mut PrimaryCamera>,
-    mut toaster: Toaster,
     gt_helper: TransformHelper,
+    mut perms: Permission<Entity>,
 ) {
     let Ok(mut camera) = camera.get_single_mut() else {
         return;
@@ -89,7 +97,7 @@ pub fn update_camera_mode_area(
         let current_index = current_areas
             .iter()
             .enumerate()
-            .find(|(_, e)| ent == **e)
+            .find(|(_, (e, _))| ent == *e)
             .map(|(ix, _)| ix);
         let in_area = scenes.contains(&scene_ent.root) && player_in_area(area, transform);
 
@@ -103,63 +111,90 @@ pub fn update_camera_mode_area(
                 current_areas.remove(index);
             }
             // add at end if newly entered
-            None => current_areas.push(ent),
+            None => current_areas.push((ent, PermissionState::NotRequested)),
         }
     }
 
     // remove destroyed areas
-    current_areas.retain(|area_ent| areas.get(*area_ent).is_ok());
+    current_areas.retain(|(area_ent, _)| areas.get(*area_ent).is_ok());
 
     // apply last-entered
-    match current_areas.last() {
-        Some(area_ent) => {
-            let (_, scene_ent, area, _) = areas.get(*area_ent).unwrap();
-
-            match area.0.mode() {
-                CameraType::CtFirstPerson => {
-                    camera.scene_override = Some(CameraOverride::Distance(0.0))
-                }
-                CameraType::CtThirdPerson => {
-                    camera.scene_override = Some(CameraOverride::Distance(1.0))
-                }
-                CameraType::CtCinematic => {
-                    let Some(cinematic_settings) = area.0.cinematic_settings.as_ref() else {
-                        warn!("no cinematic settings");
-                        return;
-                    };
-                    let target_entity =
-                        SceneEntityId::from_proto_u32(cinematic_settings.camera_entity);
-                    let Ok(ctx) = contexts.get(scene_ent.root) else {
-                        warn!("no scene");
-                        return;
-                    };
-                    let Some(cam) = ctx.bevy_entity(target_entity) else {
-                        warn!("no scene cam");
-                        return;
-                    };
-                    let Ok(origin) = gt_helper.compute_global_transform(cam) else {
-                        warn!("failed to get gt");
-                        return;
-                    };
-                    camera.scene_override = Some(CameraOverride::Cinematic(CinematicSettings {
-                        origin,
-                        allow_manual_rotation: cinematic_settings
-                            .allow_manual_rotation
-                            .unwrap_or_default(),
-                        yaw_range: cinematic_settings.yaw_range,
-                        pitch_range: cinematic_settings.pitch_range,
-                        roll_range: cinematic_settings.roll_range,
-                        zoom_min: cinematic_settings.zoom_min,
-                        zoom_max: cinematic_settings.zoom_max,
-                    }));
-                }
+    let area = current_areas
+        .iter_mut()
+        .rev()
+        .filter_map(|(ent, permitted)| match permitted {
+            PermissionState::Resolved(true) => Some(*ent),
+            PermissionState::NotRequested => {
+                let (_, scene_ent, _, _) = areas.get(*ent).unwrap();
+                perms.check(PermissionType::ForceCamera, scene_ent.root, *ent, None);
+                *permitted = PermissionState::Pending;
+                None
             }
-            toaster.add_toast("camera_mode_area", "The scene has enforced the camera view");
+            _ => None,
+        })
+        .next();
+
+    if let Some(area) = area {
+        let (_, scene_ent, area, _) = areas.get(area).unwrap();
+
+        match area.0.mode() {
+            CameraType::CtFirstPerson => {
+                camera.scene_override = Some(CameraOverride::Distance(0.0))
+            }
+            CameraType::CtThirdPerson => {
+                camera.scene_override = Some(CameraOverride::Distance(1.0))
+            }
+            CameraType::CtCinematic => {
+                let Some(cinematic_settings) = area.0.cinematic_settings.as_ref() else {
+                    warn!("no cinematic settings");
+                    return;
+                };
+                let target_entity = SceneEntityId::from_proto_u32(cinematic_settings.camera_entity);
+                let Ok(ctx) = contexts.get(scene_ent.root) else {
+                    warn!("no scene");
+                    return;
+                };
+                let Some(cam) = ctx.bevy_entity(target_entity) else {
+                    warn!("no scene cam");
+                    return;
+                };
+                let Ok(origin) = gt_helper.compute_global_transform(cam) else {
+                    warn!("failed to get gt");
+                    return;
+                };
+                camera.scene_override = Some(CameraOverride::Cinematic(CinematicSettings {
+                    origin,
+                    allow_manual_rotation: cinematic_settings
+                        .allow_manual_rotation
+                        .unwrap_or_default(),
+                    yaw_range: cinematic_settings.yaw_range,
+                    pitch_range: cinematic_settings.pitch_range,
+                    roll_range: cinematic_settings.roll_range,
+                    zoom_min: cinematic_settings.zoom_min,
+                    zoom_max: cinematic_settings.zoom_max,
+                }));
+            }
         }
-        None => {
-            // no camera areas
-            camera.scene_override = None;
-            toaster.clear_toast("camera_mode_area");
+    } else {
+        // no camera areas
+        camera.scene_override = None;
+    }
+
+    if current_areas.is_empty() {
+        perms
+            .toaster
+            .clear_toast(format!("{:?}", PermissionType::ForceCamera).as_str());
+    }
+
+    let succeeded = perms.drain_success().collect::<HashSet<_>>();
+    let failed = perms.drain_fail().collect::<HashSet<_>>();
+
+    for (area, state) in current_areas.iter_mut() {
+        if succeeded.contains(area) {
+            *state = PermissionState::Resolved(true);
+        }
+        if failed.contains(area) {
+            *state = PermissionState::Resolved(false);
         }
     }
 }
