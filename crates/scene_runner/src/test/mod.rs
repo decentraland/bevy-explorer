@@ -23,22 +23,13 @@ use spin_sleep::SpinSleeper;
 use ui_core::{scrollable::ScrollTargetEvent, stretch_uvs_image::StretchUvMaterial};
 
 use crate::{
-    initialize_scene::{PointerResult, ScenePointers},
-    process_scene_entity_lifecycle,
-    // receive_scene_updates, send_scene_updates, update_scene_priority,
-    update_world::{
+    initialize_scene::{PointerResult, ScenePointers}, permissions::PermissionManager, process_scene_entity_lifecycle, update_world::{
         transform_and_parent::process_transform_and_parent_updates, CrdtStateComponent,
-    },
-    RendererSceneContext,
-    SceneEntity,
-    SceneLoopLabel,
-    SceneLoopSchedule,
-    SceneRunnerPlugin,
-    SceneUpdates,
+    }, RendererSceneContext, SceneEntity, SceneLoopLabel, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates
 };
 use common::{
     rpc::RpcCall,
-    structs::{AppConfig, GraphicsSettings, PrimaryCamera, SceneLoadDistance, ToolTips},
+    structs::{AppConfig, GraphicsSettings, PrimaryCamera, PrimaryPlayerRes, SceneLoadDistance, ToolTips},
 };
 use comms::{preview::PreviewMode, CommsPlugin};
 use console::{self, ConsolePlugin};
@@ -124,6 +115,8 @@ fn init_test_app(entity_json: &str) -> App {
     app.add_plugins(GizmoPlugin);
     app.add_plugins(SceneRunnerPlugin);
     app.add_plugins(SceneBoundPlugin);
+    app.insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER));
+    app.init_resource::<PermissionManager>();
     app.init_resource::<InputMap>();
     app.init_resource::<AcceptInput>();
     app.init_resource::<ToolTips>();

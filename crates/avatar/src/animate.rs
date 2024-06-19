@@ -33,11 +33,12 @@ use dcl_component::{
 };
 use ipfs::IpfsAssetServer;
 use scene_runner::{
+    permissions::Permission,
     update_world::{
         avatar_modifier_area::PlayerModifiers, transform_and_parent::ParentPositionSync,
         AddCrdtInterfaceExt,
     },
-    ContainerEntity, ContainingScene,
+    ContainerEntity,
 };
 
 use crate::{process_avatar, AvatarDefinition};
@@ -87,22 +88,30 @@ fn read_player_emotes(
         (Entity, &EmoteList, &ParentPositionSync, &ContainerEntity),
         Without<PrimaryUser>,
     >,
-    mut player_emotes: Query<Entity, With<PrimaryUser>>,
-    containing_scene: ContainingScene,
+    player: Query<Entity, With<PrimaryUser>>,
+    mut perms: Permission<EmoteList>,
 ) {
-    let Ok(player) = player_emotes.get_single_mut() else {
+    let Ok(player) = player.get_single() else {
         return;
     };
-    let containing_scenes = containing_scene.get(player);
 
     for (scene_ent, emotes, parent, container) in &scene_player_emotes {
         if parent.0 == player {
             commands.entity(scene_ent).remove::<EmoteList>();
-            if containing_scenes.contains(&container.root) {
-                commands.entity(player).insert(emotes.clone());
-            }
+            perms.check(
+                common::structs::PermissionType::PlayEmote,
+                container.root,
+                emotes.clone(),
+                None,
+            );
         }
     }
+
+    for emotes in perms.drain_success() {
+        commands.entity(player).insert(emotes.clone());
+    }
+
+    for _ in perms.drain_fail() {}
 }
 
 fn broadcast_emote(
