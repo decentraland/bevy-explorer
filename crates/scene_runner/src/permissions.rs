@@ -3,11 +3,10 @@ use std::collections::VecDeque;
 use crate::{renderer_context::RendererSceneContext, ContainingScene, Toaster};
 use bevy::{ecs::system::SystemParam, prelude::*};
 use common::{
-    rpc::RpcResultSender,
-    structs::{
+    dynamics::PLAYER_COLLIDER_RADIUS, rpc::RpcResultSender, structs::{
         AppConfig, PermissionTarget, PermissionType, PrimaryPlayerRes, SettingsTab,
         ShowSettingsEvent,
-    },
+    }
 };
 use ipfs::CurrentRealm;
 use tokio::sync::oneshot::{channel, error::TryRecvError, Receiver};
@@ -59,9 +58,9 @@ impl PermissionManager {
 #[allow(clippy::type_complexity)]
 #[derive(SystemParam)]
 pub struct Permission<'w, 's, T: Send + Sync + 'static> {
-    success: Local<'s, Vec<(T, PermissionType, Entity)>>,
-    fail: Local<'s, Vec<(T, PermissionType, Entity)>>,
-    pending: Local<'s, Vec<(T, PermissionType, Entity, Receiver<bool>)>>,
+    pub success: Local<'s, Vec<(T, PermissionType, Entity)>>,
+    pub fail: Local<'s, Vec<(T, PermissionType, Entity)>>,
+    pub pending: Local<'s, Vec<(T, PermissionType, Entity, Receiver<bool>)>>,
     config: Res<'w, AppConfig>,
     realm: Res<'w, CurrentRealm>,
     containing_scenes: ContainingScene<'w, 's>,
@@ -73,7 +72,7 @@ pub struct Permission<'w, 's, T: Send + Sync + 'static> {
 
 impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
     fn get_hash(&self, scene: Entity) -> Option<(&str, bool)> {
-        if !self.containing_scenes.get(self.player.0).contains(&scene) {
+        if !self.containing_scenes.get_area(self.player.0, PLAYER_COLLIDER_RADIUS).contains(&scene) {
             return None;
         }
         self.scenes
@@ -92,9 +91,12 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
         let Some((hash, is_portable)) = self.get_hash(scene) else {
             return;
         };
-        match self
+        let perm = self
             .config
-            .get_permission(ty, &self.realm.address, hash, is_portable)
+            .get_permission(ty, &self.realm.address, hash, is_portable);
+
+        debug!("req {:?} for {:?} -> {:?}", ty, scene, perm);
+        match perm
         {
             common::structs::PermissionValue::Allow => self.success.push((value, ty, scene)),
             common::structs::PermissionValue::Deny => self.fail.push((value, ty, scene)),
@@ -133,12 +135,15 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
             .collect();
     }
 
-    pub fn drain_success(&mut self) -> impl Iterator<Item = T> + '_ {
+    pub fn drain_success(&mut self, ty: PermissionType) -> impl Iterator<Item = T> {
         self.update_pending();
 
-        if let Some(last) = self.success.last() {
-            let (_, ty, scene) = last;
-            let (ty, scene) = (*ty, *scene);
+        let (matching, not_matching): (Vec<_>, Vec<_>) = self.success.drain(..).partition(|(_, perm_ty, _)| *perm_ty == ty);
+        *self.success = not_matching;
+
+        if let Some(last) = matching.last() {
+            let (_, _, scene) = last;
+            let scene = *scene;
             self.toaster.add_clicky_toast(
                 format!("{:?}", ty),
                 ty.on_success(),
@@ -151,13 +156,16 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
                 ),
             );
         }
-        self.success.drain(..).map(|(value, _, _)| value)
+        matching.into_iter().map(|(value, _, _)| value)
     }
 
-    pub fn drain_fail(&mut self) -> impl Iterator<Item = T> + '_ {
-        if let Some(last) = self.fail.last() {
-            let (_, ty, scene) = last;
-            let (ty, scene) = (*ty, *scene);
+    pub fn drain_fail(&mut self, ty: PermissionType) -> impl Iterator<Item = T> + '_ {
+        let (matching, not_matching): (Vec<_>, Vec<_>) = self.fail.drain(..).partition(|(_, perm_ty, _)| *perm_ty == ty);
+        *self.fail = not_matching;
+
+        if let Some(last) = matching.last() {
+            let (_, _, scene) = last;
+            let scene = *scene;
             self.toaster.add_clicky_toast(
                 format!("{:?}", ty),
                 ty.on_fail(),
@@ -170,7 +178,7 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
                 ),
             );
         }
-        self.fail.drain(..).map(|(value, _, _)| value)
+        matching.into_iter().map(|(value, _, _)| value)
     }
 }
 

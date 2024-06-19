@@ -107,11 +107,11 @@ fn read_player_emotes(
         }
     }
 
-    for emotes in perms.drain_success() {
+    for emotes in perms.drain_success(common::structs::PermissionType::PlayEmote) {
         commands.entity(player).insert(emotes.clone());
     }
 
-    for _ in perms.drain_fail() {}
+    for _ in perms.drain_fail(common::structs::PermissionType::PlayEmote) {}
 }
 
 fn broadcast_emote(

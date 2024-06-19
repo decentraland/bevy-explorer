@@ -265,12 +265,12 @@ fn external_url(
         );
     }
 
-    for (response, url) in perms.drain_success() {
+    for (response, url) in perms.drain_success(PermissionType::OpenUrl) {
         let result = opener::open(Path::new(&url)).map_err(|e| e.to_string());
         response.send(result);
     }
 
-    for (response, _) in perms.drain_fail() {
+    for (response, _) in perms.drain_fail(PermissionType::OpenUrl) {
         response.send(Err(String::default()));
     }
 }

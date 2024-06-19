@@ -1,11 +1,10 @@
 use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
-    rpc::RpcResultSender,
-    structs::{
+    dynamics::PLAYER_COLLIDER_RADIUS, rpc::RpcResultSender, structs::{
         ActiveDialog, AppConfig, PermissionTarget, PermissionValue, PrimaryPlayerRes, SettingsTab,
         ShowSettingsEvent,
-    },
+    }
 };
 use ipfs::CurrentRealm;
 use scene_runner::{
@@ -45,7 +44,7 @@ fn update_permissions(
     // scene cancel, dialog Entity, original request
     mut pending: Local<Vec<(Receiver<()>, Entity, Option<PermissionRequest>)>>,
 ) {
-    let active_scenes = containing_scene.get(player.0);
+    let active_scenes = containing_scene.get_area(player.0, PLAYER_COLLIDER_RADIUS);
 
     pending.retain_mut(|(cancel_rx, ent, req)| {
         // check if dialog has been cancelled ("manage permissions") or completed

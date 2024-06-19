@@ -39,6 +39,7 @@ impl Plugin for CameraModeAreaPlugin {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PermissionState {
     Resolved(bool),
     NotRequested,
@@ -186,8 +187,8 @@ pub fn update_camera_mode_area(
             .clear_toast(format!("{:?}", PermissionType::ForceCamera).as_str());
     }
 
-    let succeeded = perms.drain_success().collect::<HashSet<_>>();
-    let failed = perms.drain_fail().collect::<HashSet<_>>();
+    let succeeded = perms.drain_success(PermissionType::ForceCamera).collect::<HashSet<_>>();
+    let failed = perms.drain_fail(PermissionType::ForceCamera).collect::<HashSet<_>>();
 
     for (area, state) in current_areas.iter_mut() {
         if succeeded.contains(area) {

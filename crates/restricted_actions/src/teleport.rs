@@ -61,11 +61,11 @@ pub fn teleport_player(
         }
     }
 
-    for (to, response) in perms.drain_success() {
+    for (to, response) in perms.drain_success(PermissionType::Teleport) {
         do_teleport(to, response);
     }
 
-    for (_, response) in perms.drain_fail() {
+    for (_, response) in perms.drain_fail(PermissionType::Teleport) {
         response.send(Err("User declined".to_owned()))
     }
 }

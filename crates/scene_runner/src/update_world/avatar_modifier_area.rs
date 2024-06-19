@@ -1,9 +1,9 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, utils::{HashMap, HashSet}};
 
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     sets::SceneSets,
-    structs::{AvatarControl, PrimaryUser},
+    structs::{AvatarControl, PrimaryPlayerRes, PrimaryUser},
 };
 use comms::global_crdt::ForeignPlayer;
 use dcl::interface::ComponentPosition;
@@ -15,9 +15,9 @@ use dcl_component::{
 };
 use wallet::Wallet;
 
-use crate::{ContainingScene, SceneEntity};
+use crate::{permissions::Permission, ContainingScene, SceneEntity};
 
-use super::AddCrdtInterfaceExt;
+use super::{camera_mode_area::PermissionState, AddCrdtInterfaceExt};
 
 pub struct AvatarModifierAreaPlugin;
 
@@ -62,7 +62,13 @@ pub struct PlayerModifiers {
     pub control_type: Option<AvatarControl>,
     pub turn_speed: Option<f32>,
     pub block_weighted_movement: bool,
-    pub areas: Vec<Entity>,
+    pub areas: Vec<ActiveAvatarArea>,
+}
+
+#[derive(Clone)]
+pub struct ActiveAvatarArea {
+    entity: Entity,
+    allow_locomotion: PermissionState,
 }
 
 impl PlayerModifiers {
@@ -94,9 +100,14 @@ fn update_avatar_modifier_area(
         Or<(With<PrimaryUser>, With<ForeignPlayer>)>,
     >,
     containing_scene: ContainingScene,
+    player_res: Res<PrimaryPlayerRes>,
     areas: Query<(Entity, &SceneEntity, &AvatarModifierArea, &GlobalTransform)>,
     me: Res<Wallet>,
+    mut perms: Permission<Entity>,
+    mut active_hide_areas: Local<HashMap<Entity, PermissionState>>,
 ) {
+    let scenes = containing_scene.get_area(player_res.0, PLAYER_COLLIDER_RADIUS);
+
     // for every player
     for (player, gt, maybe_foreign, maybe_modifiers) in players.iter_mut() {
         let Some(mut modifiers) = maybe_modifiers else {
@@ -142,15 +153,13 @@ fn update_avatar_modifier_area(
             player_relative_position.clamp(-area, area) == player_relative_position
         };
 
-        let scenes = containing_scene.get_area(player, PLAYER_COLLIDER_RADIUS);
-
         // gather areas
         for (ent, scene_ent, area, transform) in areas.iter() {
             let current_index = modifiers
                 .areas
                 .iter()
                 .enumerate()
-                .find(|(_, e)| ent == **e)
+                .find(|(_, ActiveAvatarArea { entity, .. })| ent == *entity)
                 .map(|(ix, _)| ix);
             let in_area = scenes.contains(&scene_ent.root) && player_in_area(area, transform);
 
@@ -164,50 +173,109 @@ fn update_avatar_modifier_area(
                     modifiers.areas.remove(index);
                 }
                 // add at end if newly entered
-                None => modifiers.areas.push(ent),
+                None => modifiers.areas.push(ActiveAvatarArea {
+                    entity: ent,
+                    allow_locomotion: PermissionState::NotRequested,
+                }),
             }
         }
 
         // remove destroyed areas
         modifiers
             .areas
-            .retain(|area_ent| areas.get(*area_ent).is_ok());
+            .retain(|ActiveAvatarArea { entity, .. }| areas.get(*entity).is_ok());
 
         // for each modifier area the player is within (starting from oldest)
-        for area in modifiers.areas.clone().iter() {
-            let (_, _, area, _) = areas.get(*area).unwrap();
+        let mut areas_clone = modifiers.areas.clone();
+        for active_area in areas_clone.iter_mut() {
+            let (_, scene_ent, area, _) = areas.get(active_area.entity).unwrap();
 
-            // apply modifiers
-            modifiers.hide |= area
-                .0
-                .modifiers
-                .contains(&(AvatarModifierType::AmtHideAvatars as i32));
-            modifiers.hide_profile |= area
-                .0
-                .modifiers
-                .contains(&(AvatarModifierType::AmtDisablePassports as i32));
+            if !area.0.modifiers.is_empty() {
+                let permit = match active_hide_areas.get(&scene_ent.root).unwrap_or(&PermissionState::NotRequested) {
+                    PermissionState::Resolved(true) => true,
+                    PermissionState::NotRequested => {
+                        perms.check(common::structs::PermissionType::HideAvatars, scene_ent.root, scene_ent.root, Some(format!("{:?} ({:?})", scene_ent.root, &*active_hide_areas)));
+                        active_hide_areas.insert(scene_ent.root, PermissionState::Pending);
+                        false
+                    },
+                    _ => false,
+                };
+
+                if permit {
+                    // apply modifiers
+                    modifiers.hide |= area
+                        .0
+                        .modifiers
+                        .contains(&(AvatarModifierType::AmtHideAvatars as i32));
+                    modifiers.hide_profile |= area
+                        .0
+                        .modifiers
+                        .contains(&(AvatarModifierType::AmtDisablePassports as i32));
+                }
+            }
 
             if let Some(ref movement) = area.0.movement_settings {
-                if movement.control_mode.is_some() {
-                    modifiers.control_type = Some(match movement.control_mode() {
-                        AvatarControlType::CctNone => AvatarControl::None,
-                        AvatarControlType::CctRelative => AvatarControl::Relative,
-                        AvatarControlType::CctTank => AvatarControl::Tank,
-                    })
-                }
+                let permit = maybe_foreign.is_some() || match active_area.allow_locomotion {
+                    PermissionState::Resolved(true) => true,
+                    PermissionState::NotRequested => {
+                        perms.check(common::structs::PermissionType::SetLocomotion, scene_ent.root, active_area.entity, None);
+                        active_area.allow_locomotion = PermissionState::Pending;
+                        false
+                    },
+                    _ => false,
+                };
 
-                modifiers.run_speed = movement.run_speed.or(modifiers.run_speed);
-                modifiers.friction = movement.friction.or(modifiers.friction);
-                modifiers.gravity = movement.gravity.or(modifiers.gravity);
-                modifiers.jump_height = movement.jump_height.or(modifiers.jump_height);
-                modifiers.fall_speed = movement.max_fall_speed.or(modifiers.fall_speed);
-                modifiers.turn_speed = movement.turn_speed.or(modifiers.turn_speed);
-                modifiers.walk_speed = movement.walk_speed.or(modifiers.walk_speed);
-                modifiers.block_weighted_movement |=
-                    !(movement.allow_weighted_movement.unwrap_or(true));
+                if permit {
+                    if movement.control_mode.is_some() {
+                        modifiers.control_type = Some(match movement.control_mode() {
+                            AvatarControlType::CctNone => AvatarControl::None,
+                            AvatarControlType::CctRelative => AvatarControl::Relative,
+                            AvatarControlType::CctTank => AvatarControl::Tank,
+                        })
+                    }
+    
+                    modifiers.run_speed = movement.run_speed.or(modifiers.run_speed);
+                    modifiers.friction = movement.friction.or(modifiers.friction);
+                    modifiers.gravity = movement.gravity.or(modifiers.gravity);
+                    modifiers.jump_height = movement.jump_height.or(modifiers.jump_height);
+                    modifiers.fall_speed = movement.max_fall_speed.or(modifiers.fall_speed);
+                    modifiers.turn_speed = movement.turn_speed.or(modifiers.turn_speed);
+                    modifiers.walk_speed = movement.walk_speed.or(modifiers.walk_speed);
+                    modifiers.block_weighted_movement |=
+                        !(movement.allow_weighted_movement.unwrap_or(true));    
+                }
             }
         }
+        if maybe_foreign.is_none() {
+            let allowed_areas = perms.drain_success(common::structs::PermissionType::SetLocomotion).collect::<HashSet<_>>();
+            if !allowed_areas.is_empty() {
+                for area in areas_clone.iter_mut() {
+                    if allowed_areas.contains(&area.entity) {
+                        area.allow_locomotion = PermissionState::Resolved(true);
+                    }
+                }
+            }
+
+            let denied_areas = perms.drain_fail(common::structs::PermissionType::SetLocomotion).collect::<HashSet<_>>();
+            if !denied_areas.is_empty() {
+                for area in areas_clone.iter_mut() {
+                    if denied_areas.contains(&area.entity) {
+                        area.allow_locomotion = PermissionState::Resolved(false);
+                    }
+                }
+            }
+        }
+
+        modifiers.areas = areas_clone;
     }
+
+    for allowed in perms.drain_success(common::structs::PermissionType::HideAvatars).collect::<HashSet<_>>() {
+        active_hide_areas.insert(allowed, PermissionState::Resolved(true));
+    }
+    for allowed in perms.drain_fail(common::structs::PermissionType::HideAvatars).collect::<HashSet<_>>() {
+        active_hide_areas.insert(allowed, PermissionState::Resolved(false));
+    }
+    active_hide_areas.retain(|ent, _| scenes.contains(ent));
 }
 
 // primary user visiblity is more complex, and is managed in user_input::manage_player_visibility

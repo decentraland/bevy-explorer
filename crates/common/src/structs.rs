@@ -489,7 +489,7 @@ pub struct SceneMeta {
     pub spawn_points: Option<Vec<SpawnPoint>>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum PermissionValue {
     Allow,
     Deny,
