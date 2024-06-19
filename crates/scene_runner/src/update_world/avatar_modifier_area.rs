@@ -1,4 +1,7 @@
-use bevy::{prelude::*, utils::{HashMap, HashSet}};
+use bevy::{
+    prelude::*,
+    utils::{HashMap, HashSet},
+};
 
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
@@ -87,7 +90,7 @@ impl PlayerModifiers {
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn update_avatar_modifier_area(
     mut commands: Commands,
     mut players: Query<
@@ -191,13 +194,21 @@ fn update_avatar_modifier_area(
             let (_, scene_ent, area, _) = areas.get(active_area.entity).unwrap();
 
             if !area.0.modifiers.is_empty() {
-                let permit = match active_hide_areas.get(&scene_ent.root).unwrap_or(&PermissionState::NotRequested) {
+                let permit = match active_hide_areas
+                    .get(&scene_ent.root)
+                    .unwrap_or(&PermissionState::NotRequested)
+                {
                     PermissionState::Resolved(true) => true,
                     PermissionState::NotRequested => {
-                        perms.check(common::structs::PermissionType::HideAvatars, scene_ent.root, scene_ent.root, Some(format!("{:?} ({:?})", scene_ent.root, &*active_hide_areas)));
+                        perms.check(
+                            common::structs::PermissionType::HideAvatars,
+                            scene_ent.root,
+                            scene_ent.root,
+                            Some(format!("{:?} ({:?})", scene_ent.root, &*active_hide_areas)),
+                        );
                         active_hide_areas.insert(scene_ent.root, PermissionState::Pending);
                         false
-                    },
+                    }
                     _ => false,
                 };
 
@@ -215,15 +226,21 @@ fn update_avatar_modifier_area(
             }
 
             if let Some(ref movement) = area.0.movement_settings {
-                let permit = maybe_foreign.is_some() || match active_area.allow_locomotion {
-                    PermissionState::Resolved(true) => true,
-                    PermissionState::NotRequested => {
-                        perms.check(common::structs::PermissionType::SetLocomotion, scene_ent.root, active_area.entity, None);
-                        active_area.allow_locomotion = PermissionState::Pending;
-                        false
-                    },
-                    _ => false,
-                };
+                let permit = maybe_foreign.is_some()
+                    || match active_area.allow_locomotion {
+                        PermissionState::Resolved(true) => true,
+                        PermissionState::NotRequested => {
+                            perms.check(
+                                common::structs::PermissionType::SetLocomotion,
+                                scene_ent.root,
+                                active_area.entity,
+                                None,
+                            );
+                            active_area.allow_locomotion = PermissionState::Pending;
+                            false
+                        }
+                        _ => false,
+                    };
 
                 if permit {
                     if movement.control_mode.is_some() {
@@ -233,7 +250,7 @@ fn update_avatar_modifier_area(
                             AvatarControlType::CctTank => AvatarControl::Tank,
                         })
                     }
-    
+
                     modifiers.run_speed = movement.run_speed.or(modifiers.run_speed);
                     modifiers.friction = movement.friction.or(modifiers.friction);
                     modifiers.gravity = movement.gravity.or(modifiers.gravity);
@@ -242,12 +259,14 @@ fn update_avatar_modifier_area(
                     modifiers.turn_speed = movement.turn_speed.or(modifiers.turn_speed);
                     modifiers.walk_speed = movement.walk_speed.or(modifiers.walk_speed);
                     modifiers.block_weighted_movement |=
-                        !(movement.allow_weighted_movement.unwrap_or(true));    
+                        !(movement.allow_weighted_movement.unwrap_or(true));
                 }
             }
         }
         if maybe_foreign.is_none() {
-            let allowed_areas = perms.drain_success(common::structs::PermissionType::SetLocomotion).collect::<HashSet<_>>();
+            let allowed_areas = perms
+                .drain_success(common::structs::PermissionType::SetLocomotion)
+                .collect::<HashSet<_>>();
             if !allowed_areas.is_empty() {
                 for area in areas_clone.iter_mut() {
                     if allowed_areas.contains(&area.entity) {
@@ -256,7 +275,9 @@ fn update_avatar_modifier_area(
                 }
             }
 
-            let denied_areas = perms.drain_fail(common::structs::PermissionType::SetLocomotion).collect::<HashSet<_>>();
+            let denied_areas = perms
+                .drain_fail(common::structs::PermissionType::SetLocomotion)
+                .collect::<HashSet<_>>();
             if !denied_areas.is_empty() {
                 for area in areas_clone.iter_mut() {
                     if denied_areas.contains(&area.entity) {
@@ -269,10 +290,16 @@ fn update_avatar_modifier_area(
         modifiers.areas = areas_clone;
     }
 
-    for allowed in perms.drain_success(common::structs::PermissionType::HideAvatars).collect::<HashSet<_>>() {
+    for allowed in perms
+        .drain_success(common::structs::PermissionType::HideAvatars)
+        .collect::<HashSet<_>>()
+    {
         active_hide_areas.insert(allowed, PermissionState::Resolved(true));
     }
-    for allowed in perms.drain_fail(common::structs::PermissionType::HideAvatars).collect::<HashSet<_>>() {
+    for allowed in perms
+        .drain_fail(common::structs::PermissionType::HideAvatars)
+        .collect::<HashSet<_>>()
+    {
         active_hide_areas.insert(allowed, PermissionState::Resolved(false));
     }
     active_hide_areas.retain(|ent, _| scenes.contains(ent));

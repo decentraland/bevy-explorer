@@ -1,10 +1,12 @@
 use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
-    dynamics::PLAYER_COLLIDER_RADIUS, rpc::RpcResultSender, structs::{
+    dynamics::PLAYER_COLLIDER_RADIUS,
+    rpc::RpcResultSender,
+    structs::{
         ActiveDialog, AppConfig, PermissionTarget, PermissionValue, PrimaryPlayerRes, SettingsTab,
         ShowSettingsEvent,
-    }
+    },
 };
 use ipfs::CurrentRealm;
 use scene_runner::{

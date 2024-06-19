@@ -3,10 +3,12 @@ use std::collections::VecDeque;
 use crate::{renderer_context::RendererSceneContext, ContainingScene, Toaster};
 use bevy::{ecs::system::SystemParam, prelude::*};
 use common::{
-    dynamics::PLAYER_COLLIDER_RADIUS, rpc::RpcResultSender, structs::{
+    dynamics::PLAYER_COLLIDER_RADIUS,
+    rpc::RpcResultSender,
+    structs::{
         AppConfig, PermissionTarget, PermissionType, PrimaryPlayerRes, SettingsTab,
         ShowSettingsEvent,
-    }
+    },
 };
 use ipfs::CurrentRealm;
 use tokio::sync::oneshot::{channel, error::TryRecvError, Receiver};
@@ -72,7 +74,11 @@ pub struct Permission<'w, 's, T: Send + Sync + 'static> {
 
 impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
     fn get_hash(&self, scene: Entity) -> Option<(&str, bool)> {
-        if !self.containing_scenes.get_area(self.player.0, PLAYER_COLLIDER_RADIUS).contains(&scene) {
+        if !self
+            .containing_scenes
+            .get_area(self.player.0, PLAYER_COLLIDER_RADIUS)
+            .contains(&scene)
+        {
             return None;
         }
         self.scenes
@@ -96,8 +102,7 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
             .get_permission(ty, &self.realm.address, hash, is_portable);
 
         debug!("req {:?} for {:?} -> {:?}", ty, scene, perm);
-        match perm
-        {
+        match perm {
             common::structs::PermissionValue::Allow => self.success.push((value, ty, scene)),
             common::structs::PermissionValue::Deny => self.fail.push((value, ty, scene)),
             common::structs::PermissionValue::Ask => {
@@ -138,7 +143,10 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
     pub fn drain_success(&mut self, ty: PermissionType) -> impl Iterator<Item = T> {
         self.update_pending();
 
-        let (matching, not_matching): (Vec<_>, Vec<_>) = self.success.drain(..).partition(|(_, perm_ty, _)| *perm_ty == ty);
+        let (matching, not_matching): (Vec<_>, Vec<_>) = self
+            .success
+            .drain(..)
+            .partition(|(_, perm_ty, _)| *perm_ty == ty);
         *self.success = not_matching;
 
         if let Some(last) = matching.last() {
@@ -160,7 +168,10 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
     }
 
     pub fn drain_fail(&mut self, ty: PermissionType) -> impl Iterator<Item = T> + '_ {
-        let (matching, not_matching): (Vec<_>, Vec<_>) = self.fail.drain(..).partition(|(_, perm_ty, _)| *perm_ty == ty);
+        let (matching, not_matching): (Vec<_>, Vec<_>) = self
+            .fail
+            .drain(..)
+            .partition(|(_, perm_ty, _)| *perm_ty == ty);
         *self.fail = not_matching;
 
         if let Some(last) = matching.last() {

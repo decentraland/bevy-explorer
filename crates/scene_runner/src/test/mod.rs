@@ -23,13 +23,20 @@ use spin_sleep::SpinSleeper;
 use ui_core::{scrollable::ScrollTargetEvent, stretch_uvs_image::StretchUvMaterial};
 
 use crate::{
-    initialize_scene::{PointerResult, ScenePointers}, permissions::PermissionManager, process_scene_entity_lifecycle, update_world::{
+    initialize_scene::{PointerResult, ScenePointers},
+    permissions::PermissionManager,
+    process_scene_entity_lifecycle,
+    update_world::{
         transform_and_parent::process_transform_and_parent_updates, CrdtStateComponent,
-    }, RendererSceneContext, SceneEntity, SceneLoopLabel, SceneLoopSchedule, SceneRunnerPlugin, SceneUpdates
+    },
+    RendererSceneContext, SceneEntity, SceneLoopLabel, SceneLoopSchedule, SceneRunnerPlugin,
+    SceneUpdates,
 };
 use common::{
     rpc::RpcCall,
-    structs::{AppConfig, GraphicsSettings, PrimaryCamera, PrimaryPlayerRes, SceneLoadDistance, ToolTips},
+    structs::{
+        AppConfig, GraphicsSettings, PrimaryCamera, PrimaryPlayerRes, SceneLoadDistance, ToolTips,
+    },
 };
 use comms::{preview::PreviewMode, CommsPlugin};
 use console::{self, ConsolePlugin};
