@@ -13,7 +13,10 @@ use bevy::{
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
-    rpc::{PortableLocation, RpcCall, RpcEventSender, RpcResultSender, SpawnResponse},
+    rpc::{
+        PortableLocation, RPCSendableMessage, RpcCall, RpcEventSender, RpcResultSender,
+        SpawnResponse,
+    },
     sets::SceneSets,
     structs::{PermissionType, PrimaryCamera, PrimaryUser},
     util::{FireEventEx, TaskExt},
@@ -37,7 +40,7 @@ use scene_runner::{
     update_world::gltf_container::{GltfDefinition, GltfProcessed},
     ContainingScene, SceneEntity,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use teleport::{handle_out_of_world, teleport_player};
 use ui_core::button::DuiButton;
 use wallet::{browser_auth::remote_send_async, Wallet};
@@ -987,8 +990,6 @@ fn show_nft_dialog(
 #[allow(clippy::type_complexity)]
 pub fn handle_eth_async(
     mut events: EventReader<RpcCall>,
-    containing_scene: ContainingScene,
-    primary_user: Query<Entity, With<PrimaryUser>>,
     scenes: Query<&RendererSceneContext>,
     wallet: Res<Wallet>,
     time: Res<Time>,
@@ -998,6 +999,7 @@ pub fn handle_eth_async(
             Task<Result<serde_json::Value, anyhow::Error>>,
         )>,
     >,
+    mut perms: Permission<(RPCSendableMessage, RpcResultSender<Result<Value, String>>)>,
 ) {
     for (body, scene, response) in events.read().filter_map(|ev| match ev {
         RpcCall::SendAsync {
@@ -1007,16 +1009,6 @@ pub fn handle_eth_async(
         } => Some((body, scene, response)),
         _ => None,
     }) {
-        debug!("[{:?}] handle_eth_async {:?}", scene, body);
-
-        if primary_user
-            .get_single()
-            .map_or(true, |player| !containing_scene.get(player).contains(scene))
-        {
-            response.send(Err("player not in scene.".to_owned()));
-            continue;
-        }
-
         let last_action_time = scenes
             .get(*scene)
             .ok()
@@ -1031,6 +1023,16 @@ pub fn handle_eth_async(
             continue;
         }
 
+        debug!("[{:?}] handle_eth_async {:?}", scene, body);
+        perms.check(
+            PermissionType::Web3,
+            *scene,
+            (body.clone(), response.clone()),
+            None,
+        );
+    }
+
+    for (body, response) in perms.drain_success(PermissionType::Web3) {
         if wallet.is_guest() || wallet.address().is_none() {
             response.send(Err("wallet not connected".to_owned()));
             continue;
@@ -1040,6 +1042,10 @@ pub fn handle_eth_async(
             response.clone(),
             IoTaskPool::get().spawn(remote_send_async(body.clone(), wallet.auth_chain().ok())),
         ));
+    }
+
+    for (_, response) in perms.drain_fail(PermissionType::Web3) {
+        response.send(Err("permission denied".to_owned()));
     }
 
     tasks.retain_mut(|(response, task)| {
