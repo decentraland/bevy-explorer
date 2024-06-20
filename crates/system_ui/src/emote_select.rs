@@ -8,7 +8,7 @@ use bevy::{
 };
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};
-use common::structs::PrimaryUser;
+use common::structs::{ActiveDialog, PrimaryUser};
 use comms::profile::CurrentUserProfile;
 use ui_core::{
     focus::Focus,
@@ -232,6 +232,7 @@ fn show_emote_ui(
     buttons: Query<(&EmoteButton, &Interaction)>,
     player: Query<Entity, With<PrimaryUser>>,
     mut retry: Local<Option<EmoteUiEvent>>,
+    active_dialog: Res<ActiveDialog>,
 ) {
     let mut ev = events.read().last().copied();
     if retry.is_some() {
@@ -250,6 +251,10 @@ fn show_emote_ui(
                 }
             }
         }
+
+        let Some(permit) = active_dialog.try_acquire() else {
+            return;
+        };
 
         let EmoteUiEvent::Show { coords } = ev else {
             return;
@@ -314,7 +319,7 @@ fn show_emote_ui(
             .unwrap();
 
         let output = buttons.named("output");
-        commands.entity(output).insert(EmoteOutput);
+        commands.entity(output).insert((EmoteOutput, permit));
 
         let mut all_slots = (0..=9).collect::<HashSet<u32>>();
         for emote in player_emotes {
