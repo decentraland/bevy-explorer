@@ -118,10 +118,11 @@ pub enum RpcCall {
     },
     SpawnPortable {
         location: PortableLocation,
-        spawner: Option<String>,
+        spawner: Entity,
         response: RpcResultSender<Result<SpawnResponse, String>>,
     },
     KillPortable {
+        scene: Entity,
         location: PortableLocation,
         response: RpcResultSender<bool>,
     },

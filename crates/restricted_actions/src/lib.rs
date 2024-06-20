@@ -252,6 +252,11 @@ fn spawn_portable(
     mut pending_responses: Local<HashMap<String, SpawnResponseChannel>>,
     live_scenes: Res<LiveScenes>,
     scenes: Query<(Option<&RendererSceneContext>, Option<&SceneLoading>)>,
+    mut perms: Permission<(
+        Entity,
+        PortableLocation,
+        RpcResultSender<Result<SpawnResponse, String>>,
+    )>,
 ) {
     // process incoming events
     for (location, spawner, response) in events.read().filter_map(|ev| match ev {
@@ -262,6 +267,21 @@ fn spawn_portable(
         } => Some((location, spawner, response)),
         _ => None,
     }) {
+        perms.check(
+            PermissionType::SpawnPortable,
+            *spawner,
+            (*spawner, location.clone(), response.clone()),
+            None,
+        );
+    }
+
+    for (spawner, location, response) in perms.drain_success(PermissionType::SpawnPortable) {
+        let Ok((Some(scene), _)) = scenes.get(spawner) else {
+            response.send(Err("Scene entity not found".to_owned()));
+            continue;
+        };
+        let parent_hash = scene.hash.clone();
+
         match location {
             PortableLocation::Urn(urn) => {
                 let hacked_urn = urn.replace('?', "?=&");
@@ -280,14 +300,13 @@ fn spawn_portable(
                     hash.clone(),
                     PortableSource {
                         pid: hacked_urn,
-                        parent_scene: spawner.clone(),
+                        parent_scene: Some(parent_hash),
                         ens: None,
                     },
                 );
                 pending_responses.insert(hash, Some(response.take()));
             }
             PortableLocation::Ens(ens) => {
-                let spawner = spawner.clone();
                 let ens = ens.clone();
                 pending_lookups.push((
                     IoTaskPool::get().spawn(async move {
@@ -328,7 +347,7 @@ fn spawn_portable(
                             hash,
                             PortableSource {
                                 pid: hacked_urn,
-                                parent_scene: spawner.clone(),
+                                parent_scene: Some(parent_hash),
                                 ens: Some(ens),
                             },
                         ))
@@ -337,6 +356,10 @@ fn spawn_portable(
                 ));
             }
         }
+    }
+
+    for (_, _, response) in perms.drain_fail(PermissionType::SpawnPortable) {
+        response.send(Err("permission denied".to_owned()));
     }
 
     // process pending lookups
@@ -403,11 +426,28 @@ fn spawn_portable(
     });
 }
 
-fn kill_portable(mut portables: ResMut<PortableScenes>, mut events: EventReader<RpcCall>) {
-    for (location, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::KillPortable { location, response } => Some((location, response)),
+fn kill_portable(
+    mut portables: ResMut<PortableScenes>,
+    mut events: EventReader<RpcCall>,
+    mut perms: Permission<(PortableLocation, RpcResultSender<bool>)>,
+) {
+    for (scene, location, response) in events.read().filter_map(|ev| match ev {
+        RpcCall::KillPortable {
+            scene,
+            location,
+            response,
+        } => Some((scene, location, response)),
         _ => None,
     }) {
+        perms.check(
+            PermissionType::KillPortables,
+            *scene,
+            (location.clone(), response.clone()),
+            Some(format!("{:?}", location)),
+        );
+    }
+
+    for (location, response) in perms.drain_success(PermissionType::KillPortables) {
         match location {
             PortableLocation::Urn(urn) => {
                 let hacked_urn = urn.replace('?', "?=&");
@@ -424,8 +464,15 @@ fn kill_portable(mut portables: ResMut<PortableScenes>, mut events: EventReader<
 
                 response.send(portables.0.remove(&hash).is_some());
             }
-            _ => unimplemented!(),
+            _ => {
+                warn!("unimplemented kill(Ens(..))");
+                response.send(false);
+            }
         }
+    }
+
+    for (_, response) in perms.drain_fail(PermissionType::KillPortables) {
+        response.send(false);
     }
 }
 
