@@ -188,14 +188,16 @@ impl DuiTemplate for DuiButtonTemplate {
 
         if !data.enabled {
             // delayed modification
-            commands
-                .commands()
-                .entity(components["label"])
-                .modify_component(|text: &mut Text| {
-                    for section in text.sections.iter_mut() {
-                        section.style.color = Color::rgb(0.5, 0.5, 0.5);
-                    }
-                });
+            if let Some(label) = components.get("label") {
+                commands
+                    .commands()
+                    .entity(*label)
+                    .modify_component(|text: &mut Text| {
+                        for section in text.sections.iter_mut() {
+                            section.style.color = Color::rgb(0.5, 0.5, 0.5);
+                        }
+                    });
+            }
         }
 
         if let Some(text_label) = props.take::<String>("label-name")? {
