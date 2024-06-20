@@ -16,7 +16,7 @@ use common::{
     rpc::{PortableLocation, RpcCall, RpcEventSender, RpcResultSender, SpawnResponse},
     sets::SceneSets,
     structs::{PermissionType, PrimaryCamera, PrimaryUser},
-    util::TaskExt,
+    util::{FireEventEx, TaskExt},
 };
 use comms::{
     global_crdt::ForeignPlayer,
@@ -83,6 +83,7 @@ pub fn move_player(
     scenes: Query<&RendererSceneContext>,
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
     containing_scene: ContainingScene,
+    mut perms: Permission<(Entity, Vec3, Option<Vec3>)>,
 ) {
     for (root, translation, looking_at) in events.read().filter_map(|ev| match ev {
         RpcCall::MovePlayer {
@@ -92,30 +93,26 @@ pub fn move_player(
         } => Some((scene, to, looking_at)),
         _ => None,
     }) {
-        let Ok(scene) = scenes.get(*root) else {
+        perms.check(
+            PermissionType::MovePlayer,
+            *root,
+            (*root, *translation, *looking_at),
+            None,
+        );
+    }
+
+    for (root, translation, looking_at) in perms.drain_success(PermissionType::MovePlayer) {
+        let Ok(scene) = scenes.get(root) else {
+            warn!("move player request from invalid scene {root:?}");
             continue;
         };
 
-        if !player
-            .get_single()
-            .ok()
-            .map_or(false, |(e, ..)| containing_scene.get(e).contains(root))
-        {
-            warn!("invalid move request from non-containing scene");
-            warn!("request from {root:?}");
-            warn!(
-                "containing scenes {:?}",
-                player.get_single().map(|p| containing_scene.get(p.0))
-            );
-            return;
-        }
-
-        let mut target_translation = *translation;
+        let mut target_translation = translation;
         target_translation +=
             (scene.base * IVec2::new(1, -1)).as_vec2().extend(0.0).xzy() * PARCEL_SIZE;
 
         let target_scenes = containing_scene.get_position(target_translation);
-        if !target_scenes.contains(root) {
+        if !target_scenes.contains(&root) {
             warn!("move player request from {root:?} was outside scene bounds");
         } else {
             let (_, mut player_transform, mut dynamics) = player.single_mut();
@@ -125,7 +122,7 @@ pub fn move_player(
             if let Some(looking_at) = looking_at {
                 let rotation = Transform::IDENTITY
                     .looking_at(
-                        (*looking_at - *translation) * Vec3::new(1.0, 0.0, 1.0),
+                        (looking_at - translation) * Vec3::new(1.0, 0.0, 1.0),
                         Vec3::Y,
                     )
                     .rotation;
@@ -137,6 +134,8 @@ pub fn move_player(
             }
         }
     }
+
+    for _ in perms.drain_fail(PermissionType::MovePlayer) {}
 }
 
 pub fn move_camera(
@@ -179,9 +178,7 @@ pub fn move_camera(
 fn change_realm(
     mut commands: Commands,
     mut events: EventReader<RpcCall>,
-    containing_scene: ContainingScene,
-    player: Query<Entity, With<PrimaryUser>>,
-    dui: Res<DuiRegistry>,
+    mut perms: Permission<(String, RpcResultSender<Result<(), String>>)>,
 ) {
     for (scene, to, message, response) in events.read().filter_map(|ev| match ev {
         RpcCall::ChangeRealm {
@@ -192,56 +189,21 @@ fn change_realm(
         } => Some((scene, to, message, response.clone())),
         _ => None,
     }) {
-        if !player
-            .get_single()
-            .ok()
-            .map_or(false, |e| containing_scene.get(e).contains(scene))
-        {
-            warn!("invalid changeRealm request from non-containing scene");
-            return;
-        }
+        perms.check(
+            PermissionType::ChangeRealm,
+            *scene,
+            (to.clone(), response.clone()),
+            message.clone(),
+        );
+    }
 
-        let new_realm = to.clone();
-        let response_ok = response.clone();
-        let response_fail = response.clone();
+    for (new_realm, response) in perms.drain_success(PermissionType::ChangeRealm) {
+        commands.fire_event(ChangeRealmEvent { new_realm });
+        response.send(Ok(()));
+    }
 
-        commands
-            .spawn_template(
-                &dui,
-                "text-dialog",
-                DuiProps::new()
-                    .with_prop("title", "Change Realm".to_owned())
-                    .with_prop(
-                        "body",
-                        format!(
-                            "The scene wants to move you to a new realm\n`{}`\n{}",
-                            to.clone(),
-                            if let Some(message) = message {
-                                message
-                            } else {
-                                ""
-                            }
-                        ),
-                    )
-                    .with_prop(
-                        "buttons",
-                        vec![
-                            DuiButton::new_enabled_and_close(
-                                "Let's go!",
-                                move |mut writer: EventWriter<ChangeRealmEvent>| {
-                                    writer.send(ChangeRealmEvent {
-                                        new_realm: new_realm.clone(),
-                                    });
-                                    response_ok.send(Ok(()));
-                                },
-                            ),
-                            DuiButton::new_enabled_and_close("No thanks", move || {
-                                response_fail.send(Err(String::default()));
-                            }),
-                        ],
-                    ),
-            )
-            .unwrap();
+    for (_, response) in perms.drain_fail(PermissionType::ChangeRealm) {
+        response.send(Err("Denied".to_owned()));
     }
 }
 
