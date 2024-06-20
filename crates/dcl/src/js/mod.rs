@@ -142,6 +142,7 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
                 debug!("replace: {}", op.name);
                 op.with_implementation_from(custom_op)
             } else {
+                debug!("default: {}", op.name);
                 op
             }
         })),

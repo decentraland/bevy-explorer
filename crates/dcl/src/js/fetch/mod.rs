@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 mod fetch_response_body_resource;
 
 use bevy::prelude::debug;
-use common::structs::SceneMeta;
+use common::{rpc::RpcCall, structs::SceneMeta};
 use deno_core::{
     anyhow::{self, anyhow},
     error::{type_error, AnyError},
@@ -27,9 +27,10 @@ use isahc::{
 use serde::{Deserialize, Serialize};
 
 use fetch_response_body_resource::FetchResponseBodyResource;
+use tokio::sync::oneshot::channel;
 use wallet::{sign_request, Wallet};
 
-use crate::interface::crdt_context::CrdtContext;
+use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
 use super::runtime::realm_information;
 
@@ -59,15 +60,15 @@ impl NetPermissions for NP {
         _host: &(T, Option<u16>),
         _api_name: &str,
     ) -> Result<(), AnyError> {
-        Ok(())
+        panic!();
     }
 
     fn check_read(&mut self, _p: &std::path::Path, _api_name: &str) -> Result<(), AnyError> {
-        Ok(())
+        panic!();
     }
 
     fn check_write(&mut self, _p: &std::path::Path, _api_name: &str) -> Result<(), AnyError> {
-        Ok(())
+        panic!();
     }
 }
 
@@ -86,6 +87,7 @@ struct IsahcFetchRequestResource {
     request: http::request::Builder,
     request_body_rid: Option<ResourceId>,
     body_bytes: Option<Vec<u8>>,
+    url: String,
 }
 impl deno_core::Resource for IsahcFetchRequestResource {}
 
@@ -175,14 +177,16 @@ where
 
     request = request.header("User-Agent", "DCLExplorer/0.1");
 
+    debug!("request {url}");
     let request_rid = state.resource_table.add(IsahcFetchRequestResource {
         body_bytes,
         client,
         request_body_rid,
         request,
+        url,
     });
 
-    debug!("request {url}, returning {:?}", request_rid);
+    debug!("returning {:?}", request_rid);
     Ok(IsahcFetchReturn {
         request_rid,
         cancel_handle_rid: None,
@@ -220,9 +224,26 @@ pub async fn op_fetch_send(
         request,
         body_bytes,
         request_body_rid,
+        url,
     } = Rc::try_unwrap(request)
         .ok()
         .expect("multiple op_fetch_send ongoing");
+
+    let scene = state.borrow_mut().borrow::<CrdtContext>().scene_id.0;
+    let (sx, rx) = channel();
+    state
+        .borrow_mut()
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::RequestGenericPermission {
+            scene,
+            ty: common::structs::PermissionType::Fetch,
+            message: Some(url.clone()),
+            response: sx.into(),
+        });
+    let permit = rx.await?;
+    if !permit {
+        anyhow::bail!("User denied fetch request");
+    }
 
     let ipfs = state.borrow_mut().borrow_mut::<IpfsResource>().clone();
 
@@ -268,7 +289,7 @@ pub async fn op_fetch_send(
         status: status.as_u16(),
         status_text: status.canonical_reason().unwrap_or("").to_string(),
         headers,
-        url: "why do you need that".into(),
+        url,
         response_rid,
         content_length,
         remote_addr_ip: None,

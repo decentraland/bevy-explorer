@@ -69,9 +69,13 @@ impl Plugin for RestrictedActionsPlugin {
                     teleport_player,
                     handle_out_of_world,
                     open_nft_dialog,
-                    show_nft_dialog,
                 ),
-                (handle_eth_async, handle_texture_size),
+                (
+                    show_nft_dialog,
+                    handle_eth_async,
+                    handle_texture_size,
+                    handle_generic_perm,
+                ),
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -239,9 +243,10 @@ fn external_url(
 
 type SpawnResponseChannel = Option<tokio::sync::oneshot::Sender<Result<SpawnResponse, String>>>;
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn spawn_portable(
-    mut portables: ResMut<PortableScenes>,
+    mut commands: Commands,
+    current_portables: Res<PortableScenes>,
     mut events: EventReader<RpcCall>,
     mut pending_lookups: Local<
         Vec<(
@@ -258,6 +263,9 @@ fn spawn_portable(
         RpcResultSender<Result<SpawnResponse, String>>,
     )>,
 ) {
+    let mut new_portables = HashMap::default();
+    let mut failed_portables = HashSet::default();
+
     // process incoming events
     for (location, spawner, response) in events.read().filter_map(|ev| match ev {
         RpcCall::SpawnPortable {
@@ -296,7 +304,7 @@ fn spawn_portable(
                     continue;
                 };
 
-                portables.0.insert(
+                new_portables.insert(
                     hash.clone(),
                     PortableSource {
                         pid: hacked_urn,
@@ -367,7 +375,7 @@ fn spawn_portable(
         if let Some(result) = task.complete() {
             match result {
                 Ok((hash, source)) => {
-                    portables.0.insert(hash.clone(), source);
+                    new_portables.insert(hash.clone(), source);
                     pending_responses.insert(hash, response.take());
                 }
                 Err(e) => {
@@ -386,7 +394,7 @@ fn spawn_portable(
     pending_responses.retain(|hash, sender| {
         let mut fail = |msg: String| -> bool {
             let _ = sender.take().unwrap().send(Err(msg));
-            portables.0.remove(hash);
+            failed_portables.insert(hash.clone());
             false
         };
 
@@ -405,7 +413,7 @@ fn spawn_portable(
         }
 
         if let Some(context) = maybe_context {
-            if let Some(source) = portables.0.get(hash) {
+            if let Some(source) = current_portables.0.get(hash) {
                 let _ = sender.take().unwrap().send(Ok(SpawnResponse {
                     pid: source.pid.clone(),
                     parent_cid: source.parent_scene.clone().unwrap_or_default(),
@@ -424,13 +432,32 @@ fn spawn_portable(
         debug!("waiting for context, load state is {maybe_loading:?}");
         true
     });
+
+    // deferred write to PortableScenes (we can't take it mutably as it is used in Permissions)
+    if !new_portables.is_empty() {
+        commands.add(move |world: &mut World| {
+            let mut portables = world.resource_mut::<PortableScenes>();
+            portables.0.extend(new_portables);
+        });
+    }
+    if !failed_portables.is_empty() {
+        commands.add(move |world: &mut World| {
+            let mut portables = world.resource_mut::<PortableScenes>();
+            for portable in failed_portables {
+                portables.0.remove(&portable);
+            }
+        });
+    }
 }
 
 fn kill_portable(
-    mut portables: ResMut<PortableScenes>,
+    mut commands: Commands,
+    portables: Res<PortableScenes>,
     mut events: EventReader<RpcCall>,
     mut perms: Permission<(PortableLocation, RpcResultSender<bool>)>,
 ) {
+    let mut kill_portables = HashSet::default();
+
     for (scene, location, response) in events.read().filter_map(|ev| match ev {
         RpcCall::KillPortable {
             scene,
@@ -462,7 +489,12 @@ fn kill_portable(
                     continue;
                 };
 
-                response.send(portables.0.remove(&hash).is_some());
+                if portables.0.contains_key(&hash) {
+                    response.send(true);
+                    kill_portables.insert(hash.clone());
+                } else {
+                    response.send(false);
+                }
             }
             _ => {
                 warn!("unimplemented kill(Ens(..))");
@@ -473,6 +505,16 @@ fn kill_portable(
 
     for (_, response) in perms.drain_fail(PermissionType::KillPortables) {
         response.send(false);
+    }
+
+    // deferred write to avoid resource conflict
+    if !kill_portables.is_empty() {
+        commands.add(|world: &mut World| {
+            let mut portables = world.resource_mut::<PortableScenes>();
+            for killed in kill_portables {
+                portables.0.remove(&killed);
+            }
+        })
     }
 }
 
@@ -1047,4 +1089,32 @@ pub fn handle_texture_size(
             false
         }
     });
+}
+
+pub fn handle_generic_perm(
+    mut events: EventReader<RpcCall>,
+    mut perms: Permission<RpcResultSender<bool>>,
+    mut tys: Local<HashSet<PermissionType>>,
+) {
+    for ev in events.read() {
+        if let RpcCall::RequestGenericPermission {
+            scene,
+            ty,
+            message,
+            response,
+        } = ev
+        {
+            perms.check(*ty, *scene, response.clone(), message.clone());
+            tys.insert(*ty);
+        }
+    }
+
+    for ty in &tys {
+        for response in perms.drain_success(*ty) {
+            response.send(true);
+        }
+        for response in perms.drain_fail(*ty) {
+            response.send(false);
+        }
+    }
 }
