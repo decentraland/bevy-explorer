@@ -44,11 +44,11 @@ fn update_permissions(
     dui: Res<DuiRegistry>,
     config: Res<AppConfig>,
     // scene cancel, dialog Entity, original request
-    mut pending: Local<Vec<(Receiver<()>, Entity, Option<PermissionRequest>)>>,
+    mut displayed_dialogs: Local<Vec<(Receiver<()>, Entity, Option<PermissionRequest>)>>,
 ) {
     let active_scenes = containing_scene.get_area(player.0, PLAYER_COLLIDER_RADIUS);
 
-    pending.retain_mut(|(cancel_rx, ent, req)| {
+    displayed_dialogs.retain_mut(|(cancel_rx, ent, req)| {
         // check if dialog has been cancelled ("manage permissions") or completed
         match cancel_rx.try_recv() {
             Ok(()) => {
@@ -65,10 +65,10 @@ fn update_permissions(
             }
         }
 
-        // kill dialogs where the scene is no longer active
+        // kill/requeue dialogs where the scene is no longer active
         if !active_scenes.contains(&req.as_ref().unwrap().scene) {
             commands.entity(*ent).despawn_recursive();
-            req.take().unwrap().sender.send(false);
+            manager.pending.push_front(req.take().unwrap());
             return false;
         }
 
@@ -84,6 +84,9 @@ fn update_permissions(
             let Ok(hash) = scenes.get(req.scene).map(|ctx| &ctx.hash) else {
                 return false;
             };
+            if !active_scenes.contains(&req.scene) {
+                return true;
+            }
             match config.get_permission(req.ty, &req.realm, hash, req.is_portable) {
                 PermissionValue::Allow => {
                     req.sender.clone().send(true);
@@ -256,7 +259,7 @@ fn update_permissions(
                 realm: req.realm.clone(),
             },
         ));
-        pending.push((cancel_rx, popup.root, Some(req)));
+        displayed_dialogs.push((cancel_rx, popup.root, Some(req)));
         break;
     }
 }

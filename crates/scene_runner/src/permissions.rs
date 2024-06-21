@@ -73,17 +73,15 @@ pub struct Permission<'w, 's, T: Send + Sync + 'static> {
 }
 
 impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
-    fn get_hash(&self, scene: Entity) -> Option<(&str, bool)> {
-        if !self
+    // in scene, hash, is_portable
+    fn get_hash(&self, scene: Entity) -> Option<(bool, &str, bool)> {
+        let in_scene = self
             .containing_scenes
             .get_area(self.player.0, PLAYER_COLLIDER_RADIUS)
-            .contains(&scene)
-        {
-            return None;
-        }
+            .contains(&scene);
         self.scenes
             .get(scene)
-            .map(|ctx| (ctx.hash.as_str(), ctx.is_portable))
+            .map(|ctx| (in_scene, ctx.hash.as_str(), ctx.is_portable))
             .ok()
     }
 
@@ -93,15 +91,23 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
         scene: Entity,
         value: T,
         additional: Option<String>,
+        allow_out_of_scene: bool,
     ) {
-        let Some((hash, is_portable)) = self.get_hash(scene) else {
+        let Some((in_scene, hash, is_portable)) = self.get_hash(scene) else {
             return;
         };
-        let perm = self
-            .config
-            .get_permission(ty, &self.realm.address, hash, is_portable);
 
-        debug!("req {:?} for {:?} -> {:?}", ty, scene, perm);
+        let perm = if !allow_out_of_scene && !in_scene {
+            common::structs::PermissionValue::Ask
+        } else {
+            self.config
+                .get_permission(ty, &self.realm.address, hash, is_portable)
+        };
+
+        debug!(
+            "req {:?} for {:?} -> {:?} (in_scene = {})",
+            ty, scene, perm, in_scene
+        );
         match perm {
             common::structs::PermissionValue::Allow => self.success.push((value, ty, scene)),
             common::structs::PermissionValue::Deny => self.fail.push((value, ty, scene)),

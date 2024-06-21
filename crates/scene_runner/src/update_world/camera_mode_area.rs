@@ -127,7 +127,13 @@ pub fn update_camera_mode_area(
             PermissionState::Resolved(true) => Some(*ent),
             PermissionState::NotRequested => {
                 let (_, scene_ent, _, _) = areas.get(*ent).unwrap();
-                perms.check(PermissionType::ForceCamera, scene_ent.root, *ent, None);
+                perms.check(
+                    PermissionType::ForceCamera,
+                    scene_ent.root,
+                    *ent,
+                    None,
+                    false,
+                );
                 *permitted = PermissionState::Pending;
                 None
             }

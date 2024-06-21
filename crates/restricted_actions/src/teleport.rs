@@ -55,6 +55,7 @@ pub fn teleport_player(
                 scene,
                 (to, response.clone()),
                 Some(format!("({},{})", to.x, to.y)),
+                false,
             );
         } else {
             do_teleport(to, response);

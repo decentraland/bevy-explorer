@@ -205,6 +205,7 @@ fn update_avatar_modifier_area(
                             scene_ent.root,
                             scene_ent.root,
                             Some(format!("{:?} ({:?})", scene_ent.root, &*active_hide_areas)),
+                            true,
                         );
                         active_hide_areas.insert(scene_ent.root, PermissionState::Pending);
                         false
@@ -235,6 +236,7 @@ fn update_avatar_modifier_area(
                                 scene_ent.root,
                                 active_area.entity,
                                 None,
+                                false,
                             );
                             active_area.allow_locomotion = PermissionState::Pending;
                             false

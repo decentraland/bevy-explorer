@@ -103,6 +103,7 @@ fn read_player_emotes(
                 container.root,
                 emotes.clone(),
                 None,
+                false,
             );
         }
     }

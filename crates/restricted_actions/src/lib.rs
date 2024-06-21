@@ -105,6 +105,7 @@ pub fn move_player(
             *root,
             (*root, *translation, *looking_at),
             None,
+            false,
         );
     }
 
@@ -201,6 +202,7 @@ fn change_realm(
             *scene,
             (to.clone(), response.clone()),
             message.clone(),
+            false,
         );
     }
 
@@ -231,6 +233,7 @@ fn external_url(
             *scene,
             (response.clone(), url.clone()),
             Some(url.clone()),
+            false,
         );
     }
 
@@ -283,6 +286,7 @@ fn spawn_portable(
             *spawner,
             (*spawner, location.clone(), response.clone()),
             None,
+            false,
         );
     }
 
@@ -474,6 +478,7 @@ fn kill_portable(
             *scene,
             (location.clone(), response.clone()),
             Some(format!("{:?}", location)),
+            false,
         );
     }
 
@@ -1029,6 +1034,7 @@ pub fn handle_eth_async(
             *scene,
             (body.clone(), response.clone()),
             None,
+            false,
         );
     }
 
@@ -1110,7 +1116,18 @@ pub fn handle_generic_perm(
             response,
         } = ev
         {
-            perms.check(*ty, *scene, response.clone(), message.clone());
+            let allow_out_of_scene = matches!(
+                ty,
+                PermissionType::HideAvatars | PermissionType::Fetch | PermissionType::Websocket
+            );
+
+            perms.check(
+                *ty,
+                *scene,
+                response.clone(),
+                message.clone(),
+                allow_out_of_scene,
+            );
             tys.insert(*ty);
         }
     }
