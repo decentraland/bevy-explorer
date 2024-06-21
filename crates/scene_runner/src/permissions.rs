@@ -248,10 +248,10 @@ impl PermissionStrings for PermissionType {
     }
 
     fn on_success(&self) -> String {
-        format!("The scene is {}", self.active())
+        format!("The scene is {} (click to manage)", self.active())
     }
     fn on_fail(&self) -> String {
-        format!("The scene was blocked from {}", self.active())
+        format!("The scene was blocked from {} (click to manage)", self.active())
     }
 
     fn passive(&self) -> &str {
