@@ -46,6 +46,7 @@ pub async fn op_ws_create<WP>(
 where
     WP: WebSocketPermissions + 'static,
 {
+    // check permission
     let scene = state.borrow_mut().borrow::<CrdtContext>().scene_id.0;
     let (sx, rx) = channel();
     state
@@ -62,13 +63,22 @@ where
         anyhow::bail!("User denied fetch request");
     }
 
+    // set default headers
+    let mut headers = headers.unwrap_or_default();
+    if headers.iter().find(|(key, _)| key == &ByteString::from("user-agent")).is_none() {
+        headers.push(("user-agent".into(), "DCLExplorer/0.1".into()));
+    }
+    if headers.iter().find(|(key, _)| key == &ByteString::from("accept")).is_none() {
+        headers.push(("accept".into(), "*/*".into()));
+    }
+
     deno_websocket::op_ws_create__raw_fn::<WP>(
         state,
         api_name,
         url,
         protocols,
         cancel_handle,
-        headers,
+        Some(headers),
     )
     .await
 }
