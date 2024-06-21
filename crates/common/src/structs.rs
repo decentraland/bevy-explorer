@@ -242,7 +242,7 @@ impl AppConfig {
             .get(scene.as_ref())
             .and_then(|map| map.get(&ty))
             .or_else(|| {
-                if is_portable {
+                if !is_portable {
                     self.realm_permissions
                         .get(realm.as_ref())
                         .and_then(|map| map.get(&ty))

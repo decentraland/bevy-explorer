@@ -105,12 +105,14 @@ fn update_permissions(
         return;
     };
 
+    let mut repush_requests = Vec::default();
     while let Some(req) = manager.pending.pop_front() {
-        if req.realm != current_realm.address {
+        if req.realm != current_realm.address && !req.is_portable {
             continue;
         }
 
         if !active_scenes.contains(&req.scene) {
+            repush_requests.push(req);
             continue;
         }
 
@@ -261,6 +263,10 @@ fn update_permissions(
         ));
         displayed_dialogs.push((cancel_rx, popup.root, Some(req)));
         break;
+    }
+
+    for request in repush_requests.into_iter().rev() {
+        manager.pending.push_front(request);
     }
 }
 

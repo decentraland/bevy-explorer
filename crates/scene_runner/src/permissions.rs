@@ -105,8 +105,14 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
         };
 
         debug!(
-            "req {:?} for {:?} -> {:?} (in_scene = {})",
-            ty, scene, perm, in_scene
+            "req {:?} for {:?} -> {:?} (in_scene = {}, allow_out = {}, real = {:?})",
+            ty,
+            scene,
+            perm,
+            in_scene,
+            allow_out_of_scene,
+            self.config
+                .get_permission(ty, &self.realm.address, hash, is_portable)
         );
         match perm {
             common::structs::PermissionValue::Allow => self.success.push((value, ty, scene)),

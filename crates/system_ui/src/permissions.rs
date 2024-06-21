@@ -83,10 +83,8 @@ fn set_permission_settings_content(
             None => containing_scene.get_parcel(player.0),
             Some(scene) => {
                 if scenes.get(*scene).is_ok() {
-                    println!("using scene!");
                     Some(*scene)
                 } else {
-                    println!("scene invalid!");
                     containing_scene.get_parcel(player.0)
                 }
             }
