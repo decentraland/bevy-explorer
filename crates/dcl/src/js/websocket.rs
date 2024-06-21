@@ -65,10 +65,16 @@ where
 
     // set default headers
     let mut headers = headers.unwrap_or_default();
-    if headers.iter().find(|(key, _)| key == &ByteString::from("user-agent")).is_none() {
+    if !headers
+        .iter()
+        .any(|(key, _)| key == &ByteString::from("user-agent"))
+    {
         headers.push(("user-agent".into(), "DCLExplorer/0.1".into()));
     }
-    if headers.iter().find(|(key, _)| key == &ByteString::from("accept")).is_none() {
+    if !headers
+        .iter()
+        .any(|(key, _)| key == &ByteString::from("accept"))
+    {
         headers.push(("accept".into(), "*/*".into()));
     }
 
