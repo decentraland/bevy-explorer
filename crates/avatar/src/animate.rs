@@ -14,31 +14,35 @@ use collectibles::{
     Collectible, CollectibleData, CollectibleError, CollectibleManager, Emote, EmoteUrn,
 };
 use common::{
+    dynamics::PLAYER_COLLIDER_RADIUS,
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
     structs::PrimaryUser,
 };
 use comms::{
-    chat_marker_things, global_crdt::ChatEvent, profile::CurrentUserProfile, NetworkMessage,
-    Transport,
+    chat_marker_things,
+    global_crdt::{ChatEvent, ForeignPlayer},
+    profile::CurrentUserProfile,
+    NetworkMessage, Transport,
 };
 use console::DoAddConsoleCommand;
-use dcl::interface::ComponentPosition;
+use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
         kernel::comms::rfc4::{self, Chat},
         sdk::components::PbAvatarEmoteCommand,
     },
-    SceneComponentId,
+    SceneComponentId, SceneEntityId,
 };
 use ipfs::IpfsAssetServer;
 use scene_runner::{
     permissions::Permission,
+    renderer_context::RendererSceneContext,
     update_world::{
         avatar_modifier_area::PlayerModifiers, transform_and_parent::ParentPositionSync,
         AddCrdtInterfaceExt,
     },
-    ContainerEntity,
+    ContainerEntity, ContainingScene,
 };
 
 use crate::{process_avatar, AvatarDefinition};
@@ -50,22 +54,41 @@ pub struct AvatarAnimPlayer(pub Entity);
 
 pub struct AvatarAnimationPlugin;
 
+#[derive(Debug, Clone)]
+pub struct EmoteCommand {
+    pub emote: PbAvatarEmoteCommand,
+    pub broadcast: EmoteBroadcast,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmoteBroadcast {
+    All,
+    None,
+    Omit(Entity),
+}
+
 #[derive(Component, Default, Deref, DerefMut, Debug, Clone)]
-pub struct EmoteList(pub(crate) VecDeque<PbAvatarEmoteCommand>);
+pub struct EmotesFromScene(pub(crate) VecDeque<PbAvatarEmoteCommand>);
+
+#[derive(Component, Default, Deref, DerefMut, Debug, Clone)]
+pub struct EmoteList(pub(crate) VecDeque<EmoteCommand>);
 
 impl EmoteList {
-    pub fn new(emote_urn: impl Into<String>) -> Self {
-        Self(VecDeque::from_iter([PbAvatarEmoteCommand {
-            emote_urn: emote_urn.into(),
-            r#loop: false,
-            timestamp: 0,
+    pub fn new(emote_urn: impl Into<String>, origin: EmoteBroadcast) -> Self {
+        Self(VecDeque::from_iter([EmoteCommand {
+            emote: PbAvatarEmoteCommand {
+                emote_urn: emote_urn.into(),
+                r#loop: false,
+                timestamp: 0,
+            },
+            broadcast: origin,
         }]))
     }
 }
 
 impl Plugin for AvatarAnimationPlugin {
     fn build(&self, app: &mut App) {
-        app.add_crdt_go_component::<PbAvatarEmoteCommand, EmoteList>(
+        app.add_crdt_go_component::<PbAvatarEmoteCommand, EmotesFromScene>(
             SceneComponentId::AVATAR_EMOTE_COMMAND,
             ComponentPosition::EntityOnly,
         );
@@ -85,7 +108,12 @@ impl Plugin for AvatarAnimationPlugin {
 fn read_player_emotes(
     mut commands: Commands,
     scene_player_emotes: Query<
-        (Entity, &EmoteList, &ParentPositionSync, &ContainerEntity),
+        (
+            Entity,
+            Ref<EmotesFromScene>,
+            &ParentPositionSync,
+            &ContainerEntity,
+        ),
         Without<PrimaryUser>,
     >,
     player: Query<Entity, With<PrimaryUser>>,
@@ -96,20 +124,34 @@ fn read_player_emotes(
     };
 
     for (scene_ent, emotes, parent, container) in &scene_player_emotes {
+        if emotes.0.is_empty() || !emotes.is_changed() {
+            continue;
+        }
+
+        let mut list = EmoteList::default();
+        for emote in &emotes.0 {
+            list.0.push_back(EmoteCommand {
+                emote: emote.to_owned(),
+                broadcast: EmoteBroadcast::Omit(container.root),
+            })
+        }
+
         if parent.0 == player {
             commands.entity(scene_ent).remove::<EmoteList>();
             perms.check(
                 common::structs::PermissionType::PlayEmote,
                 container.root,
-                emotes.clone(),
+                list,
                 None,
                 false,
             );
+        } else {
+            commands.entity(player).insert(list);
         }
     }
 
-    for emotes in perms.drain_success(common::structs::PermissionType::PlayEmote) {
-        commands.entity(player).insert(emotes.clone());
+    for list in perms.drain_success(common::structs::PermissionType::PlayEmote) {
+        commands.entity(player).insert(list.clone());
     }
 
     for _ in perms.drain_fail(common::structs::PermissionType::PlayEmote) {}
@@ -133,10 +175,14 @@ fn broadcast_emote(
     }
 
     for list in q.iter() {
-        if let Some(PbAvatarEmoteCommand { emote_urn, .. }) = list.back() {
+        if let Some(EmoteCommand {
+            emote: PbAvatarEmoteCommand { emote_urn, .. },
+            ..
+        }) = list.back()
+        {
             if last.as_ref() != Some(emote_urn) {
                 *count += 1;
-                debug!("sending emote: {emote_urn:?} {}", *count);
+                println!("sending emote: {emote_urn:?} {}", *count);
                 let packet = rfc4::Packet {
                     message: Some(rfc4::packet::Message::Chat(Chat {
                         message: format!("{}{} {}", chat_marker_things::EMOTE, emote_urn, *count),
@@ -180,7 +226,7 @@ fn receive_emotes(mut commands: Commands, mut chat_events: EventReader<ChatEvent
             debug!("adding remote emote: {}", emote_urn);
             commands
                 .entity(ev.sender)
-                .try_insert(EmoteList::new(emote_urn));
+                .try_insert(EmoteList::new(emote_urn, EmoteBroadcast::All));
         }
     }
 }
@@ -219,11 +265,14 @@ fn animate(
         Option<&mut EmoteList>,
         &GlobalTransform,
         Option<&mut ActiveEmote>,
+        Option<&ForeignPlayer>,
     )>,
     mut velocities: Local<HashMap<Entity, Vec3>>,
     mut current_emote_min_velocities: Local<HashMap<Entity, f32>>,
     time: Res<Time>,
     player: Query<(&PrimaryUser, Option<&PlayerModifiers>)>,
+    containing_scene: ContainingScene,
+    mut scenes: Query<&mut RendererSceneContext>,
 ) {
     let (gravity, jump_height) = player
         .get_single()
@@ -236,7 +285,9 @@ fn animate(
     let prior_velocities = std::mem::take(&mut *velocities);
     let prior_min_velocities = std::mem::take(&mut *current_emote_min_velocities);
 
-    for (avatar_ent, dynamic_state, mut emotes, gt, active_emote) in avatars.iter_mut() {
+    for (avatar_ent, dynamic_state, mut emotes, gt, active_emote, maybe_foreign) in
+        avatars.iter_mut()
+    {
         let Some(mut active_emote) = active_emote else {
             commands.entity(avatar_ent).insert(ActiveEmote::default());
             continue;
@@ -268,15 +319,22 @@ fn animate(
         velocities.insert(avatar_ent, damped_velocity);
 
         // get requested emote
-        let (mut requested_emote, request_loop) =
-            if let Some(PbAvatarEmoteCommand {
+        let (mut requested_emote, given_urn, request_loop, origin) = if let Some(EmoteCommand {
+            emote: PbAvatarEmoteCommand {
                 emote_urn, r#loop, ..
-            }) = emote
-            {
-                (EmoteUrn::new(emote_urn.as_str()).ok(), r#loop)
-            } else {
-                (None, false)
-            };
+            },
+            broadcast: origin,
+        }) = emote
+        {
+            (
+                EmoteUrn::new(emote_urn.as_str()).ok(),
+                Some(emote_urn),
+                r#loop,
+                origin,
+            )
+        } else {
+            (None, None, false, EmoteBroadcast::None)
+        };
 
         // check / cancel requested emote
         if Some(&active_emote.urn) == requested_emote.as_ref() {
@@ -313,8 +371,38 @@ fn animate(
 
         // play requested emote
         *active_emote = if let Some(requested_emote) = requested_emote {
-            if emotes_changed {
-                debug!("starting emoting {:?}", requested_emote);
+            if emotes_changed && origin != EmoteBroadcast::None {
+                // send to scenes
+                let broadcast_urn = given_urn.unwrap();
+                println!("broadcasting emote to scenes: {:?}", broadcast_urn);
+
+                let scene_id = maybe_foreign
+                    .map(|f| f.scene_id)
+                    .unwrap_or(SceneEntityId::PLAYER);
+                for scene_ent in containing_scene.get_area(avatar_ent, PLAYER_COLLIDER_RADIUS) {
+                    if EmoteBroadcast::Omit(scene_ent) == origin {
+                        // skip the scene that created the emote
+                        continue;
+                    }
+
+                    let Ok(mut scene) = scenes.get_mut(scene_ent) else {
+                        warn!("no scene to receive emote");
+                        continue;
+                    };
+
+                    let timestamp = scene.tick_number;
+                    println!("broadcast to scene {:?}", scene_ent);
+                    scene.update_crdt(
+                        SceneComponentId::AVATAR_EMOTE_COMMAND,
+                        CrdtType::GO_ANY,
+                        scene_id,
+                        &PbAvatarEmoteCommand {
+                            emote_urn: broadcast_urn.to_string(),
+                            r#loop: request_loop,
+                            timestamp,
+                        },
+                    );
+                }
             }
             ActiveEmote {
                 urn: requested_emote,
@@ -713,7 +801,7 @@ fn emote_console_command(
 
             commands
                 .entity(player)
-                .try_insert(EmoteList::new(urn.clone()));
+                .try_insert(EmoteList::new(urn.clone(), EmoteBroadcast::All));
         };
         input.ok();
     }

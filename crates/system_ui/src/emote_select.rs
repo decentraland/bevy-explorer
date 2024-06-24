@@ -1,4 +1,4 @@
-use avatar::animate::EmoteList;
+use avatar::animate::{EmoteBroadcast, EmoteList};
 use bevy::{
     prelude::*,
     text::BreakLineOn,
@@ -127,7 +127,7 @@ fn handle_emote_key(
                 if let Some(button) = buttons.iter().find(|b| b.1 == slot) {
                     commands
                         .entity(player.single())
-                        .try_insert(EmoteList::new(button.0.clone()));
+                        .try_insert(EmoteList::new(button.0.clone(), EmoteBroadcast::All));
                     w.send(EmoteUiEvent::Hide);
                 }
             }
@@ -247,7 +247,7 @@ fn show_emote_ui(
                 if interact == &Interaction::Hovered || interact == &Interaction::Pressed {
                     commands
                         .entity(player.single())
-                        .try_insert(EmoteList::new(button.0.clone()));
+                        .try_insert(EmoteList::new(button.0.clone(), EmoteBroadcast::All));
                 }
             }
         }
