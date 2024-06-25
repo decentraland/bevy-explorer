@@ -137,15 +137,19 @@ fn set_permission_settings_content(
                 PermissionLevel::Scene(_, hash) => config
                     .scene_permissions
                     .get(hash)
-                    .and_then(|sp| sp.get(&ty)),
-                PermissionLevel::Realm(r) => {
-                    config.realm_permissions.get(r).and_then(|sp| sp.get(&ty))
-                }
+                    .and_then(|sp| sp.get(&ty))
+                    .copied(),
+                PermissionLevel::Realm(r) => config
+                    .realm_permissions
+                    .get(r)
+                    .and_then(|sp| sp.get(&ty))
+                    .copied(),
                 PermissionLevel::Global => Some(
                     config
                         .default_permissions
                         .get(&ty)
-                        .unwrap_or(&PermissionValue::Ask),
+                        .copied()
+                        .unwrap_or(AppConfig::default_permission(ty)),
                 ),
             };
 
@@ -183,17 +187,27 @@ fn set_permission_settings_content(
                                 return;
                             };
 
-                            let dict = match &level {
+                            let (current_value, dict) = match &level {
                                 PermissionLevel::Scene(_, hash) => {
-                                    config.0.scene_permissions.entry(hash.clone()).or_default()
+                                    let dict =
+                                        config.0.scene_permissions.entry(hash.clone()).or_default();
+                                    (dict.get(&ty).copied(), dict)
                                 }
                                 PermissionLevel::Realm(r) => {
-                                    config.0.realm_permissions.entry(r.clone()).or_default()
+                                    let dict =
+                                        config.0.realm_permissions.entry(r.clone()).or_default();
+                                    (dict.get(&ty).copied(), dict)
                                 }
-                                PermissionLevel::Global => &mut config.0.default_permissions,
+                                PermissionLevel::Global => {
+                                    let dict = &mut config.0.default_permissions;
+                                    (
+                                        dict.get(&ty)
+                                            .copied()
+                                            .or(Some(AppConfig::default_permission(ty))),
+                                        dict,
+                                    )
+                                }
                             };
-
-                            let current_value = dict.get(&ty);
 
                             let (next, image) = match (current_value, &level) {
                                 (None, _)

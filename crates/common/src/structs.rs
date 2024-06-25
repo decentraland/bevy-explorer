@@ -252,7 +252,19 @@ impl AppConfig {
             })
             .or_else(|| self.default_permissions.get(&ty))
             .copied()
-            .unwrap_or(PermissionValue::Ask)
+            .unwrap_or_else(|| Self::default_permission(ty))
+    }
+
+    pub const fn default_permission(ty: PermissionType) -> PermissionValue {
+        match ty {
+            PermissionType::MovePlayer
+            | PermissionType::ForceCamera
+            | PermissionType::PlayEmote
+            | PermissionType::SetLocomotion
+            | PermissionType::HideAvatars
+            | PermissionType::DisableVoice => PermissionValue::Allow,
+            _ => PermissionValue::Ask,
+        }
     }
 }
 

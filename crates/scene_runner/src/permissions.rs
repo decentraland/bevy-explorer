@@ -134,6 +134,21 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
         }
     }
 
+    pub fn check_unique(
+        &mut self,
+        ty: PermissionType,
+        scene: Entity,
+        value: T,
+        additional: Option<String>,
+        allow_out_of_scene: bool,
+    ) where
+        T: Eq,
+    {
+        if !self.iter_pending().any(|v| *v == value) {
+            self.check(ty, scene, value, additional, allow_out_of_scene);
+        }
+    }
+
     fn update_pending(&mut self) {
         *self.pending = self
             .pending
@@ -202,6 +217,10 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
             );
         }
         matching.into_iter().map(|(value, _, _)| value)
+    }
+
+    pub fn iter_pending(&self) -> impl Iterator<Item = &T> + '_ {
+        self.pending.iter().map(|(value, ..)| value)
     }
 }
 

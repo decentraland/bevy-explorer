@@ -1,5 +1,8 @@
 use bevy::{prelude::*, utils::HashSet};
 
+use crate::{
+    permissions::Permission, renderer_context::RendererSceneContext, ContainingScene, SceneEntity,
+};
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     sets::SceneSets,
@@ -9,10 +12,6 @@ use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::sdk::components::{common::CameraType, PbCameraModeArea},
     SceneComponentId, SceneEntityId,
-};
-
-use crate::{
-    permissions::Permission, renderer_context::RendererSceneContext, ContainingScene, SceneEntity,
 };
 
 use super::AddCrdtInterfaceExt;
@@ -127,7 +126,7 @@ pub fn update_camera_mode_area(
             PermissionState::Resolved(true) => Some(*ent),
             PermissionState::NotRequested => {
                 let (_, scene_ent, _, _) = areas.get(*ent).unwrap();
-                perms.check(
+                perms.check_unique(
                     PermissionType::ForceCamera,
                     scene_ent.root,
                     *ent,

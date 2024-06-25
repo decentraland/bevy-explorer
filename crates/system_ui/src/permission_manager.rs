@@ -84,9 +84,6 @@ fn update_permissions(
             let Ok(hash) = scenes.get(req.scene).map(|ctx| &ctx.hash) else {
                 return false;
             };
-            if !active_scenes.contains(&req.scene) {
-                return true;
-            }
             match config.get_permission(req.ty, &req.realm, hash, req.is_portable) {
                 PermissionValue::Allow => {
                     req.sender.clone().send(true);
