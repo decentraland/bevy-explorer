@@ -73,15 +73,22 @@ pub struct Permission<'w, 's, T: Send + Sync + 'static> {
 }
 
 impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
-    // in scene, hash, is_portable
-    fn get_hash(&self, scene: Entity) -> Option<(bool, &str, bool)> {
+    // in scene, hash, title, is_portable
+    fn get_scene_info(&self, scene: Entity) -> Option<(bool, &str, &str, bool)> {
         let in_scene = self
             .containing_scenes
             .get_area(self.player.0, PLAYER_COLLIDER_RADIUS)
             .contains(&scene);
         self.scenes
             .get(scene)
-            .map(|ctx| (in_scene, ctx.hash.as_str(), ctx.is_portable))
+            .map(|ctx| {
+                (
+                    in_scene,
+                    ctx.hash.as_str(),
+                    ctx.title.as_str(),
+                    ctx.is_portable,
+                )
+            })
             .ok()
     }
 
@@ -93,7 +100,7 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
         additional: Option<String>,
         allow_out_of_scene: bool,
     ) {
-        let Some((in_scene, hash, is_portable)) = self.get_hash(scene) else {
+        let Some((in_scene, hash, _, is_portable)) = self.get_scene_info(scene) else {
             return;
         };
 
@@ -179,9 +186,12 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
         if let Some(last) = matching.last() {
             let (_, _, scene) = last;
             let scene = *scene;
+            let portable_name = self
+                .get_scene_info(scene)
+                .and_then(|(_, _, title, is_portable)| is_portable.then_some(title));
             self.toaster.add_clicky_toast(
                 format!("{:?}", ty),
-                ty.on_success(),
+                ty.on_success(portable_name),
                 On::<Click>::new(
                     (move |mut target: ResMut<PermissionTarget>| {
                         target.scene = Some(scene);
@@ -204,9 +214,12 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
         if let Some(last) = matching.last() {
             let (_, _, scene) = last;
             let scene = *scene;
+            let portable_name = self
+                .get_scene_info(scene)
+                .and_then(|(_, _, title, is_portable)| is_portable.then_some(title));
             self.toaster.add_clicky_toast(
                 format!("{:?}", ty),
-                ty.on_fail(),
+                ty.on_fail(portable_name),
                 On::<Click>::new(
                     (move |mut target: ResMut<PermissionTarget>| {
                         target.scene = Some(scene);
@@ -229,9 +242,9 @@ pub trait PermissionStrings {
     fn passive(&self) -> &str;
     fn title(&self) -> &str;
     fn request(&self) -> String;
-    fn on_success(&self) -> String;
+    fn on_success(&self, portable: Option<&str>) -> String;
 
-    fn on_fail(&self) -> String;
+    fn on_fail(&self, portable: Option<&str>) -> String;
     fn description(&self) -> String;
 }
 
@@ -266,12 +279,23 @@ impl PermissionStrings for PermissionType {
         )
     }
 
-    fn on_success(&self) -> String {
-        format!("The scene is {} (click to manage)", self.active())
-    }
-    fn on_fail(&self) -> String {
+    fn on_success(&self, portable: Option<&str>) -> String {
         format!(
-            "The scene was blocked from {} (click to manage)",
+            "{} is {} (click to manage)",
+            match portable {
+                Some(portable) => format!("The portable scene {}", portable),
+                None => "The scene".to_owned(),
+            },
+            self.active()
+        )
+    }
+    fn on_fail(&self, portable: Option<&str>) -> String {
+        format!(
+            "{} was blocked from {} (click to manage)",
+            match portable {
+                Some(portable) => format!("The portable scene {}", portable),
+                None => "The scene".to_owned(),
+            },
             self.active()
         )
     }
