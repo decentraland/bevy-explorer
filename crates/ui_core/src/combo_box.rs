@@ -1,9 +1,9 @@
 use std::{any::type_name, str::FromStr};
 
 use anyhow::anyhow;
-use bevy::{math::Vec3Swizzles, prelude::*, window::PrimaryWindow};
+use bevy::{math::Vec3Swizzles, prelude::*, transform::TransformSystem, window::PrimaryWindow};
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
-use bevy_egui::{egui, EguiContext};
+use bevy_egui::{egui, EguiContext, EguiSet};
 
 use crate::{
     ui_actions::{DataChanged, On},
@@ -17,6 +17,7 @@ pub struct ComboBox {
     pub selected: isize,
     pub allow_null: bool,
     pub disabled: bool,
+    pub id_entity: Option<Entity>,
 }
 
 impl ComboBox {
@@ -33,6 +34,14 @@ impl ComboBox {
             selected: initial_selection.unwrap_or(-1),
             allow_null,
             disabled,
+            id_entity: None,
+        }
+    }
+
+    pub fn with_id(self, entity: Entity) -> Self {
+        Self {
+            id_entity: Some(entity),
+            ..self
         }
     }
 
@@ -49,8 +58,12 @@ pub struct ComboBoxPlugin;
 
 impl Plugin for ComboBoxPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup)
-            .add_systems(Update, update_comboboxen);
+        app.add_systems(Startup, setup).add_systems(
+            PostUpdate,
+            update_comboboxen
+                .after(TransformSystem::TransformPropagate)
+                .before(EguiSet::ProcessOutput),
+        );
     }
 }
 
@@ -100,7 +113,9 @@ fn update_comboboxen(
         let topleft = center - size / 2.0;
 
         if matches!(style.display, Display::Flex) {
-            egui::Window::new(format!("{entity:?}"))
+            let id = format!("{:?}", combo.id_entity.unwrap_or(entity));
+
+            egui::Window::new(id.clone())
                 .fixed_pos(topleft.to_array())
                 .fixed_size(size.to_array())
                 .frame(egui::Frame::none())
@@ -125,7 +140,7 @@ fn update_comboboxen(
                     style.visuals.widgets.inactive.weak_bg_fill =
                         egui::Color32::from_rgba_unmultiplied(0, 0, 0, 128);
 
-                    egui::ComboBox::from_id_source(entity)
+                    egui::ComboBox::from_id_source(id)
                         .selected_text(selected_text)
                         .wrap(false)
                         .width(size.x)
@@ -180,9 +195,10 @@ impl DuiTemplate for DuiComboBoxTemplate {
             options: props
                 .take::<Vec<String>>("options")?
                 .ok_or(anyhow!("no options for combobox"))?,
-            selected: props.take::<isize>("selected")?.unwrap_or(-1),
+            selected: props.take_as::<isize>(ctx, "selected")?.unwrap_or(-1),
             allow_null: props.take_as::<bool>(ctx, "allow-null")?.unwrap_or(false),
             disabled: props.take_as::<bool>(ctx, "disabled")?.unwrap_or(false),
+            id_entity: None,
         };
         commands.insert(combobox);
 
@@ -214,6 +230,7 @@ macro_rules! impl_dui_str {
 impl_dui_str!(bool);
 impl_dui_str!(u32);
 impl_dui_str!(usize);
+impl_dui_str!(isize);
 
 impl DuiFromStr for Val {
     fn from_str(_: &DuiContext, value: &str) -> Result<Self, anyhow::Error>

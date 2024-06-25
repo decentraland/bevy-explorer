@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr};
+use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr, sync::Arc};
 
 use bevy::{
     prelude::*,
@@ -6,6 +6,7 @@ use bevy::{
 };
 use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 #[derive(Resource)]
 pub struct Version(pub String);
@@ -192,6 +193,9 @@ pub struct AppConfig {
     pub max_concurrent_remotes: usize,
     pub despawn_workaround: bool,
     pub user_id: String,
+    pub default_permissions: HashMap<PermissionType, PermissionValue>,
+    pub realm_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
+    pub scene_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
 }
 
 impl Default for AppConfig {
@@ -219,6 +223,47 @@ impl Default for AppConfig {
             #[cfg(not(target_os = "linux"))]
             despawn_workaround: false,
             user_id: uuid::Uuid::new_v4().to_string(),
+            default_permissions: Default::default(),
+            realm_permissions: Default::default(),
+            scene_permissions: Default::default(),
+        }
+    }
+}
+
+impl AppConfig {
+    pub fn get_permission(
+        &self,
+        ty: PermissionType,
+        realm: impl AsRef<str>,
+        scene: impl AsRef<str>,
+        is_portable: bool,
+    ) -> PermissionValue {
+        self.scene_permissions
+            .get(scene.as_ref())
+            .and_then(|map| map.get(&ty))
+            .or_else(|| {
+                if !is_portable {
+                    self.realm_permissions
+                        .get(realm.as_ref())
+                        .and_then(|map| map.get(&ty))
+                } else {
+                    None
+                }
+            })
+            .or_else(|| self.default_permissions.get(&ty))
+            .copied()
+            .unwrap_or_else(|| Self::default_permission(ty))
+    }
+
+    pub const fn default_permission(ty: PermissionType) -> PermissionValue {
+        match ty {
+            PermissionType::MovePlayer
+            | PermissionType::ForceCamera
+            | PermissionType::PlayEmote
+            | PermissionType::SetLocomotion
+            | PermissionType::HideAvatars
+            | PermissionType::DisableVoice => PermissionValue::Allow,
+            _ => PermissionValue::Ask,
         }
     }
 }
@@ -454,4 +499,78 @@ pub struct SceneMeta {
     pub scene: SceneMetaScene,
     pub runtime_version: Option<String>,
     pub spawn_points: Option<Vec<SpawnPoint>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum PermissionValue {
+    Allow,
+    Deny,
+    Ask,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum PermissionType {
+    MovePlayer,
+    ForceCamera,
+    PlayEmote,
+    SetLocomotion,
+    HideAvatars,
+    DisableVoice,
+    Teleport,
+    ChangeRealm,
+    SpawnPortable,
+    KillPortables,
+    Web3,
+    Fetch,
+    Websocket,
+    OpenUrl,
+}
+
+#[derive(Resource)]
+pub struct ActiveDialog(Arc<Semaphore>);
+
+impl Default for ActiveDialog {
+    fn default() -> Self {
+        Self(Arc::new(Semaphore::new(1)))
+    }
+}
+
+impl ActiveDialog {
+    pub fn try_acquire(&self) -> Option<DialogPermit> {
+        self.0
+            .clone()
+            .try_acquire_owned()
+            .ok()
+            .map(|p| DialogPermit { _p: p })
+    }
+
+    pub fn in_use(&self) -> bool {
+        self.0.available_permits() == 0
+    }
+}
+
+#[derive(Component)]
+pub struct DialogPermit {
+    _p: OwnedSemaphorePermit,
+}
+
+#[derive(Component, Default, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsTab {
+    ProfileDetail,
+    #[default]
+    Wearables,
+    Emotes,
+    Map,
+    Discover,
+    Settings,
+    Permissions,
+}
+
+#[derive(Event, Clone)]
+pub struct ShowSettingsEvent(pub SettingsTab);
+
+#[derive(Resource, Default)]
+pub struct PermissionTarget {
+    pub scene: Option<Entity>,
+    pub ty: Option<PermissionType>,
 }

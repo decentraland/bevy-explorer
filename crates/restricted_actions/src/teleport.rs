@@ -1,28 +1,47 @@
 use avatar::AvatarDynamicState;
-use bevy::{ecs::system::RunSystemOnce, math::Vec3Swizzles, prelude::*};
-use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
-use common::{rpc::RpcCall, structs::PrimaryUser};
+use bevy::{math::Vec3Swizzles, prelude::*};
+use common::{
+    rpc::{RpcCall, RpcResultSender},
+    structs::{PermissionType, PrimaryUser},
+};
 use comms::global_crdt::ForeignPlayer;
 use ethers_core::rand::{seq::SliceRandom, thread_rng, Rng};
 use scene_runner::{
     initialize_scene::{
         LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, PARCEL_SIZE,
     },
+    permissions::Permission,
     renderer_context::RendererSceneContext,
     update_world::mesh_collider::SceneColliderData,
-    ContainingScene, OutOfWorld,
+    OutOfWorld,
 };
-use ui_core::button::DuiButton;
 use wallet::Wallet;
 
 pub fn teleport_player(
     mut commands: Commands,
     mut events: EventReader<RpcCall>,
-    player: Query<(Entity, &Transform), With<PrimaryUser>>,
-    containing_scene: ContainingScene,
-    dui: Res<DuiRegistry>,
+    mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
+    mut perms: Permission<(IVec2, RpcResultSender<Result<(), String>>)>,
 ) {
-    for (requester, parcel, response) in events.read().filter_map(|ev| match ev {
+    let mut do_teleport = |to: IVec2, response: RpcResultSender<Result<(), String>>| {
+        let Ok((ent, mut transform, mut dynamic_state)) = player.get_single_mut() else {
+            warn!("player doesn't exist?!");
+            response.send(Err("Something went wrong".into()));
+            return;
+        };
+
+        transform.translation.x = to.x as f32 * 16.0 + 8.0;
+        transform.translation.z = -to.y as f32 * 16.0 - 8.0;
+        dynamic_state.velocity = Vec3::ZERO;
+        if let Some(mut commands) = commands.get_entity(ent) {
+            commands.try_insert(OutOfWorld);
+        }
+
+        response.send(Ok(()));
+        info!("teleported to {to}");
+    };
+
+    for (scene, to, response) in events.read().filter_map(|ev| match ev {
         RpcCall::TeleportPlayer {
             scene,
             to,
@@ -30,60 +49,25 @@ pub fn teleport_player(
         } => Some((*scene, *to, response.clone())),
         _ => None,
     }) {
-        if let Some(requester) = requester {
-            if !player.get_single().ok().map_or(false, |(e, ..)| {
-                containing_scene.get(e).contains(&requester)
-            }) {
-                warn!("invalid teleport request from non-containing scene");
-                warn!("request from {requester:?}");
-                warn!(
-                    "containing scenes {:?}",
-                    player.get_single().map(|p| containing_scene.get(p.0))
-                );
-                return;
-            }
-        }
-
-        let response_fail = response.clone();
-
-        let do_teleport = move |mut commands: Commands,
-                                mut player: Query<
-            (Entity, &mut Transform, &mut AvatarDynamicState),
-            With<PrimaryUser>,
-        >| {
-            let Ok((ent, mut transform, mut dynamic_state)) = player.get_single_mut() else {
-                warn!("player doesn't exist?!");
-                response.send(Err("Something went wrong".into()));
-                return;
-            };
-
-            transform.translation.x = parcel.x as f32 * 16.0 + 8.0;
-            transform.translation.z = -parcel.y as f32 * 16.0 - 8.0;
-            dynamic_state.velocity = Vec3::ZERO;
-            if let Some(mut commands) = commands.get_entity(ent) {
-                commands.try_insert(OutOfWorld);
-            }
-
-            response.send(Ok(()));
-            info!("teleported to {parcel}");
-        };
-
-        if requester.is_some() {
-            commands.spawn_template(
-                &dui,
-                "text-dialog",
-                DuiProps::new().with_prop("title", "Teleport".to_owned())
-                    .with_prop("body", format!("The scene wants to teleport you to another location: {},{}\ntodo: put scene name and thumbnail here", parcel.x, parcel.y))
-                    .with_prop("buttons", vec![
-                        DuiButton::new_enabled_and_close("Let's go!", do_teleport),
-                        DuiButton::new_enabled_and_close("No thanks", move || {
-                            response_fail.send(Err("User said no thanks".into()));
-                        }),
-                    ]),
-            ).unwrap();
+        if let Some(scene) = scene {
+            perms.check(
+                PermissionType::Teleport,
+                scene,
+                (to, response.clone()),
+                Some(format!("({},{})", to.x, to.y)),
+                false,
+            );
         } else {
-            commands.add(|w: &mut World| w.run_system_once(do_teleport))
+            do_teleport(to, response);
         }
+    }
+
+    for (to, response) in perms.drain_success(PermissionType::Teleport) {
+        do_teleport(to, response);
+    }
+
+    for (_, response) in perms.drain_fail(PermissionType::Teleport) {
+        response.send(Err("User declined".to_owned()))
     }
 }
 

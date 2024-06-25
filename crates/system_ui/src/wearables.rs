@@ -20,7 +20,7 @@ use collectibles::{
     CollectibleData, CollectibleError, CollectibleManager,
 };
 use common::{
-    structs::PrimaryUser,
+    structs::{PrimaryUser, SettingsTab},
     util::{TaskExt, TryPushChildrenEx},
 };
 use comms::profile::CurrentUserProfile;
@@ -38,7 +38,7 @@ use ui_core::{
     ui_actions::{Click, DataChanged, Enabled, On, UiCaller},
 };
 
-use crate::profile::{SettingsDialog, SettingsTab};
+use crate::profile::SettingsDialog;
 
 pub struct WearableSettingsPlugin;
 

@@ -1,7 +1,4 @@
-use std::{
-    f32::EPSILON,
-    ops::{Add, Sub},
-};
+use std::ops::{Add, Sub};
 
 use bevy::prelude::{Quat, Transform, Vec3};
 
@@ -115,13 +112,13 @@ impl DclTransformAndParent {
 
         let mut scale = self.scale;
         if scale.x == 0.0 {
-            scale.x = EPSILON;
+            scale.x = f32::EPSILON;
         };
         if scale.y == 0.0 {
-            scale.y = EPSILON;
+            scale.y = f32::EPSILON;
         };
         if scale.z == 0.0 {
-            scale.z = EPSILON;
+            scale.z = f32::EPSILON;
         };
 
         Transform {

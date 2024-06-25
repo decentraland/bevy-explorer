@@ -3,6 +3,7 @@ use std::{
     marker::PhantomData,
 };
 
+use avatar::AvatarDynamicState;
 use bevy::{
     ecs::system::SystemParam,
     input::mouse::{MouseMotion, MouseWheel},
@@ -11,7 +12,7 @@ use bevy::{
     window::CursorGrabMode,
 };
 
-use common::structs::{CameraOverride, PrimaryCamera, PrimaryUser};
+use common::structs::{ActiveDialog, CameraOverride, PrimaryCamera, PrimaryUser};
 use input_manager::AcceptInput;
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
@@ -19,7 +20,7 @@ use scene_runner::{
 };
 use tween::SystemTween;
 
-use crate::{CursorLocked, TRANSITION_TIME};
+use crate::TRANSITION_TIME;
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 
@@ -88,7 +89,8 @@ pub fn update_camera(
     mut camera: Query<(&Transform, &mut PrimaryCamera)>,
     mut locked_cursor_position: Local<Option<Vec2>>,
     accept_input: Res<AcceptInput>,
-    mut cursor_locked: ResMut<CursorLocked>,
+    mut cursor_locked: ResMut<system_ui::sysinfo::CursorLocked>,
+    active_dialog: Res<ActiveDialog>,
     mut cinematic_data: Local<Option<CinematicInitialData>>,
     mut mb_state: MouseInteractionState,
 ) {
@@ -175,7 +177,10 @@ pub fn update_camera(
 
     let mut mouse_delta = Vec2::ZERO;
 
-    if accept_input.mouse && state == ClickState::Held || *move_toggled {
+    let in_dialog = active_dialog.in_use();
+    let lock = !in_dialog && (accept_input.mouse && state == ClickState::Held || *move_toggled);
+
+    if lock {
         for mut window in &mut windows {
             if !window.focused {
                 continue;
@@ -183,7 +188,9 @@ pub fn update_camera(
 
             window.cursor.grab_mode = CursorGrabMode::Locked;
             window.cursor.visible = false;
-            cursor_locked.0 = true;
+            if !in_dialog {
+                cursor_locked.0 = true;
+            }
 
             #[cfg(target_os = "windows")]
             {
@@ -198,11 +205,13 @@ pub fn update_camera(
         }
     }
 
-    if state == ClickState::Released {
+    if state == ClickState::Released || in_dialog {
         for mut window in &mut windows {
             window.cursor.grab_mode = CursorGrabMode::None;
             window.cursor.visible = true;
-            cursor_locked.0 = false;
+            if !in_dialog {
+                cursor_locked.0 = false;
+            }
             *locked_cursor_position = None;
         }
     }
@@ -256,6 +265,7 @@ pub fn update_camera(
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn update_camera_position(
     mut commands: Commands,
     mut camera: Query<(
@@ -265,13 +275,16 @@ pub fn update_camera_position(
         &mut Projection,
         Option<&mut SystemTween>,
     )>,
-    mut player: Query<&Transform, (With<PrimaryUser>, Without<PrimaryCamera>)>,
+    mut player: Query<
+        (&Transform, &AvatarDynamicState),
+        (With<PrimaryUser>, Without<PrimaryCamera>),
+    >,
     containing_scene: ContainingScene,
     mut scene_colliders: Query<(&RendererSceneContext, &mut SceneColliderData)>,
     mut prev_override: Local<Option<CameraOverride>>,
 ) {
     let (
-        Ok(player_transform),
+        Ok((player_transform, dynamic_state)),
         Ok((camera_ent, mut camera_transform, options, mut projection, maybe_tween)),
     ) = (player.get_single_mut(), camera.get_single_mut())
     else {
@@ -293,7 +306,7 @@ pub fn update_camera_position(
             *fov = target_fov;
         }
     } else {
-        let target_fov = FRAC_PI_4;
+        let target_fov = (dynamic_state.velocity.length() / 4.0).clamp(1.0, 1.0) * FRAC_PI_4;
         let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
         else {
             panic!();

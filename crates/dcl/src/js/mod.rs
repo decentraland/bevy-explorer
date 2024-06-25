@@ -2,13 +2,11 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
 use bevy::utils::tracing::{debug, error, info_span};
 use deno_core::{
-    anyhow::anyhow,
     ascii_str,
     error::{generic_error, AnyError},
     include_js_files, op2, v8, Extension, JsRuntime, OpDecl, OpState, PollEventLoopOptions,
     RuntimeOptions,
 };
-use deno_websocket::WebSocketPermissions;
 use tokio::sync::mpsc::Receiver;
 
 use ipfs::{IpfsResource, SceneJsFile};
@@ -23,7 +21,10 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 #[cfg(not(feature = "inspect"))]
 pub struct InspectorServer;
 
-use self::fetch::{FP, NP, TP};
+use self::{
+    fetch::{FP, NP, TP},
+    websocket::WebSocketPerms,
+};
 
 use super::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
@@ -46,32 +47,12 @@ pub mod events;
 pub mod inspector;
 pub mod player;
 pub mod testing;
+pub mod websocket;
 
 // marker to indicate shutdown has been triggered
 pub struct ShuttingDown;
 
 pub struct RendererStore(pub CrdtStore);
-
-pub struct WebSocketPerms {
-    preview: bool,
-}
-
-impl WebSocketPermissions for WebSocketPerms {
-    fn check_net_url(
-        &mut self,
-        url: &deno_core::url::Url,
-        _api_name: &str,
-    ) -> Result<(), AnyError> {
-        // TODO scene permissions
-
-        // must use `wss`
-        if self.preview || url.scheme() == "wss" {
-            Ok(())
-        } else {
-            Err(anyhow!("URL scheme must be `wss`"))
-        }
-    }
-}
 
 pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<InspectorServer>) {
     // add fetch stack
@@ -117,7 +98,8 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
         ops.extend(set);
     }
 
-    let override_sets: [Vec<deno_core::OpDecl>; 1] = [fetch::override_ops()];
+    let override_sets: [Vec<deno_core::OpDecl>; 2] =
+        [fetch::override_ops(), websocket::override_ops()];
 
     for set in override_sets {
         for op in set {
@@ -142,6 +124,7 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
                 debug!("replace: {}", op.name);
                 op.with_implementation_from(custom_op)
             } else {
+                debug!("default: {}", op.name);
                 op
             }
         })),

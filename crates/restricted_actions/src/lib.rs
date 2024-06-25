@@ -13,10 +13,13 @@ use bevy::{
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
-    rpc::{PortableLocation, RpcCall, RpcEventSender, RpcResultSender, SpawnResponse},
+    rpc::{
+        PortableLocation, RPCSendableMessage, RpcCall, RpcEventSender, RpcResultSender,
+        SpawnResponse,
+    },
     sets::SceneSets,
-    structs::{PrimaryCamera, PrimaryUser},
-    util::TaskExt,
+    structs::{PermissionType, PrimaryCamera, PrimaryUser},
+    util::{FireEventEx, TaskExt},
 };
 use comms::{
     global_crdt::ForeignPlayer,
@@ -32,11 +35,12 @@ use scene_runner::{
     initialize_scene::{
         LiveScenes, PortableScenes, PortableSource, SceneHash, SceneLoading, PARCEL_SIZE,
     },
+    permissions::Permission,
     renderer_context::RendererSceneContext,
     update_world::gltf_container::{GltfDefinition, GltfProcessed},
     ContainingScene, SceneEntity,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use teleport::{handle_out_of_world, teleport_player};
 use ui_core::button::DuiButton;
 use wallet::{browser_auth::remote_send_async, Wallet};
@@ -68,9 +72,13 @@ impl Plugin for RestrictedActionsPlugin {
                     teleport_player,
                     handle_out_of_world,
                     open_nft_dialog,
-                    show_nft_dialog,
                 ),
-                (handle_eth_async, handle_texture_size),
+                (
+                    show_nft_dialog,
+                    handle_eth_async,
+                    handle_texture_size,
+                    handle_generic_perm,
+                ),
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -82,6 +90,7 @@ pub fn move_player(
     scenes: Query<&RendererSceneContext>,
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
     containing_scene: ContainingScene,
+    mut perms: Permission<(Entity, Vec3, Option<Vec3>)>,
 ) {
     for (root, translation, looking_at) in events.read().filter_map(|ev| match ev {
         RpcCall::MovePlayer {
@@ -91,30 +100,27 @@ pub fn move_player(
         } => Some((scene, to, looking_at)),
         _ => None,
     }) {
-        let Ok(scene) = scenes.get(*root) else {
+        perms.check(
+            PermissionType::MovePlayer,
+            *root,
+            (*root, *translation, *looking_at),
+            None,
+            false,
+        );
+    }
+
+    for (root, translation, looking_at) in perms.drain_success(PermissionType::MovePlayer) {
+        let Ok(scene) = scenes.get(root) else {
+            warn!("move player request from invalid scene {root:?}");
             continue;
         };
 
-        if !player
-            .get_single()
-            .ok()
-            .map_or(false, |(e, ..)| containing_scene.get(e).contains(root))
-        {
-            warn!("invalid move request from non-containing scene");
-            warn!("request from {root:?}");
-            warn!(
-                "containing scenes {:?}",
-                player.get_single().map(|p| containing_scene.get(p.0))
-            );
-            return;
-        }
-
-        let mut target_translation = *translation;
+        let mut target_translation = translation;
         target_translation +=
             (scene.base * IVec2::new(1, -1)).as_vec2().extend(0.0).xzy() * PARCEL_SIZE;
 
         let target_scenes = containing_scene.get_position(target_translation);
-        if !target_scenes.contains(root) {
+        if !target_scenes.contains(&root) {
             warn!("move player request from {root:?} was outside scene bounds");
         } else {
             let (_, mut player_transform, mut dynamics) = player.single_mut();
@@ -124,7 +130,7 @@ pub fn move_player(
             if let Some(looking_at) = looking_at {
                 let rotation = Transform::IDENTITY
                     .looking_at(
-                        (*looking_at - *translation) * Vec3::new(1.0, 0.0, 1.0),
+                        (looking_at - translation) * Vec3::new(1.0, 0.0, 1.0),
                         Vec3::Y,
                     )
                     .rotation;
@@ -136,6 +142,8 @@ pub fn move_player(
             }
         }
     }
+
+    for _ in perms.drain_fail(PermissionType::MovePlayer) {}
 }
 
 pub fn move_camera(
@@ -178,9 +186,7 @@ pub fn move_camera(
 fn change_realm(
     mut commands: Commands,
     mut events: EventReader<RpcCall>,
-    containing_scene: ContainingScene,
-    player: Query<Entity, With<PrimaryUser>>,
-    dui: Res<DuiRegistry>,
+    mut perms: Permission<(String, RpcResultSender<Result<(), String>>)>,
 ) {
     for (scene, to, message, response) in events.read().filter_map(|ev| match ev {
         RpcCall::ChangeRealm {
@@ -191,65 +197,28 @@ fn change_realm(
         } => Some((scene, to, message, response.clone())),
         _ => None,
     }) {
-        if !player
-            .get_single()
-            .ok()
-            .map_or(false, |e| containing_scene.get(e).contains(scene))
-        {
-            warn!("invalid changeRealm request from non-containing scene");
-            return;
-        }
+        perms.check(
+            PermissionType::ChangeRealm,
+            *scene,
+            (to.clone(), response.clone()),
+            message.clone(),
+            false,
+        );
+    }
 
-        let new_realm = to.clone();
-        let response_ok = response.clone();
-        let response_fail = response.clone();
+    for (new_realm, response) in perms.drain_success(PermissionType::ChangeRealm) {
+        commands.fire_event(ChangeRealmEvent { new_realm });
+        response.send(Ok(()));
+    }
 
-        commands
-            .spawn_template(
-                &dui,
-                "text-dialog",
-                DuiProps::new()
-                    .with_prop("title", "Change Realm".to_owned())
-                    .with_prop(
-                        "body",
-                        format!(
-                            "The scene wants to move you to a new realm\n`{}`\n{}",
-                            to.clone(),
-                            if let Some(message) = message {
-                                message
-                            } else {
-                                ""
-                            }
-                        ),
-                    )
-                    .with_prop(
-                        "buttons",
-                        vec![
-                            DuiButton::new_enabled_and_close(
-                                "Let's go!",
-                                move |mut writer: EventWriter<ChangeRealmEvent>| {
-                                    writer.send(ChangeRealmEvent {
-                                        new_realm: new_realm.clone(),
-                                    });
-                                    response_ok.send(Ok(()));
-                                },
-                            ),
-                            DuiButton::new_enabled_and_close("No thanks", move || {
-                                response_fail.send(Err(String::default()));
-                            }),
-                        ],
-                    ),
-            )
-            .unwrap();
+    for (_, response) in perms.drain_fail(PermissionType::ChangeRealm) {
+        response.send(Err("Denied".to_owned()));
     }
 }
 
 fn external_url(
-    mut commands: Commands,
     mut events: EventReader<RpcCall>,
-    containing_scene: ContainingScene,
-    player: Query<Entity, With<PrimaryUser>>,
-    dui: Res<DuiRegistry>,
+    mut perms: Permission<(RpcResultSender<Result<(), String>>, String)>,
 ) {
     for (scene, url, response) in events.read().filter_map(|ev| match ev {
         RpcCall::ExternalUrl {
@@ -259,55 +228,31 @@ fn external_url(
         } => Some((scene, url, response)),
         _ => None,
     }) {
-        if !player
-            .get_single()
-            .ok()
-            .map_or(false, |e| containing_scene.get(e).contains(scene))
-        {
-            warn!("invalid changeRealm request from non-containing scene");
-            return;
-        }
+        perms.check(
+            PermissionType::OpenUrl,
+            *scene,
+            (response.clone(), url.clone()),
+            Some(url.clone()),
+            false,
+        );
+    }
 
-        let url = url.clone();
-        let response_ok = response.clone();
-        let response_fail = response.clone();
+    for (response, url) in perms.drain_success(PermissionType::OpenUrl) {
+        let result = opener::open(Path::new(&url)).map_err(|e| e.to_string());
+        response.send(result);
+    }
 
-        commands
-            .spawn_template(
-                &dui,
-                "text-dialog",
-                DuiProps::new()
-                    .with_prop("title", "Open External Link".to_owned())
-                    .with_prop(
-                        "body",
-                        format!(
-                            "The scene wants to display a link in an external application\n`{}`",
-                            url.clone(),
-                        ),
-                    )
-                    .with_prop(
-                        "buttons",
-                        vec![
-                            DuiButton::new_enabled_and_close("Ok", move || {
-                                let result =
-                                    opener::open(Path::new(&url)).map_err(|e| e.to_string());
-                                response_ok.send(result);
-                            }),
-                            DuiButton::new_enabled_and_close("Cancel", move || {
-                                response_fail.send(Err(String::default()));
-                            }),
-                        ],
-                    ),
-            )
-            .unwrap();
+    for (response, _) in perms.drain_fail(PermissionType::OpenUrl) {
+        response.send(Err(String::default()));
     }
 }
 
 type SpawnResponseChannel = Option<tokio::sync::oneshot::Sender<Result<SpawnResponse, String>>>;
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn spawn_portable(
-    mut portables: ResMut<PortableScenes>,
+    mut commands: Commands,
+    current_portables: Res<PortableScenes>,
     mut events: EventReader<RpcCall>,
     mut pending_lookups: Local<
         Vec<(
@@ -318,7 +263,15 @@ fn spawn_portable(
     mut pending_responses: Local<HashMap<String, SpawnResponseChannel>>,
     live_scenes: Res<LiveScenes>,
     scenes: Query<(Option<&RendererSceneContext>, Option<&SceneLoading>)>,
+    mut perms: Permission<(
+        Entity,
+        PortableLocation,
+        RpcResultSender<Result<SpawnResponse, String>>,
+    )>,
 ) {
+    let mut new_portables = HashMap::default();
+    let mut failed_portables = HashSet::default();
+
     // process incoming events
     for (location, spawner, response) in events.read().filter_map(|ev| match ev {
         RpcCall::SpawnPortable {
@@ -328,6 +281,22 @@ fn spawn_portable(
         } => Some((location, spawner, response)),
         _ => None,
     }) {
+        perms.check(
+            PermissionType::SpawnPortable,
+            *spawner,
+            (*spawner, location.clone(), response.clone()),
+            None,
+            false,
+        );
+    }
+
+    for (spawner, location, response) in perms.drain_success(PermissionType::SpawnPortable) {
+        let Ok((Some(scene), _)) = scenes.get(spawner) else {
+            response.send(Err("Scene entity not found".to_owned()));
+            continue;
+        };
+        let parent_hash = scene.hash.clone();
+
         match location {
             PortableLocation::Urn(urn) => {
                 let hacked_urn = urn.replace('?', "?=&");
@@ -342,18 +311,17 @@ fn spawn_portable(
                     continue;
                 };
 
-                portables.0.insert(
+                new_portables.insert(
                     hash.clone(),
                     PortableSource {
                         pid: hacked_urn,
-                        parent_scene: spawner.clone(),
+                        parent_scene: Some(parent_hash),
                         ens: None,
                     },
                 );
                 pending_responses.insert(hash, Some(response.take()));
             }
             PortableLocation::Ens(ens) => {
-                let spawner = spawner.clone();
                 let ens = ens.clone();
                 pending_lookups.push((
                     IoTaskPool::get().spawn(async move {
@@ -394,7 +362,7 @@ fn spawn_portable(
                             hash,
                             PortableSource {
                                 pid: hacked_urn,
-                                parent_scene: spawner.clone(),
+                                parent_scene: Some(parent_hash),
                                 ens: Some(ens),
                             },
                         ))
@@ -405,12 +373,16 @@ fn spawn_portable(
         }
     }
 
+    for (_, _, response) in perms.drain_fail(PermissionType::SpawnPortable) {
+        response.send(Err("permission denied".to_owned()));
+    }
+
     // process pending lookups
     pending_lookups.retain_mut(|(ref mut task, ref mut response)| {
         if let Some(result) = task.complete() {
             match result {
                 Ok((hash, source)) => {
-                    portables.0.insert(hash.clone(), source);
+                    new_portables.insert(hash.clone(), source);
                     pending_responses.insert(hash, response.take());
                 }
                 Err(e) => {
@@ -429,7 +401,7 @@ fn spawn_portable(
     pending_responses.retain(|hash, sender| {
         let mut fail = |msg: String| -> bool {
             let _ = sender.take().unwrap().send(Err(msg));
-            portables.0.remove(hash);
+            failed_portables.insert(hash.clone());
             false
         };
 
@@ -448,7 +420,7 @@ fn spawn_portable(
         }
 
         if let Some(context) = maybe_context {
-            if let Some(source) = portables.0.get(hash) {
+            if let Some(source) = current_portables.0.get(hash) {
                 let _ = sender.take().unwrap().send(Ok(SpawnResponse {
                     pid: source.pid.clone(),
                     parent_cid: source.parent_scene.clone().unwrap_or_default(),
@@ -467,13 +439,50 @@ fn spawn_portable(
         debug!("waiting for context, load state is {maybe_loading:?}");
         true
     });
+
+    // deferred write to PortableScenes (we can't take it mutably as it is used in Permissions)
+    if !new_portables.is_empty() {
+        commands.add(move |world: &mut World| {
+            let mut portables = world.resource_mut::<PortableScenes>();
+            portables.0.extend(new_portables);
+        });
+    }
+    if !failed_portables.is_empty() {
+        commands.add(move |world: &mut World| {
+            let mut portables = world.resource_mut::<PortableScenes>();
+            for portable in failed_portables {
+                portables.0.remove(&portable);
+            }
+        });
+    }
 }
 
-fn kill_portable(mut portables: ResMut<PortableScenes>, mut events: EventReader<RpcCall>) {
-    for (location, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::KillPortable { location, response } => Some((location, response)),
+fn kill_portable(
+    mut commands: Commands,
+    portables: Res<PortableScenes>,
+    mut events: EventReader<RpcCall>,
+    mut perms: Permission<(PortableLocation, RpcResultSender<bool>)>,
+) {
+    let mut kill_portables = HashSet::default();
+
+    for (scene, location, response) in events.read().filter_map(|ev| match ev {
+        RpcCall::KillPortable {
+            scene,
+            location,
+            response,
+        } => Some((scene, location, response)),
         _ => None,
     }) {
+        perms.check(
+            PermissionType::KillPortables,
+            *scene,
+            (location.clone(), response.clone()),
+            Some(format!("{:?}", location)),
+            false,
+        );
+    }
+
+    for (location, response) in perms.drain_success(PermissionType::KillPortables) {
         match location {
             PortableLocation::Urn(urn) => {
                 let hacked_urn = urn.replace('?', "?=&");
@@ -488,10 +497,32 @@ fn kill_portable(mut portables: ResMut<PortableScenes>, mut events: EventReader<
                     continue;
                 };
 
-                response.send(portables.0.remove(&hash).is_some());
+                if portables.0.contains_key(&hash) {
+                    response.send(true);
+                    kill_portables.insert(hash.clone());
+                } else {
+                    response.send(false);
+                }
             }
-            _ => unimplemented!(),
+            _ => {
+                warn!("unimplemented kill(Ens(..))");
+                response.send(false);
+            }
         }
+    }
+
+    for (_, response) in perms.drain_fail(PermissionType::KillPortables) {
+        response.send(false);
+    }
+
+    // deferred write to avoid resource conflict
+    if !kill_portables.is_empty() {
+        commands.add(|world: &mut World| {
+            let mut portables = world.resource_mut::<PortableScenes>();
+            for killed in kill_portables {
+                portables.0.remove(&killed);
+            }
+        })
     }
 }
 
@@ -964,8 +995,6 @@ fn show_nft_dialog(
 #[allow(clippy::type_complexity)]
 pub fn handle_eth_async(
     mut events: EventReader<RpcCall>,
-    containing_scene: ContainingScene,
-    primary_user: Query<Entity, With<PrimaryUser>>,
     scenes: Query<&RendererSceneContext>,
     wallet: Res<Wallet>,
     time: Res<Time>,
@@ -975,6 +1004,7 @@ pub fn handle_eth_async(
             Task<Result<serde_json::Value, anyhow::Error>>,
         )>,
     >,
+    mut perms: Permission<(RPCSendableMessage, RpcResultSender<Result<Value, String>>)>,
 ) {
     for (body, scene, response) in events.read().filter_map(|ev| match ev {
         RpcCall::SendAsync {
@@ -984,16 +1014,6 @@ pub fn handle_eth_async(
         } => Some((body, scene, response)),
         _ => None,
     }) {
-        debug!("[{:?}] handle_eth_async {:?}", scene, body);
-
-        if primary_user
-            .get_single()
-            .map_or(true, |player| !containing_scene.get(player).contains(scene))
-        {
-            response.send(Err("player not in scene.".to_owned()));
-            continue;
-        }
-
         let last_action_time = scenes
             .get(*scene)
             .ok()
@@ -1008,6 +1028,17 @@ pub fn handle_eth_async(
             continue;
         }
 
+        debug!("[{:?}] handle_eth_async {:?}", scene, body);
+        perms.check(
+            PermissionType::Web3,
+            *scene,
+            (body.clone(), response.clone()),
+            None,
+            false,
+        );
+    }
+
+    for (body, response) in perms.drain_success(PermissionType::Web3) {
         if wallet.is_guest() || wallet.address().is_none() {
             response.send(Err("wallet not connected".to_owned()));
             continue;
@@ -1017,6 +1048,10 @@ pub fn handle_eth_async(
             response.clone(),
             IoTaskPool::get().spawn(remote_send_async(body.clone(), wallet.auth_chain().ok())),
         ));
+    }
+
+    for (_, response) in perms.drain_fail(PermissionType::Web3) {
+        response.send(Err("permission denied".to_owned()));
     }
 
     tasks.retain_mut(|(response, task)| {
@@ -1066,4 +1101,43 @@ pub fn handle_texture_size(
             false
         }
     });
+}
+
+pub fn handle_generic_perm(
+    mut events: EventReader<RpcCall>,
+    mut perms: Permission<RpcResultSender<bool>>,
+    mut tys: Local<HashSet<PermissionType>>,
+) {
+    for ev in events.read() {
+        if let RpcCall::RequestGenericPermission {
+            scene,
+            ty,
+            message,
+            response,
+        } = ev
+        {
+            let allow_out_of_scene = matches!(
+                ty,
+                PermissionType::HideAvatars | PermissionType::Fetch | PermissionType::Websocket
+            );
+
+            perms.check(
+                *ty,
+                *scene,
+                response.clone(),
+                message.clone(),
+                allow_out_of_scene,
+            );
+            tys.insert(*ty);
+        }
+    }
+
+    for ty in &tys {
+        for response in perms.drain_success(*ty) {
+            response.send(true);
+        }
+        for response in perms.drain_fail(*ty) {
+            response.send(false);
+        }
+    }
 }

@@ -9,6 +9,8 @@ pub mod login;
 pub mod map;
 pub mod mic;
 pub mod oow;
+pub mod permission_manager;
+pub mod permissions;
 pub mod profile;
 pub mod profile_detail;
 pub mod sysinfo;
@@ -19,13 +21,17 @@ pub mod wearables;
 use bevy::prelude::*;
 
 use change_realm::ChangeRealmPlugin;
-use common::{sets::SetupSets, structs::UiRoot};
+use common::{
+    sets::SetupSets,
+    structs::{ActiveDialog, UiRoot},
+};
 use emote_select::EmoteUiPlugin;
 use input_manager::MouseInteractionComponent;
 use login::LoginPlugin;
 use map::MapPlugin;
 use mic::MicUiPlugin;
 use oow::OowUiPlugin;
+use permission_manager::PermissionPlugin;
 use profile_detail::ProfileDetailPlugin;
 use toasts::ToastsPlugin;
 use tooltip::ToolTipPlugin;
@@ -36,7 +42,8 @@ pub struct SystemUiPlugin;
 
 impl Plugin for SystemUiPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(SystemUiRoot(Entity::PLACEHOLDER));
+        app.insert_resource(SystemUiRoot(Entity::PLACEHOLDER))
+            .init_resource::<ActiveDialog>();
         app.add_systems(
             Startup,
             setup.in_set(SetupSets::Init).before(SetupSets::Main),
@@ -55,6 +62,7 @@ impl Plugin for SystemUiPlugin {
             MapPlugin,
             ProfileDetailPlugin,
             OowUiPlugin,
+            PermissionPlugin,
         ));
     }
 }

@@ -1,0 +1,39 @@
+<define-template id="permission-dialog-wrapper">
+    <fullscreen-block>
+        <bounds 
+            style="
+                flex-direction: column;
+                overflow-x: hidden;
+                overflow-y: hidden;
+                align-items: center;
+                padding: 4vmin;
+                max-width: 90%;
+                max-height: 80%;
+            "
+            corner-size="4vmin"
+            blend-size="0.25vmin"
+            border-size="2vmin"
+            border-color="#1C298aff"
+            color="#aa1fc166"
+        >
+            <large-text style="margin: 2vmin; text-align: center; color: white;" text="@title" />
+            <hr />
+            <apply-children />
+            <hr />
+            <div style="width: 100%">
+                <space />
+                <div style="flex-direction: column">
+                    <button-set buttons="@buttons" />
+                    <combo-box options="@options" selected="0" onchanged="@option-changed" />
+                </div>
+                <button-set buttons="@buttons2" />
+            </div>
+        </bounds>
+    </fullscreen-block>
+</define-template>
+
+<define-template id="permission-text-dialog">
+    <permission-dialog-wrapper title="@title" buttons="@buttons" buttons2="@buttons2" options="@options" option-changed="@option-changed">
+        <med-text text="@body" />
+    </permission-dialog-wrapper>
+</define-template>

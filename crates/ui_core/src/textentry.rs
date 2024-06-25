@@ -1,13 +1,13 @@
 use crate::{
     combo_box::PropsExt,
-    ui_actions::{DataChanged, On},
+    ui_actions::{DataChanged, On, Submit},
     ModifyComponentExt,
 };
-use bevy::{math::Vec3Swizzles, prelude::*, utils::HashSet, window::PrimaryWindow};
+use bevy::{math::Vec3Swizzles, prelude::*, transform::TransformSystem, window::PrimaryWindow};
 use bevy_dui::{DuiRegistry, DuiTemplate};
 use bevy_egui::{
     egui::{self, TextEdit},
-    EguiContext,
+    EguiContext, EguiSet,
 };
 
 use super::focus::Focus;
@@ -43,8 +43,13 @@ pub struct TextEntryPlugin;
 
 impl Plugin for TextEntryPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup)
-            .add_systems(Update, update_text_entry_components);
+        app.add_systems(Startup, setup).add_systems(
+            PostUpdate,
+            (apply_deferred, update_text_entry_components)
+                .chain()
+                .after(TransformSystem::TransformPropagate)
+                .before(EguiSet::ProcessOutput),
+        );
     }
 }
 
@@ -61,14 +66,11 @@ pub fn update_text_entry_components(
         Option<&mut Interaction>,
         Option<&Focus>,
     )>,
-    mut lost_focus: RemovedComponents<Focus>,
 ) {
     let Ok(mut ctx) = egui_ctx.get_single_mut() else {
         return;
     };
     let ctx = ctx.get_mut();
-
-    let lost_focus = lost_focus.read().collect::<HashSet<_>>();
 
     for (entity, mut textbox, style, node, transform, maybe_interaction, maybe_focus) in
         text_entries.iter_mut()
@@ -78,8 +80,10 @@ pub fn update_text_entry_components(
         let size = node.unrounded_size() / ctx.zoom_factor() - Vec2::Y * margin;
         let topleft = center - size / 2.0;
 
+        let id = textbox.id_entity.unwrap_or(entity);
+
         if matches!(style.display, Display::Flex) {
-            egui::Window::new(format!("{:?}", textbox.id_entity.unwrap_or(entity)))
+            egui::Window::new(format!("{:?}", id))
                 .fixed_pos(topleft.to_array())
                 .fixed_size(size.to_array())
                 .vscroll(textbox.multiline > 1)
@@ -117,7 +121,8 @@ pub fn update_text_entry_components(
                                 .font(egui::FontId::new(
                                     *font_size as f32,
                                     egui::FontFamily::Proportional,
-                                )),
+                                ))
+                                .id_source(id),
                         ),
                         many => ui.add_enabled(
                             enabled,
@@ -130,12 +135,14 @@ pub fn update_text_entry_components(
                                 .font(egui::FontId::new(
                                     *font_size as f32,
                                     egui::FontFamily::Proportional,
-                                )),
+                                ))
+                                .id_source(id),
                         ),
                     };
 
                     if response.changed() && !textbox.accept_line {
-                        commands.entity(entity).try_insert(DataChanged);
+                        debug!("change on {:?}", entity);
+                        commands.entity(entity).insert(DataChanged);
                     }
 
                     // pass through focus and interaction
@@ -146,10 +153,14 @@ pub fn update_text_entry_components(
                             response.request_focus();
                             textbox.messages.push(message);
                             commands.entity(entity).try_insert(DataChanged);
+                            debug!("accept -> stash {:?}", entity);
                         } else {
                             commands.entity(entity).remove::<Focus>();
                             defocus = true;
+                            debug!("accept -> defocus {:?}", entity);
                         }
+                        debug!("submit on {:?}", entity);
+                        commands.entity(entity).try_insert(Submit);
                     }
                     if let Some(mut interaction) = maybe_interaction {
                         if response.has_focus() {
@@ -161,16 +172,19 @@ pub fn update_text_entry_components(
                         }
                     }
                     if maybe_focus.is_some() && !response.has_focus() && !defocus && enabled {
-                        debug!("Focus -> tb focus");
+                        debug!(
+                            "Focus -> tb focus ({:?} has focus now)",
+                            response.ctx.memory(|mem| mem.focus())
+                        );
                         response.request_focus();
                     }
                     if maybe_focus.is_none() {
-                        if lost_focus.contains(&entity) {
-                            debug!("!Focus -> tb surrender focus");
-                            response.surrender_focus()
-                        } else if response.has_focus() {
-                            debug!("tb focus -> Focus");
+                        if response.gained_focus() {
+                            debug!("tb gained focus -> Focus");
                             commands.entity(entity).try_insert(Focus);
+                        } else if response.has_focus() {
+                            debug!("tb focus -> Focus? na");
+                            response.surrender_focus();
                         }
                     }
                 });

@@ -24,6 +24,8 @@ pub struct Enabled(pub bool);
 
 #[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
 pub struct UiActionSet;
+#[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
+pub struct UiFocusActionSet;
 
 #[derive(Resource, Deref)]
 pub struct UiCaller(pub Entity);
@@ -38,6 +40,7 @@ impl Plugin for UiActionPlugin {
             .init_resource::<UiActions<Focus>>()
             .init_resource::<UiActions<Defocus>>()
             .init_resource::<UiActions<DataChanged>>()
+            .init_resource::<UiActions<Submit>>()
             .init_resource::<UiActions<Dragged>>()
             .init_resource::<UiActions<ClickNoDrag>>()
             .init_resource::<UiActions<MouseWheeled>>()
@@ -51,9 +54,8 @@ impl Plugin for UiActionPlugin {
                         gather_actions::<Click>,
                         gather_actions::<ClickRepeat>,
                         gather_actions::<HoverExit>,
-                        gather_actions::<Focus>,
-                        gather_actions::<Defocus>,
                         gather_actions::<DataChanged>,
+                        gather_actions::<Submit>,
                         gather_actions::<Dragged>,
                         gather_actions::<ClickNoDrag>,
                         gather_actions::<MouseWheeled>,
@@ -65,9 +67,8 @@ impl Plugin for UiActionPlugin {
                         run_actions::<Click>,
                         run_actions::<ClickRepeat>,
                         run_actions::<HoverExit>,
-                        run_actions::<Focus>,
-                        run_actions::<Defocus>,
                         run_actions::<DataChanged>,
+                        run_actions::<Submit>,
                         run_actions::<Dragged>,
                         run_actions::<ClickNoDrag>,
                         run_actions::<MouseWheeled>,
@@ -78,6 +79,17 @@ impl Plugin for UiActionPlugin {
                     .after(UiSystem::Focus)
                     .in_set(SceneSets::UiActions)
                     .in_set(UiActionSet),
+            )
+            .add_systems(
+                PreUpdate,
+                (
+                    (gather_actions::<Focus>, gather_actions::<Defocus>).chain(),
+                    apply_deferred,
+                    (run_actions::<Focus>, run_actions::<Defocus>).chain(),
+                )
+                    .chain()
+                    .after(UiActionSet)
+                    .in_set(UiFocusActionSet),
             );
     }
 }
@@ -177,6 +189,23 @@ impl ActionMarker for DataChanged {
     type Component = Option<Ref<'static, DataChanged>>;
     fn activate(param: <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool {
         param.map(|p| p.is_changed()).unwrap_or(false)
+    }
+
+    fn repeat_activate() -> bool {
+        true
+    }
+}
+
+#[derive(Component)]
+pub struct Submit;
+impl ActionMarker for Submit {
+    type Component = Option<Ref<'static, Submit>>;
+    fn activate(param: <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool {
+        param.map(|p| p.is_changed()).unwrap_or(false)
+    }
+
+    fn repeat_activate() -> bool {
+        true
     }
 }
 
@@ -431,13 +460,18 @@ impl<E: Event + Default> EventDefaultExt for E {
 
 pub trait EventCloneExt {
     fn send_value_on<A: ActionMarker>(self) -> On<A>;
+    fn send_value(self) -> impl FnMut(EventWriter<Self>);
 }
 
 impl<E: Event + Clone> EventCloneExt for E {
     fn send_value_on<A: ActionMarker>(self) -> On<A> {
-        On::<A>::new(move |mut e: EventWriter<Self>| {
+        On::<A>::new(Self::send_value(self))
+    }
+
+    fn send_value(self) -> impl FnMut(EventWriter<Self>) {
+        move |mut e: EventWriter<Self>| {
             e.send(self.clone());
-        })
+        }
     }
 }
 

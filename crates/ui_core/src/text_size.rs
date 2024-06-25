@@ -1,11 +1,12 @@
 use bevy::{
     prelude::*,
+    text::BreakLineOn,
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};
 use bevy_egui::EguiSettings;
 
-use crate::ModifyComponentExt;
+use crate::{combo_box::PropsExt, ModifyComponentExt};
 
 pub struct TextSizePlugin;
 
@@ -28,7 +29,7 @@ impl DuiTemplate for TextTemplate {
     fn render(
         &self,
         commands: &mut bevy::ecs::system::EntityCommands,
-        _: bevy_dui::DuiProps,
+        mut props: bevy_dui::DuiProps,
         ctx: &mut bevy_dui::DuiContext,
     ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
         commands.insert(FontSize(self.0));
@@ -37,7 +38,13 @@ impl DuiTemplate for TextTemplate {
         } else {
             ctx.asset_server().load("fonts/NotoSans-Bold.ttf")
         };
+        let wrap = props.take_as::<bool>(ctx, "wrap")?.unwrap_or(true);
         commands.modify_component(move |text: &mut Text| {
+            text.linebreak_behavior = if wrap {
+                BreakLineOn::WordBoundary
+            } else {
+                BreakLineOn::NoWrap
+            };
             for section in &mut text.sections {
                 section.style.font = font.clone();
             }

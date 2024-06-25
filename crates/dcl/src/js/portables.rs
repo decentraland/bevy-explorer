@@ -32,14 +32,14 @@ async fn op_portable_spawn(
         _ => anyhow::bail!("provide exactly one of `pid` and `ens`"),
     };
 
-    let spawner = Some(state.borrow().borrow::<CrdtContext>().hash.clone());
+    let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
 
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::SpawnPortable {
             location,
-            spawner,
+            spawner: scene,
             response: sx.into(),
         });
 
@@ -56,12 +56,13 @@ async fn op_portable_kill(
     debug!("op_portable_kill");
     let (sx, rx) = tokio::sync::oneshot::channel::<bool>();
 
-    // might not be a urn, who even knows
+    let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
 
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::KillPortable {
+            scene,
             location: PortableLocation::Urn(pid.clone()),
             response: sx.into(),
         });

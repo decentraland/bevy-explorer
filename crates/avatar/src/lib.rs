@@ -1258,12 +1258,7 @@ fn process_avatar(
                             valign: 0.0,
                             halign: 0.0,
                             add_y_pix: 0.0,
-                            bounds: Vec4::new(
-                                std::f32::MIN,
-                                std::f32::MIN,
-                                std::f32::MAX,
-                                std::f32::MAX,
-                            ),
+                            bounds: Vec4::new(f32::MIN, f32::MIN, f32::MAX, f32::MAX),
                             view: ui_view.view,
                             ui_node: label_ui,
                         },

@@ -15,6 +15,7 @@ comms = { workspace = true }
 wallet = { workspace = true }
 dcl_component = { workspace = true }
 nft = { workspace = true }
+system_ui = { workspace = true }
 
 bevy = { workspace = true }
 bevy_dui = { workspace = true }

@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::profile::SerializedProfile;
+use crate::{profile::SerializedProfile, structs::PermissionType};
 
 pub trait DynRpcResult: std::any::Any + std::fmt::Debug + Send + Sync + 'static {
     fn as_any(&mut self) -> &mut dyn Any;
@@ -118,10 +118,11 @@ pub enum RpcCall {
     },
     SpawnPortable {
         location: PortableLocation,
-        spawner: Option<String>,
+        spawner: Entity,
         response: RpcResultSender<Result<SpawnResponse, String>>,
     },
     KillPortable {
+        scene: Entity,
         location: PortableLocation,
         response: RpcResultSender<bool>,
     },
@@ -207,5 +208,11 @@ pub enum RpcCall {
         scene: Entity,
         src: String,
         response: RpcResultSender<Result<Vec2, String>>,
+    },
+    RequestGenericPermission {
+        scene: Entity,
+        ty: PermissionType,
+        message: Option<String>,
+        response: RpcResultSender<bool>,
     },
 }

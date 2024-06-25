@@ -1,8 +1,16 @@
-use bevy::{input::mouse::MouseWheel, prelude::*, utils::HashMap, window::PrimaryWindow};
+use bevy::{
+    input::mouse::MouseWheel, prelude::*, transform::TransformSystem, utils::HashMap,
+    window::PrimaryWindow,
+};
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
 use common::util::TryPushChildrenEx;
 
-use crate::interact_style::{InteractStyle, InteractStyles};
+use crate::{
+    bound_node::{BoundedNode, BoundedNodeBundle, NodeBounds},
+    interact_style::{InteractStyle, InteractStyles},
+    ui_actions::DataChanged,
+    ModifyComponentExt, ModifyDefaultComponentExt,
+};
 
 use super::ui_builder::SpawnSpacer;
 
@@ -11,7 +19,11 @@ pub struct ScrollablePlugin;
 impl Plugin for ScrollablePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup)
-            .add_systems(Update, update_scrollables);
+            .add_systems(
+                PostUpdate,
+                update_scrollables.after(TransformSystem::TransformPropagate),
+            )
+            .add_event::<ScrollTargetEvent>();
     }
 }
 
@@ -77,7 +89,7 @@ impl SpawnScrollable for ChildBuilder<'_> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum ScrollDirection {
     Vertical(StartPosition),
     Horizontal(StartPosition),
@@ -90,12 +102,13 @@ impl Default for ScrollDirection {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum StartPosition {
     Start,
     #[default]
     Center,
     End,
+    Explicit(f32),
 }
 
 impl ScrollDirection {
@@ -113,12 +126,33 @@ impl ScrollDirection {
     }
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Debug)]
+pub struct ScrollPosition {
+    pub h: f32,
+    pub v: f32,
+}
+
+#[derive(Component)]
 pub struct Scrollable {
     pub direction: ScrollDirection,
     pub drag: bool,
     pub wheel: bool,
     content_size: Vec2,
+    pub horizontal_bar: bool,
+    pub vertical_bar: bool,
+}
+
+impl Default for Scrollable {
+    fn default() -> Self {
+        Self {
+            direction: Default::default(),
+            drag: Default::default(),
+            wheel: Default::default(),
+            content_size: Default::default(),
+            horizontal_bar: true,
+            vertical_bar: true,
+        }
+    }
 }
 
 impl Scrollable {
@@ -137,6 +171,26 @@ impl Scrollable {
     pub fn with_wheel(self, wheel: bool) -> Self {
         Self { wheel, ..self }
     }
+
+    pub fn with_bars_visible(self, horizontal_bar: bool, vertical_bar: bool) -> Self {
+        Self {
+            horizontal_bar,
+            vertical_bar,
+            ..self
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ScrollTarget {
+    Literal(Vec2),
+    Entity(Entity),
+}
+
+#[derive(Event, Debug)]
+pub struct ScrollTargetEvent {
+    pub scrollable: Entity,
+    pub position: ScrollTarget,
 }
 
 #[derive(Component)]
@@ -163,6 +217,7 @@ fn update_scrollables(
         (&Node, &mut Style, Option<&Children>),
         (Without<Scrollable>, Without<ScrollBar>, Without<Slider>),
     >,
+    positions: Query<(&Node, &Transform, &Parent, &GlobalTransform)>,
     mut scrollables: Query<(
         Entity,
         &mut Scrollable,
@@ -188,9 +243,11 @@ fn update_scrollables(
         (Entity, &mut Slider, &mut Style),
         (Without<Scrollable>, Without<ScrollBar>),
     >,
-    mut clicked_slider: Local<Option<(Entity, Vec2)>>,
+    mut clicked_slider: Local<Option<Entity>>,
+    mut clicked_scrollable: Local<Option<(Entity, Vec2)>>,
     mut wheel: EventReader<MouseWheel>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
+    mut events: EventReader<ScrollTargetEvent>,
 ) {
     #[derive(Copy, Clone, Debug)]
     enum UpdateSliderPosition {
@@ -207,13 +264,19 @@ fn update_scrollables(
         start: StartPosition,
         redraw: bool,
         update_slider: Option<UpdateSliderPosition>,
+        visible: bool,
     }
+
+    let mut events = events
+        .read()
+        .map(|ev| (ev.scrollable, ev.position))
+        .collect::<HashMap<_, _>>();
 
     let Ok(window) = window.get_single() else {
         return;
     };
 
-    let bar_width = (window.width() * 0.01).ceil();
+    let bar_width = (window.width().min(window.height()) * 0.02).ceil();
 
     let Some(cursor_position) = window.cursor_position() else {
         return;
@@ -221,6 +284,7 @@ fn update_scrollables(
 
     if mouse_button_input.just_released(MouseButton::Left) {
         *clicked_slider = None;
+        *clicked_scrollable = None;
     }
 
     let mut vertical_scrollers = HashMap::default();
@@ -251,10 +315,44 @@ fn update_scrollables(
         let ui_position = transform.translation().truncate() - parent_size * 0.5;
         let slide_amount = child_size - parent_size;
 
+        // calculate based on event
+        let mut new_slider_abses: Option<Vec2> = None;
+        if let Some(position) = events.remove(&entity) {
+            match position {
+                ScrollTarget::Literal(pos) => {
+                    new_slider_abses = Some(pos);
+                }
+                ScrollTarget::Entity(e) => {
+                    let mut translation = Vec2::ZERO;
+
+                    let mut i = e;
+                    loop {
+                        let Ok((_, transform, parent, _)) = positions.get(i) else {
+                            warn!("scroll target not found");
+                            translation = Vec2::ZERO;
+                            break;
+                        };
+
+                        translation += transform.translation.xy();
+                        if parent.get() == scroll_content.0 {
+                            break;
+                        }
+                        i = parent.get();
+                    }
+
+                    let overflow = (child_size - parent_size).max(Vec2::ONE);
+                    let abs_mid =
+                        (translation + overflow * 0.5).clamp(Vec2::ZERO, overflow) / overflow;
+                    new_slider_abses = Some(abs_mid);
+                    debug!("{translation} -> parent size: {parent_size}, child_size: {child_size}, abs {abs_mid:?}");
+                }
+            }
+        }
+
         // calculate deltas based on drag or mouse wheel in the parent container
         let mut new_slider_deltas = None;
-        if scrollable.drag {
-            if let Some((prev_entity, prev_pos)) = clicked_slider.as_ref() {
+        if scrollable.drag && clicked_slider.is_none() {
+            if let Some((prev_entity, prev_pos)) = clicked_scrollable.as_ref() {
                 if prev_entity == &entity {
                     let delta = cursor_position - *prev_pos;
                     new_slider_deltas = Some(delta / slide_amount);
@@ -262,7 +360,7 @@ fn update_scrollables(
             }
 
             if interaction == &Interaction::Pressed {
-                *clicked_slider = Some((entity, cursor_position));
+                *clicked_scrollable = Some((entity, cursor_position));
             }
         }
         if scrollable.wheel {
@@ -302,10 +400,13 @@ fn update_scrollables(
                         ratio: ratio.x,
                         bar_position: ui_position * 0.0
                             + Vec2::new(bar_width, parent_size.y - bar_width - 5.0),
-                        length: parent_size.x - 20.0,
+                        length: parent_size.x - bar_width * 3.0,
                         start,
                         redraw,
-                        update_slider: new_slider_deltas.map(|d| UpdateSliderPosition::Rel(-d.x)),
+                        update_slider: new_slider_abses
+                            .map(|a| UpdateSliderPosition::Abs(a.x))
+                            .or(new_slider_deltas.map(|d| UpdateSliderPosition::Rel(-d.x))),
+                        visible: scrollable.horizontal_bar,
                     },
                 );
             }
@@ -324,10 +425,13 @@ fn update_scrollables(
                         ratio: ratio.y,
                         bar_position: ui_position * 0.0
                             + Vec2::new(parent_size.x - bar_width - 5.0, bar_width),
-                        length: parent_size.y - 20.0,
+                        length: parent_size.y - bar_width * 3.0,
                         start,
                         redraw,
-                        update_slider: new_slider_deltas.map(|d| UpdateSliderPosition::Rel(-d.y)),
+                        update_slider: new_slider_abses
+                            .map(|a| UpdateSliderPosition::Abs(a.y))
+                            .or(new_slider_deltas.map(|d| UpdateSliderPosition::Rel(-d.y))),
+                        visible: scrollable.vertical_bar,
                     },
                 );
             }
@@ -351,6 +455,12 @@ fn update_scrollables(
             continue;
         };
 
+        style.display = if info.visible {
+            Display::Flex
+        } else {
+            Display::None
+        };
+
         if info.redraw {
             // parent either moved, was resized or the content size changed. in any case, reposition/resize the bars
             style.left = Val::Px(info.bar_position.x);
@@ -362,19 +472,21 @@ fn update_scrollables(
                 style.width = Val::Px(info.length);
                 style.height = Val::Px(bar_width);
             }
-        } else if interaction == &Interaction::Pressed
-            || clicked_slider.map_or(false, |(ent, _)| ent == bar.parent)
+        }
+
+        if interaction == &Interaction::Pressed || clicked_slider.map_or(false, |ent| ent == entity)
         {
             // jump the slider to the clicked position
             let Vec2 { x: left, y: top } = transform.translation().xy() - node.size() * 0.5;
             let relative_position = cursor_position - Vec2::new(left, top);
-            let slider_len = info.length * info.ratio;
+            let slider_len = (info.length * info.ratio).max(bar_width);
             let position = if bar.vertical {
                 (relative_position.y - slider_len * 0.5) / (info.length - slider_len)
             } else {
                 (relative_position.x - slider_len * 0.5) / (info.length - slider_len)
             };
             info.update_slider = Some(UpdateSliderPosition::Abs(position));
+            *clicked_slider = Some(entity);
         }
     }
 
@@ -393,21 +505,21 @@ fn update_scrollables(
         // if anything changes we will redraw the slider and re-paginate the content
         let mut update_position = false;
 
-        if info.redraw {
-            // parent moved/resized or content moved/resized
-            update_position = true;
-        } else if let Some(position) = info.update_slider {
+        if let Some(position) = info.update_slider {
             // the container or the bar have triggered a slider update
             slider.position = match position {
                 UpdateSliderPosition::Abs(p) => p.clamp(0.0, 1.0),
                 UpdateSliderPosition::Rel(r) => (slider.position + r).clamp(0.0, 1.0),
             };
             update_position = true;
+        } else if info.redraw {
+            // parent moved/resized or content moved/resized
+            update_position = true;
         }
 
         if update_position {
             // redraw slider
-            let slider_len = info.length * info.ratio;
+            let slider_len = (info.length * info.ratio).max(bar_width);
             if slider.vertical {
                 style.width = Val::Px(bar_width);
                 style.height = Val::Px(slider_len);
@@ -428,9 +540,23 @@ fn update_scrollables(
             let mut style = nodes.get_mut(info.content).unwrap().1;
             let offset = info.slide_amount * -slider.position;
             if slider.vertical {
-                style.top = Val::Px(offset.y);
+                style.top = Val::Px(offset.y.floor());
+                let position = slider.position;
+                commands
+                    .entity(slider.parent)
+                    .try_insert(DataChanged)
+                    .modify_component(move |pos: &mut ScrollPosition| {
+                        pos.v = position;
+                    });
             } else {
-                style.left = Val::Px(offset.x);
+                style.left = Val::Px(offset.x.floor());
+                let position = slider.position;
+                commands
+                    .entity(slider.parent)
+                    .try_insert(DataChanged)
+                    .modify_component(move |pos: &mut ScrollPosition| {
+                        pos.h = position;
+                    });
             }
         }
 
@@ -447,7 +573,17 @@ fn update_scrollables(
 
         let children = [commands
             .spawn((
-                NodeBundle {
+                NodeBounds {
+                    corner_size: Val::Px(bar_width * 0.5),
+                    border_size: Val::Px(bar_width * 0.125),
+                    border_color: Color::NONE,
+                    ..Default::default()
+                },
+                BoundedNodeBundle {
+                    bounded: BoundedNode {
+                        image: None,
+                        color: Color::rgba(0.5, 0.5, 0.5, 0.2).into(),
+                    },
                     style: Style {
                         position_type: PositionType::Absolute,
                         left: Val::Px(info.bar_position.x),
@@ -456,7 +592,6 @@ fn update_scrollables(
                         height: bar_size.1,
                         ..Default::default()
                     },
-                    background_color: Color::rgba(0.5, 0.5, 0.5, 0.2).into(),
                     z_index: ZIndex::Local(1),
                     ..Default::default()
                 },
@@ -467,15 +602,15 @@ fn update_scrollables(
                 Interaction::default(),
                 InteractStyles {
                     hover: Some(InteractStyle {
-                        background: Some(Color::GRAY),
+                        background: Some(Color::rgba(0.3, 0.3, 0.3, 0.8)),
                         ..Default::default()
                     }),
                     press: Some(InteractStyle {
-                        background: Some(Color::GRAY),
+                        background: Some(Color::rgba(0.3, 0.3, 0.3, 0.8)),
                         ..Default::default()
                     }),
                     inactive: Some(InteractStyle {
-                        background: Some(Color::rgba(0.5, 0.5, 0.5, 0.2)),
+                        background: Some(Color::rgba(0.3, 0.3, 0.3, 0.5)),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -485,12 +620,18 @@ fn update_scrollables(
 
         commands.entity(entity).try_push_children(&children);
 
-        let position = match info.start {
+        let mut position = match info.start {
             StartPosition::Start => 0.0,
             StartPosition::Center => 0.5,
             StartPosition::End => 1.0,
+            StartPosition::Explicit(v) => v.clamp(0.0, 1.0),
         };
-        let slider_len = info.length * info.ratio;
+
+        if let Some(UpdateSliderPosition::Abs(val)) = info.update_slider {
+            position = val;
+        }
+
+        let slider_len = (info.length * info.ratio).max(bar_width);
 
         let (left, top, width, height) = if vertical {
             let slider_start = info.bar_position.y + (info.length - slider_len) * position;
@@ -512,7 +653,17 @@ fn update_scrollables(
 
         let children = [commands
             .spawn((
-                NodeBundle {
+                NodeBounds {
+                    corner_size: Val::Px(bar_width * 0.5),
+                    border_size: Val::Px(bar_width * 0.25),
+                    border_color: Color::NONE,
+                    ..Default::default()
+                },
+                BoundedNodeBundle {
+                    bounded: BoundedNode {
+                        image: None,
+                        color: Color::rgba(1.0, 1.0, 1.0, 0.2).into(),
+                    },
                     style: Style {
                         position_type: PositionType::Absolute,
                         left,
@@ -521,7 +672,6 @@ fn update_scrollables(
                         height,
                         ..Default::default()
                     },
-                    background_color: Color::rgba(1.0, 1.0, 1.0, 0.2).into(),
                     z_index: ZIndex::Local(2),
                     ..Default::default()
                 },
@@ -541,7 +691,7 @@ fn update_scrollables(
                         ..Default::default()
                     }),
                     inactive: Some(InteractStyle {
-                        background: Some(Color::rgba(1.0, 1.0, 1.0, 0.2)),
+                        background: Some(Color::rgba(1.0, 1.0, 1.0, 0.5)),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -554,9 +704,21 @@ fn update_scrollables(
         let mut style = nodes.get_mut(info.content).unwrap().1;
         let offset = info.slide_amount * -position;
         if vertical {
-            style.top = Val::Px(offset.y);
+            style.top = Val::Px(offset.y.floor());
+            commands
+                .entity(entity)
+                .default_and_modify_component(move |pos: &mut ScrollPosition| {
+                    pos.v = position;
+                })
+                .try_insert(DataChanged);
         } else {
-            style.left = Val::Px(offset.x);
+            style.left = Val::Px(offset.x.floor());
+            commands
+                .entity(entity)
+                .default_and_modify_component(move |pos: &mut ScrollPosition| {
+                    pos.h = position;
+                })
+                .try_insert(DataChanged);
         }
     };
 
@@ -581,14 +743,25 @@ impl DuiTemplate for ScrollableTemplate {
             .take::<Scrollable>("scroll-settings")?
             .unwrap_or_default();
 
+        let mut results = Ok(Default::default());
+        let content = props.take::<Entity>("content")?.unwrap_or_else(|| {
+            let mut root_cmds = commands.commands();
+            let mut content_cmds = root_cmds.spawn(NodeBundle {
+                style: Style {
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+
+            results = ctx.apply_children(&mut content_cmds);
+            content_cmds.id()
+        });
+
         let panel_size = match scrollable.direction {
             ScrollDirection::Vertical(_) => (Val::Percent(100.0), Val::Px(100000.0)),
             ScrollDirection::Horizontal(_) => (Val::Px(100000.0), Val::Percent(100.0)),
             ScrollDirection::Both(_, _) => (Val::Px(100000.0), Val::Px(100000.0)),
         };
-
-        let mut content = Entity::PLACEHOLDER;
-        let mut results = Ok(Default::default());
 
         commands
             .insert(NodeBundle {
@@ -615,19 +788,7 @@ impl DuiTemplate for ScrollableTemplate {
                     },
                     ..Default::default()
                 })
-                .with_children(|commands| {
-                    // TODO need one more layer for bidirectional scrolling
-                    let mut content_cmds = commands.spawn(NodeBundle {
-                        style: Style {
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    });
-
-                    results = ctx.apply_children(&mut content_cmds);
-                    content = content_cmds.id();
-                    commands.spacer();
-                });
+                .push_children(&[content]);
             });
 
         commands.try_insert((Interaction::default(), scrollable, ScrollContent(content)));

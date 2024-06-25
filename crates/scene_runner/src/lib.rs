@@ -34,6 +34,7 @@ use initialize_scene::{PortableScenes, TestingData};
 use ipfs::SceneIpfsLocation;
 use primary_entities::PrimaryEntities;
 use spin_sleep::SpinSleeper;
+use ui_core::ui_actions::{Click, On};
 use util::SceneUtilPlugin;
 
 use self::{
@@ -47,6 +48,7 @@ use self::{
 
 pub mod automatic_testing;
 pub mod initialize_scene;
+pub mod permissions;
 pub mod primary_entities;
 pub mod renderer_context;
 #[cfg(test)]
@@ -116,7 +118,7 @@ pub struct DebugInfo {
 }
 
 // resource for adding toasts
-#[derive(Resource, Default, Debug)]
+#[derive(Resource, Default)]
 pub struct Toasts(pub HashMap<String, Toast>);
 
 #[derive(SystemParam)]
@@ -128,7 +130,12 @@ pub struct Toaster<'w, 's> {
 }
 
 impl<'w, 's> Toaster<'w, 's> {
-    pub fn add_toast(&mut self, key: impl Into<String>, message: impl Into<String>) {
+    pub fn do_add_toast(
+        &mut self,
+        key: impl Into<String>,
+        message: impl Into<String>,
+        on_click: Option<On<Click>>,
+    ) {
         let key = key.into();
         let message = message.into();
         if let Some(existing) = self.toasts.0.get_mut(&key) {
@@ -144,20 +151,34 @@ impl<'w, 's> Toaster<'w, 's> {
                 message,
                 time: self.time.elapsed_seconds(),
                 last_update: self.time.elapsed_seconds(),
+                on_click,
             },
         );
     }
 
-    pub fn clear_toast(&mut self, key: &'static str) {
+    pub fn add_toast(&mut self, key: impl Into<String>, message: impl Into<String>) {
+        self.do_add_toast(key, message, None)
+    }
+
+    pub fn add_clicky_toast(
+        &mut self,
+        key: impl Into<String>,
+        message: impl Into<String>,
+        on_click: On<Click>,
+    ) {
+        self.do_add_toast(key, message, Some(on_click))
+    }
+
+    pub fn clear_toast(&mut self, key: &str) {
         self.toasts.0.remove(key);
     }
 }
 
-#[derive(Debug)]
 pub struct Toast {
     pub message: String,
     pub time: f32,
     pub last_update: f32,
+    pub on_click: Option<On<Click>>,
 }
 
 // plugin which creates and runs scripts

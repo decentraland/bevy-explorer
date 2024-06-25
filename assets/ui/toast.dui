@@ -12,9 +12,9 @@
         <bounds 
             style="
                 align-items: center;
-                padding: 2vmin;
+                padding: 0.75vmin 1.5vmin 0.75vmin 1.5vmin;
             "
-            corner-size="4vmin"
+            corner-size="2vmin"
             blend-size="0.25vmin"
             border-size="2vmin"
             border-color="#1C298aff"

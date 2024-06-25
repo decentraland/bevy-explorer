@@ -8,14 +8,12 @@ use bevy::{
 };
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::structs::{
-    AaSetting, AppConfig, BloomSetting, FogSetting, ShadowSetting, SsaoSetting, WindowSetting,
+    AaSetting, AppConfig, BloomSetting, FogSetting, SettingsTab, ShadowSetting, SsaoSetting,
+    WindowSetting,
 };
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
-use crate::{
-    login::config_file,
-    profile::{SettingsDialog, SettingsTab},
-};
+use crate::{login::config_file, profile::SettingsDialog};
 
 use self::{
     ambient_brightness_setting::AmbientSetting,

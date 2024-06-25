@@ -25,7 +25,6 @@ tween = { workspace = true }
 console = { workspace = true }
 scene_material = { workspace = true }
 world_ui = { workspace = true }
-user_input = { workspace = true }
 analytics = { workspace = true }
 
 bevy = { workspace = true }

@@ -29,7 +29,10 @@ use dcl_component::proto_components::sdk::components::PbAvatarEmoteCommand;
 use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 use ui_core::ui_actions::{DragData, Dragged, On};
 
-use crate::{animate::EmoteList, AvatarDynamicState, AvatarSelection, AvatarShape};
+use crate::{
+    animate::{EmoteBroadcast, EmoteCommand, EmoteList},
+    AvatarDynamicState, AvatarSelection, AvatarShape,
+};
 
 pub struct AvatarTexturePlugin;
 
@@ -153,10 +156,13 @@ impl<'w, 's> PhotoBooth<'w, 's> {
 
     pub fn play_emote(&mut self, instance: &BoothInstance, emote: CollectibleUrn<Emote>) {
         let mut list = VecDeque::new();
-        list.push_back(PbAvatarEmoteCommand {
-            emote_urn: emote.to_string(),
-            r#loop: false,
-            timestamp: 0,
+        list.push_back(EmoteCommand {
+            emote: PbAvatarEmoteCommand {
+                emote_urn: emote.to_string(),
+                r#loop: false,
+                timestamp: 0,
+            },
+            broadcast: EmoteBroadcast::None,
         });
         self.commands
             .entity(*instance.avatar)

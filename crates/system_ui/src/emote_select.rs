@@ -1,4 +1,4 @@
-use avatar::animate::EmoteList;
+use avatar::animate::{EmoteBroadcast, EmoteList};
 use bevy::{
     prelude::*,
     text::BreakLineOn,
@@ -8,7 +8,7 @@ use bevy::{
 };
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};
-use common::structs::PrimaryUser;
+use common::structs::{ActiveDialog, PrimaryUser};
 use comms::profile::CurrentUserProfile;
 use ui_core::{
     focus::Focus,
@@ -127,7 +127,7 @@ fn handle_emote_key(
                 if let Some(button) = buttons.iter().find(|b| b.1 == slot) {
                     commands
                         .entity(player.single())
-                        .try_insert(EmoteList::new(button.0.clone()));
+                        .try_insert(EmoteList::new(button.0.clone(), EmoteBroadcast::All));
                     w.send(EmoteUiEvent::Hide);
                 }
             }
@@ -232,6 +232,7 @@ fn show_emote_ui(
     buttons: Query<(&EmoteButton, &Interaction)>,
     player: Query<Entity, With<PrimaryUser>>,
     mut retry: Local<Option<EmoteUiEvent>>,
+    active_dialog: Res<ActiveDialog>,
 ) {
     let mut ev = events.read().last().copied();
     if retry.is_some() {
@@ -246,10 +247,14 @@ fn show_emote_ui(
                 if interact == &Interaction::Hovered || interact == &Interaction::Pressed {
                     commands
                         .entity(player.single())
-                        .try_insert(EmoteList::new(button.0.clone()));
+                        .try_insert(EmoteList::new(button.0.clone(), EmoteBroadcast::All));
                 }
             }
         }
+
+        let Some(permit) = active_dialog.try_acquire() else {
+            return;
+        };
 
         let EmoteUiEvent::Show { coords } = ev else {
             return;
@@ -314,7 +319,7 @@ fn show_emote_ui(
             .unwrap();
 
         let output = buttons.named("output");
-        commands.entity(output).insert(EmoteOutput);
+        commands.entity(output).insert((EmoteOutput, permit));
 
         let mut all_slots = (0..=9).collect::<HashSet<u32>>();
         for emote in player_emotes {
