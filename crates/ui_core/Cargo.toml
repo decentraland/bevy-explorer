@@ -14,3 +14,4 @@ bevy_dui = { workspace = true }
 bevy_ecss = { workspace = true }
 once_cell = { workspace = true }
 anyhow = { workspace = true }
+opener = { workspace = true }

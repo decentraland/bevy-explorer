@@ -140,7 +140,7 @@ impl DuiTemplate for DuiButtonTemplate {
             (Some(label), _) => ctx.render_template(
                 commands,
                 "button-base-text",
-                DuiProps::new().with_prop("label", label),
+                DuiProps::new().with_prop("label", format!("<b>{label}</b>")),
             ),
             (None, Some(img)) => {
                 let mut props = DuiProps::new().with_prop("image", img);

@@ -1,0 +1,24 @@
+<define-template id="motd">
+    <dialog title="Bevy Explorer" buttons="@buttons">
+        <div style="flex-direction: column; align-items: center; justify-content: center; margin: 4vmin;">
+            <large-text text="Warning" />
+            <div style="flex-direction: column; align-items: center;">
+                <med-text text="Bevy Explorer is in early development. Please have fun and report any issues on " />
+                <div>
+                    <med-link label="github" color="#8888ff" href="https://github.com/decentraland/bevy-explorer/issues" />
+                    <med-text text=" or " />
+                    <med-link label="discord" color="#8888ff" href="https://discord.gg/ZmqVKQm2" />
+                </div>
+            </div>
+            <hr />
+            <div style="flex-direction: column;">
+                <med-text text="Latest Updates (2024-06-26)" />
+                <hr-thin />
+                <med-text text="• scrollable ui areas" />
+                <med-text text="• text wrapping" />
+                <med-text text="• granular user permissions" />
+            </div>
+        </div>
+    </dialog>
+</define-template>
+

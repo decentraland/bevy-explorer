@@ -22,7 +22,10 @@ use dcl_component::{
         self,
         common::{texture_union, BorderRect, TextureUnion},
         sdk::components::{
-            self, scroll_position_value, PbUiBackground, PbUiDropdown, PbUiDropdownResult, PbUiInput, PbUiInputResult, PbUiScrollResult, PbUiText, PbUiTransform, ScrollPositionValue, TextWrap, YgAlign, YgDisplay, YgFlexDirection, YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap
+            self, scroll_position_value, PbUiBackground, PbUiDropdown, PbUiDropdownResult,
+            PbUiInput, PbUiInputResult, PbUiScrollResult, PbUiText, PbUiTransform,
+            ScrollPositionValue, TextWrap, YgAlign, YgDisplay, YgFlexDirection, YgJustify,
+            YgOverflow, YgPositionType, YgUnit, YgWrap,
         },
     },
     SceneComponentId, SceneEntityId,

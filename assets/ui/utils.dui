@@ -31,3 +31,10 @@
     </div>
 </define-template>
 
+<!-- base for <link> -->
+<define-template id="link-base">
+    <div style="flex-direction: column">
+        <med-text id="label" text="@label" color="@color" />
+        <div id="line" style="width: 100%; height: 0.1vmin; flex-grow: true" image="images/line.png" />
+    </div>
+</define-template>

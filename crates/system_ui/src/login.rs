@@ -23,7 +23,7 @@ use ipfs::{CurrentRealm, IpfsAssetServer};
 use scene_runner::Toaster;
 use ui_core::{
     button::DuiButton,
-    ui_actions::{Click, EventCloneExt, On},
+    ui_actions::{close_ui, Click, EventCloneExt, On},
 };
 use wallet::{
     browser_auth::{
@@ -78,7 +78,23 @@ fn login(
     _preview: Res<PreviewMode>,
     _config: Res<AppConfig>,
     active_dialog: Res<ActiveDialog>,
+    mut motd_shown: Local<bool>,
 ) {
+    if !*motd_shown {
+        let permit = active_dialog.try_acquire().unwrap();
+        let components = commands
+            .spawn_template(
+                &dui,
+                "motd",
+                DuiProps::default()
+                    .with_prop("buttons", vec![DuiButton::new_enabled("Ok", close_ui)]),
+            )
+            .unwrap();
+        commands.entity(components.root).insert(permit);
+        *motd_shown = true;
+        return;
+    }
+
     // cleanup if we're done
     if wallet.address().is_some() {
         if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
