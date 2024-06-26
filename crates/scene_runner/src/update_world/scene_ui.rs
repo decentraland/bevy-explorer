@@ -22,10 +22,7 @@ use dcl_component::{
         self,
         common::{texture_union, BorderRect, TextureUnion},
         sdk::components::{
-            self, scroll_position_value, PbUiBackground, PbUiDropdown, PbUiDropdownResult,
-            PbUiInput, PbUiInputResult, PbUiScrollResult, PbUiText, PbUiTransform,
-            ScrollPositionValue, YgAlign, YgDisplay, YgFlexDirection, YgJustify, YgOverflow,
-            YgPositionType, YgUnit, YgWrap,
+            self, scroll_position_value, PbUiBackground, PbUiDropdown, PbUiDropdownResult, PbUiInput, PbUiInputResult, PbUiScrollResult, PbUiText, PbUiTransform, ScrollPositionValue, TextWrap, YgAlign, YgDisplay, YgFlexDirection, YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap
         },
     },
     SceneComponentId, SceneEntityId,
@@ -407,7 +404,7 @@ impl From<PbUiText> for UiText {
             },
             font: value.font(),
             font_size: value.font_size.unwrap_or(10) as f32,
-            wrapping: value.text_wrapping(),
+            wrapping: value.text_wrap() == TextWrap::TwWrap,
         }
     }
 }

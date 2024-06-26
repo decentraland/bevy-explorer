@@ -8,16 +8,22 @@ import "decentraland/sdk/components/common/texts.proto";
 
 option (common.ecs_component_id) = 1052;
 
+enum TextWrap {
+  TW_WRAP = 0;
+  TW_NO_WRAP = 1;
+}
+
 // The UiText component creates a text widget inside a UI component tree. Its position and
 // layout properties can be specified in a UiTransform component on the same Entity.
 
 message PBUiText {
-  string value = 1;                              // the text content
+  string value = 1;                              // the text content, tag <b> and <i> are supported
   optional decentraland.common.Color4 color = 2; // RGBA color (default: opaque white)
   optional common.TextAlignMode text_align = 3;  // alignment within the bounds (default: center)
   optional common.Font font = 4;                 // font for the text (default: sans-serif)
   optional int32 font_size = 5;                  // size of the text (default: 10)
-  optional float outline_width = 6;              // width of the outline (default: 0)
-  optional decentraland.common.Color4 outline_color = 7; // RGBA color of the outline (default: opaque black)
-  optional bool text_wrapping = 8;               // wrap text when the border is reached (default false)
+  optional TextWrap text_wrap = 6;               // wrap text when the border is reached (default: TW_WRAP)
+  
+  optional float outline_width = 7;              // width of the outline (default: 0)
+  optional decentraland.common.Color4 outline_color = 8; // RGBA color of the outline (default: opaque black)
 }
