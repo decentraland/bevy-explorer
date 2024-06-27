@@ -157,17 +157,35 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
     }
 
     fn update_pending(&mut self) {
-        *self.pending = self
-            .pending
-            .drain(..)
+        let pending = std::mem::take(&mut *self.pending);
+        *self.pending = pending
+            .into_iter()
             .flat_map(|(value, ty, scene, mut rx)| match rx.try_recv() {
                 Ok(true) => {
                     self.success.push((value, ty, scene));
                     None
                 }
-                Ok(false) | Err(TryRecvError::Closed) => {
+                Ok(false) => {
                     self.fail.push((value, ty, scene));
                     None
+                }
+                Err(TryRecvError::Closed) => {
+                    let Some((_, _, _, is_portable)) = self.get_scene_info(scene) else {
+                        return None;
+                    };
+                    warn!("unexpected close of channel, re-requesting");
+                    Some((
+                        value,
+                        ty,
+                        scene,
+                        self.manager.request(
+                            ty,
+                            self.realm.address.clone(),
+                            scene,
+                            is_portable,
+                            None,
+                        ),
+                    ))
                 }
                 Err(TryRecvError::Empty) => Some((value, ty, scene, rx)),
             })
