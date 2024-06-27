@@ -243,7 +243,7 @@ fn main() {
                     ..Default::default()
                 })
                 .set(bevy::log::LogPlugin {
-                    filter: "wgpu=error,naga=error".to_string(),
+                    filter: "wgpu=error,naga=error,bevy_animation=error".to_string(),
                     update_subscriber: if file_log {
                         Some(move |_subscriber: BoxedSubscriber| -> BoxedSubscriber {
                             let (non_blocking, guard) = tracing_appender::non_blocking(
@@ -254,7 +254,7 @@ fn main() {
                             );
 
                             let default_filter = {
-                                format!("{},{}", bevy::log::Level::INFO, "wgpu=error,naga=error")
+                                format!("{},{}", bevy::log::Level::INFO, "wgpu=error,naga=error,bevy_animation=error")
                             };
                             let filter_layer =
                                 bevy::log::tracing_subscriber::EnvFilter::try_from_default_env()
