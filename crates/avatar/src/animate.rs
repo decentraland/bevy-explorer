@@ -182,7 +182,7 @@ fn broadcast_emote(
         {
             if last.as_ref() != Some(emote_urn) {
                 *count += 1;
-                println!("sending emote: {emote_urn:?} {}", *count);
+                debug!("sending emote: {emote_urn:?} {}", *count);
                 let packet = rfc4::Packet {
                     message: Some(rfc4::packet::Message::Chat(Chat {
                         message: format!("{}{} {}", chat_marker_things::EMOTE, emote_urn, *count),
@@ -374,7 +374,7 @@ fn animate(
             if emotes_changed && origin != EmoteBroadcast::None {
                 // send to scenes
                 let broadcast_urn = given_urn.unwrap();
-                println!("broadcasting emote to scenes: {:?}", broadcast_urn);
+                debug!("broadcasting emote to scenes: {:?}", broadcast_urn);
 
                 let scene_id = maybe_foreign
                     .map(|f| f.scene_id)
@@ -391,7 +391,7 @@ fn animate(
                     };
 
                     let timestamp = scene.tick_number;
-                    println!("broadcast to scene {:?}", scene_ent);
+                    debug!("broadcast to scene {:?}", scene_ent);
                     scene.update_crdt(
                         SceneComponentId::AVATAR_EMOTE_COMMAND,
                         CrdtType::GO_ANY,
