@@ -67,8 +67,13 @@ fn update_permissions(
 
         // kill/requeue dialogs where the scene is no longer active
         if !active_scenes.contains(&req.as_ref().unwrap().scene) {
-            commands.entity(*ent).despawn_recursive();
-            manager.pending.push_front(req.take().unwrap());
+            if let Some(commands) = commands.get_entity(*ent) {
+                commands.despawn_recursive();
+            }
+            let req = req.take().unwrap();
+            if scenes.get(req.scene).is_ok() {
+                manager.pending.push_front(req);
+            }
             return false;
         }
 

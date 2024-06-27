@@ -388,8 +388,10 @@ pub async fn op_signed_fetch_headers(
     debug!("op_signed_fetch_headers");
 
     let is_preview = state.borrow().borrow::<CrdtContext>().preview;
-    if !is_preview && Uri::try_from(&uri)?.scheme_str() != Some("https") {
-        anyhow::bail!("URL scheme must be `https`")
+    let scheme = Uri::try_from(&uri)?;
+    let scheme = scheme.scheme_str();
+    if !is_preview && !([Some("https"), Some("wss")].contains(&scheme)) {
+        anyhow::bail!("URL scheme must be `https` (request `{}`)", uri);
     }
 
     let realm_info = realm_information(state.clone()).await?;

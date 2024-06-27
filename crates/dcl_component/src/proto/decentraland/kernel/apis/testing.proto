@@ -16,7 +16,6 @@ service TestingService {
   rpc TakeAndCompareScreenshot (TakeAndCompareScreenshotRequest) returns (TakeAndCompareScreenshotResponse) {}
 }
 
-// @internal
 message TakeAndCompareScreenshotRequest {
   // the source path in the scene where the screenshot is stored, 
   //  the snapshot taken is compared with the stored one
@@ -46,7 +45,6 @@ message TakeAndCompareScreenshotRequest {
 }
 
 
-// @internal
 message TakeAndCompareScreenshotResponse {
   bool stored_snapshot_found = 1;
   oneof comparison_method_result {
