@@ -254,7 +254,11 @@ fn main() {
                             );
 
                             let default_filter = {
-                                format!("{},{}", bevy::log::Level::INFO, "wgpu=error,naga=error,bevy_animation=error")
+                                format!(
+                                    "{},{}",
+                                    bevy::log::Level::INFO,
+                                    "wgpu=error,naga=error,bevy_animation=error"
+                                )
                             };
                             let filter_layer =
                                 bevy::log::tracing_subscriber::EnvFilter::try_from_default_env()

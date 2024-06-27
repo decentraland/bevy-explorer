@@ -170,9 +170,7 @@ impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
                     None
                 }
                 Err(TryRecvError::Closed) => {
-                    let Some((_, _, _, is_portable)) = self.get_scene_info(scene) else {
-                        return None;
-                    };
+                    let (_, _, _, is_portable) = self.get_scene_info(scene)?;
                     warn!("unexpected close of channel, re-requesting");
                     Some((
                         value,
