@@ -10,4 +10,5 @@ import "decentraland/sdk/components/common/loading_state.proto";
 // the current state of the GltfContainer of an entity.
 message PBGltfContainerLoadingState {
   common.LoadingState current_state = 1;
+  repeated string named_nodes = 2;
 }

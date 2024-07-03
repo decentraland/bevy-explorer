@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use bevy::{ecs::system::SystemParam, pbr::NotShadowCaster, prelude::*, render::primitives::Aabb};
 use common::structs::{AppConfig, AvatarTextureHandle};
 use comms::profile::UserProfile;
@@ -18,7 +20,10 @@ use super::{mesh_renderer::update_mesh, AddCrdtInterfaceExt};
 
 pub struct MaterialDefinitionPlugin;
 
-#[derive(Component, Debug, Default, Clone)]
+#[derive(Component)]
+pub struct BaseMaterial(pub StandardMaterial);
+
+#[derive(Debug, Default, Clone)]
 pub struct MaterialDefinition {
     pub material: StandardMaterial,
     pub shadow_caster: bool,
@@ -27,11 +32,40 @@ pub struct MaterialDefinition {
     pub normal_map: Option<TextureUnion>,
 }
 
-impl From<PbMaterial> for MaterialDefinition {
+#[derive(Component, Clone)]
+pub struct PbMaterialComponent(pub PbMaterial);
+
+impl From<PbMaterial> for PbMaterialComponent {
     fn from(value: PbMaterial) -> Self {
-        let (material, base_color_texture, emmissive_texture, normal_map) = match &value.material {
+        Self(value)
+    }
+}
+
+static DEFAULT_BASE: OnceLock<StandardMaterial> = OnceLock::new();
+
+impl MaterialDefinition {
+    pub fn from_base_and_material(base: Option<&BaseMaterial>, pb_material: &PbMaterial) -> Self {
+        let base = base
+            .map(|b| &b.0)
+            .unwrap_or(DEFAULT_BASE.get_or_init(|| StandardMaterial {
+                base_color: Color::WHITE,
+                double_sided: true,
+                emissive: Color::BLACK,
+                perceptual_roughness: 0.5,
+                metallic: 0.5,
+                reflectance: 0.5,
+                cull_mode: None,
+                ..Default::default()
+            }));
+
+        let (material, base_color_texture, emmissive_texture, normal_map) = match &pb_material
+            .material
+        {
             Some(pb_material::Material::Unlit(unlit)) => {
-                let base_color = unlit.diffuse_color.map(Color::from).unwrap_or(Color::WHITE);
+                let base_color = unlit
+                    .diffuse_color
+                    .map(Color::from)
+                    .unwrap_or(base.base_color);
 
                 let alpha_mode = if base_color.a() < 1.0 {
                     AlphaMode::Blend
@@ -45,10 +79,9 @@ impl From<PbMaterial> for MaterialDefinition {
                     StandardMaterial {
                         base_color,
                         double_sided: true,
-                        cull_mode: None,
                         unlit: true,
                         alpha_mode,
-                        ..Default::default()
+                        ..base.clone()
                     },
                     unlit.texture.clone(),
                     None,
@@ -63,7 +96,7 @@ impl From<PbMaterial> for MaterialDefinition {
                     warn!("separate alpha texture not supported");
                 }
 
-                let base_color = pbr.albedo_color.map(Color::from).unwrap_or(Color::WHITE);
+                let base_color = pbr.albedo_color.map(Color::from).unwrap_or(base.base_color);
 
                 let alpha_mode = match pbr
                     .transparency_mode
@@ -107,13 +140,11 @@ impl From<PbMaterial> for MaterialDefinition {
                         base_color,
                         emissive,
                         // TODO what is pbr.reflectivity_color?
-                        metallic: pbr.metallic.unwrap_or(0.5),
-                        perceptual_roughness: pbr.roughness.unwrap_or(0.5),
+                        metallic: pbr.metallic.unwrap_or(base.metallic),
+                        perceptual_roughness: pbr.roughness.unwrap_or(base.perceptual_roughness),
                         // TODO specular intensity
-                        double_sided: true,
-                        cull_mode: None,
                         alpha_mode,
-                        ..Default::default()
+                        ..base.clone()
                     },
                     pbr.texture.clone(),
                     pbr.emissive_texture.clone(),
@@ -123,7 +154,7 @@ impl From<PbMaterial> for MaterialDefinition {
             None => Default::default(),
         };
 
-        let shadow_caster = match value.material {
+        let shadow_caster = match &pb_material.material {
             Some(pb_material::Material::Unlit(unlit)) => unlit.cast_shadows,
             Some(pb_material::Material::Pbr(pbr)) => pbr.cast_shadows,
             _ => None,
@@ -142,7 +173,7 @@ impl From<PbMaterial> for MaterialDefinition {
 
 impl Plugin for MaterialDefinitionPlugin {
     fn build(&self, app: &mut App) {
-        app.add_crdt_lww_component::<PbMaterial, MaterialDefinition>(
+        app.add_crdt_lww_component::<PbMaterial, PbMaterialComponent>(
             SceneComponentId::MATERIAL,
             ComponentPosition::EntityOnly,
         );
@@ -245,8 +276,13 @@ impl<'w, 's> TextureResolver<'w, 's> {
 fn update_materials(
     mut commands: Commands,
     mut new_materials: Query<
-        (Entity, &MaterialDefinition, &ContainerEntity),
-        Or<(Changed<MaterialDefinition>, With<RetryMaterial>)>,
+        (
+            Entity,
+            &PbMaterialComponent,
+            &ContainerEntity,
+            Option<&BaseMaterial>,
+        ),
+        Or<(Changed<PbMaterialComponent>, With<RetryMaterial>)>,
     >,
     mut materials: ResMut<Assets<SceneMaterial>>,
     touch: Query<&Handle<SceneMaterial>, With<TouchMaterial>>,
@@ -254,7 +290,8 @@ fn update_materials(
     scenes: Query<&RendererSceneContext>,
     config: Res<AppConfig>,
 ) {
-    for (ent, defn, container) in new_materials.iter_mut() {
+    for (ent, mat, container, base) in new_materials.iter_mut() {
+        let defn = MaterialDefinition::from_base_and_material(base, &mat.0);
         let textures: Result<Vec<_>, _> = [
             &defn.base_color_texture,
             &defn.emmissive_texture,
