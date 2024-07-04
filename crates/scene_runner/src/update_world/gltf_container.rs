@@ -405,7 +405,16 @@ fn update_ready_gltfs(
                 {
                     // collect named nodes to push to scene on request
                     if let Some(name) = maybe_name {
-                        named_nodes.insert(name.as_str().to_owned(), spawned_ent);
+                        let mut name = name.to_string();
+                        let mut ptr = parent.get();
+                        while ptr != bevy_scene_entity {
+                            let (maybe_name, _, parent, ..) = gltf_spawned_entities.get(ptr).unwrap();
+                            if let Some(parent_name) = maybe_name {
+                                name = format!("{parent_name}/{name}");
+                            }
+                            ptr = parent.get();
+                        }
+                        named_nodes.insert(name, spawned_ent);
                     }
 
                     // children of root nodes -> rotate
@@ -968,18 +977,22 @@ fn expose_gltfs(
                 };
 
                 debug!("adding");
+                println!("link");
                 target_commands.try_insert(RendererNodeLink(ent));
 
                 let (maybe_material, maybe_mesh, maybe_skin) = node_data.get(e).unwrap_or_default();
 
                 if let Some(mesh) = maybe_mesh {
+                    println!("link mesh");
                     commands.entity(ent).insert(mesh.clone());
                 }
                 if let Some(skin) = maybe_skin {
+                    println!("link skin");
                     commands.entity(ent).insert(skin.clone());
                 }
 
                 if let Some(material) = maybe_material {
+                    println!("link material");
                     // hide
                     commands
                         .entity(e)
@@ -1078,6 +1091,7 @@ fn expose_gltfs(
                                     direct_intensity: None,
                                 })
                             }),
+                            gltf: None,
                         },
                     );
                 }
@@ -1206,3 +1220,39 @@ fn update_gltf_linked_visibility(
         }
     }
 }
+
+// GLTFNODE TODO
+// -------------
+
+// colliders - copy and disable, push MeshCollider
+
+// meshes - push MeshRenderer
+//   - add skin id to GltfMesh for MeshRenderer, push that too
+//   - (morph targets already in gltf mesh, need to generate on gltf mesh demand)
+ 
+// bevy - change `mesh_entity.insert(Name::new(primitive_name(&mesh, &primitive)));` it should add mesh index, and primitive index if >1
+//   - can we disambguate vs existing meshes named "Mesh0" ? i don't think so. may need to just note it as a problem, and well-define the generated names.
+
+// add named materials, named meshes to container load state (same name issue)
+
+// transform propagation:
+// in: expected root-relative-transform for each gltf ent, plus list of parents (invariant)
+// check if gltf ent has moved
+//  -> mark as animated
+// check if scene ent has moved
+//  -> mark gltf as scene-moved if not already animated
+// loop
+//  -> check parents of all nodes, remove those already processed
+//  for each gltf ent
+//   -> if any parents still unprocessed, continue and come back later
+//   -> if animated
+//     -> calculate rrt
+//     -> deferred set scene ent transform = rrt 
+//     -> push rrt to scene
+//   -> if scene-moved
+//     -> calculate gltf local transform based on updated transforms
+//     -> deferred apply to gltf
+//     -> store as updated transform
+//   -> finally (in all cases)
+//     -> calculate rrt based on updated transforms and store
+//     -> add to processed list

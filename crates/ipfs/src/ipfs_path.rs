@@ -433,7 +433,7 @@ impl IpfsPath {
 
     pub fn content_path(&self) -> Option<&str> {
         if let IpfsType::ContentFile { file_path, .. } = &self.ipfs_type {
-            Some(&file_path)
+            Some(file_path)
         } else {
             None
         }

@@ -1,6 +1,11 @@
 use std::f32::consts::FRAC_PI_2;
 
-use bevy::{prelude::*, render::mesh::VertexAttributeValues, utils::HashMap};
+use bevy::{
+    gltf::{Gltf, GltfMesh},
+    prelude::*,
+    render::mesh::VertexAttributeValues,
+    utils::HashMap,
+};
 
 use common::{sets::SceneSets, structs::AppConfig};
 
@@ -9,6 +14,7 @@ use dcl_component::{
     proto_components::sdk::components::{pb_mesh_renderer, PbMeshRenderer},
     SceneComponentId,
 };
+use ipfs::IpfsAssetServer;
 use scene_material::{SceneBound, SceneMaterial};
 
 use crate::{renderer_context::RendererSceneContext, SceneEntity};
@@ -20,12 +26,19 @@ use super::AddCrdtInterfaceExt;
 pub mod truncated_cone;
 pub struct MeshDefinitionPlugin;
 
+#[derive(Debug)]
+pub enum GltfId {
+    Name(String),
+    Index(u32),
+}
+
 #[derive(Component, Debug)]
 pub enum MeshDefinition {
     Box { uvs: Vec<[f32; 2]> },
     Cylinder { radius_top: f32, radius_bottom: f32 },
     Plane { uvs: Vec<[f32; 2]> },
     Sphere,
+    Gltf { src: String, id: GltfId },
 }
 
 #[derive(Resource)]
@@ -61,6 +74,16 @@ impl From<PbMeshRenderer> for MeshDefinition {
                 }
             }
             Some(pb_mesh_renderer::Mesh::Sphere(pb_mesh_renderer::SphereMesh {})) => Self::Sphere,
+            Some(pb_mesh_renderer::Mesh::Gltf(pb_mesh_renderer::GltfMesh {
+                gltf_src,
+                id: Some(id),
+            })) => Self::Gltf {
+                src: gltf_src,
+                id: match id {
+                    pb_mesh_renderer::gltf_mesh::Id::Name(name) => GltfId::Name(name),
+                    pb_mesh_renderer::gltf_mesh::Id::Index(index) => GltfId::Index(index),
+                },
+            },
             _ => Self::Box {
                 uvs: Vec::default(),
             },
@@ -119,6 +142,9 @@ impl Plugin for MeshDefinitionPlugin {
     }
 }
 
+#[derive(Component)]
+pub struct RetryMeshDefinition;
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn update_mesh(
     mut commands: Commands,
@@ -129,7 +155,7 @@ pub fn update_mesh(
             &MeshDefinition,
             Option<&Handle<SceneMaterial>>,
         ),
-        Changed<MeshDefinition>,
+        Or<(Changed<MeshDefinition>, With<RetryMeshDefinition>)>,
     >,
     mut removed_primitives: RemovedComponents<MeshDefinition>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -137,9 +163,16 @@ pub fn update_mesh(
     mut default_material: Local<HashMap<Entity, Handle<SceneMaterial>>>,
     mut materials: ResMut<Assets<SceneMaterial>>,
     scenes: Query<&RendererSceneContext>,
+    gltfs: Res<Assets<Gltf>>,
+    gltf_meshes: Res<Assets<GltfMesh>>,
     config: Res<AppConfig>,
+    ipfas: IpfsAssetServer,
+    mut pending_gltfs: Local<HashMap<Entity, Handle<Gltf>>>,
 ) {
+    let mut prev_pending_gltfs = std::mem::take(&mut *pending_gltfs);
+
     for (ent, scene_ent, prim, maybe_material) in new_primitives.iter() {
+        commands.entity(ent).remove::<RetryMeshDefinition>();
         let handle = match prim {
             MeshDefinition::Box { uvs } => {
                 if uvs.is_empty() {
@@ -191,6 +224,42 @@ pub fn update_mesh(
                 }
             }
             MeshDefinition::Sphere => defaults.sphere.clone(),
+            MeshDefinition::Gltf { src, id } => {
+                let Ok(scene) = scenes.get(scene_ent.root) else {
+                    continue;
+                };
+                let h_gltf = prev_pending_gltfs.remove(&ent).unwrap_or_else(|| ipfas.load_content_file(src, &scene.hash).unwrap());
+                let gltf = match ipfas.asset_server().load_state(h_gltf.id()) {
+                    bevy::asset::LoadState::Loading => {
+                        pending_gltfs.insert(ent, h_gltf.clone());
+                        commands.entity(ent).try_insert(RetryMeshDefinition);
+                        continue;
+                    }
+                    bevy::asset::LoadState::Loaded => gltfs.get(h_gltf.id()).unwrap(),
+                    bevy::asset::LoadState::NotLoaded | bevy::asset::LoadState::Failed => {
+                        warn!("failed to load gltf for mesh");
+                        continue;
+                    }
+                };
+                let Some(h_gltf_mesh) = (match id {
+                    GltfId::Name(name) => gltf.named_meshes.get(name),
+                    GltfId::Index(i) => gltf.meshes.get(*i as usize),
+                }) else {
+                    warn!("mesh {id:?} not found in gltf {src}");
+                    continue;
+                };
+                let Some(gltf_mesh) = gltf_meshes.get(h_gltf_mesh) else {
+                    warn!("no gltf mesh");
+                    continue;
+                };
+                if gltf_mesh.primitives.len() != 1 {
+                    warn!("only single primitive meshes are supported: gltf_mesh has {}", gltf_mesh.primitives.len());
+                }
+                let Some(primitive) = gltf_mesh.primitives.get(0) else {
+                    continue;
+                };
+                primitive.mesh.clone()
+            }
         };
         commands.entity(ent).try_insert(handle);
 
@@ -216,7 +285,7 @@ pub fn update_mesh(
 
     for ent in removed_primitives.read() {
         if let Some(mut e) = commands.get_entity(ent) {
-            e.remove::<(Handle<Mesh>, Handle<SceneMaterial>)>();
+            e.remove::<Handle<Mesh>>();
         }
     }
 
