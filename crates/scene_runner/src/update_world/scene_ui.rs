@@ -551,6 +551,7 @@ fn layout_scene_ui(
     children: Query<&Children>,
     styles: Query<&Style>,
     mut scroll_to: EventWriter<ScrollTargetEvent>,
+    mut removed_transforms: RemovedComponents<UiTransform>,
 ) {
     let current_scenes = player
         .get_single()
@@ -567,7 +568,14 @@ fn layout_scene_ui(
 
     for (ent, mut ui_data) in scene_uis.iter_mut() {
         if current_scenes.contains(&ent) {
-            if ui_data.relayout || ui_data.current_node.is_none() || config.is_changed() {
+            let any_removed = removed_transforms
+                .read()
+                .any(|r| ui_data.nodes.contains(&r));
+            if ui_data.relayout
+                || ui_data.current_node.is_none()
+                || config.is_changed()
+                || any_removed
+            {
                 // clear any existing ui target
                 *ui_target = UiPointerTarget::None;
 
