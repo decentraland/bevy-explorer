@@ -47,6 +47,7 @@ use self::{
 };
 
 pub mod automatic_testing;
+pub mod gltf_resolver;
 pub mod initialize_scene;
 pub mod permissions;
 pub mod primary_entities;
@@ -56,7 +57,6 @@ pub mod test;
 pub mod update_scene;
 pub mod update_world;
 pub mod util;
-pub mod gltf_mesh_resolver;
 
 // bookkeeping struct for javascript execution of scenes
 #[derive(Resource)]

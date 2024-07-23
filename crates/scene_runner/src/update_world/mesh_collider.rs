@@ -16,9 +16,12 @@ use rapier3d_f64::{
 };
 
 use crate::{
-    gltf_mesh_resolver::GltfMeshResolver, update_world::{
+    gltf_resolver::GltfMeshResolver,
+    update_world::{
         gltf_container::mesh_to_parry_shape, mesh_renderer::truncated_cone::TruncatedCone,
-    }, ContainerEntity, ContainingScene, DeletedSceneEntities, PrimaryUser, RendererSceneContext, SceneLoopSchedule, SceneSets
+    },
+    ContainerEntity, ContainingScene, DeletedSceneEntities, PrimaryUser, RendererSceneContext,
+    SceneLoopSchedule, SceneSets,
 };
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},

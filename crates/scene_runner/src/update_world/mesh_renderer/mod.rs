@@ -11,7 +11,7 @@ use dcl_component::{
 };
 use scene_material::{SceneBound, SceneMaterial};
 
-use crate::{gltf_mesh_resolver::GltfMeshResolver, renderer_context::RendererSceneContext, SceneEntity};
+use crate::{gltf_resolver::GltfMeshResolver, renderer_context::RendererSceneContext, SceneEntity};
 
 use self::truncated_cone::TruncatedCone;
 

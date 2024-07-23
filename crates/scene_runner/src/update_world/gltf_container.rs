@@ -297,6 +297,9 @@ fn update_gltf(
     }
 }
 
+#[derive(Component)]
+pub struct GltfMaterialName(String);
+
 pub struct CachedMeshData {
     pub mesh_id: AssetId<Mesh>,
     maybe_collider: Option<Handle<Mesh>>,
@@ -529,6 +532,22 @@ fn update_ready_gltfs(
 
                     // substitute material
                     if let Some(h_material) = maybe_material {
+                        let material_name = gltf
+                            .named_materials
+                            .iter()
+                            .find(|(_, handle)| handle == &h_material)
+                            .map(|(name, _)| name.clone())
+                            .unwrap_or_else(|| {
+                                let ix = gltf
+                                    .materials
+                                    .iter()
+                                    .enumerate()
+                                    .find(|(_, handle)| handle == &h_material)
+                                    .unwrap()
+                                    .0;
+                                format!("Material{ix}")
+                            });
+
                         let h_scene_material = if let Some(h_scene_material) =
                             resource_lookup.materials.get(h_material)
                         {
@@ -548,7 +567,10 @@ fn update_ready_gltfs(
                             *tracker.0.entry("Unique Materials").or_default() += 1;
                             h_scene_material
                         };
-                        commands.entity(spawned_ent).insert(h_scene_material);
+                        commands
+                            .entity(spawned_ent)
+                            .insert(h_scene_material)
+                            .insert(GltfMaterialName(material_name));
                     }
                     *tracker.0.entry("Materials").or_default() += 1;
 
@@ -956,6 +978,7 @@ fn expose_gltfs(
     mut removed: RemovedComponents<GltfNodeRequest>,
     node_data: Query<(
         Option<&Handle<SceneMaterial>>,
+        Option<&GltfMaterialName>,
         Option<&Handle<Mesh>>,
         Option<&SkinnedMesh>,
         Option<&MeshCollider>,
@@ -1062,8 +1085,14 @@ fn expose_gltfs(
                 println!("link");
                 target_commands.try_insert(RendererNodeLink(ent));
 
-                let (maybe_material, maybe_mesh, maybe_skin, maybe_collider, maybe_name) =
-                    node_data.get(gltf_entity).unwrap_or_default();
+                let (
+                    maybe_material,
+                    maybe_mat_name,
+                    maybe_mesh,
+                    maybe_skin,
+                    maybe_collider,
+                    maybe_name,
+                ) = node_data.get(gltf_entity).unwrap_or_default();
 
                 if let Some(mesh) = maybe_mesh {
                     println!("link mesh");
@@ -1124,7 +1153,11 @@ fn expose_gltfs(
                     commands.entity(ent).insert(material.clone());
                     // set base
                     let base = mats.get(material.id()).unwrap();
-                    commands.entity(ent).insert(BaseMaterial(base.base.clone()));
+                    commands.entity(ent).insert(BaseMaterial {
+                        material: base.base.clone(),
+                        gltf: src.to_owned(),
+                        name: maybe_mat_name.unwrap().0.clone(),
+                    });
 
                     // write to scene
                     let dcl_texture = |h: &Handle<Image>| -> TextureUnion {
@@ -1213,7 +1246,10 @@ fn expose_gltfs(
                                     direct_intensity: None,
                                 })
                             }),
-                            gltf: None,
+                            gltf: maybe_mat_name.map(|name| pb_material::GltfMaterial {
+                                gltf_src: src.to_owned(),
+                                name: name.0.clone(),
+                            }),
                         },
                     );
                 }
@@ -1455,39 +1491,3 @@ fn update_gltf_linked_visibility(
         }
     }
 }
-
-// GLTFNODE TODO
-// -------------
-
-// colliders - copy and disable, push MeshCollider
-
-// meshes - push MeshRenderer
-//   - add skin id to GltfMesh for MeshRenderer, push that too
-//   - (morph targets already in gltf mesh, need to generate on gltf mesh demand)
-
-// bevy - change `mesh_entity.insert(Name::new(primitive_name(&mesh, &primitive)));` it should add mesh index, and primitive index if >1
-//   - can we disambguate vs existing meshes named "Mesh0" ? i don't think so. may need to just note it as a problem, and well-define the generated names.
-
-// add named materials, named meshes to container load state (same name issue)
-
-// transform propagation:
-// in: expected root-relative-transform for each gltf ent, plus list of parents (invariant)
-// check if gltf ent has moved
-//  -> mark as animated
-// check if scene ent has moved
-//  -> mark gltf as scene-moved if not already animated
-// loop until all processed
-//  -> check parents of all nodes, if any moved/unprocessed then continue
-//  for each gltf ent
-//   -> if any parents still unprocessed, continue and come back later
-//   -> if animated
-//     -> calculate rrt
-//     -> deferred set scene ent transform = rrt
-//     -> push rrt to scene
-//   -> if scene-moved
-//     -> calculate gltf local transform based on updated transforms
-//     -> deferred apply to gltf
-//     -> store as updated transform
-//   -> finally (in all cases)
-//     -> calculate rrt based on updated transforms and store
-//     -> add to processed list

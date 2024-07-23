@@ -5,7 +5,10 @@ use common::structs::{AppConfig, AvatarTextureHandle};
 use comms::profile::UserProfile;
 use ipfs::IpfsAssetServer;
 
-use crate::{renderer_context::RendererSceneContext, ContainerEntity, SceneSets};
+use crate::{
+    gltf_resolver::GltfMaterialResolver, renderer_context::RendererSceneContext, ContainerEntity,
+    SceneSets,
+};
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::{
@@ -20,8 +23,12 @@ use super::{mesh_renderer::update_mesh, AddCrdtInterfaceExt};
 
 pub struct MaterialDefinitionPlugin;
 
-#[derive(Component)]
-pub struct BaseMaterial(pub StandardMaterial);
+#[derive(Component, Clone)]
+pub struct BaseMaterial {
+    pub material: StandardMaterial,
+    pub gltf: String,
+    pub name: String,
+}
 
 #[derive(Debug, Default, Clone)]
 pub struct MaterialDefinition {
@@ -46,7 +53,7 @@ static DEFAULT_BASE: OnceLock<StandardMaterial> = OnceLock::new();
 impl MaterialDefinition {
     pub fn from_base_and_material(base: Option<&BaseMaterial>, pb_material: &PbMaterial) -> Self {
         let base = base
-            .map(|b| &b.0)
+            .map(|b| &b.material)
             .unwrap_or(DEFAULT_BASE.get_or_init(|| StandardMaterial {
                 base_color: Color::WHITE,
                 double_sided: true,
@@ -282,15 +289,58 @@ fn update_materials(
             &ContainerEntity,
             Option<&BaseMaterial>,
         ),
-        Or<(Changed<PbMaterialComponent>, With<RetryMaterial>)>,
+        Or<(
+            Changed<PbMaterialComponent>,
+            Changed<BaseMaterial>,
+            With<RetryMaterial>,
+        )>,
     >,
     mut materials: ResMut<Assets<SceneMaterial>>,
     touch: Query<&Handle<SceneMaterial>, With<TouchMaterial>>,
     resolver: TextureResolver,
     scenes: Query<&RendererSceneContext>,
     config: Res<AppConfig>,
+    mut gltf_resolver: GltfMaterialResolver,
 ) {
+    gltf_resolver.begin_frame();
+
     for (ent, mat, container, base) in new_materials.iter_mut() {
+        let new_base;
+        let base = if let Some(gltf_def) = mat.0.gltf.as_ref() {
+            if base.map_or(false, |b| {
+                b.gltf == gltf_def.gltf_src && b.name == gltf_def.name
+            }) {
+                base
+            } else {
+                let Ok(scene_hash) = scenes.get(container.root).map(|scene| &scene.hash) else {
+                    continue;
+                };
+                match gltf_resolver.resolve_material(&gltf_def.gltf_src, scene_hash, &gltf_def.name)
+                {
+                    Err(e) => {
+                        warn!("base not found: {e:?}");
+                        None
+                    }
+                    Ok(None) => {
+                        // retry
+                        commands.entity(ent).insert(RetryMaterial(Vec::default()));
+                        continue;
+                    }
+                    Ok(Some(mat)) => {
+                        new_base = BaseMaterial {
+                            material: mat.clone(),
+                            gltf: gltf_def.gltf_src.clone(),
+                            name: gltf_def.name.clone(),
+                        };
+                        commands.entity(ent).insert(new_base.clone());
+                        Some(&new_base)
+                    }
+                }
+            }
+        } else {
+            None
+        };
+
         let defn = MaterialDefinition::from_base_and_material(base, &mat.0);
         let textures: Result<Vec<_>, _> = [
             &defn.base_color_texture,
