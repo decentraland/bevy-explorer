@@ -275,6 +275,10 @@ impl<'w, 's> TransformHelperPub<'w, 's> {
         entity: Entity,
         up_to: Option<Entity>,
     ) -> Result<GlobalTransform, anyhow::Error> {
+        if up_to == Some(entity) {
+            return Ok(GlobalTransform::IDENTITY);
+        }
+
         let transform = self.transform_query.get(entity)?;
 
         let mut global_transform = GlobalTransform::from(*transform);
@@ -297,6 +301,10 @@ impl<'w, 's> TransformHelperPub<'w, 's> {
         up_to: Option<Entity>,
         overrides: &HashMap<Entity, Transform>,
     ) -> Result<GlobalTransform, anyhow::Error> {
+        if up_to == Some(entity) {
+            return Ok(GlobalTransform::IDENTITY);
+        }
+
         let transform = overrides
             .get(&entity)
             .unwrap_or(self.transform_query.get(entity)?);
@@ -323,6 +331,10 @@ impl<'w, 's> TransformHelperPub<'w, 's> {
         entity: Entity,
         up_to: Option<Entity>,
     ) -> Result<(GlobalTransform, Vec<Entity>), anyhow::Error> {
+        if up_to == Some(entity) {
+            return Ok((GlobalTransform::IDENTITY, Vec::default()));
+        }
+
         let transform = self.transform_query.get(entity)?;
         let mut ancestors = Vec::default();
 

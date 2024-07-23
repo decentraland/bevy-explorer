@@ -543,8 +543,8 @@ fn update_ready_gltfs(
                                     .iter()
                                     .enumerate()
                                     .find(|(_, handle)| handle == &h_material)
-                                    .unwrap()
-                                    .0;
+                                    .map(|(ix, _)| ix)
+                                    .unwrap_or(usize::MAX); // TODO handle inverted materials (make a list in Gltf, choose based on scale of the target?)
                                 format!("Material{ix}")
                             });
 
@@ -945,7 +945,11 @@ impl From<PbGltfNode> for GltfNodeRequest {
 #[derive(Component)]
 pub struct GltfNodeRequestRetry;
 #[derive(Component)]
-pub struct SceneNodeLink(Entity);
+pub struct SceneNodeLink {
+    gltf_entity: Entity,
+    gltf_parent: Entity,
+    scene_parent: (Entity, SceneEntityId),
+}
 #[derive(Component)]
 pub struct RendererNodeLink(Entity);
 
@@ -953,7 +957,12 @@ pub struct RendererNodeLink(Entity);
 pub enum GltfLinkState<'a> {
     Pending,
     Failed(&'static str),
-    Ready { gltf_entity: Entity, src: &'a str },
+    Ready {
+        gltf_entity: Entity,
+        src: &'a str,
+        gltf_node_parent: Entity,
+        scene_parent: (Entity, SceneEntityId),
+    },
 }
 
 #[derive(Component)]
@@ -972,7 +981,13 @@ fn expose_gltfs(
             With<GltfNodeRequestRetry>,
         )>,
     >,
-    parents: Query<(Option<&GltfDefinition>, Option<&GltfProcessed>, &Parent)>,
+    parents: Query<(
+        Option<&GltfDefinition>,
+        Option<&GltfProcessed>,
+        Option<&GltfNodeRequest>,
+        &SceneEntity,
+        &Parent,
+    )>,
     already_linked: Query<&RendererNodeLink>,
     mut scenes: Query<&mut RendererSceneContext>,
     mut removed: RemovedComponents<GltfNodeRequest>,
@@ -997,11 +1012,29 @@ fn expose_gltfs(
         commands.entity(ent).remove::<SceneNodeLink>();
 
         let mut parent = parent.get();
+        let mut scene_parent = None; // (gltf_path, entity, scene_entity_id)
         let state = loop {
-            // walk up parents until we find a gltf
-            let Ok((maybe_gltf, maybe_processed, next)) = parents.get(parent) else {
-                break GltfLinkState::Failed("GltfNode is not a child of an entity with a Gltf");
+            // walk up parents until we find a gltf container
+            let Ok((maybe_gltf, maybe_processed, maybe_parent_request, scene_entity, next)) =
+                parents.get(parent)
+            else {
+                break GltfLinkState::Failed(
+                    "GltfNode is not a child of an entity with a GltfContainer or GltfNode",
+                );
             };
+
+            if maybe_parent_request.is_none() && maybe_processed.is_none() {
+                break GltfLinkState::Failed(
+                    "GltfNode is not a child of an entity with a GltfContainer or GltfNode",
+                );
+            }
+
+            if let Some(parent_request) = maybe_parent_request {
+                // record scene parent
+                if scene_parent.is_none() {
+                    scene_parent = Some((parent_request.0.clone(), parent, scene_entity.id));
+                }
+            }
 
             if let Some(processed) = maybe_processed {
                 commands.entity(ent).remove::<GltfNodeRequestRetry>();
@@ -1022,9 +1055,37 @@ fn expose_gltfs(
                         if already_linked.get(t).is_ok() {
                             break GltfLinkState::Failed("duplicate node name requested");
                         }
+
+                        // make sure the new linked node is a child of the gltf parent (if any)
+                        let gltf_node_parent = if let Some((parent_path, ..)) =
+                            scene_parent.as_ref()
+                        {
+                            if req.0.strip_prefix(parent_path).is_none() {
+                                break GltfLinkState::Failed(
+                                    "requested GltfNode is not a descendent of the parent GltfNode",
+                                );
+                            }
+
+                            let Some(parent_node) = processed.named_nodes.get(parent_path) else {
+                                break GltfLinkState::Failed(
+                                    "requested GltfNode parent GltfNode not found",
+                                );
+                            };
+
+                            *parent_node
+                        } else {
+                            parent
+                        };
+
                         break GltfLinkState::Ready {
                             gltf_entity: t,
                             src: &maybe_gltf.unwrap().0.src,
+                            gltf_node_parent,
+                            scene_parent: scene_parent
+                                .map(|(_, scene_entity, scene_entity_id)| {
+                                    (scene_entity, scene_entity_id)
+                                })
+                                .unwrap_or((parent, scene_entity.id)),
                         };
                     }
                 }
@@ -1065,7 +1126,12 @@ fn expose_gltfs(
                     error: Some(err.to_owned()),
                 },
             ),
-            GltfLinkState::Ready { gltf_entity, src } => {
+            GltfLinkState::Ready {
+                gltf_entity,
+                src,
+                gltf_node_parent: gltf_parent,
+                scene_parent,
+            } => {
                 scene.update_crdt(
                     SceneComponentId::GLTF_NODE_STATE,
                     CrdtType::LWW_ANY,
@@ -1254,7 +1320,11 @@ fn expose_gltfs(
                     );
                 }
 
-                commands.entity(ent).insert(SceneNodeLink(gltf_entity));
+                commands.entity(ent).insert(SceneNodeLink {
+                    gltf_entity,
+                    gltf_parent,
+                    scene_parent,
+                });
             }
         }
     }
@@ -1270,7 +1340,7 @@ fn update_gltf_linked_transforms(
         Option<&HiddenMaterial>,
         Option<&HiddenCollider>,
     )>,
-    scene_nodes: Query<(&SceneEntity, Ref<Transform>, &Parent), With<SceneNodeLink>>,
+    scene_nodes: Query<(&SceneEntity, Ref<Transform>, &Parent, &SceneNodeLink)>,
     mut scenes: Query<&mut RendererSceneContext>,
     gt_helper: TransformHelperPub,
     mut stored_transforms_and_parents: Local<HashMap<Entity, (Transform, Vec<Entity>)>>,
@@ -1283,7 +1353,9 @@ fn update_gltf_linked_transforms(
         gltf_parent: Entity,
         scene_entity: Entity,
         scene_entity_id: SceneEntityId,
-        container: ContainerEntity,
+        scene: Entity,
+        transform_root: Entity,
+        scene_parent_scene_id: SceneEntityId,
         root_relative_transform: Transform,
     }
 
@@ -1317,13 +1389,15 @@ fn update_gltf_linked_transforms(
             }
         };
 
-        let Ok((scene_entity_id, scene_transform, scene_parent)) = scene_nodes.get(link.0) else {
+        let Ok((scene_entity_id, scene_transform, scene_parent, scene_link)) =
+            scene_nodes.get(link.0)
+        else {
             unlink(gltf_entity, &mut commands);
             warn!("no scene node");
             continue;
         };
 
-        if scene_parent.get() != container.container {
+        if scene_parent.get() != scene_link.scene_parent.0 {
             unlink(gltf_entity, &mut commands);
             warn!("linked entity moved out of container");
             continue;
@@ -1332,7 +1406,7 @@ fn update_gltf_linked_transforms(
         match prev_transforms_and_parents.remove(&gltf_entity) {
             Some((prev_transform, parents)) => {
                 let Ok(root_relative_gt) =
-                    gt_helper.compute_global_transform(gltf_entity, Some(container.container))
+                    gt_helper.compute_global_transform(gltf_entity, Some(scene_link.gltf_parent))
                 else {
                     warn!("failed to get gt");
                     continue;
@@ -1357,7 +1431,9 @@ fn update_gltf_linked_transforms(
                             gltf_parent: parent.get(),
                             scene_entity: link.0,
                             scene_entity_id: scene_entity_id.id,
-                            container: *container,
+                            scene: container.root,
+                            transform_root: scene_link.gltf_parent,
+                            scene_parent_scene_id: scene_link.scene_parent.1,
                         },
                     );
                     stored_transforms_and_parents
@@ -1368,11 +1444,15 @@ fn update_gltf_linked_transforms(
             }
             None => {
                 debug!("new link {gltf_entity:?}");
-                let Ok((root_relative_gt, parents)) = gt_helper
-                    .compute_global_transform_with_ancestors(
-                        gltf_entity,
-                        Some(container.container),
-                    )
+                let Ok((_, parents)) = gt_helper.compute_global_transform_with_ancestors(
+                    gltf_entity,
+                    Some(container.container),
+                ) else {
+                    warn!("failed to get ancestors");
+                    continue;
+                };
+                let Ok(root_relative_gt) =
+                    gt_helper.compute_global_transform(gltf_entity, Some(scene_link.gltf_parent))
                 else {
                     warn!("failed to get gt");
                     continue;
@@ -1388,7 +1468,9 @@ fn update_gltf_linked_transforms(
                         gltf_parent: parent.get(),
                         scene_entity: link.0,
                         scene_entity_id: scene_entity_id.id,
-                        container: *container,
+                        scene: container.root,
+                        transform_root: scene_link.gltf_parent,
+                        scene_parent_scene_id: scene_link.scene_parent.1,
                     },
                 );
             }
@@ -1406,7 +1488,7 @@ fn update_gltf_linked_transforms(
                 match data.state {
                     MoveState::Anim => {
                         // update scene / scene entity
-                        let Ok(mut scene) = scenes.get_mut(data.container.root) else {
+                        let Ok(mut scene) = scenes.get_mut(data.scene) else {
                             warn!("no scene");
                             return None;
                         };
@@ -1417,7 +1499,7 @@ fn update_gltf_linked_transforms(
                             data.scene_entity_id,
                             &DclTransformAndParent::from_bevy_transform_and_parent(
                                 &data.root_relative_transform, // transform relative to container root
-                                data.container.container_id,   // container root
+                                data.scene_parent_scene_id,
                             ),
                         );
 
@@ -1441,7 +1523,7 @@ fn update_gltf_linked_transforms(
                         let parent_transform = gt_helper
                             .compute_global_transform_with_overrides(
                                 data.gltf_parent,
-                                Some(data.container.container),
+                                Some(data.transform_root),
                                 &updated_transforms,
                             )
                             .unwrap();
@@ -1462,7 +1544,7 @@ fn update_gltf_linked_transforms(
                         stored_transforms_and_parents.get_mut(&gltf_ent).unwrap().0 = gt_helper
                             .compute_global_transform_with_overrides(
                                 gltf_ent,
-                                Some(data.container.container),
+                                Some(data.transform_root),
                                 &updated_transforms,
                             )
                             .unwrap()
@@ -1486,7 +1568,7 @@ fn update_gltf_linked_visibility(
     >,
 ) {
     for (link, vis) in scene_nodes.iter() {
-        if let Ok(mut target_vis) = gltf_nodes.get_mut(link.0) {
+        if let Ok(mut target_vis) = gltf_nodes.get_mut(link.gltf_entity) {
             *target_vis = *vis;
         }
     }
