@@ -56,6 +56,7 @@ pub mod test;
 pub mod update_scene;
 pub mod update_world;
 pub mod util;
+pub mod gltf_mesh_resolver;
 
 // bookkeeping struct for javascript execution of scenes
 #[derive(Resource)]
@@ -104,7 +105,7 @@ pub struct SceneEntity {
 // this component is present on bevy entities which either
 // - map to a scene entity
 // - are owned by a scene entity
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Clone, Copy)]
 pub struct ContainerEntity {
     pub container: Entity,
     pub root: Entity,

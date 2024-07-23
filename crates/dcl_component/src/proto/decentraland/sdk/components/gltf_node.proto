@@ -6,7 +6,7 @@ option (common.ecs_component_id) = 1045;
 
 // a GltfNode links a scene entity with a node from within a gltf, allowing the scene to inspect it or modify it.
 // This component must be added to a direct child of an entity with a PbGltfContainer component.
-// The name must uniquely match the name of one of the nodes within the Gltf.
+// The name must match the path of one of the nodes within the Gltf. These are available on the GltfContainerLoadingState component.
 // 
 // The renderer will attach a PbGltfNodeState to the entity describing the state. Once the state is `GNS_READY`, 
 // - the `Transform` will be updated to match the position of the node within the gltf (relative to the gltf root),
@@ -31,9 +31,9 @@ option (common.ecs_component_id) = 1045;
 //   change the state to `GNS_FAILED`.
 // - deleting the scene entity will not delete the gltf node.
 //
-// Removing the GltfNode will revert any changes to the original gltf. If the link is removed and the mesh/collider/material are not removed,
-// this will result in a duplication of these components as the previously-linked entity will retain it's components and the gltf node
-// will also be displayed.
+// Removing the GltfNode will revert any changes to the original gltf. If the GltfNode component is removed and the mesh/collider/material 
+// are not removed, this will result in a duplication of these components as the previously-linked entity will retain it's components and 
+// the gltf node will also be displayed.
 message PBGltfNode {
-  string name = 1; // the name of the target node in the Gltf.
+  string path = 1; // the path of the target node in the Gltf.
 }

@@ -35,10 +35,7 @@ message PBMeshRenderer {
     // A mesh from a Gltf.
     message GltfMesh {
         string gltf_src = 1; // the GLTF file path as listed in the scene's manifest.
-        oneof id {
-            string name = 2;  // the name of the mesh asset
-            uint32 index = 3; // the index of the mesh asset
-        }
+        string name = 2;  // the name of the mesh asset
     }
 
     oneof mesh {

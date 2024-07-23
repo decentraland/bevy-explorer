@@ -34,9 +34,10 @@ use dcl_component::{
     proto_components::{
         common::{Texture, TextureFilterMode, TextureUnion, TextureWrapMode},
         sdk::components::{
-            common::LoadingState, pb_material, ColliderLayer, GltfNodeStateValue,
-            MaterialTransparencyMode, PbGltfContainer, PbGltfContainerLoadingState, PbGltfNode,
-            PbGltfNodeState, PbMaterial,
+            common::LoadingState, pb_material, pb_mesh_collider, pb_mesh_renderer, ColliderLayer,
+            GltfNodeStateValue, MaterialTransparencyMode, PbGltfContainer,
+            PbGltfContainerLoadingState, PbGltfNode, PbGltfNodeState, PbMaterial, PbMeshCollider,
+            PbMeshRenderer,
         },
     },
     transform_and_parent::DclTransformAndParent,
@@ -162,7 +163,11 @@ fn update_gltf(
                 scene_ent.id,
                 &PbGltfContainerLoadingState {
                     current_state: current_state as i32,
-                    named_nodes: Default::default(),
+                    node_paths: Default::default(),
+                    mesh_names: Default::default(),
+                    material_names: Default::default(),
+                    skin_names: Default::default(),
+                    animation_names: Default::default(),
                 },
             );
 
@@ -212,6 +217,7 @@ fn update_gltf(
                 s.load_cameras = false;
                 s.load_lights = false;
                 s.load_materials = RenderAssetUsages::RENDER_WORLD;
+                s.include_source = true;
             },
         );
 
@@ -306,7 +312,13 @@ pub struct SceneResourceLookup {
 fn update_ready_gltfs(
     mut commands: Commands,
     ready_gltfs: Query<
-        (Entity, &SceneEntity, &GltfLoaded, &GltfDefinition),
+        (
+            Entity,
+            &SceneEntity,
+            &GltfLoaded,
+            &GltfDefinition,
+            &Handle<Gltf>,
+        ),
         Without<GltfProcessed>,
     >,
     gltf_spawned_entities: Query<(
@@ -336,8 +348,9 @@ fn update_ready_gltfs(
     )>,
     asset_server: Res<AssetServer>,
     config: Res<AppConfig>,
+    gltfs: Res<Assets<Gltf>>,
 ) {
-    for (bevy_scene_entity, dcl_scene_entity, loaded, definition) in ready_gltfs.iter() {
+    for (bevy_scene_entity, dcl_scene_entity, loaded, definition, h_gltf) in ready_gltfs.iter() {
         if loaded.0.is_none() {
             // nothing to process
             commands
@@ -348,6 +361,8 @@ fn update_ready_gltfs(
         let instance = loaded.0.as_ref().unwrap();
         if scene_spawner.instance_is_ready(*instance) {
             let mut animation_roots = HashSet::default();
+
+            let gltf = gltfs.get(h_gltf).unwrap();
 
             // let graph = _node_graph(&_debug_query, bevy_scene_entity);
             // println!("{bevy_scene_entity:?}");
@@ -408,7 +423,8 @@ fn update_ready_gltfs(
                         let mut name = name.to_string();
                         let mut ptr = parent.get();
                         while ptr != bevy_scene_entity {
-                            let (maybe_name, _, parent, ..) = gltf_spawned_entities.get(ptr).unwrap();
+                            let (maybe_name, _, parent, ..) =
+                                gltf_spawned_entities.get(ptr).unwrap();
                             if let Some(parent_name) = maybe_name {
                                 name = format!("{parent_name}/{name}");
                             }
@@ -600,33 +616,7 @@ fn update_ready_gltfs(
                     if collider_bits != 0
                     /* && !is_skinned */
                     {
-                        // create collider shape
-                        let VertexAttributeValues::Float32x3(positions_ref) =
-                            mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
-                        else {
-                            panic!("no positions")
-                        };
-
-                        let positions_parry: Vec<_> = positions_ref
-                            .iter()
-                            .map(|pos| Point::from([pos[0] as f64, pos[1] as f64, pos[2] as f64]))
-                            .collect();
-
-                        let indices: Vec<u32> = match mesh_data.indices() {
-                            None => (0..positions_ref.len() as u32).collect(),
-                            Some(Indices::U16(ixs)) => ixs.iter().map(|ix| *ix as u32).collect(),
-                            Some(Indices::U32(ixs)) => ixs.to_vec(),
-                        };
-                        let indices_parry = indices
-                            .chunks_exact(3)
-                            .map(|chunk| chunk.try_into().unwrap())
-                            .collect();
-
-                        let shape = SharedShape::trimesh_with_flags(
-                            positions_parry,
-                            indices_parry,
-                            TriMeshFlags::all(),
-                        );
+                        let shape = mesh_to_parry_shape(mesh_data);
 
                         let index = collider_counter
                             .entry(collider_base_name.to_owned())
@@ -697,13 +687,71 @@ fn update_ready_gltfs(
                 }
             }
 
+            // collect named assets and assign names to unnamed
+            let mesh_names = gltf
+                .source
+                .as_ref()
+                .unwrap()
+                .meshes()
+                .enumerate()
+                .map(|(ix, m)| {
+                    m.name()
+                        .map(ToOwned::to_owned)
+                        .unwrap_or_else(|| format!("Mesh{ix}"))
+                })
+                .collect::<Vec<_>>();
+
+            let skin_names = gltf
+                .source
+                .as_ref()
+                .unwrap()
+                .skins()
+                .enumerate()
+                .map(|(ix, s)| {
+                    s.name()
+                        .map(ToOwned::to_owned)
+                        .unwrap_or_else(|| format!("Skin{ix}"))
+                })
+                .collect::<Vec<_>>();
+
+            let material_names = gltf
+                .source
+                .as_ref()
+                .unwrap()
+                .materials()
+                .enumerate()
+                .map(|(ix, m)| {
+                    m.name()
+                        .map(ToOwned::to_owned)
+                        .unwrap_or_else(|| format!("Material{ix}"))
+                })
+                .collect::<Vec<_>>();
+
+            let animation_names = gltf
+                .source
+                .as_ref()
+                .unwrap()
+                .animations()
+                .enumerate()
+                .map(|(ix, a)| {
+                    a.name()
+                        .map(ToOwned::to_owned)
+                        .unwrap_or_else(|| format!("Animation{ix}"))
+                })
+                .collect::<Vec<_>>();
+
+            // collect named skins and assign names to unnamed meshes
             context.update_crdt(
                 SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
                 CrdtType::LWW_ANY,
                 dcl_scene_entity.id,
                 &PbGltfContainerLoadingState {
                     current_state: LoadingState::Finished as i32,
-                    named_nodes: named_nodes.keys().cloned().collect(),
+                    node_paths: named_nodes.keys().cloned().collect(),
+                    mesh_names,
+                    material_names,
+                    skin_names,
+                    animation_names,
                 },
             );
             commands
@@ -837,12 +885,38 @@ fn _node_graph(
     format!("{:?}", dot)
 }
 
+pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
+    // create collider shape
+    let VertexAttributeValues::Float32x3(positions_ref) =
+        mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
+    else {
+        panic!("no positions")
+    };
+
+    let positions_parry: Vec<_> = positions_ref
+        .iter()
+        .map(|pos| Point::from([pos[0] as f64, pos[1] as f64, pos[2] as f64]))
+        .collect();
+
+    let indices: Vec<u32> = match mesh_data.indices() {
+        None => (0..positions_ref.len() as u32).collect(),
+        Some(Indices::U16(ixs)) => ixs.iter().map(|ix| *ix as u32).collect(),
+        Some(Indices::U32(ixs)) => ixs.to_vec(),
+    };
+    let indices_parry = indices
+        .chunks_exact(3)
+        .map(|chunk| chunk.try_into().unwrap())
+        .collect();
+
+    SharedShape::trimesh_with_flags(positions_parry, indices_parry, TriMeshFlags::all())
+}
+
 #[derive(Component)]
 pub struct GltfNodeRequest(String);
 
 impl From<PbGltfNode> for GltfNodeRequest {
     fn from(value: PbGltfNode) -> Self {
-        GltfNodeRequest(value.name)
+        GltfNodeRequest(value.path)
     }
 }
 
@@ -854,14 +928,17 @@ pub struct SceneNodeLink(Entity);
 pub struct RendererNodeLink(Entity);
 
 #[derive(Debug)]
-pub enum GltfLinkState {
+pub enum GltfLinkState<'a> {
     Pending,
     Failed(&'static str),
-    Ready(Entity),
+    Ready { gltf_entity: Entity, src: &'a str },
 }
 
 #[derive(Component)]
 pub struct HiddenMaterial(Handle<SceneMaterial>);
+
+#[derive(Component)]
+pub struct HiddenCollider(MeshCollider);
 
 fn expose_gltfs(
     mut commands: Commands,
@@ -881,6 +958,8 @@ fn expose_gltfs(
         Option<&Handle<SceneMaterial>>,
         Option<&Handle<Mesh>>,
         Option<&SkinnedMesh>,
+        Option<&MeshCollider>,
+        Option<&Name>,
     )>,
     mats: Res<Assets<SceneMaterial>>,
     images: Res<Assets<Image>>,
@@ -920,7 +999,10 @@ fn expose_gltfs(
                         if already_linked.get(t).is_ok() {
                             break GltfLinkState::Failed("duplicate node name requested");
                         }
-                        break GltfLinkState::Ready(t);
+                        break GltfLinkState::Ready {
+                            gltf_entity: t,
+                            src: &maybe_gltf.unwrap().0.src,
+                        };
                     }
                 }
             }
@@ -960,7 +1042,7 @@ fn expose_gltfs(
                     error: Some(err.to_owned()),
                 },
             ),
-            GltfLinkState::Ready(e) => {
+            GltfLinkState::Ready { gltf_entity, src } => {
                 scene.update_crdt(
                     SceneComponentId::GLTF_NODE_STATE,
                     CrdtType::LWW_ANY,
@@ -971,7 +1053,7 @@ fn expose_gltfs(
                     },
                 );
 
-                let Some(mut target_commands) = commands.get_entity(e) else {
+                let Some(mut target_commands) = commands.get_entity(gltf_entity) else {
                     warn!("gltf node entity not found");
                     continue;
                 };
@@ -980,22 +1062,62 @@ fn expose_gltfs(
                 println!("link");
                 target_commands.try_insert(RendererNodeLink(ent));
 
-                let (maybe_material, maybe_mesh, maybe_skin) = node_data.get(e).unwrap_or_default();
+                let (maybe_material, maybe_mesh, maybe_skin, maybe_collider, maybe_name) =
+                    node_data.get(gltf_entity).unwrap_or_default();
 
                 if let Some(mesh) = maybe_mesh {
                     println!("link mesh");
                     commands.entity(ent).insert(mesh.clone());
+                    // write to scene
+                    scene.update_crdt(
+                        SceneComponentId::MESH_RENDERER,
+                        CrdtType::LWW_ANY,
+                        scene_ent.id,
+                        &PbMeshRenderer {
+                            mesh: Some(pb_mesh_renderer::Mesh::Gltf(pb_mesh_renderer::GltfMesh {
+                                gltf_src: src.to_owned(),
+                                name: maybe_name
+                                    .map(|n| n.to_string())
+                                    .unwrap_or_else(|| "???".to_owned()),
+                            })),
+                        },
+                    );
                 }
                 if let Some(skin) = maybe_skin {
                     println!("link skin");
                     commands.entity(ent).insert(skin.clone());
                 }
-
+                if let Some(collider) = maybe_collider {
+                    println!("link collider");
+                    // hide
+                    commands
+                        .entity(gltf_entity)
+                        .remove::<MeshCollider>()
+                        .insert(HiddenCollider(collider.clone()));
+                    // copy
+                    commands.entity(ent).insert(collider.clone());
+                    // write to scene
+                    scene.update_crdt(
+                        SceneComponentId::MESH_COLLIDER,
+                        CrdtType::LWW_ANY,
+                        scene_ent.id,
+                        &PbMeshCollider {
+                            collision_mask: Some(collider.collision_mask),
+                            mesh: Some(pb_mesh_collider::Mesh::Gltf(pb_mesh_collider::GltfMesh {
+                                gltf_src: src.to_owned(),
+                                name: collider
+                                    .mesh_name
+                                    .clone()
+                                    .unwrap_or_else(|| "???".to_owned()),
+                            })),
+                        },
+                    )
+                }
                 if let Some(material) = maybe_material {
                     println!("link material");
                     // hide
                     commands
-                        .entity(e)
+                        .entity(gltf_entity)
                         .remove::<Handle<SceneMaterial>>()
                         .insert(HiddenMaterial(material.clone()));
                     // copy
@@ -1096,7 +1218,7 @@ fn expose_gltfs(
                     );
                 }
 
-                commands.entity(ent).insert(SceneNodeLink(e));
+                commands.entity(ent).insert(SceneNodeLink(gltf_entity));
             }
         }
     }
@@ -1110,97 +1232,210 @@ fn update_gltf_linked_transforms(
         &ContainerEntity,
         &Parent,
         Option<&HiddenMaterial>,
+        Option<&HiddenCollider>,
     )>,
-    scene_nodes: Query<(Entity, &SceneNodeLink, &SceneEntity, Ref<Transform>)>,
+    scene_nodes: Query<(&SceneEntity, Ref<Transform>, &Parent), With<SceneNodeLink>>,
     mut scenes: Query<&mut RendererSceneContext>,
     gt_helper: TransformHelperPub,
-    mut prev_transforms: Local<HashMap<Entity, Transform>>,
+    mut stored_transforms_and_parents: Local<HashMap<Entity, (Transform, Vec<Entity>)>>,
 ) {
-    // check gltf nodes and update the scene nodes
-    for (linked_entity, link, container, _, maybe_hidden) in gltf_nodes.iter() {
-        let Ok(root_relative_gt) =
-            gt_helper.compute_global_transform(linked_entity, Some(container.container))
-        else {
-            warn!("failed to get gt");
-            continue;
-        };
-        let root_relative_transform = root_relative_gt.compute_transform();
+    let mut prev_transforms_and_parents = std::mem::take(&mut *stored_transforms_and_parents);
 
-        if Some(&root_relative_transform) != prev_transforms.get(&linked_entity) {
-            // the gltf node has moved relative to the gltf root since last run, send update to scene node/scene
-            let Ok((_, _, scene_node, _)) = scene_nodes.get(link.0) else {
-                commands.entity(linked_entity).remove::<RendererNodeLink>();
-                // unhide
-                if let Some(hidden) = maybe_hidden {
-                    commands
-                        .entity(linked_entity)
-                        .remove::<HiddenMaterial>()
-                        .insert(hidden.0.clone());
-                }
-                warn!("no scene node");
-                continue;
-            };
-
-            let Ok(mut scene) = scenes.get_mut(container.root) else {
-                warn!("no scene");
-                continue;
-            };
-
-            // update scene
-            scene.update_crdt(
-                SceneComponentId::TRANSFORM,
-                CrdtType::LWW_ANY,
-                scene_node.id,
-                &DclTransformAndParent::from_bevy_transform_and_parent(
-                    &root_relative_transform, // transform relative to container root
-                    container.container_id,   // container root
-                ),
-            );
-
-            // update local copy of the scene entity
-            commands
-                .entity(link.0)
-                .modify_component(move |t: &mut Transform| *t = root_relative_transform);
-            prev_transforms.insert(link.0, root_relative_transform);
-            debug!("{linked_entity:?} anim -> scene");
-        }
-        prev_transforms.insert(linked_entity, root_relative_transform);
+    #[derive(Clone)]
+    struct UpdateData {
+        state: MoveState,
+        gltf_parent: Entity,
+        scene_entity: Entity,
+        scene_entity_id: SceneEntityId,
+        container: ContainerEntity,
+        root_relative_transform: Transform,
     }
 
-    // check scene nodes and update the gltf nodes
-    for (linked_entity, link, _, transform) in scene_nodes.iter() {
-        if !transform.is_changed() {
+    #[derive(Clone, PartialEq)]
+    enum MoveState {
+        Anim,
+        Scene,
+    }
+
+    let mut node_movement_state = HashMap::default();
+
+    // init parents and positions, check for changes
+    for (gltf_entity, link, container, parent, maybe_hidden_material, maybe_hidden_collider) in
+        gltf_nodes.iter()
+    {
+        let unlink = |gltf_entity: Entity, commands: &mut Commands| {
+            // scene link removed, reset
+            commands.entity(gltf_entity).remove::<RendererNodeLink>();
+            // unhide
+            if let Some(hidden) = maybe_hidden_material {
+                commands
+                    .entity(gltf_entity)
+                    .remove::<HiddenMaterial>()
+                    .insert(hidden.0.clone());
+            }
+            if let Some(hidden) = maybe_hidden_collider {
+                commands
+                    .entity(gltf_entity)
+                    .remove::<HiddenCollider>()
+                    .insert(hidden.0.clone());
+            }
+        };
+
+        let Ok((scene_entity_id, scene_transform, scene_parent)) = scene_nodes.get(link.0) else {
+            unlink(gltf_entity, &mut commands);
+            warn!("no scene node");
+            continue;
+        };
+
+        if scene_parent.get() != container.container {
+            unlink(gltf_entity, &mut commands);
+            warn!("linked entity moved out of container");
             continue;
         }
 
-        if Some(&*transform) != prev_transforms.get(&linked_entity) {
-            if prev_transforms.contains_key(&linked_entity) {
-                // skip scene update when there is also an animation update
-                continue;
+        match prev_transforms_and_parents.remove(&gltf_entity) {
+            Some((prev_transform, parents)) => {
+                let Ok(root_relative_gt) =
+                    gt_helper.compute_global_transform(gltf_entity, Some(container.container))
+                else {
+                    warn!("failed to get gt");
+                    continue;
+                };
+                let gltf_root_relative_transform = root_relative_gt.compute_transform();
+                debug!("[{gltf_entity:?}] rrt {gltf_root_relative_transform:?}");
+                debug!("[{gltf_entity:?}] prev: {prev_transform:?}");
+                let update = if prev_transform != *scene_transform {
+                    Some((MoveState::Scene, *scene_transform))
+                } else if prev_transform != gltf_root_relative_transform {
+                    Some((MoveState::Anim, gltf_root_relative_transform))
+                } else {
+                    None
+                };
+
+                if let Some((state, root_relative_transform)) = update {
+                    node_movement_state.insert(
+                        gltf_entity,
+                        UpdateData {
+                            state,
+                            root_relative_transform,
+                            gltf_parent: parent.get(),
+                            scene_entity: link.0,
+                            scene_entity_id: scene_entity_id.id,
+                            container: *container,
+                        },
+                    );
+                    stored_transforms_and_parents
+                        .insert(gltf_entity, (root_relative_transform, parents));
+                } else {
+                    stored_transforms_and_parents.insert(gltf_entity, (prev_transform, parents));
+                }
             }
-
-            let Ok((_, _, container, parent, _)) = gltf_nodes.get(link.0) else {
-                warn!("no gltf node");
-                continue;
-            };
-
-            let Ok(parent_transform) =
-                gt_helper.compute_global_transform(parent.get(), Some(container.container))
-            else {
-                warn!("failed to get gt");
-                continue;
-            };
-            let gt = GlobalTransform::from(transform.compute_affine());
-            let node_transform = gt.reparented_to(&parent_transform);
-
-            // update gltf node
-            commands
-                .entity(link.0)
-                .modify_component(move |t: &mut Transform| *t = node_transform);
-            prev_transforms.insert(linked_entity, *transform);
-            debug!("{linked_entity:?} scene -> gltf");
+            None => {
+                debug!("new link {gltf_entity:?}");
+                let Ok((root_relative_gt, parents)) = gt_helper
+                    .compute_global_transform_with_ancestors(
+                        gltf_entity,
+                        Some(container.container),
+                    )
+                else {
+                    warn!("failed to get gt");
+                    continue;
+                };
+                let root_relative_transform = root_relative_gt.compute_transform();
+                stored_transforms_and_parents
+                    .insert(gltf_entity, (root_relative_transform, parents));
+                node_movement_state.insert(
+                    gltf_entity,
+                    UpdateData {
+                        state: MoveState::Anim,
+                        root_relative_transform,
+                        gltf_parent: parent.get(),
+                        scene_entity: link.0,
+                        scene_entity_id: scene_entity_id.id,
+                        container: *container,
+                    },
+                );
+            }
         }
-        prev_transforms.insert(link.0, *transform);
+    }
+
+    let mut updated_transforms = HashMap::default();
+
+    // update
+    while !node_movement_state.is_empty() {
+        node_movement_state = node_movement_state
+            .clone()
+            .into_iter()
+            .filter_map(|(gltf_ent, data)| {
+                match data.state {
+                    MoveState::Anim => {
+                        // update scene / scene entity
+                        let Ok(mut scene) = scenes.get_mut(data.container.root) else {
+                            warn!("no scene");
+                            return None;
+                        };
+
+                        scene.update_crdt(
+                            SceneComponentId::TRANSFORM,
+                            CrdtType::LWW_ANY,
+                            data.scene_entity_id,
+                            &DclTransformAndParent::from_bevy_transform_and_parent(
+                                &data.root_relative_transform, // transform relative to container root
+                                data.container.container_id,   // container root
+                            ),
+                        );
+
+                        debug!("[{gltf_ent:?}] r -> s {:?}", data.root_relative_transform);
+                        commands.entity(data.scene_entity).modify_component(
+                            move |t: &mut Transform| *t = data.root_relative_transform,
+                        );
+
+                        None
+                    }
+                    MoveState::Scene => {
+                        let parents = &stored_transforms_and_parents.get(&gltf_ent).unwrap().1;
+                        for parent in parents.iter() {
+                            if node_movement_state.get(parent).is_some() {
+                                // retain till all parents are processed
+                                return Some((gltf_ent, data));
+                            }
+                        }
+
+                        // update gltf entity
+                        let parent_transform = gt_helper
+                            .compute_global_transform_with_overrides(
+                                data.gltf_parent,
+                                Some(data.container.container),
+                                &updated_transforms,
+                            )
+                            .unwrap();
+                        let gltf_node_transform =
+                            GlobalTransform::from(data.root_relative_transform)
+                                .reparented_to(&parent_transform);
+
+                        updated_transforms.insert(gltf_ent, gltf_node_transform);
+
+                        // update local copy of the scene entity
+                        commands
+                            .entity(gltf_ent)
+                            .modify_component(move |t: &mut Transform| *t = gltf_node_transform);
+
+                        debug!("[{gltf_ent:?}] s -> r {:?}", gltf_node_transform);
+
+                        // and update stored state with the rrt we will compute next frame, to avoid rounding errors
+                        stored_transforms_and_parents.get_mut(&gltf_ent).unwrap().0 = gt_helper
+                            .compute_global_transform_with_overrides(
+                                gltf_ent,
+                                Some(data.container.container),
+                                &updated_transforms,
+                            )
+                            .unwrap()
+                            .compute_transform();
+                        None
+                    }
+                }
+            })
+            .collect();
     }
 }
 
@@ -1229,7 +1464,7 @@ fn update_gltf_linked_visibility(
 // meshes - push MeshRenderer
 //   - add skin id to GltfMesh for MeshRenderer, push that too
 //   - (morph targets already in gltf mesh, need to generate on gltf mesh demand)
- 
+
 // bevy - change `mesh_entity.insert(Name::new(primitive_name(&mesh, &primitive)));` it should add mesh index, and primitive index if >1
 //   - can we disambguate vs existing meshes named "Mesh0" ? i don't think so. may need to just note it as a problem, and well-define the generated names.
 
@@ -1241,13 +1476,13 @@ fn update_gltf_linked_visibility(
 //  -> mark as animated
 // check if scene ent has moved
 //  -> mark gltf as scene-moved if not already animated
-// loop
-//  -> check parents of all nodes, remove those already processed
+// loop until all processed
+//  -> check parents of all nodes, if any moved/unprocessed then continue
 //  for each gltf ent
 //   -> if any parents still unprocessed, continue and come back later
 //   -> if animated
 //     -> calculate rrt
-//     -> deferred set scene ent transform = rrt 
+//     -> deferred set scene ent transform = rrt
 //     -> push rrt to scene
 //   -> if scene-moved
 //     -> calculate gltf local transform based on updated transforms

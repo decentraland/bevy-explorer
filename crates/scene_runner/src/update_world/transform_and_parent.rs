@@ -290,4 +290,54 @@ impl<'w, 's> TransformHelperPub<'w, 's> {
 
         Ok(global_transform)
     }
+
+    pub fn compute_global_transform_with_overrides(
+        &self,
+        entity: Entity,
+        up_to: Option<Entity>,
+        overrides: &HashMap<Entity, Transform>,
+    ) -> Result<GlobalTransform, anyhow::Error> {
+        let transform = overrides
+            .get(&entity)
+            .unwrap_or(self.transform_query.get(entity)?);
+
+        let mut global_transform = GlobalTransform::from(*transform);
+
+        for entity in self.parent_query.iter_ancestors(entity) {
+            if Some(entity) == up_to {
+                return Ok(global_transform);
+            }
+
+            let transform = overrides
+                .get(&entity)
+                .unwrap_or(self.transform_query.get(entity)?);
+            global_transform = *transform * global_transform;
+        }
+
+        Ok(global_transform)
+    }
+
+    /// Computes the [`GlobalTransform`] of the given entity from the [`Transform`] component on it and its ancestors.
+    pub fn compute_global_transform_with_ancestors(
+        &self,
+        entity: Entity,
+        up_to: Option<Entity>,
+    ) -> Result<(GlobalTransform, Vec<Entity>), anyhow::Error> {
+        let transform = self.transform_query.get(entity)?;
+        let mut ancestors = Vec::default();
+
+        let mut global_transform = GlobalTransform::from(*transform);
+
+        for entity in self.parent_query.iter_ancestors(entity) {
+            if Some(entity) == up_to {
+                return Ok((global_transform, ancestors));
+            }
+
+            let transform = self.transform_query.get(entity)?;
+            global_transform = *transform * global_transform;
+            ancestors.push(entity);
+        }
+
+        Ok((global_transform, ancestors))
+    }
 }

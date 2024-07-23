@@ -56,10 +56,7 @@ message PBMaterial {
 
   message GltfMaterial {
     string gltf_src = 1;
-    oneof id {
-      string name = 2;
-      uint32 index = 3;
-    }
+    string name = 2;
   }
   
   // A gltf material that may provide additional features not supported by the PbMaterial fields.
