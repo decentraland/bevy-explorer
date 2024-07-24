@@ -1023,7 +1023,7 @@ fn expose_gltfs(
                 );
             };
 
-            if maybe_parent_request.is_none() && maybe_processed.is_none() {
+            if maybe_parent_request.is_none() && maybe_gltf.is_none() {
                 break GltfLinkState::Failed(
                     "GltfNode is not a child of an entity with a GltfContainer or GltfNode",
                 );
@@ -1148,7 +1148,7 @@ fn expose_gltfs(
                 };
 
                 debug!("adding");
-                println!("link");
+                debug!("link");
                 target_commands.try_insert(RendererNodeLink(ent));
 
                 let (
@@ -1161,7 +1161,7 @@ fn expose_gltfs(
                 ) = node_data.get(gltf_entity).unwrap_or_default();
 
                 if let Some(mesh) = maybe_mesh {
-                    println!("link mesh");
+                    debug!("link mesh");
                     commands.entity(ent).insert(mesh.clone());
                     // write to scene
                     scene.update_crdt(
@@ -1179,11 +1179,11 @@ fn expose_gltfs(
                     );
                 }
                 if let Some(skin) = maybe_skin {
-                    println!("link skin");
+                    debug!("link skin");
                     commands.entity(ent).insert(skin.clone());
                 }
                 if let Some(collider) = maybe_collider {
-                    println!("link collider");
+                    debug!("link collider");
                     // hide
                     commands
                         .entity(gltf_entity)
@@ -1209,7 +1209,7 @@ fn expose_gltfs(
                     )
                 }
                 if let Some(material) = maybe_material {
-                    println!("link material");
+                    debug!("link material");
                     // hide
                     commands
                         .entity(gltf_entity)
