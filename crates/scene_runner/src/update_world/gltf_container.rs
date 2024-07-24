@@ -9,12 +9,11 @@ use std::{
 use bevy::{
     asset::LoadState,
     gltf::{Gltf, GltfExtras, GltfLoaderSettings},
-    pbr::{ExtendedMaterial, Material},
+    pbr::ExtendedMaterial,
     prelude::*,
     render::{
         mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
         render_asset::RenderAssetUsages,
-        texture::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
         view::NoFrustumCulling,
     },
     scene::{scene_spawner_system, InstanceId},
@@ -26,24 +25,21 @@ use serde::Deserialize;
 use ui_core::ModifyComponentExt;
 
 use crate::{
-    renderer_context::RendererSceneContext, update_world::material::BaseMaterial, ContainerEntity,
-    SceneEntity, SceneSets,
+    renderer_context::RendererSceneContext,
+    update_world::material::{dcl_material_from_standard_material, BaseMaterial},
+    ContainerEntity, SceneEntity, SceneSets,
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
-    proto_components::{
-        common::{Texture, TextureFilterMode, TextureUnion, TextureWrapMode},
-        sdk::components::{
-            common::LoadingState, pb_material, pb_mesh_collider, pb_mesh_renderer, ColliderLayer,
-            GltfNodeStateValue, MaterialTransparencyMode, PbGltfContainer,
-            PbGltfContainerLoadingState, PbGltfNode, PbGltfNodeState, PbMaterial, PbMeshCollider,
-            PbMeshRenderer,
-        },
+    proto_components::sdk::components::{
+        common::LoadingState, pb_material, pb_mesh_collider, pb_mesh_renderer, ColliderLayer,
+        GltfNodeStateValue, PbGltfContainer, PbGltfContainerLoadingState, PbGltfNode,
+        PbGltfNodeState, PbMaterial, PbMeshCollider, PbMeshRenderer,
     },
     transform_and_parent::DclTransformAndParent,
     SceneComponentId, SceneEntityId,
 };
-use ipfs::{ipfs_path::IpfsPath, EntityDefinition, IpfsAssetServer};
+use ipfs::{EntityDefinition, IpfsAssetServer};
 use scene_material::{SceneBound, SceneMaterial};
 
 use super::{
@@ -1226,92 +1222,14 @@ fn expose_gltfs(
                     });
 
                     // write to scene
-                    let dcl_texture = |h: &Handle<Image>| -> TextureUnion {
-                        let path = h.path().unwrap().path();
-                        let ipfs_path = IpfsPath::new_from_path(path).unwrap().unwrap();
-                        let src = ipfs_path.content_path().unwrap().to_owned();
-                        let sampler = if let Some(Image {
-                            sampler: ImageSampler::Descriptor(d),
-                            ..
-                        }) = images.get(h)
-                        {
-                            d
-                        } else {
-                            &ImageSamplerDescriptor::default()
-                        };
-                        TextureUnion {
-                            tex: Some(dcl_component::proto_components::common::texture_union::Tex::Texture(Texture {
-                                src,
-                                wrap_mode: Some(match sampler.address_mode_u {
-                                    ImageAddressMode::ClampToEdge => TextureWrapMode::TwmClamp,
-                                    ImageAddressMode::Repeat => TextureWrapMode::TwmRepeat,
-                                    ImageAddressMode::MirrorRepeat => TextureWrapMode::TwmMirror,
-                                    ImageAddressMode::ClampToBorder => TextureWrapMode::TwmClamp,
-                                } as i32),
-                                filter_mode: Some(match sampler.mag_filter {
-                                    ImageFilterMode::Nearest => TextureFilterMode::TfmPoint,
-                                    ImageFilterMode::Linear => TextureFilterMode::TfmBilinear,
-                                } as i32),
-                            })),
-                        }
-                    };
-
-                    let alpha_test = if let AlphaMode::Mask(m) = base.base.alpha_mode {
-                        Some(m)
-                    } else {
-                        None
-                    };
-
                     scene.update_crdt(
                         SceneComponentId::MATERIAL,
                         CrdtType::LWW_ANY,
                         scene_ent.id,
                         &PbMaterial {
-                            material: Some(if base.base.unlit {
-                                pb_material::Material::Unlit(pb_material::UnlitMaterial {
-                                    texture: base.base.base_color_texture.as_ref().map(dcl_texture),
-                                    alpha_test,
-                                    cast_shadows: Some(true),
-                                    diffuse_color: Some(base.base.base_color.into()),
-                                })
-                            } else {
-                                pb_material::Material::Pbr(pb_material::PbrMaterial {
-                                    texture: base.base.base_color_texture.as_ref().map(dcl_texture),
-                                    alpha_test,
-                                    cast_shadows: Some(true),
-                                    alpha_texture: base
-                                        .base
-                                        .base_color_texture
-                                        .as_ref()
-                                        .map(dcl_texture),
-                                    emissive_texture: base
-                                        .base
-                                        .emissive_texture
-                                        .as_ref()
-                                        .map(dcl_texture),
-                                    bump_texture: base
-                                        .base
-                                        .normal_map_texture
-                                        .as_ref()
-                                        .map(dcl_texture),
-                                    albedo_color: Some(base.base.base_color.into()),
-                                    emissive_color: Some((base.base.emissive * 0.5).into()),
-                                    reflectivity_color: None,
-                                    transparency_mode: Some(match base.alpha_mode() {
-                                        AlphaMode::Opaque => MaterialTransparencyMode::MtmOpaque,
-                                        AlphaMode::Mask(_) => {
-                                            MaterialTransparencyMode::MtmAlphaTest
-                                        }
-                                        _ => MaterialTransparencyMode::MtmAlphaBlend,
-                                    }
-                                        as i32),
-                                    metallic: Some(base.base.metallic),
-                                    roughness: Some(base.base.perceptual_roughness),
-                                    specular_intensity: None,
-                                    emissive_intensity: None,
-                                    direct_intensity: None,
-                                })
-                            }),
+                            material: Some(dcl_material_from_standard_material(
+                                &base.base, &images,
+                            )),
                             gltf: maybe_mat_name.map(|name| pb_material::GltfMaterial {
                                 gltf_src: src.to_owned(),
                                 name: name.0.clone(),

@@ -1,15 +1,23 @@
 use std::sync::OnceLock;
 
-use bevy::{ecs::system::SystemParam, pbr::NotShadowCaster, prelude::*, render::primitives::Aabb};
+use bevy::{
+    ecs::system::SystemParam,
+    pbr::NotShadowCaster,
+    prelude::*,
+    render::{
+        primitives::Aabb,
+        texture::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
+    },
+};
 use common::structs::{AppConfig, AvatarTextureHandle};
 use comms::profile::UserProfile;
-use ipfs::IpfsAssetServer;
+use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 
 use crate::{
     gltf_resolver::GltfMaterialResolver, renderer_context::RendererSceneContext, ContainerEntity,
-    SceneSets,
+    SceneEntity, SceneSets,
 };
-use dcl::interface::ComponentPosition;
+use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
         common::{texture_union, TextureUnion},
@@ -158,7 +166,11 @@ impl MaterialDefinition {
                     pbr.bump_texture.clone(),
                 )
             }
-            None => Default::default(),
+            None => {
+                // use base defaults
+                println!("using base, bct = {}", base.base_color_texture.is_some());
+                (base.clone(), None, None, None)
+            }
         };
 
         let shadow_caster = match &pb_material.material {
@@ -214,7 +226,6 @@ pub enum TextureResolveError {
 
 #[derive(SystemParam)]
 pub struct TextureResolver<'w, 's> {
-    scenes: Query<'w, 's, &'static RendererSceneContext>,
     ipfas: IpfsAssetServer<'w, 's>,
     videos: Query<'w, 's, &'static VideoTextureOutput>,
     avatars: Query<'w, 's, (&'static UserProfile, &'static AvatarTextureHandle)>,
@@ -229,13 +240,9 @@ pub struct ResolvedTexture {
 impl<'w, 's> TextureResolver<'w, 's> {
     pub fn resolve_texture(
         &self,
-        scene: Entity,
+        scene: &RendererSceneContext,
         texture: &texture_union::Tex,
     ) -> Result<ResolvedTexture, TextureResolveError> {
-        let Ok(scene) = self.scenes.get(scene) else {
-            return Err(TextureResolveError::SceneNotFound);
-        };
-
         match texture {
             texture_union::Tex::Texture(texture) => {
                 // TODO handle wrapmode and filtering once we have some asset processing pipeline in place (bevy 0.11-0.12)
@@ -287,6 +294,7 @@ fn update_materials(
             Entity,
             &PbMaterialComponent,
             &ContainerEntity,
+            &SceneEntity,
             Option<&BaseMaterial>,
         ),
         Or<(
@@ -298,13 +306,14 @@ fn update_materials(
     mut materials: ResMut<Assets<SceneMaterial>>,
     touch: Query<&Handle<SceneMaterial>, With<TouchMaterial>>,
     resolver: TextureResolver,
-    scenes: Query<&RendererSceneContext>,
+    mut scenes: Query<&mut RendererSceneContext>,
     config: Res<AppConfig>,
     mut gltf_resolver: GltfMaterialResolver,
+    images: Res<Assets<Image>>,
 ) {
     gltf_resolver.begin_frame();
 
-    for (ent, mat, container, base) in new_materials.iter_mut() {
+    for (ent, mat, container, scene_ent, base) in new_materials.iter_mut() {
         let new_base;
         let base = if let Some(gltf_def) = mat.0.gltf.as_ref() {
             if base.map_or(false, |b| {
@@ -350,10 +359,13 @@ fn update_materials(
         .into_iter()
         .map(
             |texture| match texture.as_ref().and_then(|t| t.tex.as_ref()) {
-                Some(texture) => match resolver.resolve_texture(container.root, texture) {
-                    Ok(resolved) => Ok(Some(resolved)),
-                    Err(TextureResolveError::SourceNotReady) => Err(()),
-                    Err(_) => Ok(None),
+                Some(texture) => {
+                    let scene = scenes.get(container.root).map_err(|_| ())?;
+                    match resolver.resolve_texture(scene, texture) {
+                        Ok(resolved) => Ok(Some(resolved)),
+                        Err(TextureResolveError::SourceNotReady) => Err(()),
+                        Err(_) => Ok(None),
+                    }
                 },
                 None => Ok(None),
             },
@@ -384,23 +396,47 @@ fn update_materials(
             .unwrap_or_default();
 
         let mut commands = commands.entity(ent);
-        commands
-            .remove::<RetryMaterial>()
-            .try_insert(materials.add(SceneMaterial {
+        commands.remove::<RetryMaterial>().try_insert(
+            materials.add(SceneMaterial {
                 base: StandardMaterial {
-                    base_color_texture: base_color_texture.map(|t| t.image),
-                    emissive_texture: emissive_texture.map(|t| t.image),
-                    normal_map_texture: normal_map_texture.map(|t| t.image),
-                    double_sided: true,
-                    cull_mode: None,
+                    base_color_texture: base_color_texture
+                        .map(|t| t.image)
+                        .or(base.and_then(|b| b.material.base_color_texture.clone())),
+                    emissive_texture: emissive_texture
+                        .map(|t| t.image)
+                        .or(base.and_then(|b| b.material.emissive_texture.clone())),
+                    normal_map_texture: normal_map_texture
+                        .map(|t| t.image)
+                        .or(base.and_then(|b| b.material.normal_map_texture.clone())),
                     ..defn.material.clone()
                 },
                 extension: SceneBound::new(bounds, config.graphics.oob),
-            }));
+            }),
+        );
         if defn.shadow_caster {
             commands.remove::<NotShadowCaster>();
         } else {
             commands.try_insert(NotShadowCaster);
+        }
+
+        // write material back if required
+        if mat.0.material.is_none() && base.is_some() {
+            let Ok(mut scene) = scenes.get_mut(container.root) else {
+                continue;
+            };
+
+            scene.update_crdt(
+                SceneComponentId::MATERIAL,
+                CrdtType::LWW_ANY,
+                scene_ent.id,
+                &PbMaterial {
+                    material: Some(dcl_material_from_standard_material(
+                        &base.as_ref().unwrap().material,
+                        &images,
+                    )),
+                    gltf: mat.0.gltf.clone(),
+                },
+            );
         }
     }
 
@@ -425,5 +461,77 @@ fn update_bias(
                 material.base.depth_bias = aabb.half_extents.length() * 1e-5;
             }
         }
+    }
+}
+
+pub fn dcl_material_from_standard_material(
+    base: &StandardMaterial,
+    images: &Assets<Image>,
+) -> pb_material::Material {
+    let dcl_texture = |h: &Handle<Image>| -> TextureUnion {
+        let path = h.path().unwrap().path();
+        let ipfs_path = IpfsPath::new_from_path(path).unwrap().unwrap();
+        let src = ipfs_path.content_path().unwrap().to_owned();
+        let sampler = if let Some(Image {
+            sampler: ImageSampler::Descriptor(d),
+            ..
+        }) = images.get(h)
+        {
+            d
+        } else {
+            &ImageSamplerDescriptor::default()
+        };
+        TextureUnion {
+            tex: Some(dcl_component::proto_components::common::texture_union::Tex::Texture(dcl_component::proto_components::common::Texture {
+                src,
+                wrap_mode: Some(match sampler.address_mode_u {
+                    ImageAddressMode::ClampToEdge => dcl_component::proto_components::common::TextureWrapMode::TwmClamp,
+                    ImageAddressMode::Repeat => dcl_component::proto_components::common::TextureWrapMode::TwmRepeat,
+                    ImageAddressMode::MirrorRepeat => dcl_component::proto_components::common::TextureWrapMode::TwmMirror,
+                    ImageAddressMode::ClampToBorder => dcl_component::proto_components::common::TextureWrapMode::TwmClamp,
+                } as i32),
+                filter_mode: Some(match sampler.mag_filter {
+                    ImageFilterMode::Nearest => dcl_component::proto_components::common::TextureFilterMode::TfmPoint,
+                    ImageFilterMode::Linear => dcl_component::proto_components::common::TextureFilterMode::TfmBilinear,
+                } as i32),
+            })),
+        }
+    };
+
+    let alpha_test = if let AlphaMode::Mask(m) = base.alpha_mode {
+        Some(m)
+    } else {
+        None
+    };
+
+    if base.unlit {
+        pb_material::Material::Unlit(pb_material::UnlitMaterial {
+            texture: base.base_color_texture.as_ref().map(dcl_texture),
+            alpha_test,
+            cast_shadows: Some(true),
+            diffuse_color: Some(base.base_color.into()),
+        })
+    } else {
+        pb_material::Material::Pbr(pb_material::PbrMaterial {
+            texture: base.base_color_texture.as_ref().map(dcl_texture),
+            alpha_test,
+            cast_shadows: Some(true),
+            alpha_texture: base.base_color_texture.as_ref().map(dcl_texture),
+            emissive_texture: base.emissive_texture.as_ref().map(dcl_texture),
+            bump_texture: base.normal_map_texture.as_ref().map(dcl_texture),
+            albedo_color: Some(base.base_color.into()),
+            emissive_color: Some((base.emissive * 0.5).into()),
+            reflectivity_color: None,
+            transparency_mode: Some(match base.alpha_mode() {
+                AlphaMode::Opaque => MaterialTransparencyMode::MtmOpaque,
+                AlphaMode::Mask(_) => MaterialTransparencyMode::MtmAlphaTest,
+                _ => MaterialTransparencyMode::MtmAlphaBlend,
+            } as i32),
+            metallic: Some(base.metallic),
+            roughness: Some(base.perceptual_roughness),
+            specular_intensity: None,
+            emissive_intensity: None,
+            direct_intensity: None,
+        })
     }
 }
