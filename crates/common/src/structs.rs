@@ -202,7 +202,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             server:
-                "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-test-psquad-demo-latest"
+                "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-main-latest"
                     .to_owned(),
             location: IVec2::new(78, -7),
             previous_login: None,
