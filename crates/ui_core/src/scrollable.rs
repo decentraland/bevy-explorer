@@ -502,6 +502,12 @@ fn update_scrollables(
             continue;
         };
 
+        style.display = if info.visible {
+            Display::Flex
+        } else {
+            Display::None
+        };
+
         // if anything changes we will redraw the slider and re-paginate the content
         let mut update_position = false;
 
@@ -585,6 +591,7 @@ fn update_scrollables(
                         color: Color::rgba(0.5, 0.5, 0.5, 0.2).into(),
                     },
                     style: Style {
+                        display: if info.visible { Display::Flex } else { Display::None },
                         position_type: PositionType::Absolute,
                         left: Val::Px(info.bar_position.x),
                         top: Val::Px(info.bar_position.y),
@@ -665,6 +672,7 @@ fn update_scrollables(
                         color: Color::rgba(1.0, 1.0, 1.0, 0.2).into(),
                     },
                     style: Style {
+                        display: if info.visible { Display::Flex } else { Display::None },
                         position_type: PositionType::Absolute,
                         left,
                         top,
