@@ -168,7 +168,6 @@ impl MaterialDefinition {
             }
             None => {
                 // use base defaults
-                println!("using base, bct = {}", base.base_color_texture.is_some());
                 (base.clone(), None, None, None)
             }
         };
