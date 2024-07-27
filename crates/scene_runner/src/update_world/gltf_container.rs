@@ -1362,17 +1362,11 @@ fn update_gltf_linked_transforms(
             }
             None => {
                 debug!("new link {gltf_entity:?}");
-                let Ok((_, parents)) = gt_helper.compute_global_transform_with_ancestors(
+                let Ok((root_relative_gt, parents)) = gt_helper.compute_global_transform_with_ancestors(
                     gltf_entity,
-                    Some(container.container),
+                    Some(scene_link.gltf_parent),
                 ) else {
                     warn!("failed to get ancestors");
-                    continue;
-                };
-                let Ok(root_relative_gt) =
-                    gt_helper.compute_global_transform(gltf_entity, Some(scene_link.gltf_parent))
-                else {
-                    warn!("failed to get gt");
                     continue;
                 };
                 let root_relative_transform = root_relative_gt.compute_transform();
