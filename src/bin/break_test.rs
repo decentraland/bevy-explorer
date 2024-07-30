@@ -44,12 +44,9 @@ fn break_everything(parcel: IVec2, urn: Option<String>) {
         32,
     );
     let ipfs_io = Arc::new(ipfs_io);
-    block_on(
-        ipfs_io.set_realm(
-            "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-test-psquad-demo-latest"
-                .to_owned(),
-        ),
-    );
+    block_on(ipfs_io.set_realm(
+        "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-main-latest".to_owned(),
+    ));
     // block_on(ipfs_io.set_realm("https://realm-provider.decentraland.org/main".to_owned()));
 
     let entity = if let Some(urn) = urn {

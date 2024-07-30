@@ -11,7 +11,7 @@ use dcl_component::{
 };
 use scene_material::{SceneBound, SceneMaterial};
 
-use crate::{renderer_context::RendererSceneContext, SceneEntity};
+use crate::{gltf_resolver::GltfMeshResolver, renderer_context::RendererSceneContext, SceneEntity};
 
 use self::truncated_cone::TruncatedCone;
 
@@ -26,6 +26,7 @@ pub enum MeshDefinition {
     Cylinder { radius_top: f32, radius_bottom: f32 },
     Plane { uvs: Vec<[f32; 2]> },
     Sphere,
+    Gltf { src: String, name: String },
 }
 
 #[derive(Resource)]
@@ -61,6 +62,12 @@ impl From<PbMeshRenderer> for MeshDefinition {
                 }
             }
             Some(pb_mesh_renderer::Mesh::Sphere(pb_mesh_renderer::SphereMesh {})) => Self::Sphere,
+            Some(pb_mesh_renderer::Mesh::Gltf(pb_mesh_renderer::GltfMesh { gltf_src, name })) => {
+                Self::Gltf {
+                    src: gltf_src,
+                    name,
+                }
+            }
             _ => Self::Box {
                 uvs: Vec::default(),
             },
@@ -119,6 +126,9 @@ impl Plugin for MeshDefinitionPlugin {
     }
 }
 
+#[derive(Component)]
+pub struct RetryMeshDefinition;
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn update_mesh(
     mut commands: Commands,
@@ -129,7 +139,7 @@ pub fn update_mesh(
             &MeshDefinition,
             Option<&Handle<SceneMaterial>>,
         ),
-        Changed<MeshDefinition>,
+        Or<(Changed<MeshDefinition>, With<RetryMeshDefinition>)>,
     >,
     mut removed_primitives: RemovedComponents<MeshDefinition>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -138,8 +148,10 @@ pub fn update_mesh(
     mut materials: ResMut<Assets<SceneMaterial>>,
     scenes: Query<&RendererSceneContext>,
     config: Res<AppConfig>,
+    mut gltf_mesh_resolver: GltfMeshResolver,
 ) {
     for (ent, scene_ent, prim, maybe_material) in new_primitives.iter() {
+        commands.entity(ent).remove::<RetryMeshDefinition>();
         let handle = match prim {
             MeshDefinition::Box { uvs } => {
                 if uvs.is_empty() {
@@ -191,6 +203,20 @@ pub fn update_mesh(
                 }
             }
             MeshDefinition::Sphere => defaults.sphere.clone(),
+            MeshDefinition::Gltf { src, name } => {
+                let Ok(scene) = scenes.get(scene_ent.root) else {
+                    continue;
+                };
+                let Ok(maybe_mesh) = gltf_mesh_resolver.resolve_mesh(src, &scene.hash, name) else {
+                    warn!("failed to load gltf for mesh");
+                    continue;
+                };
+                let Some(h_mesh) = maybe_mesh else {
+                    commands.entity(ent).try_insert(RetryMeshDefinition);
+                    continue;
+                };
+                h_mesh
+            }
         };
         commands.entity(ent).try_insert(handle);
 
@@ -216,7 +242,7 @@ pub fn update_mesh(
 
     for ent in removed_primitives.read() {
         if let Some(mut e) = commands.get_entity(ent) {
-            e.remove::<(Handle<Mesh>, Handle<SceneMaterial>)>();
+            e.remove::<Handle<Mesh>>();
         }
     }
 

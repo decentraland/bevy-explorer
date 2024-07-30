@@ -529,7 +529,7 @@ pub struct SceneUiRoot(Entity);
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn layout_scene_ui(
     mut commands: Commands,
-    mut scene_uis: Query<(Entity, &mut SceneUiData)>,
+    mut scene_uis: Query<(Entity, &mut SceneUiData, &RendererSceneContext)>,
     player: Query<Entity, With<PrimaryUser>>,
     (containing_scene, resolver): (ContainingScene, TextureResolver),
     ui_nodes: Query<(
@@ -551,6 +551,7 @@ fn layout_scene_ui(
     children: Query<&Children>,
     styles: Query<&Style>,
     mut scroll_to: EventWriter<ScrollTargetEvent>,
+    mut removed_transforms: RemovedComponents<UiTransform>,
 ) {
     let current_scenes = player
         .get_single()
@@ -565,9 +566,16 @@ fn layout_scene_ui(
         }
     }
 
-    for (ent, mut ui_data) in scene_uis.iter_mut() {
+    for (ent, mut ui_data, ctx) in scene_uis.iter_mut() {
         if current_scenes.contains(&ent) {
-            if ui_data.relayout || ui_data.current_node.is_none() || config.is_changed() {
+            let any_removed = removed_transforms
+                .read()
+                .any(|r| ui_data.nodes.contains(&r));
+            if ui_data.relayout
+                || ui_data.current_node.is_none()
+                || config.is_changed()
+                || any_removed
+            {
                 // clear any existing ui target
                 *ui_target = UiPointerTarget::None;
 
@@ -768,7 +776,7 @@ fn layout_scene_ui(
 
                             if let Some(background) = maybe_background {
                                 if let Some(texture) = background.texture.as_ref() {
-                                    let image = texture.tex.tex.as_ref().and_then(|tex| resolver.resolve_texture(ent, tex).ok());
+                                    let image = texture.tex.tex.as_ref().and_then(|tex| resolver.resolve_texture(ctx, tex).ok());
 
                                     let texture_mode = match texture.tex.tex {
                                         Some(texture_union::Tex::Texture(_)) => texture.mode,

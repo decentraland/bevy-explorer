@@ -30,6 +30,12 @@ message PBMeshCollider {
   // SphereMesh is a sphere shape that contains the Entity.
   message SphereMesh {}
 
+  // A collider constructed from a Gltf Mesh.
+  message GltfMesh {
+    string gltf_src = 1; // the GLTF file path as listed in the scene's manifest.
+    string name = 2; // the name of the mesh asset
+  }
+
   optional uint32 collision_mask = 1; // enabled ColliderLayers (default CL_POINTER | CL_PHYSICS)
 
   oneof mesh {
@@ -37,6 +43,7 @@ message PBMeshCollider {
     SphereMesh sphere = 3;
     CylinderMesh cylinder = 4;
     PlaneMesh plane = 5;
+    GltfMesh gltf = 6;
   }
 }
 

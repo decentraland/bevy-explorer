@@ -5,6 +5,9 @@ edition = "2021"
 
 [lib]
 
+[lints]
+workspace = true
+
 [dependencies]
 common = { workspace = true }
 dcl_component = { workspace = true }

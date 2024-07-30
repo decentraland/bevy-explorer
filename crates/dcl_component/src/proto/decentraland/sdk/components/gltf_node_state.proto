@@ -1,0 +1,20 @@
+syntax = "proto3";
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+option (common.ecs_component_id) = 1046;
+
+// See the details of the GltfNode component for more information.
+
+// The state of a linked gltf node.
+// If the state is GNSV_FAILED, the renderer may describe the failure in the error string.
+message PBGltfNodeState {
+    GltfNodeStateValue state = 1;
+    optional string error = 2;
+}
+
+enum GltfNodeStateValue {
+    GNSV_PENDING = 0;
+    GNSV_FAILED = 1;
+    GNSV_READY = 2;
+}

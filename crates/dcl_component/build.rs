@@ -10,6 +10,8 @@ fn main() -> Result<()> {
         "material",
         "gltf_container",
         "gltf_container_loading_state",
+        "gltf_node",
+        "gltf_node_state",
         "animator",
         "pointer_events",
         "pointer_events_result",

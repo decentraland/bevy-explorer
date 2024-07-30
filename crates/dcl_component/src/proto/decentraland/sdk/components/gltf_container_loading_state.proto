@@ -10,4 +10,17 @@ import "decentraland/sdk/components/common/loading_state.proto";
 // the current state of the GltfContainer of an entity.
 message PBGltfContainerLoadingState {
   common.LoadingState current_state = 1;
+  repeated string node_paths = 2; // all node paths in the gltf, which can be used with a GltfNode to inspect and modify the gltf contents
+  repeated string mesh_names = 3; // all meshes in the gltf. unnamed meshes will be auto-assigned a name of the form `MeshX` or `MeshX/PrimitiveY`
+                                  // where X is the mesh index and Y is the primitive index (and there is more than 1 primitive). note this may 
+                                  // conflict with manually named meshes - to avoid any issues make sure all your meshes are explicitly named.
+  repeated string material_names = 4; // all materials in the gltf. unnamed materials will be auto-assigned a name of the form `MaterialX` where
+                                      // X is the material index. note this may conflict with manually named materials - to avoid any issues make
+                                      // sure all your materials are explicitly named.
+  repeated string skin_names = 5; // all mesh skins in the gltf. unnamed skins will be auto-assigned a name of the form `SkinX` where
+                                  // X is the skin index. note this may conflict with manually named skins - to avoid any issues make sure all 
+                                  // your skins are explicitly named.
+  repeated string animation_names = 6; // all animations in the gltf. unnamed animations will be auto-assigned a name of the form `AnimationX` where
+                                       // X is the animation index. note this may conflict with manually named anims - to avoid any issues make sure all 
+                                       // your animations are explicitly named.
 }

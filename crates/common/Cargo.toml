@@ -5,6 +5,9 @@ edition = "2021"
 
 [lib]
 
+[features]
+dcl-assert = []
+
 [dependencies]
 dcl_component = { workspace = true }
 

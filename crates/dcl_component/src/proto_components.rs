@@ -68,6 +68,8 @@ impl DclProtoComponent for sdk::components::PbPointerEvents {}
 impl DclProtoComponent for sdk::components::PbPointerEventsResult {}
 impl DclProtoComponent for sdk::components::PbEngineInfo {}
 impl DclProtoComponent for sdk::components::PbGltfContainerLoadingState {}
+impl DclProtoComponent for sdk::components::PbGltfNode {}
+impl DclProtoComponent for sdk::components::PbGltfNodeState {}
 impl DclProtoComponent for sdk::components::PbAvatarShape {}
 impl DclProtoComponent for sdk::components::PbAvatarAttach {}
 impl DclProtoComponent for sdk::components::PbAvatarBase {}

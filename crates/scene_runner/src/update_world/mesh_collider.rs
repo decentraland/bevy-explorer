@@ -16,8 +16,12 @@ use rapier3d_f64::{
 };
 
 use crate::{
-    update_world::mesh_renderer::truncated_cone::TruncatedCone, ContainerEntity, ContainingScene,
-    DeletedSceneEntities, PrimaryUser, RendererSceneContext, SceneLoopSchedule, SceneSets,
+    gltf_resolver::GltfMeshResolver,
+    update_world::{
+        gltf_container::mesh_to_parry_shape, mesh_renderer::truncated_cone::TruncatedCone,
+    },
+    ContainerEntity, ContainingScene, DeletedSceneEntities, PrimaryUser, RendererSceneContext,
+    SceneLoopSchedule, SceneSets,
 };
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
@@ -34,7 +38,7 @@ use super::AddCrdtInterfaceExt;
 
 pub struct MeshColliderPlugin;
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub struct MeshCollider {
     pub shape: MeshColliderShape,
     pub collision_mask: u32,
@@ -57,12 +61,14 @@ impl Default for MeshCollider {
 pub struct DisableCollisions;
 
 // #[derive(Debug)]
+#[derive(Clone)]
 pub enum MeshColliderShape {
     Box,
     Cylinder { radius_top: f32, radius_bottom: f32 },
     Plane,
     Sphere,
     Shape(SharedShape, Handle<Mesh>),
+    GltfShape { gltf_src: String, name: String },
 }
 
 impl From<PbMeshCollider> for MeshCollider {
@@ -78,6 +84,9 @@ impl From<PbMeshCollider> for MeshCollider {
                 radius_top: radius_top.unwrap_or(1.0),
                 radius_bottom: radius_bottom.unwrap_or(1.0),
             },
+            Some(pb_mesh_collider::Mesh::Gltf(pb_mesh_collider::GltfMesh { gltf_src, name })) => {
+                MeshColliderShape::GltfShape { gltf_src, name }
+            }
             _ => MeshColliderShape::Box,
         };
 
@@ -653,8 +662,12 @@ fn update_colliders(
         (Entity, &ContainerEntity, &HasCollider),
         Without<MeshCollider>,
     >,
-    mut scene_data: Query<&mut SceneColliderData>,
+    mut scene_data: Query<(&RendererSceneContext, &mut SceneColliderData)>,
+    mut gltf_mesh_resolver: GltfMeshResolver,
+    meshes: Res<Assets<Mesh>>,
 ) {
+    gltf_mesh_resolver.begin_frame();
+
     // add colliders
     // any entity with a mesh collider that we're not using, or where the mesh collider has changed
     for (ent, collider_def, container) in new_colliders.iter() {
@@ -687,6 +700,18 @@ fn update_colliders(
             MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.5, 0.05),
             MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),
             MeshColliderShape::Shape(shape, _) => ColliderBuilder::new(shape.clone()),
+            MeshColliderShape::GltfShape { gltf_src, name } => {
+                let Ok((scene, _)) = scene_data.get(container.root) else {
+                    continue;
+                };
+                let Ok(Some(h_mesh)) = gltf_mesh_resolver.resolve_mesh(gltf_src, &scene.hash, name)
+                else {
+                    continue;
+                };
+                let mesh = meshes.get(&h_mesh).unwrap();
+                let shape = mesh_to_parry_shape(mesh);
+                ColliderBuilder::new(shape)
+            }
         }
         .collision_groups(InteractionGroups {
             memberships: Group::from_bits_truncate(collider_def.collision_mask),
@@ -700,7 +725,7 @@ fn update_colliders(
             collider_def.index,
         );
         debug!("{:?} adding collider", collider_id);
-        let Ok(mut scene_data) = scene_data.get_mut(container.root) else {
+        let Ok((_, mut scene_data)) = scene_data.get_mut(container.root) else {
             warn!("missing scene root for {collider_id:?}");
             continue;
         };
@@ -712,7 +737,7 @@ fn update_colliders(
     // remove colliders
     // any entities with a live collider handle that don't have a mesh collider or a mesh definition
     for (ent, container, collider) in colliders_without_source.iter() {
-        let Ok(mut scene_data) = scene_data.get_mut(container.root) else {
+        let Ok((_, mut scene_data)) = scene_data.get_mut(container.root) else {
             warn!("missing scene root for {container:?}");
             continue;
         };
@@ -1017,13 +1042,17 @@ fn render_debug_colliders(
     mut commands: Commands,
     debug: Res<DebugColliders>,
     mut debug_entities: Local<HashMap<Entity, Entity>>,
-    with_collider: Query<(Entity, &MeshCollider), With<HasCollider>>,
+    with_collider: Query<(Entity, &MeshCollider, &ContainerEntity), With<HasCollider>>,
     changed_collider: Query<Entity, Changed<MeshCollider>>,
     player: Query<Entity, With<PrimaryUser>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut debug_material: Local<Option<Handle<StandardMaterial>>>,
+    mut gltf_resolver: GltfMeshResolver,
+    scenes: Query<&RendererSceneContext>,
 ) {
+    gltf_resolver.begin_frame();
+
     if debug.0 == 0 || debug.is_changed() {
         for (_, debug_ent) in debug_entities.drain() {
             if let Some(mut commands) = commands.get_entity(debug_ent) {
@@ -1080,7 +1109,7 @@ fn render_debug_colliders(
         }
     }
 
-    for (collider_ent, collider) in with_collider.iter() {
+    for (collider_ent, collider, container) in with_collider.iter() {
         if !debug_entities.contains_key(&collider_ent) && collider.collision_mask & debug.0 != 0 {
             let h_mesh = match &collider.shape {
                 MeshColliderShape::Box => {
@@ -1097,6 +1126,16 @@ fn render_debug_colliders(
                 MeshColliderShape::Plane => meshes.add(Rectangle::default().mesh()),
                 MeshColliderShape::Sphere => meshes.add(Sphere::default().mesh().uv(36, 18)),
                 MeshColliderShape::Shape(_, h_mesh) => h_mesh.clone(),
+                MeshColliderShape::GltfShape { gltf_src, name } => {
+                    let Ok(scene) = scenes.get(container.root) else {
+                        continue;
+                    };
+                    let Ok(Some(h_mesh)) = gltf_resolver.resolve_mesh(gltf_src, &scene.hash, name)
+                    else {
+                        continue;
+                    };
+                    h_mesh
+                }
             };
 
             let debug_ent = commands

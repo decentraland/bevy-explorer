@@ -47,6 +47,7 @@ use self::{
 };
 
 pub mod automatic_testing;
+pub mod gltf_resolver;
 pub mod initialize_scene;
 pub mod permissions;
 pub mod primary_entities;
@@ -104,7 +105,7 @@ pub struct SceneEntity {
 // this component is present on bevy entities which either
 // - map to a scene entity
 // - are owned by a scene entity
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Clone, Copy)]
 pub struct ContainerEntity {
     pub container: Entity,
     pub root: Entity,

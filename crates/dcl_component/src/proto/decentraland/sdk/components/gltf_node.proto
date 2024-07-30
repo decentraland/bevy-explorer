@@ -1,0 +1,39 @@
+syntax = "proto3";
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+option (common.ecs_component_id) = 1045;
+
+// a GltfNode links a scene entity with a node from within a gltf, allowing the scene to inspect it or modify it.
+// This component must be added to a direct child of an entity with a PbGltfContainer component.
+// The name must match the path of one of the nodes within the Gltf. These are available on the GltfContainerLoadingState component.
+// 
+// The renderer will attach a PbGltfNodeState to the entity describing the state. Once the state is `GNS_READY`, 
+// - the `Transform` will be updated to match the position of the node within the gltf (relative to the gltf root),
+// - a `MeshRenderer` with a GltfMesh mesh type will be added (if the gltf node has a mesh).
+// - a `MeshCollider` with a GltfMesh mesh type will be added (if the gltf node has a collider).
+// - a `Material` component including a GltfMaterial reference will be added (if the gltf node has a material).
+//
+// After creation, if an animation moves the node, the `Transform` will be updated.
+//
+// From the scene, you can modify various components to alter the gltf node:
+// - modifying the `Transform` position/rotation/scale will move the node. The position is interpreted relative to the gltf root, regardless of any gltf node hierarchy.
+//   If an animation is playing, the animation takes priority and the scene entity's position will be updated to match the animation.
+// - `Visibility` can be added to hide or show the node and it's children in the gltf hierarchy.
+// - `MeshRenderer` can be added/modified/removed to create/modify/remove a mesh on the node.
+// - `MeshCollider` can be added/modified/removed to create/modify/remove a collider on the node.
+// - `Material` can be added or modified to change the material properties. If the gltf node has a material, the original material will be
+//   used as a base, and any gltf features (e.g. occlusion maps) from the gtlf spec that the renderer supports but that are not exposed in the 
+//   PbMaterial will be maintained.
+//
+// The scene can add additional entities as children to the gltf node, but structural modifications of the gltf are not possible: 
+// - changing the scene hierarchy will not change the gltf node hierarchy. Moving the entity out of the gltf will sever the link and
+//   change the state to `GNS_FAILED`.
+// - deleting the scene entity will not delete the gltf node.
+//
+// Removing the GltfNode will revert any changes to the original gltf. If the GltfNode component is removed and the mesh/collider/material 
+// are not removed, this will result in a duplication of these components as the previously-linked entity will retain it's components and 
+// the gltf node will also be displayed.
+message PBGltfNode {
+  string path = 1; // the path of the target node in the Gltf.
+}

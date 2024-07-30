@@ -53,5 +53,12 @@ message PBMaterial {
     UnlitMaterial unlit = 1;
     PbrMaterial pbr = 2;
   }
+
+  message GltfMaterial {
+    string gltf_src = 1;
+    string name = 2;
+  }
   
+  // A gltf material that may provide additional features not supported by the PbMaterial fields.
+  optional GltfMaterial gltf = 3;
 }
