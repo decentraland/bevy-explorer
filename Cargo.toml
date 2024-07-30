@@ -7,7 +7,7 @@ edition = "2021"
 
 [features]
 default = ["livekit", "ffmpeg", "inspect"]
-dcl-assert = []
+dcl-assert = ["common/dcl-assert"]
 gen-tests = []
 tracy = ["bevy/trace_tracy"]
 inspect = ["dcl/inspect", "system_ui/inspect"]
