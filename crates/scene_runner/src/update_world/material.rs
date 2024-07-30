@@ -365,7 +365,7 @@ fn update_materials(
                         Err(TextureResolveError::SourceNotReady) => Err(()),
                         Err(_) => Ok(None),
                     }
-                },
+                }
                 None => Ok(None),
             },
         )

@@ -591,7 +591,11 @@ fn update_scrollables(
                         color: Color::rgba(0.5, 0.5, 0.5, 0.2).into(),
                     },
                     style: Style {
-                        display: if info.visible { Display::Flex } else { Display::None },
+                        display: if info.visible {
+                            Display::Flex
+                        } else {
+                            Display::None
+                        },
                         position_type: PositionType::Absolute,
                         left: Val::Px(info.bar_position.x),
                         top: Val::Px(info.bar_position.y),
@@ -672,7 +676,11 @@ fn update_scrollables(
                         color: Color::rgba(1.0, 1.0, 1.0, 0.2).into(),
                     },
                     style: Style {
-                        display: if info.visible { Display::Flex } else { Display::None },
+                        display: if info.visible {
+                            Display::Flex
+                        } else {
+                            Display::None
+                        },
                         position_type: PositionType::Absolute,
                         left,
                         top,
