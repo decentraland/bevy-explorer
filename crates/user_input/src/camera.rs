@@ -155,7 +155,7 @@ pub fn update_camera(
             .roll_range
             .map(|r| (cinematic_roll - r..cinematic_roll + r));
         zoom_range = Some(
-            cine.zoom_min.unwrap_or(scale.z).max(0.3)..cine.zoom_max.unwrap_or(scale.z).min(100.0),
+            cine.zoom_min.unwrap_or(scale.z).clamp(0.3, 100.0)..cine.zoom_max.unwrap_or(scale.z).clamp(0.3, 100.0),
         );
         roll_base = cinematic_roll;
     } else if let Some(initial) = cinematic_data.take() {
