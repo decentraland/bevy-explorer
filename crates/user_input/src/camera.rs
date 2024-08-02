@@ -93,6 +93,7 @@ pub fn update_camera(
     active_dialog: Res<ActiveDialog>,
     mut cinematic_data: Local<Option<CinematicInitialData>>,
     mut mb_state: MouseInteractionState,
+    gt_helper: TransformHelper,
 ) {
     let dt = time.delta_seconds();
 
@@ -114,12 +115,16 @@ pub fn update_camera(
     let mut pitch_range = None;
     let mut roll_range = None;
     let mut zoom_range = None;
-    let mut roll_base = 0.0;
 
     // record/reset cinematic start state
     if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.clone() {
-        let (scale, rotation, _) = cine.origin.to_scale_rotation_translation();
-        let (cinematic_yaw, cinematic_pitch, cinematic_roll) = rotation.to_euler(EulerRot::YXZ);
+        let Ok(origin) = gt_helper.compute_global_transform(cine.origin) else {
+            warn!("failed to get gt");
+            return;
+        };
+
+        let (scale, _, _) = origin.to_scale_rotation_translation();
+        let cinematic_distance = scale.z;
 
         match cinematic_data.as_mut() {
             None => {
@@ -128,36 +133,31 @@ pub fn update_camera(
                     base_pitch: options.pitch,
                     base_roll: options.roll,
                     base_distance: options.distance,
-                    cinematic_transform: cine.origin,
+                    cinematic_transform: origin,
                 });
 
-                (options.yaw, options.pitch, options.roll, options.distance) =
-                    (cinematic_yaw, cinematic_pitch, cinematic_roll, scale.z);
+                options.distance = cinematic_distance;
             }
             Some(ref mut existing) => {
-                if existing.cinematic_transform != cine.origin {
+                if existing.cinematic_transform != origin {
                     // reset for updated transform
-                    (options.yaw, options.pitch, options.roll, options.distance) =
-                        (cinematic_yaw, cinematic_pitch, cinematic_roll, scale.z);
-                    existing.cinematic_transform = cine.origin;
+                    let (scale, _, _) =
+                        existing.cinematic_transform.to_scale_rotation_translation();
+                    let prev_distance = scale.z;
+                    options.distance = cinematic_distance + options.distance - prev_distance;
+                    existing.cinematic_transform = origin;
                 }
             }
         }
 
         allow_cam_move = cine.allow_manual_rotation;
-        yaw_range = cine
-            .yaw_range
-            .map(|r| (cinematic_yaw - r..cinematic_yaw + r));
-        pitch_range = cine
-            .pitch_range
-            .map(|r| (cinematic_pitch - r..cinematic_pitch + r));
-        roll_range = cine
-            .roll_range
-            .map(|r| (cinematic_roll - r..cinematic_roll + r));
+        yaw_range = cine.yaw_range.map(|r| (-r..r));
+        pitch_range = cine.pitch_range.map(|r| (-r..r));
+        roll_range = cine.roll_range.map(|r| (-r..r));
         zoom_range = Some(
-            cine.zoom_min.unwrap_or(scale.z).clamp(0.3, 100.0)..cine.zoom_max.unwrap_or(scale.z).clamp(0.3, 100.0),
+            cine.zoom_min.unwrap_or(scale.z).clamp(0.3, 100.0)
+                ..cine.zoom_max.unwrap_or(scale.z).clamp(0.3, 100.0),
         );
-        roll_base = cinematic_roll;
     } else if let Some(initial) = cinematic_data.take() {
         (options.yaw, options.pitch, options.roll, options.distance) = (
             initial.base_yaw,
@@ -228,28 +228,17 @@ pub fn update_camera(
                 options.roll -= dt * 1.0;
             } else {
                 // decay roll if not in cinematic mode
-                if options.roll > roll_base {
-                    options.roll = (options.roll - dt * 0.25).max(roll_base);
+                if options.roll > 0.0 {
+                    options.roll = (options.roll - dt * 0.25).max(0.0);
                 } else {
-                    options.roll = (options.roll + dt * 0.25).min(roll_base);
+                    options.roll = (options.roll + dt * 0.25).min(0.0);
                 }
-            }
-            if let Some(roll_range) = roll_range {
-                options.roll = options.roll.clamp(roll_range.start, roll_range.end);
             }
         }
 
         options.pitch = (options.pitch - mouse_delta.y * options.sensitivity / 1000.0)
             .clamp(-PI / 2.1, PI / 2.1);
-        if let Some(pitch_range) = pitch_range {
-            options.pitch = options.pitch.clamp(pitch_range.start, pitch_range.end);
-        }
-
         options.yaw -= mouse_delta.x * options.sensitivity / 1000.0;
-        if let Some(yaw_range) = yaw_range {
-            options.yaw = options.yaw.clamp(yaw_range.start, yaw_range.end);
-        }
-
         if accept_input.mouse {
             if let Some(event) = wheel_events.read().last() {
                 if (event.y > 0.0) == zoom_range.is_none() {
@@ -258,10 +247,20 @@ pub fn update_camera(
                     options.distance = 50f32.min((options.distance / 0.9) + 0.05);
                 }
             }
-            if let Some(zoom_range) = zoom_range {
-                options.distance = options.distance.clamp(zoom_range.start, zoom_range.end);
-            }
         }
+    }
+
+    if let Some(roll_range) = roll_range {
+        options.roll = options.roll.clamp(roll_range.start, roll_range.end);
+    }
+    if let Some(pitch_range) = pitch_range {
+        options.pitch = options.pitch.clamp(pitch_range.start, pitch_range.end);
+    }
+    if let Some(yaw_range) = yaw_range {
+        options.yaw = options.yaw.clamp(yaw_range.start, yaw_range.end);
+    }
+    if let Some(zoom_range) = zoom_range {
+        options.distance = options.distance.clamp(zoom_range.start, zoom_range.end);
     }
 }
 
@@ -270,7 +269,7 @@ pub fn update_camera_position(
     mut commands: Commands,
     mut camera: Query<(
         Entity,
-        &mut Transform,
+        &Transform,
         &PrimaryCamera,
         &mut Projection,
         Option<&mut SystemTween>,
@@ -282,10 +281,11 @@ pub fn update_camera_position(
     containing_scene: ContainingScene,
     mut scene_colliders: Query<(&RendererSceneContext, &mut SceneColliderData)>,
     mut prev_override: Local<Option<CameraOverride>>,
+    gt_helper: TransformHelper,
 ) {
     let (
         Ok((player_transform, dynamic_state)),
-        Ok((camera_ent, mut camera_transform, options, mut projection, maybe_tween)),
+        Ok((camera_ent, camera_transform, options, mut projection, maybe_tween)),
     ) = (player.get_single_mut(), camera.get_single_mut())
     else {
         return;
@@ -294,9 +294,16 @@ pub fn update_camera_position(
     let mut target_transform = *camera_transform;
 
     if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.as_ref() {
-        target_transform.translation = cine.origin.translation();
+        let Ok(origin) = gt_helper.compute_global_transform(cine.origin) else {
+            warn!("failed to get gt");
+            return;
+        };
+
+        let (_, rotation, translation) = origin.to_scale_rotation_translation();
+
+        target_transform.translation = translation;
         target_transform.rotation =
-            Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
+            rotation * Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
         let target_fov = FRAC_PI_4 / options.distance;
         let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
         else {
@@ -380,6 +387,50 @@ pub fn update_camera_position(
         // bypass change detection so the tween state doesn't reset
         tween.bypass_change_detection().target = target_transform;
     } else {
-        *camera_transform = target_transform;
+        commands
+            .entity(camera_ent)
+            .modify_component(move |t: &mut Transform| *t = target_transform);
+        // *camera_transform = target_transform;
+    }
+}
+
+// move me
+
+pub struct ModifyComponent<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> {
+    func: F,
+    _p: PhantomData<fn() -> C>,
+}
+
+impl<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> bevy::ecs::system::EntityCommand
+    for ModifyComponent<C, F>
+{
+    fn apply(self, id: Entity, world: &mut World) {
+        if let Some(mut c) = world.get_mut::<C>(id) {
+            (self.func)(&mut *c)
+        }
+    }
+}
+
+impl<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> ModifyComponent<C, F> {
+    fn new(func: F) -> Self {
+        Self {
+            func,
+            _p: PhantomData,
+        }
+    }
+}
+pub trait ModifyComponentExt {
+    fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
+        &mut self,
+        func: F,
+    ) -> &mut Self;
+}
+
+impl<'a> ModifyComponentExt for bevy::ecs::system::EntityCommands<'a> {
+    fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
+        &mut self,
+        func: F,
+    ) -> &mut Self {
+        self.add(ModifyComponent::new(func))
     }
 }

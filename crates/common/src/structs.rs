@@ -102,9 +102,9 @@ pub struct PrimaryCamera {
     pub scene_override: Option<CameraOverride>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct CinematicSettings {
-    pub origin: GlobalTransform,
+    pub origin: Entity,
     pub allow_manual_rotation: bool,
     pub yaw_range: Option<f32>,
     pub pitch_range: Option<f32>,

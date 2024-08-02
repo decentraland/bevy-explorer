@@ -53,7 +53,6 @@ pub fn update_camera_mode_area(
     contexts: Query<&RendererSceneContext>,
     mut current_areas: Local<Vec<(Entity, PermissionState)>>,
     mut camera: Query<&mut PrimaryCamera>,
-    gt_helper: TransformHelper,
     mut perms: Permission<Entity>,
 ) {
     let Ok(mut camera) = camera.get_single_mut() else {
@@ -164,12 +163,8 @@ pub fn update_camera_mode_area(
                     warn!("no scene cam");
                     return;
                 };
-                let Ok(origin) = gt_helper.compute_global_transform(cam) else {
-                    warn!("failed to get gt");
-                    return;
-                };
                 camera.scene_override = Some(CameraOverride::Cinematic(CinematicSettings {
-                    origin,
+                    origin: cam,
                     allow_manual_rotation: cinematic_settings
                         .allow_manual_rotation
                         .unwrap_or_default(),

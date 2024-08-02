@@ -2,7 +2,10 @@ pub mod camera;
 pub mod dynamics;
 pub mod player_input;
 
-use bevy::{ecs::query::Has, prelude::*};
+use bevy::{
+    animation::animation_player, ecs::query::Has, prelude::*, render::camera::CameraUpdateSystem,
+    transform::TransformSystem,
+};
 
 use common::{
     sets::SceneSets,
@@ -15,7 +18,9 @@ use dynamics::{
 use input_manager::should_accept_key;
 use scene_runner::{
     update_world::{
-        avatar_modifier_area::PlayerModifiers, camera_mode_area::update_camera_mode_area,
+        avatar_modifier_area::PlayerModifiers,
+        gltf_container::update_gltf_linked_transforms,
+        transform_and_parent::{parent_position_sync, AvatarAttachStage, SceneProxyStage},
     },
     OutOfWorld,
 };
@@ -42,19 +47,25 @@ impl Plugin for UserInputPlugin {
                 .chain()
                 .in_set(SceneSets::Input),
         );
+        app.add_systems(Update, manage_player_visibility.in_set(SceneSets::PostLoop));
         app.add_systems(
-            Update,
+            PostUpdate,
             (
-                manage_player_visibility,
                 update_user_position
-                    .after(tween::update_tween)
-                    .after(restricted_actions::move_player),
+                    .after(animation_player)
+                    .after(update_gltf_linked_transforms)
+                    .before(parent_position_sync::<AvatarAttachStage>)
+                    .before(parent_position_sync::<SceneProxyStage>)
+                    .before(TransformSystem::TransformPropagate),
                 update_camera_position
-                    .after(restricted_actions::move_camera)
-                    .before(update_camera_mode_area),
-            )
-                .chain()
-                .in_set(SceneSets::PostLoop),
+                    .after(animation_player)
+                    .after(update_gltf_linked_transforms)
+                    .after(update_user_position)
+                    .after(parent_position_sync::<AvatarAttachStage>)
+                    .before(parent_position_sync::<SceneProxyStage>)
+                    .before(TransformSystem::TransformPropagate)
+                    .before(CameraUpdateSystem),
+            ),
         );
         app.insert_resource(UserClipping(true));
         app.add_console_command::<NoClipCommand, _>(no_clip);

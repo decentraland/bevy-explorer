@@ -7,6 +7,7 @@ use std::{
 };
 
 use bevy::{
+    animation::animation_player,
     asset::LoadState,
     gltf::{Gltf, GltfExtras, GltfLoaderSettings},
     pbr::ExtendedMaterial,
@@ -17,6 +18,7 @@ use bevy::{
         view::NoFrustumCulling,
     },
     scene::{scene_spawner_system, InstanceId},
+    transform::TransformSystem,
     utils::{HashMap, HashSet},
 };
 use common::structs::AppConfig;
@@ -76,13 +78,15 @@ impl Plugin for GltfDefinitionPlugin {
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
         app.add_systems(
             Update,
-            (
-                expose_gltfs,
-                update_gltf_linked_transforms,
-                update_gltf_linked_visibility,
-            )
+            (expose_gltfs, update_gltf_linked_visibility)
                 .chain()
                 .in_set(SceneSets::PostLoop),
+        );
+        app.add_systems(
+            PostUpdate,
+            update_gltf_linked_transforms
+                .after(animation_player)
+                .before(TransformSystem::TransformPropagate),
         );
     }
 }
@@ -1248,7 +1252,7 @@ fn expose_gltfs(
     }
 }
 
-fn update_gltf_linked_transforms(
+pub fn update_gltf_linked_transforms(
     mut commands: Commands,
     gltf_nodes: Query<(
         Entity,

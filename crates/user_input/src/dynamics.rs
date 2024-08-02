@@ -21,6 +21,14 @@
 // - use clamped (motion + difference) to update position and intrinsic velocity
 
 // postupdate
+
+// - [bevy] animations
+// - [gltf_container] sync gltf nodes
+// ** all collidable (non-attached items) are in final positions
+// - [here] dynamics - update player
+// - [transform_and_parent] - update ParentPositionSync<AvatarAttachStage>
+// - [user_input] - camera position
+// - [transform_and_parent] - update ParentPositionSync<SceneProxyStage>
 // - update global transforms
 // - render (player position is updated for gc/platform only, all collider entity global transforms are updated to their new positions; collider transforms are not but this doesn't affect rendering)
 // note player may intersect non-ground colliders (or weirdly rotating gcs), just for rendering
