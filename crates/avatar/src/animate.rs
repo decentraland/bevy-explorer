@@ -414,9 +414,12 @@ fn animate(
             }
         } else {
             // otherwise play a default emote baesd on motion
-            if dynamic_state.ground_height > 0.2 || dynamic_state.velocity.y > 0.01 {
-                let time_to_peak = (jump_height * -gravity * 2.0).sqrt() / -gravity;
-
+            let time_to_peak = (jump_height * -gravity * 2.0).sqrt() / -gravity;
+            if dynamic_state.ground_height > 0.2
+                || dynamic_state.velocity.y > 0.0
+                    && dynamic_state.jump_time
+                        > (time.elapsed_seconds() - time_to_peak / 2.0).max(0.0)
+            {
                 ActiveEmote {
                     urn: EmoteUrn::new("jump").unwrap(),
                     speed: time_to_peak.recip() * 0.75,

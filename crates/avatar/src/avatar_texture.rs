@@ -97,13 +97,7 @@ impl<'w, 's> PhotoBooth<'w, 's> {
                     render_layers: Some(render_layers),
                     automatic_delete: false,
                 },
-                AvatarDynamicState {
-                    force: Vec2::ZERO,
-                    velocity: Vec3::ZERO,
-                    ground_height: 0.0,
-                    tank: false,
-                    rotate: 0.0,
-                },
+                AvatarDynamicState::default(),
                 BoothAvatar,
             ))
             .id();

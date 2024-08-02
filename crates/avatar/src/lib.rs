@@ -143,6 +143,7 @@ pub struct AvatarDynamicState {
     pub ground_height: f32,
     pub tank: bool,
     pub rotate: f32,
+    pub jump_time: f32,
 }
 
 // send received avatar info into scenes

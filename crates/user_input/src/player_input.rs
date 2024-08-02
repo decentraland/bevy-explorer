@@ -41,6 +41,7 @@ pub(crate) fn update_user_velocity(
         && dynamic_state.velocity.y <= 0.0
     {
         dynamic_state.velocity.y = (user.jump_height * -user.gravity * 2.0).sqrt();
+        dynamic_state.jump_time = time.elapsed_seconds();
     }
 
     let mut axis_input = Vec2::ZERO;
