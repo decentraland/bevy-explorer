@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use bevy::{ecs::system::EntityCommands, prelude::*, ui::FocusPolicy};
 use bevy_dui::{DuiContext, DuiProps, DuiTemplate, NodeMap};
-use common::util::{TryPushChildrenEx, ModifyComponentExt};
+use common::util::{ModifyComponentExt, TryPushChildrenEx};
 
 use crate::{
     bound_node::NodeBounds,

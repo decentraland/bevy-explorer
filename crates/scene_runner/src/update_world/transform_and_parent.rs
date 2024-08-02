@@ -7,8 +7,8 @@ use bevy::{
     transform::TransformSystem,
     utils::{Entry, HashMap, HashSet},
 };
-use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
 use common::util::ModifyComponentExt;
+use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
 
 use crate::{
     primary_entities::PrimaryEntities, DeletedSceneEntities, RendererSceneContext, SceneEntity,
@@ -20,9 +20,7 @@ use dcl_component::{
     SceneEntityId,
 };
 
-use super::{
-    gltf_container::GltfLinkSet, AddCrdtInterfaceExt, CrdtStateComponent,
-};
+use super::{gltf_container::GltfLinkSet, AddCrdtInterfaceExt, CrdtStateComponent};
 
 pub struct TransformAndParentPlugin;
 

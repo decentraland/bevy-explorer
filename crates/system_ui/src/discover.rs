@@ -10,7 +10,7 @@ use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiR
 use common::{
     rpc::RpcCall,
     structs::{IVec2Arg, SettingsTab},
-    util::{TaskExt, ModifyComponentExt},
+    util::{ModifyComponentExt, TaskExt},
 };
 use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, IpfsAssetServer};
 use isahc::AsyncReadResponseExt;

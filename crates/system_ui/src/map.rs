@@ -10,7 +10,7 @@ use bevy::{
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     structs::{PrimaryUser, SettingsTab},
-    util::{TaskExt, TryPushChildrenEx, ModifyComponentExt},
+    util::{ModifyComponentExt, TaskExt, TryPushChildrenEx},
 };
 use ipfs::ipfs_path::IpfsPath;
 use isahc::AsyncReadResponseExt;
