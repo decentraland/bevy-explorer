@@ -78,7 +78,6 @@ impl Plugin for GltfDefinitionPlugin {
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
         app.add_systems(
             Update,
-<<<<<<< HEAD
             (expose_gltfs, update_gltf_linked_visibility)
                 .chain()
                 .in_set(SceneSets::PostLoop),
@@ -89,16 +88,6 @@ impl Plugin for GltfDefinitionPlugin {
                 .after(animation_player)
                 .before(TransformSystem::TransformPropagate),
         );
-=======
-            (
-                expose_gltfs,
-                update_gltf_linked_transforms,
-                update_gltf_linked_visibility,
-            )
-                .chain()
-                .in_set(SceneSets::PostLoop),
-        );
->>>>>>> main
     }
 }
 
@@ -1263,11 +1252,7 @@ fn expose_gltfs(
     }
 }
 
-<<<<<<< HEAD
 pub fn update_gltf_linked_transforms(
-=======
-fn update_gltf_linked_transforms(
->>>>>>> main
     mut commands: Commands,
     gltf_nodes: Query<(
         Entity,
