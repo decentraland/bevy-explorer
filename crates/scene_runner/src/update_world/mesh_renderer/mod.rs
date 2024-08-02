@@ -155,7 +155,11 @@ pub fn update_mesh(
     config: Res<AppConfig>,
     mut gltf_mesh_resolver: GltfMeshResolver,
 ) {
+<<<<<<< HEAD
     for (ent, scene_ent, prim, maybe_material, maybe_existing_mesh) in new_primitives.iter() {
+=======
+    for (ent, scene_ent, prim, maybe_material) in new_primitives.iter() {
+>>>>>>> main
         commands.entity(ent).remove::<RetryMeshDefinition>();
         let handle = match prim {
             MeshDefinition::Box { uvs } => {
@@ -220,10 +224,13 @@ pub fn update_mesh(
                     commands.entity(ent).try_insert(RetryMeshDefinition);
                     continue;
                 };
+<<<<<<< HEAD
                 // remove skin if mesh changed
                 if maybe_existing_mesh != Some(&h_mesh) {
                     commands.entity(ent).remove::<SkinnedMesh>();
                 }
+=======
+>>>>>>> main
                 h_mesh
             }
         };

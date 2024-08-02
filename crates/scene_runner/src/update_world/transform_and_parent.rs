@@ -246,6 +246,7 @@ pub(crate) fn process_transform_and_parent_updates(
 #[derive(Component)]
 pub struct ParentPositionSync<T: ParentPositionSyncStage>(pub Entity, PhantomData<fn() -> T>);
 
+<<<<<<< HEAD
 impl<T: ParentPositionSyncStage> ParentPositionSync<T> {
     pub fn new(parent: Entity) -> Self {
         Self(parent, Default::default())
@@ -263,6 +264,11 @@ impl ParentPositionSyncStage for SceneProxyStage {}
 pub fn parent_position_sync<T: ParentPositionSyncStage>(
     mut commands: Commands,
     syncees: Query<(Entity, &ParentPositionSync<T>, &Parent)>,
+=======
+fn parent_position_sync(
+    mut commands: Commands,
+    syncees: Query<(Entity, &ParentPositionSync, &Parent)>,
+>>>>>>> main
     globals: Query<&GlobalTransform>,
     gt_helper: TransformHelperPub,
 ) {
