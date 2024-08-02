@@ -12,7 +12,10 @@ use bevy::{
     window::CursorGrabMode,
 };
 
-use common::structs::{ActiveDialog, CameraOverride, PrimaryCamera, PrimaryUser};
+use common::{
+    structs::{ActiveDialog, CameraOverride, PrimaryCamera, PrimaryUser},
+    util::ModifyComponentExt,
+};
 use input_manager::AcceptInput;
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
@@ -391,46 +394,5 @@ pub fn update_camera_position(
             .entity(camera_ent)
             .modify_component(move |t: &mut Transform| *t = target_transform);
         // *camera_transform = target_transform;
-    }
-}
-
-// move me
-
-pub struct ModifyComponent<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> {
-    func: F,
-    _p: PhantomData<fn() -> C>,
-}
-
-impl<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> bevy::ecs::system::EntityCommand
-    for ModifyComponent<C, F>
-{
-    fn apply(self, id: Entity, world: &mut World) {
-        if let Some(mut c) = world.get_mut::<C>(id) {
-            (self.func)(&mut *c)
-        }
-    }
-}
-
-impl<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> ModifyComponent<C, F> {
-    fn new(func: F) -> Self {
-        Self {
-            func,
-            _p: PhantomData,
-        }
-    }
-}
-pub trait ModifyComponentExt {
-    fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
-        &mut self,
-        func: F,
-    ) -> &mut Self;
-}
-
-impl<'a> ModifyComponentExt for bevy::ecs::system::EntityCommands<'a> {
-    fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
-        &mut self,
-        func: F,
-    ) -> &mut Self {
-        self.add(ModifyComponent::new(func))
     }
 }

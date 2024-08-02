@@ -1,11 +1,11 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, marker::PhantomData};
 
 use bevy::{
     app::Update,
     ecs::{
         component::Component,
         event::{Event, Events},
-        system::{Command, Commands, EntityCommands, Query},
+        system::{Command, Commands, EntityCommand, EntityCommands, Query},
     },
     hierarchy::DespawnRecursiveExt,
     prelude::{
@@ -232,4 +232,99 @@ fn despawn_with(mut commands: Commands, q: Query<(Entity, &DespawnWith)>) {
 
 pub fn project_directories() -> directories::ProjectDirs {
     directories::ProjectDirs::from("org", "decentraland", "BevyExplorer").unwrap()
+}
+
+// commands to modify components
+
+pub struct ModifyComponent<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> {
+    func: F,
+    _p: PhantomData<fn() -> C>,
+}
+
+impl<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> EntityCommand
+    for ModifyComponent<C, F>
+{
+    fn apply(self, id: Entity, world: &mut World) {
+        if let Some(mut c) = world.get_mut::<C>(id) {
+            (self.func)(&mut *c)
+        }
+    }
+}
+
+impl<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> ModifyComponent<C, F> {
+    fn new(func: F) -> Self {
+        Self {
+            func,
+            _p: PhantomData,
+        }
+    }
+}
+
+pub trait ModifyComponentExt {
+    fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
+        &mut self,
+        func: F,
+    ) -> &mut Self;
+}
+
+impl<'a> ModifyComponentExt for EntityCommands<'a> {
+    fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
+        &mut self,
+        func: F,
+    ) -> &mut Self {
+        self.add(ModifyComponent::new(func))
+    }
+}
+
+pub struct ModifyDefaultComponent<C: Component + Default, F: FnOnce(&mut C) + Send + Sync + 'static>
+{
+    func: F,
+    _p: PhantomData<fn() -> C>,
+}
+
+impl<C: Component + Default, F: FnOnce(&mut C) + Send + Sync + 'static> EntityCommand
+    for ModifyDefaultComponent<C, F>
+{
+    fn apply(self, id: Entity, world: &mut World) {
+        if let Some(mut c) = world.get_mut::<C>(id) {
+            (self.func)(&mut *c)
+        } else if let Some(mut entity) = world.get_entity_mut(id) {
+            let mut v = C::default();
+            (self.func)(&mut v);
+            entity.insert(v);
+        }
+    }
+}
+
+impl<C: Component + Default, F: FnOnce(&mut C) + Send + Sync + 'static>
+    ModifyDefaultComponent<C, F>
+{
+    fn new(func: F) -> Self {
+        Self {
+            func,
+            _p: PhantomData,
+        }
+    }
+}
+
+pub trait ModifyDefaultComponentExt {
+    fn default_and_modify_component<
+        C: Component + Default,
+        F: FnOnce(&mut C) + Send + Sync + 'static,
+    >(
+        &mut self,
+        func: F,
+    ) -> &mut Self;
+}
+
+impl<'a> ModifyDefaultComponentExt for EntityCommands<'a> {
+    fn default_and_modify_component<
+        C: Component + Default,
+        F: FnOnce(&mut C) + Send + Sync + 'static,
+    >(
+        &mut self,
+        func: F,
+    ) -> &mut Self {
+        self.add(ModifyDefaultComponent::new(func))
+    }
 }

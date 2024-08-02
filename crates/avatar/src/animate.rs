@@ -414,7 +414,7 @@ fn animate(
             }
         } else {
             // otherwise play a default emote baesd on motion
-            if dynamic_state.ground_height > 0.2 || dynamic_state.velocity.y > 0.0 {
+            if dynamic_state.ground_height > 0.2 || dynamic_state.velocity.y > 0.01 {
                 let time_to_peak = (jump_height * -gravity * 2.0).sqrt() / -gravity;
 
                 ActiveEmote {

@@ -5,11 +5,12 @@ use bevy::{
 };
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry, DuiTemplate};
 use bevy_egui::EguiSettings;
+use common::util::ModifyComponentExt;
 
 use crate::{
     combo_box::PropsExt,
     ui_actions::{Click, HoverEnter, HoverExit, On},
-    user_font, FontName, ModifyComponentExt, WeightName,
+    user_font, FontName, WeightName,
 };
 
 pub struct TextSizePlugin;

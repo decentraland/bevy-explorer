@@ -21,10 +21,9 @@ use bevy::{
     transform::TransformSystem,
     utils::{HashMap, HashSet},
 };
-use common::structs::AppConfig;
+use common::{structs::AppConfig, util::ModifyComponentExt};
 use rapier3d_f64::prelude::*;
 use serde::Deserialize;
-use ui_core::ModifyComponentExt;
 
 use crate::{
     renderer_context::RendererSceneContext,
@@ -51,6 +50,9 @@ use super::{
 };
 
 pub struct GltfDefinitionPlugin;
+
+#[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
+pub struct GltfLinkSet;
 
 #[derive(Component, Debug)]
 pub struct GltfDefinition(PbGltfContainer);
@@ -84,7 +86,9 @@ impl Plugin for GltfDefinitionPlugin {
         );
         app.add_systems(
             PostUpdate,
-            update_gltf_linked_transforms
+            (update_gltf_linked_transforms, apply_deferred)
+                .chain()
+                .in_set(GltfLinkSet)
                 .after(animation_player)
                 .before(TransformSystem::TransformPropagate),
         );
@@ -1252,7 +1256,7 @@ fn expose_gltfs(
     }
 }
 
-pub fn update_gltf_linked_transforms(
+fn update_gltf_linked_transforms(
     mut commands: Commands,
     gltf_nodes: Query<(
         Entity,

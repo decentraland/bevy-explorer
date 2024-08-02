@@ -19,7 +19,7 @@ use input_manager::should_accept_key;
 use scene_runner::{
     update_world::{
         avatar_modifier_area::PlayerModifiers,
-        gltf_container::update_gltf_linked_transforms,
+        gltf_container::GltfLinkSet,
         transform_and_parent::{parent_position_sync, AvatarAttachStage, SceneProxyStage},
     },
     OutOfWorld,
@@ -53,13 +53,13 @@ impl Plugin for UserInputPlugin {
             (
                 update_user_position
                     .after(animation_player)
-                    .after(update_gltf_linked_transforms)
+                    .after(GltfLinkSet)
                     .before(parent_position_sync::<AvatarAttachStage>)
                     .before(parent_position_sync::<SceneProxyStage>)
                     .before(TransformSystem::TransformPropagate),
                 update_camera_position
                     .after(animation_player)
-                    .after(update_gltf_linked_transforms)
+                    .after(GltfLinkSet)
                     .after(update_user_position)
                     .after(parent_position_sync::<AvatarAttachStage>)
                     .before(parent_position_sync::<SceneProxyStage>)

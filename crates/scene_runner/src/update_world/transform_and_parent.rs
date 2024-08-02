@@ -8,7 +8,7 @@ use bevy::{
     utils::{Entry, HashMap, HashSet},
 };
 use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
-use ui_core::ModifyComponentExt;
+use common::util::ModifyComponentExt;
 
 use crate::{
     primary_entities::PrimaryEntities, DeletedSceneEntities, RendererSceneContext, SceneEntity,
@@ -21,7 +21,7 @@ use dcl_component::{
 };
 
 use super::{
-    gltf_container::update_gltf_linked_transforms, AddCrdtInterfaceExt, CrdtStateComponent,
+    gltf_container::GltfLinkSet, AddCrdtInterfaceExt, CrdtStateComponent,
 };
 
 pub struct TransformAndParentPlugin;
@@ -41,11 +41,11 @@ impl Plugin for TransformAndParentPlugin {
             (
                 parent_position_sync::<AvatarAttachStage>
                     .after(animation_player)
-                    .after(update_gltf_linked_transforms)
+                    .after(GltfLinkSet)
                     .before(TransformSystem::TransformPropagate),
                 parent_position_sync::<SceneProxyStage>
                     .after(animation_player)
-                    .after(update_gltf_linked_transforms)
+                    .after(GltfLinkSet)
                     .after(parent_position_sync::<AvatarAttachStage>)
                     .before(TransformSystem::TransformPropagate),
             ),
