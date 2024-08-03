@@ -10,7 +10,7 @@ use bevy::{
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     structs::{PrimaryUser, SettingsTab},
-    util::{TaskExt, TryPushChildrenEx},
+    util::{ModifyComponentExt, TaskExt, TryPushChildrenEx},
 };
 use ipfs::ipfs_path::IpfsPath;
 use isahc::AsyncReadResponseExt;
@@ -19,7 +19,6 @@ use ui_core::{
     bound_node::{BoundedNode, BoundedNodeBundle},
     text_size::FontSize,
     ui_actions::{ClickNoDrag, DragData, Dragged, MouseWheelData, MouseWheeled, On, UiCaller},
-    ModifyComponentExt,
 };
 
 use crate::{

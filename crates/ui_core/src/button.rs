@@ -1,14 +1,13 @@
 use anyhow::anyhow;
 use bevy::{ecs::system::EntityCommands, prelude::*, ui::FocusPolicy};
 use bevy_dui::{DuiContext, DuiProps, DuiTemplate, NodeMap};
-use common::util::TryPushChildrenEx;
+use common::util::{ModifyComponentExt, TryPushChildrenEx};
 
 use crate::{
     bound_node::NodeBounds,
     combo_box::PropsExt,
     interact_style::{Active, InteractStyles},
     ui_actions::{close_ui, Click, ClickRepeat, DataChanged, Enabled, On, UiCaller},
-    ModifyComponentExt,
 };
 
 pub struct DuiButton {

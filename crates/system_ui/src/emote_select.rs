@@ -8,12 +8,14 @@ use bevy::{
 };
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};
-use common::structs::{ActiveDialog, PrimaryUser};
+use common::{
+    structs::{ActiveDialog, PrimaryUser},
+    util::ModifyComponentExt,
+};
 use comms::profile::CurrentUserProfile;
 use ui_core::{
     focus::Focus,
     ui_actions::{Click, Defocus, HoverEnter, HoverExit, On},
-    ModifyComponentExt,
 };
 
 use crate::chat::BUTTON_SCALE;

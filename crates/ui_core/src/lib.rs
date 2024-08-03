@@ -18,10 +18,7 @@ use std::{any::type_name, marker::PhantomData};
 
 use bevy::{
     asset::{DependencyLoadState, LoadState, RecursiveDependencyLoadState},
-    ecs::{
-        schedule::SystemConfigs,
-        system::{EntityCommand, EntityCommands},
-    },
+    ecs::schedule::SystemConfigs,
     prelude::*,
     utils::{HashMap, HashSet},
 };
@@ -249,99 +246,6 @@ impl<S: States> StateTracker<S> {
         };
 
         system.into_configs()
-    }
-}
-
-pub struct ModifyComponent<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> {
-    func: F,
-    _p: PhantomData<fn() -> C>,
-}
-
-impl<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> EntityCommand
-    for ModifyComponent<C, F>
-{
-    fn apply(self, id: Entity, world: &mut World) {
-        if let Some(mut c) = world.get_mut::<C>(id) {
-            (self.func)(&mut *c)
-        }
-    }
-}
-
-impl<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> ModifyComponent<C, F> {
-    fn new(func: F) -> Self {
-        Self {
-            func,
-            _p: PhantomData,
-        }
-    }
-}
-
-pub trait ModifyComponentExt {
-    fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
-        &mut self,
-        func: F,
-    ) -> &mut Self;
-}
-
-impl<'a> ModifyComponentExt for EntityCommands<'a> {
-    fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
-        &mut self,
-        func: F,
-    ) -> &mut Self {
-        self.add(ModifyComponent::new(func))
-    }
-}
-
-pub struct ModifyDefaultComponent<C: Component + Default, F: FnOnce(&mut C) + Send + Sync + 'static>
-{
-    func: F,
-    _p: PhantomData<fn() -> C>,
-}
-
-impl<C: Component + Default, F: FnOnce(&mut C) + Send + Sync + 'static> EntityCommand
-    for ModifyDefaultComponent<C, F>
-{
-    fn apply(self, id: Entity, world: &mut World) {
-        if let Some(mut c) = world.get_mut::<C>(id) {
-            (self.func)(&mut *c)
-        } else if let Some(mut entity) = world.get_entity_mut(id) {
-            let mut v = C::default();
-            (self.func)(&mut v);
-            entity.insert(v);
-        }
-    }
-}
-
-impl<C: Component + Default, F: FnOnce(&mut C) + Send + Sync + 'static>
-    ModifyDefaultComponent<C, F>
-{
-    fn new(func: F) -> Self {
-        Self {
-            func,
-            _p: PhantomData,
-        }
-    }
-}
-
-pub trait ModifyDefaultComponentExt {
-    fn default_and_modify_component<
-        C: Component + Default,
-        F: FnOnce(&mut C) + Send + Sync + 'static,
-    >(
-        &mut self,
-        func: F,
-    ) -> &mut Self;
-}
-
-impl<'a> ModifyDefaultComponentExt for EntityCommands<'a> {
-    fn default_and_modify_component<
-        C: Component + Default,
-        F: FnOnce(&mut C) + Send + Sync + 'static,
-    >(
-        &mut self,
-        func: F,
-    ) -> &mut Self {
-        self.add(ModifyDefaultComponent::new(func))
     }
 }
 

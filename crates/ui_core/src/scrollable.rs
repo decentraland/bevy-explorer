@@ -3,13 +3,12 @@ use bevy::{
     window::PrimaryWindow,
 };
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
-use common::util::TryPushChildrenEx;
+use common::util::{ModifyComponentExt, ModifyDefaultComponentExt, TryPushChildrenEx};
 
 use crate::{
     bound_node::{BoundedNode, BoundedNodeBundle, NodeBounds},
     interact_style::{InteractStyle, InteractStyles},
     ui_actions::DataChanged,
-    ModifyComponentExt, ModifyDefaultComponentExt,
 };
 
 use super::ui_builder::SpawnSpacer;

@@ -11,7 +11,9 @@ use dcl_component::{
     SceneComponentId,
 };
 use scene_runner::update_world::{
-    mesh_collider::DisableCollisions, transform_and_parent::ParentPositionSync, AddCrdtInterfaceExt,
+    mesh_collider::DisableCollisions,
+    transform_and_parent::{AvatarAttachStage, ParentPositionSync},
+    AddCrdtInterfaceExt,
 };
 
 pub struct AttachPlugin;
@@ -44,7 +46,7 @@ pub fn update_attached(
 ) {
     for removed in removed_attachments.read() {
         if let Some(mut commands) = commands.get_entity(removed) {
-            commands.remove::<(ParentPositionSync, DisableCollisions)>();
+            commands.remove::<(ParentPositionSync<AvatarAttachStage>, DisableCollisions)>();
         }
     }
 
@@ -90,9 +92,10 @@ pub fn update_attached(
             }
         };
 
-        commands
-            .entity(ent)
-            .try_insert((ParentPositionSync(sync_entity), DisableCollisions));
+        commands.entity(ent).try_insert((
+            ParentPositionSync::<AvatarAttachStage>::new(sync_entity),
+            DisableCollisions,
+        ));
         debug!("syncing {ent:?} to {sync_entity:?}");
     }
 }

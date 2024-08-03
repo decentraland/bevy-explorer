@@ -14,7 +14,7 @@ use crate::{
 };
 use common::{
     structs::{AppConfig, PrimaryUser},
-    util::DespawnWith,
+    util::{DespawnWith, ModifyComponentExt},
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -41,7 +41,6 @@ use ui_core::{
     textentry::TextEntry,
     ui_actions::{DataChanged, Defocus, HoverEnter, HoverExit, On, Submit, UiCaller},
     ui_builder::SpawnSpacer,
-    ModifyComponentExt,
 };
 
 use super::{material::TextureResolver, pointer_events::PointerEvents, AddCrdtInterfaceExt};

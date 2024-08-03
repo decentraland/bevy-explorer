@@ -12,7 +12,10 @@ use dcl_component::{DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDcl
 
 use crate::{
     primary_entities::PrimaryEntities,
-    update_world::{mesh_collider::DisableCollisions, transform_and_parent::ParentPositionSync},
+    update_world::{
+        mesh_collider::DisableCollisions,
+        transform_and_parent::{ParentPositionSync, SceneProxyStage},
+    },
     ContainerEntity, SceneEntity, TargetParent,
 };
 
@@ -212,14 +215,16 @@ impl RendererSceneContext {
         });
 
         if id == SceneEntityId::CAMERA {
-            commands
-                .entity(spawned)
-                .try_insert((ParentPositionSync(primaries.camera()), DisableCollisions));
+            commands.entity(spawned).try_insert((
+                ParentPositionSync::<SceneProxyStage>::new(primaries.camera()),
+                DisableCollisions,
+            ));
         }
         if id == SceneEntityId::PLAYER {
-            commands
-                .entity(spawned)
-                .try_insert((ParentPositionSync(primaries.player()), DisableCollisions));
+            commands.entity(spawned).try_insert((
+                ParentPositionSync::<SceneProxyStage>::new(primaries.player()),
+                DisableCollisions,
+            ));
         }
 
         commands.entity(root).add_child(spawned);

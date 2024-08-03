@@ -1,11 +1,14 @@
+use std::marker::PhantomData;
+
 use bevy::{
+    animation::animation_player,
     ecs::system::SystemParam,
     prelude::*,
-    transform::systems::{propagate_transforms, sync_simple_transforms},
+    transform::TransformSystem,
     utils::{Entry, HashMap, HashSet},
 };
+use common::util::ModifyComponentExt;
 use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
-use ui_core::ModifyComponentExt;
 
 use crate::{
     primary_entities::PrimaryEntities, DeletedSceneEntities, RendererSceneContext, SceneEntity,
@@ -17,7 +20,7 @@ use dcl_component::{
     SceneEntityId,
 };
 
-use super::{AddCrdtInterfaceExt, CrdtStateComponent};
+use super::{gltf_container::GltfLinkSet, AddCrdtInterfaceExt, CrdtStateComponent};
 
 pub struct TransformAndParentPlugin;
 
@@ -33,10 +36,17 @@ impl Plugin for TransformAndParentPlugin {
             .add_systems(process_transform_and_parent_updates.in_set(SceneLoopSets::UpdateWorld));
         app.add_systems(
             PostUpdate,
-            parent_position_sync
-                .in_set(bevy::transform::TransformSystem::TransformPropagate)
-                .before(sync_simple_transforms)
-                .before(propagate_transforms),
+            (
+                parent_position_sync::<AvatarAttachStage>
+                    .after(animation_player)
+                    .after(GltfLinkSet)
+                    .before(TransformSystem::TransformPropagate),
+                parent_position_sync::<SceneProxyStage>
+                    .after(animation_player)
+                    .after(GltfLinkSet)
+                    .after(parent_position_sync::<AvatarAttachStage>)
+                    .before(TransformSystem::TransformPropagate),
+            ),
         );
     }
 }
@@ -232,11 +242,25 @@ pub(crate) fn process_transform_and_parent_updates(
 // also this will lag if the parent of the syncee is moving so they should
 // be parented to the scene root generally.
 #[derive(Component)]
-pub struct ParentPositionSync(pub Entity);
+pub struct ParentPositionSync<T: ParentPositionSyncStage>(pub Entity, PhantomData<fn() -> T>);
 
-fn parent_position_sync(
+impl<T: ParentPositionSyncStage> ParentPositionSync<T> {
+    pub fn new(parent: Entity) -> Self {
+        Self(parent, Default::default())
+    }
+}
+
+pub trait ParentPositionSyncStage: 'static {}
+
+pub struct AvatarAttachStage;
+impl ParentPositionSyncStage for AvatarAttachStage {}
+
+pub struct SceneProxyStage;
+impl ParentPositionSyncStage for SceneProxyStage {}
+
+pub fn parent_position_sync<T: ParentPositionSyncStage>(
     mut commands: Commands,
-    syncees: Query<(Entity, &ParentPositionSync, &Parent)>,
+    syncees: Query<(Entity, &ParentPositionSync<T>, &Parent)>,
     globals: Query<&GlobalTransform>,
     gt_helper: TransformHelperPub,
 ) {

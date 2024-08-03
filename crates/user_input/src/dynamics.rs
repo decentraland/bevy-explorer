@@ -21,6 +21,14 @@
 // - use clamped (motion + difference) to update position and intrinsic velocity
 
 // postupdate
+
+// - [bevy] animations
+// - [gltf_container] sync gltf nodes
+// ** all collidable (non-attached items) are in final positions
+// - [here] dynamics - update player
+// - [transform_and_parent] - update ParentPositionSync<AvatarAttachStage>
+// - [user_input] - camera position
+// - [transform_and_parent] - update ParentPositionSync<SceneProxyStage>
 // - update global transforms
 // - render (player position is updated for gc/platform only, all collider entity global transforms are updated to their new positions; collider transforms are not but this doesn't affect rendering)
 // note player may intersect non-ground colliders (or weirdly rotating gcs), just for rendering
@@ -35,7 +43,11 @@
 
 // and back to scene loop
 
-use bevy::{core::FrameCount, math::Vec3Swizzles, prelude::*};
+use bevy::{
+    core::FrameCount,
+    math::{DVec3, Vec3Swizzles},
+    prelude::*,
+};
 use bevy_console::ConsoleCommand;
 use rapier3d_f64::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 
@@ -216,18 +228,46 @@ pub fn update_user_position(
                 let new_translation = new_transform.translation();
                 platform_motion = new_translation - transform.translation;
 
+                if target_motion.y > 0.0 && platform_motion.y / dt > target_motion.y {
+                    // special case jumping on a platform moving up
+                    // dynamic_state.velocity.y = 0.0;//(platform_motion.y / dt).max(0.0);
+                    target_motion.y = 0.0;
+                    debug!("cap jump");
+                }
+
                 // force update new collider
+                let prior_cpos = DVec3::from(
+                    collider_data
+                        .get_collider(&collider)
+                        .unwrap()
+                        .position()
+                        .translation,
+                )
+                .as_vec3();
                 collider_data.update_collider_transform(&collider, &new_global_transform, None);
+                let new_cpos = DVec3::from(
+                    collider_data
+                        .get_collider(&collider)
+                        .unwrap()
+                        .position()
+                        .translation,
+                )
+                .as_vec3();
 
                 // adjust base motion wrt ground collider
                 if clip.0 {
+                    let prior = target_motion;
                     target_motion = collider_data.move_character(
                         ctx.last_update_frame,
-                        transform.translation,
+                        transform.translation + platform_motion,
                         target_motion,
                         &controller,
                         Some(&collider),
                         true,
+                    );
+                    debug!(
+                        "abmwgc {} -> {} (collider {} -> {})",
+                        prior.y, target_motion.y, prior_cpos, new_cpos
                     );
                 }
 
@@ -235,6 +275,18 @@ pub fn update_user_position(
                 target_motion += platform_motion;
 
                 platform_handle = Some((scene_ent, collider));
+                debug!(
+                    "platform move {} - rp {} -> {}",
+                    old_transform.translation().y,
+                    old_transform.translation().y - transform.translation.y,
+                    new_translation.y - transform.translation.y
+                );
+            } else {
+                debug!(
+                    "platform      {} - rp {}",
+                    old_transform.translation().y,
+                    old_transform.translation().y - transform.translation.y
+                );
             }
         }
     }
@@ -291,8 +343,13 @@ pub fn update_user_position(
                     let entity = collider_data.get_collider_entity(&collider).unwrap();
                     let gt = calc_global_transform(entity);
                     ground_collider.0 = Some((scene, collider, gt));
+                    debug!("still on platform (@{height})");
+                } else {
+                    debug!("left platform (@{height})");
                 }
             }
+        } else {
+            debug!("no platform nearby");
         }
     }
 

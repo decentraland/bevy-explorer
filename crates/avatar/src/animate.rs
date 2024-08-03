@@ -39,7 +39,8 @@ use scene_runner::{
     permissions::Permission,
     renderer_context::RendererSceneContext,
     update_world::{
-        avatar_modifier_area::PlayerModifiers, transform_and_parent::ParentPositionSync,
+        avatar_modifier_area::PlayerModifiers,
+        transform_and_parent::{ParentPositionSync, SceneProxyStage},
         AddCrdtInterfaceExt,
     },
     ContainerEntity, ContainingScene,
@@ -105,13 +106,14 @@ impl Plugin for AvatarAnimationPlugin {
 }
 
 // copy emotes from scene-player entities onto main player entity
+#[allow(clippy::type_complexity)]
 fn read_player_emotes(
     mut commands: Commands,
     scene_player_emotes: Query<
         (
             Entity,
             Ref<EmotesFromScene>,
-            &ParentPositionSync,
+            &ParentPositionSync<SceneProxyStage>,
             &ContainerEntity,
         ),
         Without<PrimaryUser>,
@@ -412,9 +414,12 @@ fn animate(
             }
         } else {
             // otherwise play a default emote baesd on motion
-            if dynamic_state.ground_height > 0.2 {
-                let time_to_peak = (jump_height * -gravity * 2.0).sqrt() / -gravity;
-
+            let time_to_peak = (jump_height * -gravity * 2.0).sqrt() / -gravity;
+            if dynamic_state.ground_height > 0.2
+                || dynamic_state.velocity.y > 0.0
+                    && dynamic_state.jump_time
+                        > (time.elapsed_seconds() - time_to_peak / 2.0).max(0.0)
+            {
                 ActiveEmote {
                     urn: EmoteUrn::new("jump").unwrap(),
                     speed: time_to_peak.recip() * 0.75,

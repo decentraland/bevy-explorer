@@ -1,6 +1,10 @@
 use std::f32::consts::FRAC_PI_2;
 
-use bevy::{prelude::*, render::mesh::VertexAttributeValues, utils::HashMap};
+use bevy::{
+    prelude::*,
+    render::mesh::{skinning::SkinnedMesh, VertexAttributeValues},
+    utils::HashMap,
+};
 
 use common::{sets::SceneSets, structs::AppConfig};
 
@@ -138,6 +142,7 @@ pub fn update_mesh(
             &SceneEntity,
             &MeshDefinition,
             Option<&Handle<SceneMaterial>>,
+            Option<&Handle<Mesh>>,
         ),
         Or<(Changed<MeshDefinition>, With<RetryMeshDefinition>)>,
     >,
@@ -150,7 +155,7 @@ pub fn update_mesh(
     config: Res<AppConfig>,
     mut gltf_mesh_resolver: GltfMeshResolver,
 ) {
-    for (ent, scene_ent, prim, maybe_material) in new_primitives.iter() {
+    for (ent, scene_ent, prim, maybe_material, maybe_existing_mesh) in new_primitives.iter() {
         commands.entity(ent).remove::<RetryMeshDefinition>();
         let handle = match prim {
             MeshDefinition::Box { uvs } => {
@@ -215,6 +220,10 @@ pub fn update_mesh(
                     commands.entity(ent).try_insert(RetryMeshDefinition);
                     continue;
                 };
+                // remove skin if mesh changed
+                if maybe_existing_mesh != Some(&h_mesh) {
+                    commands.entity(ent).remove::<SkinnedMesh>();
+                }
                 h_mesh
             }
         };

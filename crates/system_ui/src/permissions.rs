@@ -4,7 +4,7 @@ use common::{
     structs::{
         AppConfig, PermissionTarget, PermissionType, PermissionValue, PrimaryPlayerRes, SettingsTab,
     },
-    util::FireEventEx,
+    util::{FireEventEx, ModifyComponentExt},
 };
 use ipfs::CurrentRealm;
 use scene_runner::{
@@ -17,7 +17,6 @@ use ui_core::{
     interact_style::set_interaction_style,
     scrollable::{ScrollTarget, ScrollTargetEvent},
     ui_actions::{Click, HoverEnter, On, UiCaller},
-    ModifyComponentExt,
 };
 
 use crate::profile::SettingsDialog;

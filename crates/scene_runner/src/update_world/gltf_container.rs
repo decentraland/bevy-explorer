@@ -7,6 +7,7 @@ use std::{
 };
 
 use bevy::{
+    animation::animation_player,
     asset::LoadState,
     gltf::{Gltf, GltfExtras, GltfLoaderSettings},
     pbr::ExtendedMaterial,
@@ -17,12 +18,12 @@ use bevy::{
         view::NoFrustumCulling,
     },
     scene::{scene_spawner_system, InstanceId},
+    transform::TransformSystem,
     utils::{HashMap, HashSet},
 };
-use common::structs::AppConfig;
+use common::{structs::AppConfig, util::ModifyComponentExt};
 use rapier3d_f64::prelude::*;
 use serde::Deserialize;
-use ui_core::ModifyComponentExt;
 
 use crate::{
     renderer_context::RendererSceneContext,
@@ -50,6 +51,9 @@ use super::{
 
 pub struct GltfDefinitionPlugin;
 
+#[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
+pub struct GltfLinkSet;
+
 #[derive(Component, Debug)]
 pub struct GltfDefinition(PbGltfContainer);
 
@@ -76,13 +80,17 @@ impl Plugin for GltfDefinitionPlugin {
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
         app.add_systems(
             Update,
-            (
-                expose_gltfs,
-                update_gltf_linked_transforms,
-                update_gltf_linked_visibility,
-            )
+            (expose_gltfs, update_gltf_linked_visibility)
                 .chain()
                 .in_set(SceneSets::PostLoop),
+        );
+        app.add_systems(
+            PostUpdate,
+            (update_gltf_linked_transforms, apply_deferred)
+                .chain()
+                .in_set(GltfLinkSet)
+                .after(animation_player)
+                .before(TransformSystem::TransformPropagate),
         );
     }
 }

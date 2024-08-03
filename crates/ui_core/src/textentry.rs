@@ -1,7 +1,6 @@
 use crate::{
     combo_box::PropsExt,
     ui_actions::{DataChanged, On, Submit},
-    ModifyComponentExt,
 };
 use bevy::{math::Vec3Swizzles, prelude::*, transform::TransformSystem, window::PrimaryWindow};
 use bevy_dui::{DuiRegistry, DuiTemplate};
@@ -9,6 +8,7 @@ use bevy_egui::{
     egui::{self, TextEdit},
     EguiContext, EguiSet,
 };
+use common::util::ModifyComponentExt;
 
 use super::focus::Focus;
 

@@ -10,7 +10,7 @@ use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiR
 use common::{
     rpc::RpcCall,
     structs::{IVec2Arg, SettingsTab},
-    util::TaskExt,
+    util::{ModifyComponentExt, TaskExt},
 };
 use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, IpfsAssetServer};
 use isahc::AsyncReadResponseExt;
@@ -21,7 +21,6 @@ use ui_core::{
     interact_style::Active,
     toggle::Toggled,
     ui_actions::{close_ui, Click, DataChanged, On, UiCaller},
-    ModifyComponentExt,
 };
 
 use crate::profile::{close_settings, OnCloseEvent, SettingsDialog};
