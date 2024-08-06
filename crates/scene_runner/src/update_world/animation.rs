@@ -28,10 +28,15 @@ impl Plugin for AnimatorPlugin {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct Animator {
     pb_animator: PbAnimator,
     playing: bool,
+}
+
+#[derive(Component)]
+pub struct PriorAnimator {
+    pb_animator: PbAnimator,
 }
 
 impl From<PbAnimator> for Animator {
@@ -45,11 +50,13 @@ impl From<PbAnimator> for Animator {
 
 #[allow(clippy::type_complexity)]
 fn update_animations(
+    mut commands: Commands,
     mut animators: Query<
         (
             Entity,
             &SceneEntity,
             Option<&mut Animator>,
+            Option<&mut PriorAnimator>,
             &Handle<Gltf>,
             &mut GltfProcessed,
         ),
@@ -59,9 +66,20 @@ fn update_animations(
     clips: Res<Assets<AnimationClip>>,
     gltfs: Res<Assets<Gltf>>,
 ) {
-    for (ent, scene_ent, mut maybe_animator, h_gltf, mut gltf_processed) in animators.iter_mut() {
+    for (ent, scene_ent, mut maybe_animator, maybe_prior, h_gltf, mut gltf_processed) in animators.iter_mut() {
         let maybe_h_clip = match maybe_animator {
             Some(ref animator) => {
+                if let Some(mut prior) = maybe_prior {
+                    // make sure it really changed
+                    if prior.pb_animator == animator.pb_animator {
+                        continue;
+                    }
+                    prior.pb_animator = animator.pb_animator.clone();
+                } else {
+                    commands.entity(ent).try_insert(PriorAnimator{ pb_animator: animator.pb_animator.clone() });
+                }
+                debug!("pba {:?}: {:?}", scene_ent, maybe_animator);
+
                 // TODO bevy only supports a single concurrent animation (or a single timed transition which we can't use)
                 // it is still in development so will probably have better support soon. otherwise we could build our own
                 // animator to handle blending if required.
@@ -99,6 +117,7 @@ fn update_animations(
                     };
                     Some((h_clip, state.clone()))
                 } else {
+                    debug!("no state");
                     None
                 }
             }
@@ -157,6 +176,7 @@ fn update_animations(
                     state
                 );
                 player.play(h_clip.clone_weak());
+                player.resume();
 
                 player.set_speed(state.speed.unwrap_or(1.0));
                 if state.r#loop.unwrap_or(true) {
@@ -181,10 +201,7 @@ fn update_animations(
             if let Some(animator) = maybe_animator.as_mut() {
                 animator.bypass_change_detection().playing = true;
             }
-        } else if maybe_animator
-            .as_ref()
-            .map_or(false, |animator| animator.playing)
-        {
+        } else {
             if let Some(animator) = maybe_animator.as_mut() {
                 animator.bypass_change_detection().playing = false;
             }
