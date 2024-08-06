@@ -301,7 +301,7 @@ fn update_gltf(
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct GltfMaterialName(String);
 
 pub struct CachedMeshData {
@@ -934,7 +934,7 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
         .map(|chunk| chunk.try_into().unwrap())
         .collect();
 
-    SharedShape::trimesh_with_flags(positions_parry, indices_parry, TriMeshFlags::all())
+    SharedShape::trimesh_with_flags(positions_parry, indices_parry, TriMeshFlags::empty())
 }
 
 #[derive(Component)]
@@ -1110,7 +1110,6 @@ fn expose_gltfs(
             continue;
         };
 
-        debug!("checking {} -> {:?}", req.0, state);
         match state {
             GltfLinkState::Pending => scene.update_crdt(
                 SceneComponentId::GLTF_NODE_STATE,
@@ -1213,7 +1212,7 @@ fn expose_gltfs(
                     )
                 }
                 if let Some(material) = maybe_material {
-                    debug!("link material");
+                    debug!("link material ({} / {:?})", src, maybe_mat_name);
                     // hide
                     commands
                         .entity(gltf_entity)
@@ -1285,7 +1284,7 @@ fn update_gltf_linked_transforms(
         root_relative_transform: Transform,
     }
 
-    #[derive(Clone, PartialEq)]
+    #[derive(Clone, PartialEq, Debug)]
     enum MoveState {
         Anim,
         Scene,
@@ -1340,10 +1339,10 @@ fn update_gltf_linked_transforms(
                 let gltf_root_relative_transform = root_relative_gt.compute_transform();
                 debug!("[{gltf_entity:?}] rrt {gltf_root_relative_transform:?}");
                 debug!("[{gltf_entity:?}] prev: {prev_transform:?}");
-                let update = if prev_transform != *scene_transform {
-                    Some((MoveState::Scene, *scene_transform))
-                } else if prev_transform != gltf_root_relative_transform {
+                let update = if prev_transform != gltf_root_relative_transform {
                     Some((MoveState::Anim, gltf_root_relative_transform))
+                } else if scene_transform.is_changed() && prev_transform != *scene_transform {
+                    Some((MoveState::Scene, *scene_transform))
                 } else {
                     None
                 };
@@ -1455,7 +1454,6 @@ fn update_gltf_linked_transforms(
 
                         updated_transforms.insert(gltf_ent, gltf_node_transform);
 
-                        // update local copy of the scene entity
                         commands
                             .entity(gltf_ent)
                             .modify_component(move |t: &mut Transform| *t = gltf_node_transform);
