@@ -14,7 +14,7 @@ security default-keychain -s build.keychain
 
 echo -n $MACOS_CSC_CONTENT | base64 --decode -o file.p12
 security unlock-keychain -p "$TEMP_PASSWORD" build.keychain
-security import file.p12 -P "$MACOS_CSC_KEY_PASSWORD" -k ~/Library/Keychains/login.keychain -T /usr/bin/codesign
+security import file.p12 -P "$MACOS_CSC_KEY_PASSWORD" -k build.keychain -T /usr/bin/codesign
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$TEMP_PASSWORD" build.keychain
 
 echo "Create keychain profile"
