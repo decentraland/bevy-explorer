@@ -3,8 +3,6 @@
 set -e
 echo "Building macOS app"
 
-
-
 SOURCE_ICON_IMAGE="../linux/decentra-bevy.png"
 APP_NAME="DecentralandBevyExplorer"
 

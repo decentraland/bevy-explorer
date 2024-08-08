@@ -139,6 +139,13 @@ jobs:
 
           - name: Package Macos
             if: runner.os == 'macos'
+            env:
+              MACOS_CSC_CONTENT: ${{ secrets.MACOS_CSC_CONTENT }}
+              MACOS_CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+              MACOS_DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
+              MACOS_NOTARIZATION_APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
+              MACOS_NOTARIZATION_PWD: ${{ secrets.MACOS_NOTARIZATION_PWD }}
+              MACOS_NOTARIZATION_TEAM_ID: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
             run: |
               cd deploy/macos
               bash build.sh
