@@ -151,8 +151,7 @@ jobs:
             run: |
               cd deploy/macos
               bash build.sh
-              gh release upload "${{ needs.create-release.outputs.tag_name }}" DecentralandBevyExplorer.zip
-            #  gh release upload "${{ needs.create-release.outputs.tag_name }}" DecentralandBevyExplorer.pkg
+              mv DecentralandBevyExplorer.zip "${{ env.PACKAGE_FILE }}"
 
           - name: Package Windows
             if: runner.os == 'Windows'
@@ -191,7 +190,6 @@ jobs:
                 GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
           - name: Upload package
-            if: runner.os != 'macos'
             continue-on-error: true
             run: gh release upload "${{ needs.create-release.outputs.tag_name }}" "${{ env.PACKAGE_FILE }}"
             env:
