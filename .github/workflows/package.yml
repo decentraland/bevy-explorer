@@ -49,13 +49,13 @@ jobs:
                   - build_name: macos-m1m2
                     os: macos-14-xlarge
 
-                  # Disable by the moment
+                  # some ffmpeg thing is failing
                   # - build_name: macos-x86_64
                   #   os: macos-14-large
         
                   # - build_name: windows-x86_64
                   #   os: self-hosted-windows
-#                    target: x86_64-pc-windows-msvc
+                  #   target: x86_64-pc-windows-msvc
 
         env:
             PACKAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.${{ startsWith(matrix.build_name, 'win') && 'zip' || 'tar.gz' }}
@@ -114,15 +114,15 @@ jobs:
               Add-Content $env:GITHUB_ENV "FFMPEG_DIR=c:\ffmpeg-6.0`n"
     
               
-          # - name: Cargo build (windows)
-          #   if: runner.os == 'windows'
-          #   run: cargo build --release --bin decentra-bevy -j8
-          # - name: Cargo build (macos)
-          #   if: runner.os == 'macos'
-          #   run: cargo build --release --bin decentra-bevy
-          # - name: Cargo build (linux)
-          #   if: runner.os == 'linux'
-          #   run: cargo build --release --bin decentra-bevy --no-default-features --features "ffmpeg,inspect"
+          - name: Cargo build (windows)
+            if: runner.os == 'windows'
+            run: cargo build --release --bin decentra-bevy -j8
+          - name: Cargo build (macos)
+            if: runner.os == 'macos'
+            run: cargo build --release --bin decentra-bevy
+          - name: Cargo build (linux)
+            if: runner.os == 'linux'
+            run: cargo build --release --bin decentra-bevy --no-default-features --features "ffmpeg,inspect"
 
           - name: Package common
             run: |
