@@ -6,12 +6,19 @@ echo "Building macOS app"
 SOURCE_ICON_IMAGE="../linux/decentra-bevy.png"
 APP_NAME="DecentralandBevyExplorer"
 
+echo "Setting up the certificates"
+
+TEMP_PASSWORD=$(openssl rand -base64 32)
+security create-keychain -p "$TEMP_PASSWORD" build.keychain
+security default-keychain -s build.keychain
+
+echo -n $MACOS_CSC_CONTENT | base64 --decode -o file.p12
+security unlock-keychain -p "$TEMP_PASSWORD" build.keychain
+security import file.p12 -P "$MACOS_CSC_KEY_PASSWORD" -k ~/Library/Keychains/login.keychain -T /usr/bin/codesign
+security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$TEMP_PASSWORD" build.keychain
+
 echo "Create keychain profile"
 xcrun notarytool store-credentials "notary-profile" --apple-id "$MACOS_NOTARIZATION_APPLE_ID" --team-id "$MACOS_NOTARIZATION_TEAM_ID" --password "$MACOS_NOTARIZATION_PWD"
-
-echo "Setting up the certificates"
-echo $MACOS_CSC_CONTENT | base64 --decode > file.p12
-security import file.p12 -k ~/Library/Keychains/login.keychain -P "$MACOS_CSC_KEY_PASSWORD" -T /usr/bin/codesign
 
 echo "Creating AppIcon.icns"
 mkdir -p AppIcon.iconset
