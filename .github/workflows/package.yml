@@ -55,7 +55,7 @@ jobs:
         
                   - build_name: windows-x86_64
                     os: self-hosted-windows
-                    target: x86_64-pc-windows-msvc
+                  #  target: x86_64-pc-windows-msvc
 
         env:
             PACKAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.${{ startsWith(matrix.build_name, 'win') && 'zip' || 'tar.gz' }}
@@ -164,7 +164,6 @@ jobs:
 
           - name: Package Linux
             if: runner.os == 'linux'
-            # if: runner.os != 'windows'
             continue-on-error: true
             run: |
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy package/decentra-bevy
