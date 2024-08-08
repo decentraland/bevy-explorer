@@ -49,8 +49,9 @@ jobs:
                   - build_name: macos-m1m2
                     os: macos-14-xlarge
 
-                  - build_name: macos-x86_64
-                    os: macos-14-large
+                  # Disable by the moment
+                  # - build_name: macos-x86_64
+                  #   os: macos-14-large
         
                   # - build_name: windows-x86_64
                   #   os: self-hosted-windows
@@ -113,15 +114,15 @@ jobs:
               Add-Content $env:GITHUB_ENV "FFMPEG_DIR=c:\ffmpeg-6.0`n"
     
               
-          - name: Cargo build (windows)
-            if: runner.os == 'windows'
-            run: cargo build --release --bin decentra-bevy -j8
-          - name: Cargo build (macos)
-            if: runner.os == 'macos'
-            run: cargo build --release --bin decentra-bevy
-          - name: Cargo build (linux)
-            if: runner.os == 'linux'
-            run: cargo build --release --bin decentra-bevy --no-default-features --features "ffmpeg,inspect"
+          # - name: Cargo build (windows)
+          #   if: runner.os == 'windows'
+          #   run: cargo build --release --bin decentra-bevy -j8
+          # - name: Cargo build (macos)
+          #   if: runner.os == 'macos'
+          #   run: cargo build --release --bin decentra-bevy
+          # - name: Cargo build (linux)
+          #   if: runner.os == 'linux'
+          #   run: cargo build --release --bin decentra-bevy --no-default-features --features "ffmpeg,inspect"
 
           - name: Package common
             run: |
