@@ -213,13 +213,8 @@ fn update_manual_cursor(
     };
 
     let mesh_uvs = |h_mesh: &Handle<Mesh>| -> Option<Vec2> {
-        let Some(mesh) = meshes.get(h_mesh) else {
-            return None;
-        };
-
-        let Some(face) = world_target.face else {
-            return None;
-        };
+        let mesh = meshes.get(h_mesh)?;
+        let face = world_target.face?;
 
         let indices: [usize; 3] = match mesh.indices() {
             Some(Indices::U16(ixs)) => [
@@ -338,7 +333,7 @@ fn resolve_pointer_target(
         return;
     }
 
-    target.0 = world_target.0.clone();
+    target.0.clone_from(&world_target.0);
 }
 
 #[derive(clap::Parser, ConsoleCommand)]

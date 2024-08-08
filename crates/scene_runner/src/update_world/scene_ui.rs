@@ -740,9 +740,7 @@ fn layout_scene_ui(
                             scene_ui_root_node,
                         )| {
                             let bevy_ui_root = *ui_data.current_nodes.entry(*scene_ui_root_node).or_insert_with(|| {
-                                let canvas_info = canvas_infos.get(*scene_ui_root_node).cloned().unwrap_or_else(|_| {
-                                    UiCanvas(PbUiCanvas { width: 512, height: 512, color: None })
-                                }).0;
+                                let canvas_info = canvas_infos.get(*scene_ui_root_node).cloned().unwrap_or(UiCanvas(PbUiCanvas { width: 512, height: 512, color: None })).0;
 
                                 let root_node = prev_nodes.remove(scene_ui_root_node).unwrap_or_else(|| {
                                     debug!("creating camera for root {:?}", scene_ui_root_node);
