@@ -76,19 +76,24 @@ xcrun stapler staple $APP_NAME.app
 echo "Validate staple"
 xcrun stapler validate $APP_NAME.app
 
-echo "Create pkg"
-pkgbuild --root $APP_NAME.app \
-         --identifier "org.decentraland.bevyexplorer" \
-         --version "0.1.0" \
-         --install-location "/Applications" \
-         --scripts Scripts \
-         "$APP_NAME.pkg"
+# TODO: need the developer id installer certificate
 
-echo "Notarize pkg"
-xcrun notarytool submit "$APP_NAME.pkg" --keychain-profile "notary-profile" --wait
+# echo "Create pkg"
+# pkgbuild --root $APP_NAME.app \
+#          --identifier "org.decentraland.bevyexplorer" \
+#          --version "0.1.0" \
+#          --install-location "/Applications" \
+#          --scripts Scripts \
+#          "$APP_NAME-unsigned.pkg"
 
-echo "Attach staple pkg "
-xcrun stapler staple $APP_NAME.pkg
+# productsign --sign "Developer ID Installer: $MACOS_DEVELOPER_ID" \
+#   "$APP_NAME-unsigned.pkg" "$APP_NAME.pkg"
+  
+# echo "Notarize pkg"
+# xcrun notarytool submit "$APP_NAME.pkg" --keychain-profile "notary-profile" --wait
 
-echo "Validate staple pkg "
-xcrun stapler validate $APP_NAME.pkg
+# echo "Attach staple pkg "
+# xcrun stapler staple $APP_NAME.pkg
+
+# echo "Validate staple pkg "
+# xcrun stapler validate $APP_NAME.pkg

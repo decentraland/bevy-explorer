@@ -152,7 +152,7 @@ jobs:
               cd deploy/macos
               bash build.sh
               gh release upload "${{ needs.create-release.outputs.tag_name }}" DecentralandBevyExplorer.zip
-              gh release upload "${{ needs.create-release.outputs.tag_name }}" DecentralandBevyExplorer.pkg
+            #  gh release upload "${{ needs.create-release.outputs.tag_name }}" DecentralandBevyExplorer.pkg
 
           - name: Package Windows
             if: runner.os == 'Windows'
