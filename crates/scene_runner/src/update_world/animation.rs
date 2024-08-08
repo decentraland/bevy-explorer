@@ -66,7 +66,9 @@ fn update_animations(
     clips: Res<Assets<AnimationClip>>,
     gltfs: Res<Assets<Gltf>>,
 ) {
-    for (ent, scene_ent, mut maybe_animator, maybe_prior, h_gltf, mut gltf_processed) in animators.iter_mut() {
+    for (ent, scene_ent, mut maybe_animator, maybe_prior, h_gltf, mut gltf_processed) in
+        animators.iter_mut()
+    {
         let maybe_h_clip = match maybe_animator {
             Some(ref animator) => {
                 if let Some(mut prior) = maybe_prior {
@@ -76,7 +78,9 @@ fn update_animations(
                     }
                     prior.pb_animator = animator.pb_animator.clone();
                 } else {
-                    commands.entity(ent).try_insert(PriorAnimator{ pb_animator: animator.pb_animator.clone() });
+                    commands.entity(ent).try_insert(PriorAnimator {
+                        pb_animator: animator.pb_animator.clone(),
+                    });
                 }
                 debug!("pba {:?}: {:?}", scene_ent, maybe_animator);
 

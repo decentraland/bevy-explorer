@@ -14,8 +14,8 @@ use comms::profile::UserProfile;
 use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 
 use crate::{
-    gltf_resolver::GltfMaterialResolver, renderer_context::RendererSceneContext, ContainerEntity,
-    SceneEntity, SceneSets,
+    gltf_resolver::GltfMaterialResolver, renderer_context::RendererSceneContext,
+    update_scene::pointer_results::ResolveCursor, ContainerEntity, SceneEntity, SceneSets,
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -27,7 +27,7 @@ use dcl_component::{
 };
 use scene_material::{SceneBound, SceneMaterial};
 
-use super::{mesh_renderer::update_mesh, AddCrdtInterfaceExt};
+use super::{mesh_renderer::update_mesh, scene_ui::UiTextureOutput, AddCrdtInterfaceExt};
 
 pub struct MaterialDefinitionPlugin;
 
@@ -199,6 +199,7 @@ impl Plugin for MaterialDefinitionPlugin {
         app.add_systems(
             Update,
             (update_materials, update_bias)
+                .chain()
                 .in_set(SceneSets::PostLoop)
                 // we must run after update_mesh as that inserts a default material if none is present
                 .after(update_mesh),
@@ -227,6 +228,7 @@ pub enum TextureResolveError {
 pub struct TextureResolver<'w, 's> {
     ipfas: IpfsAssetServer<'w, 's>,
     videos: Query<'w, 's, &'static VideoTextureOutput>,
+    uis: Query<'w, 's, &'static UiTextureOutput>,
     avatars: Query<'w, 's, (&'static UserProfile, &'static AvatarTextureHandle)>,
 }
 
@@ -234,6 +236,7 @@ pub struct TextureResolver<'w, 's> {
 pub struct ResolvedTexture {
     pub image: Handle<Image>,
     pub touch: bool,
+    pub camera_target: Option<ResolveCursor>,
 }
 
 impl<'w, 's> TextureResolver<'w, 's> {
@@ -251,6 +254,7 @@ impl<'w, 's> TextureResolver<'w, 's> {
                         .load_content_file::<Image>(&texture.src, &scene.hash)
                         .unwrap(),
                     touch: false,
+                    camera_target: None,
                 })
             }
             texture_union::Tex::AvatarTexture(at) => self
@@ -260,6 +264,7 @@ impl<'w, 's> TextureResolver<'w, 's> {
                 .map(|(_, tex)| ResolvedTexture {
                     image: tex.0.clone(),
                     touch: false,
+                    camera_target: None,
                 })
                 .ok_or(TextureResolveError::AvatarNotFound),
             texture_union::Tex::VideoTexture(vt) => {
@@ -275,10 +280,34 @@ impl<'w, 's> TextureResolver<'w, 's> {
                     Ok(ResolvedTexture {
                         image: vt.0.clone(),
                         touch: true,
+                        camera_target: None,
                     })
                 } else {
                     warn!("video source entity not ready, retrying ...");
                     Err(TextureResolveError::SourceNotReady)
+                }
+            }
+            texture_union::Tex::UiTexture(uit) => {
+                let Some(ui_entity) =
+                    scene.bevy_entity(SceneEntityId::from_proto_u32(uit.ui_canvas_entity))
+                else {
+                    warn!("failed to look up ui source entity");
+                    return Err(TextureResolveError::SourceNotAvailable);
+                };
+
+                match self.uis.get(ui_entity) {
+                    Ok(ui_t) => Ok(ResolvedTexture {
+                        image: ui_t.image.clone(),
+                        touch: false,
+                        camera_target: Some(ResolveCursor {
+                            camera: ui_t.camera,
+                            texture_size: ui_t.texture_size.as_vec2(),
+                        }),
+                    }),
+                    Err(_) => {
+                        warn!("ui source entity not ready, retrying ...");
+                        Err(TextureResolveError::SourceNotReady)
+                    }
                 }
             }
         }
@@ -386,8 +415,15 @@ fn update_materials(
             commands.entity(ent).insert(TouchMaterial);
         }
 
-        let [base_color_texture, emissive_texture, normal_map_texture]: [Option<ResolvedTexture>;
-            3] = textures.try_into().unwrap();
+        let [mut base_color_texture, emissive_texture, normal_map_texture]: [Option<
+            ResolvedTexture,
+        >; 3] = textures.try_into().unwrap();
+
+        if let Some(bct) = base_color_texture.as_mut() {
+            if let Some(cursor) = bct.camera_target.take() {
+                commands.entity(ent).insert(cursor);
+            }
+        }
 
         let bounds = scenes
             .get(container.root)

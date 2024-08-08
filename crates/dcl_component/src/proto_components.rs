@@ -86,6 +86,7 @@ impl DclProtoComponent for sdk::components::PbUiInputResult {}
 impl DclProtoComponent for sdk::components::PbUiDropdown {}
 impl DclProtoComponent for sdk::components::PbUiDropdownResult {}
 impl DclProtoComponent for sdk::components::PbUiScrollResult {}
+impl DclProtoComponent for sdk::components::PbUiCanvas {}
 impl DclProtoComponent for sdk::components::PbTextShape {}
 impl DclProtoComponent for sdk::components::PbPointerLock {}
 impl DclProtoComponent for sdk::components::PbCameraMode {}

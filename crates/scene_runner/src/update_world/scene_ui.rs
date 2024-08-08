@@ -2,11 +2,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::{
     prelude::*,
-    ui::FocusPolicy,
+    render::render_resource::Extent3d,
+    ui::{FocusPolicy, ManualCursorPosition},
     utils::{HashMap, HashSet},
 };
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
-use input_manager::MouseInteractionComponent;
 
 use crate::{
     renderer_context::RendererSceneContext, update_scene::pointer_results::UiPointerTarget,
@@ -22,10 +22,10 @@ use dcl_component::{
         self,
         common::{texture_union, BorderRect, TextureUnion},
         sdk::components::{
-            self, scroll_position_value, PbUiBackground, PbUiDropdown, PbUiDropdownResult,
-            PbUiInput, PbUiInputResult, PbUiScrollResult, PbUiText, PbUiTransform,
-            ScrollPositionValue, TextWrap, YgAlign, YgDisplay, YgFlexDirection, YgJustify,
-            YgOverflow, YgPositionType, YgUnit, YgWrap,
+            self, scroll_position_value, PbUiBackground, PbUiCanvas, PbUiDropdown,
+            PbUiDropdownResult, PbUiInput, PbUiInputResult, PbUiScrollResult, PbUiText,
+            PbUiTransform, ScrollPositionValue, TextWrap, YgAlign, YgDisplay, YgFlexDirection,
+            YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap,
         },
     },
     SceneComponentId, SceneEntityId,
@@ -411,6 +411,15 @@ impl From<PbUiText> for UiText {
     }
 }
 
+#[derive(Component, Clone)]
+pub struct UiCanvas(pub PbUiCanvas);
+
+impl From<PbUiCanvas> for UiCanvas {
+    fn from(value: PbUiCanvas) -> Self {
+        Self(value)
+    }
+}
+
 #[derive(Component, Debug)]
 pub struct UiInput(PbUiInput);
 
@@ -468,6 +477,10 @@ impl Plugin for SceneUiPlugin {
             SceneComponentId::UI_DROPDOWN,
             ComponentPosition::EntityOnly,
         );
+        app.add_crdt_lww_component::<PbUiCanvas, UiCanvas>(
+            SceneComponentId::UI_CANVAS,
+            ComponentPosition::EntityOnly,
+        );
 
         app.add_systems(Update, init_scene_ui_root.in_set(SceneSets::PostInit));
         app.add_systems(
@@ -483,7 +496,14 @@ impl Plugin for SceneUiPlugin {
 pub struct SceneUiData {
     nodes: BTreeSet<Entity>,
     relayout: bool,
-    current_node: Option<Entity>,
+    current_nodes: HashMap<Entity, Entity>,
+}
+
+#[derive(Component)]
+pub struct UiTextureOutput {
+    pub camera: Entity,
+    pub image: Handle<Image>,
+    pub texture_size: UVec2,
 }
 
 fn init_scene_ui_root(
@@ -539,18 +559,23 @@ fn layout_scene_ui(
         Option<&PointerEvents>,
         Option<&UiInput>,
         Option<&UiDropdown>,
+        &Parent,
     )>,
-    mut ui_target: ResMut<UiPointerTarget>,
+    (mut ui_target, mut stretch_uvs, mut images): (
+        ResMut<UiPointerTarget>,
+        ResMut<Assets<StretchUvMaterial>>,
+        ResMut<Assets<Image>>,
+    ),
     current_uis: Query<(Entity, &SceneUiRoot)>,
     ui_input_state: Query<&UiInputPersistentState>,
     ui_dropdown_state: Query<&UiDropdownPersistentState>,
     ui_scrollable_state: Query<(Entity, &UiScrollablePersistentState)>,
-    mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
     (config, dui): (Res<AppConfig>, Res<DuiRegistry>),
     children: Query<&Children>,
     styles: Query<&Style>,
     mut scroll_to: EventWriter<ScrollTargetEvent>,
     mut removed_transforms: RemovedComponents<UiTransform>,
+    canvas_infos: Query<&UiCanvas>,
 ) {
     let current_scenes = player
         .get_single()
@@ -571,7 +596,7 @@ fn layout_scene_ui(
                 .read()
                 .any(|r| ui_data.nodes.contains(&r));
             if ui_data.relayout
-                || ui_data.current_node.is_none()
+                || ui_data.current_nodes.is_empty()
                 || config.is_changed()
                 || any_removed
             {
@@ -582,7 +607,7 @@ fn layout_scene_ui(
                 let mut salvaged_scrollables = ui_scrollable_state
                     .iter()
                     .filter_map(|(entity, scrollable)| {
-                        if scrollable.root != ent {
+                        if !ui_data.current_nodes.contains_key(&scrollable.root) {
                             debug!(
                                 "skipping salvage for {entity:?} as root {:?} != scene root {:?}",
                                 scrollable.root, ent
@@ -595,13 +620,12 @@ fn layout_scene_ui(
                         // extract the scrollable infrastructure
                         commands.remove_parent();
 
-                        // reattach children so they get despawned properly
+                        // // reattach children so they get despawned properly
                         if let Ok(children) = children.get(scrollable.content) {
                             for child in children.iter() {
-                                commands
-                                    .commands()
-                                    .entity(*child)
-                                    .set_parent(ui_data.current_node.unwrap());
+                                commands.commands().entity(*child).set_parent(
+                                    *ui_data.current_nodes.get(&scrollable.root).unwrap(),
+                                );
                             }
                         }
 
@@ -615,9 +639,10 @@ fn layout_scene_ui(
                     })
                     .collect::<HashMap<_, _>>();
 
-                // remove any old instance of the ui
-                if let Some(node) = ui_data.current_node.take() {
-                    commands.entity(node).despawn_recursive();
+                // clear any old uis
+                let mut prev_nodes = std::mem::take(&mut ui_data.current_nodes);
+                for node in prev_nodes.values() {
+                    commands.entity(*node).despawn_descendants();
                 }
 
                 // pending scroll events
@@ -636,6 +661,7 @@ fn layout_scene_ui(
                                 maybe_pointer_events,
                                 maybe_ui_input,
                                 maybe_dropdown,
+                                bevy_parent,
                             )) => Some((
                                 scene_entity.id,
                                 (
@@ -646,6 +672,7 @@ fn layout_scene_ui(
                                     maybe_pointer_events,
                                     maybe_ui_input,
                                     maybe_dropdown,
+                                    bevy_parent.get(),
                                 ),
                             )),
                             Err(_) => {
@@ -684,7 +711,7 @@ fn layout_scene_ui(
                     }
                 };
 
-                let root = commands
+                let window_root = commands
                     .spawn((
                         NodeBundle {
                             style: root_style,
@@ -694,7 +721,8 @@ fn layout_scene_ui(
                         DespawnWith(ent),
                     ))
                     .id();
-                processed_nodes.insert(SceneEntityId::ROOT, (Some(root), 1.0));
+                ui_data.current_nodes.insert(ent, window_root);
+                processed_nodes.insert((ent, SceneEntityId::ROOT), (Some(window_root), 1.0));
 
                 let mut modified = true;
                 while modified && !unprocessed_uis.is_empty() {
@@ -709,20 +737,69 @@ fn layout_scene_ui(
                             maybe_pointer_events,
                             maybe_ui_input,
                             maybe_dropdown,
+                            scene_ui_root_node,
                         )| {
+                            let bevy_ui_root = *ui_data.current_nodes.entry(*scene_ui_root_node).or_insert_with(|| {
+                                let canvas_info = canvas_infos.get(*scene_ui_root_node).cloned().unwrap_or_else(|_| {
+                                    UiCanvas(PbUiCanvas { width: 512, height: 512, color: None })
+                                }).0;
+
+                                let root_node = prev_nodes.remove(scene_ui_root_node).unwrap_or_else(|| {
+                                    debug!("creating camera for root {:?}", scene_ui_root_node);
+                                    let (camera, ui_texture) = world_ui::spawn_world_ui_view(&mut commands, &mut images);
+                                    commands.entity(camera).insert((
+                                        TargetCamera(camera),
+                                        ManualCursorPosition::default(),
+                                        SceneUiRoot(ent),
+                                        DespawnWith(ent),
+                                        NodeBundle {
+                                            style: Style {
+                                                position_type: PositionType::Absolute,
+                                                width: Val::Percent(100.0),
+                                                height: Val::Percent(100.0),
+                                                ..Default::default()
+                                            },
+                                            z_index: ZIndex::Global(-2), // behind the ZIndex(-1) MouseInteractionComponent
+                                            ..Default::default()
+                                        }
+                                    ));
+                                    debug!("created {:?}", camera);
+
+                                    images.get_mut(&ui_texture).unwrap().resize(Extent3d {
+                                        width: canvas_info.width,
+                                        height: canvas_info.height,
+                                        depth_or_array_layers: 1,
+                                    });
+
+                                    commands.entity(*scene_ui_root_node).insert(
+                                        UiTextureOutput {
+                                            camera,
+                                            image: ui_texture,
+                                            texture_size: UVec2::new(canvas_info.width, canvas_info.height),
+                                        }
+                                    );
+
+                                    camera
+                                });
+
+                                commands.entity(root_node).modify_component(move |c: &mut Camera| c.clear_color = bevy::render::camera::ClearColorConfig::Custom(canvas_info.color.map(Into::into).unwrap_or(Color::NONE)));
+                                root_node
+                            });
+                            processed_nodes.insert((*scene_ui_root_node, SceneEntityId::ROOT), (Some(bevy_ui_root), 1.0));
+
                             // if our rightof is not added, we can't process this node
-                            if !processed_nodes.contains_key(&ui_transform.right_of) {
+                            if !processed_nodes.contains_key(&(*scene_ui_root_node, ui_transform.right_of)) {
                                 return true;
                             }
 
                             // if our parent is not added (or is hidden), we can't process this node
-                            let Some((parent, opacity)) = processed_nodes.get(&ui_transform.parent) else {
+                            let Some((parent, opacity)) = processed_nodes.get(&(*scene_ui_root_node, ui_transform.parent)) else {
                                 return true;
                             };
 
                             // if we're hidden or our parent is hidden, bail here
                             if parent.is_none() || ui_transform.display == Display::None {
-                                processed_nodes.insert(*scene_id, (None, *opacity));
+                                processed_nodes.insert((*scene_ui_root_node, *scene_id), (None, *opacity));
                                 modified = true;
                                 return false;
                             }
@@ -757,12 +834,15 @@ fn layout_scene_ui(
                                 ..Default::default()
                             };
 
+                            debug!("{:?} ui root: {:?} scene root: {:?})", scene_id, scene_ui_root_node, ent);
                             debug!("{:?} style: {:?}", scene_id, ui_transform);
                             debug!("{:?}, {:?}, {:?}, {:?}, {:?}", maybe_background, maybe_text, maybe_pointer_events, maybe_ui_input, maybe_dropdown);
                             let total_opacity = opacity * ui_transform.opacity;
                             let opacity_array = [1.0, 1.0, 1.0, total_opacity];
 
-                            let ui_entity = commands.spawn(NodeBundle::default()).id();
+                            // we have to manually add the target camera here to ensure it is immediately updated - otherwise bevy will clear it and 
+                            // the ui appears on the main window for a frame
+                            let ui_entity = commands.spawn((NodeBundle::default(), TargetCamera(bevy_ui_root))).id();
                             commands.entity(parent).add_child(ui_entity);
                             let mut ent_cmds = commands.entity(ui_entity);
 
@@ -1008,7 +1088,6 @@ fn layout_scene_ui(
                                 let node = *node;
 
                                 ent_cmds.insert((
-                                    MouseInteractionComponent,
                                     FocusPolicy::Block,
                                     Interaction::default(),
                                     On::<HoverEnter>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
@@ -1055,7 +1134,7 @@ fn layout_scene_ui(
                                     time: Res<Time>,
                                     caller: Res<UiCaller>,
                                 | {
-                                    println!("callback on {:?}", caller.0);
+                                    debug!("callback on {:?}", caller.0);
                                     let Ok(entry) = entry.get(ui_node) else {
                                         warn!("failed to get text node on UiInput update");
                                         return;
@@ -1162,11 +1241,11 @@ fn layout_scene_ui(
                                 ));
                             }
 
-                            processed_nodes.insert(*scene_id, (Some(ent_cmds.id()), total_opacity));
+                            processed_nodes.insert((*scene_ui_root_node, *scene_id), (Some(ent_cmds.id()), total_opacity));
 
                             // if it's a scrollable, embed any child content in a labyrinthine tower of divs
                             if ui_transform.scroll {
-                                let id = processed_nodes.get_mut(scene_id).unwrap().0.as_mut().unwrap();
+                                let id = processed_nodes.get_mut(&(*scene_ui_root_node, *scene_id)).unwrap().0.as_mut().unwrap();
                                 ent_cmds.insert(FocusPolicy::Block);
                                 let (scrollable, content, pos, event) = match salvaged_scrollables.remove(node) {
                                     Some((state, prev_pos)) => {
@@ -1228,7 +1307,7 @@ fn layout_scene_ui(
                                         );
 
                                         let state = UiScrollablePersistentState {
-                                            root: ent,
+                                            root: *scene_ui_root_node,
                                             scrollable,
                                             content,
                                             position: ui_transform.scroll_position.clone(),
@@ -1281,11 +1360,15 @@ fn layout_scene_ui(
                     unprocessed_uis
                 );
                 ui_data.relayout = false;
-                ui_data.current_node = Some(root);
 
                 // remove any unused salvaged scrollables
                 for ent in salvaged_scrollables.keys() {
                     commands.entity(*ent).despawn_recursive();
+                }
+
+                // remove any un-reused roots
+                for (_, node) in prev_nodes.drain() {
+                    commands.entity(node).despawn_recursive();
                 }
 
                 // send any pending events
@@ -1301,7 +1384,7 @@ fn layout_scene_ui(
                 }
             }
         } else {
-            ui_data.current_node = None;
+            ui_data.current_nodes.clear();
         }
     }
 }

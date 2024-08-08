@@ -1,13 +1,20 @@
 use bevy::{
     core::FrameCount,
+    input::InputSystem,
     prelude::*,
+    render::mesh::{Indices, VertexAttributeValues},
+    ui::{ManualCursorPosition, UiSystem},
     utils::{FloatOrd, HashSet},
 };
 use bevy_console::ConsoleCommand;
 use console::DoAddConsoleCommand;
 
 use crate::{
-    update_world::{mesh_collider::SceneColliderData, pointer_events::PointerEvents},
+    gltf_resolver::GltfMeshResolver,
+    update_world::{
+        mesh_collider::{MeshCollider, MeshColliderShape, SceneColliderData},
+        pointer_events::PointerEvents,
+    },
     ContainerEntity, ContainingScene, DebugInfo, PrimaryUser, RendererSceneContext, SceneEntity,
     SceneSets,
 };
@@ -31,11 +38,19 @@ impl Plugin for PointerResultPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PointerTarget>()
             .init_resource::<UiPointerTarget>()
+            .init_resource::<WorldPointerTarget>()
             .init_resource::<DebugPointers>();
+        app.add_systems(
+            PreUpdate,
+            (update_pointer_target, update_manual_cursor)
+                .chain()
+                .after(InputSystem)
+                .before(UiSystem::Focus),
+        );
         app.add_systems(
             Update,
             (
-                update_pointer_target,
+                resolve_pointer_target,
                 send_hover_events,
                 send_action_events,
                 debug_pointer,
@@ -54,6 +69,7 @@ pub struct PointerTargetInfo {
     pub distance: FloatOrd,
     pub position: Option<Vec3>,
     pub normal: Option<Vec3>,
+    pub face: Option<usize>,
 }
 
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
@@ -66,6 +82,9 @@ pub enum UiPointerTarget {
     Some(Entity),
 }
 
+#[derive(Default, Debug, Resource, Clone, PartialEq)]
+pub struct WorldPointerTarget(Option<PointerTargetInfo>);
+
 #[allow(clippy::too_many_arguments)]
 fn update_pointer_target(
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
@@ -73,9 +92,7 @@ fn update_pointer_target(
     windows: Query<&Window>,
     containing_scenes: ContainingScene,
     mut scenes: Query<(Entity, &mut RendererSceneContext, &mut SceneColliderData)>,
-    mut hover_target: ResMut<PointerTarget>,
-    ui_target: Res<UiPointerTarget>,
-    accept_input: Res<AcceptInput>,
+    mut world_target: ResMut<WorldPointerTarget>,
 ) {
     let Ok((camera, camera_position)) = camera.get_single() else {
         // can't do much without a camera
@@ -85,24 +102,6 @@ fn update_pointer_target(
         return;
     };
     let player_translation = player_transform.translation();
-
-    // check for ui target
-    if let UiPointerTarget::Some(t) = *ui_target {
-        hover_target.0 = Some(PointerTargetInfo {
-            container: t,
-            mesh_name: None,
-            distance: FloatOrd(0.0),
-            position: None,
-            normal: None,
-        });
-        return;
-    }
-
-    // check for system ui
-    if !accept_input.mouse {
-        hover_target.0 = None;
-        return;
-    }
 
     // get new 3d hover target
     let Ok(window) = windows.get_single() else {
@@ -154,7 +153,7 @@ fn update_pointer_target(
             },
         );
 
-    hover_target.0 = None;
+    world_target.0 = None;
     if let Some((scene_entity, hit)) = maybe_nearest_hit {
         let (_, context, mut collider_data) = scenes.get_mut(scene_entity).unwrap();
 
@@ -168,17 +167,178 @@ fn update_pointer_target(
 
         if let Some(container) = context.bevy_entity(hit.id.entity) {
             let mesh_name = hit.id.name;
-            hover_target.0 = Some(PointerTargetInfo {
+            world_target.0 = Some(PointerTargetInfo {
                 container,
                 mesh_name,
                 distance: FloatOrd(distance),
                 position: Some(ray.origin + ray.direction * hit.toi),
                 normal: Some(hit.normal.normalize_or_zero()),
+                face: hit.face,
             });
         } else {
             warn!("hit some dead entity?");
         }
     }
+}
+
+#[derive(Component, Debug)]
+pub struct ResolveCursor {
+    pub camera: Entity,
+    pub texture_size: Vec2,
+}
+
+fn update_manual_cursor(
+    world_target: Res<WorldPointerTarget>,
+    uis: Query<(
+        &GlobalTransform,
+        &MeshCollider,
+        &ResolveCursor,
+        &ContainerEntity,
+    )>,
+    meshes: Res<Assets<Mesh>>,
+    mut cursors: Query<&mut ManualCursorPosition>,
+    mut gltf_resolver: GltfMeshResolver,
+    scenes: Query<&RendererSceneContext>,
+) {
+    for mut cursor in cursors.iter_mut() {
+        cursor.0 = None;
+    }
+
+    let Some(world_target) = world_target.0.as_ref() else {
+        return;
+    };
+
+    let Ok((gt, collider, resolve, container)) = uis.get(world_target.container) else {
+        return;
+    };
+
+    let mesh_uvs = |h_mesh: &Handle<Mesh>| -> Option<Vec2> {
+        let Some(mesh) = meshes.get(h_mesh) else {
+            return None;
+        };
+
+        let Some(face) = world_target.face else {
+            return None;
+        };
+
+        let indices: [usize; 3] = match mesh.indices() {
+            Some(Indices::U16(ixs)) => [
+                ixs[face * 3] as usize,
+                ixs[face * 3 + 1] as usize,
+                ixs[face * 3 + 2] as usize,
+            ],
+            Some(Indices::U32(ixs)) => [
+                ixs[face * 3] as usize,
+                ixs[face * 3 + 1] as usize,
+                ixs[face * 3 + 2] as usize,
+            ],
+            None => [face * 3, face * 3 + 1, face * 3 + 2],
+        };
+
+        let Some(VertexAttributeValues::Float32x3(posns)) =
+            mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+        else {
+            return None;
+        };
+        let posns: [Vec3; 3] = [
+            gt.transform_point(Vec3::from(posns[indices[0]])),
+            gt.transform_point(Vec3::from(posns[indices[1]])),
+            gt.transform_point(Vec3::from(posns[indices[2]])),
+        ];
+        let target = world_target.position.unwrap();
+        let bary_coords = barycentric_coords(&posns, target);
+
+        let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0)
+        else {
+            return None;
+        };
+        Some(
+            Vec2::from(uvs[indices[0]]) * bary_coords.x
+                + Vec2::from(uvs[indices[1]]) * bary_coords.y
+                + Vec2::from(uvs[indices[2]]) * bary_coords.z,
+        )
+    };
+
+    let uv = match &collider.shape {
+        MeshColliderShape::Shape(_, h_mesh) => mesh_uvs(h_mesh),
+        MeshColliderShape::GltfShape { gltf_src, name } => {
+            let Ok(scene) = scenes.get(container.root) else {
+                warn!("no scene");
+                return;
+            };
+            let Ok(Some(h_mesh)) = gltf_resolver.resolve_mesh(gltf_src, &scene.hash, name) else {
+                warn!("pending gltf mesh");
+                return;
+            };
+
+            mesh_uvs(&h_mesh)
+        }
+        _ => panic!(),
+    };
+
+    let Some(uv) = uv else {
+        return;
+    };
+
+    debug!("cursor uv: {}", uv);
+
+    let Ok(mut cursor) = cursors.get_mut(resolve.camera) else {
+        return;
+    };
+
+    cursor.0 = Some(uv * resolve.texture_size);
+}
+
+fn barycentric_coords(posns: &[Vec3; 3], target: Vec3) -> Vec3 {
+    let v0 = posns[1] - posns[0];
+    let v1 = posns[2] - posns[0];
+    let v2 = target - posns[0];
+    let d00 = v0.dot(v0);
+    let d01 = v0.dot(v1);
+    let d11 = v1.dot(v1);
+    let d20 = v2.dot(v0);
+    let d21 = v2.dot(v1);
+    let denom = d00 * d11 - d01 * d01;
+    let v = (d11 * d20 - d01 * d21) / denom;
+    let w = (d00 * d21 - d01 * d20) / denom;
+    let u = 1.0 - v - w;
+    if u < 0.0 || v < 0.0 || w < 0.0 || u > 1.0 || v > 1.0 || w > 1.0 {
+        warn!("bad bary coords [tri: {:?}, target: {}]", posns, target);
+    }
+    Vec3::new(u, v, w)
+}
+
+fn resolve_pointer_target(
+    world_target: Res<WorldPointerTarget>,
+    ui_target: Res<UiPointerTarget>,
+    mut target: ResMut<PointerTarget>,
+    accept_input: Res<AcceptInput>,
+) {
+    let distance = world_target
+        .0
+        .as_ref()
+        .map(|t| t.distance)
+        .unwrap_or(FloatOrd(0.0));
+
+    if let UiPointerTarget::Some(e) = *ui_target {
+        target.0 = Some(PointerTargetInfo {
+            container: e,
+            distance,
+            mesh_name: None,
+            position: None,
+            normal: None,
+            face: None,
+        });
+        return;
+    }
+
+    // check for system ui
+    if !accept_input.mouse {
+        target.0 = None;
+        return;
+    }
+
+    target.0 = world_target.0.clone();
 }
 
 #[derive(clap::Parser, ConsoleCommand)]

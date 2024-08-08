@@ -44,7 +44,10 @@ pub struct WorldUi {
     pub ui_node: Entity,
 }
 
-pub fn spawn_world_ui_view(commands: &mut Commands, images: &mut Assets<Image>) -> Entity {
+pub fn spawn_world_ui_view(
+    commands: &mut Commands,
+    images: &mut Assets<Image>,
+) -> (Entity, Handle<Image>) {
     let mut image = Image::new_fill(
         Extent3d {
             width: 16,
@@ -72,7 +75,7 @@ pub fn spawn_world_ui_view(commands: &mut Commands, images: &mut Assets<Image>) 
         },))
         .id();
 
-    camera
+    (camera, image)
 }
 
 #[derive(Component)]

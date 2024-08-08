@@ -22,6 +22,7 @@ use scene_runner::{
     ContainingScene,
 };
 use tween::SystemTween;
+use ui_core::scrollable::UsedScrollWheel;
 
 use crate::TRANSITION_TIME;
 
@@ -92,6 +93,7 @@ pub fn update_camera(
     mut camera: Query<(&Transform, &mut PrimaryCamera)>,
     mut locked_cursor_position: Local<Option<Vec2>>,
     accept_input: Res<AcceptInput>,
+    used_wheel: Res<UsedScrollWheel>,
     mut cursor_locked: ResMut<system_ui::sysinfo::CursorLocked>,
     active_dialog: Res<ActiveDialog>,
     mut cinematic_data: Local<Option<CinematicInitialData>>,
@@ -242,7 +244,7 @@ pub fn update_camera(
         options.pitch = (options.pitch - mouse_delta.y * options.sensitivity / 1000.0)
             .clamp(-PI / 2.1, PI / 2.1);
         options.yaw -= mouse_delta.x * options.sensitivity / 1000.0;
-        if accept_input.mouse {
+        if accept_input.mouse && !used_wheel.0 {
             if let Some(event) = wheel_events.read().last() {
                 if (event.y > 0.0) == zoom_range.is_none() {
                     options.distance = 0f32.max((options.distance - 0.05) * 0.9);

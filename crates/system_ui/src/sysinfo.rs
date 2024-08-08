@@ -12,7 +12,7 @@ use bevy::{
 use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
-    sets::SetupSets,
+    sets::{SceneSets, SetupSets},
     structs::{AppConfig, PrimaryUser, SettingsTab, ShowSettingsEvent, Version},
 };
 use comms::{
@@ -63,7 +63,8 @@ impl Plugin for SysInfoPanelPlugin {
                 update_map_visibilty,
                 update_crosshair,
             )
-                .before(update_fontsize),
+                .before(update_fontsize)
+                .after(SceneSets::PostLoop),
         );
         app.add_systems(
             OnEnter::<ui_core::State>(ui_core::State::Ready),

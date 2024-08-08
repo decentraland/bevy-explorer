@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+import "decentraland/sdk/components/common/id.proto";
+package decentraland.sdk.components;
+
+option (common.ecs_component_id) = 1055;
+
+import "decentraland/common/colors.proto";
+
+// The UiCanvas component can be attached to a ui root entity to specify properties of the ui texture.
+message PBUiCanvas {
+  uint32 width = 1;
+  uint32 height = 2;
+
+  optional decentraland.common.Color4 color = 3; // default = (0.0, 0.0, 0.0, 0.0) / transparent
+}
