@@ -43,8 +43,8 @@ jobs:
             matrix:
                 include:
                   # linux livekit disabled until i figure out the multiple symbol definitions issue (webrtc and v8 both use abseil)
-                  # - build_name: linux-x86_64
-                  #   os: ubuntu-latest
+                  - build_name: linux-x86_64
+                    os: ubuntu-latest
 
                   - build_name: macos-m1m2
                     os: macos-14-xlarge
@@ -53,9 +53,9 @@ jobs:
                   # - build_name: macos-x86_64
                   #   os: macos-14-large
         
-                  # - build_name: windows-x86_64
-                  #   os: self-hosted-windows
-                  #   target: x86_64-pc-windows-msvc
+                  - build_name: windows-x86_64
+                    os: self-hosted-windows
+                    target: x86_64-pc-windows-msvc
 
         env:
             PACKAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.${{ startsWith(matrix.build_name, 'win') && 'zip' || 'tar.gz' }}

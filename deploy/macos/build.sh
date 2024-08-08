@@ -83,3 +83,12 @@ pkgbuild --root $APP_NAME.app \
          --install-location "/Applications" \
          --scripts Scripts \
          "$APP_NAME.pkg"
+
+echo "Notarize pkg"
+xcrun notarytool submit "$APP_NAME.pkg" --keychain-profile "notary-profile" --wait
+
+echo "Attach staple pkg "
+xcrun stapler staple $APP_NAME.pkg
+
+echo "Validate staple pkg "
+xcrun stapler validate $APP_NAME.pkg
