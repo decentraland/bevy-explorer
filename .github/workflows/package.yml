@@ -58,7 +58,7 @@ jobs:
                   #  target: x86_64-pc-windows-msvc
 
         env:
-            PACKAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.${{ startsWith(matrix.build_name, 'win') && 'zip' || 'tar.gz' }}
+            PACKAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.${{ startsWith(matrix.build_name, 'lin') && 'tar.gz' || 'zip' }}
             APPIMAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.AppImage
             CARGO_BUILD_DIR: target/release
 
@@ -151,7 +151,7 @@ jobs:
             run: |
               cd deploy/macos
               bash build.sh
-              mv DecentralandBevyExplorer.zip "${{ env.PACKAGE_FILE }}"
+              mv DecentralandBevyExplorer.zip ../../${{ env.PACKAGE_FILE }}
 
           - name: Package Windows
             if: runner.os == 'Windows'
