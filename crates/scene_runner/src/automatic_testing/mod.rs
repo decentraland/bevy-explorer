@@ -78,7 +78,7 @@ fn automatic_testing(
             debug!("waiting for screenshots");
             return;
         }
-        bevy::asset::LoadState::NotLoaded | bevy::asset::LoadState::Failed => {
+        bevy::asset::LoadState::NotLoaded | bevy::asset::LoadState::Failed(_) => {
             panic!("failed to load screenshots");
         }
     }

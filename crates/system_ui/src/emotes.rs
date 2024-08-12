@@ -316,7 +316,7 @@ fn set_emotes_content(
                             ..Default::default()
                         }),
                         inactive: Some(InteractStyle {
-                            background: Some(Color::rgba(0.0, 0.0, 0.0, 0.0)),
+                            background: Some(Color::srgba(0.0, 0.0, 0.0, 0.0)),
                             border: Some(Color::NONE),
                             ..Default::default()
                         }),
@@ -595,14 +595,14 @@ impl ColorHexEx for Color {
 impl Rarity {
     pub fn color(&self) -> Color {
         match self {
-            Rarity::Free => Color::rgb(0.9, 0.9, 0.9),
-            Rarity::Common => Color::rgb(0.7, 0.7, 0.7),
-            Rarity::Uncommon => Color::rgb(1.0, 0.8, 0.4),
-            Rarity::Rare => Color::rgb(0.6, 1.0, 0.6),
-            Rarity::Epic => Color::rgb(0.6, 0.6, 1.0),
-            Rarity::Legendary => Color::rgb(0.8, 0.4, 0.8),
-            Rarity::Mythic => Color::rgb(1.0, 0.6, 1.0),
-            Rarity::Unique => Color::rgb(1.0, 1.0, 0.4),
+            Rarity::Free => Color::srgb(0.9, 0.9, 0.9),
+            Rarity::Common => Color::srgb(0.7, 0.7, 0.7),
+            Rarity::Uncommon => Color::srgb(1.0, 0.8, 0.4),
+            Rarity::Rare => Color::srgb(0.6, 1.0, 0.6),
+            Rarity::Epic => Color::srgb(0.6, 0.6, 1.0),
+            Rarity::Legendary => Color::srgb(0.8, 0.4, 0.8),
+            Rarity::Mythic => Color::srgb(1.0, 0.6, 1.0),
+            Rarity::Unique => Color::srgb(1.0, 1.0, 0.4),
         }
     }
 
@@ -723,11 +723,11 @@ fn update_emotes_list(
                 initial = Some(ix);
             }
             let (inactive_color, inactive_border) = if worn.contains(&emote.instance) {
-                (Color::ORANGE, Color::rgb(0.5, 0.325, 0.0))
+                (Color::ORANGE, Color::srgb(0.5, 0.325, 0.0))
             } else {
                 (
-                    Color::rgba(0.0, 0.0, 0.0, 0.0),
-                    Color::rgba(0.0, 0.0, 0.0, 0.0),
+                    Color::srgba(0.0, 0.0, 0.0, 0.0),
+                    Color::srgba(0.0, 0.0, 0.0, 0.0),
                 )
             };
 
@@ -743,7 +743,7 @@ fn update_emotes_list(
                 styles: Some(InteractStyles {
                     active: Some(InteractStyle {
                         background: Some(Color::RED),
-                        border: Some(Color::rgb(0.5, 0.0, 0.0)),
+                        border: Some(Color::srgb(0.5, 0.0, 0.0)),
                         ..Default::default()
                     }),
                     inactive: Some(InteractStyle {
@@ -752,8 +752,8 @@ fn update_emotes_list(
                         ..Default::default()
                     }),
                     disabled: Some(InteractStyle {
-                        background: Some(Color::rgba(0.0, 0.0, 0.0, 0.0)),
-                        border: Some(Color::rgba(0.0, 0.0, 0.0, 0.0)),
+                        background: Some(Color::srgba(0.0, 0.0, 0.0, 0.0)),
+                        border: Some(Color::srgba(0.0, 0.0, 0.0, 0.0)),
                         ..Default::default()
                     }),
                     ..Default::default()

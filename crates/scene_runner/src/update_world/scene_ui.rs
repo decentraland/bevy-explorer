@@ -760,7 +760,6 @@ fn layout_scene_ui(
                             debug!("{:?} style: {:?}", scene_id, ui_transform);
                             debug!("{:?}, {:?}, {:?}, {:?}, {:?}", maybe_background, maybe_text, maybe_pointer_events, maybe_ui_input, maybe_dropdown);
                             let total_opacity = opacity * ui_transform.opacity;
-                            let opacity_array = [1.0, 1.0, 1.0, total_opacity];
 
                             let ui_entity = commands.spawn(NodeBundle::default()).id();
                             commands.entity(parent).add_child(ui_entity);
@@ -786,7 +785,7 @@ fn layout_scene_ui(
                                         match texture_mode {
                                             BackgroundTextureMode::NineSlices(rect) => {
                                                 ent_cmds.remove::<BackgroundColor>();
-                                                let background_color = background.color.map(|c| {c * opacity_array});
+                                                let background_color = background.color.map(|c| {c.with_alpha(c.alpha() * total_opacity)});
                                                 ent_cmds.with_children(|c| {
                                                     c.spawn((
                                                         NodeBundle {
@@ -819,7 +818,8 @@ fn layout_scene_ui(
                                                         },
                                                         ..Default::default()
                                                     }).with_children(|c| {
-                                                        let color = background.color.unwrap_or(Color::WHITE) * opacity_array;
+                                                        let color = background.color.unwrap_or(Color::WHITE);
+                                                        let color = color.with_alpha(color.alpha() * total_opacity);
                                                         c.spawn((
                                                             NodeBundle{
                                                                 style: Style {
@@ -830,7 +830,7 @@ fn layout_scene_ui(
                                                                 },
                                                                 ..Default::default()
                                                             },
-                                                            stretch_uvs.add(StretchUvMaterial{ image: image.image.clone(), uvs: *uvs, color: color.as_linear_rgba_f32().into() })
+                                                            stretch_uvs.add(StretchUvMaterial{ image: image.image.clone(), uvs: *uvs, color: color.to_linear().to_vec4() })
                                                         ));
                                                     });
                                                 });
@@ -874,11 +874,11 @@ fn layout_scene_ui(
                                                                     ..Default::default()
                                                                 },
                                                                 image: UiImage {
+                                                                    color: Color::srgba(1.0, 1.0, 1.0, total_opacity).into(),
                                                                     texture: image.image,
                                                                     flip_x: false,
                                                                     flip_y: false,
                                                                 },
-                                                                background_color: Color::rgba(1.0, 1.0, 1.0, total_opacity).into(),
                                                                 ..Default::default()
                                                             });
                                                             c.spacer();
@@ -904,7 +904,7 @@ fn layout_scene_ui(
                                 let text = make_text_section(
                                     ui_text.text.as_str(),
                                     ui_text.font_size * 1.3,
-                                    ui_text.color * total_opacity,
+                                    ui_text.color.with_alpha(ui_text.color.alpha() * total_opacity),
                                     ui_text.font,
                                     ui_text.h_align,
                                     ui_text.wrapping,

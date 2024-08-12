@@ -8,7 +8,6 @@ use bevy::{
 };
 use dcl::interface::CrdtType;
 use ethers_core::types::Address;
-use image::ImageOutputFormat;
 use ipfs::{IpfsAssetServer, IpfsIo, TypedIpfsRef};
 use isahc::{http::StatusCode, AsyncReadResponseExt, ReadResponseExt, RequestExt};
 use multihash_codetable::MultihashDigest;
@@ -382,7 +381,7 @@ async fn deploy_profile(
         let process = |img: Image| -> Result<_, anyhow::Error> {
             let img = img.clone().try_into_dynamic()?;
             let mut cursor = std::io::Cursor::new(Vec::default());
-            img.write_to(&mut cursor, ImageOutputFormat::Png)?;
+            img.write_to(&mut cursor, image::ImageFormat::Png)?;
             let bytes = cursor.into_inner();
             let hash = multihash_codetable::Code::Sha2_256.digest(bytes.as_slice());
             let cid = cid::Cid::new_v1(0x55, hash).to_string();

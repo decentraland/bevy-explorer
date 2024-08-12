@@ -294,7 +294,7 @@ fn set_permission_settings_content(
             if hilight {
                 commands
                     .entity(ent)
-                    .insert(BackgroundColor(Color::rgba(1.0, 1.0, 1.0, 0.1)));
+                    .insert(BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.1)));
                 target_entity = Some(ent);
             }
 

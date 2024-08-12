@@ -98,8 +98,8 @@ pub fn update_tooltip(
                         padding: UiRect::all(Val::Px(2.0)),
                         ..Default::default()
                     },
-                    border_color: Color::rgba(1.0, 1.0, 1.0, 1.0 * *vis).into(),
-                    background_color: Color::rgba(0.0, 0.0, 0.0, 0.5 * *vis).into(),
+                    border_color: Color::srgba(1.0, 1.0, 1.0, 1.0 * *vis).into(),
+                    background_color: Color::srgba(0.0, 0.0, 0.0, 0.5 * *vis).into(),
                     ..Default::default()
                 },
                 ToolTipNode,

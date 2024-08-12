@@ -8,10 +8,10 @@ use std::{
 use bevy::{
     core::FrameCount,
     ecs::{query::Has, schedule::ScheduleLabel, system::SystemParam},
-    math::{Vec3A, Vec3Swizzles},
+    math::{FloatOrd, Vec3A, Vec3Swizzles},
     prelude::*,
     scene::scene_spawner_system,
-    utils::{FloatOrd, HashMap, HashSet, Instant},
+    utils::{HashMap, HashSet, Instant},
     window::PrimaryWindow,
     winit::WinitWindows,
 };
@@ -74,6 +74,7 @@ pub struct SceneUpdates {
 // safety: struct is sync except for the receiver.
 // receiver is only accessible via &mut handle
 unsafe impl Sync for SceneUpdates {}
+unsafe impl Send for SceneUpdates {}
 
 impl SceneUpdates {
     pub fn receiver(&mut self) -> &Receiver<SceneResponse> {

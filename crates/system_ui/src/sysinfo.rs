@@ -120,7 +120,7 @@ pub(crate) fn setup(
                             ..Default::default()
                         },
                         image: asset_server.load("images/crosshair.png").into(),
-                        background_color: Color::rgba(1.0, 1.0, 1.0, 0.7).into(),
+                        background_color: Color::srgba(1.0, 1.0, 1.0, 0.7).into(),
                         ..Default::default()
                     },
                     CrossHair,
@@ -156,7 +156,7 @@ pub(crate) fn setup(
                     } else {
                         Visibility::Hidden
                     },
-                    background_color: Color::rgba(0.8, 0.8, 1.0, 0.8).into(),
+                    background_color: Color::srgba(0.8, 0.8, 1.0, 0.8).into(),
                     focus_policy: FocusPolicy::Block,
                     z_index: ZIndex::Global(100),
                     ..default()

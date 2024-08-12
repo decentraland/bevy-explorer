@@ -195,7 +195,7 @@ fn update_bounded_nodes(
             .resolve(node.unrounded_size().min_element(), window)
             .unwrap_or(0.0);
         if add_border {
-            mat.bounds.border_color = bounds.border_color.as_linear_rgba_f32().into();
+            mat.bounds.border_color = bounds.border_color.to_linear().to_vec4();
         } else {
             mat.bounds.border_color = Vec4::ZERO;
         }
@@ -220,7 +220,7 @@ fn update_bounded_nodes(
         });
         let mut mat = BoundedImageMaterial {
             image: bound_node.image.clone(),
-            color: color.as_linear_rgba_f32().into(),
+            color: color.to_linear().to_vec4(),
             bounds: GpuBoundsData::default(),
         };
         let bound_parent = resolve_parent(ent);

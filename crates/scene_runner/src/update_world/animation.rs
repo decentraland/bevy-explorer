@@ -93,7 +93,7 @@ fn update_animations(
                         continue;
                     };
 
-                    let Some(h_clip) = gltf.named_animations.get(&state.clip) else {
+                    let Some(h_clip) = gltf.named_animations.get(state.clip.as_str()) else {
                         warn!("requested clip {} doesn't exist", state.clip);
                         continue;
                     };

@@ -68,7 +68,7 @@ impl DuiTemplate for LinkTemplate {
         let link = props.take::<String>("href").unwrap().unwrap();
         let color = props
             .take_as::<Color>(ctx, "color")?
-            .unwrap_or(Color::rgba(0.8, 0.8, 0.8, 1.0));
+            .unwrap_or(Color::srgba(0.8, 0.8, 0.8, 1.0));
 
         let components = commands
             .apply_template(

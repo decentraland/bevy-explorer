@@ -7,7 +7,6 @@ use std::{
 };
 
 use bevy::{
-    animation::animation_player,
     asset::LoadState,
     gltf::{Gltf, GltfExtras, GltfLoaderSettings},
     pbr::ExtendedMaterial,
@@ -21,7 +20,7 @@ use bevy::{
     transform::TransformSystem,
     utils::{HashMap, HashSet},
 };
-use common::{structs::AppConfig, util::ModifyComponentExt};
+use common::{anim_last_system, structs::AppConfig, util::ModifyComponentExt};
 use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
@@ -89,7 +88,7 @@ impl Plugin for GltfDefinitionPlugin {
             (update_gltf_linked_transforms, apply_deferred)
                 .chain()
                 .in_set(GltfLinkSet)
-                .after(animation_player)
+                .after(anim_last_system!())
                 .before(TransformSystem::TransformPropagate),
         );
     }
@@ -245,8 +244,8 @@ fn update_gltf(
     for (ent, scene_ent, h_gltf, def) in unprocessed_gltfs.iter() {
         match ipfas.load_state(h_gltf) {
             bevy::asset::LoadState::Loaded => (),
-            bevy::asset::LoadState::Failed => {
-                warn!("failed to process gltf: {}", def.0.src);
+            bevy::asset::LoadState::Failed(e) => {
+                warn!("failed to process gltf {}: {}", def.0.src, e);
                 set_state(scene_ent, LoadingState::FinishedWithError);
                 commands.entity(ent).try_insert(GltfLoaded(None));
                 continue;
@@ -540,7 +539,7 @@ fn update_ready_gltfs(
                             .named_materials
                             .iter()
                             .find(|(_, handle)| handle == &h_material)
-                            .map(|(name, _)| name.clone())
+                            .map(|(name, _)| name.to_string())
                             .unwrap_or_else(|| {
                                 let ix = gltf
                                     .materials
@@ -880,11 +879,8 @@ fn _node_graph(
                             .unwrap_or(Some(String::from("?"))),
                         (
                             c,
-                            scene_entity_query.get_component::<SkinnedMesh>(*c).is_ok(),
-                            scene_entity_query
-                                .get_component::<Transform>(*c)
-                                .map(|t| t.scale)
-                                .unwrap_or(Vec3::ZERO),
+                            scene_entity_query.get(*c).map(|(_, _, _, skin, _)| skin.is_some()).unwrap_or(false),
+                            scene_entity_query.get(*c).map(|(_, _, _, _, t)| t.scale).unwrap_or(Vec3::ZERO),
                         ),
                     )
                 })

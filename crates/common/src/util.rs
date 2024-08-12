@@ -5,7 +5,7 @@ use bevy::{
     ecs::{
         component::Component,
         event::{Event, Events},
-        system::{Command, Commands, EntityCommand, EntityCommands, Query},
+        system::{Commands, EntityCommand, EntityCommands, Query}, world::Command,
     },
     hierarchy::DespawnRecursiveExt,
     prelude::{
@@ -327,4 +327,11 @@ impl<'a> ModifyDefaultComponentExt for EntityCommands<'a> {
     ) -> &mut Self {
         self.add(ModifyDefaultComponent::new(func))
     }
+}
+
+#[macro_export]
+macro_rules! anim_last_system {
+    () => {
+        bevy::prelude::expire_completed_transitions        
+    };
 }

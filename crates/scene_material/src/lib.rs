@@ -101,7 +101,7 @@ impl MaterialExtension for SceneBound {
     fn specialize(
         _: &bevy::pbr::MaterialExtensionPipeline,
         descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
-        _: &bevy::render::mesh::MeshVertexBufferLayout,
+        _: &bevy::render::mesh::MeshVertexBufferLayoutRef,
         key: bevy::pbr::MaterialExtensionKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
         let data = key.bind_group_data;

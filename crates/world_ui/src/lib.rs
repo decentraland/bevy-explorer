@@ -106,7 +106,7 @@ pub fn add_worldui_materials(
         let material = materials.add(TextShapeMaterial {
             base: SceneMaterial {
                 base: StandardMaterial {
-                    base_color: Color::WHITE * 2.0,
+                    base_color: Color::srgb(2.0, 2.0, 2.0),
                     base_color_texture: Some(view.target.as_image().unwrap().clone()),
                     unlit: true,
                     double_sided: true,

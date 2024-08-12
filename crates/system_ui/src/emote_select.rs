@@ -340,7 +340,7 @@ fn show_emote_ui(
                 On::<HoverEnter>::new(
                     move |mut color: Query<&mut BackgroundColor>, mut text: Query<&mut Text>| {
                         if let Ok(mut bg) = color.get_mut(button) {
-                            bg.0 = Color::rgb(1.0, 1.0, 1.50);
+                            bg.0 = Color::srgb(1.0, 1.0, 1.50);
                         }
                         if let Ok(mut text) = text.get_mut(output) {
                             text.sections[0].value.clone_from(&name);
@@ -351,7 +351,7 @@ fn show_emote_ui(
                 On::<HoverExit>::new(
                     move |mut color: Query<&mut BackgroundColor>, mut text: Query<&mut Text>| {
                         if let Ok(mut bg) = color.get_mut(button) {
-                            bg.0 = Color::rgb(0.67, 0.67, 0.87);
+                            bg.0 = Color::srgb(0.67, 0.67, 0.87);
                         }
                         if let Ok(mut text) = text.get_mut(output) {
                             if text.sections[0].value == name2 {

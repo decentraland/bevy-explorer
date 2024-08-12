@@ -587,7 +587,7 @@ fn update_scrollables(
                 BoundedNodeBundle {
                     bounded: BoundedNode {
                         image: None,
-                        color: Color::rgba(0.5, 0.5, 0.5, 0.2).into(),
+                        color: Color::srgba(0.5, 0.5, 0.5, 0.2).into(),
                     },
                     style: Style {
                         display: if info.visible {
@@ -612,15 +612,15 @@ fn update_scrollables(
                 Interaction::default(),
                 InteractStyles {
                     hover: Some(InteractStyle {
-                        background: Some(Color::rgba(0.3, 0.3, 0.3, 0.8)),
+                        background: Some(Color::srgba(0.3, 0.3, 0.3, 0.8)),
                         ..Default::default()
                     }),
                     press: Some(InteractStyle {
-                        background: Some(Color::rgba(0.3, 0.3, 0.3, 0.8)),
+                        background: Some(Color::srgba(0.3, 0.3, 0.3, 0.8)),
                         ..Default::default()
                     }),
                     inactive: Some(InteractStyle {
-                        background: Some(Color::rgba(0.3, 0.3, 0.3, 0.5)),
+                        background: Some(Color::srgba(0.3, 0.3, 0.3, 0.5)),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -672,7 +672,7 @@ fn update_scrollables(
                 BoundedNodeBundle {
                     bounded: BoundedNode {
                         image: None,
-                        color: Color::rgba(1.0, 1.0, 1.0, 0.2).into(),
+                        color: Color::srgba(1.0, 1.0, 1.0, 0.2).into(),
                     },
                     style: Style {
                         display: if info.visible {
@@ -706,7 +706,7 @@ fn update_scrollables(
                         ..Default::default()
                     }),
                     inactive: Some(InteractStyle {
-                        background: Some(Color::rgba(1.0, 1.0, 1.0, 0.5)),
+                        background: Some(Color::srgba(1.0, 1.0, 1.0, 0.5)),
                         ..Default::default()
                     }),
                     ..Default::default()

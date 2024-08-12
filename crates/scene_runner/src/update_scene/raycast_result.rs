@@ -6,7 +6,7 @@
 // [ ] - move into scene loop
 // [/] - consider how global raycasts interact with this setup (it works, pointer events use a global raycast already. but need to optimise by ordering scenes based on ray)
 
-use bevy::prelude::*;
+use bevy::{color::palettes::basic, prelude::*};
 use bevy_console::ConsoleCommand;
 
 use crate::{
@@ -77,7 +77,7 @@ fn run_raycasts(
 ) {
     // redraw non-continuous gizmos for 1 sec
     gizmo_cache.retain(|(until, origin, end)| {
-        gizmos.line(*origin, *end, Color::BLUE);
+        gizmos.line(*origin, *end, basic::BLUE);
         time.elapsed_seconds() > *until
     });
 
@@ -238,7 +238,7 @@ fn run_raycasts(
         // debug line showing raycast
         if debug.0 {
             let end = origin + direction * raycast.max_distance;
-            gizmos.line(origin, end, Color::BLUE);
+            gizmos.line(origin, end, basic::BLUE);
             if !continuous {
                 gizmo_cache.push((time.elapsed_seconds() + 1.0, origin, end));
             }

@@ -2,7 +2,7 @@ use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr, sync::A
 
 use bevy::{
     prelude::*,
-    utils::{uuid, HashMap},
+    utils::HashMap,
 };
 use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};

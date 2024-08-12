@@ -193,7 +193,7 @@ impl DuiTemplate for DuiButtonTemplate {
                     .entity(*label)
                     .modify_component(|text: &mut Text| {
                         for section in text.sections.iter_mut() {
-                            section.style.color = Color::rgb(0.5, 0.5, 0.5);
+                            section.style.color = Color::srgb(0.5, 0.5, 0.5);
                         }
                     });
             }

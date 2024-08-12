@@ -361,7 +361,7 @@ fn main() {
         .add_systems(Startup, setup.in_set(SetupSets::Init))
         .add_systems(Update, asset_loaded)
         .insert_resource(AmbientLight {
-            color: Color::rgb(0.85, 0.85, 1.0),
+            color: Color::srgb(0.85, 0.85, 1.0),
             brightness: 575.0,
         });
 
@@ -470,7 +470,7 @@ fn setup(
     // add a directional light so it looks nicer
     commands.spawn(DirectionalLightBundle {
         directional_light: DirectionalLight {
-            color: Color::rgb(1.0, 1.0, 0.7),
+            color: Color::srgb(1.0, 1.0, 0.7),
             shadows_enabled: true,
             ..Default::default()
         },

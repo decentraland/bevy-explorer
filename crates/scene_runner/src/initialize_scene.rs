@@ -8,7 +8,7 @@ use bevy::{
     prelude::*,
     reflect::TypePath,
     render::render_resource::{AsBindGroup, ShaderRef},
-    utils::{BoxedFuture, HashMap, HashSet},
+    utils::{ConditionalSendFuture, HashMap, HashSet},
 };
 use futures_lite::AsyncReadExt;
 
@@ -50,7 +50,7 @@ impl AssetLoader for CrdtLoader {
         reader: &'a mut Reader,
         _: &'a Self::Settings,
         _: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+    ) -> impl ConditionalSendFuture<Output=Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
             let mut bytes = Vec::default();
             reader.read_to_end(&mut bytes).await?;
@@ -166,7 +166,7 @@ pub(crate) fn load_scene_json(
 
         match ipfas.load_state(h_scene) {
             bevy::asset::LoadState::Loaded => (),
-            bevy::asset::LoadState::Failed => {
+            bevy::asset::LoadState::Failed(_) => {
                 fail("Scene entity could not be loaded");
                 continue;
             }
@@ -231,7 +231,7 @@ pub(crate) fn load_scene_javascript(
         if let Some(ref h_crdt) = crdt {
             match ipfas.load_state(h_crdt) {
                 bevy::asset::LoadState::Loaded => (),
-                bevy::asset::LoadState::Failed => {
+                bevy::asset::LoadState::Failed(_) => {
                     fail("scene.json could not be loaded");
                     continue;
                 }
@@ -513,7 +513,7 @@ pub(crate) fn initialize_scene(
 
         match asset_server.load_state(h_code) {
             bevy::asset::LoadState::Loaded => (),
-            bevy::asset::LoadState::Failed => {
+            bevy::asset::LoadState::Failed(_) => {
                 fail("main js could not be loaded");
                 continue;
             }
@@ -1049,6 +1049,7 @@ fn animate_ready_scene(
             meshes.add(
                 Rectangle::default()
                     .mesh()
+                    .build()
                     .scaled_by(Vec3::splat(PARCEL_SIZE)),
             ),
             materials.add(StandardMaterial {

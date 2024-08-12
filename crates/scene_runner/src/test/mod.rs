@@ -141,7 +141,7 @@ fn init_test_app(entity_json: &str) -> App {
     test_path.push("test");
     test_path.push("test_assets");
 
-    let ipfs = app.world.resource::<IpfsResource>();
+    let ipfs = app.world().resource::<IpfsResource>();
     let urn = format!("urn:decentraland:entity:{entity_json}");
     ipfs.set_realm_about(ServerAbout {
         content: None,
@@ -152,7 +152,7 @@ fn init_test_app(entity_json: &str) -> App {
         ..Default::default()
     });
 
-    app.world.resource_mut::<ScenePointers>().0.insert(
+    app.world_mut().resource_mut::<ScenePointers>().0.insert(
         IVec2::ZERO,
         PointerResult::Exists {
             realm: "manual value".to_owned(),
@@ -171,10 +171,10 @@ fn init_test_app(entity_json: &str) -> App {
     });
 
     // replace the scene loop schedule with a dummy so we can better control it
-    app.world.remove_resource::<SceneLoopSchedule>().unwrap();
+    app.world_mut().remove_resource::<SceneLoopSchedule>().unwrap();
     let mut skip_loop_schedule = Schedule::new(SceneLoopLabel);
-    skip_loop_schedule.add_systems(|mut updates: ResMut<SceneUpdates>| updates.eligible_jobs = 0);
-    app.world.insert_resource(SceneLoopSchedule {
+    skip_loop_schedule.add_systems(|mut updates: ResMut<SceneUpdates>| { updates.eligible_jobs = 0; });
+    app.world_mut().insert_resource(SceneLoopSchedule {
         schedule: skip_loop_schedule,
         prev_time: Instant::now(),
         run_time: 100.0,
@@ -183,9 +183,9 @@ fn init_test_app(entity_json: &str) -> App {
 
     // run app once to get the scene initialized
     let mut q = app
-        .world
+        .world_mut()
         .query_filtered::<&RendererSceneContext, Without<SceneLoading>>();
-    while q.get_single(&mut app.world).is_err() {
+    while q.get_single(app.world_mut()).is_err() {
         app.update();
         // if let Ok(loading) = app.world.query::<&SceneLoading>().get_single(&mut app.world) {
         //     warn!("load state: {loading:?}");
@@ -195,7 +195,7 @@ fn init_test_app(entity_json: &str) -> App {
         // }
     }
 
-    app.world.insert_resource(SceneLoopSchedule {
+    app.world_mut().insert_resource(SceneLoopSchedule {
         schedule: Schedule::new(SceneLoopLabel),
         prev_time: Instant::now(),
         run_time: 100.0,
@@ -237,19 +237,19 @@ macro_rules! check_or_write {
 
 fn make_graph(app: &mut App) -> String {
     let mut scene_query = app
-        .world
+        .world_mut()
         .query_filtered::<Entity, With<RendererSceneContext>>();
-    assert_eq!(scene_query.iter(&app.world).len(), 1);
-    let root = scene_query.iter(&app.world).next().unwrap();
+    assert_eq!(scene_query.iter(app.world()).len(), 1);
+    let root = scene_query.iter(app.world()).next().unwrap();
 
-    let mut scene_entity_query = app.world.query::<(&SceneEntity, Option<&Children>)>();
+    let mut scene_entity_query = app.world_mut().query::<(&SceneEntity, Option<&Children>)>();
     let mut graph_nodes = HashMap::default();
     let mut graph = petgraph::Graph::<_, ()>::new();
     let mut to_check = vec![root];
 
     while let Some(ent) = to_check.pop() {
         debug!("current: {ent:?}, to_check: {to_check:?}");
-        let Ok((scene_entity, maybe_children)) = scene_entity_query.get(&app.world, ent) else {
+        let Ok((scene_entity, maybe_children)) = scene_entity_query.get(app.world(), ent) else {
             panic!()
         };
         assert_eq!(scene_entity.root, root);
@@ -263,7 +263,7 @@ fn make_graph(app: &mut App) -> String {
                 .iter()
                 .filter_map(|c| {
                     scene_entity_query
-                        .get(&app.world, *c)
+                        .get(app.world(), *c)
                         .ok()
                         .map(|q| (q.0.id, c))
                 })
@@ -434,10 +434,10 @@ fn cyclic_recovery() {
         let mut app = init_test_app("empty_scene.entity_definition");
         // add lww state
         let scene_entity = app
-            .world
+            .world_mut()
             .query_filtered::<Entity, With<RendererSceneContext>>()
-            .single(&mut app.world);
-        app.world
+            .single(app.world_mut());
+        app.world_mut()
             .entity_mut(scene_entity)
             .insert(CrdtStateComponent::<CrdtLWWState, DclTransformAndParent>::default());
 
@@ -446,12 +446,12 @@ fn cyclic_recovery() {
         for ix in 0..4 {
             let (dcl_entity, timestamp, data) = &messages[ix];
             let (mut scene_context, mut crdt_state) = app
-                .world
+                .world_mut()
                 .query::<(
                     &mut RendererSceneContext,
                     &mut CrdtStateComponent<CrdtLWWState, DclTransformAndParent>,
                 )>()
-                .single_mut(&mut app.world);
+                .single_mut(app.world_mut());
 
             // initialize the scene entity
             if scene_context.bevy_entity(*dcl_entity).is_none() {
@@ -487,7 +487,7 @@ fn cyclic_recovery() {
                     )
                         .chain(),
                 )
-                .run(&mut app.world);
+                .run(app.world_mut());
         }
         let graph = make_graph(&mut app);
         check_or_write!(graph, "expected/cyclic_recovery.dot");

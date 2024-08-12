@@ -124,7 +124,7 @@ fn set_profile_detail_content(
                             ..Default::default()
                         }),
                         inactive: Some(InteractStyle {
-                            background: Some(Color::rgba(0.0, 0.0, 0.0, 0.0)),
+                            background: Some(Color::srgba(0.0, 0.0, 0.0, 0.0)),
                             border: Some(Color::NONE),
                             ..Default::default()
                         }),

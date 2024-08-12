@@ -106,8 +106,8 @@ fn update_slices(
                 .tint
                 .map(|bg| bg.0)
                 .unwrap_or(Color::WHITE)
-                .as_linear_rgba_f32()
-                .into(),
+                .to_linear()
+                .to_vec4(),
         };
 
         if let Some(mat) = maybe_material.and_then(|h| mats.get_mut(h)) {

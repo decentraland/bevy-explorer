@@ -22,7 +22,7 @@ fn setup(
 
     let texture = asset_server.load::<Image>("images/spinner_atlas.png");
     let texture_atlas_layout =
-        TextureAtlasLayout::from_grid(Vec2::new(34.0, 34.0), 8, 1, None, None);
+        TextureAtlasLayout::from_grid(UVec2::new(34, 34), 8, 1, None, None);
     let texture_atlas_layout_handle = texture_atlases.add(texture_atlas_layout);
 
     dui.set_default_prop("spinner-image", texture);
