@@ -2,7 +2,7 @@
 // - support blending animations
 // - suport morph targets
 use bevy::prelude::*;
-use bevy::{animation::RepeatAnimation, gltf::Gltf};
+use bevy::animation::RepeatAnimation;
 
 use common::sets::SceneSets;
 use dcl::interface::ComponentPosition;
@@ -13,7 +13,7 @@ use dcl_component::{
 
 use crate::SceneEntity;
 
-use super::{gltf_container::GltfProcessed, AddCrdtInterfaceExt};
+use super::{gltf_container::{Clips, GltfProcessed}, AddCrdtInterfaceExt};
 
 pub struct AnimatorPlugin;
 
@@ -50,17 +50,13 @@ fn update_animations(
             Entity,
             &SceneEntity,
             Option<&mut Animator>,
-            &Handle<Gltf>,
-            &mut GltfProcessed,
+            &mut AnimationPlayer, &Clips
         ),
         Or<(Changed<Animator>, Changed<GltfProcessed>)>,
     >,
-    mut players: Query<&mut AnimationPlayer>,
-    clips: Res<Assets<AnimationClip>>,
-    gltfs: Res<Assets<Gltf>>,
 ) {
-    for (ent, scene_ent, mut maybe_animator, h_gltf, mut gltf_processed) in animators.iter_mut() {
-        let maybe_h_clip = match maybe_animator {
+    for (ent, scene_ent, mut maybe_animator, mut player, clips) in animators.iter_mut() {
+        let maybe_index = match maybe_animator {
             Some(ref animator) => {
                 // TODO bevy only supports a single concurrent animation (or a single timed transition which we can't use)
                 // it is still in development so will probably have better support soon. otherwise we could build our own
@@ -86,97 +82,41 @@ fn update_animations(
                         });
 
                 if let Some(state) = req_state {
-                    let Some(gltf) = gltfs.get(h_gltf) else {
-                        // set change tick on the animator so that we recheck next frame
-                        // TODO this will recheck forever if the gltf fails to load
-                        gltf_processed.set_changed();
-                        continue;
-                    };
-
-                    let Some(h_clip) = gltf.named_animations.get(state.clip.as_str()) else {
+                    let Some(index) = clips.named.get(state.clip.as_str()) else {
                         warn!("requested clip {} doesn't exist", state.clip);
                         continue;
                     };
-                    Some((h_clip, state.clone()))
+                    Some((*index, state.clone()))
                 } else {
                     None
                 }
             }
             None => {
-                // if no animator is present we should play the first clip, if any exist
-                let Some(gltf) = gltfs.get(h_gltf) else {
-                    // set change tick on the animator so that we recheck next frame
-                    // TODO this will recheck forever if the gltf fails to load
-                    gltf_processed.set_changed();
-                    continue;
-                };
-
-                gltf.animations
-                    .first()
-                    .map(|anim| (anim, PbAnimationState::default()))
+                Some((clips.default, PbAnimationState::default()))
             }
         };
 
-        if let Some((h_clip, state)) = maybe_h_clip {
-            let Some(clip) = clips.get(h_clip) else {
-                // set change tick on the animator so that we recheck next frame
-                // TODO this will recheck forever if the gltf fails to load
-                gltf_processed.set_changed();
-                continue;
-            };
+        if let Some((index, state)) = maybe_index {
+            debug!(
+                "[{ent:?}/{scene_ent:?}] playing (something) with state {:?}",
+                state
+            );
 
-            // bevy adds a player to each animated root node.
-            // we can't track which root node corresponds to which animation.
-            // in gltfs, the animation nodes must be uniquely named so we
-            // can just add the animation to every player with the right name.
-            let (target, others) = gltf_processed
-                .animation_roots
-                .iter()
-                .partition::<Vec<_>, _>(|(_, name)| clip.compatible_with(name));
+            let active_animation = player.play(index);
 
-            if target.is_empty() {
-                warn!("invalid root node for animation: (there is no name field any more)");
-                warn!(
-                    "available root nodes: {:?}",
-                    gltf_processed
-                        .animation_roots
-                        .iter()
-                        .map(|(_, name)| name.as_str())
-                        .collect::<Vec<_>>()
-                );
-            }
-
-            for (player_ent, _) in target {
-                let Ok(mut player) = players.get_mut(*player_ent) else {
-                    error!("failed to get animation player");
-                    continue;
-                };
-
-                debug!(
-                    "[{ent:?}/{scene_ent:?}] playing (something) with state {:?}",
-                    state
-                );
-                player.play(h_clip.clone_weak());
-
-                player.set_speed(state.speed.unwrap_or(1.0));
-                if state.r#loop.unwrap_or(true) {
-                    player.repeat();
-                } else {
-                    if state.should_reset.unwrap_or(false) {
-                        player.replay();
-                    }
-
-                    player.set_repeat(RepeatAnimation::Never);
+            active_animation.set_speed(state.speed.unwrap_or(1.0));
+            if state.r#loop.unwrap_or(true) {
+                active_animation.repeat();
+            } else {
+                if state.should_reset.unwrap_or(false) {
+                    active_animation.replay();
                 }
 
-                // on my version of bevy animator this means "should go back to starting position when finished"
-                player.set_should_reset(false);
+                active_animation.set_repeat(RepeatAnimation::Never);
             }
 
-            for (player_ent, _) in others {
-                let mut player = players.get_mut(*player_ent).unwrap();
-                player.pause();
-            }
+            // on my version of bevy animator this means "should go back to starting position when finished"
+            // player.set_should_reset(false);
 
             if let Some(animator) = maybe_animator.as_mut() {
                 animator.bypass_change_detection().playing = true;
@@ -188,11 +128,7 @@ fn update_animations(
             if let Some(animator) = maybe_animator.as_mut() {
                 animator.bypass_change_detection().playing = false;
             }
-            for (player_ent, _) in gltf_processed.animation_roots.iter() {
-                let mut player = players.get_mut(*player_ent).unwrap();
-
-                player.pause();
-            }
+            player.pause_all();
         }
     }
 }

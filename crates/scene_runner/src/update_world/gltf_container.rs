@@ -18,9 +18,10 @@ use bevy::{
     },
     scene::{scene_spawner_system, InstanceId},
     transform::TransformSystem,
-    utils::{HashMap, HashSet},
+    utils::HashMap,
 };
 use common::{anim_last_system, structs::AppConfig, util::ModifyComponentExt};
+use petgraph::graph::NodeIndex;
 use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
@@ -104,7 +105,6 @@ struct GltfLoaded(Option<InstanceId>);
 #[derive(Component, Default)]
 pub struct GltfProcessed {
     pub instance_id: Option<InstanceId>,
-    pub animation_roots: HashSet<(Entity, Name)>,
     pub named_nodes: HashMap<String, Entity>,
 }
 
@@ -337,7 +337,7 @@ fn update_ready_gltfs(
         Option<&SkinnedMesh>,
         Option<&Handle<StandardMaterial>>,
     )>,
-    (base_mats, mut bound_mats): (Res<Assets<StandardMaterial>>, ResMut<Assets<SceneMaterial>>),
+    (base_mats, mut bound_mats, mut graphs): (Res<Assets<StandardMaterial>>, ResMut<Assets<SceneMaterial>>, ResMut<Assets<AnimationGraph>>),
     scene_spawner: Res<SceneSpawner>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut contexts: Query<(
@@ -366,8 +366,6 @@ fn update_ready_gltfs(
         }
         let instance = loaded.0.as_ref().unwrap();
         if scene_spawner.instance_is_ready(*instance) {
-            let mut animation_roots = HashSet::default();
-
             let gltf = gltfs.get(h_gltf).unwrap();
 
             // let graph = _node_graph(&_debug_query, bevy_scene_entity);
@@ -391,6 +389,9 @@ fn update_ready_gltfs(
 
             // create a counter per name so we can make unique collider handles
             let mut collider_counter: HashMap<_, u32> = HashMap::default();
+
+            // track if any animations exist
+            let mut has_animations = false;
 
             let Ok((mut context, mut resource_lookup, mut tracker)) =
                 contexts.get_mut(dcl_scene_entity.root)
@@ -451,7 +452,9 @@ fn update_ready_gltfs(
                     if maybe_player.is_some() {
                         if let Some(name) = maybe_name {
                             debug!("animator found on {name} node of {}", definition.0.src);
-                            animation_roots.insert((spawned_ent, name.clone()));
+                            // animation_roots.insert((spawned_ent, name.clone()));
+                            has_animations = true;
+                            commands.entity(spawned_ent).remove::<AnimationPlayer>();
                             *tracker.0.entry("Animations").or_default() += 1;
                         }
                     }
@@ -782,10 +785,23 @@ fn update_ready_gltfs(
             commands
                 .entity(bevy_scene_entity)
                 .try_insert(GltfProcessed {
-                    animation_roots,
                     instance_id: Some(*instance),
                     named_nodes,
                 });
+            if has_animations && !gltf.animations.is_empty() {
+                let mut graph = AnimationGraph::new();
+                let animation_clips = Clips {
+                    default: graph.add_clip(gltf.animations.first().cloned().unwrap(), 0.0, graph.root),
+                    named: gltf.named_animations.iter().map(|(name, clip)| {
+                        (name.to_string(), graph.add_clip(clip.clone(), 0.0, graph.root))
+                    }).collect()
+                };
+                commands.entity(bevy_scene_entity).insert((
+                    AnimationPlayer::default(),
+                    graphs.add(graph),
+                    animation_clips,
+                ));
+            }
             *tracker.0.entry("Live Meshes").or_default() = resource_lookup
                 .meshes
                 .iter()
@@ -793,6 +809,12 @@ fn update_ready_gltfs(
                 .count();
         }
     }
+}
+
+#[derive(Component)]
+pub struct Clips{
+    pub default: NodeIndex,
+    pub named: HashMap<String, NodeIndex>,
 }
 
 pub const GLTF_LOADING: &str = "gltfs loading";
