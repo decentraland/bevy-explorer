@@ -21,7 +21,6 @@ use bevy::{
     utils::HashMap,
 };
 use common::{anim_last_system, structs::AppConfig, util::ModifyComponentExt};
-use petgraph::graph::NodeIndex;
 use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
@@ -44,9 +43,7 @@ use ipfs::{EntityDefinition, IpfsAssetServer};
 use scene_material::{SceneBound, SceneMaterial};
 
 use super::{
-    mesh_collider::{MeshCollider, MeshColliderShape},
-    transform_and_parent::TransformHelperPub,
-    AddCrdtInterfaceExt, ComponentTracker,
+    animation::Clips, mesh_collider::{MeshCollider, MeshColliderShape}, transform_and_parent::TransformHelperPub, AddCrdtInterfaceExt, ComponentTracker
 };
 
 pub struct GltfDefinitionPlugin;
@@ -791,9 +788,9 @@ fn update_ready_gltfs(
             if has_animations && !gltf.animations.is_empty() {
                 let mut graph = AnimationGraph::new();
                 let animation_clips = Clips {
-                    default: graph.add_clip(gltf.animations.first().cloned().unwrap(), 0.0, graph.root),
+                    default: gltf.animations.first().cloned().map(|clip| graph.add_clip(clip, 1.0, graph.root)),
                     named: gltf.named_animations.iter().map(|(name, clip)| {
-                        (name.to_string(), graph.add_clip(clip.clone(), 0.0, graph.root))
+                        (name.to_string(), graph.add_clip(clip.clone(), 1.0, graph.root))
                     }).collect()
                 };
                 commands.entity(bevy_scene_entity).insert((
@@ -809,12 +806,6 @@ fn update_ready_gltfs(
                 .count();
         }
     }
-}
-
-#[derive(Component)]
-pub struct Clips{
-    pub default: NodeIndex,
-    pub named: HashMap<String, NodeIndex>,
 }
 
 pub const GLTF_LOADING: &str = "gltfs loading";

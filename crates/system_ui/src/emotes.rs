@@ -4,10 +4,7 @@ use avatar::{
     AvatarShape,
 };
 use bevy::{
-    prelude::*,
-    render::render_resource::Extent3d,
-    tasks::{IoTaskPool, Task},
-    utils::{HashMap, HashSet},
+    color::palettes::css, prelude::*, render::render_resource::Extent3d, tasks::{IoTaskPool, Task}, utils::{HashMap, HashSet}
 };
 use bevy_dui::{
     DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry, DuiWalker,
@@ -311,7 +308,7 @@ fn set_emotes_content(
                 DuiButton {
                     styles: Some(InteractStyles {
                         active: Some(InteractStyle {
-                            background: Some(Color::ORANGE),
+                            background: Some(css::ORANGE.into()),
                             border: Some(Color::BLACK),
                             ..Default::default()
                         }),
@@ -584,7 +581,7 @@ pub trait ColorHexEx {
 
 impl ColorHexEx for Color {
     fn to_hex_color(&self) -> String {
-        let color = self.as_rgba_u8();
+        let color = self.to_linear().to_u8_array();
         format!(
             "#{:02x}{:02x}{:02x}{:02x}",
             color[0], color[1], color[2], color[3]
@@ -723,7 +720,7 @@ fn update_emotes_list(
                 initial = Some(ix);
             }
             let (inactive_color, inactive_border) = if worn.contains(&emote.instance) {
-                (Color::ORANGE, Color::srgb(0.5, 0.325, 0.0))
+                (Color::Srgba(css::ORANGE), Color::srgb(0.5, 0.325, 0.0))
             } else {
                 (
                     Color::srgba(0.0, 0.0, 0.0, 0.0),
@@ -742,7 +739,7 @@ fn update_emotes_list(
             DuiButton {
                 styles: Some(InteractStyles {
                     active: Some(InteractStyle {
-                        background: Some(Color::RED),
+                        background: Some(css::RED.into()),
                         border: Some(Color::srgb(0.5, 0.0, 0.0)),
                         ..Default::default()
                     }),
@@ -883,7 +880,7 @@ fn update_emote_item(
                     let (image_color, rarity_color) = if fits {
                         (Color::WHITE.to_hex_color(), entry.rarity.hex_color())
                     } else {
-                        (Color::BLACK.to_hex_color(), Color::DARK_GRAY.to_hex_color())
+                        (Color::BLACK.to_hex_color(), Color::Srgba(css::DARK_GRAY).to_hex_color())
                     };
                     match ipfas.asset_server().load_state(handle.id()) {
                         bevy::asset::LoadState::Loading => (),
@@ -904,7 +901,7 @@ fn update_emote_item(
                                 )
                                 .unwrap();
                         }
-                        bevy::asset::LoadState::Failed | bevy::asset::LoadState::NotLoaded => {
+                        bevy::asset::LoadState::Failed(_) | bevy::asset::LoadState::NotLoaded => {
                             warn!("failed to load emote image");
                             commands
                                 .entity(ent)
@@ -932,7 +929,7 @@ fn update_emote_item(
     }
 }
 
-#[derive(Event, Component, Clone)]
+#[derive(Event, Clone)]
 struct SelectItem(Option<EmoteEntry>);
 
 #[allow(clippy::too_many_arguments)]

@@ -36,7 +36,7 @@ use crate::{
 
 pub struct AvatarTexturePlugin;
 
-pub const PRIMARY_AVATAR_RENDERLAYER: RenderLayers = RenderLayers::layer(0).with(1);
+pub const PRIMARY_AVATAR_RENDERLAYER: RenderLayers = RenderLayers::layer(0);
 pub const PROFILE_UI_RENDERLAYER: RenderLayers = RenderLayers::layer(2);
 
 const SNAPSHOT_FRAMES: u32 = 5;
@@ -94,7 +94,7 @@ impl<'w, 's> PhotoBooth<'w, 's> {
                 AvatarSelection {
                     scene: None,
                     shape,
-                    render_layers: Some(render_layers),
+                    render_layers: Some(render_layers.clone()),
                     automatic_delete: false,
                 },
                 AvatarDynamicState::default(),
@@ -121,7 +121,7 @@ impl<'w, 's> PhotoBooth<'w, 's> {
             &mut self.images,
             avatar,
             size,
-            render_layers,
+            render_layers.clone(),
         );
 
         let avatar = Arc::new(avatar);
@@ -298,7 +298,7 @@ fn add_booth_camera(
                     },
                     ..Default::default()
                 },
-                render_layers,
+                render_layers.clone(),
                 BloomSettings {
                     intensity: 0.15,
                     ..BloomSettings::OLD_SCHOOL
@@ -323,7 +323,7 @@ fn add_booth_camera(
                 },
                 ..default()
             },
-            render_layers,
+            render_layers.clone(),
         ));
     });
 
@@ -445,7 +445,7 @@ fn snapshot(
                             },
                             ..Default::default()
                         },
-                        selection.render_layers.unwrap_or_default(),
+                        selection.render_layers.clone().unwrap_or_default(),
                     ))
                     .id()
             };
@@ -509,7 +509,7 @@ fn snapshot(
         commands.entity(window).despawn_recursive();
         commands.entity(camera).despawn_recursive();
 
-        let Some(target) = images.get_mut(target) else {
+        let Some(target) = images.get_mut(&target) else {
             error!("target not found");
             continue;
         };

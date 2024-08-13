@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, path::PathBuf, str::FromStr};
+use std::{f32::consts::PI, path::PathBuf, str::FromStr, time::Duration};
 
 use attach::AttachPlugin;
 use avatar_texture::AvatarTexturePlugin;
@@ -56,7 +56,7 @@ use ipfs::{
     EntityDefinition, IpfsAssetServer,
 };
 use scene_runner::{
-    update_world::{billboard::Billboard, AddCrdtInterfaceExt},
+    update_world::{animation::Clips, billboard::Billboard, AddCrdtInterfaceExt},
     util::ConsoleRelay,
     ContainingScene, SceneEntity,
 };
@@ -708,7 +708,7 @@ fn update_render_avatar(
                             b: 0.356,
                         })
                         .into(),
-                    render_layer: selection.render_layers,
+                    render_layer: selection.render_layers.clone(),
                 },
                 UsedWearables(urns),
             ));
@@ -875,6 +875,7 @@ fn process_avatar(
     ui_view: Res<AvatarWorldUi>,
     dui: Res<DuiRegistry>,
     mut emote_loader: CollectibleManager<Emote>,
+    mut graphs: ResMut<Assets<AnimationGraph>>,
 ) {
     for (avatar_ent, def, loaded_avatar, root_player_entity) in query.iter() {
         let not_loaded = !scene_spawner.instance_is_ready(loaded_avatar.body_instance)
@@ -897,7 +898,7 @@ fn process_avatar(
 
         // hide and colour the base model
         for scene_ent in scene_spawner.iter_instance_entities(loaded_avatar.body_instance) {
-            if let Some(layer) = def.render_layer {
+            if let Some(layer) = def.render_layer.clone() {
                 // set render layer for primary avatar
                 commands.entity(scene_ent).try_insert(layer);
             }
@@ -915,6 +916,9 @@ fn process_avatar(
             // add animation player to armature root
             if name.to_lowercase() == "armature" && armature_node.is_none() {
                 let mut player = AnimationPlayer::default();
+                let mut graph = AnimationGraph::new();
+                let mut clips = Clips::default();
+                let mut transitions = AnimationTransitions::default();
                 // play default idle anim to avoid t-posing
                 if let Some(clip) = emote_loader
                     .get_representation(EmoteUrn::new("Idle_Male").unwrap(), &def.body_shape)
@@ -922,9 +926,16 @@ fn process_avatar(
                     .and_then(|rep| rep.avatar_animation(&gltfs).ok())
                     .flatten()
                 {
-                    player.start(clip.clone());
+                    let ix = graph.add_clip(clip, 1.0, graph.root);
+                    clips.named.insert("Idle_Male".into(), ix.clone());
+                    transitions.play(&mut player, ix, Duration::from_secs_f32(0.2));
                 }
-                commands.entity(scene_ent).try_insert(player);
+                commands.entity(scene_ent).try_insert((
+                    player,
+                    transitions,
+                    clips,
+                    graphs.add(graph)
+                ));
                 // record the node with the animator
                 commands
                     .entity(root_player_entity.get())
@@ -1012,7 +1023,7 @@ fn process_avatar(
                         if let Some(mask) = wearable.mask.as_ref() {
                             debug!("using mask for {suffix}");
                             let mask_material = mask_materials.add(MaskMaterial {
-                                color,
+                                color: color.to_linear().to_vec4(),
                                 base_texture: wearable.texture.clone().unwrap(),
                                 mask_texture: mask.clone(),
                             });
@@ -1113,7 +1124,7 @@ fn process_avatar(
             let mut armature_map = HashMap::default();
 
             for scene_ent in scene_spawner.iter_instance_entities(*instance) {
-                if let Some(layer) = def.render_layer {
+                if let Some(layer) = def.render_layer.clone() {
                     // set render layer for primary avatar
                     commands.entity(scene_ent).try_insert(layer);
                 }

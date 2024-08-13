@@ -731,9 +731,9 @@ fn update_crosshair(
         };
         *prev = Some(locked.0);
         if locked.0 {
-            bg.0.set_a(0.7);
+            bg.0.set_alpha(0.7);
         } else {
-            bg.0.set_a(0.2);
+            bg.0.set_alpha(0.2);
         }
     }
 }

@@ -39,9 +39,7 @@ use scene_runner::{
     permissions::Permission,
     renderer_context::RendererSceneContext,
     update_world::{
-        avatar_modifier_area::PlayerModifiers,
-        transform_and_parent::{ParentPositionSync, SceneProxyStage},
-        AddCrdtInterfaceExt,
+        animation::Clips, avatar_modifier_area::PlayerModifiers, transform_and_parent::{ParentPositionSync, SceneProxyStage}, AddCrdtInterfaceExt
     },
     ContainerEntity, ContainingScene,
 };
@@ -429,7 +427,7 @@ fn animate(
                 }
             } else {
                 let directional_velocity_len =
-                    (damped_velocity * (Vec3::X + Vec3::Z)).dot(gt.forward());
+                    (damped_velocity * (Vec3::X + Vec3::Z)).dot(gt.forward().as_vec3());
 
                 if damped_velocity_len.abs() > 0.1 {
                     if damped_velocity_len.abs() <= 2.5 {
@@ -468,6 +466,7 @@ struct SpawnedExtras {
     scene: Option<InstanceId>,
     scene_rotated: bool,
     audio: Option<Entity>,
+    clip: Option<AnimationNodeIndex>,
 }
 
 impl SpawnedExtras {
@@ -477,6 +476,7 @@ impl SpawnedExtras {
             scene: None,
             scene_rotated: false,
             audio: None,
+            clip: None,
         }
     }
 }
@@ -488,8 +488,8 @@ fn play_current_emote(
     definitions: Query<&AvatarDefinition>,
     mut emote_loader: CollectibleManager<Emote>,
     mut gltfs: ResMut<Assets<Gltf>>,
-    animations: Res<Assets<AnimationClip>>,
-    mut players: Query<(&mut AnimationPlayer, &Name)>,
+    mut players: Query<(&mut AnimationPlayer, &mut AnimationTransitions, Option<&mut Clips>, &Handle<AnimationGraph>)>,
+    mut graphs: ResMut<Assets<AnimationGraph>>,
     mut playing: Local<HashMap<Entity, EmoteUrn>>,
     ipfas: IpfsAssetServer,
     mut cached_gltf_handles: Local<HashSet<Handle<Gltf>>>,
@@ -545,11 +545,15 @@ fn play_current_emote(
             {
                 // load the gltf
                 let handle = ipfas.load_hash::<Gltf>(hash);
-                let Some(gltf) = gltfs.get_mut(handle.id()) else {
-                    if !cached_gltf_handles.contains(&handle) {
+                let gltf = match gltfs.get_mut(handle.id()) {
+                    Some(gltf) => {
+                        cached_gltf_handles.remove(&handle);
+                        gltf
+                    },
+                    None => {
                         cached_gltf_handles.insert(handle);
+                        continue;
                     }
-                    continue;
                 };
 
                 // fix up the gltf if possible/required
@@ -561,7 +565,7 @@ fn play_current_emote(
                     };
 
                     gltf.named_animations
-                        .insert("_Avatar".to_owned(), anim.clone());
+                        .insert("_Avatar".into(), anim.clone());
                 }
 
                 // add repr
@@ -624,20 +628,16 @@ fn play_current_emote(
         // extract props and prop anim
         let mut prop_player_and_clip = None;
         if let Ok(Some(props)) = emote.prop_scene(&gltfs) {
-            if let Some(instance) = spawned_extras
-                .get(&entity)
-                .and_then(|extras| extras.scene.as_ref())
-                .copied()
-            {
+            if let Some(extras) = spawned_extras.get_mut(&entity) {
+                let Some(instance) = extras.scene else {
+                    continue;
+                };
+
                 if !scene_spawner.instance_is_ready(instance) {
                     continue;
                 }
 
-                let scene_rotated = spawned_extras
-                    .get_mut(&entity)
-                    .map(|extras| &mut extras.scene_rotated)
-                    .unwrap();
-                if !*scene_rotated {
+                if !extras.scene_rotated {
                     for spawned_ent in scene_spawner.iter_instance_entities(instance) {
                         if let Ok((transform, parent)) = transform_and_parent.get(spawned_ent) {
                             if parent.get() == entity {
@@ -653,26 +653,25 @@ fn play_current_emote(
                             }
                         }
 
-                        if let Some(layers) = definition.render_layer {
+                        if let Some(layers) = definition.render_layer.clone() {
                             commands.entity(spawned_ent).insert(layers);
                         }
                     }
-                    *scene_rotated = true;
+                    extras.scene_rotated = true;
                 }
 
                 if let Ok(Some(prop_clip)) = emote.prop_anim(&gltfs) {
-                    let Some(clip) = animations.get(prop_clip.id()) else {
-                        continue;
-                    };
-
                     if let Some(prop_player) =
                         scene_spawner.iter_instance_entities(instance).find(|ent| {
-                            players
-                                .get(*ent)
-                                .map_or(false, |(_, name)| clip.compatible_with(name))
+                            players.get(*ent).is_ok()
                         })
                     {
-                        prop_player_and_clip = Some((prop_player, prop_clip));
+                        let clip = extras.clip.get_or_insert_with(|| {
+                            let (graph, ix) = AnimationGraph::from_clip(prop_clip);
+                            commands.entity(prop_player).insert(graphs.add(graph));
+                            ix
+                        });
+                        prop_player_and_clip = Some((prop_player, *clip));
                     }
                 }
             } else {
@@ -714,60 +713,75 @@ fn play_current_emote(
             }
         }
 
-        let play = |player: &mut AnimationPlayer,
-                    clip: Handle<AnimationClip>,
+        let play = |transitions: &mut AnimationTransitions,
+                    player: &mut AnimationPlayer,
+                    clip_ix: AnimationNodeIndex,
                     active_emote: &ActiveEmote| {
-            if Some(&active_emote.urn) != prior_playing.get(&ent) || active_emote.restart {
-                player.play_with_transition(
-                    clip.clone(),
+
+            let active_animation = if Some(&active_emote.urn) != prior_playing.get(&ent) || active_emote.restart {
+                let active_animation = transitions.play(
+                    player,
+                    clip_ix,
                     Duration::from_secs_f32(active_emote.transition_seconds),
                 );
-                player.seek_to(0.0);
+                active_animation.seek_to(0.0);
                 if active_emote.repeat {
-                    player.repeat();
+                    active_animation.repeat();
                 } else {
-                    player.set_repeat(RepeatAnimation::Never);
+                    active_animation.set_repeat(RepeatAnimation::Never);
                 }
-            }
+                Some(active_animation)
+            } else {
+                player.playing_animations_mut().find(|(nix, _)| **nix == clip_ix).map(|(_, anim)| anim)
+            };
 
             // nasty hack for falling animation
-            if active_emote.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
-                && player.seek_time() >= 0.5833
-            {
-                player.seek_to(0.5833);
-                player.pause();
-            } else {
-                player.resume();
-            }
+            if let Some(active_animation) = active_animation {
+                if active_emote.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
+                    && active_animation.seek_time() >= 0.5833
+                {
+                    active_animation.seek_to(0.5833);
+                    active_animation.pause();
+                } else {
+                    active_animation.resume();
+                }
 
-            player.set_speed(active_emote.speed);
-            // on my version of bevy animator this means "should go back to starting position when finished"
-            player.set_should_reset(false);
+                active_animation.set_speed(active_emote.speed);                
+            }
         };
 
-        let Ok((mut player, _)) = players.get_mut(ent) else {
+        let Ok((mut player, mut transitions, clips, graph)) = players.get_mut(ent) else {
             debug!("no player");
             active_emote.finished = true;
             continue;
         };
-        play(&mut player, clip.clone(), &active_emote);
+
+        let mut clips = clips.unwrap();
+        let clip_ix = clips.named.entry(active_emote.urn.to_string()).or_insert_with(|| {
+            let Some(graph) = graphs.get_mut(graph) else {
+                return AnimationNodeIndex::new(u32::MAX as usize);
+            };
+            graph.add_clip(clip, 1.0, graph.root)
+        });
+
+        play(&mut transitions, &mut player, *clip_ix, &active_emote);
         active_emote.restart = false;
 
-        if !active_emote.finished && player.is_finished() {
-            // debug!("finished on seek time: {}", player.seek_time());
-            // we have to mess around to allow transitions to still apply even though the animation is finished.
-            // assuming a new animation is `play_with_transition`ed next frame, the speed and seek position
-            // here will only apply to the outgoing animation, and will allow it to be transitioned out smoothly.
-            // otherwise if we let it run to actual completion then it applies no weight when it is the outgoing transition.
-            let seek_time = player.seek_time() - 0.0001;
-            player.seek_to(seek_time);
-            player.set_speed(0.0);
-            active_emote.finished = true;
-        }
+        // if !active_emote.finished && player.all_finished() {
+        //     // debug!("finished on seek time: {}", player.seek_time());
+        //     // we have to mess around to allow transitions to still apply even though the animation is finished.
+        //     // assuming a new animation is `play_with_transition`ed next frame, the speed and seek position
+        //     // here will only apply to the outgoing animation, and will allow it to be transitioned out smoothly.
+        //     // otherwise if we let it run to actual completion then it applies no weight when it is the outgoing transition.
+        //     let seek_time = player.seek_time() - 0.0001;
+        //     player.seek_to(seek_time);
+        //     player.set_speed(0.0);
+        //     active_emote.finished = true;
+        // }
 
-        if let Some((prop_player_ent, clip)) = prop_player_and_clip {
-            if let Ok((mut player, _)) = players.get_mut(prop_player_ent) {
-                play(&mut player, clip, &active_emote);
+        if let Some((prop_player_ent, clip_ix)) = prop_player_and_clip {
+            if let Ok((mut player, mut transitions, _, _)) = players.get_mut(prop_player_ent) {
+                play(&mut transitions, &mut player, clip_ix, &active_emote);
             }
         }
 

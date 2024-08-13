@@ -1,6 +1,6 @@
 use bevy::ecs::system::lifetimeless::{SQuery, Write};
 use bevy::prelude::*;
-use bevy::utils::FloatOrd;
+use bevy::math::FloatOrd;
 use bevy_dui::DuiRegistry;
 use common::structs::{AppConfig, PrimaryUser};
 

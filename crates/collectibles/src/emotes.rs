@@ -5,7 +5,7 @@ use bevy::{
     asset::{AssetLoader, LoadState, LoadedFolder},
     gltf::Gltf,
     prelude::*,
-    utils::{HashMap, HashSet},
+    utils::{ConditionalSendFuture, HashMap, HashSet},
 };
 use ipfs::EntityDefinitionLoader;
 use serde::{Deserialize, Serialize};
@@ -148,7 +148,7 @@ fn load_animations(
 
                             let new_gltf = Gltf {
                                 named_animations: HashMap::from_iter([(
-                                    "_Avatar".to_owned(),
+                                    "_Avatar".into(),
                                     h_clip.clone(),
                                 )]),
                                 scenes: Default::default(),
@@ -462,7 +462,7 @@ impl AssetLoader for EmoteLoader {
         reader: &'a mut bevy::asset::io::Reader,
         settings: &'a Self::Settings,
         load_context: &'a mut bevy::asset::LoadContext,
-    ) -> bevy::utils::BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+    ) -> impl ConditionalSendFuture<Output=Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
             let mut entity = EntityDefinitionLoader
                 .load(reader, settings, load_context)
@@ -532,7 +532,7 @@ impl AssetLoader for EmoteMetaLoader {
         reader: &'a mut bevy::asset::io::Reader,
         settings: &'a Self::Settings,
         load_context: &'a mut bevy::asset::LoadContext,
-    ) -> bevy::utils::BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+    ) -> impl ConditionalSendFuture<Output=Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
             let mut entity = EntityDefinitionLoader
                 .load(reader, settings, load_context)

@@ -1,10 +1,6 @@
 use avatar::animate::{EmoteBroadcast, EmoteList};
 use bevy::{
-    prelude::*,
-    text::BreakLineOn,
-    ui::FocusPolicy,
-    utils::HashSet,
-    window::{PrimaryWindow, WindowFocused, WindowResized},
+    color::palettes::css, prelude::*, text::BreakLineOn, ui::FocusPolicy, utils::HashSet, window::{PrimaryWindow, WindowFocused, WindowResized}
 };
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};
@@ -369,7 +365,7 @@ fn show_emote_ui(
                 .despawn_recursive();
             commands
                 .entity(buttons.named(format!("emote_{unused_slot}").as_str()))
-                .modify_component(|bg: &mut BackgroundColor| bg.0 = Color::GRAY);
+                .modify_component(|bg: &mut BackgroundColor| bg.0 = css::GRAY.into());
         }
     }
 }

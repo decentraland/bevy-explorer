@@ -1,7 +1,7 @@
 // TODO
 // - support blending animations
 // - suport morph targets
-use bevy::prelude::*;
+use bevy::{prelude::*, utils::HashMap};
 use bevy::animation::RepeatAnimation;
 
 use common::sets::SceneSets;
@@ -10,10 +10,11 @@ use dcl_component::{
     proto_components::sdk::components::{PbAnimationState, PbAnimator},
     SceneComponentId,
 };
+use petgraph::graph::NodeIndex;
 
 use crate::SceneEntity;
 
-use super::{gltf_container::{Clips, GltfProcessed}, AddCrdtInterfaceExt};
+use super::{gltf_container::GltfProcessed, AddCrdtInterfaceExt};
 
 pub struct AnimatorPlugin;
 
@@ -26,6 +27,12 @@ impl Plugin for AnimatorPlugin {
 
         app.add_systems(Update, update_animations.in_set(SceneSets::PostLoop));
     }
+}
+
+#[derive(Component, Default)]
+pub struct Clips {
+    pub default: Option<NodeIndex>,
+    pub named: HashMap<String, NodeIndex>,
 }
 
 #[derive(Component)]
@@ -92,7 +99,7 @@ fn update_animations(
                 }
             }
             None => {
-                Some((clips.default, PbAnimationState::default()))
+                clips.default.map(|clip| (clip, PbAnimationState::default()))
             }
         };
 

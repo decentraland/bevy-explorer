@@ -11,25 +11,15 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 use avatar::AvatarDynamicState;
 use bevy::{
-    asset::LoadState,
-    core::TaskPoolThreadAssignmentPolicy,
-    core_pipeline::{
+    asset::LoadState, core::TaskPoolThreadAssignmentPolicy, core_pipeline::{
         bloom::BloomSettings,
         prepass::{DepthPrepass, NormalPrepass},
         tonemapping::{DebandDither, Tonemapping},
         Skybox,
-    },
-    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    log::BoxedSubscriber,
-    pbr::{CascadeShadowConfigBuilder, ShadowFilteringMethod},
-    prelude::*,
-    render::{
+    }, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, /* log::tracing_subscriber::{Layer, Registry}, */ pbr::{CascadeShadowConfigBuilder, ShadowFilteringMethod}, prelude::*, render::{
         render_resource::{TextureViewDescriptor, TextureViewDimension},
-        view::ColorGrading,
-    },
-    text::TextSettings,
-    utils::uuid,
-    window::WindowResolution,
+        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
+    }, text::TextSettings, window::WindowResolution
 };
 use bevy_console::ConsoleCommand;
 
@@ -62,6 +52,7 @@ use system_ui::{crash_report::CrashReportPlugin, login::config_file, SystemUiPlu
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
 use user_input::UserInputPlugin;
+use uuid::Uuid;
 use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
 use world_ui::WorldUiPlugin;
@@ -244,42 +235,43 @@ fn main() {
                 })
                 .set(bevy::log::LogPlugin {
                     filter: "wgpu=error,naga=error,bevy_animation=error".to_string(),
-                    update_subscriber: if file_log {
-                        Some(move |_subscriber: BoxedSubscriber| -> BoxedSubscriber {
-                            let (non_blocking, guard) = tracing_appender::non_blocking(
-                                File::options()
-                                    .write(true)
-                                    .open(SESSION_LOG.get().unwrap())
-                                    .unwrap(),
-                            );
+                    // custom_layer: |_app: &mut App| -> Option<Box<dyn Layer<Registry> + Sync + Send>> {
+                    //     let file_log = true;
+                    //     if file_log {
+                    //         let (non_blocking, guard) = tracing_appender::non_blocking(
+                    //             File::options()
+                    //                 .write(true)
+                    //                 .open(SESSION_LOG.get().unwrap())
+                    //                 .unwrap(),
+                    //         );
 
-                            let default_filter = {
-                                format!(
-                                    "{},{}",
-                                    bevy::log::Level::INFO,
-                                    "wgpu=error,naga=error,bevy_animation=error"
-                                )
-                            };
-                            let filter_layer =
-                                bevy::log::tracing_subscriber::EnvFilter::try_from_default_env()
-                                    .or_else(|_| {
-                                        bevy::log::tracing_subscriber::EnvFilter::try_new(
-                                            &default_filter,
-                                        )
-                                    })
-                                    .unwrap();
+                    //         let default_filter = {
+                    //             format!(
+                    //                 "{},{}",
+                    //                 bevy::log::Level::INFO,
+                    //                 "wgpu=error,naga=error,bevy_animation=error"
+                    //             )
+                    //         };
+                    //         let filter_layer =
+                    //             bevy::log::tracing_subscriber::EnvFilter::try_from_default_env()
+                    //                 .or_else(|_| {
+                    //                     bevy::log::tracing_subscriber::EnvFilter::try_new(
+                    //                         &default_filter,
+                    //                     )
+                    //                 })
+                    //                 .unwrap();
 
-                            let l = bevy::log::tracing_subscriber::fmt()
-                                .with_ansi(false)
-                                .with_writer(non_blocking)
-                                .with_env_filter(filter_layer)
-                                .finish();
-                            Box::leak(Box::new(guard));
-                            Box::new(l)
-                        })
-                    } else {
-                        None
-                    },
+                    //         let l = bevy::log::tracing_subscriber::fmt()
+                    //             .with_ansi(false)
+                    //             .with_writer(non_blocking)
+                    //             .with_env_filter(filter_layer)
+                    //             .finish();
+                    //         Box::leak(Box::new(guard));
+                    //         Some(Box::new(l))
+                    //     } else {
+                    //         None
+                    //     }
+                    // },
                     ..default()
                 })
                 .build()
@@ -303,7 +295,7 @@ fn main() {
     app.add_plugins(MetricsPlugin);
     app.insert_resource(SegmentConfig::new(
         final_config.user_id.clone(),
-        uuid::Uuid::new_v4().to_string(),
+        Uuid::new_v4().to_string(),
         version_hash,
     ));
 
@@ -319,7 +311,7 @@ fn main() {
 
     app.insert_resource(final_config);
     if no_gltf {
-        app.world.insert_resource(NoGltf(true));
+        app.insert_resource(NoGltf(true));
     }
 
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
@@ -435,12 +427,28 @@ fn setup(
                     ..Default::default()
                 },
                 tonemapping: Tonemapping::TonyMcMapface,
-                dither: DebandDither::Enabled,
+                deband_dither: DebandDither::Enabled,
                 color_grading: ColorGrading {
-                    exposure: -0.5,
-                    gamma: 1.5,
-                    pre_saturation: 1.0,
-                    post_saturation: 1.0,
+                    // exposure: -0.5,
+                    // gamma: 1.5,
+                    // pre_saturation: 1.0,
+                    // post_saturation: 1.0,
+                    global: ColorGradingGlobal {
+                        exposure: -0.5,
+                        ..default()
+                    },
+                    shadows: ColorGradingSection {
+                        gamma: 1.5,
+                        ..Default::default()
+                    },
+                    midtones: ColorGradingSection {
+                        gamma: 1.5,
+                        ..Default::default()
+                    },
+                    highlights: ColorGradingSection {
+                        gamma: 1.5,
+                        ..Default::default()
+                    },
                 },
                 ..Default::default()
             },
@@ -448,7 +456,7 @@ fn setup(
                 intensity: 0.15,
                 ..BloomSettings::OLD_SCHOOL
             },
-            ShadowFilteringMethod::Castano13,
+            ShadowFilteringMethod::Gaussian,
             PrimaryCamera::default(),
             DepthPrepass,
             NormalPrepass,

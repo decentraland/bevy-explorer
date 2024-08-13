@@ -1,4 +1,7 @@
-use bevy::prelude::*;
+use bevy::{
+    color::palettes::css,
+    prelude::*
+};
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{profile::SerializedProfile, structs::SettingsTab};
 use comms::profile::CurrentUserProfile;
@@ -119,7 +122,7 @@ fn set_profile_detail_content(
                 DuiButton {
                     styles: Some(InteractStyles {
                         active: Some(InteractStyle {
-                            background: Some(Color::ORANGE),
+                            background: Some(css::ORANGE.into()),
                             border: Some(Color::BLACK),
                             ..Default::default()
                         }),
