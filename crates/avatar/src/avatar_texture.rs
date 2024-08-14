@@ -43,6 +43,7 @@ const SNAPSHOT_FRAMES: u32 = 5;
 
 impl Plugin for AvatarTexturePlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<LiveBooths>();
         app.add_systems(Startup, setup_primary_avatar_camera.in_set(SetupSets::Main));
         app.add_systems(
             Update,
