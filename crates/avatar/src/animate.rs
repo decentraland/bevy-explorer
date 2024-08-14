@@ -503,6 +503,7 @@ fn play_current_emote(
     let mut prev_spawned_extras = std::mem::take(&mut *spawned_extras);
 
     for (entity, mut active_emote, target_entity, children) in q.iter_mut() {
+        debug!("emote {}", active_emote.urn);
         let Some(definition) = children
             .iter()
             .flat_map(|c| definitions.get(*c).ok())
@@ -533,6 +534,7 @@ fn play_current_emote(
         let bodyshape = &definition.body_shape;
 
         if let Some(scene_emote) = active_emote.urn.scene_emote() {
+            debug!("got {scene_emote:?}");
             let Some((hash, _)) = scene_emote.split_once('-') else {
                 debug!("failed to split scene emote {scene_emote:?}");
                 active_emote.finished = true;
@@ -610,7 +612,10 @@ fn play_current_emote(
         };
 
         let clip = match emote.avatar_animation(&gltfs) {
-            Err(_) => continue,
+            Err(e) => {
+                debug!("animation error: {:?}", e);
+                continue;
+            }
             Ok(None) => {
                 debug!("{} -> no clip", active_emote.urn);
                 debug!(
@@ -628,6 +633,7 @@ fn play_current_emote(
         // extract props and prop anim
         let mut prop_player_and_clip = None;
         if let Ok(Some(props)) = emote.prop_scene(&gltfs) {
+            debug!("got props");
             if let Some(extras) = spawned_extras.get_mut(&entity) {
                 let Some(instance) = extras.scene else {
                     continue;
@@ -724,6 +730,7 @@ fn play_current_emote(
                     clip_ix,
                     Duration::from_secs_f32(active_emote.transition_seconds),
                 );
+                debug!("starting clip {:?}", clip_ix);
                 active_animation.seek_to(0.0);
                 if active_emote.repeat {
                     active_animation.repeat();
@@ -735,18 +742,17 @@ fn play_current_emote(
                 player.playing_animations_mut().find(|(nix, _)| **nix == clip_ix).map(|(_, anim)| anim)
             };
 
-            // nasty hack for falling animation
             if let Some(active_animation) = active_animation {
+                // println!("active weight {}", active_animation.weight());
+                active_animation.set_speed(active_emote.speed);
+
+                // nasty hack for falling animation
                 if active_emote.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
                     && active_animation.seek_time() >= 0.5833
                 {
                     active_animation.seek_to(0.5833);
-                    active_animation.pause();
-                } else {
-                    active_animation.resume();
+                    active_animation.set_speed(0.0);
                 }
-
-                active_animation.set_speed(active_emote.speed);                
             }
         };
 
@@ -758,26 +764,26 @@ fn play_current_emote(
 
         let mut clips = clips.unwrap();
         let clip_ix = clips.named.entry(active_emote.urn.to_string()).or_insert_with(|| {
+            debug!("adding clip");
             let Some(graph) = graphs.get_mut(graph) else {
                 return AnimationNodeIndex::new(u32::MAX as usize);
             };
             graph.add_clip(clip, 1.0, graph.root)
         });
 
+        // println!("transitions: {:?}", transitions);
+        // println!("active animations: {:?}", player.playing_animations().map(|(ix, anim)| format!("[{ix:?} / {:?}", anim)).collect::<Vec<_>>());
         play(&mut transitions, &mut player, *clip_ix, &active_emote);
         active_emote.restart = false;
 
-        // if !active_emote.finished && player.all_finished() {
-        //     // debug!("finished on seek time: {}", player.seek_time());
-        //     // we have to mess around to allow transitions to still apply even though the animation is finished.
-        //     // assuming a new animation is `play_with_transition`ed next frame, the speed and seek position
-        //     // here will only apply to the outgoing animation, and will allow it to be transitioned out smoothly.
-        //     // otherwise if we let it run to actual completion then it applies no weight when it is the outgoing transition.
-        //     let seek_time = player.seek_time() - 0.0001;
-        //     player.seek_to(seek_time);
-        //     player.set_speed(0.0);
-        //     active_emote.finished = true;
-        // }
+        if !active_emote.finished && player.all_finished() {
+            // debug!("finished on seek time: {}", player.seek_time());
+            // we have to mess around to allow transitions to still apply even though the animation is finished.
+            // assuming a new animation is `play_with_transition`ed next frame, the speed and seek position
+            // here will only apply to the outgoing animation, and will allow it to be transitioned out smoothly.
+            // otherwise if we let it run to actual completion then it applies no weight when it is the outgoing transition.
+            active_emote.finished = true;
+        }
 
         if let Some((prop_player_ent, clip_ix)) = prop_player_and_clip {
             if let Ok((mut player, mut transitions, _, _)) = players.get_mut(prop_player_ent) {

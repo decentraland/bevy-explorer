@@ -24,7 +24,7 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
 
     // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
     // See https://github.com/gfx-rs/naga/issues/2416 .
-    var model = mesh_functions::get_model_matrix(vertex_no_morph.instance_index);
+    var model = mesh_functions::get_world_from_local(vertex_no_morph.instance_index);
 
     // we assume a quad with [-0.5, 0.5] bounds in x,y and 0 in z
     // then we take the pixels per meter and texture size to determine where the vertices should lie

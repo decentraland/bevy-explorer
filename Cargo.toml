@@ -75,7 +75,7 @@ bevy = { version = "0.14", default-features = false, features=[
     "webgl2",
     "jpeg"
 ] }
-bevy_console = { git = "https://github.com/msklosak/bevy-console", branch="bevy_014" }
+bevy_console = { git = "https://github.com/robtfm/bevy-console", branch="bevy-0.14" }
 bevy_egui = "0.28"
 
 serde = "1.0.152"

@@ -146,7 +146,9 @@ pub enum EmoteUiEvent {
 }
 
 fn update_dui_props(mut dui: ResMut<DuiRegistry>, window: Query<&Window, With<PrimaryWindow>>) {
-    let window = window.single();
+    let Ok(window) = window.get_single() else {
+        return;
+    };
     let aspect_size = window.width().min(window.height());
     dui.set_default_prop("font-large", format!("{}px", (aspect_size * 0.05) as u32));
     dui.set_default_prop("font-med", format!("{}px", (aspect_size * 0.025) as u32));
@@ -184,7 +186,9 @@ fn apply_layout(
     window: Query<&Window, With<PrimaryWindow>>,
 ) {
     let resized = resized.read().last().is_some();
-    let window = window.single();
+    let Ok(window) = window.get_single() else {
+        return;
+    };
     let viewport = Vec2::new(window.width(), window.height());
     let viewport_ratio = viewport.x / viewport.y;
 
