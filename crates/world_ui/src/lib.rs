@@ -3,10 +3,12 @@ use bevy::{
     pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster},
     prelude::*,
     render::{
-        camera::RenderTarget, render_asset::RenderAssetUsages, render_resource::{
+        camera::RenderTarget,
+        render_asset::RenderAssetUsages,
+        render_resource::{
             AsBindGroup, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
             TextureUsages,
-        }
+        },
     },
     transform::TransformSystem,
     ui::UiSystem,
@@ -123,10 +125,9 @@ pub fn add_worldui_materials(
             },
         });
 
-        commands.entity(wui.ui_node).try_insert(WorldUiMaterialRef(
-            material.id(),
-            target.id(),
-        ));
+        commands
+            .entity(wui.ui_node)
+            .try_insert(WorldUiMaterialRef(material.id(), target.id()));
 
         let quad = commands
             .spawn((
