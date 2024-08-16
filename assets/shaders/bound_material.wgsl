@@ -1,7 +1,7 @@
 #import bevy_pbr::{
     forward_io::{VertexOutput, FragmentOutput},
     pbr_fragment::pbr_input_from_standard_material,
-    pbr_functions::{alpha_discard, apply_pbr_lighting, main_pass_post_lighting_processing},
+    pbr_functions::{SampleBias, sample_texture, alpha_discard, apply_pbr_lighting, main_pass_post_lighting_processing},
     pbr_bindings::{material, emissive_texture, emissive_sampler},
     pbr_types::STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT,
     mesh_view_bindings::{globals, view},
@@ -59,7 +59,18 @@ fn fragment(
         if dot(emissive, emissive) == 0.0 {
             emissive = vec4(2.0);
         }
-        emissive = vec4<f32>(emissive.rgb * textureSampleBias(emissive_texture, emissive_sampler, in.uv, view.mip_bias).rgb, 1.0);
+        var bias: SampleBias;
+        bias.mip_bias = view.mip_bias;
+        emissive = vec4<f32>(emissive.rgb * sample_texture(
+            emissive_texture,
+            emissive_sampler,
+#ifdef STANDARD_MATERIAL_EMISSIVE_UV_B
+            (material.uv_transform * vec3(in.uv_b, 1.0)).xy,
+#else
+            (material.uv_transform * vec3(in.uv, 1.0)).xy,
+#endif
+            bias,
+        ).rgb, emissive.a);
     } else {
         if dot(emissive, emissive) != 0.0 {
             // emissive is set, no emissive texture, use base color texture as emissive texture
