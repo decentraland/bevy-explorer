@@ -903,7 +903,7 @@ fn process_avatar(
             .flatten()
         {
             let ix = graph.add_clip(clip, 1.0, graph.root);
-            clips.named.insert("Idle_Male".into(), ix.clone());
+            clips.named.insert("Idle_Male".into(), (ix.clone(), 0.0));
             transitions.play(&mut player, ix, Duration::from_secs_f32(0.2));
         }
         commands.entity(root_player_entity.get()).try_insert((

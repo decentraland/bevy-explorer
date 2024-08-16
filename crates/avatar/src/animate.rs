@@ -763,12 +763,12 @@ fn play_current_emote(
         };
 
         let mut clips = clips.unwrap();
-        let clip_ix = clips.named.entry(active_emote.urn.to_string()).or_insert_with(|| {
+        let (clip_ix, _) = clips.named.entry(active_emote.urn.to_string()).or_insert_with(|| {
             debug!("adding clip");
             let Some(graph) = graphs.get_mut(graph) else {
-                return AnimationNodeIndex::new(u32::MAX as usize);
+                return (AnimationNodeIndex::new(u32::MAX as usize), 0.0);
             };
-            graph.add_clip(clip, 1.0, graph.root)
+            (graph.add_clip(clip, 1.0, graph.root), 0.0)
         });
 
         // println!("transitions: {:?}", transitions);

@@ -7,18 +7,11 @@ use std::{
 };
 
 use bevy::{
-    asset::LoadState,
-    gltf::{Gltf, GltfExtras, GltfLoaderSettings},
-    pbr::ExtendedMaterial,
-    prelude::*,
-    render::{
+    animation::AnimationTarget, asset::LoadState, gltf::{Gltf, GltfExtras, GltfLoaderSettings}, pbr::ExtendedMaterial, prelude::*, render::{
         mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
         render_asset::RenderAssetUsages,
         view::NoFrustumCulling,
-    },
-    scene::{scene_spawner_system, InstanceId},
-    transform::TransformSystem,
-    utils::HashMap,
+    }, scene::{scene_spawner_system, InstanceId}, transform::TransformSystem, utils::HashMap
 };
 use common::{anim_last_system, structs::AppConfig, util::ModifyComponentExt};
 use rapier3d_f64::prelude::*;
@@ -333,10 +326,10 @@ fn update_ready_gltfs(
         Option<&GltfExtras>,
         Option<&SkinnedMesh>,
         Option<&Handle<StandardMaterial>>,
+        Option<&AnimationTarget>,
     )>,
-    (base_mats, mut bound_mats, mut graphs): (Res<Assets<StandardMaterial>>, ResMut<Assets<SceneMaterial>>, ResMut<Assets<AnimationGraph>>),
+    (base_mats, mut bound_mats, mut graphs, mut meshes): (Res<Assets<StandardMaterial>>, ResMut<Assets<SceneMaterial>>, ResMut<Assets<AnimationGraph>>, ResMut<Assets<Mesh>>),
     scene_spawner: Res<SceneSpawner>,
-    mut meshes: ResMut<Assets<Mesh>>,
     mut contexts: Query<(
         &mut RendererSceneContext,
         &mut SceneResourceLookup,
@@ -352,6 +345,7 @@ fn update_ready_gltfs(
     asset_server: Res<AssetServer>,
     config: Res<AppConfig>,
     gltfs: Res<Assets<Gltf>>,
+    animation_clips: Res<Assets<AnimationClip>>,
 ) {
     for (bevy_scene_entity, dcl_scene_entity, loaded, definition, h_gltf) in ready_gltfs.iter() {
         if loaded.0.is_none() {
@@ -420,6 +414,7 @@ fn update_ready_gltfs(
                     maybe_extras,
                     maybe_skin,
                     maybe_material,
+                    maybe_target,
                 )) = gltf_spawned_entities.get(spawned_ent)
                 {
                     // collect named nodes to push to scene on request
@@ -443,6 +438,14 @@ fn update_ready_gltfs(
                         rotated
                             .rotate_around(Vec3::ZERO, Quat::from_rotation_y(std::f32::consts::PI));
                         commands.entity(spawned_ent).try_insert(rotated);
+                    }
+
+                    // retarget animations to our manually added root player
+                    if let Some(target) = maybe_target {
+                        commands.entity(spawned_ent).insert(AnimationTarget {
+                            player: bevy_scene_entity,
+                            ..*target
+                        });
                     }
 
                     // if there is an animation player, record the entity (bevy-specific hack)
@@ -790,7 +793,8 @@ fn update_ready_gltfs(
                 let animation_clips = Clips {
                     default: gltf.animations.first().cloned().map(|clip| graph.add_clip(clip, 1.0, graph.root)),
                     named: gltf.named_animations.iter().map(|(name, clip)| {
-                        (name.to_string(), graph.add_clip(clip.clone(), 1.0, graph.root))
+                        let duration = animation_clips.get(clip).map(|clip| clip.duration()).unwrap_or(0.0);
+                        (name.to_string(), (graph.add_clip(clip.clone(), 1.0, graph.root), duration))
                     }).collect()
                 };
                 commands.entity(bevy_scene_entity).insert((
