@@ -434,19 +434,19 @@ fn setup(
                     // pre_saturation: 1.0,
                     // post_saturation: 1.0,
                     global: ColorGradingGlobal {
-                        // exposure: -0.5,
+                        exposure: -0.5,
                         ..default()
                     },
                     shadows: ColorGradingSection {
-                        // gamma: 1.5,
+                        gamma: 0.75,
                         ..Default::default()
                     },
                     midtones: ColorGradingSection {
-                        // gamma: 1.5,
+                        gamma: 0.75,
                         ..Default::default()
                     },
                     highlights: ColorGradingSection {
-                        // gamma: 1.5,
+                        gamma: 0.75,
                         ..Default::default()
                     },
                 },
