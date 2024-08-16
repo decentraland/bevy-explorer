@@ -4,7 +4,11 @@ use avatar::{
     AvatarShape,
 };
 use bevy::{
-    color::palettes::css, prelude::*, render::render_resource::Extent3d, tasks::{IoTaskPool, Task}, utils::{HashMap, HashSet}
+    color::palettes::css,
+    prelude::*,
+    render::render_resource::Extent3d,
+    tasks::{IoTaskPool, Task},
+    utils::{HashMap, HashSet},
 };
 use bevy_dui::{
     DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry, DuiWalker,
@@ -880,7 +884,10 @@ fn update_emote_item(
                     let (image_color, rarity_color) = if fits {
                         (Color::WHITE.to_hex_color(), entry.rarity.hex_color())
                     } else {
-                        (Color::BLACK.to_hex_color(), Color::Srgba(css::DARK_GRAY).to_hex_color())
+                        (
+                            Color::BLACK.to_hex_color(),
+                            Color::Srgba(css::DARK_GRAY).to_hex_color(),
+                        )
                     };
                     match ipfas.asset_server().load_state(handle.id()) {
                         bevy::asset::LoadState::Loading => (),

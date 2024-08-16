@@ -1,6 +1,11 @@
 use avatar::animate::{EmoteBroadcast, EmoteList};
 use bevy::{
-    color::palettes::css, prelude::*, text::BreakLineOn, ui::FocusPolicy, utils::HashSet, window::{PrimaryWindow, WindowFocused, WindowResized}
+    color::palettes::css,
+    prelude::*,
+    text::BreakLineOn,
+    ui::FocusPolicy,
+    utils::HashSet,
+    window::{PrimaryWindow, WindowFocused, WindowResized},
 };
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};

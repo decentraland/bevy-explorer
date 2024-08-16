@@ -16,7 +16,8 @@ use async_std::io::{Cursor, ReadExt};
 use bevy::{
     asset::{
         io::{
-            file::FileAssetReader, AssetReader, AssetReaderError, AssetSource, AssetSourceId, ErasedAssetReader, Reader
+            file::FileAssetReader, AssetReader, AssetReaderError, AssetSource, AssetSourceId,
+            ErasedAssetReader, Reader,
         },
         meta::Settings,
         Asset, AssetLoader, LoadState, UntypedAssetId,
@@ -132,7 +133,7 @@ impl AssetLoader for EntityDefinitionLoader {
         reader: &'a mut Reader,
         settings: &'a Self::Settings,
         load_context: &'a mut bevy::asset::LoadContext,
-    ) -> impl ConditionalSendFuture<Output=Result<Self::Asset, Self::Error>> {
+    ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
         let id_fn = || {
             // we must have been loaded as an entity with the format "$ipfs/$entity/{hash}.entity_type" - use the ipfs path to resolve the id
             load_context
@@ -168,7 +169,7 @@ impl AssetLoader for SceneJsLoader {
         reader: &'a mut Reader,
         _settings: &'a Self::Settings,
         _load_context: &'a mut bevy::asset::LoadContext,
-    ) -> impl ConditionalSendFuture<Output=Result<Self::Asset, Self::Error>> {
+    ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
             let mut bytes = Vec::default();
             reader.read_to_end(&mut bytes).await?;
@@ -914,7 +915,7 @@ impl AssetReader for IpfsIo {
     fn read<'a>(
         &'a self,
         path: &'a std::path::Path,
-    ) -> impl ConditionalSendFuture<Output=Result<Box<Reader<'a>>, bevy::asset::io::AssetReaderError>>
+    ) -> impl ConditionalSendFuture<Output = Result<Box<Reader<'a>>, bevy::asset::io::AssetReaderError>>
     {
         Box::pin(async move {
             let wrap_err = |e| {
@@ -1094,7 +1095,7 @@ impl AssetReader for IpfsIo {
     fn read_meta<'a>(
         &'a self,
         path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output=Result<Box<bevy::asset::io::Reader<'a>>, AssetReaderError>>
+    ) -> impl ConditionalSendFuture<Output = Result<Box<bevy::asset::io::Reader<'a>>, AssetReaderError>>
     {
         self.default_io.read_meta(path)
     }
@@ -1102,14 +1103,14 @@ impl AssetReader for IpfsIo {
     fn is_directory<'a>(
         &'a self,
         path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output=Result<bool, AssetReaderError>> {
+    ) -> impl ConditionalSendFuture<Output = Result<bool, AssetReaderError>> {
         self.default_io.is_directory(path)
     }
 
     fn read_directory<'a>(
         &'a self,
         path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output=Result<Box<bevy::asset::io::PathStream>, AssetReaderError>>
+    ) -> impl ConditionalSendFuture<Output = Result<Box<bevy::asset::io::PathStream>, AssetReaderError>>
     {
         self.default_io.read_directory(path)
     }
@@ -1124,15 +1125,15 @@ impl AssetReader for PassThroughReader {
     fn read<'a>(
         &'a self,
         path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output=Result<Box<Reader<'a>>, AssetReaderError>> {
+    ) -> impl ConditionalSendFuture<Output = Result<Box<Reader<'a>>, AssetReaderError>> {
         AssetReader::read(&*self.inner, path)
     }
 
     fn read_meta<'a>(
         &'a self,
         path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output=Result<Box<Reader<'a>>, AssetReaderError>> {
-        Box::pin(async move { 
+    ) -> impl ConditionalSendFuture<Output = Result<Box<Reader<'a>>, AssetReaderError>> {
+        Box::pin(async move {
             if IpfsPath::new_from_path(path).is_ok() {
                 Err(AssetReaderError::NotFound(path.to_owned()))
             } else {
@@ -1144,15 +1145,15 @@ impl AssetReader for PassThroughReader {
     fn read_directory<'a>(
         &'a self,
         path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output=Result<Box<bevy::asset::io::PathStream>, AssetReaderError>>
+    ) -> impl ConditionalSendFuture<Output = Result<Box<bevy::asset::io::PathStream>, AssetReaderError>>
     {
-        AssetReader::read_directory(&*self.inner,path)
+        AssetReader::read_directory(&*self.inner, path)
     }
 
     fn is_directory<'a>(
         &'a self,
         path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output=Result<bool, AssetReaderError>> {
-        AssetReader::is_directory(&*self.inner,path)
+    ) -> impl ConditionalSendFuture<Output = Result<bool, AssetReaderError>> {
+        AssetReader::is_directory(&*self.inner, path)
     }
 }

@@ -17,7 +17,11 @@ pub mod ui_builder;
 use std::{any::type_name, marker::PhantomData};
 
 use bevy::{
-    asset::{DependencyLoadState, LoadState, RecursiveDependencyLoadState}, ecs::schedule::SystemConfigs, prelude::*, state::state::FreelyMutableState, utils::{HashMap, HashSet}
+    asset::{DependencyLoadState, LoadState, RecursiveDependencyLoadState},
+    ecs::schedule::SystemConfigs,
+    prelude::*,
+    state::state::FreelyMutableState,
+    utils::{HashMap, HashSet},
 };
 use bevy_dui::{DuiPlugin, DuiRegistry};
 use bevy_egui::EguiPlugin;

@@ -7,11 +7,19 @@ use std::{
 };
 
 use bevy::{
-    animation::AnimationTarget, asset::LoadState, gltf::{Gltf, GltfExtras, GltfLoaderSettings}, pbr::ExtendedMaterial, prelude::*, render::{
+    animation::AnimationTarget,
+    asset::LoadState,
+    gltf::{Gltf, GltfExtras, GltfLoaderSettings},
+    pbr::ExtendedMaterial,
+    prelude::*,
+    render::{
         mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
         render_asset::RenderAssetUsages,
         view::NoFrustumCulling,
-    }, scene::{scene_spawner_system, InstanceId}, transform::TransformSystem, utils::HashMap
+    },
+    scene::{scene_spawner_system, InstanceId},
+    transform::TransformSystem,
+    utils::HashMap,
 };
 use common::{anim_last_system, structs::AppConfig, util::ModifyComponentExt};
 use rapier3d_f64::prelude::*;
@@ -36,7 +44,10 @@ use ipfs::{EntityDefinition, IpfsAssetServer};
 use scene_material::{SceneBound, SceneMaterial};
 
 use super::{
-    animation::Clips, mesh_collider::{MeshCollider, MeshColliderShape}, transform_and_parent::TransformHelperPub, AddCrdtInterfaceExt, ComponentTracker
+    animation::Clips,
+    mesh_collider::{MeshCollider, MeshColliderShape},
+    transform_and_parent::TransformHelperPub,
+    AddCrdtInterfaceExt, ComponentTracker,
 };
 
 pub struct GltfDefinitionPlugin;
@@ -328,7 +339,12 @@ fn update_ready_gltfs(
         Option<&Handle<StandardMaterial>>,
         Option<&AnimationTarget>,
     )>,
-    (base_mats, mut bound_mats, mut graphs, mut meshes): (Res<Assets<StandardMaterial>>, ResMut<Assets<SceneMaterial>>, ResMut<Assets<AnimationGraph>>, ResMut<Assets<Mesh>>),
+    (base_mats, mut bound_mats, mut graphs, mut meshes): (
+        Res<Assets<StandardMaterial>>,
+        ResMut<Assets<SceneMaterial>>,
+        ResMut<Assets<AnimationGraph>>,
+        ResMut<Assets<Mesh>>,
+    ),
     scene_spawner: Res<SceneSpawner>,
     mut contexts: Query<(
         &mut RendererSceneContext,
@@ -791,11 +807,25 @@ fn update_ready_gltfs(
             if has_animations && !gltf.animations.is_empty() {
                 let mut graph = AnimationGraph::new();
                 let animation_clips = Clips {
-                    default: gltf.animations.first().cloned().map(|clip| graph.add_clip(clip, 1.0, graph.root)),
-                    named: gltf.named_animations.iter().map(|(name, clip)| {
-                        let duration = animation_clips.get(clip).map(|clip| clip.duration()).unwrap_or(0.0);
-                        (name.to_string(), (graph.add_clip(clip.clone(), 1.0, graph.root), duration))
-                    }).collect()
+                    default: gltf
+                        .animations
+                        .first()
+                        .cloned()
+                        .map(|clip| graph.add_clip(clip, 1.0, graph.root)),
+                    named: gltf
+                        .named_animations
+                        .iter()
+                        .map(|(name, clip)| {
+                            let duration = animation_clips
+                                .get(clip)
+                                .map(|clip| clip.duration())
+                                .unwrap_or(0.0);
+                            (
+                                name.to_string(),
+                                (graph.add_clip(clip.clone(), 1.0, graph.root), duration),
+                            )
+                        })
+                        .collect(),
                 };
                 commands.entity(bevy_scene_entity).insert((
                     AnimationPlayer::default(),
@@ -896,8 +926,14 @@ fn _node_graph(
                             .unwrap_or(Some(String::from("?"))),
                         (
                             c,
-                            scene_entity_query.get(*c).map(|(_, _, _, skin, _)| skin.is_some()).unwrap_or(false),
-                            scene_entity_query.get(*c).map(|(_, _, _, _, t)| t.scale).unwrap_or(Vec3::ZERO),
+                            scene_entity_query
+                                .get(*c)
+                                .map(|(_, _, _, skin, _)| skin.is_some())
+                                .unwrap_or(false),
+                            scene_entity_query
+                                .get(*c)
+                                .map(|(_, _, _, _, t)| t.scale)
+                                .unwrap_or(Vec3::ZERO),
                         ),
                     )
                 })

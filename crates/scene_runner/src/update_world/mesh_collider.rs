@@ -435,7 +435,12 @@ impl SceneColliderData {
             QueryFilter::default().predicate(&|h, _| self.collider_enabled(h)),
         );
 
-        contact.map(|(handle, toi)| (toi.time_of_impact as f32, self.get_id(handle).unwrap().clone()))
+        contact.map(|(handle, toi)| {
+            (
+                toi.time_of_impact as f32,
+                self.get_id(handle).unwrap().clone(),
+            )
+        })
     }
 
     pub fn get_collider_entity(&self, id: &ColliderId) -> Option<Entity> {

@@ -171,9 +171,13 @@ fn init_test_app(entity_json: &str) -> App {
     });
 
     // replace the scene loop schedule with a dummy so we can better control it
-    app.world_mut().remove_resource::<SceneLoopSchedule>().unwrap();
+    app.world_mut()
+        .remove_resource::<SceneLoopSchedule>()
+        .unwrap();
     let mut skip_loop_schedule = Schedule::new(SceneLoopLabel);
-    skip_loop_schedule.add_systems(|mut updates: ResMut<SceneUpdates>| { updates.eligible_jobs = 0; });
+    skip_loop_schedule.add_systems(|mut updates: ResMut<SceneUpdates>| {
+        updates.eligible_jobs = 0;
+    });
     app.world_mut().insert_resource(SceneLoopSchedule {
         schedule: skip_loop_schedule,
         prev_time: Instant::now(),

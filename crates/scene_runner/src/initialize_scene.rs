@@ -50,7 +50,7 @@ impl AssetLoader for CrdtLoader {
         reader: &'a mut Reader,
         _: &'a Self::Settings,
         _: &'a mut LoadContext,
-    ) -> impl ConditionalSendFuture<Output=Result<Self::Asset, Self::Error>> {
+    ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
             let mut bytes = Vec::default();
             reader.read_to_end(&mut bytes).await?;

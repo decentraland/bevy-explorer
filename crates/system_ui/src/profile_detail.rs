@@ -1,7 +1,4 @@
-use bevy::{
-    color::palettes::css,
-    prelude::*
-};
+use bevy::{color::palettes::css, prelude::*};
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{profile::SerializedProfile, structs::SettingsTab};
 use comms::profile::CurrentUserProfile;

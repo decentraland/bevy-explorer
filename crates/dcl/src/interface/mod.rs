@@ -10,8 +10,8 @@ use num::{FromPrimitive, ToPrimitive};
 use num_derive::{FromPrimitive, ToPrimitive};
 
 use dcl_component::{
-    DclReader, DclReaderError, DclWriter, SceneComponentId, SceneCrdtTimestamp,
-    SceneEntityId, ToDclWriter,
+    DclReader, DclReaderError, DclWriter, SceneComponentId, SceneCrdtTimestamp, SceneEntityId,
+    ToDclWriter,
 };
 
 use self::crdt_context::CrdtContext;
@@ -155,7 +155,7 @@ impl CrdtStore {
                 .and_then(|state| state.last_write.get(&entity))
                 .filter(|state| state.is_some)
                 .map(|state| state.data.as_slice()),
-            CrdtType::GO(_) => panic!()
+            CrdtType::GO(_) => panic!(),
         }
     }
 

@@ -4,10 +4,15 @@ use crate::{
     video_stream::{av_sinks, VideoSink},
 };
 use bevy::{
-    color::palettes::basic, core::FrameCount, math::FloatOrd, prelude::*, render::{
+    color::palettes::basic,
+    core::FrameCount,
+    math::FloatOrd,
+    prelude::*,
+    render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
-    }, utils::HashMap
+    },
+    utils::HashMap,
 };
 use common::{
     sets::SceneSets,

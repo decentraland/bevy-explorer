@@ -462,7 +462,7 @@ impl AssetLoader for EmoteLoader {
         reader: &'a mut bevy::asset::io::Reader,
         settings: &'a Self::Settings,
         load_context: &'a mut bevy::asset::LoadContext,
-    ) -> impl ConditionalSendFuture<Output=Result<Self::Asset, Self::Error>> {
+    ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
             let mut entity = EntityDefinitionLoader
                 .load(reader, settings, load_context)
@@ -532,7 +532,7 @@ impl AssetLoader for EmoteMetaLoader {
         reader: &'a mut bevy::asset::io::Reader,
         settings: &'a Self::Settings,
         load_context: &'a mut bevy::asset::LoadContext,
-    ) -> impl ConditionalSendFuture<Output=Result<Self::Asset, Self::Error>> {
+    ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
             let mut entity = EntityDefinitionLoader
                 .load(reader, settings, load_context)

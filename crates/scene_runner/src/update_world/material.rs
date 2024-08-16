@@ -1,10 +1,13 @@
 use std::sync::OnceLock;
 
 use bevy::{
-    ecs::system::SystemParam, pbr::NotShadowCaster, prelude::*, render::{
+    ecs::system::SystemParam,
+    pbr::NotShadowCaster,
+    prelude::*,
+    render::{
         primitives::Aabb,
         texture::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
-    }
+    },
 };
 use common::structs::{AppConfig, AvatarTextureHandle};
 use comms::profile::UserProfile;

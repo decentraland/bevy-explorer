@@ -60,7 +60,10 @@ fn update_animations(
     >,
 ) {
     for (ent, scene_ent, maybe_animator, mut player, clips) in animators.iter_mut() {
-        debug!("[{ent:?} / {scene_ent:?}] {:?}", maybe_animator.as_ref().map(|a| &a.pb_animator));
+        debug!(
+            "[{ent:?} / {scene_ent:?}] {:?}",
+            maybe_animator.as_ref().map(|a| &a.pb_animator)
+        );
         let targets: HashMap<AnimationNodeIndex, (f32, PbAnimationState)> = match maybe_animator {
             Some(ref animator) => animator
                 .pb_animator

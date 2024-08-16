@@ -6,7 +6,8 @@ use bevy::{
         io::{AssetReader, AssetReaderError, AssetSourceBuilder, Reader},
         AssetApp, AssetLoader,
     },
-    prelude::*, utils::ConditionalSendFuture,
+    prelude::*,
+    utils::ConditionalSendFuture,
 };
 use isahc::{config::Configurable, http::StatusCode, AsyncReadResponseExt, RequestExt};
 use num::{BigInt, ToPrimitive};
@@ -30,7 +31,8 @@ impl AssetReader for NftReader {
     fn read<'a>(
         &'a self,
         path: &'a std::path::Path,
-    ) -> impl ConditionalSendFuture<Output=Result<Box<bevy::asset::io::Reader<'a>>, bevy::asset::io::AssetReaderError>,
+    ) -> impl ConditionalSendFuture<
+        Output = Result<Box<bevy::asset::io::Reader<'a>>, bevy::asset::io::AssetReaderError>,
     > {
         let path = path.to_owned();
         Box::pin(async move {
@@ -150,7 +152,8 @@ impl AssetReader for NftReader {
     fn read_meta<'a>(
         &'a self,
         path: &'a std::path::Path,
-    ) -> impl ConditionalSendFuture<Output=Result<Box<bevy::asset::io::Reader<'a>>, bevy::asset::io::AssetReaderError>,
+    ) -> impl ConditionalSendFuture<
+        Output = Result<Box<bevy::asset::io::Reader<'a>>, bevy::asset::io::AssetReaderError>,
     > {
         Box::pin(async { Err(AssetReaderError::NotFound(path.to_owned())) })
     }
@@ -158,15 +161,18 @@ impl AssetReader for NftReader {
     fn read_directory<'a>(
         &'a self,
         _: &'a std::path::Path,
-    ) -> impl ConditionalSendFuture<Output=Result<Box<bevy::asset::io::PathStream>, bevy::asset::io::AssetReaderError>,
+    ) -> impl ConditionalSendFuture<
+        Output = Result<Box<bevy::asset::io::PathStream>, bevy::asset::io::AssetReaderError>,
     > {
-        Box::pin(async { panic!(); })
+        Box::pin(async {
+            panic!();
+        })
     }
 
     fn is_directory<'a>(
         &'a self,
         _: &'a std::path::Path,
-    ) -> impl ConditionalSendFuture<Output=Result<bool, bevy::asset::io::AssetReaderError>> {
+    ) -> impl ConditionalSendFuture<Output = Result<bool, bevy::asset::io::AssetReaderError>> {
         Box::pin(async { Ok(false) })
     }
 }
@@ -257,7 +263,7 @@ impl AssetLoader for NftLoader {
         reader: &'a mut Reader,
         _: &'a Self::Settings,
         _: &'a mut bevy::asset::LoadContext,
-    ) -> impl ConditionalSendFuture<Output=Result<Self::Asset, Self::Error>> {
+    ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
             debug!("loading nft");
             let mut bytes = Vec::default();

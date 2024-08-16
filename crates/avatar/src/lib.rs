@@ -3,10 +3,17 @@ use std::{collections::VecDeque, f32::consts::PI, path::PathBuf, str::FromStr, t
 use attach::AttachPlugin;
 use avatar_texture::AvatarTexturePlugin;
 use bevy::{
-    animation::{AnimationTarget, AnimationTargetId}, asset::{io::AssetReader, AsyncReadExt}, gltf::Gltf, prelude::*, render::{
+    animation::{AnimationTarget, AnimationTargetId},
+    asset::{io::AssetReader, AsyncReadExt},
+    gltf::Gltf,
+    prelude::*,
+    render::{
         mesh::skinning::SkinnedMesh,
         view::{NoFrustumCulling, RenderLayers},
-    }, scene::InstanceId, tasks::{IoTaskPool, Task}, utils::{hashbrown::HashSet, HashMap}
+    },
+    scene::InstanceId,
+    tasks::{IoTaskPool, Task},
+    utils::{hashbrown::HashSet, HashMap},
 };
 use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
@@ -903,14 +910,14 @@ fn process_avatar(
             .flatten()
         {
             let ix = graph.add_clip(clip, 1.0, graph.root);
-            clips.named.insert("Idle_Male".into(), (ix.clone(), 0.0));
+            clips.named.insert("Idle_Male".into(), (ix, 0.0));
             transitions.play(&mut player, ix, Duration::from_secs_f32(0.2));
         }
         commands.entity(root_player_entity.get()).try_insert((
             player,
             transitions,
             clips,
-            graphs.add(graph)
+            graphs.add(graph),
         ));
         // record the node with the animator
         commands
@@ -924,7 +931,8 @@ fn process_avatar(
                 commands.entity(scene_ent).try_insert(layer);
             }
 
-            let Ok((mut vis, parent, maybe_h_mat, maybe_h_mesh, maybe_player)) = instance_ents.get_mut(scene_ent)
+            let Ok((mut vis, parent, maybe_h_mat, maybe_h_mesh, maybe_player)) =
+                instance_ents.get_mut(scene_ent)
             else {
                 continue;
             };
@@ -1148,7 +1156,8 @@ fn process_avatar(
                     commands.entity(scene_ent).try_insert(layer);
                 }
 
-                let Ok((_, parent, maybe_h_mat, maybe_h_mesh, maybe_player)) = instance_ents.get_mut(scene_ent)
+                let Ok((_, parent, maybe_h_mat, maybe_h_mesh, maybe_player)) =
+                    instance_ents.get_mut(scene_ent)
                 else {
                     continue;
                 };

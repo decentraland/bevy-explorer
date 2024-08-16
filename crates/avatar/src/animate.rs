@@ -39,7 +39,10 @@ use scene_runner::{
     permissions::Permission,
     renderer_context::RendererSceneContext,
     update_world::{
-        animation::Clips, avatar_modifier_area::PlayerModifiers, transform_and_parent::{ParentPositionSync, SceneProxyStage}, AddCrdtInterfaceExt
+        animation::Clips,
+        avatar_modifier_area::PlayerModifiers,
+        transform_and_parent::{ParentPositionSync, SceneProxyStage},
+        AddCrdtInterfaceExt,
     },
     ContainerEntity, ContainingScene,
 };
@@ -488,7 +491,12 @@ fn play_current_emote(
     definitions: Query<&AvatarDefinition>,
     mut emote_loader: CollectibleManager<Emote>,
     mut gltfs: ResMut<Assets<Gltf>>,
-    mut players: Query<(&mut AnimationPlayer, &mut AnimationTransitions, Option<&mut Clips>, &Handle<AnimationGraph>)>,
+    mut players: Query<(
+        &mut AnimationPlayer,
+        &mut AnimationTransitions,
+        Option<&mut Clips>,
+        &Handle<AnimationGraph>,
+    )>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
     mut playing: Local<HashMap<Entity, EmoteUrn>>,
     ipfas: IpfsAssetServer,
@@ -551,7 +559,7 @@ fn play_current_emote(
                     Some(gltf) => {
                         cached_gltf_handles.remove(&handle);
                         gltf
-                    },
+                    }
                     None => {
                         cached_gltf_handles.insert(handle);
                         continue;
@@ -566,8 +574,7 @@ fn play_current_emote(
                         continue;
                     };
 
-                    gltf.named_animations
-                        .insert("_Avatar".into(), anim.clone());
+                    gltf.named_animations.insert("_Avatar".into(), anim.clone());
                 }
 
                 // add repr
@@ -667,10 +674,9 @@ fn play_current_emote(
                 }
 
                 if let Ok(Some(prop_clip)) = emote.prop_anim(&gltfs) {
-                    if let Some(prop_player) =
-                        scene_spawner.iter_instance_entities(instance).find(|ent| {
-                            players.get(*ent).is_ok()
-                        })
+                    if let Some(prop_player) = scene_spawner
+                        .iter_instance_entities(instance)
+                        .find(|ent| players.get(*ent).is_ok())
                     {
                         let clip = extras.clip.get_or_insert_with(|| {
                             let (graph, ix) = AnimationGraph::from_clip(prop_clip);
@@ -723,24 +729,27 @@ fn play_current_emote(
                     player: &mut AnimationPlayer,
                     clip_ix: AnimationNodeIndex,
                     active_emote: &ActiveEmote| {
-
-            let active_animation = if Some(&active_emote.urn) != prior_playing.get(&ent) || active_emote.restart {
-                let active_animation = transitions.play(
-                    player,
-                    clip_ix,
-                    Duration::from_secs_f32(active_emote.transition_seconds),
-                );
-                debug!("starting clip {:?}", clip_ix);
-                active_animation.seek_to(0.0);
-                if active_emote.repeat {
-                    active_animation.repeat();
+            let active_animation =
+                if Some(&active_emote.urn) != prior_playing.get(&ent) || active_emote.restart {
+                    let active_animation = transitions.play(
+                        player,
+                        clip_ix,
+                        Duration::from_secs_f32(active_emote.transition_seconds),
+                    );
+                    debug!("starting clip {:?}", clip_ix);
+                    active_animation.seek_to(0.0);
+                    if active_emote.repeat {
+                        active_animation.repeat();
+                    } else {
+                        active_animation.set_repeat(RepeatAnimation::Never);
+                    }
+                    Some(active_animation)
                 } else {
-                    active_animation.set_repeat(RepeatAnimation::Never);
-                }
-                Some(active_animation)
-            } else {
-                player.playing_animations_mut().find(|(nix, _)| **nix == clip_ix).map(|(_, anim)| anim)
-            };
+                    player
+                        .playing_animations_mut()
+                        .find(|(nix, _)| **nix == clip_ix)
+                        .map(|(_, anim)| anim)
+                };
 
             if let Some(active_animation) = active_animation {
                 // println!("active weight {}", active_animation.weight());
@@ -763,13 +772,16 @@ fn play_current_emote(
         };
 
         let mut clips = clips.unwrap();
-        let (clip_ix, _) = clips.named.entry(active_emote.urn.to_string()).or_insert_with(|| {
-            debug!("adding clip");
-            let Some(graph) = graphs.get_mut(graph) else {
-                return (AnimationNodeIndex::new(u32::MAX as usize), 0.0);
-            };
-            (graph.add_clip(clip, 1.0, graph.root), 0.0)
-        });
+        let (clip_ix, _) = clips
+            .named
+            .entry(active_emote.urn.to_string())
+            .or_insert_with(|| {
+                debug!("adding clip");
+                let Some(graph) = graphs.get_mut(graph) else {
+                    return (AnimationNodeIndex::new(u32::MAX as usize), 0.0);
+                };
+                (graph.add_clip(clip, 1.0, graph.root), 0.0)
+            });
 
         // println!("transitions: {:?}", transitions);
         // println!("active animations: {:?}", player.playing_animations().map(|(ix, anim)| format!("[{ix:?} / {:?}", anim)).collect::<Vec<_>>());

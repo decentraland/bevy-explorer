@@ -3,12 +3,13 @@ pub mod dynamics;
 pub mod player_input;
 
 use bevy::{
-    ecs::query::Has, prelude::*, render::camera::CameraUpdateSystem,
-    transform::TransformSystem,
+    ecs::query::Has, prelude::*, render::camera::CameraUpdateSystem, transform::TransformSystem,
 };
 
 use common::{
-    anim_last_system, sets::SceneSets, structs::{PrimaryCamera, PrimaryUser}
+    anim_last_system,
+    sets::SceneSets,
+    structs::{PrimaryCamera, PrimaryUser},
 };
 use console::DoAddConsoleCommand;
 use dynamics::{

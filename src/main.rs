@@ -11,15 +11,24 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 use avatar::AvatarDynamicState;
 use bevy::{
-    asset::LoadState, core::TaskPoolThreadAssignmentPolicy, core_pipeline::{
+    asset::LoadState,
+    core::TaskPoolThreadAssignmentPolicy,
+    core_pipeline::{
         bloom::BloomSettings,
         prepass::{DepthPrepass, NormalPrepass},
         tonemapping::{DebandDither, Tonemapping},
         Skybox,
-    }, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, /* log::tracing_subscriber::{Layer, Registry}, */ pbr::{CascadeShadowConfigBuilder, ShadowFilteringMethod}, prelude::*, render::{
+    },
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    /* log::tracing_subscriber::{Layer, Registry}, */
+    pbr::{CascadeShadowConfigBuilder, ShadowFilteringMethod},
+    prelude::*,
+    render::{
         render_resource::{TextureViewDescriptor, TextureViewDimension},
         view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
-    }, text::TextSettings, window::WindowResolution
+    },
+    text::TextSettings,
+    window::WindowResolution,
 };
 use bevy_console::ConsoleCommand;
 

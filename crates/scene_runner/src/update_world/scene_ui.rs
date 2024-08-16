@@ -874,7 +874,7 @@ fn layout_scene_ui(
                                                                     ..Default::default()
                                                                 },
                                                                 image: UiImage {
-                                                                    color: Color::srgba(1.0, 1.0, 1.0, total_opacity).into(),
+                                                                    color: Color::srgba(1.0, 1.0, 1.0, total_opacity),
                                                                     texture: image.image,
                                                                     flip_x: false,
                                                                     flip_y: false,
