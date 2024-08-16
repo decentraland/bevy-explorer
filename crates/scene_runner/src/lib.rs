@@ -28,7 +28,7 @@ use dcl::{
 use dcl_component::{
     proto_components::{common::BorderRect, sdk::components::PbUiCanvasInformation},
     transform_and_parent::DclTransformAndParent,
-    DclReader, DclWriter, SceneComponentId, SceneEntityId,
+    DclReader, DclWriter, FromDclReader, SceneComponentId, SceneEntityId,
 };
 use initialize_scene::{PortableScenes, TestingData};
 use ipfs::SceneIpfsLocation;
@@ -665,12 +665,27 @@ fn send_scene_updates(
             SceneEntityId::ROOT,
         ));
 
-        crdt_store.update_if_different(
-            SceneComponentId::TRANSFORM,
-            CrdtType::LWW_ENT,
-            id,
-            Some(&mut DclReader::new(&buf)),
-        );
+        let update = crdt_store
+            .get(SceneComponentId::TRANSFORM, CrdtType::LWW_ENT, id)
+            .map(|prev| {
+                DclTransformAndParent::from_reader(&mut DclReader::new(prev))
+                    .unwrap()
+                    .to_bevy_transform()
+            })
+            .map(|t| {
+                (t.translation - relative_transform.translation).length_squared() > 0.0001
+                    || t.rotation.angle_between(relative_transform.rotation) > 0.0001
+            })
+            .unwrap_or(true);
+
+        if update {
+            crdt_store.update_if_different(
+                SceneComponentId::TRANSFORM,
+                CrdtType::LWW_ENT,
+                id,
+                Some(&mut DclReader::new(&buf)),
+            );
+        }
     }
 
     // add canvas info
