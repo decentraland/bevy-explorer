@@ -821,16 +821,16 @@ fn layout_scene_ui(
                                                         let color = background.color.unwrap_or(Color::WHITE);
                                                         let color = color.with_alpha(color.alpha() * total_opacity);
                                                         c.spawn((
-                                                            NodeBundle{
+                                                            MaterialNodeBundle {
                                                                 style: Style {
                                                                     position_type: PositionType::Absolute,
                                                                     width: Val::Percent(100.0),
                                                                     height: Val::Percent(100.0),
                                                                     ..Default::default()
                                                                 },
+                                                                material: stretch_uvs.add(StretchUvMaterial{ image: image.image.clone(), uvs: *uvs, color: color.to_linear().to_vec4() }),
                                                                 ..Default::default()
                                                             },
-                                                            stretch_uvs.add(StretchUvMaterial{ image: image.image.clone(), uvs: *uvs, color: color.to_linear().to_vec4() })
                                                         ));
                                                     });
                                                 });
