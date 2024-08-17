@@ -960,7 +960,7 @@ fn show_nft_dialog(
                             "title",
                             nft.name.clone().unwrap_or("Unnamed Nft".to_owned()),
                         )
-                        .with_prop("image", h_image)
+                        .with_prop("img", h_image)
                         .with_prop("creator", creator)
                         .with_prop("description", description)
                         .with_prop(

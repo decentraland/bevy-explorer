@@ -3,7 +3,7 @@
         <div style="flex-direction: row; width: 100%; align-content: space-between:">
             <med-text id="stats" style="left: 1vmin; margin: 1vmin;" text="Scene Stats" />
             <space />
-            <!-- <button image="images/redx.png" onclick="@toggle" image-width="3.5vmin" image-height="3.5vmin" /> -->
+            <!-- <button img="images/redx.png" onclick="@toggle" image-width="3.5vmin" image-height="3.5vmin" /> -->
         </div>
         <div id="content" style="flex-direction: row; margin: 0px 2vmin 2vmin 2vmin;">
             <div id="labels" style="flex-direction: column; width: 70%">

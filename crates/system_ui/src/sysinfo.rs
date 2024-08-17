@@ -119,8 +119,11 @@ pub(crate) fn setup(
                             height: Val::VMin(3.0),
                             ..Default::default()
                         },
-                        image: asset_server.load("images/crosshair.png").into(),
-                        background_color: Color::srgba(1.0, 1.0, 1.0, 0.7).into(),
+                        image: UiImage {
+                            color: Color::srgba(1.0, 1.0, 1.0, 0.7),
+                            texture: asset_server.load("images/crosshair.png"),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     CrossHair,
@@ -723,17 +726,17 @@ fn set_track_components(
 fn update_crosshair(
     locked: Res<CursorLocked>,
     mut prev: Local<Option<bool>>,
-    mut crosshair: Query<&mut BackgroundColor, With<CrossHair>>,
+    mut crosshair: Query<&mut UiImage, With<CrossHair>>,
 ) {
     if Some(locked.0) != *prev {
-        let Ok(mut bg) = crosshair.get_single_mut() else {
+        let Ok(mut img) = crosshair.get_single_mut() else {
             return;
         };
         *prev = Some(locked.0);
         if locked.0 {
-            bg.0.set_alpha(0.7);
+            img.color.set_alpha(0.7);
         } else {
-            bg.0.set_alpha(0.2);
+            img.color.set_alpha(0.2);
         }
     }
 }

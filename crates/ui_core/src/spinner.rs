@@ -56,7 +56,6 @@ impl DuiTemplate for DuiSpinnerTemplate {
         commands.insert((
             UiImage::new(image),
             TextureAtlas { layout, index: 0 },
-            BackgroundColor(Color::WHITE),
             UiImageSize::default(),
             Spinner,
         ));

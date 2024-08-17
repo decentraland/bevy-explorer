@@ -782,10 +782,10 @@ fn layout_scene_ui(
                                     };
 
                                     if let Some(image) = image {
+                                        let image_color = background.color.unwrap_or(Color::WHITE);
+                                        let image_color = image_color.with_alpha(image_color.alpha() * total_opacity);
                                         match texture_mode {
                                             BackgroundTextureMode::NineSlices(rect) => {
-                                                ent_cmds.remove::<BackgroundColor>();
-                                                let background_color = background.color.map(|c| {c.with_alpha(c.alpha() * total_opacity)});
                                                 ent_cmds.with_children(|c| {
                                                     c.spawn((
                                                         NodeBundle {
@@ -801,7 +801,7 @@ fn layout_scene_ui(
                                                         Ui9Slice{
                                                             image: image.image,
                                                             center_region: rect.into(),
-                                                            tint: background_color.map(BackgroundColor),
+                                                            tint: Some(image_color),
                                                         },
                                                     ));
                                                 });
@@ -874,7 +874,7 @@ fn layout_scene_ui(
                                                                     ..Default::default()
                                                                 },
                                                                 image: UiImage {
-                                                                    color: Color::srgba(1.0, 1.0, 1.0, total_opacity),
+                                                                    color: image_color,
                                                                     texture: image.image,
                                                                     flip_x: false,
                                                                     flip_y: false,

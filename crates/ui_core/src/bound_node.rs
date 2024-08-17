@@ -313,7 +313,7 @@ impl DuiTemplate for DuiBoundNode {
         let image = props.take_as::<Handle<Image>>(ctx, "bound-image")?;
         let color = props.take_as::<Color>(ctx, "color")?;
         commands.insert(BoundedNode { image, color });
-        commands.remove::<BackgroundColor>();
+        commands.remove::<BackgroundColor>().remove::<UiImage>();
         Ok(Default::default())
     }
 }

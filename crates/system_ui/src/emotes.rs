@@ -606,10 +606,6 @@ impl Rarity {
             Rarity::Unique => Color::srgb(1.0, 1.0, 0.4),
         }
     }
-
-    fn hex_color(&self) -> String {
-        self.color().to_hex_color()
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -861,12 +857,12 @@ fn update_emote_item(
                                     "emote-item",
                                     DuiProps::new()
                                         .with_prop(
-                                            "image",
+                                            "img",
                                             ipfas
                                                 .asset_server()
                                                 .load::<Image>("images/backback/empty.png"),
                                         )
-                                        .with_prop("rarity-color", entry.rarity.hex_color()),
+                                        .with_prop("rarity-color", entry.rarity.color()),
                                 )
                                 .unwrap();
                         }
@@ -882,18 +878,18 @@ fn update_emote_item(
                         .contains(settings.body_shape.base().as_str());
 
                     let (image_color, rarity_color) = if fits {
-                        (Color::WHITE.to_hex_color(), entry.rarity.hex_color())
+                        (Color::WHITE.to_hex_color(), entry.rarity.color())
                     } else {
-                        (
-                            Color::BLACK.to_hex_color(),
-                            Color::Srgba(css::DARK_GRAY).to_hex_color(),
-                        )
+                        (Color::BLACK.to_hex_color(), Color::Srgba(css::DARK_GRAY))
                     };
                     match ipfas.asset_server().load_state(handle.id()) {
                         bevy::asset::LoadState::Loading => (),
                         bevy::asset::LoadState::Loaded => {
                             debug!("loaded image");
-                            debug!("image color {}, rarity color {}", image_color, rarity_color);
+                            debug!(
+                                "image color {}, rarity color {:?}",
+                                image_color, rarity_color
+                            );
                             commands
                                 .entity(ent)
                                 .despawn_descendants()
@@ -902,7 +898,7 @@ fn update_emote_item(
                                     &dui,
                                     "emote-item",
                                     DuiProps::new()
-                                        .with_prop("image", handle.clone())
+                                        .with_prop("img", handle.clone())
                                         .with_prop("rarity-color", rarity_color)
                                         .with_prop("image-color", image_color),
                                 )
@@ -919,7 +915,7 @@ fn update_emote_item(
                                     "emote-item",
                                     DuiProps::new()
                                         .with_prop(
-                                            "image",
+                                            "img",
                                             ipfas
                                                 .asset_server()
                                                 .load::<Image>("images/backback/empty.png"),
@@ -1092,7 +1088,7 @@ fn update_selected_item(
                 &dui,
                 "emote-selection",
                 DuiProps::new()
-                    .with_prop("rarity-color", sel.rarity.hex_color())
+                    .with_prop("rarity-color", sel.rarity.color())
                     .with_prop("selection-image", data_ref.thumbnail.clone())
                     .with_prop("title", data_ref.name.clone())
                     .with_prop("body", data_ref.description.clone())
