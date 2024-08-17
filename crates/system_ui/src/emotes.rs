@@ -900,7 +900,7 @@ fn update_emote_item(
                                     DuiProps::new()
                                         .with_prop("img", handle.clone())
                                         .with_prop("rarity-color", rarity_color)
-                                        .with_prop("image-color", image_color),
+                                        .with_prop("img-color", image_color),
                                 )
                                 .unwrap();
                         }
@@ -921,7 +921,7 @@ fn update_emote_item(
                                                 .load::<Image>("images/backback/empty.png"),
                                         )
                                         .with_prop("rarity-color", rarity_color)
-                                        .with_prop("image-color", image_color),
+                                        .with_prop("img-color", image_color),
                                 )
                                 .unwrap();
                         }

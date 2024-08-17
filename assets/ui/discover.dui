@@ -12,7 +12,7 @@
                 </div>
                 <div style="flex-direction: column; width: 10%; align-items: center;">
                     <med-text text="worlds" />
-                    <div style="width: 4.2vmin; height: 2.8vmin;"><toggle ontoggle="@world-toggle" /></div>
+                    <div style="width: 6.2vmin; height: 2.8vmin;"><toggle ontoggle="@world-toggle" /></div>
                 </div>
             </div>
             <hr-thin />

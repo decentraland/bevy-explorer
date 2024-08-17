@@ -36,7 +36,7 @@ impl DuiTemplate for ToggleTemplate {
         commands.insert((
             ImageBundle {
                 style: Style {
-                    width: Val::Px(100.0),
+                    width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     ..Default::default()
                 },

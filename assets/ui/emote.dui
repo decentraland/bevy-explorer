@@ -10,7 +10,7 @@
             <div id="tools" style="width: 100%;">
                 <div style="align-items: center; flex-direction: column; width: 25%; flex-grow: 1; margin: 1vmin;">
                     <med-text style="align-self: center;" text="show only collectibles" />
-                    <div style="width: 4.2vmin; height: 2.8vmin;"><toggle ontoggle="@only-collectibles" toggled="@only-collectibles-set" /></div>
+                    <div style="width: 6.2vmin; height: 2.8vmin;"><toggle ontoggle="@only-collectibles" toggled="@only-collectibles-set" /></div>
                 </div>
                 <space />
                 <div style="align-items: center; flex-direction: column; width: 25%; flex-grow: 1; margin: 1vmin;">
@@ -75,7 +75,7 @@
 <define-template id="emote-item">
     <div style="width: 14vmin; height: 14vmin; min-width: 14vmin; min-height: 14vmin; padding: 0.2vmin; ">
         <div id="rarity" style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; width: 100%; height: 100%;" image-color="@rarity-color" image="images/backpack/item_bg.png" />
-        <div image="@img" image-color="@image-color" />
+        <div image="@img" image-color="@img-color" />
     </div>
 </define-template>
 
