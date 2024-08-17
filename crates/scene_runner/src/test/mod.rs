@@ -93,6 +93,7 @@ impl PluginGroup for TestPlugins {
             .add(AssetPlugin::default())
             .add(MeshPlugin)
             .add(GltfPlugin::default())
+            .add(AnimationPlugin)
             .add(InputPlugin)
             .add(ScenePlugin)
             .add(ConsolePlugin { add_egui: false })
