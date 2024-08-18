@@ -80,6 +80,7 @@ fn fragment(
 #endif
     // scale up for lumens
     pbr_input.material.emissive = emissive * 10.0;
+    pbr_input.material.emissive.a = min(pbr_input.material.emissive.a, 1.0);
 
     // check bounds
     let world_position = pbr_input.world_position.xyz;
