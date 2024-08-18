@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "console"), windows_subsystem = "windows")]
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 use std::{fs::File, io::Write, sync::OnceLock};
@@ -101,17 +102,13 @@ fn main() {
 
     let mut args = pico_args::Arguments::from_env();
 
-    let file_log = !args.contains("--console") && !cfg!(feature = "tracy");
+    File::create(SESSION_LOG.get().unwrap())
+        .expect("failed to create log file")
+        .write_all(format!("{}\n\n", SESSION_LOG.get().unwrap()).as_bytes())
+        .expect("failed to create log file");
 
-    if file_log {
-        File::create(SESSION_LOG.get().unwrap())
-            .expect("failed to create log file")
-            .write_all(format!("{}\n\n", SESSION_LOG.get().unwrap()).as_bytes())
-            .expect("failed to create log file");
-
-        File::create(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
-        println!("log file: {}", SESSION_LOG.get().unwrap());
-    }
+    File::create(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
+    println!("log file: {}", SESSION_LOG.get().unwrap());
 
     // warnings before log init must be stored and replayed later
     let mut infos = Vec::default();
@@ -244,43 +241,20 @@ fn main() {
                 })
                 .set(bevy::log::LogPlugin {
                     filter: "wgpu=error,naga=error,bevy_animation=error".to_string(),
-                    // custom_layer: |_app: &mut App| -> Option<Box<dyn Layer<Registry> + Sync + Send>> {
-                    //     let file_log = true;
-                    //     if file_log {
-                    //         let (non_blocking, guard) = tracing_appender::non_blocking(
-                    //             File::options()
-                    //                 .write(true)
-                    //                 .open(SESSION_LOG.get().unwrap())
-                    //                 .unwrap(),
-                    //         );
-
-                    //         let default_filter = {
-                    //             format!(
-                    //                 "{},{}",
-                    //                 bevy::log::Level::INFO,
-                    //                 "wgpu=error,naga=error,bevy_animation=error"
-                    //             )
-                    //         };
-                    //         let filter_layer =
-                    //             bevy::log::tracing_subscriber::EnvFilter::try_from_default_env()
-                    //                 .or_else(|_| {
-                    //                     bevy::log::tracing_subscriber::EnvFilter::try_new(
-                    //                         &default_filter,
-                    //                     )
-                    //                 })
-                    //                 .unwrap();
-
-                    //         let l = bevy::log::tracing_subscriber::fmt()
-                    //             .with_ansi(false)
-                    //             .with_writer(non_blocking)
-                    //             .with_env_filter(filter_layer)
-                    //             .finish();
-                    //         Box::leak(Box::new(guard));
-                    //         Some(Box::new(l))
-                    //     } else {
-                    //         None
-                    //     }
-                    // },
+                    custom_layer: |_| {
+                        let (non_blocking, guard) = tracing_appender::non_blocking(
+                            File::options()
+                                .write(true)
+                                .open(SESSION_LOG.get().unwrap())
+                                .unwrap(),
+                        );
+                        Box::leak(guard.into());
+                        Some(Box::new(
+                            bevy::log::tracing_subscriber::fmt::layer()
+                                .with_writer(non_blocking)
+                                .with_ansi(false),
+                        ))
+                    },
                     ..default()
                 })
                 .build()
@@ -384,16 +358,12 @@ fn main() {
     // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
     // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
     // bevy_mod_debugdump::print_main_schedule(&mut app);
-
-    if file_log {
-        log_panics::init();
-    }
+    #[cfg(not(feature = "console"))]
+    log_panics::init();
 
     app.run();
 
-    if file_log {
-        std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
-    }
+    std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
 }
 
 fn setup(

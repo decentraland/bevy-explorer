@@ -72,12 +72,9 @@ We try to keep these instructions up to date, but the [github ci](.github/workfl
 `--inspect <scene_hash>`
 - when the scene with the input hash is first loaded, the js runtime will pause waiting for a debugger session (such as `chrome://inspect`) to connect, and allow you to debug the scene code. requires a build with --features "inspect"
 
-`--console`
-- output logs to console instead of to file
-
 # Testing
 
-`cargo test` executes all the tests.
+`cargo test --all` executes all the tests.
 
 
 Powered by the Decentraland DAO
