@@ -9,7 +9,7 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
-use bevy_kira_audio::AudioControl;
+use bevy_kira_audio::{AudioControl, AudioInstance, AudioTween};
 use collectibles::{
     Collectible, CollectibleData, CollectibleError, CollectibleManager, Emote, EmoteUrn,
 };
@@ -469,7 +469,7 @@ struct SpawnedExtras {
     scene: Option<InstanceId>,
     scene_rotated: bool,
     audio: Option<Entity>,
-    clip: Option<AnimationNodeIndex>,
+    clip: Option<(AnimationNodeIndex, Handle<AnimationGraph>)>,
 }
 
 impl SpawnedExtras {
@@ -484,7 +484,7 @@ impl SpawnedExtras {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn play_current_emote(
     mut commands: Commands,
     mut q: Query<(Entity, &mut ActiveEmote, &AvatarAnimPlayer, &Children)>,
@@ -493,9 +493,9 @@ fn play_current_emote(
     mut gltfs: ResMut<Assets<Gltf>>,
     mut players: Query<(
         &mut AnimationPlayer,
-        &mut AnimationTransitions,
+        Option<&mut AnimationTransitions>,
         Option<&mut Clips>,
-        &Handle<AnimationGraph>,
+        Option<&Handle<AnimationGraph>>,
     )>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
     mut playing: Local<HashMap<Entity, EmoteUrn>>,
@@ -503,8 +503,12 @@ fn play_current_emote(
     mut cached_gltf_handles: Local<HashSet<Handle<Gltf>>>,
     mut spawned_extras: Local<HashMap<Entity, SpawnedExtras>>,
     mut scene_spawner: ResMut<SceneSpawner>,
-    audio: Res<bevy_kira_audio::Audio>,
-    sounds: Res<Assets<bevy_kira_audio::AudioSource>>,
+    (audio, sounds): (
+        Res<bevy_kira_audio::Audio>,
+        Res<Assets<bevy_kira_audio::AudioSource>>,
+    ),
+    mut emitters: Query<&mut bevy_kira_audio::prelude::AudioEmitter>,
+    mut audio_instances: ResMut<Assets<AudioInstance>>,
     transform_and_parent: Query<(&Transform, &Parent)>,
 ) {
     let prior_playing = std::mem::take(&mut *playing);
@@ -674,16 +678,26 @@ fn play_current_emote(
                 }
 
                 if let Ok(Some(prop_clip)) = emote.prop_anim(&gltfs) {
-                    if let Some(prop_player) = scene_spawner
+                    let clip = extras.clip.get_or_insert_with(|| {
+                        let (graph, ix) = AnimationGraph::from_clip(prop_clip);
+                        (ix, graphs.add(graph))
+                    });
+
+                    let prop_players = scene_spawner
                         .iter_instance_entities(instance)
-                        .find(|ent| players.get(*ent).is_ok())
-                    {
-                        let clip = extras.clip.get_or_insert_with(|| {
-                            let (graph, ix) = AnimationGraph::from_clip(prop_clip);
-                            commands.entity(prop_player).insert(graphs.add(graph));
-                            ix
-                        });
-                        prop_player_and_clip = Some((prop_player, *clip));
+                        .filter(|ent| {
+                            if let Ok((_, _, _, g)) = players.get(*ent) {
+                                if g.is_none() {
+                                    commands.entity(*ent).insert(clip.1.clone());
+                                }
+                                true
+                            } else {
+                                false
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    if !prop_players.is_empty() {
+                        prop_player_and_clip = Some((prop_players, clip.0))
                     }
                 }
             } else {
@@ -702,40 +716,51 @@ fn play_current_emote(
         };
 
         if let Some(sound) = sound {
-            if spawned_extras
+            let existing = spawned_extras
                 .get(&entity)
-                .and_then(|extras| extras.audio.as_ref())
-                .is_none()
-            {
-                let mut handle = audio.play(sound);
+                .and_then(|extras| extras.audio.as_ref());
+            if active_emote.restart || existing.is_none() {
+                if let Some(mut existing) = existing.and_then(|e| emitters.get_mut(*e).ok()) {
+                    for h_instance in existing.instances.drain(..) {
+                        if let Some(instance) = audio_instances.get_mut(&h_instance) {
+                            instance.stop(AudioTween::default());
+                        }
+                    }
+                    existing.instances.push(audio.play(sound).handle());
+                } else {
+                    let mut handle = audio.play(sound);
 
-                let audio_entity = commands
-                    .spawn((
-                        SpatialBundle::default(),
-                        bevy_kira_audio::prelude::AudioEmitter {
-                            instances: vec![handle.handle()],
-                        },
-                    ))
-                    .id();
+                    let audio_entity = commands
+                        .spawn((
+                            SpatialBundle::default(),
+                            bevy_kira_audio::prelude::AudioEmitter {
+                                instances: vec![handle.handle()],
+                            },
+                        ))
+                        .id();
 
-                spawned_extras
-                    .entry(entity)
-                    .or_insert_with(|| SpawnedExtras::new(active_emote.urn.clone()))
-                    .audio = Some(audio_entity);
+                    spawned_extras
+                        .entry(entity)
+                        .or_insert_with(|| SpawnedExtras::new(active_emote.urn.clone()))
+                        .audio = Some(audio_entity);
+                }
             }
         }
 
-        let play = |transitions: &mut AnimationTransitions,
+        let play = |transitions: Option<Mut<AnimationTransitions>>,
                     player: &mut AnimationPlayer,
                     clip_ix: AnimationNodeIndex,
                     active_emote: &ActiveEmote| {
             let active_animation =
                 if Some(&active_emote.urn) != prior_playing.get(&ent) || active_emote.restart {
-                    let active_animation = transitions.play(
-                        player,
-                        clip_ix,
-                        Duration::from_secs_f32(active_emote.transition_seconds),
-                    );
+                    let active_animation = match transitions {
+                        Some(mut t) => t.play(
+                            player,
+                            clip_ix,
+                            Duration::from_secs_f32(active_emote.transition_seconds),
+                        ),
+                        None => player.start(clip_ix),
+                    };
                     debug!("starting clip {:?}", clip_ix);
                     active_animation.seek_to(0.0);
                     if active_emote.repeat {
@@ -765,7 +790,7 @@ fn play_current_emote(
             }
         };
 
-        let Ok((mut player, mut transitions, clips, graph)) = players.get_mut(ent) else {
+        let Ok((mut player, transitions, clips, graph)) = players.get_mut(ent) else {
             debug!("no player");
             active_emote.finished = true;
             continue;
@@ -777,7 +802,7 @@ fn play_current_emote(
             .entry(active_emote.urn.to_string())
             .or_insert_with(|| {
                 debug!("adding clip");
-                let Some(graph) = graphs.get_mut(graph) else {
+                let Some(graph) = graph.and_then(|graph| graphs.get_mut(graph)) else {
                     return (AnimationNodeIndex::new(u32::MAX as usize), 0.0);
                 };
                 (graph.add_clip(clip, 1.0, graph.root), 0.0)
@@ -785,23 +810,21 @@ fn play_current_emote(
 
         // println!("transitions: {:?}", transitions);
         // println!("active animations: {:?}", player.playing_animations().map(|(ix, anim)| format!("[{ix:?} / {:?}", anim)).collect::<Vec<_>>());
-        play(&mut transitions, &mut player, *clip_ix, &active_emote);
-        active_emote.restart = false;
+        play(transitions, &mut player, *clip_ix, &active_emote);
 
         if !active_emote.finished && player.all_finished() {
-            // debug!("finished on seek time: {}", player.seek_time());
-            // we have to mess around to allow transitions to still apply even though the animation is finished.
-            // assuming a new animation is `play_with_transition`ed next frame, the speed and seek position
-            // here will only apply to the outgoing animation, and will allow it to be transitioned out smoothly.
-            // otherwise if we let it run to actual completion then it applies no weight when it is the outgoing transition.
             active_emote.finished = true;
         }
 
-        if let Some((prop_player_ent, clip_ix)) = prop_player_and_clip {
-            if let Ok((mut player, mut transitions, _, _)) = players.get_mut(prop_player_ent) {
-                play(&mut transitions, &mut player, clip_ix, &active_emote);
+        if let Some((prop_player_ents, clip_ix)) = prop_player_and_clip {
+            for ent in prop_player_ents {
+                if let Ok((mut player, transitions, _, _)) = players.get_mut(ent) {
+                    play(transitions, &mut player, clip_ix, &active_emote);
+                }
             }
         }
+
+        active_emote.restart = false;
 
         playing.insert(ent, active_emote.urn.clone());
     }
