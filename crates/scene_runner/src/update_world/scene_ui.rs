@@ -901,7 +901,7 @@ fn layout_scene_ui(
                             }
 
                             if let Some(ui_text) = maybe_text {
-                                if ui_text.text.len() > 0 && ui_text.font_size > 0.0 {
+                                if !ui_text.text.is_empty() && ui_text.font_size > 0.0 {
                                     let text = make_text_section(
                                         ui_text.text.as_str(),
                                         ui_text.font_size,
@@ -910,7 +910,7 @@ fn layout_scene_ui(
                                         ui_text.h_align,
                                         ui_text.wrapping,
                                     );
-    
+
                                     // with text nodes the axis sizes are unusual. 
                                     // a) if either size axis is NOT NONE, (explicit or auto), we want auto to size appropriately for the content.
                                     // b) if both axes are NONE, we want to size to zero.
@@ -918,9 +918,9 @@ fn layout_scene_ui(
                                     //    - for alignment we use align-items and justify-content
                                     // b) - we use a nested position-type: absolute node, and default the parent to auto
                                     //    - for alignment we use align-items and justify-content as above, and we also set left/right/top/bottom to 50% if required
-    
+
                                     let any_axis_specified = [ui_transform.size.width, ui_transform.size.height].iter().any(Option::is_some);
-    
+
                                     let inner_style = if any_axis_specified {
                                         Style {
                                             position_type: PositionType::Relative,
@@ -952,7 +952,7 @@ fn layout_scene_ui(
                                             ..Default::default()
                                         }
                                     };
-    
+
                                     // we need to set size for the first inner element depending 
                                     // on how the outer was specified
                                     let width = match ui_transform.size.width {
@@ -965,7 +965,7 @@ fn layout_scene_ui(
                                         Some(Val::Percent(_)) => Val::Percent(100.0),
                                         _ => Val::Auto,
                                     };
-    
+
                                     ent_cmds.with_children(|c| {
                                         c.spawn(NodeBundle {
                                             style: Style {
@@ -1003,7 +1003,7 @@ fn layout_scene_ui(
                                                 });
                                             },
                                         );
-                                    });    
+                                    });
                                 }
                             }
 

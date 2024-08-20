@@ -87,7 +87,12 @@ bevy: not implemented
 
 */
 
-use bevy::{core::FrameCount, prelude::*, text::{BreakLineOn, CosmicBuffer}, utils::hashbrown::HashMap};
+use bevy::{
+    core::FrameCount,
+    prelude::*,
+    text::{BreakLineOn, CosmicBuffer},
+    utils::hashbrown::HashMap,
+};
 use common::{
     sets::SceneLoopSets,
     util::{DespawnWith, TryPushChildrenEx},
@@ -178,7 +183,8 @@ fn update_text_shapes(
             }
         }
 
-        if text_shape.0.text.len() == 0 || text_shape.0.font_size.map_or(false, |size| size <= 0.0) {
+        if text_shape.0.text.is_empty() || text_shape.0.font_size.map_or(false, |size| size <= 0.0)
+        {
             continue;
         }
 
