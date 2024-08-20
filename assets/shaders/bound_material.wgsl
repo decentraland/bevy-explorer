@@ -65,7 +65,11 @@ fn fragment(
             emissive_texture,
             emissive_sampler,
 #ifdef STANDARD_MATERIAL_EMISSIVE_UV_B
+#ifdef VERTEX_UVS_B
             (material.uv_transform * vec3(in.uv_b, 1.0)).xy,
+#else
+            (material.uv_transform * vec3(in.uv, 1.0)).xy,
+#endif
 #else
             (material.uv_transform * vec3(in.uv, 1.0)).xy,
 #endif
