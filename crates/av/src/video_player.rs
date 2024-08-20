@@ -97,8 +97,8 @@ fn play_videos(
                 })) => {
                     debug!("resize");
                     images.get_mut(&sink.image).unwrap().resize(Extent3d {
-                        width,
-                        height,
+                        width: width.max(16),
+                        height: height.max(16),
                         depth_or_array_layers: 1,
                     });
                     sink.length = Some(length);

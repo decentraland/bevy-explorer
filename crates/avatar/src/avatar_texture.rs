@@ -366,8 +366,8 @@ fn update_booth_image(
                 .get_mut(h_image.texture.id())
                 .unwrap()
                 .resize(Extent3d {
-                    width: (node_size.x as u32).max(1),
-                    height: (node_size.y as u32).max(1),
+                    width: (node_size.x as u32).max(16),
+                    height: (node_size.y as u32).max(16),
                     ..Default::default()
                 });
         }

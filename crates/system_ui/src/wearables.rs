@@ -208,8 +208,8 @@ fn set_wearables_content(
                 PROFILE_UI_RENDERLAYER,
                 avatar.clone(),
                 Extent3d {
-                    width: 1,
-                    height: 1,
+                    width: 16,
+                    height: 16,
                     depth_or_array_layers: 1,
                 },
                 true,

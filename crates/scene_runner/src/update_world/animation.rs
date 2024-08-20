@@ -115,13 +115,23 @@ fn update_animations(
             };
 
             active_animation.set_weight(new_weight);
-            active_animation.set_speed(state.speed.unwrap_or(1.0));
+            active_animation.set_speed(new_speed);
             if state.r#loop.unwrap_or(true) {
                 active_animation.repeat();
             } else {
                 active_animation.set_repeat(RepeatAnimation::Never);
             }
+
+            // clamp seek time and reset completions
+            if duration != 0.0 {
+                let seek_time = active_animation.seek_time().clamp(0.0, duration);
+                active_animation.replay();
+                active_animation.seek_to(seek_time);
+            }
         }
+
+        let playing = player.playing_animations().collect::<Vec<_>>();
+        debug!("final: {:?}", playing);
 
         // stop anims that have been removed
         for ix in prev_anims {
