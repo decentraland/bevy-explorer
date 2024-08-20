@@ -21,14 +21,12 @@ use bevy::{
         Skybox,
     },
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    /* log::tracing_subscriber::{Layer, Registry}, */
     pbr::{CascadeShadowConfigBuilder, ShadowFilteringMethod},
     prelude::*,
     render::{
         render_resource::{TextureViewDescriptor, TextureViewDimension},
         view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
     },
-    text::TextSettings,
     window::WindowResolution,
 };
 use bevy_console::ConsoleCommand;
@@ -212,10 +210,6 @@ fn main() {
     let version = format!("{VERSION} ({version_hash})");
 
     app.insert_resource(Version(version.clone()))
-        .insert_resource(TextSettings {
-            soft_max_font_atlases: 4.try_into().unwrap(),
-            allow_dynamic_font_size: true,
-        })
         .insert_resource(final_config.audio.clone())
         .add_plugins(
             DefaultPlugins

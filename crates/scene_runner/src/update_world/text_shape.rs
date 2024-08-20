@@ -87,7 +87,7 @@ bevy: not implemented
 
 */
 
-use bevy::{core::FrameCount, prelude::*, text::BreakLineOn, utils::hashbrown::HashMap};
+use bevy::{core::FrameCount, prelude::*, text::{BreakLineOn, CosmicBuffer}, utils::hashbrown::HashMap};
 use common::{
     sets::SceneLoopSets,
     util::{DespawnWith, TryPushChildrenEx},
@@ -116,6 +116,7 @@ impl Plugin for TextShapePlugin {
             Update,
             update_text_shapes.in_set(SceneLoopSets::UpdateWorld),
         );
+        app.add_systems(Update, add_cosmic_buffers);
     }
 }
 
@@ -131,7 +132,7 @@ impl From<PbTextShape> for TextShape {
 const PIX_PER_M: f32 = 200.0;
 
 #[derive(Component)]
-pub struct PriorTextShapeUi(Entity);
+pub struct PriorTextShapeUi(Entity, PbTextShape);
 
 #[derive(Component, Clone, Copy)]
 pub struct SceneWorldUi {
@@ -167,6 +168,20 @@ fn update_text_shapes(
             continue;
         };
 
+        if let Some(prior) = maybe_prior {
+            if prior.1 == text_shape.0 {
+                continue;
+            }
+
+            if let Some(commands) = commands.get_entity(prior.0) {
+                commands.despawn_recursive();
+            }
+        }
+
+        if text_shape.0.text.len() == 0 || text_shape.0.font_size.map_or(false, |size| size <= 0.0) {
+            continue;
+        }
+
         let world_ui = world_ui.unwrap_or_else(|| {
             new_world_uis.entry(scene_ent.root).or_insert_with(|| {
                 let view = spawn_world_ui_view(&mut commands, images);
@@ -194,12 +209,6 @@ fn update_text_shapes(
                 world_ui
             })
         });
-
-        if let Some(prior) = maybe_prior {
-            if let Some(commands) = commands.get_entity(prior.0) {
-                commands.despawn_recursive();
-            }
-        }
 
         let text_align = text_shape
             .0
@@ -233,7 +242,7 @@ fn update_text_shapes(
 
         let add_y_pix = (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * PIX_PER_M;
 
-        let font_size = text_shape.0.font_size.unwrap_or(10.0) * PIX_PER_M * 0.1;
+        let font_size = text_shape.0.font_size.unwrap_or(10.0) * PIX_PER_M * 0.077;
 
         let wrapping = text_shape.0.text_wrapping() && !text_shape.0.font_auto_size();
 
@@ -297,6 +306,7 @@ fn update_text_shapes(
                                 JustifyText::Left => AlignSelf::FlexStart,
                                 JustifyText::Center => AlignSelf::Center,
                                 JustifyText::Right => AlignSelf::FlexEnd,
+                                JustifyText::Justified => AlignSelf::Center,
                             },
                             ..Default::default()
                         },
@@ -327,7 +337,7 @@ fn update_text_shapes(
             .try_push_children(&[ui_node]);
 
         commands.entity(ent).try_insert((
-            PriorTextShapeUi(ui_node),
+            PriorTextShapeUi(ui_node, text_shape.0.clone()),
             WorldUi {
                 dbg: format!("TextShape `{}`", text_shape.0.text),
                 pix_per_m: PIX_PER_M,
@@ -391,7 +401,7 @@ pub fn make_text_section(
                 &text[section_start..],
                 TextStyle {
                     font: user_font(font_name, weight),
-                    font_size,
+                    font_size: font_size * 0.95,
                     color,
                 },
             ));
@@ -402,7 +412,7 @@ pub fn make_text_section(
             &text[section_start..section_end],
             TextStyle {
                 font: user_font(font_name, weight),
-                font_size,
+                font_size: font_size * 0.95,
                 color,
             },
         ));
@@ -451,5 +461,17 @@ pub fn make_text_section(
             BreakLineOn::NoWrap
         },
         justify,
+    }
+}
+
+// workaround for using bevy cosmic buffer patch without lib support
+fn add_cosmic_buffers(
+    mut commands: Commands,
+    q: Query<Entity, (With<Text>, Without<CosmicBuffer>)>,
+) {
+    for e in q.iter() {
+        if let Some(mut commands) = commands.get_entity(e) {
+            commands.try_insert(CosmicBuffer::default());
+        }
     }
 }
