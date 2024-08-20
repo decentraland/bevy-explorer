@@ -956,9 +956,9 @@ fn update_wearable_item(
                             .contains(settings.body_shape.base().as_str());
 
                     let (image_color, rarity_color) = if fits {
-                        (Color::WHITE.to_hex_color(), entry.rarity.color())
+                        (Color::WHITE, entry.rarity.color())
                     } else {
-                        (Color::BLACK.to_hex_color(), Color::Srgba(css::DARK_GRAY))
+                        (Color::BLACK, Color::Srgba(css::DARK_GRAY))
                     };
                     match ipfas.asset_server().load_state(handle.id()) {
                         bevy::asset::LoadState::Loading => (),
