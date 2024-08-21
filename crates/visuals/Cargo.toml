@@ -10,7 +10,7 @@ common = { workspace = true }
 console = { workspace = true }
 bevy = { workspace = true }
 
-bevy_atmosphere = { git = "https://github.com/robtfm/bevy_atmosphere", branch = "0.9.0-throttle-safe" }
+bevy_atmosphere = { git = "https://github.com/robtfm/bevy_atmosphere", branch = "0.14-dcl" }
 bevy_console = { workspace = true }
 
 clap = { workspace = true }

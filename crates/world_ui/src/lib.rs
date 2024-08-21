@@ -60,17 +60,21 @@ pub fn spawn_world_ui_view(commands: &mut Commands, images: &mut Assets<Image>) 
     let image = images.add(image);
 
     let camera = commands
-        .spawn((Camera2dBundle {
-            camera: Camera {
-                target: RenderTarget::Image(image.clone()),
-                order: -1,
-                is_active: true,
-                clear_color: bevy::render::camera::ClearColorConfig::Custom(Color::NONE),
+        .spawn((
+            image.clone(),
+            Camera2dBundle {
+                camera: Camera {
+                    target: RenderTarget::Image(image.clone()),
+                    order: -1,
+                    is_active: true,
+                    clear_color: bevy::render::camera::ClearColorConfig::Custom(Color::NONE),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-            ..Default::default()
-        },))
+        ))
         .id();
+    debug!("spawn");
 
     camera
 }
@@ -85,12 +89,12 @@ pub fn add_worldui_materials(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TextShapeMaterial>>,
     config: Res<AppConfig>,
-    views: Query<&Camera>,
+    targets: Query<&Handle<Image>>,
     mats: Query<&Handle<TextShapeMaterial>>,
     frame: Res<FrameCount>,
 ) {
     for (ent, wui, maybe_children) in q.iter() {
-        let Ok(view) = views.get(wui.view) else {
+        let Ok(target) = targets.get(wui.view) else {
             warn!("world ui view not found");
             continue;
         };
@@ -106,8 +110,8 @@ pub fn add_worldui_materials(
         let material = materials.add(TextShapeMaterial {
             base: SceneMaterial {
                 base: StandardMaterial {
-                    base_color: Color::WHITE * 2.0,
-                    base_color_texture: Some(view.target.as_image().unwrap().clone()),
+                    base_color: Color::srgb(2.0, 2.0, 2.0),
+                    base_color_texture: Some(target.clone()),
                     unlit: true,
                     double_sided: true,
                     cull_mode: None,
@@ -121,10 +125,9 @@ pub fn add_worldui_materials(
             },
         });
 
-        commands.entity(wui.ui_node).try_insert(WorldUiMaterialRef(
-            material.id(),
-            view.target.as_image().unwrap().id(),
-        ));
+        commands
+            .entity(wui.ui_node)
+            .try_insert(WorldUiMaterialRef(material.id(), target.id()));
 
         let quad = commands
             .spawn((

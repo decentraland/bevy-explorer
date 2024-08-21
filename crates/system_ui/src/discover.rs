@@ -250,7 +250,7 @@ fn set_discover_content(
                         &dui,
                         "discover-category-button",
                         DuiProps::new().with_prop("text", cat.text()).with_prop(
-                            "image",
+                            "img",
                             format!("images/discover/{}.png", cat.text().to_lowercase()),
                         ),
                     )
@@ -440,7 +440,7 @@ fn update_page(
                     &dui,
                     "discover-page",
                     DuiProps::new()
-                        .with_prop("image", h_image.clone())
+                        .with_prop("img", h_image.clone())
                         .with_prop("label", item.title.clone())
                         .with_prop("author", item.contact_name.clone().unwrap_or_default())
                         .with_prop("views", format!("{}", item.user_visits.unwrap_or_default()))
@@ -528,7 +528,7 @@ pub fn spawn_discover_popup(
 
     let props = DuiProps::new()
         .with_prop("close", On::<Click>::new(DuiButton::close_dialog))
-        .with_prop("image", h_image.clone())
+        .with_prop("img", h_image.clone())
         .with_prop("title", item.title.clone())
         .with_prop("author", item.contact_name.clone().unwrap_or_default())
         .with_prop(

@@ -172,10 +172,7 @@ pub fn update_text_entry_components(
                         }
                     }
                     if maybe_focus.is_some() && !response.has_focus() && !defocus && enabled {
-                        debug!(
-                            "Focus -> tb focus ({:?} has focus now)",
-                            response.ctx.memory(|mem| mem.focus())
-                        );
+                        debug!("Focus -> tb focus");
                         response.request_focus();
                     }
                     if maybe_focus.is_none() {

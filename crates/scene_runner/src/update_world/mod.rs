@@ -152,7 +152,7 @@ impl Plugin for SceneOutputPlugin {
         app.add_plugins(MeshColliderPlugin);
 
         if !app
-            .world
+            .world()
             .get_resource::<NoGltf>()
             .map_or(false, |no_gltf| no_gltf.0)
         {
@@ -214,7 +214,7 @@ impl AddCrdtInterfaceExt for App {
         position: ComponentPosition,
     ) {
         // store a writer
-        let existing = self.world.resource_mut::<CrdtExtractors>().0.insert(
+        let existing = self.world_mut().resource_mut::<CrdtExtractors>().0.insert(
             id,
             Box::new(CrdtLWWInterface::<D> {
                 position,
@@ -234,7 +234,7 @@ impl AddCrdtInterfaceExt for App {
     {
         self.add_crdt_lww_interface::<D>(id, position);
         // add a system to process the update
-        self.world
+        self.world_mut()
             .resource_mut::<SceneLoopSchedule>()
             .schedule
             .add_systems(process_crdt_lww_updates::<D, C>.in_set(SceneLoopSets::UpdateWorld));
@@ -254,7 +254,7 @@ impl AddCrdtInterfaceExt for App {
         position: ComponentPosition,
     ) {
         // store a writer
-        let existing = self.world.resource_mut::<CrdtExtractors>().0.insert(
+        let existing = self.world_mut().resource_mut::<CrdtExtractors>().0.insert(
             id,
             Box::new(CrdtGOInterface::<D> {
                 position,
@@ -264,7 +264,7 @@ impl AddCrdtInterfaceExt for App {
 
         assert!(existing.is_none(), "duplicate registration for {id:?}");
 
-        self.world
+        self.world_mut()
             .resource_mut::<SceneLoopSchedule>()
             .schedule
             .add_systems(process_crdt_go_updates::<D, C>.in_set(SceneLoopSets::UpdateWorld));

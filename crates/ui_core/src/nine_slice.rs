@@ -20,11 +20,11 @@ pub struct Ui9Slice {
     /// Val::Percent uses a percent of the image size
     /// Val::Auto and Val::Undefined are treated as zero.
     pub center_region: UiRect,
-    pub tint: Option<BackgroundColor>,
+    pub tint: Option<Color>,
 }
 
 impl Ui9Slice {
-    pub fn new(image: Handle<Image>, center_region: UiRect, tint: Option<BackgroundColor>) -> Self {
+    pub fn new(image: Handle<Image>, center_region: UiRect, tint: Option<Color>) -> Self {
         Self {
             image,
             center_region,
@@ -102,18 +102,16 @@ fn update_slices(
                 ),
                 surface: node.unrounded_size().extend(0.0).extend(0.0),
             },
-            color: slice
-                .tint
-                .map(|bg| bg.0)
-                .unwrap_or(Color::WHITE)
-                .as_linear_rgba_f32()
-                .into(),
+            color: slice.tint.unwrap_or(Color::WHITE).to_linear().to_vec4(),
         };
 
         if let Some(mat) = maybe_material.and_then(|h| mats.get_mut(h)) {
             *mat = new_mat;
         } else {
-            commands.entity(ent).try_insert(mats.add(new_mat));
+            commands
+                .entity(ent)
+                .try_insert(mats.add(new_mat))
+                .remove::<BackgroundColor>();
         }
     }
 }
@@ -182,16 +180,11 @@ impl DuiTemplate for Ui9SliceTemplate {
             .unwrap()
             .rect()
             .ok_or(anyhow!("failed to parse slice-border value `{border}`"))?;
-        let tint: Option<BackgroundColor> = if let Some(color) = properties.get("color") {
-            Some(
-                color
-                    .color()
-                    .ok_or(anyhow!(
-                        "failed to parse slice-color value `{}`",
-                        tint.unwrap()
-                    ))?
-                    .into(),
-            )
+        let tint: Option<Color> = if let Some(color) = properties.get("color") {
+            Some(color.color().ok_or(anyhow!(
+                "failed to parse slice-color value `{}`",
+                tint.unwrap()
+            ))?)
         } else {
             None
         };

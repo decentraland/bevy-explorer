@@ -960,7 +960,7 @@ fn show_nft_dialog(
                             "title",
                             nft.name.clone().unwrap_or("Unnamed Nft".to_owned()),
                         )
-                        .with_prop("image", h_image)
+                        .with_prop("img", h_image)
                         .with_prop("creator", creator)
                         .with_prop("description", description)
                         .with_prop(
@@ -976,7 +976,7 @@ fn show_nft_dialog(
                 .unwrap();
 
             nft_spawn.response.clone().send(Ok(()));
-        } else if asset_server.load_state(nft_spawn.h_nft.id()) == LoadState::Failed {
+        } else if let LoadState::Failed(_) = asset_server.load_state(nft_spawn.h_nft.id()) {
             commands.entity(ent).remove::<NftDialogSpawn>();
             commands
                 .spawn_template(

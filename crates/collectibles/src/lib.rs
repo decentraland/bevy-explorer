@@ -198,7 +198,7 @@ impl<'w, 's, T: CollectibleType> CollectibleManager<'w, 's, T> {
                         Some(collectible) => Ok(collectible),
                         None => Err(CollectibleError::NoRepresentation),
                     }
-                } else if let bevy::asset::LoadState::Failed =
+                } else if let bevy::asset::LoadState::Failed(_) =
                     self.ipfas.asset_server().load_state(handle.id())
                 {
                     Err(CollectibleError::Failed)
@@ -252,7 +252,7 @@ impl<'w, 's, T: CollectibleType> CollectibleManager<'w, 's, T> {
 
                 if let Some(reps) = self.datas.get(handle.id()) {
                     Ok(reps)
-                } else if let bevy::asset::LoadState::Failed =
+                } else if let bevy::asset::LoadState::Failed(_) =
                     self.ipfas.asset_server().load_state(handle.id())
                 {
                     Err(CollectibleError::Failed)

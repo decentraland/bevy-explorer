@@ -20,6 +20,7 @@ use bevy::{
     asset::{DependencyLoadState, LoadState, RecursiveDependencyLoadState},
     ecs::schedule::SystemConfigs,
     prelude::*,
+    state::state::FreelyMutableState,
     utils::{HashMap, HashSet},
 };
 use bevy_dui::{DuiPlugin, DuiRegistry};
@@ -182,7 +183,7 @@ fn setup(
                 .map(|i| TextStyle {
                     font: asset_server.load("fonts/NotoSans-Bold.ttf"),
                     font_size: 25.0,
-                    color: Color::rgba(1.0, 1.0, 1.0, i as f32 / 9.0),
+                    color: Color::srgba(1.0, 1.0, 1.0, i as f32 / 9.0),
                 })
                 .collect::<Vec<_>>()
                 .try_into()
@@ -200,13 +201,13 @@ pub enum State {
 
 // state tracker, allows running several systems until completed, then switching to a new state
 #[derive(Resource, Default)]
-pub struct StateTracker<S: States> {
+pub struct StateTracker<S: States + FreelyMutableState> {
     assets: HashSet<UntypedHandle>,
     systems: HashMap<&'static str, bool>,
     _p: PhantomData<fn() -> S>,
 }
 
-impl<S: States> StateTracker<S> {
+impl<S: States + FreelyMutableState> StateTracker<S> {
     pub fn load_asset<A: Asset>(&mut self, h: Handle<A>) {
         self.assets.insert(h.untyped());
     }

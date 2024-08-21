@@ -142,7 +142,7 @@ fn update_comboboxen(
 
                     egui::ComboBox::from_id_source(id)
                         .selected_text(selected_text)
-                        .wrap(false)
+                        .wrap_mode(egui::TextWrapMode::Truncate)
                         .width(size.x)
                         .show_ui(ui, |ui| {
                             // split borrow

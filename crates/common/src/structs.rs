@@ -1,9 +1,6 @@
 use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr, sync::Arc};
 
-use bevy::{
-    prelude::*,
-    utils::{uuid, HashMap},
-};
+use bevy::{prelude::*, utils::HashMap};
 use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};

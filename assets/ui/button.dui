@@ -67,7 +67,7 @@
             blend-size="0.125vmin"
             border-size="0.75vmin"
             border-color="#9c73af"
-            bound-image="@image"
+            bound-image="@img"
             styles="active: #b2a1bf; inactive: #7f569e; hover: #d2c1df; disabled: #555555;"
         >
         </bounds>

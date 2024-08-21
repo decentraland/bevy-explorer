@@ -76,7 +76,7 @@ impl AppSetting for ShadowSetting {
                 *filter_method = ShadowFilteringMethod::Hardware2x2;
             }
             ShadowSetting::High => {
-                *filter_method = ShadowFilteringMethod::Castano13;
+                *filter_method = ShadowFilteringMethod::Gaussian;
             }
         }
 

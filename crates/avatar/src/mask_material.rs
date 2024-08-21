@@ -26,7 +26,7 @@ impl Material for MaskMaterial {
 #[derive(AsBindGroup, Asset, Debug, Clone, TypePath)]
 pub struct MaskMaterial {
     #[uniform(0)]
-    pub color: Color,
+    pub color: Vec4,
     #[texture(1)]
     #[sampler(2)]
     pub base_texture: Handle<Image>,

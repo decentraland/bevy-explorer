@@ -9,7 +9,7 @@ use bevy_console::ConsoleCommand;
 use rapier3d_f64::{
     control::KinematicCharacterController,
     parry::{
-        query::{NonlinearRigidMotion, TOIStatus},
+        query::{NonlinearRigidMotion, ShapeCastHit, ShapeCastOptions, ShapeCastStatus},
         shape::{Ball, Capsule},
     },
     prelude::*,
@@ -127,7 +127,7 @@ impl Plugin for MeshColliderPlugin {
 
         // collider deletion has to occur within the scene loop, as the DeletedSceneEntities resource is only
         // valid within the loop
-        app.world
+        app.world_mut()
             .resource_mut::<SceneLoopSchedule>()
             .schedule
             .add_systems(remove_deleted_colliders.in_set(SceneLoopSets::UpdateWorld));
@@ -259,7 +259,7 @@ impl SceneColliderData {
         id: &ColliderId,
         transform: &GlobalTransform,
         cast_with: Option<&ColliderSet>,
-    ) -> (Option<Transform>, Option<TOI>) {
+    ) -> (Option<Transform>, Option<ShapeCastHit>) {
         if let Some(handle) = self.get_collider_handle(id) {
             if let Some(collider) = self.collider_set.get_mut(handle) {
                 self.query_state_valid_at = None;
@@ -284,7 +284,7 @@ impl SceneColliderData {
                 } else if let Some(colliders) = cast_with {
                     // if scale doesn't change then just shapecast to hit colliders
                     let mut pipeline = QueryPipeline::new();
-                    pipeline.update(&self.dummy_rapier_structs.1, colliders);
+                    pipeline.update(colliders);
                     let euler_axes =
                         (req_rotation * init_rotation.inverse()).to_euler(EulerRot::XYZ);
                     cast_result = pipeline
@@ -343,7 +343,7 @@ impl SceneColliderData {
             self.query_state
                 .as_mut()
                 .unwrap()
-                .update(&self.dummy_rapier_structs.1, &self.collider_set);
+                .update(&self.collider_set);
             self.query_state_valid_at = Some(scene_frame);
         }
     }
@@ -356,7 +356,7 @@ impl SceneColliderData {
         self.query_state
             .as_mut()
             .unwrap()
-            .update(&self.dummy_rapier_structs.1, &self.collider_set);
+            .update(&self.collider_set);
     }
 
     pub fn cast_ray_nearest(
@@ -411,7 +411,7 @@ impl SceneColliderData {
             )
             .map(|(handle, intersection)| RaycastResult {
                 id: self.get_id(handle).unwrap().clone(),
-                toi: intersection.toi as f32,
+                toi: intersection.time_of_impact as f32,
                 normal: DVec3::from(intersection.normal).as_vec3(),
             })
     }
@@ -426,12 +426,21 @@ impl SceneColliderData {
                 .into(),
             &(-DVec3::Y).into(),
             &Ball::new((PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP) as f64),
-            10.0,
-            true,
+            ShapeCastOptions {
+                max_time_of_impact: 10.0,
+                target_distance: 0.0,
+                stop_at_penetration: true,
+                compute_impact_geometry_on_penetration: true,
+            },
             QueryFilter::default().predicate(&|h, _| self.collider_enabled(h)),
         );
 
-        contact.map(|(handle, toi)| (toi.toi as f32, self.get_id(handle).unwrap().clone()))
+        contact.map(|(handle, toi)| {
+            (
+                toi.time_of_impact as f32,
+                self.get_id(handle).unwrap().clone(),
+            )
+        })
     }
 
     pub fn get_collider_entity(&self, id: &ColliderId) -> Option<Entity> {
@@ -539,7 +548,7 @@ impl SceneColliderData {
             |handle, intersection| {
                 results.push(RaycastResult {
                     id: self.get_id(handle).unwrap().clone(),
-                    toi: intersection.toi as f32,
+                    toi: intersection.time_of_impact as f32,
                     normal: DVec3::from(intersection.normal).as_vec3(),
                 });
                 true
@@ -846,14 +855,14 @@ fn update_collider_transforms(
     // not sure ... that would be better for colliders vs other stuff than player
     // but currently it uses pretty intimate knowledge of scene collider data
     let depenetration_vector =
-        |scene_data: &mut SceneColliderData, translation: Vec3, toi: &TOI| -> Vec3 {
+        |scene_data: &mut SceneColliderData, translation: Vec3, toi: &ShapeCastHit| -> Vec3 {
             // just use the bottom sphere of the player collider
             let base_of_sphere = translation + PLAYER_COLLIDER_RADIUS * Vec3::Y;
             let closest_point = match toi.status {
-                TOIStatus::OutOfIterations | TOIStatus::Converged => {
+                ShapeCastStatus::OutOfIterations | ShapeCastStatus::Converged => {
                     DVec3::from(toi.witness1).as_vec3()
                 }
-                TOIStatus::Failed | TOIStatus::Penetrating => {
+                ShapeCastStatus::Failed | ShapeCastStatus::PenetratingOrWithinTargetDist => {
                     scene_data.force_update();
                     match scene_data.query_state.as_ref().unwrap().project_point(
                         &scene_data.dummy_rapier_structs.1,
@@ -901,7 +910,7 @@ fn update_collider_transforms(
         if let Some(original_transform) = maybe_original_transform {
             if let Some(toi) = maybe_toi {
                 match toi.status {
-                    TOIStatus::Penetrating => {
+                    ShapeCastStatus::PenetratingOrWithinTargetDist => {
                         // penetrating collider - use closest point to infer fix/depen direction
                         debug!(
                             "don't skip pen, player: {:?} [moving {:?}]",
@@ -918,7 +927,7 @@ fn update_collider_transforms(
                     _ => {
                         // get contact point at toi
                         // use 0.9 cap to avoid clipping
-                        let ratio = toi.toi.min(0.9) as f32;
+                        let ratio = toi.time_of_impact.min(0.9) as f32;
                         let relative_hit_point = DVec3::from(toi.witness2).as_vec3();
                         let (new_scale, new_rotation, new_translation) =
                             global_transform.to_scale_rotation_translation();
@@ -950,7 +959,7 @@ fn update_collider_transforms(
                         if req_translation.length() > 1.0 {
                             // disregard too large deltas as the collider probably just warped
                             // TODO we could check this before updating based on translation?
-                            warn!("disregarding push due to large delta: {}, toi: {}, normal dot1: {}, 2: {}", req_translation, toi.toi, dot_w_normal1, dot_w_normal2);
+                            warn!("disregarding push due to large delta: {}, toi: {}, normal dot1: {}, 2: {}", req_translation, toi.time_of_impact, dot_w_normal1, dot_w_normal2);
                             continue;
                         }
                         // add extra 0.01 due to character controller offset / collider size difference
@@ -1064,7 +1073,7 @@ fn render_debug_colliders(
 
     if debug_material.is_none() {
         *debug_material = Some(materials.add(StandardMaterial {
-            base_color: Color::rgba(1.0, 0.0, 0.0, 0.1),
+            base_color: Color::srgba(1.0, 0.0, 0.0, 0.1),
             alpha_mode: AlphaMode::Blend,
             unlit: true,
             depth_bias: 1000.0,

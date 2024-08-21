@@ -157,7 +157,7 @@ fn load_nft(
 ) {
     for (ent, nft) in q.iter() {
         let Some(nft) = nfts.get(nft.0.id()) else {
-            if asset_server.load_state(nft.0.id()) == LoadState::Failed {
+            if let LoadState::Failed(_) = asset_server.load_state(nft.0.id()) {
                 debug!("nft failed");
                 commands.entity(ent).remove::<NftLoading>();
             } else {

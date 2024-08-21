@@ -3,11 +3,11 @@ pub mod dynamics;
 pub mod player_input;
 
 use bevy::{
-    animation::animation_player, ecs::query::Has, prelude::*, render::camera::CameraUpdateSystem,
-    transform::TransformSystem,
+    ecs::query::Has, prelude::*, render::camera::CameraUpdateSystem, transform::TransformSystem,
 };
 
 use common::{
+    anim_last_system,
     sets::SceneSets,
     structs::{PrimaryCamera, PrimaryUser},
 };
@@ -52,13 +52,13 @@ impl Plugin for UserInputPlugin {
             PostUpdate,
             (
                 update_user_position
-                    .after(animation_player)
+                    .after(anim_last_system!())
                     .after(GltfLinkSet)
                     .before(parent_position_sync::<AvatarAttachStage>)
                     .before(parent_position_sync::<SceneProxyStage>)
                     .before(TransformSystem::TransformPropagate),
                 update_camera_position
-                    .after(animation_player)
+                    .after(anim_last_system!())
                     .after(GltfLinkSet)
                     .after(update_user_position)
                     .after(parent_position_sync::<AvatarAttachStage>)

@@ -1,5 +1,6 @@
 use avatar::animate::{EmoteBroadcast, EmoteList};
 use bevy::{
+    color::palettes::css,
     prelude::*,
     text::BreakLineOn,
     ui::FocusPolicy,
@@ -150,7 +151,9 @@ pub enum EmoteUiEvent {
 }
 
 fn update_dui_props(mut dui: ResMut<DuiRegistry>, window: Query<&Window, With<PrimaryWindow>>) {
-    let window = window.single();
+    let Ok(window) = window.get_single() else {
+        return;
+    };
     let aspect_size = window.width().min(window.height());
     dui.set_default_prop("font-large", format!("{}px", (aspect_size * 0.05) as u32));
     dui.set_default_prop("font-med", format!("{}px", (aspect_size * 0.025) as u32));
@@ -188,7 +191,9 @@ fn apply_layout(
     window: Query<&Window, With<PrimaryWindow>>,
 ) {
     let resized = resized.read().last().is_some();
-    let window = window.single();
+    let Ok(window) = window.get_single() else {
+        return;
+    };
     let viewport = Vec2::new(window.width(), window.height());
     let viewport_ratio = viewport.x / viewport.y;
 
@@ -338,9 +343,9 @@ fn show_emote_ui(
                 Interaction::default(),
                 FocusPolicy::Block,
                 On::<HoverEnter>::new(
-                    move |mut color: Query<&mut BackgroundColor>, mut text: Query<&mut Text>| {
-                        if let Ok(mut bg) = color.get_mut(button) {
-                            bg.0 = Color::rgb(1.0, 1.0, 1.50);
+                    move |mut color: Query<&mut UiImage>, mut text: Query<&mut Text>| {
+                        if let Ok(mut img) = color.get_mut(button) {
+                            img.color = Color::srgb(1.0, 1.0, 1.50);
                         }
                         if let Ok(mut text) = text.get_mut(output) {
                             text.sections[0].value.clone_from(&name);
@@ -349,9 +354,9 @@ fn show_emote_ui(
                     },
                 ),
                 On::<HoverExit>::new(
-                    move |mut color: Query<&mut BackgroundColor>, mut text: Query<&mut Text>| {
-                        if let Ok(mut bg) = color.get_mut(button) {
-                            bg.0 = Color::rgb(0.67, 0.67, 0.87);
+                    move |mut color: Query<&mut UiImage>, mut text: Query<&mut Text>| {
+                        if let Ok(mut img) = color.get_mut(button) {
+                            img.color = Color::srgb(0.67, 0.67, 0.87);
                         }
                         if let Ok(mut text) = text.get_mut(output) {
                             if text.sections[0].value == name2 {
@@ -369,7 +374,7 @@ fn show_emote_ui(
                 .despawn_recursive();
             commands
                 .entity(buttons.named(format!("emote_{unused_slot}").as_str()))
-                .modify_component(|bg: &mut BackgroundColor| bg.0 = Color::GRAY);
+                .modify_component(|img: &mut UiImage| img.color = css::GRAY.into());
         }
     }
 }

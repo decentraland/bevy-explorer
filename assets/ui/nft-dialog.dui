@@ -8,7 +8,7 @@
                     border-size="0.5vmin"
                     border-color="#000000"
                 >
-                    <bounded style="width: 100%;" bound-image="@image" />
+                    <bounded style="width: 100%;" bound-image="@img" />
                 </bounds>
             </div>
             <div style="flex-direction: column; max-width: 30vw; margin: 2vmin;">

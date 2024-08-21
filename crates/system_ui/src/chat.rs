@@ -1,4 +1,4 @@
-use bevy::{core::FrameCount, prelude::*};
+use bevy::{color::palettes::css, core::FrameCount, prelude::*};
 
 use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine};
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
@@ -186,7 +186,7 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
 
     // commands
     //     .entity(components.named("chat-output"))
-    //     .insert(BackgroundColor(Color::rgba(0.0, 0.0, 0.25, 0.2)));
+    //     .insert(BackgroundColor(Color::srgba(0.0, 0.0, 0.25, 0.2)));
 
     commands
         .entity(components.named("chat-output-inner"))
@@ -284,9 +284,9 @@ fn make_chat(
                             font: asset_server.load("fonts/NotoSans-Bold.ttf"),
                             font_size: 15.0,
                             color: if msg.sender.is_some() {
-                                Color::YELLOW
+                                css::YELLOW.into()
                             } else {
-                                Color::GRAY
+                                css::GRAY.into()
                             },
                         },
                     ),
@@ -296,9 +296,9 @@ fn make_chat(
                             font: asset_server.load("fonts/NotoSans-Bold.ttf"),
                             font_size: 15.0,
                             color: if msg.sender.is_some() {
-                                Color::WHITE
+                                css::WHITE.into()
                             } else {
-                                Color::GRAY
+                                css::GRAY.into()
                             },
                         },
                     ),
@@ -340,8 +340,8 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
                         font_size: 15.0,
                         color: match level {
                             SceneLogLevel::Log => Color::WHITE,
-                            SceneLogLevel::SceneError => Color::YELLOW,
-                            SceneLogLevel::SystemError => Color::BISQUE,
+                            SceneLogLevel::SceneError => css::YELLOW.into(),
+                            SceneLogLevel::SystemError => css::BISQUE.into(),
                         },
                     },
                 )]),

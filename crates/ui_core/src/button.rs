@@ -128,7 +128,7 @@ impl DuiTemplate for DuiButtonTemplate {
         if let Some(children) = props.take::<Entity>("children")? {
             data.children = Some(children);
         }
-        if let Some(image) = props.take_as::<Handle<Image>>(ctx, "image")? {
+        if let Some(image) = props.take_as::<Handle<Image>>(ctx, "img")? {
             data.image = Some(image);
 
             data.image_width = props.take_as::<Val>(ctx, "image-width")?;
@@ -142,7 +142,7 @@ impl DuiTemplate for DuiButtonTemplate {
                 DuiProps::new().with_prop("label", format!("<b>{label}</b>")),
             ),
             (None, Some(img)) => {
-                let mut props = DuiProps::new().with_prop("image", img);
+                let mut props = DuiProps::new().with_prop("img", img);
                 if let Some(image_width) = data.image_width {
                     props = props.with_prop("width", image_width.style_string());
                 }
@@ -193,7 +193,7 @@ impl DuiTemplate for DuiButtonTemplate {
                     .entity(*label)
                     .modify_component(|text: &mut Text| {
                         for section in text.sections.iter_mut() {
-                            section.style.color = Color::rgb(0.5, 0.5, 0.5);
+                            section.style.color = Color::srgb(0.5, 0.5, 0.5);
                         }
                     });
             }

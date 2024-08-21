@@ -1,8 +1,4 @@
-use bevy::{
-    core::FrameCount,
-    prelude::*,
-    utils::{FloatOrd, HashSet},
-};
+use bevy::{core::FrameCount, math::FloatOrd, prelude::*, utils::HashSet};
 use bevy_console::ConsoleCommand;
 use console::DoAddConsoleCommand;
 

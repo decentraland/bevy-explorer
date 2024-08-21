@@ -6,6 +6,7 @@ use avatar::{
     AvatarShape,
 };
 use bevy::{
+    color::palettes::css,
     prelude::*,
     render::render_resource::Extent3d,
     tasks::{IoTaskPool, Task},
@@ -207,8 +208,8 @@ fn set_wearables_content(
                 PROFILE_UI_RENDERLAYER,
                 avatar.clone(),
                 Extent3d {
-                    width: 1,
-                    height: 1,
+                    width: 16,
+                    height: 16,
                     depth_or_array_layers: 1,
                 },
                 true,
@@ -326,12 +327,12 @@ fn set_wearables_content(
                 DuiButton {
                     styles: Some(InteractStyles {
                         active: Some(InteractStyle {
-                            background: Some(Color::ORANGE),
+                            background: Some(css::ORANGE.into()),
                             border: Some(Color::BLACK),
                             ..Default::default()
                         }),
                         inactive: Some(InteractStyle {
-                            background: Some(Color::rgba(0.0, 0.0, 0.0, 0.0)),
+                            background: Some(Color::srgba(0.0, 0.0, 0.0, 0.0)),
                             border: Some(Color::NONE),
                             ..Default::default()
                         }),
@@ -643,7 +644,7 @@ pub trait ColorHexEx {
 
 impl ColorHexEx for Color {
     fn to_hex_color(&self) -> String {
-        let color = self.as_rgba_u8();
+        let color = self.to_linear().to_u8_array();
         format!(
             "#{:02x}{:02x}{:02x}{:02x}",
             color[0], color[1], color[2], color[3]
@@ -654,19 +655,15 @@ impl ColorHexEx for Color {
 impl Rarity {
     pub fn color(&self) -> Color {
         match self {
-            Rarity::Free => Color::rgb(0.9, 0.9, 0.9),
-            Rarity::Common => Color::rgb(0.7, 0.7, 0.7),
-            Rarity::Uncommon => Color::rgb(1.0, 0.8, 0.4),
-            Rarity::Rare => Color::rgb(0.6, 1.0, 0.6),
-            Rarity::Epic => Color::rgb(0.6, 0.6, 1.0),
-            Rarity::Legendary => Color::rgb(0.8, 0.4, 0.8),
-            Rarity::Mythic => Color::rgb(1.0, 0.6, 1.0),
-            Rarity::Unique => Color::rgb(1.0, 1.0, 0.4),
+            Rarity::Free => Color::srgb(0.9, 0.9, 0.9),
+            Rarity::Common => Color::srgb(0.7, 0.7, 0.7),
+            Rarity::Uncommon => Color::srgb(1.0, 0.8, 0.4),
+            Rarity::Rare => Color::srgb(0.6, 1.0, 0.6),
+            Rarity::Epic => Color::srgb(0.6, 0.6, 1.0),
+            Rarity::Legendary => Color::srgb(0.8, 0.4, 0.8),
+            Rarity::Mythic => Color::srgb(1.0, 0.6, 1.0),
+            Rarity::Unique => Color::srgb(1.0, 1.0, 0.4),
         }
-    }
-
-    fn hex_color(&self) -> String {
-        self.color().to_hex_color()
     }
 }
 
@@ -796,14 +793,14 @@ fn update_wearables_list(
                 initial = Some(ix);
             }
             let (inactive_color, inactive_border) = if worn.contains(&wearable.instance) {
-                (Color::ORANGE, Color::rgb(0.5, 0.325, 0.0))
+                (Color::Srgba(css::ORANGE), Color::srgb(0.5, 0.325, 0.0))
             } else {
                 if wearable.category == WearableCategory::BODY_SHAPE {
                     debug!("worn does not contain {:?} - {:?}", wearable.instance, worn);
                 }
                 (
-                    Color::rgba(0.0, 0.0, 0.0, 0.0),
-                    Color::rgba(0.0, 0.0, 0.0, 0.0),
+                    Color::srgba(0.0, 0.0, 0.0, 0.0),
+                    Color::srgba(0.0, 0.0, 0.0, 0.0),
                 )
             };
 
@@ -818,8 +815,8 @@ fn update_wearables_list(
             DuiButton {
                 styles: Some(InteractStyles {
                     active: Some(InteractStyle {
-                        background: Some(Color::RED),
-                        border: Some(Color::rgb(0.5, 0.0, 0.0)),
+                        background: Some(css::RED.into()),
+                        border: Some(Color::srgb(0.5, 0.0, 0.0)),
                         ..Default::default()
                     }),
                     inactive: Some(InteractStyle {
@@ -828,8 +825,8 @@ fn update_wearables_list(
                         ..Default::default()
                     }),
                     disabled: Some(InteractStyle {
-                        background: Some(Color::rgba(0.0, 0.0, 0.0, 0.0)),
-                        border: Some(Color::rgba(0.0, 0.0, 0.0, 0.0)),
+                        background: Some(Color::srgba(0.0, 0.0, 0.0, 0.0)),
+                        border: Some(Color::srgba(0.0, 0.0, 0.0, 0.0)),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -937,12 +934,12 @@ fn update_wearable_item(
                                     "wearable-item",
                                     DuiProps::new()
                                         .with_prop(
-                                            "image",
+                                            "img",
                                             ipfas
                                                 .asset_server()
                                                 .load::<Image>("images/backback/empty.png"),
                                         )
-                                        .with_prop("rarity-color", entry.rarity.hex_color()),
+                                        .with_prop("rarity-color", entry.rarity.color()),
                                 )
                                 .unwrap();
                         }
@@ -959,9 +956,9 @@ fn update_wearable_item(
                             .contains(settings.body_shape.base().as_str());
 
                     let (image_color, rarity_color) = if fits {
-                        (Color::WHITE.to_hex_color(), entry.rarity.hex_color())
+                        (Color::WHITE, entry.rarity.color())
                     } else {
-                        (Color::BLACK.to_hex_color(), Color::DARK_GRAY.to_hex_color())
+                        (Color::BLACK, Color::Srgba(css::DARK_GRAY))
                     };
                     match ipfas.asset_server().load_state(handle.id()) {
                         bevy::asset::LoadState::Loading => (),
@@ -975,13 +972,13 @@ fn update_wearable_item(
                                     &dui,
                                     "wearable-item",
                                     DuiProps::new()
-                                        .with_prop("image", handle.clone())
+                                        .with_prop("img", handle.clone())
                                         .with_prop("rarity-color", rarity_color)
-                                        .with_prop("image-color", image_color),
+                                        .with_prop("img-color", image_color),
                                 )
                                 .unwrap();
                         }
-                        bevy::asset::LoadState::Failed | bevy::asset::LoadState::NotLoaded => {
+                        bevy::asset::LoadState::Failed(_) | bevy::asset::LoadState::NotLoaded => {
                             warn!("failed to load wearable image");
                             commands
                                 .entity(ent)
@@ -992,13 +989,13 @@ fn update_wearable_item(
                                     "wearable-item",
                                     DuiProps::new()
                                         .with_prop(
-                                            "image",
+                                            "img",
                                             ipfas
                                                 .asset_server()
                                                 .load::<Image>("images/backback/empty.png"),
                                         )
                                         .with_prop("rarity-color", rarity_color)
-                                        .with_prop("image-color", image_color),
+                                        .with_prop("img-color", image_color),
                                 )
                                 .unwrap();
                         }
@@ -1009,7 +1006,7 @@ fn update_wearable_item(
     }
 }
 
-#[derive(Event, Component, Clone)]
+#[derive(Event, Clone)]
 struct SelectItem(Option<WearableEntry>);
 
 #[allow(clippy::too_many_arguments)]
@@ -1229,7 +1226,7 @@ fn update_selected_item(
                 &dui,
                 "wearable-selection",
                 DuiProps::new()
-                    .with_prop("rarity-color", sel.rarity.hex_color())
+                    .with_prop("rarity-color", sel.rarity.color())
                     .with_prop("selection-image", data_ref.thumbnail.clone())
                     .with_prop("title", data_ref.name.clone())
                     .with_prop("body", data_ref.description.clone())
@@ -1248,7 +1245,7 @@ fn update_selected_item(
                     &dui,
                     "wearable-hides",
                     DuiProps::new().with_prop(
-                        "image",
+                        "img",
                         format!("images/backpack/wearable_categories/{}.png", category.slot),
                     ),
                 )
