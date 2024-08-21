@@ -1,10 +1,11 @@
 use bevy::{
     core::FrameCount,
     input::InputSystem,
+    math::FloatOrd,
     prelude::*,
     render::mesh::{Indices, VertexAttributeValues},
     ui::{ManualCursorPosition, UiSystem},
-    utils::{FloatOrd, HashSet},
+    utils::HashSet,
 };
 use bevy_console::ConsoleCommand;
 use console::DoAddConsoleCommand;

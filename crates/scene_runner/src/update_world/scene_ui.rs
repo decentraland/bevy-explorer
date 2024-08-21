@@ -485,7 +485,11 @@ impl Plugin for SceneUiPlugin {
         app.add_systems(Update, init_scene_ui_root.in_set(SceneSets::PostInit));
         app.add_systems(
             Update,
-            (update_scene_ui_components, layout_scene_ui)
+            (
+                update_scene_ui_components,
+                layout_scene_ui,
+                fully_update_target_camera_system,
+            )
                 .chain()
                 .in_set(SceneSets::PostLoop),
         );
@@ -780,7 +784,9 @@ fn layout_scene_ui(
                                     camera
                                 });
 
-                                commands.entity(root_node).modify_component(move |c: &mut Camera| c.clear_color = bevy::render::camera::ClearColorConfig::Custom(canvas_info.color.map(Into::into).unwrap_or(Color::NONE)));
+                                commands
+                                    .entity(root_node)
+                                    .modify_component(move |c: &mut Camera| c.clear_color = bevy::render::camera::ClearColorConfig::Custom(canvas_info.color.map(Into::into).unwrap_or(Color::NONE)));
                                 root_node
                             });
                             processed_nodes.insert((*scene_ui_root_node, SceneEntityId::ROOT), (Some(bevy_ui_root), 1.0));
@@ -839,7 +845,7 @@ fn layout_scene_ui(
 
                             // we have to manually add the target camera here to ensure it is immediately updated - otherwise bevy will clear it and 
                             // the ui appears on the main window for a frame
-                            let ui_entity = commands.spawn((NodeBundle::default(), TargetCamera(bevy_ui_root))).id();
+                            let ui_entity = commands.spawn(NodeBundle::default()).id();
                             commands.entity(parent).add_child(ui_entity);
                             let mut ent_cmds = commands.entity(ui_entity);
 
@@ -975,7 +981,6 @@ fn layout_scene_ui(
                                 } else if let Some(color) = background.color {
                                     ent_cmds.insert(BackgroundColor(color));
                                 }
-
                             }
 
                             if let Some(ui_text) = maybe_text {
@@ -1400,5 +1405,62 @@ impl ValAsPx for Val {
             Val::Px(px) => *px,
             _ => 0.0,
         }
+    }
+}
+
+pub fn fully_update_target_camera_system(
+    mut commands: Commands,
+    root_nodes_query: Query<(Entity, Option<&TargetCamera>), (With<Node>, Without<Parent>)>,
+    children_query: Query<&Children, With<Node>>,
+) {
+    // Track updated entities to prevent redundant updates, as `Commands` changes are deferred,
+    // and updates done for changed_children_query can overlap with itself or with root_node_query
+    let mut updated_entities = HashSet::new();
+
+    for (root_node, target_camera) in &root_nodes_query {
+        update_children_target_camera(
+            root_node,
+            target_camera,
+            &children_query,
+            &mut commands,
+            &mut updated_entities,
+        );
+    }
+}
+
+fn update_children_target_camera(
+    entity: Entity,
+    camera_to_set: Option<&TargetCamera>,
+    children_query: &Query<&Children, With<Node>>,
+    commands: &mut Commands,
+    updated_entities: &mut HashSet<Entity>,
+) {
+    let Ok(children) = children_query.get(entity) else {
+        return;
+    };
+
+    for &child in children {
+        // Skip if the child has already been updated
+        if updated_entities.contains(&child) {
+            continue;
+        }
+
+        match camera_to_set {
+            Some(camera) => {
+                commands.entity(child).try_insert(camera.clone());
+            }
+            None => {
+                commands.entity(child).remove::<TargetCamera>();
+            }
+        }
+        updated_entities.insert(child);
+
+        update_children_target_camera(
+            child,
+            camera_to_set,
+            children_query,
+            commands,
+            updated_entities,
+        );
     }
 }
