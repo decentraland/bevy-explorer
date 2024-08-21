@@ -1490,13 +1490,15 @@ fn update_gltf_linked_transforms(
                         }
 
                         // update gltf entity
-                        let parent_transform = gt_helper
+                        let Ok(parent_transform) = gt_helper
                             .compute_global_transform_with_overrides(
                                 data.gltf_parent,
                                 Some(data.transform_root),
                                 &updated_transforms,
                             )
-                            .unwrap();
+                        else {
+                            return None;
+                        };
                         let gltf_node_transform =
                             GlobalTransform::from(data.root_relative_transform)
                                 .reparented_to(&parent_transform);
