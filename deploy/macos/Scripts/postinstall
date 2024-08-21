@@ -1,0 +1,4 @@
+#!/bin/bash
+APP_NAME="DecentralandBevyExplorer"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/$APP_NAME.app"
+exit 0

@@ -1,13 +1,12 @@
 use std::marker::PhantomData;
 
 use bevy::{
-    animation::animation_player,
     ecs::system::SystemParam,
     prelude::*,
     transform::TransformSystem,
     utils::{Entry, HashMap, HashSet},
 };
-use common::util::ModifyComponentExt;
+use common::{anim_last_system, util::ModifyComponentExt};
 use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
 
 use crate::{
@@ -30,7 +29,7 @@ impl Plugin for TransformAndParentPlugin {
             SceneComponentId::TRANSFORM,
             ComponentPosition::EntityOnly,
         );
-        app.world
+        app.world_mut()
             .resource_mut::<SceneLoopSchedule>()
             .schedule
             .add_systems(process_transform_and_parent_updates.in_set(SceneLoopSets::UpdateWorld));
@@ -38,11 +37,11 @@ impl Plugin for TransformAndParentPlugin {
             PostUpdate,
             (
                 parent_position_sync::<AvatarAttachStage>
-                    .after(animation_player)
+                    .after(anim_last_system!())
                     .after(GltfLinkSet)
                     .before(TransformSystem::TransformPropagate),
                 parent_position_sync::<SceneProxyStage>
-                    .after(animation_player)
+                    .after(anim_last_system!())
                     .after(GltfLinkSet)
                     .after(parent_position_sync::<AvatarAttachStage>)
                     .before(TransformSystem::TransformPropagate),

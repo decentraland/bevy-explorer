@@ -23,7 +23,7 @@ impl Plugin for MicUiPlugin {
         app.add_systems(Startup, setup);
         app.add_systems(Update, update_mic_ui);
 
-        let asset_server = app.world.resource::<AssetServer>();
+        let asset_server = app.world().resource::<AssetServer>();
         app.insert_resource(MicImages {
             inactive: asset_server.load("images/mic_button_inactive.png"),
             on: asset_server.load("images/mic_button_on.png"),

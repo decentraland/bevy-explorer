@@ -23,13 +23,13 @@ impl Plugin for TextSizePlugin {
 }
 
 fn setup(mut dui: ResMut<DuiRegistry>) {
-    dui.register_template("small-text", TextTemplate(0.015));
-    dui.register_template("med-text", TextTemplate(0.03));
-    dui.register_template("large-text", TextTemplate(0.06));
+    dui.register_template("small-text", TextTemplate(0.015 / 1.3));
+    dui.register_template("med-text", TextTemplate(0.03 / 1.3));
+    dui.register_template("large-text", TextTemplate(0.06 / 1.3));
 
-    dui.register_template("small-link", LinkTemplate(0.015));
-    dui.register_template("med-link", LinkTemplate(0.03));
-    dui.register_template("large-link", LinkTemplate(0.06));
+    dui.register_template("small-link", LinkTemplate(0.015 / 1.3));
+    dui.register_template("med-link", LinkTemplate(0.03 / 1.3));
+    dui.register_template("large-link", LinkTemplate(0.06 / 1.3));
 }
 
 pub struct TextTemplate(f32);
@@ -68,7 +68,7 @@ impl DuiTemplate for LinkTemplate {
         let link = props.take::<String>("href").unwrap().unwrap();
         let color = props
             .take_as::<Color>(ctx, "color")?
-            .unwrap_or(Color::rgba(0.8, 0.8, 0.8, 1.0));
+            .unwrap_or(Color::srgba(0.8, 0.8, 0.8, 1.0));
 
         let components = commands
             .apply_template(

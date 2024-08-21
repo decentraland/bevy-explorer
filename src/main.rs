@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "console"), windows_subsystem = "windows")]
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 use std::{fs::File, io::Write, sync::OnceLock};
@@ -20,15 +21,12 @@ use bevy::{
         Skybox,
     },
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    log::BoxedSubscriber,
     pbr::{CascadeShadowConfigBuilder, ShadowFilteringMethod},
     prelude::*,
     render::{
         render_resource::{TextureViewDescriptor, TextureViewDimension},
-        view::ColorGrading,
+        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
     },
-    text::TextSettings,
-    utils::uuid,
     window::WindowResolution,
 };
 use bevy_console::ConsoleCommand;
@@ -62,6 +60,7 @@ use system_ui::{crash_report::CrashReportPlugin, login::config_file, SystemUiPlu
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
 use user_input::UserInputPlugin;
+use uuid::Uuid;
 use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
 use world_ui::WorldUiPlugin;
@@ -101,17 +100,13 @@ fn main() {
 
     let mut args = pico_args::Arguments::from_env();
 
-    let file_log = !args.contains("--console") && !cfg!(feature = "tracy");
+    File::create(SESSION_LOG.get().unwrap())
+        .expect("failed to create log file")
+        .write_all(format!("{}\n\n", SESSION_LOG.get().unwrap()).as_bytes())
+        .expect("failed to create log file");
 
-    if file_log {
-        File::create(SESSION_LOG.get().unwrap())
-            .expect("failed to create log file")
-            .write_all(format!("{}\n\n", SESSION_LOG.get().unwrap()).as_bytes())
-            .expect("failed to create log file");
-
-        File::create(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
-        println!("log file: {}", SESSION_LOG.get().unwrap());
-    }
+    File::create(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
+    println!("log file: {}", SESSION_LOG.get().unwrap());
 
     // warnings before log init must be stored and replayed later
     let mut infos = Vec::default();
@@ -215,10 +210,6 @@ fn main() {
     let version = format!("{VERSION} ({version_hash})");
 
     app.insert_resource(Version(version.clone()))
-        .insert_resource(TextSettings {
-            soft_max_font_atlases: 4.try_into().unwrap(),
-            allow_dynamic_font_size: true,
-        })
         .insert_resource(final_config.audio.clone())
         .add_plugins(
             DefaultPlugins
@@ -244,41 +235,19 @@ fn main() {
                 })
                 .set(bevy::log::LogPlugin {
                     filter: "wgpu=error,naga=error,bevy_animation=error".to_string(),
-                    update_subscriber: if file_log {
-                        Some(move |_subscriber: BoxedSubscriber| -> BoxedSubscriber {
-                            let (non_blocking, guard) = tracing_appender::non_blocking(
-                                File::options()
-                                    .write(true)
-                                    .open(SESSION_LOG.get().unwrap())
-                                    .unwrap(),
-                            );
-
-                            let default_filter = {
-                                format!(
-                                    "{},{}",
-                                    bevy::log::Level::INFO,
-                                    "wgpu=error,naga=error,bevy_animation=error"
-                                )
-                            };
-                            let filter_layer =
-                                bevy::log::tracing_subscriber::EnvFilter::try_from_default_env()
-                                    .or_else(|_| {
-                                        bevy::log::tracing_subscriber::EnvFilter::try_new(
-                                            &default_filter,
-                                        )
-                                    })
-                                    .unwrap();
-
-                            let l = bevy::log::tracing_subscriber::fmt()
-                                .with_ansi(false)
+                    custom_layer: |_| {
+                        let (non_blocking, guard) = tracing_appender::non_blocking(
+                            File::options()
+                                .write(true)
+                                .open(SESSION_LOG.get().unwrap())
+                                .unwrap(),
+                        );
+                        Box::leak(guard.into());
+                        Some(Box::new(
+                            bevy::log::tracing_subscriber::fmt::layer()
                                 .with_writer(non_blocking)
-                                .with_env_filter(filter_layer)
-                                .finish();
-                            Box::leak(Box::new(guard));
-                            Box::new(l)
-                        })
-                    } else {
-                        None
+                                .with_ansi(false),
+                        ))
                     },
                     ..default()
                 })
@@ -303,7 +272,7 @@ fn main() {
     app.add_plugins(MetricsPlugin);
     app.insert_resource(SegmentConfig::new(
         final_config.user_id.clone(),
-        uuid::Uuid::new_v4().to_string(),
+        Uuid::new_v4().to_string(),
         version_hash,
     ));
 
@@ -319,7 +288,7 @@ fn main() {
 
     app.insert_resource(final_config);
     if no_gltf {
-        app.world.insert_resource(NoGltf(true));
+        app.insert_resource(NoGltf(true));
     }
 
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
@@ -361,7 +330,7 @@ fn main() {
         .add_systems(Startup, setup.in_set(SetupSets::Init))
         .add_systems(Update, asset_loaded)
         .insert_resource(AmbientLight {
-            color: Color::rgb(0.85, 0.85, 1.0),
+            color: Color::srgb(0.85, 0.85, 1.0),
             brightness: 575.0,
         });
 
@@ -383,16 +352,12 @@ fn main() {
     // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
     // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
     // bevy_mod_debugdump::print_main_schedule(&mut app);
-
-    if file_log {
-        log_panics::init();
-    }
+    #[cfg(not(feature = "console"))]
+    log_panics::init();
 
     app.run();
 
-    if file_log {
-        std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
-    }
+    std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
 }
 
 fn setup(
@@ -435,12 +400,28 @@ fn setup(
                     ..Default::default()
                 },
                 tonemapping: Tonemapping::TonyMcMapface,
-                dither: DebandDither::Enabled,
+                deband_dither: DebandDither::Enabled,
                 color_grading: ColorGrading {
-                    exposure: -0.5,
-                    gamma: 1.5,
-                    pre_saturation: 1.0,
-                    post_saturation: 1.0,
+                    // exposure: -0.5,
+                    // gamma: 1.5,
+                    // pre_saturation: 1.0,
+                    // post_saturation: 1.0,
+                    global: ColorGradingGlobal {
+                        exposure: -0.5,
+                        ..default()
+                    },
+                    shadows: ColorGradingSection {
+                        gamma: 0.75,
+                        ..Default::default()
+                    },
+                    midtones: ColorGradingSection {
+                        gamma: 0.75,
+                        ..Default::default()
+                    },
+                    highlights: ColorGradingSection {
+                        gamma: 0.75,
+                        ..Default::default()
+                    },
                 },
                 ..Default::default()
             },
@@ -448,7 +429,7 @@ fn setup(
                 intensity: 0.15,
                 ..BloomSettings::OLD_SCHOOL
             },
-            ShadowFilteringMethod::Castano13,
+            ShadowFilteringMethod::Gaussian,
             PrimaryCamera::default(),
             DepthPrepass,
             NormalPrepass,
@@ -470,7 +451,7 @@ fn setup(
     // add a directional light so it looks nicer
     commands.spawn(DirectionalLightBundle {
         directional_light: DirectionalLight {
-            color: Color::rgb(1.0, 1.0, 0.7),
+            color: Color::srgb(1.0, 1.0, 0.7),
             shadows_enabled: true,
             ..Default::default()
         },

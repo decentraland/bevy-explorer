@@ -42,4 +42,4 @@ ethers-providers = { version = "2", features = ["ws","rustls"] }
 # inspector requirements
 fastwebsockets = { version = "0.4.4", optional = true, features = ["upgrade"] }
 hyper = { version = "0.14.26", features = ["runtime", "http1", "server"], optional = true }
-uuid = { version = "1.3.0", features = ["v4"], optional = true }
+uuid = { workspace = true, optional = true }

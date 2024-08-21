@@ -7,7 +7,7 @@
 
 #ifdef DEPTH_PREPASS
 fn get_depth(pos: vec4<f32>, si: u32) -> f32 {
-    return view.projection[3][2] / prepass_depth(pos, si); 
+    return view.clip_from_view[3][2] / prepass_depth(pos, si); 
 }
 #endif
 

@@ -18,12 +18,12 @@ pub struct ColorPicker {
 impl ColorPicker {
     pub fn new_linear(color: Color) -> Self {
         Self {
-            color: color.as_linear_rgba_f32()[0..3].try_into().unwrap(),
+            color: color.to_linear().to_f32_array()[0..3].try_into().unwrap(),
         }
     }
 
     pub fn get_linear(&self) -> Color {
-        Color::rgb_linear(self.color[0], self.color[1], self.color[2])
+        Color::srgb(self.color[0], self.color[1], self.color[2])
     }
 }
 
@@ -134,14 +134,11 @@ impl DuiTemplate for DuiColorPicker {
         mut props: bevy_dui::DuiProps,
         _: &mut bevy_dui::DuiContext,
     ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
-        let picker = ColorPicker {
-            color: props
+        let picker = ColorPicker::new_linear(
+            props
                 .take::<Color>("color")?
-                .ok_or(anyhow!("no initial color"))?
-                .as_linear_rgba_f32()[0..3]
-                .try_into()
-                .unwrap(),
-        };
+                .ok_or(anyhow!("no initial color"))?,
+        );
         commands.insert(picker);
 
         if let Some(onchanged) = props.take::<On<DataChanged>>("onchanged")? {

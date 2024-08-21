@@ -110,12 +110,12 @@ impl Plugin for MeshDefinitionPlugin {
             mesh
         };
 
-        let mut assets = app.world.resource_mut::<Assets<Mesh>>();
+        let mut assets = app.world_mut().resource_mut::<Assets<Mesh>>();
         let boxx = assets.add(generate_tangents(
             bevy::math::primitives::Cuboid::default().into(),
         ));
         let cylinder = assets.add(generate_tangents(Cylinder::default().into()));
-        let plane = assets.add(generate_tangents(Rectangle::default().mesh()));
+        let plane = assets.add(generate_tangents(Rectangle::default().mesh().into()));
         let sphere = assets.add(generate_tangents(flip_uv(
             Sphere::new(0.5).mesh().uv(36, 18),
         )));
@@ -194,6 +194,7 @@ pub fn update_mesh(
                 } else {
                     let mut mesh = Rectangle::default()
                         .mesh()
+                        .build()
                         .rotated_by(Quat::from_rotation_z(-FRAC_PI_2));
                     let Some(VertexAttributeValues::Float32x2(mesh_uvs)) =
                         mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)

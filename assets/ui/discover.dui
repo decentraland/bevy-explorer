@@ -12,7 +12,7 @@
                 </div>
                 <div style="flex-direction: column; width: 10%; align-items: center;">
                     <med-text text="worlds" />
-                    <div style="width: 4.2vmin; height: 2.8vmin;"><toggle ontoggle="@world-toggle" /></div>
+                    <div style="width: 6.2vmin; height: 2.8vmin;"><toggle ontoggle="@world-toggle" /></div>
                 </div>
             </div>
             <hr-thin />
@@ -32,7 +32,7 @@
 
 <define-template id="discover-category-button">
     <div>
-        <div style="width: 5vmin; height: 5vmin;" image="@image" />
+        <div style="width: 5vmin; height: 5vmin;" image="@img" />
         <med-text style="color: black; align-self: center; margin: 1vmin;" text="@text" />
     </div>
 </define-template>
@@ -45,7 +45,7 @@
         border-size="1vmin"
         border-color="#0000ff"
     >
-        <bounded style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 8vmin;" bound-image="@image" />
+        <bounded style="position-type: absolute; left: 0px; right: 0px; top: 0px; bottom: 8vmin;" bound-image="@img" />
         <bounded style="position-type: absolute; left: 0px; right: 0px; top: 20vmin; bottom: 0vmin; flex-direction: column; padding: 0vmin 1vmin 1vmin 1vmin;" color="#b2a1ff">
             <med-text style="color: black;" text="@label" />
             <small-text style="color: black;" text="@author" />
@@ -78,10 +78,10 @@
             color="#aa1fc1bb"
         >
             <div style="justify-content: flex-end;">
-                <button image="images/redx.png" onclick="@close" image-width="4.4vmin" image-height="4.4vmin" />
+                <button img="images/redx.png" onclick="@close" image-width="4.4vmin" image-height="4.4vmin" />
             </div>
             <div style="justify-content: space-around;">
-                <bounds style="width: 30vmin; height: 20vmin; margin: 1vmin;" bound-image="@image" corner-size="2vmin"             blend-size="0vmin"
+                <bounds style="width: 30vmin; height: 20vmin; margin: 1vmin;" bound-image="@img" corner-size="2vmin"             blend-size="0vmin"
             border-size="2vmin"
             border-color="#000000"
  />

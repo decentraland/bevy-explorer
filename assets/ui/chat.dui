@@ -12,8 +12,8 @@
         <div>
             <tab-group style="justify-content: flex-start; width: 100%; flex-wrap: wrap;" tabs="@chat-tabs" onchanged="@tab-changed" initial="@initial-tab" edge-scale="1px 1px -0px 1px"/>
             <div>
-                <button image="images/copy.png" onclick="@copy" image-width="4.4vmin" image-height="4.4vmin" />
-                <button image="images/redx.png" onclick="@close" image-width="4.4vmin" image-height="4.4vmin" />
+                <button img="images/copy.png" onclick="@copy" image-width="4.4vmin" image-height="4.4vmin" />
+                <button img="images/redx.png" onclick="@close" image-width="4.4vmin" image-height="4.4vmin" />
             </div>
         </div>
         <div style="background-color: #00000088; min-height: 0px;">

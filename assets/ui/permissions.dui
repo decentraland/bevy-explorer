@@ -40,13 +40,13 @@
                 <med-text style="color: black; text-align: right;" text = "@permission-name" />
             </div>
             <div style="width: 20%; align-items: center; justify-content: center;">
-                <button image-width="5vmin" image-height="5vmin" image="@scene-image" onclick="@scene-click" enabled="@scene-enabled" />
+                <button image-width="5vmin" image-height="5vmin" img="@scene-image" onclick="@scene-click" enabled="@scene-enabled" />
             </div>
             <div style="width: 20%; align-items: center; justify-content: center;">
-                <button image-width="5vmin" image-height="5vmin" image="@realm-image" onclick="@realm-click" />
+                <button image-width="5vmin" image-height="5vmin" img="@realm-image" onclick="@realm-click" />
             </div>
             <div style="width: 20%; align-items: center; justify-content: center;">
-                <button image-width="5vmin" image-height="5vmin" image="@global-image" onclick="@global-click" />
+                <button image-width="5vmin" image-height="5vmin" img="@global-image" onclick="@global-click" />
             </div>
         </div>
     </div>

@@ -91,7 +91,7 @@ pub fn set_interaction_style(
 
         if let Some(mut nineslice) = maybe_nineslice {
             if let Some(req_bg) = style.background {
-                nineslice.tint = Some(BackgroundColor(req_bg));
+                nineslice.tint = Some(req_bg);
             }
 
             if let Some(image) = &style.image {
@@ -114,12 +114,17 @@ pub fn set_interaction_style(
             }
         }
 
-        if let (Some(mut bg), Some(req_bg)) = (maybe_bg, style.background) {
-            *bg = BackgroundColor(req_bg);
-        }
-
-        if let (Some(mut ui_image), Some(image)) = (maybe_image, &style.image) {
-            ui_image.texture = image.clone();
+        if let Some(mut ui_image) = maybe_image {
+            if let Some(image) = &style.image {
+                ui_image.texture = image.clone();
+            }
+            if let Some(req_bg) = style.background {
+                ui_image.color = req_bg;
+            }
+        } else if let Some(mut bg) = maybe_bg {
+            if let Some(req_bg) = style.background {
+                bg.0 = req_bg;
+            }
         }
     }
 }

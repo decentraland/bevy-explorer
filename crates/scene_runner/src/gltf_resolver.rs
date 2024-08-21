@@ -47,7 +47,7 @@ impl<'w, 's> GltfResolver<'w, 's> {
                 Ok(None)
             }
             bevy::asset::LoadState::Loaded => Ok(Some(h_gltf)),
-            bevy::asset::LoadState::NotLoaded | bevy::asset::LoadState::Failed => {
+            bevy::asset::LoadState::NotLoaded | bevy::asset::LoadState::Failed(_) => {
                 warn!("failed to load gltf for mesh");
                 Err(anyhow!("failed to load gltf for mesh"))
             }

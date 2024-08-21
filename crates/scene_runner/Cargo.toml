@@ -29,7 +29,7 @@ anyhow = { workspace = true }
 bevy_console = { workspace = true }
 clap = { workspace = true }
 bimap = { workspace = true }
-nalgebra = { version = "0.32.4", features = [ "convert-glam025" ] }
+nalgebra = { version = "0.33", features = [ "convert-glam027" ] }
 futures-lite = { workspace = true }
 once_cell = { workspace = true }
 rapier3d-f64 = { workspace = true }
@@ -40,4 +40,4 @@ bevy_dui = { workspace = true }
 
 petgraph = "0.6.3"
 spin_sleep = "1.1.1"
-image = "0.24"
+image = "0.25"

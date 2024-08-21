@@ -1,7 +1,5 @@
 // kuruk 0x481bed8645804714Efd1dE3f25467f78E7Ba07d6
 
-use std::io::Write;
-
 use avatar::{avatar_texture::BoothInstance, AvatarShape};
 use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
@@ -32,10 +30,9 @@ pub struct ProfileEditPlugin;
 
 impl Plugin for ProfileEditPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<SerializeUi>()
-            .add_event::<ShowSettingsEvent>();
+        app.add_event::<ShowSettingsEvent>();
         app.add_systems(Startup, setup);
-        app.add_systems(Update, (show_settings, dump));
+        app.add_systems(Update, show_settings);
         app.add_plugins((
             DiscoverSettingsPlugin,
             WearableSettingsPlugin,
@@ -427,20 +424,4 @@ pub fn show_settings(
         .insert(tab);
 
     //start on the wearables tab
-}
-
-#[derive(Event, Default)]
-pub struct SerializeUi;
-
-fn dump(world: &World, mut ev: EventReader<SerializeUi>) {
-    if ev.read().last().is_none() {
-        return;
-    }
-
-    let scene = DynamicScene::from_world(world);
-    let mut file = std::fs::File::create("dump.ron").unwrap();
-    let type_registry = world.resource::<AppTypeRegistry>();
-
-    file.write_all(scene.serialize_ron(&type_registry.0).unwrap().as_bytes())
-        .unwrap();
 }

@@ -836,7 +836,6 @@ fn layout_scene_ui(
                             debug!("{:?} style: {:?}", scene_id, ui_transform);
                             debug!("{:?}, {:?}, {:?}, {:?}, {:?}", maybe_background, maybe_text, maybe_pointer_events, maybe_ui_input, maybe_dropdown);
                             let total_opacity = opacity * ui_transform.opacity;
-                            let opacity_array = [1.0, 1.0, 1.0, total_opacity];
 
                             // we have to manually add the target camera here to ensure it is immediately updated - otherwise bevy will clear it and 
                             // the ui appears on the main window for a frame
@@ -861,10 +860,10 @@ fn layout_scene_ui(
                                     };
 
                                     if let Some(image) = image {
+                                        let image_color = background.color.unwrap_or(Color::WHITE);
+                                        let image_color = image_color.with_alpha(image_color.alpha() * total_opacity);
                                         match texture_mode {
                                             BackgroundTextureMode::NineSlices(rect) => {
-                                                ent_cmds.remove::<BackgroundColor>();
-                                                let background_color = background.color.map(|c| {c * opacity_array});
                                                 ent_cmds.with_children(|c| {
                                                     c.spawn((
                                                         NodeBundle {
@@ -880,7 +879,7 @@ fn layout_scene_ui(
                                                         Ui9Slice{
                                                             image: image.image,
                                                             center_region: rect.into(),
-                                                            tint: background_color.map(BackgroundColor),
+                                                            tint: Some(image_color),
                                                         },
                                                     ));
                                                 });
@@ -897,18 +896,19 @@ fn layout_scene_ui(
                                                         },
                                                         ..Default::default()
                                                     }).with_children(|c| {
-                                                        let color = background.color.unwrap_or(Color::WHITE) * opacity_array;
+                                                        let color = background.color.unwrap_or(Color::WHITE);
+                                                        let color = color.with_alpha(color.alpha() * total_opacity);
                                                         c.spawn((
-                                                            NodeBundle{
+                                                            MaterialNodeBundle {
                                                                 style: Style {
                                                                     position_type: PositionType::Absolute,
                                                                     width: Val::Percent(100.0),
                                                                     height: Val::Percent(100.0),
                                                                     ..Default::default()
                                                                 },
+                                                                material: stretch_uvs.add(StretchUvMaterial{ image: image.image.clone(), uvs: *uvs, color: color.to_linear().to_vec4() }),
                                                                 ..Default::default()
                                                             },
-                                                            stretch_uvs.add(StretchUvMaterial{ image: image.image.clone(), uvs: *uvs, color: color.as_linear_rgba_f32().into() })
                                                         ));
                                                     });
                                                 });
@@ -952,11 +952,11 @@ fn layout_scene_ui(
                                                                     ..Default::default()
                                                                 },
                                                                 image: UiImage {
+                                                                    color: image_color,
                                                                     texture: image.image,
                                                                     flip_x: false,
                                                                     flip_y: false,
                                                                 },
-                                                                background_color: Color::rgba(1.0, 1.0, 1.0, total_opacity).into(),
                                                                 ..Default::default()
                                                             });
                                                             c.spacer();
@@ -979,107 +979,110 @@ fn layout_scene_ui(
                             }
 
                             if let Some(ui_text) = maybe_text {
-                                let text = make_text_section(
-                                    ui_text.text.as_str(),
-                                    ui_text.font_size * 1.3,
-                                    ui_text.color * total_opacity,
-                                    ui_text.font,
-                                    ui_text.h_align,
-                                    ui_text.wrapping,
-                                );
-
-                                // with text nodes the axis sizes are unusual. 
-                                // a) if either size axis is NOT NONE, (explicit or auto), we want auto to size appropriately for the content.
-                                // b) if both axes are NONE, we want to size to zero.
-                                // a) - we tackle this by using a nested position-type: relative node which will size it's parent appropriately, and default the parent to Auto
-                                //    - for alignment we use align-items and justify-content
-                                // b) - we use a nested position-type: absolute node, and default the parent to auto
-                                //    - for alignment we use align-items and justify-content as above, and we also set left/right/top/bottom to 50% if required
-
-                                let any_axis_specified = [ui_transform.size.width, ui_transform.size.height].iter().any(Option::is_some);
-
-                                let inner_style = if any_axis_specified {
-                                    Style {
-                                        position_type: PositionType::Relative,
-                                        ..Default::default()
-                                    }
-                                } else {
-                                    Style {
-                                        position_type: PositionType::Absolute,
-                                        left: if ui_text.h_align == JustifyText::Left {
-                                            Val::Percent(50.0)
-                                        } else {
-                                            Val::Auto
-                                        },
-                                        right: if ui_text.h_align == JustifyText::Right {
-                                            Val::Percent(50.0)
-                                        } else {
-                                            Val::Auto
-                                        },
-                                        top: if ui_text.v_align == VAlign::Top {
-                                            Val::Percent(50.0)
-                                        } else {
-                                            Val::Auto
-                                        },
-                                        bottom: if ui_text.v_align == VAlign::Bottom {
-                                            Val::Percent(50.0)
-                                        } else {
-                                            Val::Auto
-                                        },
-                                        ..Default::default()
-                                    }
-                                };
-
-                                // we need to set size for the first inner element depending 
-                                // on how the outer was specified
-                                let width = match ui_transform.size.width {
-                                    Some(Val::Px(px)) => Val::Px(px),
-                                    Some(Val::Percent(_)) => Val::Percent(100.0),
-                                    _ => Val::Auto,
-                                };
-                                let height = match ui_transform.size.height {
-                                    Some(Val::Px(px)) => Val::Px(px),
-                                    Some(Val::Percent(_)) => Val::Percent(100.0),
-                                    _ => Val::Auto,
-                                };
-
-                                ent_cmds.with_children(|c| {
-                                    c.spawn(NodeBundle {
-                                        style: Style {
-                                            flex_direction: FlexDirection::Row,
-                                            justify_content: match ui_text.h_align {
-                                                JustifyText::Left => JustifyContent::FlexStart,
-                                                JustifyText::Center => JustifyContent::Center,
-                                                JustifyText::Right => JustifyContent::FlexEnd,
-                                            },
-                                            align_items: match ui_text.v_align {
-                                                VAlign::Top => AlignItems::FlexStart,
-                                                VAlign::Middle => AlignItems::Center,
-                                                VAlign::Bottom => AlignItems::FlexEnd,
-                                            },
-                                            width,
-                                            height,
-                                            align_self: AlignSelf::FlexStart,
-                                            // elements are horizontally centered by default
-                                            margin: UiRect::horizontal(Val::Auto),
-                                            ..Default::default()
-                                        },
-                                        ..Default::default()
-                                    })
-                                        .with_children(|c| {
-                                            c.spawn(NodeBundle {
-                                                style: inner_style,
-                                                ..Default::default()
-                                            }).with_children(|c| {
-                                                c.spawn(TextBundle {
-                                                    text,
-                                                    z_index: ZIndex::Local(1),
-                                                    ..Default::default()
-                                                });
-                                            });
-                                        },
+                                if !ui_text.text.is_empty() && ui_text.font_size > 0.0 {
+                                    let text = make_text_section(
+                                        ui_text.text.as_str(),
+                                        ui_text.font_size,
+                                        ui_text.color.with_alpha(ui_text.color.alpha() * total_opacity),
+                                        ui_text.font,
+                                        ui_text.h_align,
+                                        ui_text.wrapping,
                                     );
-                                });
+
+                                    // with text nodes the axis sizes are unusual. 
+                                    // a) if either size axis is NOT NONE, (explicit or auto), we want auto to size appropriately for the content.
+                                    // b) if both axes are NONE, we want to size to zero.
+                                    // a) - we tackle this by using a nested position-type: relative node which will size it's parent appropriately, and default the parent to Auto
+                                    //    - for alignment we use align-items and justify-content
+                                    // b) - we use a nested position-type: absolute node, and default the parent to auto
+                                    //    - for alignment we use align-items and justify-content as above, and we also set left/right/top/bottom to 50% if required
+
+                                    let any_axis_specified = [ui_transform.size.width, ui_transform.size.height].iter().any(Option::is_some);
+
+                                    let inner_style = if any_axis_specified {
+                                        Style {
+                                            position_type: PositionType::Relative,
+                                            ..Default::default()
+                                        }
+                                    } else {
+                                        Style {
+                                            position_type: PositionType::Absolute,
+                                            left: if ui_text.h_align == JustifyText::Left {
+                                                Val::Percent(50.0)
+                                            } else {
+                                                Val::Auto
+                                            },
+                                            right: if ui_text.h_align == JustifyText::Right {
+                                                Val::Percent(50.0)
+                                            } else {
+                                                Val::Auto
+                                            },
+                                            top: if ui_text.v_align == VAlign::Top {
+                                                Val::Percent(50.0)
+                                            } else {
+                                                Val::Auto
+                                            },
+                                            bottom: if ui_text.v_align == VAlign::Bottom {
+                                                Val::Percent(50.0)
+                                            } else {
+                                                Val::Auto
+                                            },
+                                            ..Default::default()
+                                        }
+                                    };
+
+                                    // we need to set size for the first inner element depending 
+                                    // on how the outer was specified
+                                    let width = match ui_transform.size.width {
+                                        Some(Val::Px(px)) => Val::Px(px),
+                                        Some(Val::Percent(_)) => Val::Percent(100.0),
+                                        _ => Val::Auto,
+                                    };
+                                    let height = match ui_transform.size.height {
+                                        Some(Val::Px(px)) => Val::Px(px),
+                                        Some(Val::Percent(_)) => Val::Percent(100.0),
+                                        _ => Val::Auto,
+                                    };
+
+                                    ent_cmds.with_children(|c| {
+                                        c.spawn(NodeBundle {
+                                            style: Style {
+                                                flex_direction: FlexDirection::Row,
+                                                justify_content: match ui_text.h_align {
+                                                    JustifyText::Left => JustifyContent::FlexStart,
+                                                    JustifyText::Center => JustifyContent::Center,
+                                                    JustifyText::Right => JustifyContent::FlexEnd,
+                                                    JustifyText::Justified => unreachable!(),
+                                                },
+                                                align_items: match ui_text.v_align {
+                                                    VAlign::Top => AlignItems::FlexStart,
+                                                    VAlign::Middle => AlignItems::Center,
+                                                    VAlign::Bottom => AlignItems::FlexEnd,
+                                                },
+                                                width,
+                                                height,
+                                                align_self: AlignSelf::FlexStart,
+                                                // elements are horizontally centered by default
+                                                margin: UiRect::horizontal(Val::Auto),
+                                                ..Default::default()
+                                            },
+                                            ..Default::default()
+                                        })
+                                            .with_children(|c| {
+                                                c.spawn(NodeBundle {
+                                                    style: inner_style,
+                                                    ..Default::default()
+                                                }).with_children(|c| {
+                                                    c.spawn(TextBundle {
+                                                        text,
+                                                        z_index: ZIndex::Local(1),
+                                                        ..Default::default()
+                                                    });
+                                                });
+                                            },
+                                        );
+                                    });
+                                }
                             }
 
                             if maybe_pointer_events.is_some() {

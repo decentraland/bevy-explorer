@@ -65,7 +65,7 @@ impl MaterialDefinition {
             .unwrap_or(DEFAULT_BASE.get_or_init(|| StandardMaterial {
                 base_color: Color::WHITE,
                 double_sided: true,
-                emissive: Color::BLACK,
+                emissive: LinearRgba::BLACK,
                 perceptual_roughness: 0.5,
                 metallic: 0.5,
                 reflectance: 0.5,
@@ -82,7 +82,7 @@ impl MaterialDefinition {
                     .map(Color::from)
                     .unwrap_or(base.base_color);
 
-                let alpha_mode = if base_color.a() < 1.0 {
+                let alpha_mode = if base_color.alpha() < 1.0 {
                     AlphaMode::Blend
                 } else if let Some(test) = unlit.alpha_test {
                     AlphaMode::Mask(test)
@@ -131,7 +131,7 @@ impl MaterialDefinition {
                         AlphaMode::Blend
                     }
                     Some(MaterialTransparencyMode::MtmAuto) | None => {
-                        if base_color.a() < 1.0 || pbr.alpha_texture.is_some() {
+                        if base_color.alpha() < 1.0 || pbr.alpha_texture.is_some() {
                             AlphaMode::Blend
                         } else if let Some(test) = pbr.alpha_test {
                             AlphaMode::Mask(test)
@@ -143,11 +143,11 @@ impl MaterialDefinition {
 
                 let emissive_intensity = pbr.emissive_intensity.unwrap_or(2.0);
                 let emissive = if let Some(color) = pbr.emissive_color {
-                    Color::from(color) * emissive_intensity
+                    Color::from(color).to_linear() * emissive_intensity
                 } else if pbr.emissive_texture.is_some() {
-                    Color::WHITE * emissive_intensity
+                    Color::WHITE.to_linear() * emissive_intensity
                 } else {
-                    Color::BLACK
+                    Color::BLACK.to_linear()
                 };
 
                 (

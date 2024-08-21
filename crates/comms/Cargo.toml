@@ -39,4 +39,4 @@ rand = "0.8.5"
 multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
 cid = "0.11.0"
 multipart = { version = "0.18.0", default-features = false, features = ["client", "lazy_static"] }
-image = "0.24"
+image = "0.25"

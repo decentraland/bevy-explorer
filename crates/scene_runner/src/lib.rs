@@ -8,10 +8,10 @@ use std::{
 use bevy::{
     core::FrameCount,
     ecs::{query::Has, schedule::ScheduleLabel, system::SystemParam},
-    math::{Vec3A, Vec3Swizzles},
+    math::{FloatOrd, Vec3A, Vec3Swizzles},
     prelude::*,
     scene::scene_spawner_system,
-    utils::{FloatOrd, HashMap, HashSet, Instant},
+    utils::{HashMap, HashSet, Instant},
     window::PrimaryWindow,
     winit::WinitWindows,
 };
@@ -28,7 +28,7 @@ use dcl::{
 use dcl_component::{
     proto_components::{common::BorderRect, sdk::components::PbUiCanvasInformation},
     transform_and_parent::DclTransformAndParent,
-    DclReader, DclWriter, SceneComponentId, SceneEntityId,
+    DclReader, DclWriter, FromDclReader, SceneComponentId, SceneEntityId,
 };
 use initialize_scene::{PortableScenes, TestingData};
 use ipfs::SceneIpfsLocation;
@@ -74,6 +74,7 @@ pub struct SceneUpdates {
 // safety: struct is sync except for the receiver.
 // receiver is only accessible via &mut handle
 unsafe impl Sync for SceneUpdates {}
+unsafe impl Send for SceneUpdates {}
 
 impl SceneUpdates {
     pub fn receiver(&mut self) -> &Receiver<SceneResponse> {
@@ -664,12 +665,27 @@ fn send_scene_updates(
             SceneEntityId::ROOT,
         ));
 
-        crdt_store.update_if_different(
-            SceneComponentId::TRANSFORM,
-            CrdtType::LWW_ENT,
-            id,
-            Some(&mut DclReader::new(&buf)),
-        );
+        let update = crdt_store
+            .get(SceneComponentId::TRANSFORM, CrdtType::LWW_ENT, id)
+            .map(|prev| {
+                DclTransformAndParent::from_reader(&mut DclReader::new(prev))
+                    .unwrap()
+                    .to_bevy_transform()
+            })
+            .map(|t| {
+                (t.translation - relative_transform.translation).length_squared() > 0.0001
+                    || t.rotation.angle_between(relative_transform.rotation) > 0.0001
+            })
+            .unwrap_or(true);
+
+        if update {
+            crdt_store.update_if_different(
+                SceneComponentId::TRANSFORM,
+                CrdtType::LWW_ENT,
+                id,
+                Some(&mut DclReader::new(&buf)),
+            );
+        }
     }
 
     // add canvas info

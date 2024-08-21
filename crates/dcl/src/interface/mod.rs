@@ -142,6 +142,23 @@ impl CrdtStore {
         }
     }
 
+    pub fn get(
+        &self,
+        component_id: SceneComponentId,
+        crdt_type: CrdtType,
+        entity: SceneEntityId,
+    ) -> Option<&[u8]> {
+        match crdt_type {
+            CrdtType::LWW(_) => self
+                .lww
+                .get(&component_id)
+                .and_then(|state| state.last_write.get(&entity))
+                .filter(|state| state.is_some)
+                .map(|state| state.data.as_slice()),
+            CrdtType::GO(_) => panic!(),
+        }
+    }
+
     pub fn clean_up(&mut self, dead: &HashSet<SceneEntityId>) {
         for state in self.lww.values_mut() {
             for id in dead {

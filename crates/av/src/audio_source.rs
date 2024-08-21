@@ -272,7 +272,7 @@ fn update_source_volume(
 
             for h_instance in prev_instances {
                 if !current_ids.contains(&h_instance.id()) {
-                    if let Some(instance) = audio_instances.get_mut(h_instance) {
+                    if let Some(instance) = audio_instances.get_mut(h_instance.id()) {
                         instance.stop(AudioTween::default());
                     }
                 }
@@ -284,7 +284,7 @@ fn update_source_volume(
 
     for (_ent, prev_instances) in prev_instances {
         for h_instance in prev_instances {
-            if let Some(instance) = audio_instances.get_mut(h_instance) {
+            if let Some(instance) = audio_instances.get_mut(h_instance.id()) {
                 instance.stop(AudioTween::default());
             }
         }

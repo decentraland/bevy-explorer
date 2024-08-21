@@ -1,8 +1,9 @@
-use std::{f32::consts::PI, path::PathBuf, str::FromStr};
+use std::{collections::VecDeque, f32::consts::PI, path::PathBuf, str::FromStr, time::Duration};
 
 use attach::AttachPlugin;
 use avatar_texture::AvatarTexturePlugin;
 use bevy::{
+    animation::{AnimationTarget, AnimationTargetId},
     asset::{io::AssetReader, AsyncReadExt},
     gltf::Gltf,
     prelude::*,
@@ -56,7 +57,7 @@ use ipfs::{
     EntityDefinition, IpfsAssetServer,
 };
 use scene_runner::{
-    update_world::{billboard::Billboard, AddCrdtInterfaceExt},
+    update_world::{animation::Clips, billboard::Billboard, AddCrdtInterfaceExt},
     util::ConsoleRelay,
     ContainingScene, SceneEntity,
 };
@@ -708,7 +709,7 @@ fn update_render_avatar(
                             b: 0.356,
                         })
                         .into(),
-                    render_layer: selection.render_layers,
+                    render_layer: selection.render_layers.clone(),
                 },
                 UsedWearables(urns),
             ));
@@ -863,6 +864,7 @@ fn process_avatar(
         &Parent,
         Option<&Handle<StandardMaterial>>,
         Option<&Handle<Mesh>>,
+        Option<&AnimationPlayer>,
     )>,
     named_ents: Query<&Name>,
     mut skins: Query<&mut SkinnedMesh>,
@@ -872,9 +874,10 @@ fn process_avatar(
     mut meshes: ResMut<Assets<Mesh>>,
     gltfs: Res<Assets<Gltf>>,
     attach_points: Query<&AttachPoints>,
-    ui_view: Res<AvatarWorldUi>,
-    dui: Res<DuiRegistry>,
+    (ui_view, dui): (Res<AvatarWorldUi>, Res<DuiRegistry>),
     mut emote_loader: CollectibleManager<Emote>,
+    mut graphs: ResMut<Assets<AnimationGraph>>,
+    names: Query<(&Name, &Parent)>,
 ) {
     for (avatar_ent, def, loaded_avatar, root_player_entity) in query.iter() {
         let not_loaded = !scene_spawner.instance_is_ready(loaded_avatar.body_instance)
@@ -895,17 +898,48 @@ fn process_avatar(
         let mut armature_node = None;
         let mut target_armature_entities = HashMap::default();
 
+        let mut player = AnimationPlayer::default();
+        let mut graph = AnimationGraph::new();
+        let mut clips = Clips::default();
+        let mut transitions = AnimationTransitions::default();
+        // play default idle anim to avoid t-posing
+        if let Some(clip) = emote_loader
+            .get_representation(EmoteUrn::new("Idle_Male").unwrap(), &def.body_shape)
+            .ok()
+            .and_then(|rep| rep.avatar_animation(&gltfs).ok())
+            .flatten()
+        {
+            let ix = graph.add_clip(clip, 1.0, graph.root);
+            clips.named.insert("Idle_Male".into(), (ix, 0.0));
+            transitions.play(&mut player, ix, Duration::from_secs_f32(0.2));
+        }
+        commands.entity(root_player_entity.get()).try_insert((
+            player,
+            transitions,
+            clips,
+            graphs.add(graph),
+        ));
+        // record the node with the animator
+        commands
+            .entity(root_player_entity.get())
+            .try_insert(AvatarAnimPlayer(root_player_entity.get()));
+
         // hide and colour the base model
         for scene_ent in scene_spawner.iter_instance_entities(loaded_avatar.body_instance) {
-            if let Some(layer) = def.render_layer {
+            if let Some(layer) = def.render_layer.clone() {
                 // set render layer for primary avatar
                 commands.entity(scene_ent).try_insert(layer);
             }
 
-            let Ok((mut vis, parent, maybe_h_mat, maybe_h_mesh)) = instance_ents.get_mut(scene_ent)
+            let Ok((mut vis, parent, maybe_h_mat, maybe_h_mesh, maybe_player)) =
+                instance_ents.get_mut(scene_ent)
             else {
                 continue;
             };
+
+            if maybe_player.is_some() {
+                commands.entity(scene_ent).remove::<AnimationPlayer>();
+            }
 
             let Ok(name) = named_ents.get(scene_ent) else {
                 continue;
@@ -913,22 +947,7 @@ fn process_avatar(
             let name = name.to_lowercase();
 
             // add animation player to armature root
-            if name.to_lowercase() == "armature" && armature_node.is_none() {
-                let mut player = AnimationPlayer::default();
-                // play default idle anim to avoid t-posing
-                if let Some(clip) = emote_loader
-                    .get_representation(EmoteUrn::new("Idle_Male").unwrap(), &def.body_shape)
-                    .ok()
-                    .and_then(|rep| rep.avatar_animation(&gltfs).ok())
-                    .flatten()
-                {
-                    player.start(clip.clone());
-                }
-                commands.entity(scene_ent).try_insert(player);
-                // record the node with the animator
-                commands
-                    .entity(root_player_entity.get())
-                    .try_insert(AvatarAnimPlayer(scene_ent));
+            if name == "armature" && armature_node.is_none() {
                 armature_node = Some(scene_ent);
             }
 
@@ -1012,7 +1031,7 @@ fn process_avatar(
                         if let Some(mask) = wearable.mask.as_ref() {
                             debug!("using mask for {suffix}");
                             let mask_material = mask_materials.add(MaskMaterial {
-                                color,
+                                color: color.to_linear().to_vec4(),
                                 base_texture: wearable.texture.clone().unwrap(),
                                 mask_texture: mask.clone(),
                             });
@@ -1101,6 +1120,25 @@ fn process_avatar(
             } else {
                 warn!("no attach points");
             }
+
+            // add AnimationTargets
+            for ent in target_armature_entities.values() {
+                let mut path = VecDeque::default();
+                let mut e = *ent;
+                loop {
+                    let (name, parent) = names.get(e).unwrap();
+                    path.push_front(name);
+                    if name.to_lowercase() == "armature" {
+                        break;
+                    }
+                    e = parent.get();
+                }
+
+                commands.entity(*ent).insert(AnimationTarget {
+                    id: AnimationTargetId::from_names(path.into_iter()),
+                    player: root_player_entity.get(),
+                });
+            }
         }
 
         // color the components of wearables
@@ -1113,15 +1151,20 @@ fn process_avatar(
             let mut armature_map = HashMap::default();
 
             for scene_ent in scene_spawner.iter_instance_entities(*instance) {
-                if let Some(layer) = def.render_layer {
+                if let Some(layer) = def.render_layer.clone() {
                     // set render layer for primary avatar
                     commands.entity(scene_ent).try_insert(layer);
                 }
 
-                let Ok((_, parent, maybe_h_mat, maybe_h_mesh)) = instance_ents.get(scene_ent)
+                let Ok((_, parent, maybe_h_mat, maybe_h_mesh, maybe_player)) =
+                    instance_ents.get_mut(scene_ent)
                 else {
                     continue;
                 };
+
+                if maybe_player.is_some() {
+                    commands.entity(scene_ent).remove::<AnimationPlayer>();
+                }
 
                 let Ok(parent_name) = named_ents.get(parent.get()) else {
                     continue;

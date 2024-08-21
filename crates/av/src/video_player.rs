@@ -4,13 +4,15 @@ use crate::{
     video_stream::{av_sinks, VideoSink},
 };
 use bevy::{
+    color::palettes::basic,
     core::FrameCount,
+    math::FloatOrd,
     prelude::*,
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
     },
-    utils::{FloatOrd, HashMap},
+    utils::HashMap,
 };
 use common::{
     sets::SceneSets,
@@ -95,8 +97,8 @@ fn play_videos(
                 })) => {
                     debug!("resize");
                     images.get_mut(&sink.image).unwrap().resize(Extent3d {
-                        width,
-                        height,
+                        width: width.max(16),
+                        height: height.max(16),
                         depth_or_array_layers: 1,
                     });
                     sink.length = Some(length);
@@ -182,7 +184,7 @@ pub fn update_video_players(
                             depth_or_array_layers: 1,
                         },
                         TextureDimension::D2,
-                        &Color::PINK.as_rgba_u32().to_le_bytes(),
+                        &basic::FUCHSIA.to_u8_array(),
                         TextureFormat::Rgba8UnormSrgb,
                         RenderAssetUsages::all(),
                     );

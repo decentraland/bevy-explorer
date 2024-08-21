@@ -12,7 +12,7 @@ use bevy::{
     prelude::*,
     render::render_asset::RenderAssetUsages,
     tasks::{IoTaskPool, Task},
-    utils::{HashMap, HashSet},
+    utils::{ConditionalSendFuture, HashMap, HashSet},
 };
 use isahc::AsyncReadResponseExt;
 use serde::Deserialize;
@@ -314,7 +314,7 @@ impl AssetLoader for WearableLoader {
         reader: &'a mut bevy::asset::io::Reader,
         settings: &'a Self::Settings,
         load_context: &'a mut bevy::asset::LoadContext,
-    ) -> bevy::utils::BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+    ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
             let mut entity = EntityDefinitionLoader
                 .load(reader, settings, load_context)
@@ -356,18 +356,19 @@ impl AssetLoader for WearableLoader {
                         ));
                     }
 
-                    let model = load_context.load_with_settings::<Gltf, GltfLoaderSettings>(
-                        load_context
-                            .path()
-                            .parent()
-                            .unwrap()
-                            .join(&representation.main_file),
-                        |s| {
+                    let path = load_context
+                        .path()
+                        .parent()
+                        .unwrap()
+                        .join(&representation.main_file);
+                    let model = load_context
+                        .loader()
+                        .with_settings::<GltfLoaderSettings>(|s| {
                             s.load_cameras = false;
                             s.load_lights = false;
                             s.load_materials = RenderAssetUsages::RENDER_WORLD;
-                        },
-                    );
+                        })
+                        .load(path);
 
                     (Some(model), None, None)
                 };
@@ -489,7 +490,7 @@ impl AssetLoader for WearableMetaLoader {
         reader: &'a mut bevy::asset::io::Reader,
         settings: &'a Self::Settings,
         load_context: &'a mut bevy::asset::LoadContext,
-    ) -> bevy::utils::BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+    ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
             let mut entity = EntityDefinitionLoader
                 .load(reader, settings, load_context)

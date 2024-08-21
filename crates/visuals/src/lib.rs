@@ -53,8 +53,8 @@ fn setup(
         .try_insert(AtmosphereCamera::default());
 
     commands.entity(camera.0).try_insert(FogSettings {
-        color: Color::rgb(0.3, 0.2, 0.1),
-        directional_light_color: Color::rgb(1.0, 1.0, 0.7),
+        color: Color::srgb(0.3, 0.2, 0.1),
+        directional_light_color: Color::srgb(1.0, 1.0, 0.7),
         directional_light_exponent: 10.0,
         falloff: FogFalloff::ExponentialSquared { density: 0.01 },
     });
@@ -63,7 +63,7 @@ fn setup(
         PbrBundle {
             mesh: meshes.add(Plane3d::default().mesh().size(50000.0, 50000.0)),
             material: materials.add(StandardMaterial {
-                base_color: Color::rgb(0.15, 0.2, 0.05),
+                base_color: Color::srgb(0.15, 0.2, 0.05),
                 perceptual_roughness: 1.0,
                 metallic: 0.0,
                 depth_bias: -100.0,
@@ -102,15 +102,15 @@ fn daylight_cycle(
             match setting.graphics.fog {
                 FogSetting::Off => {
                     fog.falloff = FogFalloff::from_visibility_squared(distance * 200.0);
-                    fog.directional_light_color = Color::rgb(0.3, 0.2, 0.1);
+                    fog.directional_light_color = Color::srgb(0.3, 0.2, 0.1);
                 }
                 FogSetting::Basic => {
                     fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
-                    fog.directional_light_color = Color::rgb(0.3, 0.2, 0.1);
+                    fog.directional_light_color = Color::srgb(0.3, 0.2, 0.1);
                 }
                 FogSetting::Atmospheric => {
                     fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
-                    fog.directional_light_color = Color::rgb(1.0, 1.0, 0.7);
+                    fog.directional_light_color = Color::srgb(1.0, 1.0, 0.7);
                 }
             }
 
@@ -118,7 +118,7 @@ fn daylight_cycle(
             let rgb = Vec3::new(0.4, 0.4, 0.2) * sun_up.clamp(0.0, 1.0)
                 + Vec3::new(0.0, 0.0, 0.0) * (8.0 * (0.125 - sun_up.clamp(0.0, 0.125)));
             let rgb = rgb.powf(1.0 / 2.2);
-            fog.color = Color::rgb(rgb.x, rgb.y, rgb.z);
+            fog.color = Color::srgb(rgb.x, rgb.y, rgb.z);
         }
     }
 }

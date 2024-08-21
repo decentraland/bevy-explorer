@@ -29,7 +29,7 @@ use serde_json::json;
 use ui_core::button::DuiButton;
 
 use crate::{
-    avatar_texture::{LiveBooths, PhotoBooth, PROFILE_UI_RENDERLAYER},
+    avatar_texture::{PhotoBooth, PROFILE_UI_RENDERLAYER},
     AvatarMaterials, AvatarShape,
 };
 
@@ -38,7 +38,6 @@ pub struct AvatarColliderPlugin;
 impl Plugin for AvatarColliderPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<AvatarColliders>();
-        app.init_resource::<LiveBooths>();
         app.add_systems(
             Update,
             (

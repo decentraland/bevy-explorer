@@ -7,7 +7,7 @@ use std::{
 };
 
 use bevy::{
-    animation::animation_player,
+    animation::AnimationTarget,
     asset::LoadState,
     gltf::{Gltf, GltfExtras, GltfLoaderSettings},
     pbr::ExtendedMaterial,
@@ -19,9 +19,9 @@ use bevy::{
     },
     scene::{scene_spawner_system, InstanceId},
     transform::TransformSystem,
-    utils::{HashMap, HashSet},
+    utils::HashMap,
 };
-use common::{structs::AppConfig, util::ModifyComponentExt};
+use common::{anim_last_system, structs::AppConfig, util::ModifyComponentExt};
 use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
@@ -44,6 +44,7 @@ use ipfs::{EntityDefinition, IpfsAssetServer};
 use scene_material::{SceneBound, SceneMaterial};
 
 use super::{
+    animation::Clips,
     mesh_collider::{MeshCollider, MeshColliderShape},
     transform_and_parent::TransformHelperPub,
     AddCrdtInterfaceExt, ComponentTracker,
@@ -89,7 +90,7 @@ impl Plugin for GltfDefinitionPlugin {
             (update_gltf_linked_transforms, apply_deferred)
                 .chain()
                 .in_set(GltfLinkSet)
-                .after(animation_player)
+                .after(anim_last_system!())
                 .before(TransformSystem::TransformPropagate),
         );
     }
@@ -105,7 +106,6 @@ struct GltfLoaded(Option<InstanceId>);
 #[derive(Component, Default)]
 pub struct GltfProcessed {
     pub instance_id: Option<InstanceId>,
-    pub animation_roots: HashSet<(Entity, Name)>,
     pub named_nodes: HashMap<String, Entity>,
 }
 
@@ -245,8 +245,8 @@ fn update_gltf(
     for (ent, scene_ent, h_gltf, def) in unprocessed_gltfs.iter() {
         match ipfas.load_state(h_gltf) {
             bevy::asset::LoadState::Loaded => (),
-            bevy::asset::LoadState::Failed => {
-                warn!("failed to process gltf: {}", def.0.src);
+            bevy::asset::LoadState::Failed(e) => {
+                warn!("failed to process gltf {}: {}", def.0.src, e);
                 set_state(scene_ent, LoadingState::FinishedWithError);
                 commands.entity(ent).try_insert(GltfLoaded(None));
                 continue;
@@ -337,10 +337,15 @@ fn update_ready_gltfs(
         Option<&GltfExtras>,
         Option<&SkinnedMesh>,
         Option<&Handle<StandardMaterial>>,
+        Option<&AnimationTarget>,
     )>,
-    (base_mats, mut bound_mats): (Res<Assets<StandardMaterial>>, ResMut<Assets<SceneMaterial>>),
+    (base_mats, mut bound_mats, mut graphs, mut meshes): (
+        Res<Assets<StandardMaterial>>,
+        ResMut<Assets<SceneMaterial>>,
+        ResMut<Assets<AnimationGraph>>,
+        ResMut<Assets<Mesh>>,
+    ),
     scene_spawner: Res<SceneSpawner>,
-    mut meshes: ResMut<Assets<Mesh>>,
     mut contexts: Query<(
         &mut RendererSceneContext,
         &mut SceneResourceLookup,
@@ -356,6 +361,7 @@ fn update_ready_gltfs(
     asset_server: Res<AssetServer>,
     config: Res<AppConfig>,
     gltfs: Res<Assets<Gltf>>,
+    animation_clips: Res<Assets<AnimationClip>>,
 ) {
     for (bevy_scene_entity, dcl_scene_entity, loaded, definition, h_gltf) in ready_gltfs.iter() {
         if loaded.0.is_none() {
@@ -367,8 +373,6 @@ fn update_ready_gltfs(
         }
         let instance = loaded.0.as_ref().unwrap();
         if scene_spawner.instance_is_ready(*instance) {
-            let mut animation_roots = HashSet::default();
-
             let gltf = gltfs.get(h_gltf).unwrap();
 
             // let graph = _node_graph(&_debug_query, bevy_scene_entity);
@@ -392,6 +396,9 @@ fn update_ready_gltfs(
 
             // create a counter per name so we can make unique collider handles
             let mut collider_counter: HashMap<_, u32> = HashMap::default();
+
+            // track if any animations exist
+            let mut has_animations = false;
 
             let Ok((mut context, mut resource_lookup, mut tracker)) =
                 contexts.get_mut(dcl_scene_entity.root)
@@ -423,6 +430,7 @@ fn update_ready_gltfs(
                     maybe_extras,
                     maybe_skin,
                     maybe_material,
+                    maybe_target,
                 )) = gltf_spawned_entities.get(spawned_ent)
                 {
                     // collect named nodes to push to scene on request
@@ -448,11 +456,21 @@ fn update_ready_gltfs(
                         commands.entity(spawned_ent).try_insert(rotated);
                     }
 
+                    // retarget animations to our manually added root player
+                    if let Some(target) = maybe_target {
+                        commands.entity(spawned_ent).insert(AnimationTarget {
+                            player: bevy_scene_entity,
+                            ..*target
+                        });
+                    }
+
                     // if there is an animation player, record the entity (bevy-specific hack)
                     if maybe_player.is_some() {
                         if let Some(name) = maybe_name {
                             debug!("animator found on {name} node of {}", definition.0.src);
-                            animation_roots.insert((spawned_ent, name.clone()));
+                            // animation_roots.insert((spawned_ent, name.clone()));
+                            has_animations = true;
+                            commands.entity(spawned_ent).remove::<AnimationPlayer>();
                             *tracker.0.entry("Animations").or_default() += 1;
                         }
                     }
@@ -540,7 +558,7 @@ fn update_ready_gltfs(
                             .named_materials
                             .iter()
                             .find(|(_, handle)| handle == &h_material)
-                            .map(|(name, _)| name.clone())
+                            .map(|(name, _)| name.to_string())
                             .unwrap_or_else(|| {
                                 let ix = gltf
                                     .materials
@@ -783,10 +801,38 @@ fn update_ready_gltfs(
             commands
                 .entity(bevy_scene_entity)
                 .try_insert(GltfProcessed {
-                    animation_roots,
                     instance_id: Some(*instance),
                     named_nodes,
                 });
+            if has_animations && !gltf.animations.is_empty() {
+                let mut graph = AnimationGraph::new();
+                let animation_clips = Clips {
+                    default: gltf
+                        .animations
+                        .first()
+                        .cloned()
+                        .map(|clip| graph.add_clip(clip, 1.0, graph.root)),
+                    named: gltf
+                        .named_animations
+                        .iter()
+                        .map(|(name, clip)| {
+                            let duration = animation_clips
+                                .get(clip)
+                                .map(|clip| clip.duration())
+                                .unwrap_or(0.0);
+                            (
+                                name.to_string(),
+                                (graph.add_clip(clip.clone(), 1.0, graph.root), duration),
+                            )
+                        })
+                        .collect(),
+                };
+                commands.entity(bevy_scene_entity).insert((
+                    AnimationPlayer::default(),
+                    graphs.add(graph),
+                    animation_clips,
+                ));
+            }
             *tracker.0.entry("Live Meshes").or_default() = resource_lookup
                 .meshes
                 .iter()
@@ -880,10 +926,13 @@ fn _node_graph(
                             .unwrap_or(Some(String::from("?"))),
                         (
                             c,
-                            scene_entity_query.get_component::<SkinnedMesh>(*c).is_ok(),
                             scene_entity_query
-                                .get_component::<Transform>(*c)
-                                .map(|t| t.scale)
+                                .get(*c)
+                                .map(|(_, _, _, skin, _)| skin.is_some())
+                                .unwrap_or(false),
+                            scene_entity_query
+                                .get(*c)
+                                .map(|(_, _, _, _, t)| t.scale)
                                 .unwrap_or(Vec3::ZERO),
                         ),
                     )
