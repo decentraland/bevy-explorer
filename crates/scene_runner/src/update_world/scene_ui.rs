@@ -809,6 +809,8 @@ fn layout_scene_ui(
                             }
                             let parent = parent.unwrap();
 
+                            let is_primary = bevy_ui_root == window_root;
+
                             // we can process this node
                             let mut style = Style {
                                 align_content: ui_transform.align_content,
@@ -1097,10 +1099,14 @@ fn layout_scene_ui(
                                     FocusPolicy::Block,
                                     Interaction::default(),
                                     On::<HoverEnter>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
-                                        *ui_target = UiPointerTarget::Some(node);
+                                        if is_primary {
+                                            *ui_target = UiPointerTarget::Primary(node);
+                                        } else {
+                                            *ui_target = UiPointerTarget::World(node);
+                                        }
                                     }),
                                     On::<HoverExit>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
-                                        if *ui_target == UiPointerTarget::Some(node) {
+                                        if *ui_target == UiPointerTarget::Primary(node) || *ui_target == UiPointerTarget::World(node) {
                                             *ui_target = UiPointerTarget::None;
                                         };
                                     }),

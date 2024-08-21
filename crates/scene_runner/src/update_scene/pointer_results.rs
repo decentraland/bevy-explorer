@@ -80,7 +80,8 @@ pub struct PointerTarget(pub Option<PointerTargetInfo>);
 pub enum UiPointerTarget {
     #[default]
     None,
-    Some(Entity),
+    Primary(Entity),
+    World(Entity),
 }
 
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
@@ -310,31 +311,43 @@ fn resolve_pointer_target(
     mut target: ResMut<PointerTarget>,
     accept_input: Res<AcceptInput>,
 ) {
-    let distance = world_target
-        .0
-        .as_ref()
-        .map(|t| t.distance)
-        .unwrap_or(FloatOrd(0.0));
+    match *ui_target {
+        UiPointerTarget::None => {
+            // check for system ui
+            if !accept_input.mouse {
+                target.0 = None;
+                return;
+            }
 
-    if let UiPointerTarget::Some(e) = *ui_target {
-        target.0 = Some(PointerTargetInfo {
-            container: e,
-            distance,
-            mesh_name: None,
-            position: None,
-            normal: None,
-            face: None,
-        });
-        return;
+            target.0.clone_from(&world_target.0);
+        }
+        UiPointerTarget::Primary(e) => {
+            target.0 = Some(PointerTargetInfo {
+                container: e,
+                distance: FloatOrd(0.0),
+                mesh_name: None,
+                position: None,
+                normal: None,
+                face: None,
+            });
+        }
+        UiPointerTarget::World(e) => {
+            let distance = world_target
+                .0
+                .as_ref()
+                .map(|t| t.distance)
+                .unwrap_or(FloatOrd(0.0));
+
+            target.0 = Some(PointerTargetInfo {
+                container: e,
+                distance,
+                mesh_name: None,
+                position: None,
+                normal: None,
+                face: None,
+            });
+        }
     }
-
-    // check for system ui
-    if !accept_input.mouse {
-        target.0 = None;
-        return;
-    }
-
-    target.0.clone_from(&world_target.0);
 }
 
 #[derive(clap::Parser, ConsoleCommand)]
@@ -365,7 +378,7 @@ fn debug_pointer(
     scene: Query<&RendererSceneContext>,
 ) {
     if debug.0 {
-        let info = if let UiPointerTarget::Some(ui_ent) = *ui_target {
+        let info = if let UiPointerTarget::Primary(ui_ent) = *ui_target {
             if let Ok(target) = target.get(ui_ent) {
                 if let Ok(scene) = scene.get(target.root) {
                     format!(

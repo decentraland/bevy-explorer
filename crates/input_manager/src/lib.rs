@@ -119,9 +119,7 @@ impl<'w> InputManager<'w> {
             .iter()
             .filter(|(_, button)| match button {
                 InputItem::Key(k) => self.should_accept.key && self.key_input.just_pressed(*k),
-                InputItem::Mouse(m) => {
-                    self.should_accept.mouse && self.mouse_input.just_pressed(*m)
-                }
+                InputItem::Mouse(m) => self.mouse_input.just_pressed(*m),
                 InputItem::Any => false,
             })
             .map(|(action, _)| action)
