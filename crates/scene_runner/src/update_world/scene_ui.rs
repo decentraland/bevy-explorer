@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::{
+    ecs::system::EntityCommands,
     prelude::*,
     render::render_resource::Extent3d,
     ui::{FocusPolicy, ManualCursorPosition},
@@ -565,7 +566,7 @@ fn layout_scene_ui(
         Option<&UiDropdown>,
         &Parent,
     )>,
-    (mut ui_target, mut stretch_uvs, mut images): (
+    (mut ui_target, stretch_uvs, images): (
         ResMut<UiPointerTarget>,
         ResMut<Assets<StretchUvMaterial>>,
         ResMut<Assets<Image>>,
@@ -594,11 +595,13 @@ fn layout_scene_ui(
         }
     }
 
+    let removed_transforms = removed_transforms.read().collect::<Vec<_>>();
+    let images = images.into_inner();
+    let stretch_uvs = stretch_uvs.into_inner();
+
     for (ent, mut ui_data, ctx) in scene_uis.iter_mut() {
         if current_scenes.contains(&ent) {
-            let any_removed = removed_transforms
-                .read()
-                .any(|r| ui_data.nodes.contains(&r));
+            let any_removed = removed_transforms.iter().any(|r| ui_data.nodes.contains(r));
             if ui_data.relayout
                 || ui_data.current_nodes.is_empty()
                 || config.is_changed()
@@ -743,67 +746,42 @@ fn layout_scene_ui(
                             maybe_dropdown,
                             scene_ui_root_node,
                         )| {
-                            let bevy_ui_root = *ui_data.current_nodes.entry(*scene_ui_root_node).or_insert_with(|| {
-                                let canvas_info = canvas_infos.get(*scene_ui_root_node).cloned().unwrap_or(UiCanvas(PbUiCanvas { width: 512, height: 512, color: None })).0;
-
-                                let root_node = prev_nodes.remove(scene_ui_root_node).unwrap_or_else(|| {
-                                    debug!("creating camera for root {:?}", scene_ui_root_node);
-                                    let (camera, ui_texture) = world_ui::spawn_world_ui_view(&mut commands, &mut images);
-                                    commands.entity(camera).insert((
-                                        TargetCamera(camera),
-                                        ManualCursorPosition::default(),
-                                        SceneUiRoot(ent),
-                                        DespawnWith(ent),
-                                        NodeBundle {
-                                            style: Style {
-                                                position_type: PositionType::Absolute,
-                                                width: Val::Percent(100.0),
-                                                height: Val::Percent(100.0),
-                                                ..Default::default()
-                                            },
-                                            z_index: ZIndex::Global(-2), // behind the ZIndex(-1) MouseInteractionComponent
-                                            ..Default::default()
-                                        }
-                                    ));
-                                    debug!("created {:?}", camera);
-
-                                    images.get_mut(&ui_texture).unwrap().resize(Extent3d {
-                                        width: canvas_info.width,
-                                        height: canvas_info.height,
-                                        depth_or_array_layers: 1,
-                                    });
-
-                                    commands.entity(*scene_ui_root_node).insert(
-                                        UiTextureOutput {
-                                            camera,
-                                            image: ui_texture,
-                                            texture_size: UVec2::new(canvas_info.width, canvas_info.height),
-                                        }
-                                    );
-
-                                    camera
+                            let bevy_ui_root = *ui_data
+                                .current_nodes
+                                .entry(*scene_ui_root_node)
+                                .or_insert_with(|| {
+                                    create_ui_root(
+                                        &canvas_infos,
+                                        scene_ui_root_node,
+                                        &mut prev_nodes,
+                                        &mut commands,
+                                        images,
+                                        ent,
+                                    )
                                 });
-
-                                commands
-                                    .entity(root_node)
-                                    .modify_component(move |c: &mut Camera| c.clear_color = bevy::render::camera::ClearColorConfig::Custom(canvas_info.color.map(Into::into).unwrap_or(Color::NONE)));
-                                root_node
-                            });
-                            processed_nodes.insert((*scene_ui_root_node, SceneEntityId::ROOT), (Some(bevy_ui_root), 1.0));
+                            processed_nodes.insert(
+                                (*scene_ui_root_node, SceneEntityId::ROOT),
+                                (Some(bevy_ui_root), 1.0),
+                            );
 
                             // if our rightof is not added, we can't process this node
-                            if !processed_nodes.contains_key(&(*scene_ui_root_node, ui_transform.right_of)) {
+                            if !processed_nodes
+                                .contains_key(&(*scene_ui_root_node, ui_transform.right_of))
+                            {
                                 return true;
                             }
 
                             // if our parent is not added (or is hidden), we can't process this node
-                            let Some((parent, opacity)) = processed_nodes.get(&(*scene_ui_root_node, ui_transform.parent)) else {
+                            let Some((parent, opacity)) =
+                                processed_nodes.get(&(*scene_ui_root_node, ui_transform.parent))
+                            else {
                                 return true;
                             };
 
                             // if we're hidden or our parent is hidden, bail here
                             if parent.is_none() || ui_transform.display == Display::None {
-                                processed_nodes.insert((*scene_ui_root_node, *scene_id), (None, *opacity));
+                                processed_nodes
+                                    .insert((*scene_ui_root_node, *scene_id), (None, *opacity));
                                 modified = true;
                                 return false;
                             }
@@ -840,16 +818,24 @@ fn layout_scene_ui(
                                 ..Default::default()
                             };
 
-                            debug!("{:?} ui root: {:?} scene root: {:?})", scene_id, scene_ui_root_node, ent);
+                            debug!(
+                                "{:?} ui root: {:?} scene root: {:?})",
+                                scene_id, scene_ui_root_node, ent
+                            );
                             debug!("{:?} style: {:?}", scene_id, ui_transform);
-                            debug!("{:?}, {:?}, {:?}, {:?}, {:?}", maybe_background, maybe_text, maybe_pointer_events, maybe_ui_input, maybe_dropdown);
+                            debug!(
+                                "{:?}, {:?}, {:?}, {:?}, {:?}",
+                                maybe_background,
+                                maybe_text,
+                                maybe_pointer_events,
+                                maybe_ui_input,
+                                maybe_dropdown
+                            );
                             let total_opacity = opacity * ui_transform.opacity;
 
-                            // we have to manually add the target camera here to ensure it is immediately updated - otherwise bevy will clear it and 
-                            // the ui appears on the main window for a frame
-                            let ui_entity = commands.spawn(NodeBundle::default()).id();
-                            commands.entity(parent).add_child(ui_entity);
-                            let mut ent_cmds = commands.entity(ui_entity);
+                            let mut ent_cmds = commands.spawn(NodeBundle::default());
+                            let ui_entity = ent_cmds.id();
+                            ent_cmds.commands().entity(parent).add_child(ui_entity);
 
                             if let Some(name) = ui_transform.element_id.clone() {
                                 named_nodes.insert(name, ent_cmds.id());
@@ -859,501 +845,72 @@ fn layout_scene_ui(
                             ent_cmds.insert(ZIndex::Local(scene_id.id as i32));
 
                             if let Some(background) = maybe_background {
-                                if let Some(texture) = background.texture.as_ref() {
-                                    let image = texture.tex.tex.as_ref().and_then(|tex| resolver.resolve_texture(ctx, tex).ok());
-
-                                    let texture_mode = match texture.tex.tex {
-                                        Some(texture_union::Tex::Texture(_)) => texture.mode,
-                                        _ => BackgroundTextureMode::stretch_default(),
-                                    };
-
-                                    if let Some(image) = image {
-                                        let image_color = background.color.unwrap_or(Color::WHITE);
-                                        let image_color = image_color.with_alpha(image_color.alpha() * total_opacity);
-                                        match texture_mode {
-                                            BackgroundTextureMode::NineSlices(rect) => {
-                                                ent_cmds.with_children(|c| {
-                                                    c.spawn((
-                                                        NodeBundle {
-                                                            style: Style {
-                                                                position_type: PositionType::Absolute,
-                                                                width: Val::Percent(100.0),
-                                                                height: Val::Percent(100.0),
-                                                                overflow: Overflow::clip(),
-                                                                ..Default::default()
-                                                            },
-                                                            ..Default::default()
-                                                        },
-                                                        Ui9Slice{
-                                                            image: image.image,
-                                                            center_region: rect.into(),
-                                                            tint: Some(image_color),
-                                                        },
-                                                    ));
-                                                });
-                                            },
-                                            BackgroundTextureMode::Stretch(ref uvs) => {
-                                                ent_cmds.with_children(|c| {
-                                                    c.spawn(NodeBundle {
-                                                        style: Style {
-                                                            position_type: PositionType::Absolute,
-                                                            width: Val::Percent(100.0),
-                                                            height: Val::Percent(100.0),
-                                                            overflow: Overflow::clip(),
-                                                            ..Default::default()
-                                                        },
-                                                        ..Default::default()
-                                                    }).with_children(|c| {
-                                                        let color = background.color.unwrap_or(Color::WHITE);
-                                                        let color = color.with_alpha(color.alpha() * total_opacity);
-                                                        c.spawn((
-                                                            MaterialNodeBundle {
-                                                                style: Style {
-                                                                    position_type: PositionType::Absolute,
-                                                                    width: Val::Percent(100.0),
-                                                                    height: Val::Percent(100.0),
-                                                                    ..Default::default()
-                                                                },
-                                                                material: stretch_uvs.add(StretchUvMaterial{ image: image.image.clone(), uvs: *uvs, color: color.to_linear().to_vec4() }),
-                                                                ..Default::default()
-                                                            },
-                                                        ));
-                                                    });
-                                                });
-                                            }
-                                            BackgroundTextureMode::Center => {
-                                                ent_cmds.with_children(|c| {
-                                                    // make a stretchy grid
-                                                    c.spawn(NodeBundle {
-                                                        style: Style {
-                                                            position_type: PositionType::Absolute,
-                                                            left: Val::Px(0.0),
-                                                            right: Val::Px(0.0),
-                                                            top: Val::Px(0.0),
-                                                            bottom: Val::Px(0.0),
-                                                            justify_content: JustifyContent::Center,
-                                                            overflow: Overflow::clip(),
-                                                            width: Val::Percent(100.0),
-                                                            ..Default::default()
-                                                        },
-                                                        ..Default::default()
-                                                    })
-                                                    .with_children(|c| {
-                                                        c.spacer();
-                                                        c.spawn(NodeBundle {
-                                                            style: Style {
-                                                                flex_direction:
-                                                                    FlexDirection::Column,
-                                                                justify_content:
-                                                                    JustifyContent::Center,
-                                                                overflow: Overflow::clip(),
-                                                                height: Val::Percent(100.0),
-                                                                ..Default::default()
-                                                            },
-                                                            ..Default::default()
-                                                        })
-                                                        .with_children(|c| {
-                                                            c.spacer();
-                                                            c.spawn(ImageBundle {
-                                                                style: Style {
-                                                                    overflow: Overflow::clip(),
-                                                                    ..Default::default()
-                                                                },
-                                                                image: UiImage {
-                                                                    color: image_color,
-                                                                    texture: image.image,
-                                                                    flip_x: false,
-                                                                    flip_y: false,
-                                                                },
-                                                                ..Default::default()
-                                                            });
-                                                            c.spacer();
-                                                        });
-                                                        c.spacer();
-                                                    });
-                                                });
-                                            }
-                                        }
-                                    } else {
-                                        warn!(
-                                            "failed to load ui image from content map: {:?}",
-                                            texture
-                                        );
-                                    }
-                                } else if let Some(color) = background.color {
-                                    ent_cmds.insert(BackgroundColor(color));
-                                }
+                                set_ui_background(
+                                    &mut ent_cmds,
+                                    background,
+                                    total_opacity,
+                                    ctx,
+                                    &resolver,
+                                    stretch_uvs,
+                                );
                             }
 
                             if let Some(ui_text) = maybe_text {
-                                if !ui_text.text.is_empty() && ui_text.font_size > 0.0 {
-                                    let text = make_text_section(
-                                        ui_text.text.as_str(),
-                                        ui_text.font_size,
-                                        ui_text.color.with_alpha(ui_text.color.alpha() * total_opacity),
-                                        ui_text.font,
-                                        ui_text.h_align,
-                                        ui_text.wrapping,
-                                    );
-
-                                    // with text nodes the axis sizes are unusual. 
-                                    // a) if either size axis is NOT NONE, (explicit or auto), we want auto to size appropriately for the content.
-                                    // b) if both axes are NONE, we want to size to zero.
-                                    // a) - we tackle this by using a nested position-type: relative node which will size it's parent appropriately, and default the parent to Auto
-                                    //    - for alignment we use align-items and justify-content
-                                    // b) - we use a nested position-type: absolute node, and default the parent to auto
-                                    //    - for alignment we use align-items and justify-content as above, and we also set left/right/top/bottom to 50% if required
-
-                                    let any_axis_specified = [ui_transform.size.width, ui_transform.size.height].iter().any(Option::is_some);
-
-                                    let inner_style = if any_axis_specified {
-                                        Style {
-                                            position_type: PositionType::Relative,
-                                            ..Default::default()
-                                        }
-                                    } else {
-                                        Style {
-                                            position_type: PositionType::Absolute,
-                                            left: if ui_text.h_align == JustifyText::Left {
-                                                Val::Percent(50.0)
-                                            } else {
-                                                Val::Auto
-                                            },
-                                            right: if ui_text.h_align == JustifyText::Right {
-                                                Val::Percent(50.0)
-                                            } else {
-                                                Val::Auto
-                                            },
-                                            top: if ui_text.v_align == VAlign::Top {
-                                                Val::Percent(50.0)
-                                            } else {
-                                                Val::Auto
-                                            },
-                                            bottom: if ui_text.v_align == VAlign::Bottom {
-                                                Val::Percent(50.0)
-                                            } else {
-                                                Val::Auto
-                                            },
-                                            ..Default::default()
-                                        }
-                                    };
-
-                                    // we need to set size for the first inner element depending 
-                                    // on how the outer was specified
-                                    let width = match ui_transform.size.width {
-                                        Some(Val::Px(px)) => Val::Px(px),
-                                        Some(Val::Percent(_)) => Val::Percent(100.0),
-                                        _ => Val::Auto,
-                                    };
-                                    let height = match ui_transform.size.height {
-                                        Some(Val::Px(px)) => Val::Px(px),
-                                        Some(Val::Percent(_)) => Val::Percent(100.0),
-                                        _ => Val::Auto,
-                                    };
-
-                                    ent_cmds.with_children(|c| {
-                                        c.spawn(NodeBundle {
-                                            style: Style {
-                                                flex_direction: FlexDirection::Row,
-                                                justify_content: match ui_text.h_align {
-                                                    JustifyText::Left => JustifyContent::FlexStart,
-                                                    JustifyText::Center => JustifyContent::Center,
-                                                    JustifyText::Right => JustifyContent::FlexEnd,
-                                                    JustifyText::Justified => unreachable!(),
-                                                },
-                                                align_items: match ui_text.v_align {
-                                                    VAlign::Top => AlignItems::FlexStart,
-                                                    VAlign::Middle => AlignItems::Center,
-                                                    VAlign::Bottom => AlignItems::FlexEnd,
-                                                },
-                                                width,
-                                                height,
-                                                align_self: AlignSelf::FlexStart,
-                                                // elements are horizontally centered by default
-                                                margin: UiRect::horizontal(Val::Auto),
-                                                ..Default::default()
-                                            },
-                                            ..Default::default()
-                                        })
-                                            .with_children(|c| {
-                                                c.spawn(NodeBundle {
-                                                    style: inner_style,
-                                                    ..Default::default()
-                                                }).with_children(|c| {
-                                                    c.spawn(TextBundle {
-                                                        text,
-                                                        z_index: ZIndex::Local(1),
-                                                        ..Default::default()
-                                                    });
-                                                });
-                                            },
-                                        );
-                                    });
-                                }
+                                set_ui_text(&mut ent_cmds, ui_text, total_opacity, ui_transform);
                             }
 
                             if maybe_pointer_events.is_some() {
-                                let node = *node;
-
-                                ent_cmds.insert((
-                                    FocusPolicy::Block,
-                                    Interaction::default(),
-                                    On::<HoverEnter>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
-                                        if is_primary {
-                                            *ui_target = UiPointerTarget::Primary(node);
-                                        } else {
-                                            *ui_target = UiPointerTarget::World(node);
-                                        }
-                                    }),
-                                    On::<HoverExit>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
-                                        if *ui_target == UiPointerTarget::Primary(node) || *ui_target == UiPointerTarget::World(node) {
-                                            *ui_target = UiPointerTarget::None;
-                                        };
-                                    }),
-                                ));
+                                set_ui_pointer_events(&mut ent_cmds, *node, is_primary);
                             }
 
                             if let Some(input) = maybe_ui_input {
-                                let node = *node;
-                                let ui_node = ent_cmds.id();
-                                let scene_id = *scene_id;
-
-                                let (content, focus) = match ui_input_state.get(node) {
-                                    Ok(state) => (state.content.clone(), state.focus),
-                                    Err(_) => {
-                                        ent_cmds.commands().entity(node).try_insert(UiInputPersistentState{content: input.0.value.clone().unwrap_or_default(), focus: false});
-                                        (input.0.value.clone().unwrap_or_default(), false)
-                                    }
-                                };
-                                let font_size = input.0.font_size.unwrap_or(12);
-
-                                debug!("{:?} input: {:?} - {:?}", ent_cmds.id(), input.0, content);
-
-                                //ensure we use max width if not given
-                                if style.width == Val::Px(0.0) {
-                                    style.width = Val::Percent(100.0);
-                                }
-                                //and some size if not given
-                                if style.height == Val::Px(0.0) {
-                                    style.height = Val::Px(font_size as f32 * 1.3);
-                                }
-
-                                let data_handler = move |
-                                    In(submit): In<bool>,
-                                    mut commands: Commands,
-                                    entry: Query<&TextEntry>,
-                                    mut context: Query<&mut RendererSceneContext>,
-                                    time: Res<Time>,
-                                    caller: Res<UiCaller>,
-                                | {
-                                    debug!("callback on {:?}", caller.0);
-                                    let Ok(entry) = entry.get(ui_node) else {
-                                        warn!("failed to get text node on UiInput update");
-                                        return;
-                                    };
-                                    let Ok(mut context) = context.get_mut(ent) else {
-                                        warn!("failed to get context on UiInput update");
-                                        return;
-                                    };
-
-                                    context.update_crdt(SceneComponentId::UI_INPUT_RESULT, CrdtType::LWW_ENT, scene_id, &PbUiInputResult {
-                                        value: entry.content.clone(),
-                                        is_submit: Some(submit),
-                                    });
-                                    context.last_action_event = Some(time.elapsed_seconds());
-                                    // store persistent state to the scene entity
-                                    commands.entity(node).try_insert(UiInputPersistentState{content: entry.content.clone(), focus: true});
-                                };
-
-                                ent_cmds.insert((
-                                    FocusPolicy::Block,
-                                    Interaction::default(),
-                                    TextEntry {
-                                        hint_text: input.0.placeholder.to_owned(),
-                                        enabled: !input.0.disabled,
-                                        content,
-                                        accept_line: false,
-                                        font_size,
-                                        id_entity: Some(node),
-                                        ..Default::default()
-                                    },
-                                    On::<DataChanged>::new((|| false).pipe(data_handler)),
-                                    On::<Submit>::new((|| true).pipe(data_handler)),
-                                    On::<Focus>::new(move |mut q: Query<&mut UiInputPersistentState>| {
-                                        let Ok(mut state) = q.get_mut(node) else {
-                                            warn!("failed to get node state on focus");
-                                            return;
-                                        };
-                                        state.focus = true;
-                                    }),
-                                    On::<Defocus>::new(move |mut q: Query<&mut UiInputPersistentState>| {
-                                        let Ok(mut state) = q.get_mut(node) else {
-                                            warn!("failed to get node state on defocus");
-                                            return;
-                                        };
-                                        state.focus = false;
-                                    }),
-                                ));
-
-                                if focus {
-                                    ent_cmds.insert((Focus, FocusIsNotReallyNew));
-                                }
+                                set_ui_input(
+                                    &mut ent_cmds,
+                                    input,
+                                    *node,
+                                    *scene_id,
+                                    ent,
+                                    &ui_input_state,
+                                    &mut style,
+                                );
                             }
 
                             if let Some(dropdown) = maybe_dropdown {
-                                let node = *node;
-                                let ui_node = ent_cmds.id();
-                                let scene_id = *scene_id;
-
-                                let initial_selection = match (ui_dropdown_state.get(node), dropdown.0.accept_empty) {
-                                    (Ok(state), _) => Some(state.0),
-                                    (_, false) => Some(dropdown.0.selected_index.unwrap_or(0) as isize),
-                                    (_, true) => dropdown.0.selected_index.map(|ix| ix as isize),
-                                };
-
-                                //ensure we use max width if not given
-                                if style.width == Val::Px(0.0) || style.width == Val::Auto {
-                                    style.width = Val::Percent(100.0);
-                                }
-                                //and some size if not given
-                                if style.height == Val::Px(0.0) || style.height == Val::Auto {
-                                    style.height = Val::Px(16.0);
-                                }
-
-                                ent_cmds.insert((
-                                    ComboBox::new(
-                                        dropdown.0.empty_label.clone().unwrap_or_default(),
-                                        &dropdown.0.options,
-                                        dropdown.0.accept_empty,
-                                        dropdown.0.disabled,
-                                        initial_selection
-                                    ).with_id(node),
-                                    On::<DataChanged>::new(move |
-                                        mut commands: Commands,
-                                        combo: Query<(Entity, &ComboBox)>,
-                                        mut context: Query<&mut RendererSceneContext>,
-                                        time: Res<Time>,
-                                    | {
-                                        let Ok((_, combo)) = combo.get(ui_node) else {
-                                            warn!("failed to get combo node on UiDropdown update");
-                                            return;
-                                        };
-                                        let Ok(mut context) = context.get_mut(ent) else {
-                                            warn!("failed to get context on UiInput update");
-                                            return;
-                                        };
-
-                                        context.update_crdt(SceneComponentId::UI_DROPDOWN_RESULT, CrdtType::LWW_ENT, scene_id, &PbUiDropdownResult {
-                                            value: combo.selected as i32,
-                                        });
-                                        context.last_action_event = Some(time.elapsed_seconds());
-                                        // store persistent state to the scene entity
-                                        commands.entity(node).try_insert(UiDropdownPersistentState(combo.selected));
-                                    }),
-                                ));
+                                set_ui_dropdown(
+                                    &mut ent_cmds,
+                                    dropdown,
+                                    *node,
+                                    *scene_id,
+                                    &ui_dropdown_state,
+                                    &mut style,
+                                    ent,
+                                );
                             }
 
-                            processed_nodes.insert((*scene_ui_root_node, *scene_id), (Some(ent_cmds.id()), total_opacity));
+                            processed_nodes.insert(
+                                (*scene_ui_root_node, *scene_id),
+                                (Some(ent_cmds.id()), total_opacity),
+                            );
 
                             // if it's a scrollable, embed any child content in a labyrinthine tower of divs
                             if ui_transform.scroll {
-                                let id = processed_nodes.get_mut(&(*scene_ui_root_node, *scene_id)).unwrap().0.as_mut().unwrap();
-                                ent_cmds.insert(FocusPolicy::Block);
-                                let (scrollable, content, pos, event) = match salvaged_scrollables.remove(node) {
-                                    Some((state, prev_pos)) => {
-                                        // reuse existing
-                                        ent_cmds.add_child(state.scrollable);
-                                        // send event if there's a new target
-                                        let event = if ui_transform.scroll_position.is_some() && ui_transform.scroll_position != state.position {
-                                            ui_transform.scroll_position.clone()
-                                        } else {
-                                            None
-                                        };
-                                        // update current target (deferred)
-                                        if ui_transform.scroll_position != state.position {
-                                            let pos = ui_transform.scroll_position.clone();
-                                            ent_cmds.commands().entity(*node).modify_component(move |state: &mut UiScrollablePersistentState| {
-                                                state.position = pos;
-                                            });
-                                        }
-                                        (state.scrollable, state.content, prev_pos, event)
-                                    },
-                                    None => {
-                                        // create new
-                                        let content = ent_cmds.commands().spawn(NodeBundle::default()).id();
-
-                                        let scrollable = ent_cmds.spawn_template(
-                                                &dui,
-                                                "scrollable-base", 
-                                                DuiProps::new().with_prop(
-                                                    "scroll-settings",
-                                                    Scrollable::new()
-                                                        .with_direction(ScrollDirection::Both(StartPosition::Explicit(0.0), StartPosition::Explicit(0.0)))
-                                                        .with_drag(true)
-                                                        .with_wheel(true)
-                                                        .with_bars_visible(ui_transform.scroll_h_visible, ui_transform.scroll_v_visible),
-                                                    )
-                                                    .with_prop("content", content)
-                                            ).unwrap().root;
-                                        let scene_id = *scene_id;
-
-                                        ent_cmds.commands().entity(scrollable).insert(
-                                            On::<DataChanged>::new(move |
-                                                caller: Res<UiCaller>,
-                                                position: Query<&ScrollPosition>,
-                                                mut context: Query<&mut RendererSceneContext>,
-                                            | {
-                                                let Ok(pos) = position.get(caller.0) else {
-                                                    warn!("failed to get scroll pos on scrollable update");
-                                                    return;
-                                                };
-                                                let Ok(mut context) = context.get_mut(ent) else {
-                                                    warn!("failed to get context on scrollable update");
-                                                    return;
-                                                };
-
-                                                context.update_crdt(SceneComponentId::UI_SCROLL_RESULT, CrdtType::LWW_ENT, scene_id, &PbUiScrollResult {
-                                                    value: Some(Vec2::new(pos.h, pos.v).into())
-                                                });
-                                            }),
-                                        );
-
-                                        let state = UiScrollablePersistentState {
-                                            root: *scene_ui_root_node,
-                                            scrollable,
-                                            content,
-                                            position: ui_transform.scroll_position.clone(),
-                                        };
-                                        ent_cmds.commands().entity(*node).try_insert(state);
-                                        (scrollable, content, (0.0, 0.0), ui_transform.scroll_position.clone())
-                                    }
-                                };
-                                *id = content;
-
-                                if let Some(ScrollPositionValue{ value: Some(target) }) = event {
-                                    match target {
-                                        scroll_position_value::Value::Position(vec) => {
-                                            scroll_to.send(ScrollTargetEvent { scrollable, position: ScrollTarget::Literal(Vec2::from(&vec)) });
-                                        },
-                                        scroll_position_value::Value::Reference(target) => {
-                                            target_scroll_events.insert(scrollable, target);
-                                        },
-                                    }
-                                }
-
-                                // copy child-affecting style members onto the inner pane
-                                let inner_style = Style {
-                                    align_content: ui_transform.align_content,
-                                    align_items: ui_transform.align_items,
-                                    flex_wrap: ui_transform.wrap,
-                                    flex_direction: ui_transform.flex_direction,
-                                    justify_content: ui_transform.justify_content,
-                                    overflow: ui_transform.overflow,
-                                    left: Val::Px(pos.0),
-                                    top: Val::Px(pos.1),
-                                    ..Default::default()
-                                };
-                                ent_cmds.commands().entity(content).insert(inner_style);
+                                let salvaged_scrollable = salvaged_scrollables.remove(node);
+                                let content = set_ui_scrollable(
+                                    &mut ent_cmds,
+                                    *node,
+                                    *scene_id,
+                                    *scene_ui_root_node,
+                                    ent,
+                                    salvaged_scrollable,
+                                    ui_transform,
+                                    &dui,
+                                    &mut scroll_to,
+                                    &mut target_scroll_events,
+                                );
+                                processed_nodes.insert(
+                                    (*scene_ui_root_node, *scene_id),
+                                    (Some(content), total_opacity),
+                                );
                             }
 
                             ent_cmds.insert(style);
@@ -1398,6 +955,658 @@ fn layout_scene_ui(
         } else {
             ui_data.current_nodes.clear();
         }
+    }
+}
+
+fn create_ui_root(
+    canvas_infos: &Query<&UiCanvas>,
+    scene_ui_root_node: &mut Entity,
+    prev_nodes: &mut HashMap<Entity, Entity>,
+    commands: &mut Commands,
+    images: &mut Assets<Image>,
+    ent: Entity,
+) -> Entity {
+    let canvas_info = canvas_infos
+        .get(*scene_ui_root_node)
+        .cloned()
+        .unwrap_or(UiCanvas(PbUiCanvas {
+            width: 512,
+            height: 512,
+            color: None,
+        }))
+        .0;
+
+    let root_node = prev_nodes.remove(scene_ui_root_node).unwrap_or_else(|| {
+        debug!("creating camera for root {:?}", scene_ui_root_node);
+        let (camera, ui_texture) = world_ui::spawn_world_ui_view(commands, images);
+        commands.entity(camera).insert((
+            TargetCamera(camera),
+            ManualCursorPosition::default(),
+            SceneUiRoot(ent),
+            DespawnWith(ent),
+            NodeBundle {
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    ..Default::default()
+                },
+                z_index: ZIndex::Global(-2), // behind the ZIndex(-1) MouseInteractionComponent
+                ..Default::default()
+            },
+        ));
+        debug!("created {:?}", camera);
+
+        images.get_mut(&ui_texture).unwrap().resize(Extent3d {
+            width: canvas_info.width,
+            height: canvas_info.height,
+            depth_or_array_layers: 1,
+        });
+
+        commands
+            .entity(*scene_ui_root_node)
+            .insert(UiTextureOutput {
+                camera,
+                image: ui_texture,
+                texture_size: UVec2::new(canvas_info.width, canvas_info.height),
+            });
+
+        camera
+    });
+
+    commands
+        .entity(root_node)
+        .modify_component(move |c: &mut Camera| {
+            c.clear_color = bevy::render::camera::ClearColorConfig::Custom(
+                canvas_info.color.map(Into::into).unwrap_or(Color::NONE),
+            )
+        });
+    root_node
+}
+
+fn set_ui_input(
+    ent_cmds: &mut EntityCommands,
+    input: &UiInput,
+    node: Entity,
+    scene_id: SceneEntityId,
+    root: Entity,
+    ui_input_state: &Query<&UiInputPersistentState>,
+    style: &mut Style,
+) {
+    let ui_node = ent_cmds.id();
+
+    let (content, focus) = match ui_input_state.get(node) {
+        Ok(state) => (state.content.clone(), state.focus),
+        Err(_) => {
+            ent_cmds
+                .commands()
+                .entity(node)
+                .try_insert(UiInputPersistentState {
+                    content: input.0.value.clone().unwrap_or_default(),
+                    focus: false,
+                });
+            (input.0.value.clone().unwrap_or_default(), false)
+        }
+    };
+    let font_size = input.0.font_size.unwrap_or(12);
+
+    debug!("{:?} input: {:?} - {:?}", ent_cmds.id(), input.0, content);
+
+    //ensure we use max width if not given
+    if style.width == Val::Px(0.0) {
+        style.width = Val::Percent(100.0);
+    }
+    //and some size if not given
+    if style.height == Val::Px(0.0) {
+        style.height = Val::Px(font_size as f32 * 1.3);
+    }
+
+    let data_handler = move |In(submit): In<bool>,
+                             mut commands: Commands,
+                             entry: Query<&TextEntry>,
+                             mut context: Query<&mut RendererSceneContext>,
+                             time: Res<Time>,
+                             caller: Res<UiCaller>| {
+        debug!("callback on {:?}", caller.0);
+        let Ok(entry) = entry.get(ui_node) else {
+            warn!("failed to get text node on UiInput update");
+            return;
+        };
+        let Ok(mut context) = context.get_mut(root) else {
+            warn!("failed to get context on UiInput update");
+            return;
+        };
+
+        context.update_crdt(
+            SceneComponentId::UI_INPUT_RESULT,
+            CrdtType::LWW_ENT,
+            scene_id,
+            &PbUiInputResult {
+                value: entry.content.clone(),
+                is_submit: Some(submit),
+            },
+        );
+        context.last_action_event = Some(time.elapsed_seconds());
+        // store persistent state to the scene entity
+        commands.entity(node).try_insert(UiInputPersistentState {
+            content: entry.content.clone(),
+            focus: true,
+        });
+    };
+
+    ent_cmds.insert((
+        FocusPolicy::Block,
+        Interaction::default(),
+        TextEntry {
+            hint_text: input.0.placeholder.to_owned(),
+            enabled: !input.0.disabled,
+            content,
+            accept_line: false,
+            font_size,
+            id_entity: Some(node),
+            ..Default::default()
+        },
+        On::<DataChanged>::new((|| false).pipe(data_handler)),
+        On::<Submit>::new((|| true).pipe(data_handler)),
+        On::<Focus>::new(move |mut q: Query<&mut UiInputPersistentState>| {
+            let Ok(mut state) = q.get_mut(node) else {
+                warn!("failed to get node state on focus");
+                return;
+            };
+            state.focus = true;
+        }),
+        On::<Defocus>::new(move |mut q: Query<&mut UiInputPersistentState>| {
+            let Ok(mut state) = q.get_mut(node) else {
+                warn!("failed to get node state on defocus");
+                return;
+            };
+            state.focus = false;
+        }),
+    ));
+
+    if focus {
+        ent_cmds.insert((Focus, FocusIsNotReallyNew));
+    }
+}
+
+fn set_ui_scrollable(
+    ent_cmds: &mut EntityCommands,
+    node: Entity,
+    scene_id: SceneEntityId,
+    scene_ui_root_node: Entity,
+    scene_root: Entity,
+    salvaged_scrollable: Option<(&UiScrollablePersistentState, (f32, f32))>,
+    ui_transform: &mut UiTransform,
+    dui: &DuiRegistry,
+    scroll_to: &mut EventWriter<ScrollTargetEvent>,
+    target_scroll_events: &mut HashMap<Entity, String>,
+) -> Entity {
+    ent_cmds.insert(FocusPolicy::Block);
+    let (scrollable, content, pos, event) = match salvaged_scrollable {
+        Some((state, prev_pos)) => {
+            // reuse existing
+            ent_cmds.add_child(state.scrollable);
+            // send event if there's a new target
+            let event = if ui_transform.scroll_position.is_some()
+                && ui_transform.scroll_position != state.position
+            {
+                ui_transform.scroll_position.clone()
+            } else {
+                None
+            };
+            // update current target (deferred)
+            if ui_transform.scroll_position != state.position {
+                let pos = ui_transform.scroll_position.clone();
+                ent_cmds.commands().entity(node).modify_component(
+                    move |state: &mut UiScrollablePersistentState| {
+                        state.position = pos;
+                    },
+                );
+            }
+            (state.scrollable, state.content, prev_pos, event)
+        }
+        None => {
+            // create new
+            let content = ent_cmds.commands().spawn(NodeBundle::default()).id();
+
+            let scrollable = ent_cmds
+                .spawn_template(
+                    dui,
+                    "scrollable-base",
+                    DuiProps::new()
+                        .with_prop(
+                            "scroll-settings",
+                            Scrollable::new()
+                                .with_direction(ScrollDirection::Both(
+                                    StartPosition::Explicit(0.0),
+                                    StartPosition::Explicit(0.0),
+                                ))
+                                .with_drag(true)
+                                .with_wheel(true)
+                                .with_bars_visible(
+                                    ui_transform.scroll_h_visible,
+                                    ui_transform.scroll_v_visible,
+                                ),
+                        )
+                        .with_prop("content", content),
+                )
+                .unwrap()
+                .root;
+
+            ent_cmds
+                .commands()
+                .entity(scrollable)
+                .insert(On::<DataChanged>::new(
+                    move |caller: Res<UiCaller>,
+                          position: Query<&ScrollPosition>,
+                          mut context: Query<&mut RendererSceneContext>| {
+                        let Ok(pos) = position.get(caller.0) else {
+                            warn!("failed to get scroll pos on scrollable update");
+                            return;
+                        };
+                        let Ok(mut context) = context.get_mut(scene_root) else {
+                            warn!("failed to get context on scrollable update");
+                            return;
+                        };
+
+                        context.update_crdt(
+                            SceneComponentId::UI_SCROLL_RESULT,
+                            CrdtType::LWW_ENT,
+                            scene_id,
+                            &PbUiScrollResult {
+                                value: Some(Vec2::new(pos.h, pos.v).into()),
+                            },
+                        );
+                    },
+                ));
+
+            let state = UiScrollablePersistentState {
+                root: scene_ui_root_node,
+                scrollable,
+                content,
+                position: ui_transform.scroll_position.clone(),
+            };
+            ent_cmds.commands().entity(node).try_insert(state);
+            (
+                scrollable,
+                content,
+                (0.0, 0.0),
+                ui_transform.scroll_position.clone(),
+            )
+        }
+    };
+
+    if let Some(ScrollPositionValue {
+        value: Some(target),
+    }) = event
+    {
+        match target {
+            scroll_position_value::Value::Position(vec) => {
+                scroll_to.send(ScrollTargetEvent {
+                    scrollable,
+                    position: ScrollTarget::Literal(Vec2::from(&vec)),
+                });
+            }
+            scroll_position_value::Value::Reference(target) => {
+                target_scroll_events.insert(scrollable, target);
+            }
+        }
+    }
+
+    // copy child-affecting style members onto the inner pane
+    let inner_style = Style {
+        align_content: ui_transform.align_content,
+        align_items: ui_transform.align_items,
+        flex_wrap: ui_transform.wrap,
+        flex_direction: ui_transform.flex_direction,
+        justify_content: ui_transform.justify_content,
+        overflow: ui_transform.overflow,
+        left: Val::Px(pos.0),
+        top: Val::Px(pos.1),
+        ..Default::default()
+    };
+    ent_cmds.commands().entity(content).insert(inner_style);
+
+    content
+}
+
+fn set_ui_dropdown(
+    ent_cmds: &mut EntityCommands,
+    dropdown: &UiDropdown,
+    node: Entity,
+    scene_id: SceneEntityId,
+    ui_dropdown_state: &Query<&UiDropdownPersistentState>,
+    style: &mut Style,
+    root: Entity,
+) {
+    let ui_node = ent_cmds.id();
+
+    let initial_selection = match (ui_dropdown_state.get(node), dropdown.0.accept_empty) {
+        (Ok(state), _) => Some(state.0),
+        (_, false) => Some(dropdown.0.selected_index.unwrap_or(0) as isize),
+        (_, true) => dropdown.0.selected_index.map(|ix| ix as isize),
+    };
+
+    //ensure we use max width if not given
+    if style.width == Val::Px(0.0) || style.width == Val::Auto {
+        style.width = Val::Percent(100.0);
+    }
+    //and some size if not given
+    if style.height == Val::Px(0.0) || style.height == Val::Auto {
+        style.height = Val::Px(16.0);
+    }
+
+    ent_cmds.insert((
+        ComboBox::new(
+            dropdown.0.empty_label.clone().unwrap_or_default(),
+            &dropdown.0.options,
+            dropdown.0.accept_empty,
+            dropdown.0.disabled,
+            initial_selection,
+        )
+        .with_id(node),
+        On::<DataChanged>::new(
+            move |mut commands: Commands,
+                  combo: Query<(Entity, &ComboBox)>,
+                  mut context: Query<&mut RendererSceneContext>,
+                  time: Res<Time>| {
+                let Ok((_, combo)) = combo.get(ui_node) else {
+                    warn!("failed to get combo node on UiDropdown update");
+                    return;
+                };
+                let Ok(mut context) = context.get_mut(root) else {
+                    warn!("failed to get context on UiInput update");
+                    return;
+                };
+
+                context.update_crdt(
+                    SceneComponentId::UI_DROPDOWN_RESULT,
+                    CrdtType::LWW_ENT,
+                    scene_id,
+                    &PbUiDropdownResult {
+                        value: combo.selected as i32,
+                    },
+                );
+                context.last_action_event = Some(time.elapsed_seconds());
+                // store persistent state to the scene entity
+                commands
+                    .entity(node)
+                    .try_insert(UiDropdownPersistentState(combo.selected));
+            },
+        ),
+    ));
+}
+
+fn set_ui_pointer_events(ent_cmds: &mut EntityCommands, node: Entity, is_primary: bool) {
+    ent_cmds.insert((
+        FocusPolicy::Block,
+        Interaction::default(),
+        On::<HoverEnter>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
+            if is_primary {
+                *ui_target = UiPointerTarget::Primary(node);
+            } else {
+                *ui_target = UiPointerTarget::World(node);
+            }
+        }),
+        On::<HoverExit>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
+            if *ui_target == UiPointerTarget::Primary(node)
+                || *ui_target == UiPointerTarget::World(node)
+            {
+                *ui_target = UiPointerTarget::None;
+            };
+        }),
+    ));
+}
+
+fn set_ui_text(
+    ent_cmds: &mut EntityCommands,
+    ui_text: &UiText,
+    total_opacity: f32,
+    ui_transform: &UiTransform,
+) {
+    if !ui_text.text.is_empty() && ui_text.font_size > 0.0 {
+        let text = make_text_section(
+            ui_text.text.as_str(),
+            ui_text.font_size,
+            ui_text
+                .color
+                .with_alpha(ui_text.color.alpha() * total_opacity),
+            ui_text.font,
+            ui_text.h_align,
+            ui_text.wrapping,
+        );
+
+        // with text nodes the axis sizes are unusual.
+        // a) if either size axis is NOT NONE, (explicit or auto), we want auto to size appropriately for the content.
+        // b) if both axes are NONE, we want to size to zero.
+        // a) - we tackle this by using a nested position-type: relative node which will size it's parent appropriately, and default the parent to Auto
+        //    - for alignment we use align-items and justify-content
+        // b) - we use a nested position-type: absolute node, and default the parent to auto
+        //    - for alignment we use align-items and justify-content as above, and we also set left/right/top/bottom to 50% if required
+
+        let any_axis_specified = [ui_transform.size.width, ui_transform.size.height]
+            .iter()
+            .any(Option::is_some);
+
+        let inner_style = if any_axis_specified {
+            Style {
+                position_type: PositionType::Relative,
+                ..Default::default()
+            }
+        } else {
+            Style {
+                position_type: PositionType::Absolute,
+                left: if ui_text.h_align == JustifyText::Left {
+                    Val::Percent(50.0)
+                } else {
+                    Val::Auto
+                },
+                right: if ui_text.h_align == JustifyText::Right {
+                    Val::Percent(50.0)
+                } else {
+                    Val::Auto
+                },
+                top: if ui_text.v_align == VAlign::Top {
+                    Val::Percent(50.0)
+                } else {
+                    Val::Auto
+                },
+                bottom: if ui_text.v_align == VAlign::Bottom {
+                    Val::Percent(50.0)
+                } else {
+                    Val::Auto
+                },
+                ..Default::default()
+            }
+        };
+
+        // we need to set size for the first inner element depending
+        // on how the outer was specified
+        let width = match ui_transform.size.width {
+            Some(Val::Px(px)) => Val::Px(px),
+            Some(Val::Percent(_)) => Val::Percent(100.0),
+            _ => Val::Auto,
+        };
+        let height = match ui_transform.size.height {
+            Some(Val::Px(px)) => Val::Px(px),
+            Some(Val::Percent(_)) => Val::Percent(100.0),
+            _ => Val::Auto,
+        };
+
+        ent_cmds.with_children(|c| {
+            c.spawn(NodeBundle {
+                style: Style {
+                    flex_direction: FlexDirection::Row,
+                    justify_content: match ui_text.h_align {
+                        JustifyText::Left => JustifyContent::FlexStart,
+                        JustifyText::Center => JustifyContent::Center,
+                        JustifyText::Right => JustifyContent::FlexEnd,
+                        JustifyText::Justified => unreachable!(),
+                    },
+                    align_items: match ui_text.v_align {
+                        VAlign::Top => AlignItems::FlexStart,
+                        VAlign::Middle => AlignItems::Center,
+                        VAlign::Bottom => AlignItems::FlexEnd,
+                    },
+                    width,
+                    height,
+                    align_self: AlignSelf::FlexStart,
+                    // elements are horizontally centered by default
+                    margin: UiRect::horizontal(Val::Auto),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .with_children(|c| {
+                c.spawn(NodeBundle {
+                    style: inner_style,
+                    ..Default::default()
+                })
+                .with_children(|c| {
+                    c.spawn(TextBundle {
+                        text,
+                        z_index: ZIndex::Local(1),
+                        ..Default::default()
+                    });
+                });
+            });
+        });
+    }
+}
+
+fn set_ui_background(
+    ent_cmds: &mut EntityCommands,
+    background: &UiBackground,
+    total_opacity: f32,
+    ctx: &RendererSceneContext,
+    resolver: &TextureResolver,
+    stretch_uvs: &mut Assets<StretchUvMaterial>,
+) {
+    if let Some(texture) = background.texture.as_ref() {
+        let image = texture
+            .tex
+            .tex
+            .as_ref()
+            .and_then(|tex| resolver.resolve_texture(ctx, tex).ok());
+
+        let texture_mode = match texture.tex.tex {
+            Some(texture_union::Tex::Texture(_)) => texture.mode,
+            _ => BackgroundTextureMode::stretch_default(),
+        };
+
+        if let Some(image) = image {
+            let image_color = background.color.unwrap_or(Color::WHITE);
+            let image_color = image_color.with_alpha(image_color.alpha() * total_opacity);
+            match texture_mode {
+                BackgroundTextureMode::NineSlices(rect) => {
+                    ent_cmds.with_children(|c| {
+                        c.spawn((
+                            NodeBundle {
+                                style: Style {
+                                    position_type: PositionType::Absolute,
+                                    width: Val::Percent(100.0),
+                                    height: Val::Percent(100.0),
+                                    overflow: Overflow::clip(),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            },
+                            Ui9Slice {
+                                image: image.image,
+                                center_region: rect.into(),
+                                tint: Some(image_color),
+                            },
+                        ));
+                    });
+                }
+                BackgroundTextureMode::Stretch(ref uvs) => {
+                    ent_cmds.with_children(|c| {
+                        c.spawn(NodeBundle {
+                            style: Style {
+                                position_type: PositionType::Absolute,
+                                width: Val::Percent(100.0),
+                                height: Val::Percent(100.0),
+                                overflow: Overflow::clip(),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        })
+                        .with_children(|c| {
+                            let color = background.color.unwrap_or(Color::WHITE);
+                            let color = color.with_alpha(color.alpha() * total_opacity);
+                            c.spawn((MaterialNodeBundle {
+                                style: Style {
+                                    position_type: PositionType::Absolute,
+                                    width: Val::Percent(100.0),
+                                    height: Val::Percent(100.0),
+                                    ..Default::default()
+                                },
+                                material: stretch_uvs.add(StretchUvMaterial {
+                                    image: image.image.clone(),
+                                    uvs: *uvs,
+                                    color: color.to_linear().to_vec4(),
+                                }),
+                                ..Default::default()
+                            },));
+                        });
+                    });
+                }
+                BackgroundTextureMode::Center => {
+                    ent_cmds.with_children(|c| {
+                        // make a stretchy grid
+                        c.spawn(NodeBundle {
+                            style: Style {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(0.0),
+                                right: Val::Px(0.0),
+                                top: Val::Px(0.0),
+                                bottom: Val::Px(0.0),
+                                justify_content: JustifyContent::Center,
+                                overflow: Overflow::clip(),
+                                width: Val::Percent(100.0),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        })
+                        .with_children(|c| {
+                            c.spacer();
+                            c.spawn(NodeBundle {
+                                style: Style {
+                                    flex_direction: FlexDirection::Column,
+                                    justify_content: JustifyContent::Center,
+                                    overflow: Overflow::clip(),
+                                    height: Val::Percent(100.0),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            })
+                            .with_children(|c| {
+                                c.spacer();
+                                c.spawn(ImageBundle {
+                                    style: Style {
+                                        overflow: Overflow::clip(),
+                                        ..Default::default()
+                                    },
+                                    image: UiImage {
+                                        color: image_color,
+                                        texture: image.image,
+                                        flip_x: false,
+                                        flip_y: false,
+                                    },
+                                    ..Default::default()
+                                });
+                                c.spacer();
+                            });
+                            c.spacer();
+                        });
+                    });
+                }
+            }
+        } else {
+            warn!("failed to load ui image from content map: {:?}", texture);
+        }
+    } else if let Some(color) = background.color {
+        ent_cmds.insert(BackgroundColor(color));
     }
 }
 
