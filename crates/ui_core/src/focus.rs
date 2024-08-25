@@ -8,11 +8,6 @@ use common::sets::SceneSets;
 #[derive(Component)]
 pub struct Focus;
 
-// use when you need to add focus but it is being done programatically and should not count as a new "focus" event
-// this allows a click to still defocus the target
-#[derive(Component)]
-pub struct FocusIsNotReallyNew;
-
 #[derive(Component)]
 pub struct Focusable;
 
@@ -33,17 +28,15 @@ impl Plugin for FocusPlugin {
 
 fn defocus(
     mut commands: Commands,
-    focus_elements: Query<(Entity, Ref<Focus>, Option<&FocusIsNotReallyNew>)>,
+    focus_elements: Query<(Entity, Ref<Focus>), Changed<Focus>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
 ) {
     let refocussed = mouse_button_input.any_just_pressed([MouseButton::Left, MouseButton::Right])
-        || focus_elements
-            .iter()
-            .any(|(_, focus, not_sticky)| focus.is_changed() && not_sticky.is_none());
+        || focus_elements.iter().any(|(_, focus)| focus.is_changed());
 
     if refocussed {
-        for (entity, ref_focus, not_sticky) in focus_elements.iter() {
-            if !ref_focus.is_changed() || not_sticky.is_some() {
+        for (entity, ref_focus) in focus_elements.iter() {
+            if !ref_focus.is_changed() {
                 commands.entity(entity).remove::<Focus>();
             }
         }

@@ -11,11 +11,12 @@ pub enum SetupSets {
 #[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
 pub enum SceneSets {
     UiActions,
-    Init,     // setup the scene
-    PostInit, // used for adding data to new scenes
+    Init,              // setup the scene
+    PostInit,          // used for adding data to new scenes
     Input, // systems which create EngineResponses for the current frame (though these can be created anywhere)
     RunLoop, // run the scripts
     PostLoop, // do anything after the script loop
+    RestrictedActions, // can do crazy stuff like modify player position, oow etc
 }
 
 // sets within the scene processing loop (SceneSets::RunLoop)

@@ -10,8 +10,8 @@ use bevy::{
     },
     hierarchy::DespawnRecursiveExt,
     prelude::{
-        despawn_with_children_recursive, BuildWorldChildren, Entity, IntoSystemConfigs, Plugin,
-        World,
+        despawn_with_children_recursive, BuildWorldChildren, Bundle, Entity, IntoSystemConfigs,
+        Plugin, World,
     },
     tasks::Task,
 };
@@ -143,7 +143,42 @@ impl Command for TryPushChildren {
     }
 }
 
+pub struct TryChildBuilder<'a> {
+    commands: Commands<'a, 'a>,
+    push_children: TryPushChildren,
+}
+
+impl TryChildBuilder<'_> {
+    /// Spawns an entity with the given bundle and inserts it into the parent entity's [`Children`].
+    /// Also adds [`Parent`] component to the created entity.
+    pub fn spawn(&mut self, bundle: impl Bundle) -> EntityCommands {
+        let e = self.commands.spawn(bundle);
+        self.push_children.children.push(e.id());
+        e
+    }
+
+    /// Spawns an [`Entity`] with no components and inserts it into the parent entity's [`Children`].
+    /// Also adds [`Parent`] component to the created entity.
+    pub fn spawn_empty(&mut self) -> EntityCommands {
+        let e = self.commands.spawn_empty();
+        self.push_children.children.push(e.id());
+        e
+    }
+
+    /// Returns the parent entity of this [`ChildBuilder`].
+    pub fn parent_entity(&self) -> Entity {
+        self.push_children.parent
+    }
+
+    /// Adds a command to be executed, like [`Commands::add`].
+    pub fn add_command<C: Command>(&mut self, command: C) -> &mut Self {
+        self.commands.add(command);
+        self
+    }
+}
 pub trait TryPushChildrenEx {
+    fn try_with_children(&mut self, spawn_children: impl FnOnce(&mut TryChildBuilder))
+        -> &mut Self;
     fn try_push_children(&mut self, children: &[Entity]) -> &mut Self;
 }
 
@@ -154,6 +189,28 @@ impl TryPushChildrenEx for EntityCommands<'_> {
             children: SmallVec::from(children),
             parent,
         });
+        self
+    }
+
+    fn try_with_children(
+        &mut self,
+        spawn_children: impl FnOnce(&mut TryChildBuilder),
+    ) -> &mut Self {
+        let parent = self.id();
+        let mut builder = TryChildBuilder {
+            commands: self.commands(),
+            push_children: TryPushChildren {
+                children: SmallVec::default(),
+                parent,
+            },
+        };
+
+        spawn_children(&mut builder);
+        let children = builder.push_children;
+        if children.children.contains(&parent) {
+            panic!("Entity cannot be a child of itself.");
+        }
+        self.commands().add(children);
         self
     }
 }

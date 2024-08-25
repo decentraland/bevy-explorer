@@ -117,7 +117,7 @@ struct AvatarWorldUi {
 }
 
 fn setup(mut commands: Commands, images: ResMut<Assets<Image>>, mut view: ResMut<AvatarWorldUi>) {
-    view.view = spawn_world_ui_view(&mut commands, images.into_inner()).0;
+    view.view = spawn_world_ui_view(&mut commands, images.into_inner(), None).0;
     view.ui_root = commands
         .spawn((
             NodeBundle {

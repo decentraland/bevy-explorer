@@ -47,20 +47,23 @@ pub struct WorldUi {
 pub fn spawn_world_ui_view(
     commands: &mut Commands,
     images: &mut Assets<Image>,
+    existing_image: Option<&Handle<Image>>,
 ) -> (Entity, Handle<Image>) {
-    let mut image = Image::new_fill(
-        Extent3d {
-            width: 16,
-            height: 16,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        &[0, 0, 0, 0],
-        TextureFormat::Bgra8UnormSrgb,
-        RenderAssetUsages::all(),
-    );
-    image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
-    let image = images.add(image);
+    let image = existing_image.cloned().unwrap_or_else(|| {
+        let mut image = Image::new_fill(
+            Extent3d {
+                width: 16,
+                height: 16,
+                depth_or_array_layers: 1,
+            },
+            TextureDimension::D2,
+            &[0, 0, 0, 0],
+            TextureFormat::Bgra8UnormSrgb,
+            RenderAssetUsages::all(),
+        );
+        image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
+        images.add(image)
+    });
 
     let camera = commands
         .spawn((

@@ -80,7 +80,7 @@ impl Plugin for RestrictedActionsPlugin {
                     handle_generic_perm,
                 ),
             )
-                .in_set(SceneSets::PostLoop),
+                .in_set(SceneSets::RestrictedActions),
         );
     }
 }
