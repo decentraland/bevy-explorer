@@ -94,7 +94,7 @@ use bevy::{
     utils::hashbrown::HashMap,
 };
 use common::{
-    sets::SceneLoopSets,
+    sets::{SceneLoopSets, SceneSets},
     util::{DespawnWith, TryPushChildrenEx},
 };
 use dcl::interface::ComponentPosition;
@@ -121,7 +121,10 @@ impl Plugin for TextShapePlugin {
             Update,
             update_text_shapes.in_set(SceneLoopSets::UpdateWorld),
         );
-        app.add_systems(Update, add_cosmic_buffers);
+        app.add_systems(
+            Update,
+            add_cosmic_buffers.after(SceneSets::RestrictedActions),
+        );
     }
 }
 

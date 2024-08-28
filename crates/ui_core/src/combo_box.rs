@@ -8,12 +8,14 @@ use bevy::{
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry, DuiTemplate};
 use common::{
     sets::SceneSets,
-    util::{DespawnWith, ModifyComponentExt, TryPushChildrenEx},
+    util::{DespawnWith, FireEventEx, ModifyComponentExt, TryPushChildrenEx},
 };
 
 use crate::{
     dui_utils::PropsExt,
     focus::{Focus, Focusable},
+    interact_style::{Active, InteractStyle, InteractStyles},
+    scrollable::ScrollTargetEvent,
     text_size::FontSize,
     ui_actions::{close_ui, Click, DataChanged, On},
 };
@@ -243,65 +245,97 @@ fn update_comboboxen(
                         )
                         .unwrap();
 
+                    let mut target = None;
                     let contents = cbox
                         .options
                         .iter()
                         .enumerate()
                         .map(|(ix, option)| {
-                            commands
-                                .spawn((
-                                    NodeBundle {
-                                        style: Style {
-                                            width: Val::Percent(100.0),
-                                            min_width: Val::Percent(100.0),
-                                            flex_grow: 1.0,
-                                            flex_shrink: 0.0,
-                                            ..Default::default()
-                                        },
+                            let mut cmds = commands.spawn((
+                                NodeBundle {
+                                    style: Style {
+                                        width: Val::Percent(100.0),
+                                        min_width: Val::Percent(100.0),
+                                        flex_grow: 1.0,
+                                        flex_shrink: 0.0,
                                         ..Default::default()
                                     },
-                                    Interaction::default(),
-                                    On::<Click>::new(move |mut commands: Commands| {
-                                        debug!("selected {ix:?}");
-                                        let Some(mut commands) = commands.get_entity(ent) else {
-                                            warn!("no combo");
-                                            return;
-                                        };
+                                    ..Default::default()
+                                },
+                                Interaction::default(),
+                                On::<Click>::new(move |mut commands: Commands| {
+                                    debug!("selected {ix:?}");
+                                    let Some(mut commands) = commands.get_entity(ent) else {
+                                        warn!("no combo");
+                                        return;
+                                    };
 
-                                        commands
-                                            .modify_component(move |combo: &mut ComboBox| {
-                                                combo.selected = ix as isize;
-                                            })
-                                            .insert(DataChanged);
-                                    }),
-                                ))
-                                .with_children(|c| {
-                                    let mut cmds = c.spawn((TextBundle {
-                                        text: Text::from_section(
-                                            option,
-                                            cbox.style.clone().unwrap_or_default(),
-                                        ),
-                                        style: Style {
-                                            width: Val::Percent(100.0),
-                                            min_width: Val::Percent(100.0),
-                                            flex_grow: 1.0,
-                                            flex_shrink: 0.0,
-                                            ..Default::default()
-                                        },
+                                    commands
+                                        .modify_component(move |combo: &mut ComboBox| {
+                                            combo.selected = ix as isize;
+                                        })
+                                        .insert(DataChanged);
+                                }),
+                                InteractStyles {
+                                    active: Some(InteractStyle {
+                                        background: Some(Color::srgba(0.0, 0.0, 0.5, 0.867)),
+                                        border: Some(Color::srgba(0.2, 0.2, 0.2, 0.867)),
                                         ..Default::default()
-                                    },));
+                                    }),
+                                    hover: Some(InteractStyle {
+                                        background: Some(Color::srgba(0.0, 0.0, 1.0, 0.867)),
+                                        border: Some(Color::srgba(0.2, 0.2, 0.2, 1.0)),
+                                        ..Default::default()
+                                    }),
+                                    inactive: Some(InteractStyle {
+                                        background: Some(Color::srgba(0.0, 0.0, 0.0, 0.0)),
+                                        border: Some(Color::srgba(0.0, 0.0, 0.0, 0.0)),
+                                        ..Default::default()
+                                    }),
+                                    ..Default::default()
+                                },
+                            ));
 
-                                    if cbox.style.is_none() {
-                                        cmds.insert(FontSize(0.03 / 1.3));
-                                    }
-                                })
-                                .id()
+                            cmds.with_children(|c| {
+                                let mut cmds = c.spawn((TextBundle {
+                                    text: Text::from_section(
+                                        option,
+                                        cbox.style.clone().unwrap_or_default(),
+                                    ),
+                                    style: Style {
+                                        width: Val::Percent(100.0),
+                                        min_width: Val::Percent(100.0),
+                                        flex_grow: 1.0,
+                                        flex_shrink: 0.0,
+                                        ..Default::default()
+                                    },
+                                    ..Default::default()
+                                },));
+
+                                if cbox.style.is_none() {
+                                    cmds.insert(FontSize(0.03 / 1.3));
+                                }
+                            });
+
+                            if cbox.selected == ix as isize {
+                                cmds.insert(Active(true));
+                                target = Some(cmds.id());
+                            }
+
+                            cmds.id()
                         })
                         .collect::<Vec<_>>();
 
                     commands
                         .entity(popup.named("contents"))
                         .try_push_children(contents.as_slice());
+
+                    if let Some(target) = target {
+                        commands.fire_event(ScrollTargetEvent {
+                            scrollable: popup.named("popup-scroll"),
+                            position: crate::scrollable::ScrollTarget::Entity(target),
+                        });
+                    }
 
                     let blocker = commands
                         .spawn((

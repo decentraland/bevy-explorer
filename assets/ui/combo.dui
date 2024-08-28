@@ -11,10 +11,10 @@
 </define-template>
 
 <define-template id="combo-popup">
-    <div style="position-type: absolute; top: '@top'; left: '@left'; height: '@height'; min-width: '@width'; border: 1px; border-color: #88888888; background-color: #000000dd" z-index="100">
+    <div style="position-type: absolute; top: '@top'; left: '@left'; height: '@height'; width: '@width'; min-width: '@width'; border: 1px; border-color: #88888888; background-color: #000000dd" z-index="100">
         <div style="flex-direction: column; width: 100%; height: 100%">
-            <vscroll>
-                <div id="contents" style="width: 100%; flex-direction: column; margin: 0px 2vmin 0px 0px;" />
+            <vscroll id="popup-scroll">
+                <div id="contents" style="width: 100%; min-width: 100%; flex-grow: 1; flex-direction: column; margin: 0px 2vmin 0px 0px;" />
             </vscroll>
         </div>
     </div>
