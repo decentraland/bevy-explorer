@@ -1,6 +1,6 @@
 <define-template id="chat">
     <bounds 
-        style="display: none; width: 60vmin; min-width: 30vmin; max-height: 31vmin; flex-direction: column; justify-content: flex-end; padding: 1vmin;" 
+        style="display: none; width: 60vmin; min-width: 30vmin; max-height: 31vmin; flex-direction: column; justify-content: flex-end; padding: 1vmin; margin: auto 0px 0px 0px;" 
         focus="block" 
         interact="true"
         corner-size="2vmin"

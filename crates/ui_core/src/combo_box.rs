@@ -204,7 +204,7 @@ fn update_comboboxen(
                     };
 
                     let ui_size = props.size.as_vec2();
-                    let v_space_required = node.size().y * cbox.options.len() as f32;
+                    let v_space_required = (node.unrounded_size().y - 2.0) * cbox.options.len() as f32 + 2.0;
                     let node_bottom = node.size().y * 0.5 + gt.translation().y;
                     let node_top = gt.translation().y - node.size().y * 0.5;
                     let v_space_below = ui_size.y - node_bottom;
@@ -230,6 +230,13 @@ fn update_comboboxen(
                     // dbg!(gt.translation());
                     // dbg!(node.size());
 
+                    let text_lightness = Lcha::from(cbox.style.as_ref().map(|s| s.color).unwrap_or(Color::WHITE)).lightness;
+                    let background = if text_lightness > 0.5 {
+                        Color::BLACK.with_alpha(0.85)
+                    } else {
+                        Color::WHITE.with_alpha(0.85)
+                    };
+
                     let popup = commands
                         .spawn_template(
                             &dui,
@@ -241,7 +248,8 @@ fn update_comboboxen(
                                     format!("{}px", gt.translation().x - node.size().x * 0.5),
                                 )
                                 .with_prop("width", format!("{}px", node.size().x))
-                                .with_prop("height", format!("{height}px")),
+                                .with_prop("height", format!("{height}px"))
+                                .with_prop("background", background.to_srgba().to_hex())
                         )
                         .unwrap();
 
@@ -254,10 +262,10 @@ fn update_comboboxen(
                             let mut cmds = commands.spawn((
                                 NodeBundle {
                                     style: Style {
-                                        width: Val::Percent(100.0),
-                                        min_width: Val::Percent(100.0),
-                                        flex_grow: 1.0,
-                                        flex_shrink: 0.0,
+                                        // width: Val::Percent(100.0),
+                                        // min_width: Val::Percent(100.0),
+                                        // flex_grow: 1.0,
+                                        // flex_shrink: 0.0,
                                         ..Default::default()
                                     },
                                     ..Default::default()

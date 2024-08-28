@@ -26,7 +26,7 @@ impl From<PbUiDropdown> for UiDropdown {
 
 pub fn set_ui_dropdown(
     mut commands: Commands,
-    dropdowns: Query<(&SceneEntity, &UiDropdown, &UiLink), Or<(Added<UiDropdown>, Added<UiLink>)>>,
+    dropdowns: Query<(&SceneEntity, &UiDropdown, &UiLink), Or<(Changed<UiDropdown>, Changed<UiLink>)>>,
     mut removed: RemovedComponents<UiDropdown>,
     links: Query<&UiLink>,
 ) {

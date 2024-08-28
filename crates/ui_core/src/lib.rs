@@ -167,14 +167,14 @@ fn setup(
     TITLE_TEXT_STYLE
         .set(TextStyle {
             font: asset_server.load("fonts/NotoSans-Bold.ttf"),
-            font_size: 35.0,
+            font_size: 35.0 / 1.3,
             color: Color::BLACK,
         })
         .unwrap();
     BODY_TEXT_STYLE
         .set(TextStyle {
             font: asset_server.load("fonts/NotoSans-Regular.ttf"),
-            font_size: 25.0,
+            font_size: 25.0 / 1.3,
             color: Color::BLACK,
         })
         .unwrap();
@@ -183,7 +183,7 @@ fn setup(
             (0..10)
                 .map(|i| TextStyle {
                     font: asset_server.load("fonts/NotoSans-Bold.ttf"),
-                    font_size: 25.0,
+                    font_size: 25.0 / 1.3,
                     color: Color::srgba(1.0, 1.0, 1.0, i as f32 / 9.0),
                 })
                 .collect::<Vec<_>>()

@@ -13,7 +13,7 @@ use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     sets::{SceneSets, SetupSets},
-    structs::{AppConfig, PrimaryUser, SettingsTab, ShowSettingsEvent, Version},
+    structs::{AppConfig, PrimaryUser, SettingsTab, ShowSettingsEvent, Version}, util::ModifyComponentExt,
 };
 use comms::{
     global_crdt::ForeignPlayer,
@@ -150,15 +150,15 @@ pub(crate) fn setup(
             .spawn((
                 NodeBundle {
                     style: Style {
+                        display: if config.sysinfo_visible {
+                            Display::Flex
+                        } else {
+                            Display::None
+                        },
                         flex_direction: FlexDirection::Column,
                         align_self: AlignSelf::FlexStart,
                         border: UiRect::all(Val::Px(5.)),
                         ..default()
-                    },
-                    visibility: if config.sysinfo_visible {
-                        Visibility::Visible
-                    } else {
-                        Visibility::Hidden
                     },
                     background_color: Color::srgba(0.8, 0.8, 1.0, 0.8).into(),
                     focus_policy: FocusPolicy::Block,
@@ -191,7 +191,7 @@ pub(crate) fn setup(
                                 .with_children(|commands| {
                                     commands.spawn(TextBundle {
                                         style: Style {
-                                            width: Val::Px(120.0),
+                                            width: Val::Px(150.0),
                                             ..Default::default()
                                         },
                                         text: Text::from_section(
@@ -203,7 +203,7 @@ pub(crate) fn setup(
                                     });
                                     commands.spawn(TextBundle {
                                         style: Style {
-                                            width: Val::Px(120.0),
+                                            width: Val::Px(150.0),
                                             ..Default::default()
                                         },
                                         text: Text::from_section(
@@ -615,10 +615,12 @@ fn set_sysinfo(
     if let Some(Ok(command)) = input.take() {
         let on = command.on.unwrap_or(true);
 
-        commands.entity(q.single()).insert(if on {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
+        commands.entity(q.single()).modify_component(move |style: &mut Style| {
+            style.display = if on {
+                Display::Flex
+            } else {
+                Display::None
+            };
         });
         input.reply_ok("");
     }
@@ -628,8 +630,10 @@ fn update_map_visibilty(
     realm: Res<CurrentRealm>,
     map: Query<&DuiEntities, With<Minimap>>,
     mut style: Query<&mut Style>,
+    mut init: Local<bool>
 ) {
-    if realm.is_changed() {
+    if !*init || realm.is_changed() {
+        *init = true;
         let Ok(nodes) = map.get_single() else {
             return;
         };
