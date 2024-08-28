@@ -13,7 +13,8 @@ use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     sets::{SceneSets, SetupSets},
-    structs::{AppConfig, PrimaryUser, SettingsTab, ShowSettingsEvent, Version}, util::ModifyComponentExt,
+    structs::{AppConfig, PrimaryUser, SettingsTab, ShowSettingsEvent, Version},
+    util::ModifyComponentExt,
 };
 use comms::{
     global_crdt::ForeignPlayer,
@@ -615,13 +616,11 @@ fn set_sysinfo(
     if let Some(Ok(command)) = input.take() {
         let on = command.on.unwrap_or(true);
 
-        commands.entity(q.single()).modify_component(move |style: &mut Style| {
-            style.display = if on {
-                Display::Flex
-            } else {
-                Display::None
-            };
-        });
+        commands
+            .entity(q.single())
+            .modify_component(move |style: &mut Style| {
+                style.display = if on { Display::Flex } else { Display::None };
+            });
         input.reply_ok("");
     }
 }
@@ -630,7 +629,7 @@ fn update_map_visibilty(
     realm: Res<CurrentRealm>,
     map: Query<&DuiEntities, With<Minimap>>,
     mut style: Query<&mut Style>,
-    mut init: Local<bool>
+    mut init: Local<bool>,
 ) {
     if !*init || realm.is_changed() {
         *init = true;

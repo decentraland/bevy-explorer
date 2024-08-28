@@ -28,7 +28,7 @@ impl Plugin for FocusPlugin {
 
 fn defocus(
     mut commands: Commands,
-    focus_elements: Query<(Entity, Ref<Focus>), Changed<Focus>>,
+    focus_elements: Query<(Entity, Ref<Focus>)>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
 ) {
     let refocussed = mouse_button_input.any_just_pressed([MouseButton::Left, MouseButton::Right])
