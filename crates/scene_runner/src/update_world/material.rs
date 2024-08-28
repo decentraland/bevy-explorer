@@ -27,7 +27,7 @@ use dcl_component::{
 };
 use scene_material::{SceneBound, SceneMaterial};
 
-use super::{mesh_renderer::update_mesh, scene_ui_two::UiTextureOutput, AddCrdtInterfaceExt};
+use super::{mesh_renderer::update_mesh, scene_ui::UiTextureOutput, AddCrdtInterfaceExt};
 
 pub struct MaterialDefinitionPlugin;
 
@@ -283,7 +283,7 @@ impl<'w, 's> TextureResolver<'w, 's> {
                         camera_target: None,
                     })
                 } else {
-                    warn!("video source entity not ready, retrying ...");
+                    debug!("video source entity not ready, retrying ...");
                     Err(TextureResolveError::SourceNotReady)
                 }
             }
@@ -305,7 +305,7 @@ impl<'w, 's> TextureResolver<'w, 's> {
                         }),
                     }),
                     Err(_) => {
-                        warn!("ui source entity not ready, retrying ...");
+                        debug!("ui source entity not ready, retrying ...");
                         Err(TextureResolveError::SourceNotReady)
                     }
                 }

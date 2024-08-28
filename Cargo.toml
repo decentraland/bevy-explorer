@@ -162,3 +162,6 @@ deno_core = { git = "https://github.com/robtfm/deno_core", branch = "0_280_hotfi
 serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_280_hotfix" }
 deno_ops = { git = "https://github.com/robtfm/deno_core", branch = "0_280_hotfix" }
 # deno_ops = { path = "../deno_core/ops" }
+
+# [patch."https://github.com/robtfm/bevy_dui"]
+# bevy_dui = { path = "../bevy_dui" }

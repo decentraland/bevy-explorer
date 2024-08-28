@@ -1,23 +1,31 @@
-use std::{any::type_name, str::FromStr};
-
 use anyhow::anyhow;
-use bevy::{math::Vec3Swizzles, prelude::*, transform::TransformSystem, window::PrimaryWindow};
-use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
-use bevy_egui::{egui, EguiContext, EguiSet};
-
-use crate::{
-    ui_actions::{DataChanged, On},
-    Blocker,
+use bevy::{
+    ecs::system::SystemParam,
+    prelude::*,
+    render::camera::RenderTarget,
+    window::{PrimaryWindow, WindowRef},
+};
+use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry, DuiTemplate};
+use common::{
+    sets::SceneSets,
+    util::{DespawnWith, ModifyComponentExt, TryPushChildrenEx},
 };
 
-#[derive(Component, Debug)]
+use crate::{
+    dui_utils::PropsExt,
+    focus::{Focus, Focusable},
+    text_size::FontSize,
+    ui_actions::{close_ui, Click, DataChanged, On},
+};
+
+#[derive(Component, Debug, Clone)]
 pub struct ComboBox {
     pub empty_text: String,
     pub options: Vec<String>,
     pub selected: isize,
     pub allow_null: bool,
     pub disabled: bool,
-    pub id_entity: Option<Entity>,
+    pub style: Option<TextStyle>,
 }
 
 impl ComboBox {
@@ -27,6 +35,7 @@ impl ComboBox {
         allow_null: bool,
         disabled: bool,
         initial_selection: Option<isize>,
+        style: Option<TextStyle>,
     ) -> Self {
         Self {
             empty_text,
@@ -34,14 +43,7 @@ impl ComboBox {
             selected: initial_selection.unwrap_or(-1),
             allow_null,
             disabled,
-            id_entity: None,
-        }
-    }
-
-    pub fn with_id(self, entity: Entity) -> Self {
-        Self {
-            id_entity: Some(entity),
-            ..self
+            style,
         }
     }
 
@@ -53,17 +55,12 @@ impl ComboBox {
         }
     }
 }
-
 pub struct ComboBoxPlugin;
 
 impl Plugin for ComboBoxPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup).add_systems(
-            PostUpdate,
-            update_comboboxen
-                .after(TransformSystem::TransformPropagate)
-                .before(EguiSet::ProcessOutput),
-        );
+        app.add_systems(Startup, setup)
+            .add_systems(Update, update_comboboxen.in_set(SceneSets::PostLoop));
     }
 }
 
@@ -71,116 +68,277 @@ fn setup(mut dui: ResMut<DuiRegistry>) {
     dui.register_template("combo-box", DuiComboBoxTemplate);
 }
 
-#[allow(clippy::type_complexity)]
-fn update_comboboxen(
-    mut commands: Commands,
-    mut egui_ctx: Query<&mut EguiContext, With<PrimaryWindow>>,
-    mut combos: Query<(Entity, &mut ComboBox, &Style, &Node, &GlobalTransform), Without<Blocker>>,
-    mut blocker: Local<Option<Entity>>,
-    mut blocker_display: Query<&mut Style, With<Blocker>>,
-    mut blocker_active: Local<bool>,
-) {
-    let Ok(mut ctx) = egui_ctx.get_single_mut() else {
-        return;
-    };
-    let ctx = ctx.get_mut();
-    let blocker = *blocker.get_or_insert_with(|| {
-        commands
-            .spawn((
-                NodeBundle {
-                    style: Style {
-                        position_type: PositionType::Absolute,
-                        display: Display::None,
-                        left: Val::Px(0.0),
-                        right: Val::Px(0.0),
-                        top: Val::Px(0.0),
-                        bottom: Val::Px(0.0),
-                        ..Default::default()
-                    },
-                    focus_policy: bevy::ui::FocusPolicy::Block,
-                    z_index: ZIndex::Global(100),
-                    ..Default::default()
-                },
-                Blocker,
-            ))
-            .id()
-    });
-    let mut popup_active = false;
+#[derive(SystemParam)]
+pub struct TargetCameraProperties<'w, 's> {
+    target_camera: Query<'w, 's, &'static TargetCamera>,
+    cameras: Query<'w, 's, &'static Camera>,
+    all_windows: Query<'w, 's, &'static Window>,
+    primary_window: Query<'w, 's, &'static Window, With<PrimaryWindow>>,
+    images: Res<'w, Assets<Image>>,
+}
 
-    for (entity, mut combo, style, node, transform) in combos.iter_mut() {
-        let center = transform.translation().xy() / ctx.zoom_factor();
-        let size = node.size() / ctx.zoom_factor();
-        let topleft = center - size / 2.0;
+pub struct TargetCameraProps {
+    pub target_camera: Option<TargetCamera>,
+    pub size: UVec2,
+    pub scale_factor: f32,
+}
 
-        if matches!(style.display, Display::Flex) {
-            let id = format!("{:?}", combo.id_entity.unwrap_or(entity));
+impl<'w, 's> TargetCameraProperties<'w, 's> {
+    fn get_props(&self, e: Entity) -> Option<TargetCameraProps> {
+        let target_camera = self.target_camera.get(e).ok().cloned();
+        let (window_ref, texture_ref) = match &target_camera {
+            Some(target) => {
+                let camera = self.cameras.get(target.0).ok()?;
 
-            egui::Window::new(id.clone())
-                .fixed_pos(topleft.to_array())
-                .fixed_size(size.to_array())
-                .frame(egui::Frame::none())
-                .title_bar(false)
-                .enabled(!combo.disabled)
-                .show(ctx, |ui| {
-                    let initial_selection = combo.selected;
-                    let selected_text = if combo.selected == -1 {
-                        &combo.empty_text
-                    } else {
-                        combo
-                            .options
-                            .get(combo.selected as usize)
-                            .unwrap_or(&combo.empty_text)
-                    };
-
-                    let style = ui.style_mut();
-                    style.visuals.widgets.active.weak_bg_fill =
-                        egui::Color32::from_rgba_unmultiplied(0, 0, 0, 25);
-                    style.visuals.widgets.hovered.weak_bg_fill =
-                        egui::Color32::from_rgba_unmultiplied(0, 0, 0, 50);
-                    style.visuals.widgets.inactive.weak_bg_fill =
-                        egui::Color32::from_rgba_unmultiplied(0, 0, 0, 128);
-
-                    egui::ComboBox::from_id_source(id)
-                        .selected_text(selected_text)
-                        .wrap_mode(egui::TextWrapMode::Truncate)
-                        .width(size.x)
-                        .show_ui(ui, |ui| {
-                            // split borrow
-                            let ComboBox {
-                                ref options,
-                                ref mut selected,
-                                ..
-                            } = &mut *combo;
-
-                            for (i, label) in options.iter().enumerate() {
-                                ui.selectable_value(selected, i as isize, label);
-                            }
-                        });
-
-                    if ui.memory(|mem| mem.any_popup_open()) {
-                        popup_active = true;
-                    }
-
-                    if combo.selected != initial_selection || combo.selected == -1 {
-                        if combo.selected == -1 {
-                            combo.selected = 0;
-                        }
-                        commands.entity(entity).try_insert(DataChanged);
-                    }
-                });
-        }
-    }
-
-    if popup_active != *blocker_active {
-        blocker_display.get_mut(blocker).unwrap().display = if popup_active {
-            Display::Flex
-        } else {
-            Display::None
+                match &camera.target {
+                    RenderTarget::Window(window_ref) => (Some(*window_ref), None),
+                    RenderTarget::Image(h_image) => (None, Some(h_image)),
+                    _ => return None,
+                }
+            }
+            None => (Some(WindowRef::Primary), None),
         };
-        *blocker_active = popup_active;
+
+        let window = window_ref.and_then(|window_ref| match window_ref {
+            WindowRef::Entity(w) => self.all_windows.get(w).ok(),
+            WindowRef::Primary => self.primary_window.get_single().ok(),
+        });
+
+        let scale_factor = window.map(Window::scale_factor).unwrap_or(1.0);
+        let size = if let Some(h_image) = texture_ref {
+            self.images.get(h_image)?.size()
+        } else {
+            window?.size().as_uvec2()
+        };
+
+        Some(TargetCameraProps {
+            target_camera,
+            size,
+            scale_factor,
+        })
     }
 }
 
+#[derive(Component)]
+struct ComboMarker;
+
+fn update_comboboxen(
+    mut commands: Commands,
+    new_boxes: Query<(Entity, &ComboBox, Option<&Children>), Changed<ComboBox>>,
+    children: Query<&Children>,
+    marked: Query<&ComboMarker>,
+    mut removed: RemovedComponents<ComboBox>,
+    dui: Res<DuiRegistry>,
+) {
+    for ent in removed.read() {
+        if let Ok(children) = children.get(ent) {
+            for child in children {
+                if marked.get(*child).is_ok() {
+                    commands.entity(*child).despawn_recursive();
+                }
+            }
+        }
+    }
+
+    for (ent, cbox, maybe_children) in &new_boxes {
+        debug!("{cbox:?}");
+
+        if let Some(children) = maybe_children {
+            for child in children {
+                if marked.get(*child).is_ok() {
+                    commands.entity(*child).despawn_recursive();
+                }
+            }
+        }
+
+        let selected = if cbox.allow_null {
+            cbox.selected
+        } else {
+            cbox.selected.max(0)
+        };
+        let selection = if selected < 0 {
+            cbox.empty_text.as_str()
+        } else {
+            cbox.options[selected as usize].as_str()
+        };
+
+        let components = commands
+            .spawn_template(
+                &dui,
+                "combo-root",
+                DuiProps::default().with_prop("selection", selection.to_owned()),
+            )
+            .unwrap();
+        if let Some(style) = cbox.style.as_ref() {
+            let style_copy = style.clone();
+            commands
+                .entity(components.named("text"))
+                .modify_component(move |text: &mut Text| {
+                    for section in text.sections.iter_mut() {
+                        section.style = style_copy.clone();
+                    }
+                });
+        } else {
+            commands
+                .entity(components.named("text"))
+                .insert(FontSize(0.03 / 1.3));
+        }
+        commands.entity(components.root).set_parent(ent).insert((
+            ComboMarker,
+            Interaction::default(),
+            On::<Click>::new(
+                move |mut commands: Commands,
+                      combo: Query<(&ComboBox, &Node, &GlobalTransform)>,
+                      target_camera: TargetCameraProperties,
+                      dui: Res<DuiRegistry>| {
+                    let Ok((cbox, node, gt)) = combo.get(ent) else {
+                        warn!("no node");
+                        return;
+                    };
+
+                    let Some(props) = target_camera.get_props(ent) else {
+                        warn!("no props");
+                        return;
+                    };
+
+                    let ui_size = props.size.as_vec2();
+                    let v_space_required = node.size().y * cbox.options.len() as f32;
+                    let node_bottom = node.size().y * 0.5 + gt.translation().y;
+                    let node_top = gt.translation().y - node.size().y * 0.5;
+                    let v_space_below = ui_size.y - node_bottom;
+                    let v_space_above = node_top;
+                    let (top, height) = if v_space_below >= v_space_required {
+                        (node_bottom, v_space_required)
+                    } else if v_space_above >= v_space_required {
+                        (node_top - v_space_required, v_space_required)
+                    } else if v_space_below > v_space_above {
+                        (node_bottom, v_space_below)
+                    } else {
+                        (0.0, v_space_above)
+                    };
+
+                    // dbg!(ui_size);
+                    // dbg!(v_space_required);
+                    // dbg!(node_bottom);
+                    // dbg!(node_top);
+                    // dbg!(v_space_below);
+                    // dbg!(v_space_above);
+                    // dbg!(top);
+                    // dbg!(height);
+                    // dbg!(gt.translation());
+                    // dbg!(node.size());
+
+                    let popup = commands
+                        .spawn_template(
+                            &dui,
+                            "combo-popup",
+                            DuiProps::new()
+                                .with_prop("top", format!("{top}px"))
+                                .with_prop(
+                                    "left",
+                                    format!("{}px", gt.translation().x - node.size().x * 0.5),
+                                )
+                                .with_prop("width", format!("{}px", node.size().x))
+                                .with_prop("height", format!("{height}px")),
+                        )
+                        .unwrap();
+
+                    let contents = cbox
+                        .options
+                        .iter()
+                        .enumerate()
+                        .map(|(ix, option)| {
+                            commands
+                                .spawn((
+                                    NodeBundle {
+                                        style: Style {
+                                            width: Val::Percent(100.0),
+                                            min_width: Val::Percent(100.0),
+                                            flex_grow: 1.0,
+                                            flex_shrink: 0.0,
+                                            ..Default::default()
+                                        },
+                                        ..Default::default()
+                                    },
+                                    Interaction::default(),
+                                    On::<Click>::new(move |mut commands: Commands| {
+                                        debug!("selected {ix:?}");
+                                        let Some(mut commands) = commands.get_entity(ent) else {
+                                            warn!("no combo");
+                                            return;
+                                        };
+
+                                        commands
+                                            .modify_component(move |combo: &mut ComboBox| {
+                                                combo.selected = ix as isize;
+                                            })
+                                            .insert(DataChanged);
+                                    }),
+                                ))
+                                .with_children(|c| {
+                                    let mut cmds = c.spawn((TextBundle {
+                                        text: Text::from_section(
+                                            option,
+                                            cbox.style.clone().unwrap_or_default(),
+                                        ),
+                                        style: Style {
+                                            width: Val::Percent(100.0),
+                                            min_width: Val::Percent(100.0),
+                                            flex_grow: 1.0,
+                                            flex_shrink: 0.0,
+                                            ..Default::default()
+                                        },
+                                        ..Default::default()
+                                    },));
+
+                                    if cbox.style.is_none() {
+                                        cmds.insert(FontSize(0.03 / 1.3));
+                                    }
+                                })
+                                .id()
+                        })
+                        .collect::<Vec<_>>();
+
+                    commands
+                        .entity(popup.named("contents"))
+                        .try_push_children(contents.as_slice());
+
+                    let blocker = commands
+                        .spawn((
+                            NodeBundle {
+                                style: Style {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(0.0),
+                                    right: Val::Px(0.0),
+                                    top: Val::Px(0.0),
+                                    bottom: Val::Px(0.0),
+                                    ..Default::default()
+                                },
+                                focus_policy: bevy::ui::FocusPolicy::Block,
+                                z_index: ZIndex::Global(99),
+                                ..Default::default()
+                            },
+                            Focusable,
+                            Interaction::default(),
+                            DespawnWith(popup.root),
+                            On::<Focus>::new(
+                                (move |mut commands: Commands| {
+                                    commands.entity(popup.root).despawn_recursive();
+                                })
+                                .pipe(close_ui),
+                            ),
+                        ))
+                        .id();
+
+                    if let Some(target_camera) = props.target_camera {
+                        commands.entity(popup.root).insert(target_camera.clone());
+                        commands.entity(blocker).insert(target_camera);
+                    }
+                },
+            ),
+        ));
+    }
+}
 pub struct DuiComboBoxTemplate;
 
 impl DuiTemplate for DuiComboBoxTemplate {
@@ -198,7 +356,7 @@ impl DuiTemplate for DuiComboBoxTemplate {
             selected: props.take_as::<isize>(ctx, "selected")?.unwrap_or(-1),
             allow_null: props.take_as::<bool>(ctx, "allow-null")?.unwrap_or(false),
             disabled: props.take_as::<bool>(ctx, "disabled")?.unwrap_or(false),
-            id_entity: None,
+            style: None,
         };
         commands.insert(combobox);
 
@@ -207,122 +365,5 @@ impl DuiTemplate for DuiComboBoxTemplate {
         }
 
         Ok(Default::default())
-    }
-}
-
-pub trait DuiFromStr {
-    fn from_str(ctx: &DuiContext, value: &str) -> Result<Self, anyhow::Error>
-    where
-        Self: Sized;
-}
-
-macro_rules! impl_dui_str {
-    ($T:ty) => {
-        impl<'a> DuiFromStr for $T {
-            fn from_str(_: &DuiContext, value: &str) -> Result<Self, anyhow::Error> {
-                <Self as FromStr>::from_str(value)
-                    .map_err(|_| anyhow!("failed to convert `{value}` to {}", type_name::<$T>()))
-            }
-        }
-    };
-}
-
-impl_dui_str!(bool);
-impl_dui_str!(u32);
-impl_dui_str!(usize);
-impl_dui_str!(isize);
-
-impl DuiFromStr for Val {
-    fn from_str(_: &DuiContext, value: &str) -> Result<Self, anyhow::Error>
-    where
-        Self: Sized,
-    {
-        let content = format!("#inline {{a: {value}}}");
-        let ss = bevy_ecss::StyleSheetAsset::parse("", &content);
-        let Some(rule) = ss.iter().next() else {
-            anyhow::bail!("no rule?");
-        };
-        let Some(prop_value) = rule.properties.values().next() else {
-            anyhow::bail!("no value?");
-        };
-
-        prop_value
-            .val()
-            .ok_or_else(|| anyhow!("failed to parse `{value}` as Val"))
-    }
-}
-
-impl DuiFromStr for UiRect {
-    fn from_str(_: &DuiContext, value: &str) -> Result<Self, anyhow::Error>
-    where
-        Self: Sized,
-    {
-        let content = format!("#inline {{a: {value}}}");
-        let ss = bevy_ecss::StyleSheetAsset::parse("", &content);
-        let Some(rule) = ss.iter().next() else {
-            anyhow::bail!("no rule?");
-        };
-        let Some(prop_value) = rule.properties.values().next() else {
-            anyhow::bail!("no value?");
-        };
-
-        prop_value
-            .rect()
-            .ok_or_else(|| anyhow!("failed to parse `{value}` as Rect"))
-    }
-}
-
-impl DuiFromStr for Color {
-    fn from_str(_: &DuiContext, value: &str) -> Result<Self, anyhow::Error>
-    where
-        Self: Sized,
-    {
-        let content = format!("#inline {{a: {value}}}");
-        let ss = bevy_ecss::StyleSheetAsset::parse("", &content);
-        let Some(rule) = ss.iter().next() else {
-            anyhow::bail!("no rule?");
-        };
-        let Some(prop_value) = rule.properties.values().next() else {
-            anyhow::bail!("no value?");
-        };
-
-        prop_value
-            .color()
-            .ok_or_else(|| anyhow!("failed to parse `{value}` as Color"))
-    }
-}
-
-impl<T: Asset> DuiFromStr for Handle<T> {
-    fn from_str(ctx: &DuiContext, value: &str) -> Result<Self, anyhow::Error>
-    where
-        Self: Sized,
-    {
-        Ok(ctx.asset_server().load::<T>(value.to_owned()))
-    }
-}
-
-pub trait PropsExt {
-    fn take_as<T: DuiFromStr + 'static>(
-        &mut self,
-        ctx: &DuiContext,
-        label: &str,
-    ) -> Result<Option<T>, anyhow::Error>;
-}
-
-impl PropsExt for DuiProps {
-    fn take_as<T: DuiFromStr + 'static>(
-        &mut self,
-        ctx: &DuiContext,
-        label: &str,
-    ) -> Result<Option<T>, anyhow::Error> {
-        if let Ok(value) = self.take::<T>(label) {
-            return Ok(value);
-        }
-
-        if let Ok(Some(value)) = self.take::<String>(label) {
-            Ok(Some(<T as DuiFromStr>::from_str(ctx, &value)?))
-        } else {
-            Err(anyhow!("unrecognised type for key `{label}`"))
-        }
     }
 }

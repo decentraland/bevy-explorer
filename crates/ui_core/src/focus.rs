@@ -38,6 +38,7 @@ fn defocus(
         for (entity, ref_focus) in focus_elements.iter() {
             if !ref_focus.is_changed() {
                 commands.entity(entity).remove::<Focus>();
+                debug!("defocus {:?}", entity);
             }
         }
     }
@@ -53,5 +54,6 @@ fn focus(
         .filter(|(_, interaction)| matches!(interaction, Interaction::Pressed))
     {
         commands.entity(entity).try_insert(Focus);
+        debug!("focus {:?}", entity);
     }
 }

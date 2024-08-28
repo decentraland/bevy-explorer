@@ -20,7 +20,7 @@ use self::{
     billboard::BillboardPlugin, camera_mode_area::CameraModeAreaPlugin,
     gltf_container::GltfDefinitionPlugin, material::MaterialDefinitionPlugin,
     mesh_collider::MeshColliderPlugin, mesh_renderer::MeshDefinitionPlugin,
-    pointer_events::PointerEventsPlugin, raycast::RaycastPlugin, scene_ui_two::SceneUiPlugin,
+    pointer_events::PointerEventsPlugin, raycast::RaycastPlugin, scene_ui::SceneUiPlugin,
     text_shape::TextShapePlugin, transform_and_parent::TransformAndParentPlugin,
     visibility::VisibilityComponentPlugin,
 };
@@ -38,7 +38,6 @@ pub mod mesh_renderer;
 pub mod pointer_events;
 pub mod raycast;
 pub mod scene_ui;
-pub mod scene_ui_two;
 pub mod text_shape;
 pub mod transform_and_parent;
 pub mod visibility;

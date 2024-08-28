@@ -1,8 +1,8 @@
 pub mod bound_node;
 pub mod button;
 pub mod color_picker;
-pub mod combo;
 pub mod combo_box;
+pub mod dui_utils;
 pub mod focus;
 pub mod interact_style;
 pub mod nine_slice;
@@ -174,7 +174,7 @@ fn setup(
     BODY_TEXT_STYLE
         .set(TextStyle {
             font: asset_server.load("fonts/NotoSans-Regular.ttf"),
-            font_size: 15.0,
+            font_size: 25.0,
             color: Color::BLACK,
         })
         .unwrap();

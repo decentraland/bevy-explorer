@@ -5,7 +5,7 @@ use common::util::{ModifyComponentExt, TryPushChildrenEx};
 
 use crate::{
     bound_node::NodeBounds,
-    combo_box::PropsExt,
+    dui_utils::PropsExt,
     interact_style::{Active, InteractStyles},
     ui_actions::{close_ui, Click, ClickRepeat, DataChanged, Enabled, On, UiCaller},
 };

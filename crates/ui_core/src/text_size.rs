@@ -8,7 +8,7 @@ use bevy_egui::EguiSettings;
 use common::util::ModifyComponentExt;
 
 use crate::{
-    combo_box::PropsExt,
+    dui_utils::PropsExt,
     ui_actions::{Click, HoverEnter, HoverExit, On},
     user_font, FontName, WeightName,
 };

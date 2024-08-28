@@ -5,7 +5,7 @@ use bevy::prelude::*;
 
 use crate::{
     bound_node::{BoundedNode, NodeBounds},
-    combo_box::DuiFromStr,
+    dui_utils::DuiFromStr,
     nine_slice::Ui9Slice,
     ui_actions::Enabled,
 };

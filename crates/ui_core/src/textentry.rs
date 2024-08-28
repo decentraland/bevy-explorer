@@ -1,5 +1,5 @@
 use crate::{
-    combo_box::PropsExt,
+    dui_utils::PropsExt,
     ui_actions::{DataChanged, On, Submit},
 };
 use bevy::{math::Vec3Swizzles, prelude::*, transform::TransformSystem, window::PrimaryWindow};
