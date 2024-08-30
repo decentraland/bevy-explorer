@@ -220,14 +220,14 @@ fn update_manual_cursor(
 
         let indices: [usize; 3] = match mesh.indices() {
             Some(Indices::U16(ixs)) => [
-                ixs[face * 3] as usize,
-                ixs[face * 3 + 1] as usize,
-                ixs[face * 3 + 2] as usize,
+                *ixs.get(face * 3)? as usize,
+                *ixs.get(face * 3 + 1)? as usize,
+                *ixs.get(face * 3 + 2)? as usize,
             ],
             Some(Indices::U32(ixs)) => [
-                ixs[face * 3] as usize,
-                ixs[face * 3 + 1] as usize,
-                ixs[face * 3 + 2] as usize,
+                *ixs.get(face * 3)? as usize,
+                *ixs.get(face * 3 + 1)? as usize,
+                *ixs.get(face * 3 + 2)? as usize,
             ],
             None => [face * 3, face * 3 + 1, face * 3 + 2],
         };
