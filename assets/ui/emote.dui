@@ -19,7 +19,7 @@
                 </div>
                 <div style="align-items: center; flex-direction: column; width: 25%; flex-grow: 1; margin: 1vmin;">
                     <med-text style="align-self: center;" text="filter" />
-                    <text-entry style="align-self: center; height: 3vmin; width: 100%;" hint-text="🔍" initial-text="@initial-filter" onchanged="@filter-changed" />
+                    <text-entry style="align-self: center; height: 3vmin; width: 100%; min-width: 100%;" hint-text="(type to filter)" initial-text="@initial-filter" onchanged="@filter-changed" />
                 </div>
     
             </div>

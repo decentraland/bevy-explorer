@@ -10,7 +10,8 @@ pub mod scrollable;
 pub mod spinner;
 pub mod stretch_uvs_image;
 pub mod text_size;
-pub mod textentry;
+// pub mod textentry;
+pub mod text_entry;
 pub mod toggle;
 pub mod ui_actions;
 pub mod ui_builder;
@@ -36,8 +37,8 @@ use once_cell::sync::OnceCell;
 use common::sets::SetupSets;
 use spinner::SpinnerPlugin;
 use stretch_uvs_image::StretchUvsImagePlugin;
+use text_entry::TextEntryPlugin;
 use text_size::TextSizePlugin;
-use textentry::TextEntryPlugin;
 use toggle::TogglePlugin;
 
 use self::{

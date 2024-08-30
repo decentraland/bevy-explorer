@@ -310,8 +310,6 @@ fn update_comboboxen(
                                 },
                             ));
 
-                            println!("->");
-
                             cmds.with_children(|c| {
                                 let mut cmds = c.spawn((TextBundle {
                                     text: Text::from_section(
@@ -354,7 +352,9 @@ fn update_comboboxen(
                     }
 
                     if let Some(target_camera) = props.target_camera {
-                        commands.entity(popup.root).insert((target_camera.clone(), DespawnWith(ent)));
+                        commands
+                            .entity(popup.root)
+                            .insert((target_camera.clone(), DespawnWith(ent)));
                     }
                 },
             ),

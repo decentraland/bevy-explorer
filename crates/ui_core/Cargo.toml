@@ -15,3 +15,4 @@ bevy_ecss = { workspace = true }
 once_cell = { workspace = true }
 anyhow = { workspace = true }
 opener = { workspace = true }
+bevy_simple_text_input = { workspace = true }

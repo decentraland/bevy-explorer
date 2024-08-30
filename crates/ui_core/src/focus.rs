@@ -11,6 +11,10 @@ pub struct Focus;
 #[derive(Component)]
 pub struct Focusable;
 
+// focus + blockkeyboard -> input manager will block normal key ops
+#[derive(Component)]
+pub struct BlockKeyboard;
+
 pub struct FocusPlugin;
 
 impl Plugin for FocusPlugin {

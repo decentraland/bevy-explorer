@@ -103,6 +103,7 @@ chrono = { version = "0.4.31", features = ["serde"] }
 bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "main-14" }
 bevy_ecss = { git = "https://github.com/robtfm/bevy_ecss", branch = "v0.14" }
 bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "0.14-dcl", features=["flac", "mp3", "ogg", "wav"] }
+bevy_simple_text_input = { git = "https://github.com/robtfm/bevy_simple_text_input", features=["clipboard"], branch="multiline" }
 directories = "5"
 uuid = { version = "1.7", features = ["v4"] }
 
@@ -165,3 +166,6 @@ deno_ops = { git = "https://github.com/robtfm/deno_core", branch = "0_280_hotfix
 
 # [patch."https://github.com/robtfm/bevy_dui"]
 # bevy_dui = { path = "../bevy_dui" }
+
+[patch."https://github.com/robtfm/bevy_simple_text_input"]
+bevy_simple_text_input = { path = "../bevy_simple_text_input" }

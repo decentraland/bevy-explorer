@@ -2,12 +2,13 @@ use bevy::{prelude::*, ui::FocusPolicy};
 use common::util::ModifyComponentExt;
 use dcl::interface::CrdtType;
 use dcl_component::{
-    proto_components::sdk::components::{PbUiInput, PbUiInputResult},
+    proto_components::sdk::components::{self, PbUiInput, PbUiInputResult},
     SceneComponentId,
 };
 use ui_core::{
-    textentry::TextEntry,
+    text_entry::{TextEntry, TextEntrySubmit, TextEntryValue},
     ui_actions::{DataChanged, On, Submit, UiCaller},
+    user_font, FontName,
 };
 
 use crate::{renderer_context::RendererSceneContext, SceneEntity};
@@ -42,18 +43,31 @@ pub fn set_ui_input(
             continue;
         };
 
-        let font_size = input.0.font_size.unwrap_or(12);
+        let font_name = match input.0.font() {
+            components::common::Font::FSansSerif => FontName::Serif,
+            components::common::Font::FSerif => FontName::Sans,
+            components::common::Font::FMonospace => FontName::Mono,
+        };
+        let font_size = input.0.font_size.unwrap_or(10) as f32;
+
         let ui_entity = link.ui_entity;
         let root = scene_ent.root;
         let scene_id = scene_ent.id;
 
         let data_handler = move |In(submit): In<bool>,
-                                 entry: Query<&TextEntry>,
+                                 change_entry: Query<&TextEntryValue>,
+                                 submit_entry: Query<&TextEntrySubmit>,
                                  mut context: Query<&mut RendererSceneContext>,
                                  time: Res<Time>,
                                  caller: Res<UiCaller>| {
             debug!("callback on {:?}", caller.0);
-            let Ok(entry) = entry.get(ui_entity) else {
+            let value = if submit {
+                submit_entry.get(ui_entity).map(|v| v.0.clone())
+            } else {
+                change_entry.get(ui_entity).map(|v| v.0.clone())
+            };
+
+            let Ok(value) = value else {
                 warn!("failed to get text node on UiInput update");
                 return;
             };
@@ -67,7 +81,7 @@ pub fn set_ui_input(
                 CrdtType::LWW_ENT,
                 scene_id,
                 &PbUiInputResult {
-                    value: entry.content.clone(),
+                    value,
                     is_submit: Some(submit),
                 },
             );
@@ -81,7 +95,7 @@ pub fn set_ui_input(
             }
             //and some size if not given
             if style.height == Val::Px(0.0) {
-                style.height = Val::Px(font_size as f32 * 1.3);
+                style.height = Val::Px(font_size * 1.3);
             }
         });
 
@@ -90,10 +104,15 @@ pub fn set_ui_input(
             Interaction::default(),
             TextEntry {
                 hint_text: input.0.placeholder.to_owned(),
+                hint_text_color: input.0.placeholder_color.map(Into::into),
                 enabled: !input.0.disabled,
                 content: input.0.value.clone().unwrap_or_default(),
                 accept_line: false,
-                font_size,
+                text_style: Some(TextStyle {
+                    font: user_font(font_name, ui_core::WeightName::Regular),
+                    font_size,
+                    color: input.0.color.map(Into::into).unwrap_or(Color::BLACK),
+                }),
                 ..Default::default()
             },
             On::<DataChanged>::new((|| false).pipe(data_handler)),

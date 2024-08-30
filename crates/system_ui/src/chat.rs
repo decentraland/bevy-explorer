@@ -19,8 +19,8 @@ use shlex::Shlex;
 use ui_core::{
     button::{DuiButton, TabSelection},
     focus::Focus,
+    text_entry::{TextEntry, TextEntrySubmit},
     text_size::FontSize,
-    textentry::TextEntry,
     ui_actions::{Click, DataChanged, HoverEnter, HoverExit, On, UiCaller},
 };
 
@@ -443,67 +443,76 @@ pub struct ChatInput;
 
 #[allow(clippy::too_many_arguments)]
 fn emit_user_chat(
+    mut commands: Commands,
     mut chats: EventWriter<ChatEvent>,
     transports: Query<&Transport>,
     player: Query<Entity, With<PrimaryUser>>,
     time: Res<Time>,
-    mut chat_input: Query<&mut TextEntry, With<ChatInput>>,
+    chat_input: Query<(Entity, &TextEntrySubmit), With<ChatInput>>,
     chat_output: Query<&ChatBox>,
     console_config: Res<ConsoleConfiguration>,
     mut command_entered: EventWriter<ConsoleCommandEntered>,
     mut console_lines: EventReader<PrintConsoleLine>,
+    f: Query<Entity, With<Focus>>,
 ) {
     let Ok(player) = player.get_single() else {
-        return;
-    };
-    let Ok(mut textbox) = chat_input.get_single_mut() else {
         return;
     };
     let Ok(output) = chat_output.get_single() else {
         return;
     };
 
-    for message in textbox.messages.drain(..) {
-        let sender = if message.starts_with('/') {
-            Entity::PLACEHOLDER
-        } else {
-            player
-        };
+    if let Ok((ent, TextEntrySubmit(message))) = chat_input.get_single() {
+        let mut cmds = commands.entity(ent);
+        cmds.remove::<TextEntrySubmit>();
 
-        chats.send(ChatEvent {
-            timestamp: time.elapsed_seconds_f64(),
-            sender,
-            channel: output.active_tab.to_owned(),
-            message: message.clone(),
-        });
-
-        if message.starts_with('/') {
-            let mut args = Shlex::new(&message).collect::<Vec<_>>();
-
-            let command_name = args.remove(0);
-            debug!("Command entered: `{command_name}`, with args: `{args:?}`");
-
-            let command = console_config.commands.get(command_name.as_str());
-
-            if command.is_some() {
-                command_entered.send(ConsoleCommandEntered { command_name, args });
-            } else {
-                debug!(
-                    "Command not recognized, recognized commands: `{:?}`",
-                    console_config.commands.keys().collect::<Vec<_>>()
-                );
+        if message.is_empty() {
+            for e in f.iter() {
+                commands.entity(e).remove::<Focus>();
             }
-        } else if output.active_tab == "Nearby" {
-            for transport in transports.iter() {
-                let _ = transport
-                    .sender
-                    .try_send(NetworkMessage::reliable(&rfc4::Packet {
-                        message: Some(rfc4::packet::Message::Chat(rfc4::Chat {
-                            message: message.clone(),
-                            timestamp: time.elapsed_seconds_f64(),
-                        })),
-                        protocol_version: 999,
-                    }));
+        } else {
+            // cmds.insert(Focus);
+            let sender = if message.starts_with('/') {
+                Entity::PLACEHOLDER
+            } else {
+                player
+            };
+
+            chats.send(ChatEvent {
+                timestamp: time.elapsed_seconds_f64(),
+                sender,
+                channel: output.active_tab.to_owned(),
+                message: message.clone(),
+            });
+
+            if message.starts_with('/') {
+                let mut args = Shlex::new(message).collect::<Vec<_>>();
+
+                let command_name = args.remove(0);
+                debug!("Command entered: `{command_name}`, with args: `{args:?}`");
+
+                let command = console_config.commands.get(command_name.as_str());
+
+                if command.is_some() {
+                    command_entered.send(ConsoleCommandEntered { command_name, args });
+                } else {
+                    debug!(
+                        "Command not recognized, recognized commands: `{:?}`",
+                        console_config.commands.keys().collect::<Vec<_>>()
+                    );
+                }
+            } else if output.active_tab == "Nearby" {
+                for transport in transports.iter() {
+                    let _ = transport
+                        .sender
+                        .try_send(NetworkMessage::reliable(&rfc4::Packet {
+                            message: Some(rfc4::packet::Message::Chat(rfc4::Chat {
+                                message: message.clone(),
+                                timestamp: time.elapsed_seconds_f64(),
+                            })),
+                            protocol_version: 999,
+                        }));
+                }
             }
         }
     }
