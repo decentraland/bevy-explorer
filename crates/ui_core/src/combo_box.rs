@@ -13,11 +13,11 @@ use common::{
 
 use crate::{
     dui_utils::PropsExt,
-    focus::{Focus, Focusable},
+    focus::Focus,
     interact_style::{Active, InteractStyle, InteractStyles},
     scrollable::ScrollTargetEvent,
     text_size::FontSize,
-    ui_actions::{close_ui, Click, DataChanged, On},
+    ui_actions::{close_ui, Click, DataChanged, Defocus, On},
 };
 
 #[derive(Component, Debug, Clone)]
@@ -71,7 +71,7 @@ fn setup(mut dui: ResMut<DuiRegistry>) {
 }
 
 #[derive(SystemParam)]
-pub struct TargetCameraProperties<'w, 's> {
+pub struct TargetCameraHelper<'w, 's> {
     target_camera: Query<'w, 's, &'static TargetCamera>,
     cameras: Query<'w, 's, &'static Camera>,
     all_windows: Query<'w, 's, &'static Window>,
@@ -85,7 +85,7 @@ pub struct TargetCameraProps {
     pub scale_factor: f32,
 }
 
-impl<'w, 's> TargetCameraProperties<'w, 's> {
+impl<'w, 's> TargetCameraHelper<'w, 's> {
     fn get_props(&self, e: Entity) -> Option<TargetCameraProps> {
         let target_camera = self.target_camera.get(e).ok().cloned();
         let (window_ref, texture_ref) = match &target_camera {
@@ -191,7 +191,7 @@ fn update_comboboxen(
             On::<Click>::new(
                 move |mut commands: Commands,
                       combo: Query<(&ComboBox, &Node, &GlobalTransform)>,
-                      target_camera: TargetCameraProperties,
+                      target_camera: TargetCameraHelper,
                       dui: Res<DuiRegistry>| {
                     let Ok((cbox, node, gt)) = combo.get(ent) else {
                         warn!("no node");
@@ -274,8 +274,11 @@ fn update_comboboxen(
                                     ..Default::default()
                                 },
                                 Interaction::default(),
+                                Focus,
+                                On::<Defocus>::new(close_ui),
                                 On::<Click>::new(move |mut commands: Commands| {
                                     debug!("selected {ix:?}");
+                                    commands.entity(popup.root).despawn_recursive();
                                     let Some(mut commands) = commands.get_entity(ent) else {
                                         warn!("no combo");
                                         return;
@@ -306,6 +309,8 @@ fn update_comboboxen(
                                     ..Default::default()
                                 },
                             ));
+
+                            println!("->");
 
                             cmds.with_children(|c| {
                                 let mut cmds = c.spawn((TextBundle {
@@ -348,36 +353,8 @@ fn update_comboboxen(
                         });
                     }
 
-                    let blocker = commands
-                        .spawn((
-                            NodeBundle {
-                                style: Style {
-                                    position_type: PositionType::Absolute,
-                                    left: Val::Px(0.0),
-                                    right: Val::Px(0.0),
-                                    top: Val::Px(0.0),
-                                    bottom: Val::Px(0.0),
-                                    ..Default::default()
-                                },
-                                focus_policy: bevy::ui::FocusPolicy::Block,
-                                z_index: ZIndex::Global(99),
-                                ..Default::default()
-                            },
-                            Focusable,
-                            Interaction::default(),
-                            DespawnWith(popup.root),
-                            On::<Focus>::new(
-                                (move |mut commands: Commands| {
-                                    commands.entity(popup.root).despawn_recursive();
-                                })
-                                .pipe(close_ui),
-                            ),
-                        ))
-                        .id();
-
                     if let Some(target_camera) = props.target_camera {
-                        commands.entity(popup.root).insert(target_camera.clone());
-                        commands.entity(blocker).insert(target_camera);
+                        commands.entity(popup.root).insert((target_camera.clone(), DespawnWith(ent)));
                     }
                 },
             ),
