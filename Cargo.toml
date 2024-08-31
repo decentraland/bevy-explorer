@@ -166,6 +166,3 @@ deno_ops = { git = "https://github.com/robtfm/deno_core", branch = "0_280_hotfix
 
 # [patch."https://github.com/robtfm/bevy_dui"]
 # bevy_dui = { path = "../bevy_dui" }
-
-[patch."https://github.com/robtfm/bevy_simple_text_input"]
-bevy_simple_text_input = { path = "../bevy_simple_text_input" }
