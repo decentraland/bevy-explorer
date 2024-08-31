@@ -2,7 +2,7 @@ syntax = "proto3";
 package decentraland.sdk.components;
 
 import "decentraland/sdk/components/common/id.proto";
-option (common.ecs_component_id) = 1045;
+option (common.ecs_component_id) = 1200;
 
 // a GltfNode links a scene entity with a node from within a gltf, allowing the scene to inspect it or modify it.
 // This component must be added to a direct child of an entity with a PbGltfContainer component.

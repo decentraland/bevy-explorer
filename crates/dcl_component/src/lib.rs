@@ -70,8 +70,8 @@ impl SceneComponentId {
     pub const VIDEO_PLAYER: SceneComponentId = SceneComponentId(1043);
     pub const VIDEO_EVENT: SceneComponentId = SceneComponentId(1044);
 
-    pub const GLTF_NODE: SceneComponentId = SceneComponentId(1045);
-    pub const GLTF_NODE_STATE: SceneComponentId = SceneComponentId(1046);
+    pub const GLTF_NODE: SceneComponentId = SceneComponentId(1200);
+    pub const GLTF_NODE_STATE: SceneComponentId = SceneComponentId(1201);
 
     pub const ENGINE_INFO: SceneComponentId = SceneComponentId(1048);
     pub const GLTF_CONTAINER_LOADING_STATE: SceneComponentId = SceneComponentId(1049);
@@ -81,7 +81,7 @@ impl SceneComponentId {
     pub const UI_BACKGROUND: SceneComponentId = SceneComponentId(1053);
 
     pub const CANVAS_INFO: SceneComponentId = SceneComponentId(1054);
-    pub const UI_CANVAS: SceneComponentId = SceneComponentId(1055);
+    pub const UI_CANVAS: SceneComponentId = SceneComponentId(1203);
 
     pub const POINTER_EVENTS: SceneComponentId = SceneComponentId(1062);
     pub const POINTER_RESULT: SceneComponentId = SceneComponentId(1063);
@@ -112,7 +112,7 @@ impl SceneComponentId {
     pub const UI_DROPDOWN: SceneComponentId = SceneComponentId(1094);
     pub const UI_INPUT_RESULT: SceneComponentId = SceneComponentId(1095);
     pub const UI_DROPDOWN_RESULT: SceneComponentId = SceneComponentId(1096);
-    pub const UI_SCROLL_RESULT: SceneComponentId = SceneComponentId(1097);
+    pub const UI_SCROLL_RESULT: SceneComponentId = SceneComponentId(1202);
 
     pub const TWEEN: SceneComponentId = SceneComponentId(1102);
     pub const TWEEN_STATE: SceneComponentId = SceneComponentId(1103);
