@@ -6,7 +6,7 @@ use ui_core::{
     button::{DuiButton, TabSelection},
     focus::Focus,
     interact_style::{InteractStyle, InteractStyles},
-    textentry::TextEntry,
+    text_entry::TextEntry,
     ui_actions::{DataChanged, On, UiCaller},
 };
 

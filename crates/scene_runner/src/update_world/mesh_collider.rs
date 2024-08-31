@@ -166,6 +166,7 @@ pub struct RaycastResult {
     pub id: ColliderId,
     pub toi: f32,
     pub normal: Vec3,
+    pub face: Option<usize>,
 }
 
 struct ColliderState {
@@ -413,6 +414,11 @@ impl SceneColliderData {
                 id: self.get_id(handle).unwrap().clone(),
                 toi: intersection.time_of_impact as f32,
                 normal: DVec3::from(intersection.normal).as_vec3(),
+                face: if let FeatureId::Face(fix) = intersection.feature {
+                    Some(fix as usize)
+                } else {
+                    None
+                },
             })
     }
 
@@ -550,6 +556,11 @@ impl SceneColliderData {
                     id: self.get_id(handle).unwrap().clone(),
                     toi: intersection.time_of_impact as f32,
                     normal: DVec3::from(intersection.normal).as_vec3(),
+                    face: if let FeatureId::Face(fix) = intersection.feature {
+                        Some(fix as usize)
+                    } else {
+                        None
+                    },
                 });
                 true
             },
@@ -706,7 +717,7 @@ fn update_colliders(
                 )
                 .unwrap()
             }
-            MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.5, 0.05),
+            MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.5, 0.005),
             MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),
             MeshColliderShape::Shape(shape, _) => ColliderBuilder::new(shape.clone()),
             MeshColliderShape::GltfShape { gltf_src, name } => {

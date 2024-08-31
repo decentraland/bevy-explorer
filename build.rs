@@ -13,7 +13,6 @@ fn main() -> Result<()> {
             .args(["diff", "--cached", "--quiet"])
             .status()?
             .success();
-
     println!(
         "cargo:rustc-env=BEVY_EXPLORER_LOCAL_MODIFICATION={}",
         if unmodified { "false" } else { "true" }

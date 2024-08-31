@@ -1,8 +1,9 @@
 use anyhow::anyhow;
 use bevy::{
     ecs::system::SystemParam,
-    gltf::{Gltf, GltfMesh},
+    gltf::{Gltf, GltfLoaderSettings, GltfMesh},
     prelude::*,
+    render::render_asset::RenderAssetUsages,
     utils::HashMap,
 };
 use ipfs::IpfsAssetServer;
@@ -26,10 +27,20 @@ impl<'w, 's> GltfResolver<'w, 's> {
         scene_hash: &str,
     ) -> Result<Option<Handle<Gltf>>, anyhow::Error> {
         let lookup = format!("{gltf_src}##{scene_hash}");
-        let h_gltf = self
-            .prev_pending_gltfs
-            .remove(&lookup)
-            .unwrap_or_else(|| self.ipfas.load_content_file(gltf_src, scene_hash).unwrap());
+        let h_gltf = self.prev_pending_gltfs.remove(&lookup).unwrap_or_else(|| {
+            self.ipfas
+                .load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
+                    gltf_src,
+                    scene_hash,
+                    |s| {
+                        s.load_cameras = false;
+                        s.load_lights = false;
+                        s.load_materials = RenderAssetUsages::RENDER_WORLD;
+                        s.include_source = true;
+                    },
+                )
+                .unwrap()
+        });
         match self.ipfas.asset_server().load_state(h_gltf.id()) {
             bevy::asset::LoadState::Loading => {
                 self.pending_gltfs.insert(lookup, h_gltf.clone());

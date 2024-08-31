@@ -268,10 +268,11 @@ pub fn parent_position_sync<T: ParentPositionSyncStage>(
             continue;
         };
 
-        let transform = gt_helper
-            .compute_global_transform(sync.0, None)
-            .unwrap()
-            .reparented_to(parent_transform);
+        let Ok(gt) = gt_helper.compute_global_transform(sync.0, None) else {
+            continue;
+        };
+
+        let transform = gt.reparented_to(parent_transform);
 
         commands
             .entity(ent)

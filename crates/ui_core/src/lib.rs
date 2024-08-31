@@ -2,6 +2,7 @@ pub mod bound_node;
 pub mod button;
 pub mod color_picker;
 pub mod combo_box;
+pub mod dui_utils;
 pub mod focus;
 pub mod interact_style;
 pub mod nine_slice;
@@ -9,7 +10,8 @@ pub mod scrollable;
 pub mod spinner;
 pub mod stretch_uvs_image;
 pub mod text_size;
-pub mod textentry;
+// pub mod textentry;
+pub mod text_entry;
 pub mod toggle;
 pub mod ui_actions;
 pub mod ui_builder;
@@ -35,8 +37,8 @@ use once_cell::sync::OnceCell;
 use common::sets::SetupSets;
 use spinner::SpinnerPlugin;
 use stretch_uvs_image::StretchUvsImagePlugin;
+use text_entry::TextEntryPlugin;
 use text_size::TextSizePlugin;
-use textentry::TextEntryPlugin;
 use toggle::TogglePlugin;
 
 use self::{
@@ -166,14 +168,14 @@ fn setup(
     TITLE_TEXT_STYLE
         .set(TextStyle {
             font: asset_server.load("fonts/NotoSans-Bold.ttf"),
-            font_size: 35.0,
+            font_size: 35.0 / 1.3,
             color: Color::BLACK,
         })
         .unwrap();
     BODY_TEXT_STYLE
         .set(TextStyle {
             font: asset_server.load("fonts/NotoSans-Regular.ttf"),
-            font_size: 15.0,
+            font_size: 25.0 / 1.3,
             color: Color::BLACK,
         })
         .unwrap();
@@ -182,7 +184,7 @@ fn setup(
             (0..10)
                 .map(|i| TextStyle {
                     font: asset_server.load("fonts/NotoSans-Bold.ttf"),
-                    font_size: 25.0,
+                    font_size: 25.0 / 1.3,
                     color: Color::srgba(1.0, 1.0, 1.0, i as f32 / 9.0),
                 })
                 .collect::<Vec<_>>()

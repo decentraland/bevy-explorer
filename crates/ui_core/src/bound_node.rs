@@ -8,7 +8,7 @@ use bevy::{
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};
 
-use crate::{combo_box::PropsExt, interact_style::InteractStyles};
+use crate::{dui_utils::PropsExt, interact_style::InteractStyles};
 
 #[derive(Component)]
 pub struct NodeBounds {

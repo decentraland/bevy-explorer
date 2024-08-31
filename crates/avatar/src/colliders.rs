@@ -145,7 +145,7 @@ fn update_avatar_collider_actions(
     tooltips.0.remove("avatar_pointer");
 
     // check for scene ui
-    if matches!(*ui_target, UiPointerTarget::Some(_)) {
+    if !matches!(*ui_target, UiPointerTarget::None) {
         return;
     }
 

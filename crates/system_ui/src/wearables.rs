@@ -34,7 +34,7 @@ use ui_core::{
     color_picker::ColorPicker,
     combo_box::ComboBox,
     interact_style::{InteractStyle, InteractStyles},
-    textentry::TextEntry,
+    text_entry::TextEntryValue,
     toggle::Toggled,
     ui_actions::{Click, DataChanged, Enabled, On, UiCaller},
 };
@@ -425,9 +425,9 @@ fn set_wearables_content(
                 "filter-changed",
                 On::<DataChanged>::new(
                     |caller: Res<UiCaller>,
-                     q: Query<&TextEntry>,
+                     q: Query<&TextEntryValue>,
                      mut settings: Query<&mut WearablesSettings>| {
-                        let Ok(value) = q.get(caller.0).map(|te| te.content.clone()) else {
+                        let Ok(value) = q.get(caller.0).map(|te| te.0.clone()) else {
                             warn!("no value from text entry?");
                             return;
                         };

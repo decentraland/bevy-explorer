@@ -94,7 +94,7 @@ use bevy::{
     utils::hashbrown::HashMap,
 };
 use common::{
-    sets::SceneLoopSets,
+    sets::{SceneLoopSets, SceneSets},
     util::{DespawnWith, TryPushChildrenEx},
 };
 use dcl::interface::ComponentPosition;
@@ -121,7 +121,10 @@ impl Plugin for TextShapePlugin {
             Update,
             update_text_shapes.in_set(SceneLoopSets::UpdateWorld),
         );
-        app.add_systems(Update, add_cosmic_buffers);
+        app.add_systems(
+            Update,
+            add_cosmic_buffers.after(SceneSets::RestrictedActions),
+        );
     }
 }
 
@@ -190,7 +193,7 @@ fn update_text_shapes(
 
         let world_ui = world_ui.unwrap_or_else(|| {
             new_world_uis.entry(scene_ent.root).or_insert_with(|| {
-                let view = spawn_world_ui_view(&mut commands, images);
+                let (view, _) = spawn_world_ui_view(&mut commands, images, None);
                 commands.entity(view).insert(DespawnWith(ent));
                 let ui_root = commands
                     .spawn((

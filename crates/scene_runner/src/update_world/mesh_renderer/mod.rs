@@ -90,7 +90,7 @@ impl Plugin for MeshDefinitionPlugin {
             mesh.generate_tangents().unwrap();
             mesh
         };
-        let flip_uv = |mut mesh: Mesh| {
+        let _flip_uv = |mut mesh: Mesh| {
             let Some(VertexAttributeValues::Float32x3(ref mut positions)) =
                 mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION)
             else {
@@ -116,9 +116,12 @@ impl Plugin for MeshDefinitionPlugin {
         ));
         let cylinder = assets.add(generate_tangents(Cylinder::default().into()));
         let plane = assets.add(generate_tangents(Rectangle::default().mesh().into()));
-        let sphere = assets.add(generate_tangents(flip_uv(
-            Sphere::new(0.5).mesh().uv(36, 18),
-        )));
+        let sphere = assets.add(generate_tangents(
+            Sphere::new(0.5)
+                .mesh()
+                .uv(36, 18)
+                .rotated_by(Quat::from_rotation_x(-FRAC_PI_2)),
+        ));
         app.insert_resource(MeshPrimitiveDefaults {
             boxx,
             plane,

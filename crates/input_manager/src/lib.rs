@@ -7,7 +7,10 @@ use bevy_console::ConsoleOpen;
 use bevy_egui::EguiContext;
 
 use dcl_component::proto_components::sdk::components::common::InputAction;
-use ui_core::ui_actions::UiActionSet;
+use ui_core::{
+    focus::{BlockKeyboard, Focus},
+    ui_actions::UiActionSet,
+};
 
 pub struct InputManagerPlugin;
 
@@ -119,9 +122,7 @@ impl<'w> InputManager<'w> {
             .iter()
             .filter(|(_, button)| match button {
                 InputItem::Key(k) => self.should_accept.key && self.key_input.just_pressed(*k),
-                InputItem::Mouse(m) => {
-                    self.should_accept.mouse && self.mouse_input.just_pressed(*m)
-                }
+                InputItem::Mouse(m) => self.mouse_input.just_pressed(*m),
                 InputItem::Any => false,
             })
             .map(|(action, _)| action)
@@ -207,6 +208,7 @@ fn check_accept_input(
     console: Res<ConsoleOpen>,
     mut ctx: Query<&mut EguiContext, With<PrimaryWindow>>,
     mut should_accept: ResMut<AcceptInput>,
+    key_blocked: Query<Entity, (With<Focus>, With<BlockKeyboard>)>,
 ) {
     let Ok(mut ctx) = ctx.get_single_mut() else {
         return;
@@ -215,7 +217,8 @@ fn check_accept_input(
     should_accept.mouse = ui_roots
         .iter()
         .any(|root| !matches!(root, Interaction::None));
-    should_accept.key = !console.open && !ctx.get_mut().wants_keyboard_input();
+    should_accept.key =
+        !console.open && !ctx.get_mut().wants_keyboard_input() && key_blocked.is_empty();
 }
 
 pub fn should_accept_key(should_accept: Res<AcceptInput>) -> bool {

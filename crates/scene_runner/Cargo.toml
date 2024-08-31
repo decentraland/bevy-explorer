@@ -8,6 +8,9 @@ edition = "2021"
 [lints]
 workspace = true
 
+[features]
+gen-tests = []
+
 [dependencies]
 common = { workspace = true }
 dcl_component = { workspace = true }

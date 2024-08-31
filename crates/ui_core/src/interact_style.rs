@@ -5,7 +5,7 @@ use bevy::prelude::*;
 
 use crate::{
     bound_node::{BoundedNode, NodeBounds},
-    combo_box::DuiFromStr,
+    dui_utils::DuiFromStr,
     nine_slice::Ui9Slice,
     ui_actions::Enabled,
 };
@@ -44,6 +44,7 @@ pub fn set_interaction_style(
             Entity,
             &InteractStyles,
             Option<&mut BackgroundColor>,
+            Option<&mut BorderColor>,
             Option<&mut Ui9Slice>,
             Option<&mut UiImage>,
             Option<&mut BoundedNode>,
@@ -64,6 +65,7 @@ pub fn set_interaction_style(
         _ent,
         styles,
         maybe_bg,
+        maybe_border,
         maybe_nineslice,
         maybe_image,
         maybe_bounded,
@@ -124,6 +126,12 @@ pub fn set_interaction_style(
         } else if let Some(mut bg) = maybe_bg {
             if let Some(req_bg) = style.background {
                 bg.0 = req_bg;
+            }
+        }
+
+        if let Some(mut border) = maybe_border {
+            if let Some(border_color) = style.border {
+                border.0 = border_color;
             }
         }
     }

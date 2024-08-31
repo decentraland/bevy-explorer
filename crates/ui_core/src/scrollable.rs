@@ -1,6 +1,6 @@
 use bevy::{
-    input::mouse::MouseWheel, prelude::*, transform::TransformSystem, utils::HashMap,
-    window::PrimaryWindow,
+    input::mouse::MouseWheel, prelude::*, transform::TransformSystem, ui::ManualCursorPosition,
+    utils::HashMap, window::PrimaryWindow,
 };
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
 use common::util::{ModifyComponentExt, ModifyDefaultComponentExt, TryPushChildrenEx};
@@ -17,7 +17,8 @@ pub struct ScrollablePlugin;
 
 impl Plugin for ScrollablePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup)
+        app.init_resource::<UsedScrollWheel>()
+            .add_systems(Startup, setup)
             .add_systems(
                 PostUpdate,
                 update_scrollables.after(TransformSystem::TransformPropagate),
@@ -208,6 +209,9 @@ struct Slider {
     position: f32,
 }
 
+#[derive(Resource, Default)]
+pub struct UsedScrollWheel(pub bool);
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn update_scrollables(
     mut commands: Commands,
@@ -226,6 +230,7 @@ fn update_scrollables(
         Ref<GlobalTransform>,
         Ref<Node>,
         &Interaction,
+        Option<&TargetCamera>,
     )>,
     mut bars: Query<
         (
@@ -235,6 +240,7 @@ fn update_scrollables(
             &Interaction,
             &Node,
             &GlobalTransform,
+            Option<&TargetCamera>,
         ),
         (Without<Scrollable>, Without<Slider>),
     >,
@@ -247,6 +253,8 @@ fn update_scrollables(
     mut wheel: EventReader<MouseWheel>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
     mut events: EventReader<ScrollTargetEvent>,
+    cursors: Query<(Entity, &ManualCursorPosition)>,
+    mut used_wheel: ResMut<UsedScrollWheel>,
 ) {
     #[derive(Copy, Clone, Debug)]
     enum UpdateSliderPosition {
@@ -271,14 +279,26 @@ fn update_scrollables(
         .map(|ev| (ev.scrollable, ev.position))
         .collect::<HashMap<_, _>>();
 
+    used_wheel.0 = false;
+
     let Ok(window) = window.get_single() else {
         return;
     };
 
     let bar_width = (window.width().min(window.height()) * 0.02).ceil();
 
-    let Some(cursor_position) = window.cursor_position() else {
+    let Some(window_cursor_position) = window.cursor_position() else {
         return;
+    };
+    let manual_cursor_positions: HashMap<_, _> = cursors.iter().collect();
+    let cursor_position = |camera: Option<&TargetCamera>| -> Option<Vec2> {
+        if let Some(camera) = camera {
+            if let Some(position) = manual_cursor_positions.get(&camera.0) {
+                return position.0;
+            }
+        }
+
+        Some(window_cursor_position)
     };
 
     if mouse_button_input.just_released(MouseButton::Left) {
@@ -301,12 +321,15 @@ fn update_scrollables(
         ref_transform,
         ref_node,
         interaction,
+        maybe_target_camera,
     ) in scrollables.iter_mut()
     {
         let Ok((child_node, mut style, _)) = nodes.get_mut(scroll_content.0) else {
             warn!("scrollable hierarchy is broken");
             continue;
         };
+
+        let cursor_position = cursor_position(maybe_target_camera);
 
         let child_size = child_node.size();
         let parent_size = node.size();
@@ -348,34 +371,38 @@ fn update_scrollables(
             }
         }
 
-        // calculate deltas based on drag or mouse wheel in the parent container
         let mut new_slider_deltas = None;
-        if scrollable.drag && clicked_slider.is_none() {
-            if let Some((prev_entity, prev_pos)) = clicked_scrollable.as_ref() {
-                if prev_entity == &entity {
-                    let delta = cursor_position - *prev_pos;
-                    new_slider_deltas = Some(delta / slide_amount);
+        if let Some(cursor_position) = cursor_position {
+            // calculate deltas based on drag or mouse wheel in the parent container
+            if scrollable.drag && clicked_slider.is_none() {
+                if let Some((prev_entity, prev_pos)) = clicked_scrollable.as_ref() {
+                    if prev_entity == &entity {
+                        let delta = cursor_position - *prev_pos;
+                        new_slider_deltas = Some(delta / slide_amount);
+                    }
+                }
+
+                if interaction == &Interaction::Pressed {
+                    *clicked_scrollable = Some((entity, cursor_position));
                 }
             }
-
-            if interaction == &Interaction::Pressed {
-                *clicked_scrollable = Some((entity, cursor_position));
-            }
-        }
-        if scrollable.wheel {
-            // we check only if the cursor is within our frame - this means scrollables can still be scrolled when
-            // blocking dialogs cover them. TODO: make this better, requires either
-            // - check all children for interaction (yuck)
-            // - add some context to FocusPolicy (e.g. FocusPolicy::Block(HashSet<Buttons>))
-            // - add another system to manage "container" focus based on child focus
-            if cursor_position.clamp(ui_position, ui_position + parent_size) == cursor_position {
-                for ev in wheel_events.iter() {
-                    let unit = match ev.unit {
-                        bevy::input::mouse::MouseScrollUnit::Line => 20.0,
-                        bevy::input::mouse::MouseScrollUnit::Pixel => 1.0,
-                    };
-                    *new_slider_deltas.get_or_insert(Default::default()) +=
-                        Vec2::new(ev.x, ev.y) * unit / slide_amount;
+            if scrollable.wheel {
+                // we check only if the cursor is within our frame - this means scrollables can still be scrolled when
+                // blocking dialogs cover them. TODO: make this better, requires either
+                // - check all children for interaction (yuck)
+                // - add some context to FocusPolicy (e.g. FocusPolicy::Block(HashSet<Buttons>))
+                // - add another system to manage "container" focus based on child focus
+                if cursor_position.clamp(ui_position, ui_position + parent_size) == cursor_position
+                {
+                    used_wheel.0 = true;
+                    for ev in wheel_events.iter() {
+                        let unit = match ev.unit {
+                            bevy::input::mouse::MouseScrollUnit::Line => 20.0,
+                            bevy::input::mouse::MouseScrollUnit::Pixel => 1.0,
+                        };
+                        *new_slider_deltas.get_or_insert(Default::default()) +=
+                            Vec2::new(ev.x, ev.y) * unit / slide_amount;
+                    }
                 }
             }
         }
@@ -442,7 +469,9 @@ fn update_scrollables(
     }
 
     // bars
-    for (entity, bar, mut style, interaction, node, transform) in bars.iter_mut() {
+    for (entity, bar, mut style, interaction, node, transform, maybe_target_camera) in
+        bars.iter_mut()
+    {
         let source = if bar.vertical {
             &mut vertical_scrollers
         } else {
@@ -472,6 +501,10 @@ fn update_scrollables(
                 style.height = Val::Px(bar_width);
             }
         }
+
+        let Some(cursor_position) = cursor_position(maybe_target_camera) else {
+            continue;
+        };
 
         if interaction == &Interaction::Pressed || clicked_slider.map_or(false, |ent| ent == entity)
         {

@@ -30,6 +30,7 @@ fn main() -> Result<()> {
         "ui_dropdown",
         "ui_dropdown_result",
         "ui_scroll_result",
+        "ui_canvas",
         "text_shape",
         "pointer_lock",
         "camera_mode",

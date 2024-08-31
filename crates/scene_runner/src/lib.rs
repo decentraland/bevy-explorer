@@ -227,6 +227,7 @@ impl Plugin for SceneRunnerPlugin {
                 SceneSets::Input,
                 SceneSets::RunLoop,
                 SceneSets::PostLoop,
+                SceneSets::RestrictedActions,
             )
                 .chain(),
         );
@@ -259,6 +260,12 @@ impl Plugin for SceneRunnerPlugin {
             apply_deferred
                 .after(SceneSets::RunLoop)
                 .before(SceneSets::PostLoop),
+        );
+        app.add_systems(
+            Update,
+            apply_deferred
+                .after(SceneSets::PostLoop)
+                .before(SceneSets::RestrictedActions),
         );
 
         app.add_plugins(SceneLifecyclePlugin);
@@ -445,7 +452,7 @@ pub struct OutOfWorld;
 // helper to get the scene entity containing a given world position
 #[derive(SystemParam)]
 pub struct ContainingScene<'w, 's> {
-    transforms: Query<'w, 's, (&'static GlobalTransform, Has<OutOfWorld>)>,
+    pub transforms: Query<'w, 's, (&'static GlobalTransform, Has<OutOfWorld>)>,
     pointers: Res<'w, ScenePointers>,
     live_scenes: Res<'w, LiveScenes>,
     portable_scenes: Res<'w, PortableScenes>,
