@@ -194,6 +194,7 @@ fn update_manual_cursor(
     uis: Query<(
         &GlobalTransform,
         &MeshCollider,
+        &Handle<Mesh>,
         &ResolveCursor,
         &ContainerEntity,
     )>,
@@ -210,12 +211,23 @@ fn update_manual_cursor(
         return;
     };
 
-    let Ok((gt, collider, resolve, container)) = uis.get(world_target.container) else {
+    let Ok((gt, collider, render_mesh, resolve, container)) = uis.get(world_target.container)
+    else {
         return;
     };
 
-    let mesh_uvs = |h_mesh: &Handle<Mesh>| -> Option<Vec2> {
+    let face_uvs = |h_mesh: &Handle<Mesh>| -> Option<Vec2> {
         let mesh = meshes.get(h_mesh)?;
+        let Some(VertexAttributeValues::Float32x3(posns)) =
+            mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+        else {
+            return None;
+        };
+        let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0)
+        else {
+            return None;
+        };
+
         let face = world_target.face?;
 
         let indices: [usize; 3] = match mesh.indices() {
@@ -232,32 +244,21 @@ fn update_manual_cursor(
             None => [face * 3, face * 3 + 1, face * 3 + 2],
         };
 
-        let Some(VertexAttributeValues::Float32x3(posns)) =
-            mesh.attribute(Mesh::ATTRIBUTE_POSITION)
-        else {
-            return None;
-        };
         let posns: [Vec3; 3] = [
             gt.transform_point(Vec3::from(posns[indices[0]])),
             gt.transform_point(Vec3::from(posns[indices[1]])),
             gt.transform_point(Vec3::from(posns[indices[2]])),
         ];
         let target = world_target.position.unwrap();
-        let bary_coords = barycentric_coords(&posns, target);
-
-        let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0)
-        else {
-            return None;
-        };
-        Some(
+        barycentric_coords(&posns, target).map(|bary_coords| {
             Vec2::from(uvs[indices[0]]) * bary_coords.x
                 + Vec2::from(uvs[indices[1]]) * bary_coords.y
-                + Vec2::from(uvs[indices[2]]) * bary_coords.z,
-        )
+                + Vec2::from(uvs[indices[2]]) * bary_coords.z
+        })
     };
 
     let uv = match &collider.shape {
-        MeshColliderShape::Shape(_, h_mesh) => mesh_uvs(h_mesh),
+        MeshColliderShape::Shape(_, h_mesh) => face_uvs(h_mesh),
         MeshColliderShape::GltfShape { gltf_src, name } => {
             let Ok(scene) = scenes.get(container.root) else {
                 warn!("no scene");
@@ -268,9 +269,67 @@ fn update_manual_cursor(
                 return;
             };
 
-            mesh_uvs(&h_mesh)
+            face_uvs(&h_mesh)
         }
-        _ => panic!(),
+        // for primitive colliders we check every face of the rendered mesh
+        _ => {
+            let Some(mesh) = meshes.get(render_mesh) else {
+                return;
+            };
+            let Some(VertexAttributeValues::Float32x3(posns)) =
+                mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+            else {
+                return;
+            };
+            let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0)
+            else {
+                return;
+            };
+
+            let faces = match mesh.indices() {
+                Some(indices) => 0..indices.len() / 3,
+                None => 0..posns.len() / 3,
+            };
+
+            let mut distances_and_barycoords = faces
+                .into_iter()
+                .filter_map(|face| {
+                    let indices: [usize; 3] = match mesh.indices() {
+                        Some(Indices::U16(ixs)) => [
+                            *ixs.get(face * 3)? as usize,
+                            *ixs.get(face * 3 + 1)? as usize,
+                            *ixs.get(face * 3 + 2)? as usize,
+                        ],
+                        Some(Indices::U32(ixs)) => [
+                            *ixs.get(face * 3)? as usize,
+                            *ixs.get(face * 3 + 1)? as usize,
+                            *ixs.get(face * 3 + 2)? as usize,
+                        ],
+                        None => [face * 3, face * 3 + 1, face * 3 + 2],
+                    };
+
+                    let posns: [Vec3; 3] = [
+                        gt.transform_point(Vec3::from(posns[indices[0]])),
+                        gt.transform_point(Vec3::from(posns[indices[1]])),
+                        gt.transform_point(Vec3::from(posns[indices[2]])),
+                    ];
+                    let target = world_target.position.unwrap();
+                    barycentric_coords(&posns, target).map(|bary_coords| {
+                        let uvs = Vec2::from(uvs[indices[0]]) * bary_coords.x
+                            + Vec2::from(uvs[indices[1]]) * bary_coords.y
+                            + Vec2::from(uvs[indices[2]]) * bary_coords.z;
+                        let bary_pos = posns[0] * bary_coords.x
+                            + posns[1] * bary_coords.y
+                            + posns[2] * bary_coords.z;
+                        let distance = bary_pos.distance(target);
+                        (distance, uvs)
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            distances_and_barycoords.sort_by_key(|(distance, _)| -FloatOrd(*distance));
+            distances_and_barycoords.pop().map(|(_, uvs)| uvs)
+        }
     };
 
     let Some(uv) = uv else {
@@ -286,7 +345,7 @@ fn update_manual_cursor(
     cursor.0 = Some(uv * resolve.texture_size);
 }
 
-fn barycentric_coords(posns: &[Vec3; 3], target: Vec3) -> Vec3 {
+fn barycentric_coords(posns: &[Vec3; 3], target: Vec3) -> Option<Vec3> {
     let v0 = posns[1] - posns[0];
     let v1 = posns[2] - posns[0];
     let v2 = target - posns[0];
@@ -300,9 +359,9 @@ fn barycentric_coords(posns: &[Vec3; 3], target: Vec3) -> Vec3 {
     let w = (d00 * d21 - d01 * d20) / denom;
     let u = 1.0 - v - w;
     if u < 0.0 || v < 0.0 || w < 0.0 || u > 1.0 || v > 1.0 || w > 1.0 {
-        warn!("bad bary coords [tri: {:?}, target: {}]", posns, target);
+        return None;
     }
-    Vec3::new(u, v, w)
+    Some(Vec3::new(u, v, w))
 }
 
 fn resolve_pointer_target(

@@ -717,7 +717,7 @@ fn update_colliders(
                 )
                 .unwrap()
             }
-            MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.5, 0.05),
+            MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.5, 0.005),
             MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),
             MeshColliderShape::Shape(shape, _) => ColliderBuilder::new(shape.clone()),
             MeshColliderShape::GltfShape { gltf_src, name } => {
