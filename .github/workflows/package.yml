@@ -57,8 +57,13 @@ jobs:
                     os: self-hosted-windows
                   #  target: x86_64-pc-windows-msvc
 
+                    console: [no_console]
+                    include:
+                      - os: self-hosted-windows
+                        console: console
+
         env:
-            PACKAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.${{ startsWith(matrix.build_name, 'lin') && 'tar.gz' || 'zip' }}
+            PACKAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}${{ startsWith(matrix.build_name, 'console') && '_console' || ''}}.${{ startsWith(matrix.build_name, 'lin') && 'tar.gz' || 'zip' }}
             APPIMAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.AppImage
             CARGO_BUILD_DIR: target/release
 
@@ -114,16 +119,19 @@ jobs:
               Add-Content $env:GITHUB_ENV "FFMPEG_DIR=c:\ffmpeg-6.0`n"
     
               
-          - name: Cargo build (windows)
-            if: runner.os == 'windows'
+          - name: Cargo build (windows no console)
+            if: runner.os == 'windows' && matrix.console == 'no_console'
             run: cargo build --release --bin decentra-bevy -j8
+          - name: Cargo build (windows console)
+            if: runner.os == 'windows' && matrix.console == 'console'
+            run: cargo build --release --bin decentra-bevy -j8 --features "console"
           - name: Cargo build (macos)
             if: runner.os == 'macos'
             run: cargo build --release --bin decentra-bevy
           - name: Cargo build (linux)
             if: runner.os == 'linux'
             run: cargo build --release --bin decentra-bevy --no-default-features --features "ffmpeg,inspect"
-
+    
           - name: Package common
             run: |
                 mkdir package
