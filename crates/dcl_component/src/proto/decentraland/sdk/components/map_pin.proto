@@ -1,0 +1,16 @@
+syntax = "proto3";
+package decentraland.sdk.components;
+import "decentraland/common/vectors.proto";
+import "decentraland/sdk/components/common/id.proto";
+import "decentraland/common/texture.proto";
+option (common.ecs_component_id) = 1097;
+
+// @deprecated
+// Used internally for the game orchestrator PX, not exposed in the SDK
+message PBMapPin {
+  decentraland.common.Vector2 position = 1;
+  optional decentraland.common.TextureUnion texture = 2;
+  float icon_size = 3;
+  string title = 4;
+  string description = 5;
+}

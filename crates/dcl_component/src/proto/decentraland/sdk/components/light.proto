@@ -1,0 +1,37 @@
+syntax = "proto3";
+package decentraland.sdk.components;
+
+import "decentraland/common/colors.proto";
+
+import "decentraland/sdk/components/common/id.proto";
+option (common.ecs_component_id) = 1204;
+
+// defines a light source.
+// the world has a default directional light (like sunlight) which can be overridden by adding the light component to the scene root.
+// point lights (lightbulbs) or spotlights can also be created by attaching the light component to non-root entities.
+message PbLight {
+  // whether the light is on
+  // default true
+  optional bool enabled = 1;
+  // light brightness in lux (lumens/m^2). 
+  // 
+  // for directional light, this is a constant value at all surfaces.
+  // the world's default sunlight (directional) varies from 400 (sunrise/sunset) to 10,000 (midday).
+  // for more typical values, see https://en.wikipedia.org/wiki/Lux#Illuminance
+  //
+  // for point and spot lights, this is the value at 1m distance from the light. to transform from raw lumens, 
+  // divide by ~12 (4*pi).
+  // e.g. a 100w household bulb with 1200 lumens would have a 1m illuminance of ~100.
+  // a lighthouse bulb with 200,000 lumens would have a 1m illuminance of ~15,000
+  // 
+  // default 10,000
+  optional float illuminance = 2;
+  // whether the light should cast shadows.
+  // note: even when set to true the engine may not display shadows, or may only show shadows for a limited number 
+  // of lights depending on the implementation, platform, and user settings.
+  // default false / off
+  optional bool shadows = 3;
+  // light color
+  // default White
+  optional decentraland.common.Color3 color = 4;
+}

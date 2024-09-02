@@ -5,11 +5,13 @@ import "decentraland/sdk/components/common/id.proto";
 option (common.ecs_component_id) = 1200;
 
 // a GltfNode links a scene entity with a node from within a gltf, allowing the scene to inspect it or modify it.
-// This component must be added to a direct child of an entity with a PbGltfContainer component.
+// This component must be added to a direct child of an entity with a PbGltfContainer component, or
+// to a direct child of another entity with a GltfNode component, and the referenced gltf node must be a descendent of the gltf node
+// in the parent.
 // The name must match the path of one of the nodes within the Gltf. These are available on the GltfContainerLoadingState component.
 // 
 // The renderer will attach a PbGltfNodeState to the entity describing the state. Once the state is `GNS_READY`, 
-// - the `Transform` will be updated to match the position of the node within the gltf (relative to the gltf root),
+// - the `Transform` will be updated to match the position of the node within the gltf (relative to the gltf root, or the parent node),
 // - a `MeshRenderer` with a GltfMesh mesh type will be added (if the gltf node has a mesh).
 // - a `MeshCollider` with a GltfMesh mesh type will be added (if the gltf node has a collider).
 // - a `Material` component including a GltfMaterial reference will be added (if the gltf node has a material).
@@ -17,7 +19,8 @@ option (common.ecs_component_id) = 1200;
 // After creation, if an animation moves the node, the `Transform` will be updated.
 //
 // From the scene, you can modify various components to alter the gltf node:
-// - modifying the `Transform` position/rotation/scale will move the node. The position is interpreted relative to the gltf root, regardless of any gltf node hierarchy.
+// - modifying the `Transform` position/rotation/scale will move the node. The position is interpreted relative to the gltf root (or parent node), 
+//   regardless of any intermediate gltf node hierarchy.
 //   If an animation is playing, the animation takes priority and the scene entity's position will be updated to match the animation.
 // - `Visibility` can be added to hide or show the node and it's children in the gltf hierarchy.
 // - `MeshRenderer` can be added/modified/removed to create/modify/remove a mesh on the node.
