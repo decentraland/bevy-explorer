@@ -632,13 +632,13 @@ fn update_map_visibilty(
     mut init: Local<bool>,
 ) {
     if !*init || realm.is_changed() {
-        *init = true;
         let Ok(nodes) = map.get_single() else {
             return;
         };
         let Ok(mut style) = style.get_mut(nodes.named("map-container")) else {
             return;
         };
+        *init = true;
         // todo this is really bad
         if realm.address == "https://realm-provider.decentraland.org/main" {
             style.display = Display::Flex;
