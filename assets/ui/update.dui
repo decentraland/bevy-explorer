@@ -1,0 +1,14 @@
+<define-template id="update-available">
+    <dialog title="Update Available" buttons="@buttons">
+        <div style="flex-direction: column; align-items: center; justify-content: center; margin: 4vmin;">
+            <div style="flex-direction: column;">
+                <med-text text="@body" />
+            </div>
+            <hr />
+            <div>
+                <med-link label="Download" color="#8888ff" href="@download" />
+            </div>
+        </div>
+    </dialog>
+</define-template>
+

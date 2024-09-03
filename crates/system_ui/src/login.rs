@@ -10,7 +10,7 @@ use bevy::{
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
-    structs::{ActiveDialog, AppConfig, ChainLink, PreviousLogin},
+    structs::{ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin},
     util::{project_directories, TaskExt},
 };
 use comms::{
@@ -31,6 +31,8 @@ use wallet::{
     },
     Wallet,
 };
+
+use crate::version_check::check_update;
 
 pub struct LoginPlugin;
 
@@ -81,16 +83,44 @@ fn login(
     mut motd_shown: Local<bool>,
 ) {
     if !*motd_shown {
+        let update = check_update();
         let permit = active_dialog.try_acquire().unwrap();
-        let components = commands
-            .spawn_template(
-                &dui,
-                "motd",
-                DuiProps::default()
-                    .with_prop("buttons", vec![DuiButton::new_enabled("Ok", close_ui)]),
-            )
-            .unwrap();
-        commands.entity(components.root).insert(permit);
+
+        if let Some((desc, url)) = update {
+            let components = commands
+                .spawn_template(
+                    &dui,
+                    "update-available",
+                    DuiProps::new()
+                        .with_prop("download", url)
+                        .with_prop("body", desc)
+                        .with_prop("buttons", vec![DuiButton::new_enabled("Ok", (|mut commands: Commands, dui: Res<DuiRegistry>, mut permit: Query<&mut DialogPermit>| {
+                            let mut permit = permit.single_mut();
+                            let permit = permit.take();
+                            let components = commands
+                                .spawn_template(
+                                    &dui,
+                                    "motd",
+                                    DuiProps::default()
+                                        .with_prop("buttons", vec![DuiButton::new_enabled("Ok", close_ui)]),
+                                )
+                                .unwrap();
+                            commands.entity(components.root).insert(permit);
+                        }).pipe(close_ui))]),
+                )
+                .unwrap();
+            commands.entity(components.root).insert(permit);
+        } else {
+            let components = commands
+                .spawn_template(
+                    &dui,
+                    "motd",
+                    DuiProps::default()
+                        .with_prop("buttons", vec![DuiButton::new_enabled("Ok", close_ui)]),
+                )
+                .unwrap();
+            commands.entity(components.root).insert(permit);
+        }
         *motd_shown = true;
         return;
     }
