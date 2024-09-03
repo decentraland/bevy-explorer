@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 
 use analytics::segment_system::SegmentConfig;
 use bevy::{
@@ -151,6 +151,29 @@ fn login(
             .and_then(|f| serde_json::from_slice::<AppConfig>(&f).ok())
             .unwrap_or_default()
             .previous_login;
+
+        let mut expired = false;
+        if let Some(prev) = previous_login.as_ref() {
+            for link in &prev.auth {
+                if link.ty == "ECDSA_EPHEMERAL" {
+                    for line in link.payload.lines() {
+                        if line.starts_with("Expiration:") {
+                            let exp = line.split_once(':').unwrap().1;
+                            if let Ok(exp) = chrono::DateTime::<chrono::Utc>::from_str(exp.trim()) {
+                                let now: chrono::DateTime<chrono::Utc> =
+                                    std::time::SystemTime::now().into();
+                                if now > exp {
+                                    warn!("previous login expired, removing");
+                                    expired = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let previous_login = if expired { None } else { previous_login };
 
         let mut dlg = commands.spawn(permit);
         *dialog = Some(dlg.id());
