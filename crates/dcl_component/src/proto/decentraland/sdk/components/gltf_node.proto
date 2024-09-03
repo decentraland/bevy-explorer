@@ -5,12 +5,12 @@ import "decentraland/sdk/components/common/id.proto";
 option (common.ecs_component_id) = 1200;
 
 // a GltfNode links a scene entity with a node from within a gltf, allowing the scene to inspect it or modify it.
-// This component must be added to a direct child of an entity with a PbGltfContainer component, or
+// This component must be added to a direct child of an entity with a PBGltfContainer component, or
 // to a direct child of another entity with a GltfNode component, and the referenced gltf node must be a descendent of the gltf node
 // in the parent.
 // The name must match the path of one of the nodes within the Gltf. These are available on the GltfContainerLoadingState component.
 // 
-// The renderer will attach a PbGltfNodeState to the entity describing the state. Once the state is `GNS_READY`, 
+// The renderer will attach a PBGltfNodeState to the entity describing the state. Once the state is `GNS_READY`, 
 // - the `Transform` will be updated to match the position of the node within the gltf (relative to the gltf root, or the parent node),
 // - a `MeshRenderer` with a GltfMesh mesh type will be added (if the gltf node has a mesh).
 // - a `MeshCollider` with a GltfMesh mesh type will be added (if the gltf node has a collider).
@@ -27,7 +27,7 @@ option (common.ecs_component_id) = 1200;
 // - `MeshCollider` can be added/modified/removed to create/modify/remove a collider on the node.
 // - `Material` can be added or modified to change the material properties. If the gltf node has a material, the original material will be
 //   used as a base, and any gltf features (e.g. occlusion maps) from the gtlf spec that the renderer supports but that are not exposed in the 
-//   PbMaterial will be maintained.
+//   PBMaterial will be maintained.
 //
 // The scene can add additional entities as children to the gltf node, but structural modifications of the gltf are not possible: 
 // - changing the scene hierarchy will not change the gltf node hierarchy. Moving the entity out of the gltf will sever the link and

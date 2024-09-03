@@ -8,8 +8,8 @@ import "decentraland/sdk/components/common/id.proto";
 option (common.ecs_component_id) = 1206;
 
 // defines the global scene light settings. must be added to the scene root.
-// to control sunlight color, intensity, shadows etc, you can also add a PbLight to the scene root.
-message PbGlobalLight {
+// to control sunlight color, intensity, shadows etc, you can also add a PBLight to the scene root.
+message PBGlobalLight {
   // the direction the directional light shines in.
   // default depends on time of day and explorer implementation
   optional decentraland.common.Vector3 direction = 1;

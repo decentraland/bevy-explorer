@@ -8,9 +8,9 @@ option (common.ecs_component_id) = 1204;
 
 // defines a light source.
 // the world has a default directional light (like sunlight) which can be overridden by adding the light component to the scene root.
-// a PbGlobalLight component can also be added to the root to control the directional light direction.
+// a PBGlobalLight component can also be added to the root to control the directional light direction.
 // point lights (lightbulbs) or spotlights can be created by attaching the light component to non-root entities.
-message PbLight {
+message PBLight {
   // whether the light is on
   // default true
   optional bool enabled = 1;
