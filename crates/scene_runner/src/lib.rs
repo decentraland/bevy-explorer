@@ -35,6 +35,7 @@ use ipfs::SceneIpfsLocation;
 use primary_entities::PrimaryEntities;
 use spin_sleep::SpinSleeper;
 use ui_core::ui_actions::{Click, On};
+use update_world::lights::LightsPlugin;
 use util::SceneUtilPlugin;
 
 use self::{
@@ -311,6 +312,7 @@ impl Plugin for SceneRunnerPlugin {
         app.add_plugins(SceneInputPlugin);
         app.add_plugins(SceneOutputPlugin);
         app.add_plugins(SceneUtilPlugin);
+        app.add_plugins(LightsPlugin);
     }
 }
 
@@ -509,14 +511,17 @@ impl<'w, 's> ContainingScene<'w, 's> {
             }
         }
 
-        results.extend(
-            self.portable_scenes
-                .0
-                .iter()
-                .flat_map(|(hash, _)| self.live_scenes.0.get(hash)),
-        );
-
+        results.extend(self.get_portables());
         results
+    }
+
+    pub fn get_portables(&self) -> HashSet<Entity> {
+        self.portable_scenes
+            .0
+            .iter()
+            .flat_map(|(hash, _)| self.live_scenes.0.get(hash))
+            .copied()
+            .collect()
     }
 
     // the parcel at the entity's position, plus any global scenes

@@ -1,5 +1,3 @@
-use std::f32::consts::{FRAC_PI_2, TAU};
-
 use bevy::{
     core_pipeline::Skybox,
     pbr::{wireframe::WireframePlugin, DirectionalLightShadowMap},
@@ -27,10 +25,11 @@ pub struct VisualsPlugin {
 impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DirectionalLightShadowMap { size: 4096 })
+            .init_resource::<SceneGlobalLight>()
             .insert_resource(AtmosphereModel::default())
             .add_plugins(AtmospherePlugin)
             .add_plugins(WireframePlugin)
-            .add_systems(Update, daylight_cycle)
+            .add_systems(Update, apply_global_light)
             .add_systems(Update, move_ground)
             .add_systems(Startup, setup.in_set(SetupSets::Main))
             .insert_resource(RenderAssetBytesPerFrame::new(16777216));
@@ -75,27 +74,73 @@ fn setup(
     ));
 }
 
-fn daylight_cycle(
+#[derive(Resource, Default, Clone)]
+pub struct SceneGlobalLight {
+    pub source: Option<Entity>,
+    pub dir_color: Color,
+    pub dir_illuminance: f32,
+    pub dir_direction: Vec3,
+    pub ambient_color: Color,
+    pub ambient_brightness: f32,
+}
+
+static TRANSITION_TIME: f32 = 1.0;
+
+#[allow(clippy::too_many_arguments)]
+fn apply_global_light(
     mut fog: Query<&mut FogSettings>,
     setting: Res<AppConfig>,
     mut atmosphere: AtmosphereMut<Nishita>,
     mut sun: Query<(&mut Transform, &mut DirectionalLight)>,
+    mut ambient: ResMut<AmbientLight>,
     time: Res<Time>,
     mut camera: Query<(&PrimaryCamera, &mut Skybox)>,
     scene_distance: Res<SceneLoadDistance>,
+    scene_global_light: Res<SceneGlobalLight>,
+    mut prev: Local<(f32, SceneGlobalLight)>,
+    config: Res<AppConfig>,
 ) {
-    let t = ((TAU * 0.15 + time.elapsed_seconds_wrapped() / 200.0) % TAU) * 0.6 - TAU * 0.05;
-    let rotation = Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0);
-    atmosphere.sun_position = rotation * Vec3::Z;
+    let next_light = if prev.0 >= TRANSITION_TIME && prev.1.source == scene_global_light.source {
+        scene_global_light.clone()
+    } else {
+        // transition part way
+        let new_amount = if prev.1.source == scene_global_light.source {
+            (time.delta_seconds() / (TRANSITION_TIME - prev.0)).clamp(0.0, 1.0)
+        } else {
+            time.delta_seconds() / TRANSITION_TIME
+        };
+        let old_amount = 1.0 - new_amount;
+        SceneGlobalLight {
+            source: scene_global_light.source,
+            dir_color: (scene_global_light.dir_color.to_srgba() * new_amount
+                + prev.1.dir_color.to_srgba() * old_amount)
+                .into(),
+            dir_illuminance: scene_global_light.dir_illuminance * new_amount
+                + prev.1.dir_illuminance * old_amount,
+            dir_direction: prev
+                .1
+                .dir_direction
+                .lerp(scene_global_light.dir_direction, new_amount),
+            ambient_color: (scene_global_light.ambient_color.to_srgba() * new_amount
+                + prev.1.ambient_color.to_srgba() * old_amount)
+                .into(),
+            ambient_brightness: scene_global_light.ambient_brightness * new_amount
+                + prev.1.ambient_brightness * old_amount,
+        }
+    };
+
+    let rotation = Quat::from_rotation_arc(Vec3::NEG_Z, next_light.dir_direction);
+    atmosphere.sun_position = -next_light.dir_direction;
 
     let Ok((camera, mut skybox)) = camera.get_single_mut() else {
         return;
     };
-    skybox.brightness = 4000.0 * t.sin().clamp(0.0, 0.5);
+    skybox.brightness = (next_light.dir_illuminance.sqrt() * 40.0).min(2000.0);
 
     if let Ok((mut light_trans, mut directional)) = sun.get_single_mut() {
         light_trans.rotation = rotation;
-        directional.illuminance = t.sin().max(0.0).powf(2.0) * 10_000.0;
+        directional.illuminance = next_light.dir_illuminance;
+        directional.color = next_light.dir_color;
 
         if let Ok(mut fog) = fog.get_single_mut() {
             let distance = scene_distance.load + scene_distance.unload + camera.distance * 5.0;
@@ -110,7 +155,7 @@ fn daylight_cycle(
                 }
                 FogSetting::Atmospheric => {
                     fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
-                    fog.directional_light_color = Color::srgb(1.0, 1.0, 0.7);
+                    fog.directional_light_color = next_light.dir_color;
                 }
             }
 
@@ -121,6 +166,17 @@ fn daylight_cycle(
             fog.color = Color::srgb(rgb.x, rgb.y, rgb.z);
         }
     }
+
+    ambient.brightness =
+        next_light.ambient_brightness * config.graphics.ambient_brightness as f32 * 20.0;
+    ambient.color = next_light.ambient_color;
+
+    if prev.1.source == scene_global_light.source {
+        prev.0 += time.delta_seconds()
+    } else {
+        prev.0 = time.delta_seconds()
+    };
+    prev.1 = next_light;
 }
 
 #[derive(Component)]

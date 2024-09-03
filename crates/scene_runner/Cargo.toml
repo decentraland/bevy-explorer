@@ -23,6 +23,7 @@ input_manager = { workspace = true }
 wallet = { workspace = true }
 scene_material = { workspace = true }
 world_ui = { workspace = true }
+visuals = { workspace = true }
 
 bevy = { workspace = true }
 tokio = { workspace = true }
