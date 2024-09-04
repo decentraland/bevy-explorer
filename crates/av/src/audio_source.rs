@@ -8,7 +8,7 @@ use bevy_kira_audio::{
 };
 use common::{
     sets::{SceneSets, SetupSets},
-    structs::{AudioSettings, PrimaryCameraRes, PrimaryUser},
+    structs::{AudioSettings, PrimaryCameraRes, PrimaryUser, SystemAudio},
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{proto_components::sdk::components::PbAudioSource, SceneComponentId};
@@ -31,13 +31,14 @@ pub struct AudioSourcePlugin;
 
 impl Plugin for AudioSourcePlugin {
     fn build(&self, app: &mut App) {
+        app.add_event::<SystemAudio>();
         app.add_crdt_lww_component::<PbAudioSource, AudioSource>(
             SceneComponentId::AUDIO_SOURCE,
             ComponentPosition::EntityOnly,
         );
         app.add_systems(
             Update,
-            (update_audio, update_source_volume).in_set(SceneSets::PostLoop),
+            (update_audio, update_source_volume, play_system_audio).in_set(SceneSets::PostLoop),
         );
         app.add_systems(Startup, setup_audio.in_set(SetupSets::Main));
     }
@@ -196,6 +197,36 @@ fn update_audio(
             commands.entity(ent).try_insert(new_state);
         }
     }
+}
+
+fn play_system_audio(
+    mut events: EventReader<SystemAudio>,
+    audio: Res<bevy_kira_audio::Audio>,
+    ipfas: IpfsAssetServer,
+    audio_instances: Res<Assets<AudioInstance>>,
+    settings: Res<AudioSettings>,
+    mut playing: Local<HashSet<Handle<AudioInstance>>>,
+) {
+    for event in events.read() {
+        let h_clip = ipfas.asset_server().load(&event.0);
+        let volume = settings.system();
+        let h_instance = audio
+            .play(h_clip)
+            .with_volume(bevy_kira_audio::prelude::Volume::Amplitude(volume as f64))
+            .handle();
+        playing.insert(h_instance);
+        debug!("play system audio {}", event.0);
+    }
+
+    playing.retain(|h_instance| {
+        let retain = audio_instances
+            .get(h_instance)
+            .map_or(false, |instance| instance.state().position().is_some());
+        if !retain {
+            debug!("drop system audio");
+        }
+        retain
+    })
 }
 
 #[allow(clippy::too_many_arguments)]

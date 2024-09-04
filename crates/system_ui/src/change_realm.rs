@@ -4,7 +4,10 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
-use common::util::TaskExt;
+use common::{
+    structs::SystemAudio,
+    util::{FireEventEx, TaskExt},
+};
 use ipfs::{ChangeRealmEvent, CurrentRealm};
 use isahc::AsyncReadResponseExt;
 use serde::Deserialize;
@@ -100,7 +103,7 @@ fn change_realm_dialog(
                         .clone()
                         .unwrap_or(String::from("<none>")),
                 )
-                .with_prop("buttons", vec![DuiButton::close("cancel")]),
+                .with_prop("buttons", vec![DuiButton::close_sad("cancel")]),
         )
         .unwrap();
     commands
@@ -134,6 +137,7 @@ fn update_server_list(
                                 .with_prop(
                                     "onclick",
                                     On::<Click>::new(move |mut commands: Commands, mut e: EventWriter<ChangeRealmEvent>| {
+                                        commands.fire_event(SystemAudio("sounds/toggle_enable.wav".to_owned()));
                                         e.send(ChangeRealmEvent {
                                             new_realm: server.url.clone(),
                                         });

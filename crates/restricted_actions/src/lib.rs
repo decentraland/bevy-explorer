@@ -969,7 +969,7 @@ fn show_nft_dialog(
                                 DuiButton::new("View on OpenSea.io", link.is_some(), move || {
                                     let _ = opener::open(link.as_ref().unwrap());
                                 }),
-                                DuiButton::close("Close"),
+                                DuiButton::close_happy("Close"),
                             ],
                         ),
                 )
@@ -985,7 +985,7 @@ fn show_nft_dialog(
                     DuiProps::new()
                         .with_prop("title", "Failed to load NFT")
                         .with_prop("body", "Failed to load NFT")
-                        .with_prop("buttons", vec![DuiButton::close("Shame")]),
+                        .with_prop("buttons", vec![DuiButton::close_sad("Shame")]),
                 )
                 .unwrap();
         }

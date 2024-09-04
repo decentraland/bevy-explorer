@@ -10,8 +10,8 @@ use bevy::{
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
-    structs::{ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin},
-    util::{project_directories, TaskExt},
+    structs::{ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin, SystemAudio},
+    util::{project_directories, FireEventEx, TaskExt},
 };
 use comms::{
     preview::PreviewMode,
@@ -23,7 +23,7 @@ use ipfs::{CurrentRealm, IpfsAssetServer};
 use scene_runner::Toaster;
 use ui_core::{
     button::DuiButton,
-    ui_actions::{close_ui, Click, EventCloneExt, On},
+    ui_actions::{close_ui_happy, Click, EventCloneExt, On},
 };
 use wallet::{
     browser_auth::{
@@ -102,11 +102,11 @@ fn login(
                                     &dui,
                                     "motd",
                                     DuiProps::default()
-                                        .with_prop("buttons", vec![DuiButton::new_enabled("Ok", close_ui)]),
+                                        .with_prop("buttons", vec![DuiButton::new_enabled("Ok", close_ui_happy)]),
                                 )
                                 .unwrap();
                             commands.entity(components.root).insert(permit);
-                        }).pipe(close_ui))]),
+                        }).pipe(close_ui_happy))]),
                 )
                 .unwrap();
             commands.entity(components.root).insert(permit);
@@ -115,8 +115,10 @@ fn login(
                 .spawn_template(
                     &dui,
                     "motd",
-                    DuiProps::default()
-                        .with_prop("buttons", vec![DuiButton::new_enabled("Ok", close_ui)]),
+                    DuiProps::default().with_prop(
+                        "buttons",
+                        vec![DuiButton::new_enabled("Ok", close_ui_happy)],
+                    ),
                 )
                 .unwrap();
             commands.entity(components.root).insert(permit);
@@ -373,6 +375,7 @@ fn login(
 
                     Ok((previous_login.root_address, local_wallet, auth, profile))
                 }));
+                commands.fire_event(SystemAudio("sounds/toggle_enable.wav".to_owned()));
             }
             LoginType::NewRemote => {
                 info!("new remote");
@@ -398,6 +401,7 @@ fn login(
                     .unwrap();
 
                 *dialog = Some(components.root);
+                commands.fire_event(SystemAudio("sounds/toggle_enable.wav".to_owned()));
             }
             LoginType::Guest => {
                 info!("guest");
@@ -417,10 +421,12 @@ fn login(
                     base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
                 });
                 current_profile.is_deployed = true;
+                commands.fire_event(SystemAudio("sounds/toggle_enable.wav".to_owned()));
             }
             LoginType::Cancel => {
                 *final_task = None;
                 *dialog = None;
+                commands.fire_event(SystemAudio("sounds/toggle_disable.wav".to_owned()));
             }
         }
     }

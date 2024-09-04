@@ -8,7 +8,7 @@ use bevy::{
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};
 
-use crate::{dui_utils::PropsExt, interact_style::InteractStyles};
+use crate::{dui_utils::PropsExt, interact_sounds::InteractSounds, interact_style::InteractStyles};
 
 #[derive(Component)]
 pub struct NodeBounds {
@@ -297,6 +297,9 @@ impl DuiTemplate for DuiNodeBounds {
         });
         if let Some(styles) = props.take_as::<InteractStyles>(ctx, "styles")? {
             commands.insert(styles);
+        }
+        if let Some(sounds) = props.take_as::<InteractSounds>(ctx, "sounds")? {
+            commands.insert(sounds);
         }
         DuiBoundNode.render(commands, props, ctx)
     }

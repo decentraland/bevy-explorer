@@ -178,13 +178,19 @@ fn update_permissions(
                     .with_prop(
                         "buttons",
                         vec![
-                            DuiButton::new_enabled_and_close("Allow", send(PermissionValue::Allow)),
-                            DuiButton::new_enabled_and_close("Deny", send(PermissionValue::Deny)),
+                            DuiButton::new_enabled_and_close_happy(
+                                "Allow",
+                                send(PermissionValue::Allow),
+                            ),
+                            DuiButton::new_enabled_and_close_sad(
+                                "Deny",
+                                send(PermissionValue::Deny),
+                            ),
                         ],
                     )
                     .with_prop(
                         "buttons2",
-                        vec![DuiButton::new_enabled_and_close(
+                        vec![DuiButton::new_enabled_and_close_silent(
                             "Manage Permissions",
                             (move |mut target: ResMut<PermissionTarget>| {
                                 target.scene = Some(scene_ent);

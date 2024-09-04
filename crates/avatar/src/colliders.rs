@@ -261,7 +261,7 @@ fn update_avatar_collider_actions(
                         .with_prop("title", format!("{} profile", profile.content.name))
                         .with_prop("booth-instance", instance)
                         .with_prop("eth-address", profile.content.eth_address.clone())
-                        .with_prop("buttons", vec![DuiButton::close("Ok")]),
+                        .with_prop("buttons", vec![DuiButton::close_happy("Ok")]),
                 )
                 .unwrap();
 

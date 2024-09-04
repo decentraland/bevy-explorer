@@ -573,6 +573,27 @@ pub enum SettingsTab {
 #[derive(Event, Clone)]
 pub struct ShowSettingsEvent(pub SettingsTab);
 
+#[derive(Event, Clone)]
+pub struct SystemAudio(pub String);
+
+impl From<&str> for SystemAudio {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl From<String> for SystemAudio {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&String> for SystemAudio {
+    fn from(value: &String) -> Self {
+        Self(value.to_owned())
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct PermissionTarget {
     pub scene: Option<Entity>,

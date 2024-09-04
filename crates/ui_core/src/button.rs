@@ -7,7 +7,10 @@ use crate::{
     bound_node::NodeBounds,
     dui_utils::PropsExt,
     interact_style::{Active, InteractStyles},
-    ui_actions::{close_ui, Click, ClickRepeat, DataChanged, Enabled, On, UiCaller},
+    ui_actions::{
+        close_ui_happy, close_ui_sad, close_ui_silent, Click, ClickRepeat, DataChanged, Enabled,
+        On, UiCaller,
+    },
 };
 
 pub struct DuiButton {
@@ -51,27 +54,37 @@ impl DuiButton {
         Self::new(label, true, onclick)
     }
 
-    pub fn new_enabled_and_close<M, S: IntoSystem<(), (), M>>(
+    pub fn new_enabled_and_close_happy<M, S: IntoSystem<(), (), M>>(
         label: impl Into<String>,
         onclick: S,
     ) -> Self {
-        Self::new(label, true, onclick.pipe(close_ui))
+        Self::new(label, true, onclick.pipe(close_ui_happy))
     }
 
-    pub fn close(label: impl Into<String>) -> Self {
-        Self::new(
-            label,
-            true,
-            move |mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller>| {
-                let mut ent = c.0;
-                while let Ok(p) = parents.get(ent) {
-                    ent = **p;
-                }
-                if let Some(commands) = commands.get_entity(ent) {
-                    commands.despawn_recursive();
-                }
-            },
-        )
+    pub fn new_enabled_and_close_sad<M, S: IntoSystem<(), (), M>>(
+        label: impl Into<String>,
+        onclick: S,
+    ) -> Self {
+        Self::new(label, true, onclick.pipe(close_ui_sad))
+    }
+
+    pub fn new_enabled_and_close_silent<M, S: IntoSystem<(), (), M>>(
+        label: impl Into<String>,
+        onclick: S,
+    ) -> Self {
+        Self::new(label, true, onclick.pipe(close_ui_silent))
+    }
+
+    pub fn close_silent(label: impl Into<String>) -> Self {
+        Self::new(label, true, close_ui_silent)
+    }
+
+    pub fn close_happy(label: impl Into<String>) -> Self {
+        Self::new(label, true, close_ui_happy)
+    }
+
+    pub fn close_sad(label: impl Into<String>) -> Self {
+        Self::new(label, true, close_ui_sad)
     }
 
     pub fn close_dialog(mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller>) {

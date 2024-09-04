@@ -1,6 +1,9 @@
 use av::microphone::MicState;
 use bevy::prelude::*;
-use common::structs::ToolTips;
+use common::{
+    structs::{SystemAudio, ToolTips},
+    util::FireEventEx,
+};
 use comms::{Transport, TransportType};
 use ui_core::ui_actions::{Click, HoverEnter, HoverExit, On};
 
@@ -49,7 +52,14 @@ fn setup(mut commands: Commands, images: Res<MicImages>) {
             ..Default::default()
         },
         Interaction::default(),
-        On::<Click>::new(|mut mic_state: ResMut<MicState>| mic_state.enabled = !mic_state.enabled),
+        On::<Click>::new(|mut commands: Commands, mut mic_state: ResMut<MicState>| {
+            mic_state.enabled = !mic_state.enabled;
+            if mic_state.enabled {
+                commands.fire_event(SystemAudio("sounds/voice_chat_mic_on.wav".to_owned()));
+            } else {
+                commands.fire_event(SystemAudio("sounds/voice_chat_mic_off.wav".to_owned()));
+            }
+        }),
         On::<HoverEnter>::new(
             |mut tooltip: ResMut<ToolTips>, transport: Query<&Transport>, state: Res<MicState>| {
                 let transport_available = transport
@@ -72,6 +82,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>) {
 }
 
 fn update_mic_ui(
+    mut commands: Commands,
     mut mic_state: ResMut<MicState>,
     transport: Query<&Transport>,
     mut button: Query<&mut UiImage, With<MicUiMarker>>,
@@ -97,5 +108,10 @@ fn update_mic_ui(
     if input.pressed(KeyCode::ControlLeft) != *pressed {
         mic_state.enabled = !mic_state.enabled;
         *pressed = !*pressed;
+        if mic_state.enabled {
+            commands.fire_event(SystemAudio("sounds/voice_chat_mic_on.wav".to_owned()));
+        } else {
+            commands.fire_event(SystemAudio("sounds/voice_chat_mic_off.wav".to_owned()));
+        }
     }
 }

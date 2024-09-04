@@ -11,6 +11,7 @@ pub mod spinner;
 pub mod stretch_uvs_image;
 pub mod text_size;
 // pub mod textentry;
+pub mod interact_sounds;
 pub mod text_entry;
 pub mod toggle;
 pub mod ui_actions;
@@ -31,6 +32,7 @@ use bound_node::BoundedNodePlugin;
 use button::{DuiButtonSetTemplate, DuiButtonTemplate, DuiTabGroupTemplate};
 use color_picker::ColorPickerPlugin;
 use combo_box::ComboBoxPlugin;
+use interact_sounds::InteractSoundsPlugin;
 use nine_slice::Ui9SlicePlugin;
 use once_cell::sync::OnceCell;
 
@@ -81,6 +83,7 @@ impl Plugin for UiCorePlugin {
         app.add_plugins(UiActionPlugin);
         app.add_plugins(FocusPlugin);
         app.add_plugins(InteractStylePlugin);
+        app.add_plugins(InteractSoundsPlugin);
         app.add_plugins(ScrollablePlugin);
         app.add_plugins(Ui9SlicePlugin);
         app.add_plugins(StretchUvsImagePlugin);
