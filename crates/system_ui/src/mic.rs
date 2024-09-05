@@ -81,6 +81,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>) {
     ));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_mic_ui(
     mut commands: Commands,
     mut mic_state: ResMut<MicState>,
