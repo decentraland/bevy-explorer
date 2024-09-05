@@ -107,6 +107,7 @@ bevy_simple_text_input = { git = "https://github.com/robtfm/bevy_simple_text_inp
 directories = "5"
 uuid = { version = "1.7", features = ["v4"] }
 build-time = "0.1.3"
+fastrand = "2"
 
 [dependencies]
 analytics = { workspace = true }

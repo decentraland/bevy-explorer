@@ -121,14 +121,12 @@ pub fn close_ui_silent(mut commands: Commands, parents: Query<&Parent>, c: Res<U
 }
 
 pub fn close_ui_happy(mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller>) {
-    println!("happy");
-    commands.fire_event(SystemAudio("sounds/toggle_enable.wav".to_owned()));
+    commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
     close_ui_silent(commands, parents, c)
 }
 
 pub fn close_ui_sad(mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller>) {
-    println!("sad");
-    commands.fire_event(SystemAudio("sounds/toggle_disable.wav".to_owned()));
+    commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
     close_ui_silent(commands, parents, c)
 }
 

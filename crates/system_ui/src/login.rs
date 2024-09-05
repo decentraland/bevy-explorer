@@ -375,7 +375,7 @@ fn login(
 
                     Ok((previous_login.root_address, local_wallet, auth, profile))
                 }));
-                commands.fire_event(SystemAudio("sounds/toggle_enable.wav".to_owned()));
+                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
             }
             LoginType::NewRemote => {
                 info!("new remote");
@@ -401,7 +401,7 @@ fn login(
                     .unwrap();
 
                 *dialog = Some(components.root);
-                commands.fire_event(SystemAudio("sounds/toggle_enable.wav".to_owned()));
+                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
             }
             LoginType::Guest => {
                 info!("guest");
@@ -421,12 +421,12 @@ fn login(
                     base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
                 });
                 current_profile.is_deployed = true;
-                commands.fire_event(SystemAudio("sounds/toggle_enable.wav".to_owned()));
+                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
             }
             LoginType::Cancel => {
                 *final_task = None;
                 *dialog = None;
-                commands.fire_event(SystemAudio("sounds/toggle_disable.wav".to_owned()));
+                commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
             }
         }
     }

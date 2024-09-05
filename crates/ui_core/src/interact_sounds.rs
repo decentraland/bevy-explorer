@@ -36,8 +36,7 @@ fn play_interact_sounds(
                 },
                 Interaction::Hovered,
             ) => {
-                println!("{}", sound);
-                writer.send(format!("sounds/{}", sound).into());
+                writer.send(format!("sounds/ui/{}", sound).into());
             }
             _ => (),
         }

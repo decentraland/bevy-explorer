@@ -86,10 +86,10 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             |mut commands: Commands, mut q: Query<&mut Style, With<ChatboxContainer>>| {
                 if let Ok(mut style) = q.get_single_mut() {
                     style.display = if style.display == Display::Flex {
-                        commands.fire_event(SystemAudio("sounds/toggle_disable.wav".to_owned()));
+                        commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
                         Display::None
                     } else {
-                        commands.fire_event(SystemAudio("sounds/toggle_enable.wav".to_owned()));
+                        commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                         Display::Flex
                     };
                 }
@@ -161,7 +161,7 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
             return;
         };
         style.display = Display::None;
-        commands.fire_event(SystemAudio("sounds/toggle_disable.wav".to_owned()));
+        commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
     };
 
     let props = DuiProps::new()

@@ -308,6 +308,7 @@ pub struct AudioSettings {
     pub voice: i32,
     pub scene: i32,
     pub system: i32,
+    pub avatar: i32,
 }
 
 impl Default for AudioSettings {
@@ -317,6 +318,7 @@ impl Default for AudioSettings {
             voice: 100,
             scene: 100,
             system: 100,
+            avatar: 100,
         }
     }
 }
@@ -330,6 +332,9 @@ impl AudioSettings {
     }
     pub fn system(&self) -> f32 {
         (self.system * self.master) as f32 / 10_000.0
+    }
+    pub fn avatar(&self) -> f32 {
+        (self.avatar * self.master) as f32 / 10_000.0
     }
 }
 

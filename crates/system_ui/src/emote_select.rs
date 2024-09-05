@@ -248,7 +248,7 @@ fn show_emote_ui(
 
     if let Some(ev) = ev {
         for ent in existing.iter() {
-            commands.fire_event(SystemAudio("sounds/widget_emotes_close.wav".to_owned()));
+            commands.fire_event(SystemAudio("sounds/ui/widget_emotes_close.wav".to_owned()));
             commands.entity(ent).despawn_recursive();
 
             for (button, interact) in &buttons {
@@ -268,7 +268,7 @@ fn show_emote_ui(
             return;
         };
 
-        commands.fire_event(SystemAudio("sounds/widget_emotes_open.wav".to_owned()));
+        commands.fire_event(SystemAudio("sounds/ui/widget_emotes_open.wav".to_owned()));
 
         let mut props = window.single().get_layout_props(1.5, 0.6, coords);
 
@@ -350,7 +350,7 @@ fn show_emote_ui(
                           mut color: Query<&mut UiImage>,
                           mut text: Query<&mut Text>| {
                         commands.fire_event(SystemAudio(
-                            "sounds/widget_emotes_highlight.wav".to_owned(),
+                            "sounds/ui/widget_emotes_highlight.wav".to_owned(),
                         ));
                         if let Ok(mut img) = color.get_mut(button) {
                             img.color = Color::srgb(1.0, 1.0, 1.50);

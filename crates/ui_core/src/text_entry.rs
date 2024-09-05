@@ -137,8 +137,6 @@ pub fn update_text_entry_components(
                 cmds.insert(FontSize(0.03 / 1.3));
             }
         });
-
-        println!("+text entry {entity:?}");
     }
 }
 

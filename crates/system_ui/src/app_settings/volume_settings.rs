@@ -90,6 +90,13 @@ volume_setting!(
     |cfg: &mut AudioSettings, val: i32| cfg.system = val,
     |cfg: &AudioSettings| cfg.system
 );
+volume_setting!(
+    AvatarVolumeSetting,
+    "|Avatar",
+    "The volume of avatar emotes and footsteps.",
+    |cfg: &mut AudioSettings, val: i32| cfg.avatar = val,
+    |cfg: &AudioSettings| cfg.avatar
+);
 
 // impl AppSetting for MasterVolumeSetting {
 // }

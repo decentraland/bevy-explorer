@@ -1,3 +1,4 @@
+use core::f32;
 use std::{collections::VecDeque, time::Duration};
 
 use bevy::{
@@ -17,7 +18,7 @@ use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
-    structs::PrimaryUser,
+    structs::{AppConfig, PrimaryUser},
 };
 use comms::{
     chat_marker_things,
@@ -414,7 +415,7 @@ fn animate(
                 ..Default::default()
             }
         } else {
-            // otherwise play a default emote baesd on motion
+            // otherwise play a default emote based on motion
             let time_to_peak = (jump_height * -gravity * 2.0).sqrt() / -gravity;
             if dynamic_state.ground_height > 0.2
                 || dynamic_state.velocity.y > 0.0
@@ -425,6 +426,18 @@ fn animate(
                     urn: EmoteUrn::new("jump").unwrap(),
                     speed: time_to_peak.recip() * 0.75,
                     repeat: true,
+                    restart: dynamic_state.jump_time
+                        > time.elapsed_seconds() - time.delta_seconds(),
+                    transition_seconds: 0.1,
+                    ..Default::default()
+                }
+            } else if active_emote.urn == EmoteUrn::new("jump").unwrap() && !active_emote.finished {
+                // finish the jump - we use `repeat: false` to signal that we are landing...
+                ActiveEmote {
+                    urn: EmoteUrn::new("jump").unwrap(),
+                    speed: 1.5,
+                    repeat: false,
+                    restart: false,
                     transition_seconds: 0.1,
                     ..Default::default()
                 }
@@ -433,7 +446,7 @@ fn animate(
                     (damped_velocity * (Vec3::X + Vec3::Z)).dot(gt.forward().as_vec3());
 
                 if damped_velocity_len.abs() > 0.1 {
-                    if damped_velocity_len.abs() <= 2.5 {
+                    if damped_velocity_len.abs() <= 2.6 {
                         ActiveEmote {
                             urn: EmoteUrn::new("walk").unwrap(),
                             speed: directional_velocity_len / 1.5,
@@ -468,7 +481,7 @@ struct SpawnedExtras {
     urn: EmoteUrn,
     scene: Option<InstanceId>,
     scene_rotated: bool,
-    audio: Option<Entity>,
+    audio: Option<(Entity, f32)>,
     clip: Option<(AnimationNodeIndex, Handle<AnimationGraph>)>,
 }
 
@@ -503,9 +516,11 @@ fn play_current_emote(
     mut cached_gltf_handles: Local<HashSet<Handle<Gltf>>>,
     mut spawned_extras: Local<HashMap<Entity, SpawnedExtras>>,
     mut scene_spawner: ResMut<SceneSpawner>,
-    (audio, sounds): (
+    (audio, sounds, anim_clips, config): (
         Res<bevy_kira_audio::Audio>,
         Res<Assets<bevy_kira_audio::AudioSource>>,
+        Res<Assets<AnimationClip>>,
+        Res<AppConfig>,
     ),
     mut emitters: Query<&mut bevy_kira_audio::prelude::AudioEmitter>,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
@@ -532,8 +547,8 @@ fn play_current_emote(
                     scene_spawner.despawn_instance(scene);
                 }
 
-                if let Some(audio_ent) = extras.audio {
-                    if let Some(commands) = commands.get_entity(audio_ent) {
+                if let Some((audio_ent, _)) = extras.audio.as_ref() {
+                    if let Some(commands) = commands.get_entity(*audio_ent) {
                         commands.despawn_recursive();
                     }
                 }
@@ -590,7 +605,7 @@ fn play_current_emote(
                             Emote {
                                 gltf: handle,
                                 default_repeat: false,
-                                sound: None,
+                                sound: Vec::default(),
                             },
                         )]),
                         data: CollectibleData::<Emote> {
@@ -710,47 +725,57 @@ fn play_current_emote(
             }
         }
 
-        let sound = match emote.audio(&sounds) {
-            Ok(s) => s,
-            Err(_) => continue,
+        let last_audio_mark = if active_emote.restart {
+            f32::NEG_INFINITY
+        } else {
+            spawned_extras
+                .get(&entity)
+                .and_then(|extras| extras.audio.as_ref())
+                .map(|(_, mark)| *mark)
+                .unwrap_or(f32::NEG_INFINITY)
         };
 
-        if let Some(sound) = sound {
-            let existing = spawned_extras
-                .get(&entity)
-                .and_then(|extras| extras.audio.as_ref());
-            if active_emote.restart || existing.is_none() {
-                if let Some(mut existing) = existing.and_then(|e| emitters.get_mut(*e).ok()) {
-                    for h_instance in existing.instances.drain(..) {
-                        if let Some(instance) = audio_instances.get_mut(&h_instance) {
-                            instance.stop(AudioTween::default());
-                        }
-                    }
-                    existing.instances.push(audio.play(sound).handle());
+        let Some(clip_duration) = anim_clips.get(&clip).map(|c| c.duration()) else {
+            continue;
+        };
+        let completions = (last_audio_mark / clip_duration).floor();
+
+        // get next time to play a sound, with a lot of messing around for inf values
+        let sound = match emote.audio(
+            &sounds,
+            if last_audio_mark.is_finite() {
+                last_audio_mark % clip_duration
+            } else {
+                last_audio_mark
+            },
+        ) {
+            Ok(Some((t, s))) => {
+                if last_audio_mark.is_finite() {
+                    Some((t + completions * clip_duration, s))
                 } else {
-                    let mut handle = audio.play(sound);
-
-                    let audio_entity = commands
-                        .spawn((
-                            SpatialBundle::default(),
-                            bevy_kira_audio::prelude::AudioEmitter {
-                                instances: vec![handle.handle()],
-                            },
-                        ))
-                        .id();
-
-                    spawned_extras
-                        .entry(entity)
-                        .or_insert_with(|| SpawnedExtras::new(active_emote.urn.clone()))
-                        .audio = Some(audio_entity);
+                    Some((t, s))
                 }
             }
-        }
+            Ok(None) => None,
+            Err(_) => continue,
+        };
+        let sound = if sound.is_none() && active_emote.repeat {
+            match emote.audio(&sounds, f32::NEG_INFINITY) {
+                Ok(None) => None,
+                Ok(Some((play_time, s))) => {
+                    Some((play_time + clip_duration * (completions + 1.0), s))
+                }
+                Err(_) => continue,
+            }
+        } else {
+            sound
+        };
 
         let play = |transitions: Option<Mut<AnimationTransitions>>,
                     player: &mut AnimationPlayer,
                     clip_ix: AnimationNodeIndex,
-                    active_emote: &ActiveEmote| {
+                    active_emote: &ActiveEmote|
+         -> f32 {
             let active_animation =
                 if Some(&active_emote.urn) != prior_playing.get(&ent) || active_emote.restart {
                     let active_animation = match transitions {
@@ -763,11 +788,6 @@ fn play_current_emote(
                     };
                     debug!("starting clip {:?}", clip_ix);
                     active_animation.seek_to(0.0);
-                    if active_emote.repeat {
-                        active_animation.repeat();
-                    } else {
-                        active_animation.set_repeat(RepeatAnimation::Never);
-                    }
                     Some(active_animation)
                 } else {
                     player
@@ -777,16 +797,27 @@ fn play_current_emote(
                 };
 
             if let Some(active_animation) = active_animation {
+                if active_emote.repeat {
+                    active_animation.repeat();
+                } else {
+                    active_animation.set_repeat(RepeatAnimation::Never);
+                }
+
                 // println!("active weight {}", active_animation.weight());
                 active_animation.set_speed(active_emote.speed);
 
                 // nasty hack for falling animation
                 if active_emote.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
                     && active_animation.seek_time() >= 0.5833
+                    && active_emote.repeat
                 {
                     active_animation.seek_to(0.5833);
                     active_animation.set_speed(0.0);
                 }
+
+                active_animation.seek_time() + active_animation.completions() as f32 * clip_duration
+            } else {
+                0.0
             }
         };
 
@@ -808,9 +839,7 @@ fn play_current_emote(
                 (graph.add_clip(clip, 1.0, graph.root), 0.0)
             });
 
-        // println!("transitions: {:?}", transitions);
-        // println!("active animations: {:?}", player.playing_animations().map(|(ix, anim)| format!("[{ix:?} / {:?}", anim)).collect::<Vec<_>>());
-        play(transitions, &mut player, *clip_ix, &active_emote);
+        let elapsed = play(transitions, &mut player, *clip_ix, &active_emote);
 
         if !active_emote.finished && player.all_finished() {
             active_emote.finished = true;
@@ -825,6 +854,52 @@ fn play_current_emote(
         }
 
         active_emote.restart = false;
+
+        if let Some((play_time, sound)) = sound {
+            if elapsed >= play_time {
+                debug!("duration {}", clip_duration);
+                debug!("play {:?} @ {}>{}", sound.path(), elapsed, play_time);
+                let existing = spawned_extras
+                    .get_mut(&entity)
+                    .and_then(|extras| extras.audio.as_mut());
+                if let Some(mut existing_emitter) = existing
+                    .as_ref()
+                    .and_then(|(e, _)| emitters.get_mut(*e).ok())
+                {
+                    for h_instance in existing_emitter.instances.drain(..) {
+                        if let Some(instance) = audio_instances.get_mut(&h_instance) {
+                            instance.stop(AudioTween::default());
+                        }
+                    }
+                    existing_emitter.instances.push(
+                        audio
+                            .play(sound)
+                            .with_volume(config.audio.avatar() as f64)
+                            .handle(),
+                    );
+                    existing.unwrap().1 = elapsed;
+                } else {
+                    let handle = audio
+                        .play(sound)
+                        .with_volume(config.audio.avatar() as f64)
+                        .handle();
+
+                    let audio_entity = commands
+                        .spawn((
+                            SpatialBundle::default(),
+                            bevy_kira_audio::prelude::AudioEmitter {
+                                instances: vec![handle],
+                            },
+                        ))
+                        .id();
+
+                    spawned_extras
+                        .entry(entity)
+                        .or_insert_with(|| SpawnedExtras::new(active_emote.urn.clone()))
+                        .audio = Some((audio_entity, elapsed));
+                }
+            }
+        }
 
         playing.insert(ent, active_emote.urn.clone());
     }

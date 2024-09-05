@@ -69,7 +69,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 target.ty = None;
             })
             .pipe(ShowSettingsEvent(SettingsTab::Discover).send_value())
-            .pipe(SystemAudio("sounds/mainmenu_widget_open.wav".to_owned()).send_value()),
+            .pipe(SystemAudio("sounds/ui/mainmenu_widget_open.wav".to_owned()).send_value()),
         ),
     ));
 }
@@ -278,10 +278,10 @@ pub fn close_settings(
             Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
                 cr.send(cr_ev.clone());
                 rpc.send(rpc_ev.clone());
-                commands.fire_event(SystemAudio("sounds/toggle_enable.wav".to_owned()));
+                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
             }
             _ => {
-                commands.fire_event(SystemAudio("sounds/toggle_disable.wav".to_owned()));
+                commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
             }
         }
     }

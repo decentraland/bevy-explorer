@@ -137,7 +137,7 @@ fn update_server_list(
                                 .with_prop(
                                     "onclick",
                                     On::<Click>::new(move |mut commands: Commands, mut e: EventWriter<ChangeRealmEvent>| {
-                                        commands.fire_event(SystemAudio("sounds/toggle_enable.wav".to_owned()));
+                                        commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                                         e.send(ChangeRealmEvent {
                                             new_realm: server.url.clone(),
                                         });

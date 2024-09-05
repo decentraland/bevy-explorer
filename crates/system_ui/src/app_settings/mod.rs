@@ -32,7 +32,8 @@ use self::{
     shadow_settings::ShadowDistanceSetting,
     video_threads::VideoThreadsSetting,
     volume_settings::{
-        MasterVolumeSetting, SceneVolumeSetting, SystemVolumeSetting, VoiceVolumeSetting,
+        AvatarVolumeSetting, MasterVolumeSetting, SceneVolumeSetting, SystemVolumeSetting,
+        VoiceVolumeSetting,
     },
 };
 
@@ -84,6 +85,7 @@ impl Plugin for AppSettingsPlugin {
             apply_setting::<SceneVolumeSetting>,
             apply_setting::<VoiceVolumeSetting>,
             apply_setting::<SystemVolumeSetting>,
+            apply_setting::<AvatarVolumeSetting>,
             apply_setting::<ConstrainUiSetting>,
         ));
         apply_schedule.add_systems((
@@ -203,6 +205,7 @@ fn set_app_settings_content(
             SceneVolumeSetting::spawn_template(&mut commands, &dui, &config),
             VoiceVolumeSetting::spawn_template(&mut commands, &dui, &config),
             SystemVolumeSetting::spawn_template(&mut commands, &dui, &config),
+            AvatarVolumeSetting::spawn_template(&mut commands, &dui, &config),
             commands
                 .spawn_template(
                     &dui,
