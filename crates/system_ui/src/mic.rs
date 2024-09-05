@@ -89,6 +89,7 @@ fn update_mic_ui(
     mut pressed: Local<bool>,
     input: Res<ButtonInput<KeyCode>>,
     mic_images: Res<MicImages>,
+    mut prev_active: Local<bool>,
 ) {
     let mic_available = mic_state.available;
     let transport_available = transport
@@ -106,12 +107,17 @@ fn update_mic_ui(
     }
 
     if input.pressed(KeyCode::ControlLeft) != *pressed {
-        mic_state.enabled = !mic_state.enabled;
         *pressed = !*pressed;
-        if mic_state.enabled {
+        mic_state.enabled = !mic_state.enabled;
+    }
+
+    let active = mic_available && mic_state.enabled && transport_available;
+    if active != *prev_active {
+        if active {
             commands.fire_event(SystemAudio("sounds/ui/voice_chat_mic_on.wav".to_owned()));
         } else {
             commands.fire_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
         }
+        *prev_active = active;
     }
 }
