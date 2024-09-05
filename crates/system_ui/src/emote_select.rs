@@ -268,8 +268,6 @@ fn show_emote_ui(
             return;
         };
 
-        commands.fire_event(SystemAudio("sounds/ui/widget_emotes_open.wav".to_owned()));
-
         let mut props = window.single().get_layout_props(1.5, 0.6, coords);
 
         let Some(player_emotes) = profile
@@ -315,6 +313,8 @@ fn show_emote_ui(
             *retry = Some(ev);
             return;
         }
+
+        commands.fire_event(SystemAudio("sounds/ui/widget_emotes_open.wav".to_owned()));
 
         let buttons = commands
             .spawn((
