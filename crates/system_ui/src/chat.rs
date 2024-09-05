@@ -117,6 +117,7 @@ fn keyboard_popup(
     if input.just_pressed(KeyCode::Enter) || input.just_pressed(KeyCode::NumpadEnter) {
         if let Ok(mut style) = container.get_single_mut() {
             if style.display == Display::None {
+                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                 style.display = Display::Flex;
                 res = "Nearby";
             };
@@ -507,6 +508,9 @@ fn emit_user_chat(
                     );
                 }
             } else if output.active_tab == "Nearby" {
+                commands.fire_event(SystemAudio(
+                    "sounds/ui/widget_chat_message_private_send.wav".to_owned(),
+                ));
                 for transport in transports.iter() {
                     let _ = transport
                         .sender
