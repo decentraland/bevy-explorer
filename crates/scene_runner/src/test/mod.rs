@@ -21,6 +21,7 @@ use once_cell::sync::Lazy;
 use scene_material::SceneBoundPlugin;
 use spin_sleep::SpinSleeper;
 use ui_core::{scrollable::ScrollTargetEvent, stretch_uvs_image::StretchUvMaterial};
+use visuals::SceneGlobalLight;
 
 use crate::{
     initialize_scene::{PointerResult, ScenePointers},
@@ -128,6 +129,7 @@ fn init_test_app(entity_json: &str) -> App {
     app.init_resource::<InputMap>();
     app.init_resource::<AcceptInput>();
     app.init_resource::<ToolTips>();
+    app.init_resource::<SceneGlobalLight>();
     app.add_event::<RpcCall>();
     app.add_event::<ScrollTargetEvent>();
     app.insert_resource(SceneLoadDistance {
