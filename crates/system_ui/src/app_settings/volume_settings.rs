@@ -92,7 +92,7 @@ volume_setting!(
 );
 volume_setting!(
     AvatarVolumeSetting,
-    "|Avatar",
+    "Avatar",
     "The volume of avatar emotes and footsteps.",
     |cfg: &mut AudioSettings, val: i32| cfg.avatar = val,
     |cfg: &AudioSettings| cfg.avatar
