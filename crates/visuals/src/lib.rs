@@ -74,7 +74,7 @@ fn setup(
     ));
 }
 
-#[derive(Resource, Default, Clone)]
+#[derive(Resource, Default, Clone, Debug)]
 pub struct SceneGlobalLight {
     pub source: Option<Entity>,
     pub dir_color: Color,
@@ -135,7 +135,11 @@ fn apply_global_light(
     let Ok((camera, mut skybox)) = camera.get_single_mut() else {
         return;
     };
-    skybox.brightness = (next_light.dir_illuminance.sqrt() * 40.0).min(2000.0);
+    let dir_light_lightness = Lcha::from(next_light.dir_color).lightness;
+    skybox.brightness =
+        (next_light.dir_illuminance.sqrt() * 40.0 * dir_light_lightness).min(2000.0);
+    atmosphere.rayleigh_coefficient =
+        Vec3::new(5.5e-6, 13.0e-6, 22.4e-6) * next_light.dir_color.to_srgba().to_vec3();
 
     if let Ok((mut light_trans, mut directional)) = sun.get_single_mut() {
         light_trans.rotation = rotation;
@@ -144,14 +148,20 @@ fn apply_global_light(
 
         if let Ok(mut fog) = fog.get_single_mut() {
             let distance = scene_distance.load + scene_distance.unload + camera.distance * 5.0;
+
+            let base_color =
+                next_light.ambient_color.to_srgba() * next_light.ambient_brightness * 0.5;
+            let base_color = Color::from(base_color).with_alpha(1.0);
+
+            fog.color = base_color;
             match setting.graphics.fog {
                 FogSetting::Off => {
                     fog.falloff = FogFalloff::from_visibility_squared(distance * 200.0);
-                    fog.directional_light_color = Color::srgb(0.3, 0.2, 0.1);
+                    fog.directional_light_color = base_color;
                 }
                 FogSetting::Basic => {
                     fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
-                    fog.directional_light_color = Color::srgb(0.3, 0.2, 0.1);
+                    fog.directional_light_color = base_color;
                 }
                 FogSetting::Atmospheric => {
                     fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
@@ -159,11 +169,11 @@ fn apply_global_light(
                 }
             }
 
-            let sun_up = atmosphere.sun_position.dot(Vec3::Y);
-            let rgb = Vec3::new(0.4, 0.4, 0.2) * sun_up.clamp(0.0, 1.0)
-                + Vec3::new(0.0, 0.0, 0.0) * (8.0 * (0.125 - sun_up.clamp(0.0, 0.125)));
-            let rgb = rgb.powf(1.0 / 2.2);
-            fog.color = Color::srgb(rgb.x, rgb.y, rgb.z);
+            // let sun_up = atmosphere.sun_position.dot(Vec3::Y);
+            // let rgb = Vec3::new(0.4, 0.4, 0.2) * sun_up.clamp(0.0, 1.0)
+            //     + Vec3::new(0.0, 0.0, 0.0) * (8.0 * (0.125 - sun_up.clamp(0.0, 0.125)));
+            // let rgb = rgb.powf(1.0 / 2.2);
+            // fog.color = Color::srgb(rgb.x, rgb.y, rgb.z);
         }
     }
 

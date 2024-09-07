@@ -1,14 +1,7 @@
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
-use bevy::{
-    pbr::CubemapVisibleEntities,
-    prelude::*,
-    render::{
-        primitives::{CubemapFrusta, Frustum},
-        view::VisibleEntities,
-    },
-};
-use common::{sets::SceneSets, structs::PrimaryUser};
+use bevy::prelude::*;
+use common::{sets::SceneSets, structs::PrimaryUser, util::TryPushChildrenEx};
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::{
@@ -46,7 +39,7 @@ impl Plugin for LightsPlugin {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct Light {
     pub enabled: bool,
     pub illuminance: Option<f32>,
@@ -186,43 +179,42 @@ fn update_directional_light(
     }
 }
 
+#[derive(Component)]
+pub struct LightEntity;
+
 fn update_point_lights(
     q: Query<
-        (
-            Entity,
-            &Light,
-            Option<&SpotlightAngles>,
-            Option<&PointLight>,
-            Option<&SpotLight>,
-        ),
+        (Entity, &Light, Option<&SpotlightAngles>, Option<&Children>),
         (
             Without<RendererSceneContext>,
             Or<(Changed<Light>, Changed<SpotlightAngles>)>,
         ),
     >,
     mut commands: Commands,
-    mut removed_spots: RemovedComponents<SpotlightAngles>,
     mut removed_points: RemovedComponents<Light>,
+    children: Query<&Children>,
+    child_lights: Query<&LightEntity>,
 ) {
-    for (entity, light, angles, maybe_point, maybe_spot) in q.iter() {
+    for (entity, light, angles, maybe_children) in q.iter() {
+        // despawn any previous
+        if let Some(children) = maybe_children {
+            for child in children.iter() {
+                if child_lights.get(*child).is_ok() {
+                    commands.entity(*child).despawn_recursive();
+                }
+            }
+        }
+
         let lumens = if light.enabled {
             light.illuminance.unwrap_or(10000.0) * 4.0 * PI
         } else {
             0.0
         };
-        // 10 lumens cutoff
-        let range = light.illuminance.unwrap_or(10000.0).sqrt();
-        let Some(mut commands) = commands.get_entity(entity) else {
-            continue;
-        };
-        match angles {
-            Some(angles) => {
-                if maybe_point.is_some() {
-                    commands.remove::<(PointLight, CubemapVisibleEntities, CubemapFrusta)>();
-                }
-
-                commands.try_insert((
-                    SpotLight {
+        let range = light.illuminance.unwrap_or(10000.0).powf(0.25);
+        let light_id = match angles {
+            Some(angles) => commands
+                .spawn(SpotLightBundle {
+                    spot_light: SpotLight {
                         color: light.color.unwrap_or(Color::WHITE),
                         intensity: lumens,
                         range,
@@ -232,17 +224,12 @@ fn update_point_lights(
                         inner_angle: angles.inner_angle,
                         ..Default::default()
                     },
-                    VisibleEntities::default(),
-                    Frustum::default(),
-                ));
-            }
-            None => {
-                if maybe_spot.is_some() {
-                    commands.remove::<(SpotLight, VisibleEntities, Frustum)>();
-                }
-
-                commands.insert((
-                    PointLight {
+                    ..Default::default()
+                })
+                .id(),
+            None => commands
+                .spawn(PointLightBundle {
+                    point_light: PointLight {
                         color: light.color.unwrap_or(Color::WHITE),
                         intensity: lumens,
                         range,
@@ -250,22 +237,22 @@ fn update_point_lights(
                         shadows_enabled: light.shadows.unwrap_or(false),
                         ..Default::default()
                     },
-                    CubemapVisibleEntities::default(),
-                    CubemapFrusta::default(),
-                ));
+                    ..Default::default()
+                })
+                .id(),
+        };
+
+        commands.entity(entity).try_push_children(&[light_id]);
+    }
+
+    for removed_light in removed_points.read() {
+        let Ok(children) = children.get(removed_light) else {
+            continue;
+        };
+        for child in children {
+            if child_lights.get(*child).is_ok() {
+                commands.entity(*child).despawn_recursive();
             }
-        }
-    }
-
-    for removed_spot in removed_spots.read() {
-        if let Some(mut commands) = commands.get_entity(removed_spot) {
-            commands.remove::<(SpotLight, VisibleEntities, Frustum)>();
-        }
-    }
-
-    for removed_point in removed_points.read() {
-        if let Some(mut commands) = commands.get_entity(removed_point) {
-            commands.remove::<(PointLight, CubemapVisibleEntities, CubemapFrusta)>();
         }
     }
 }
