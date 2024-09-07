@@ -9,6 +9,7 @@ use bevy::{
             AsBindGroup, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
             TextureUsages,
         },
+        view::NoFrustumCulling,
     },
     transform::TransformSystem,
     ui::UiSystem,
@@ -143,6 +144,7 @@ pub fn add_worldui_materials(
                     ..Default::default()
                 },
                 NotShadowCaster,
+                NoFrustumCulling, // TODO calculate aabb based on font size (and update when it changes)
             ))
             .id();
 
