@@ -9,7 +9,7 @@ use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
-    structs::{ActiveDialog, PrimaryCamera, ToolTips},
+    structs::{ActiveDialog, PrimaryCamera, ToolTips, PROFILE_UI_RENDERLAYER},
 };
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
 use input_manager::AcceptInput;
@@ -28,10 +28,7 @@ use scene_runner::{
 use serde_json::json;
 use ui_core::button::DuiButton;
 
-use crate::{
-    avatar_texture::{PhotoBooth, PROFILE_UI_RENDERLAYER},
-    AvatarMaterials, AvatarShape,
-};
+use crate::{avatar_texture::PhotoBooth, AvatarMaterials, AvatarShape};
 
 pub struct AvatarColliderPlugin;
 

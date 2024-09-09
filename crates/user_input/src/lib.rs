@@ -3,13 +3,16 @@ pub mod dynamics;
 pub mod player_input;
 
 use bevy::{
-    ecs::query::Has, prelude::*, render::camera::CameraUpdateSystem, transform::TransformSystem,
+    ecs::query::Has,
+    prelude::*,
+    render::{camera::CameraUpdateSystem, view::RenderLayers},
+    transform::TransformSystem,
 };
 
 use common::{
     anim_last_system,
     sets::SceneSets,
-    structs::{PrimaryCamera, PrimaryUser},
+    structs::{PrimaryCamera, PrimaryUser, AVATAR_TEXTURE_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER},
 };
 use console::DoAddConsoleCommand;
 use dynamics::{
@@ -74,10 +77,13 @@ impl Plugin for UserInputPlugin {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn manage_player_visibility(
+    mut commands: Commands,
     camera: Query<&GlobalTransform, With<PrimaryCamera>>,
     mut player: Query<
         (
+            Entity,
             &GlobalTransform,
             &mut Visibility,
             Has<OutOfWorld>,
@@ -85,22 +91,39 @@ fn manage_player_visibility(
         ),
         With<PrimaryUser>,
     >,
+    children: Query<&Children>,
 ) {
-    if let (Ok(cam_transform), Ok((player_transform, mut vis, is_oow, modifiers))) =
+    if let (Ok(cam_transform), Ok((player, player_transform, mut vis, is_oow, modifiers))) =
         (camera.get_single(), player.get_single_mut())
     {
+        #[allow(clippy::collapsible_else_if)]
+        if is_oow || modifiers.hide {
+            if *vis != Visibility::Hidden {
+                *vis = Visibility::Hidden;
+            }
+            return;
+        } else {
+            if *vis != Visibility::Inherited {
+                *vis = Visibility::Inherited;
+            }
+        }
+
         let distance =
             (cam_transform.translation() - player_transform.translation() - Vec3::Y * 1.81)
                 .length();
 
         #[allow(clippy::collapsible_else_if)]
-        if is_oow || modifiers.hide || distance < 0.5 {
-            if *vis != Visibility::Hidden {
-                *vis = Visibility::Hidden;
+        if distance < 0.5 {
+            for child in children.iter_descendants(player) {
+                if let Some(mut commands) = commands.get_entity(child) {
+                    commands.insert(PRIMARY_AVATAR_LIGHT_LAYER.union(&AVATAR_TEXTURE_RENDERLAYER));
+                }
             }
         } else {
-            if *vis != Visibility::Inherited {
-                *vis = Visibility::Inherited;
+            for child in children.iter_descendants(player) {
+                if let Some(mut commands) = commands.get_entity(child) {
+                    commands.insert(RenderLayers::default().union(&AVATAR_TEXTURE_RENDERLAYER));
+                }
             }
         }
     }

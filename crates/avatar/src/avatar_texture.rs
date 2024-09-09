@@ -22,7 +22,7 @@ use bevy_dui::{DuiRegistry, DuiTemplate};
 use collectibles::{urn::CollectibleUrn, Emote};
 use common::{
     sets::SetupSets,
-    structs::{AvatarTextureHandle, PrimaryPlayerRes},
+    structs::{AvatarTextureHandle, PrimaryPlayerRes, AVATAR_TEXTURE_RENDERLAYER},
 };
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
 use dcl_component::proto_components::sdk::components::PbAvatarEmoteCommand;
@@ -35,9 +35,6 @@ use crate::{
 };
 
 pub struct AvatarTexturePlugin;
-
-pub const PRIMARY_AVATAR_RENDERLAYER: RenderLayers = RenderLayers::layer(0);
-pub const PROFILE_UI_RENDERLAYER: RenderLayers = RenderLayers::layer(2);
 
 const SNAPSHOT_FRAMES: u32 = 5;
 
@@ -247,7 +244,7 @@ fn setup_primary_avatar_camera(
         &mut images,
         player.0,
         size,
-        RenderLayers::layer(1),
+        AVATAR_TEXTURE_RENDERLAYER,
     );
 
     commands

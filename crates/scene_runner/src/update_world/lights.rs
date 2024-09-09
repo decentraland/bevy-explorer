@@ -1,10 +1,10 @@
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
-use bevy::{math::FloatOrd, prelude::*};
+use bevy::{math::FloatOrd, prelude::*, render::view::RenderLayers};
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::SceneSets,
-    structs::{AppConfig, PrimaryUser},
+    structs::{AppConfig, PrimaryUser, PRIMARY_AVATAR_LIGHT_LAYER},
     util::TryPushChildrenEx,
 };
 use dcl::interface::ComponentPosition;
@@ -257,9 +257,13 @@ fn update_point_lights(
         };
 
         let light_id = light
-            .insert(LightEntity {
-                scene: container.root,
-            })
+            .insert((
+                LightEntity {
+                    scene: container.root,
+                },
+                // light hidden avatars too
+                RenderLayers::default().union(&PRIMARY_AVATAR_LIGHT_LAYER),
+            ))
             .id();
         commands.entity(entity).try_push_children(&[light_id]);
     }
