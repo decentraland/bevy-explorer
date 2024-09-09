@@ -53,9 +53,8 @@ impl<T: CollectibleType> TryFrom<&str> for CollectibleUrn<T> {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Self::try_new_and_token(value)
             .map(|(urn, _)| urn)
-            .map_err(|e| {
+            .inspect_err(|e| {
                 warn!("invalid collectible urn: {}, {}", e.msg, e.value);
-                e
             })
     }
 }

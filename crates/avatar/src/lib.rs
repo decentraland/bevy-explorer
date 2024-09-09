@@ -1387,19 +1387,16 @@ fn debug_dump_avatar(
             .shape
             .emotes
             .iter()
-            .map(|e| {
+            .inspect(|e| {
                 info!("0 {e:?}");
-                e
             })
             .flat_map(|e| EmoteUrn::new(e).ok())
-            .map(|e| {
+            .inspect(|e| {
                 info!("1 {e:?}");
-                e
             })
             .flat_map(|emote| emotes.get_hash(emote).ok())
-            .map(|e| {
+            .inspect(|e| {
                 info!("2 {e:?}");
-                e
             })
             .collect();
 
