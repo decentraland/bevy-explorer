@@ -11,6 +11,7 @@ use common::structs::{
     AaSetting, AppConfig, BloomSetting, FogSetting, SettingsTab, ShadowSetting, SsaoSetting,
     WindowSetting,
 };
+use shadow_settings::ShadowCasterCountSetting;
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
 use crate::{login::config_file, profile::SettingsDialog};
@@ -68,6 +69,7 @@ impl Plugin for AppSettingsPlugin {
 
         apply_schedule.add_systems((
             apply_setting::<ShadowDistanceSetting>,
+            apply_setting::<ShadowCasterCountSetting>,
             apply_setting::<ShadowSetting>.after(apply_setting::<ShadowDistanceSetting>),
             apply_setting::<FogSetting>,
             apply_setting::<BloomSetting>,
@@ -86,9 +88,9 @@ impl Plugin for AppSettingsPlugin {
             apply_setting::<VoiceVolumeSetting>,
             apply_setting::<SystemVolumeSetting>,
             apply_setting::<AvatarVolumeSetting>,
-            apply_setting::<ConstrainUiSetting>,
         ));
         apply_schedule.add_systems((
+            apply_setting::<ConstrainUiSetting>,
             apply_setting::<RunSpeedSetting>,
             apply_setting::<WalkSpeedSetting>,
             apply_setting::<FrictionSetting>,
@@ -172,6 +174,7 @@ fn set_app_settings_content(
             AmbientSetting::spawn_template(&mut commands, &dui, &config),
             ShadowSetting::spawn_template(&mut commands, &dui, &config),
             ShadowDistanceSetting::spawn_template(&mut commands, &dui, &config),
+            ShadowCasterCountSetting::spawn_template(&mut commands, &dui, &config),
             FogSetting::spawn_template(&mut commands, &dui, &config),
             BloomSetting::spawn_template(&mut commands, &dui, &config),
             SsaoSetting::spawn_template(&mut commands, &dui, &config),

@@ -166,3 +166,53 @@ impl AppSetting for ShadowDistanceSetting {
         spawn_int_setting_template::<Self>(commands, dui, config)
     }
 }
+
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ShadowCasterCountSetting(i32);
+
+impl IntAppSetting for ShadowCasterCountSetting {
+    fn from_int(value: i32) -> Self {
+        Self(value)
+    }
+
+    fn value(&self) -> i32 {
+        self.0
+    }
+
+    fn min() -> i32 {
+        0
+    }
+
+    fn max() -> i32 {
+        64
+    }
+}
+
+impl AppSetting for ShadowCasterCountSetting {
+    type Param = ();
+
+    fn title() -> String {
+        "Shadow Caster Count".to_owned()
+    }
+
+    fn description(&self) -> String {
+        "Shadow Caster Count\n\nMaximum number of scene lights (excluding the global sun light) that will cast shadows. Lights that cast shadows are expensive in GPU time and memory, the cost scales linearly with the number of shadow-casting lights. Reduce this if scenes with a large number of shadow-casting lights cause slowdown.\n\nLights from currently active scenes, closest to the player, will have shadows enabled first.".to_owned()
+    }
+
+    fn load(config: &AppConfig) -> Self {
+        Self(config.graphics.shadow_caster_count as i32)
+    }
+
+    fn save(&self, config: &mut AppConfig) {
+        config.graphics.shadow_caster_count = self.0 as usize
+    }
+
+    fn apply(&self, _: (), _: Commands) {
+        // applied via lights system
+    }
+
+    fn spawn_template(commands: &mut Commands, dui: &DuiRegistry, config: &AppConfig) -> Entity {
+        spawn_int_setting_template::<Self>(commands, dui, config)
+    }
+}

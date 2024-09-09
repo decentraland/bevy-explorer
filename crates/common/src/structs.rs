@@ -272,6 +272,7 @@ pub struct GraphicsSettings {
     pub fps_target: usize,
     pub shadow_distance: f32,
     pub shadow_settings: ShadowSetting,
+    pub shadow_caster_count: usize,
     pub window: WindowSetting,
     // removed until bevy window resizing bugs are fixed
     // pub fullscreen_res: FullscreenResSetting,
@@ -291,6 +292,7 @@ impl Default for GraphicsSettings {
             fps_target: 60,
             shadow_distance: 200.0,
             shadow_settings: ShadowSetting::High,
+            shadow_caster_count: 8,
             window: WindowSetting::Windowed,
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
             fog: FogSetting::Atmospheric,

@@ -1,7 +1,12 @@
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
-use bevy::prelude::*;
-use common::{sets::SceneSets, structs::PrimaryUser, util::TryPushChildrenEx};
+use bevy::{math::FloatOrd, prelude::*};
+use common::{
+    dynamics::PLAYER_COLLIDER_RADIUS,
+    sets::SceneSets,
+    structs::{AppConfig, PrimaryUser},
+    util::TryPushChildrenEx,
+};
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::{
@@ -12,7 +17,7 @@ use dcl_component::{
 };
 use visuals::SceneGlobalLight;
 
-use crate::{renderer_context::RendererSceneContext, ContainingScene};
+use crate::{renderer_context::RendererSceneContext, ContainerEntity, ContainingScene};
 
 use super::AddCrdtInterfaceExt;
 
@@ -34,7 +39,12 @@ impl Plugin for LightsPlugin {
         );
         app.add_systems(
             Update,
-            (update_directional_light, update_point_lights).in_set(SceneSets::PostLoop),
+            (
+                update_directional_light,
+                update_point_lights,
+                manage_shadow_casters,
+            )
+                .in_set(SceneSets::PostLoop),
         );
     }
 }
@@ -180,11 +190,19 @@ fn update_directional_light(
 }
 
 #[derive(Component)]
-pub struct LightEntity;
+pub struct LightEntity {
+    scene: Entity,
+}
 
 fn update_point_lights(
     q: Query<
-        (Entity, &Light, Option<&SpotlightAngles>, Option<&Children>),
+        (
+            Entity,
+            &ContainerEntity,
+            &Light,
+            Option<&SpotlightAngles>,
+            Option<&Children>,
+        ),
         (
             Without<RendererSceneContext>,
             Or<(Changed<Light>, Changed<SpotlightAngles>)>,
@@ -195,7 +213,7 @@ fn update_point_lights(
     children: Query<&Children>,
     child_lights: Query<&LightEntity>,
 ) {
-    for (entity, light, angles, maybe_children) in q.iter() {
+    for (entity, container, light, angles, maybe_children) in q.iter() {
         // despawn any previous
         if let Some(children) = maybe_children {
             for child in children.iter() {
@@ -211,37 +229,38 @@ fn update_point_lights(
             0.0
         };
         let range = light.illuminance.unwrap_or(10000.0).powf(0.25);
-        let light_id = match angles {
-            Some(angles) => commands
-                .spawn(SpotLightBundle {
-                    spot_light: SpotLight {
-                        color: light.color.unwrap_or(Color::WHITE),
-                        intensity: lumens,
-                        range,
-                        radius: 0.0,
-                        shadows_enabled: light.shadows.unwrap_or(false),
-                        outer_angle: angles.outer_angle,
-                        inner_angle: angles.inner_angle,
-                        ..Default::default()
-                    },
+        let mut light = match angles {
+            Some(angles) => commands.spawn(SpotLightBundle {
+                spot_light: SpotLight {
+                    color: light.color.unwrap_or(Color::WHITE),
+                    intensity: lumens,
+                    range,
+                    radius: 0.0,
+                    shadows_enabled: light.shadows.unwrap_or(false),
+                    outer_angle: angles.outer_angle,
+                    inner_angle: angles.inner_angle,
                     ..Default::default()
-                })
-                .id(),
-            None => commands
-                .spawn(PointLightBundle {
-                    point_light: PointLight {
-                        color: light.color.unwrap_or(Color::WHITE),
-                        intensity: lumens,
-                        range,
-                        radius: 0.0,
-                        shadows_enabled: light.shadows.unwrap_or(false),
-                        ..Default::default()
-                    },
+                },
+                ..Default::default()
+            }),
+            None => commands.spawn(PointLightBundle {
+                point_light: PointLight {
+                    color: light.color.unwrap_or(Color::WHITE),
+                    intensity: lumens,
+                    range,
+                    radius: 0.0,
+                    shadows_enabled: light.shadows.unwrap_or(false),
                     ..Default::default()
-                })
-                .id(),
+                },
+                ..Default::default()
+            }),
         };
 
+        let light_id = light
+            .insert(LightEntity {
+                scene: container.root,
+            })
+            .id();
         commands.entity(entity).try_push_children(&[light_id]);
     }
 
@@ -252,6 +271,82 @@ fn update_point_lights(
         for child in children {
             if child_lights.get(*child).is_ok() {
                 commands.entity(*child).despawn_recursive();
+            }
+        }
+    }
+}
+
+fn manage_shadow_casters(
+    mut q: Query<
+        (
+            Entity,
+            &GlobalTransform,
+            &LightEntity,
+            Option<&mut PointLight>,
+            Option<&mut SpotLight>,
+        ),
+        Or<(With<PointLight>, With<SpotLight>)>,
+    >,
+    player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
+    containing_scene: ContainingScene,
+    config: Res<AppConfig>,
+    mut lights: Local<Vec<(Entity, bool, FloatOrd, bool)>>,
+) {
+    let Ok((player, player_gt)) = player.get_single() else {
+        return;
+    };
+    let player_t = player_gt.translation();
+
+    let active_scenes = containing_scene.get_area(player, PLAYER_COLLIDER_RADIUS);
+
+    // collect lights
+    lights.extend(q.iter().map(|(entity, gt, container, maybe_p, maybe_s)| {
+        (
+            entity,
+            active_scenes.contains(&container.scene),
+            FloatOrd(gt.translation().distance_squared(player_t)),
+            maybe_p
+                .map(|p| p.shadows_enabled)
+                .unwrap_or_else(|| maybe_s.unwrap().shadows_enabled),
+        )
+    }));
+    // sort by scene-active and distance
+    lights.sort_by_key(|(_, scene_active, distance, _)| (*scene_active, *distance));
+    // enable up to limit
+    let max_casters = match config.graphics.shadow_settings {
+        common::structs::ShadowSetting::Off => 0,
+        _ => config.graphics.shadow_caster_count,
+    };
+    debug!(
+        "found {} lights, enabling up to {}",
+        lights.len(),
+        max_casters
+    );
+    let mut iter = lights.drain(..);
+    for (light, _, _, enabled) in iter.by_ref().take(max_casters) {
+        if !enabled {
+            let (_, _, _, maybe_p, maybe_s) = q.get_mut(light).unwrap();
+            if let Some(mut p) = maybe_p {
+                println!("enabled point");
+                p.shadows_enabled = true;
+            }
+            if let Some(mut s) = maybe_s {
+                println!("enabled spot");
+                s.shadows_enabled = true;
+            }
+        }
+    }
+    // disable over limit
+    for (light, _, _, enabled) in iter {
+        if enabled {
+            let (_, _, _, maybe_p, maybe_s) = q.get_mut(light).unwrap();
+            if let Some(mut p) = maybe_p {
+                println!("disabled point");
+                p.shadows_enabled = false;
+            }
+            if let Some(mut s) = maybe_s {
+                println!("disabled spot");
+                s.shadows_enabled = false;
             }
         }
     }
