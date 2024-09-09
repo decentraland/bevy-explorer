@@ -167,7 +167,6 @@ impl AppSetting for ShadowDistanceSetting {
     }
 }
 
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct ShadowCasterCountSetting(i32);
 
