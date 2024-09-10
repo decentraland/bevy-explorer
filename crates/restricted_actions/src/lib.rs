@@ -983,8 +983,8 @@ fn show_nft_dialog(
                     &dui,
                     "text-dialog",
                     DuiProps::new()
-                        .with_prop("title", "Failed to load NFT")
-                        .with_prop("body", "Failed to load NFT")
+                        .with_prop("title", "Failed to load NFT".to_owned())
+                        .with_prop("body", "Failed to load NFT".to_owned())
                         .with_prop("buttons", vec![DuiButton::close_sad("Shame")]),
                 )
                 .unwrap();

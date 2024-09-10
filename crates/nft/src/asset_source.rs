@@ -75,10 +75,10 @@ impl AssetReader for NftReader {
                 ))));
             };
 
-            if chain != "ethereum" {
+            if !["ethereum", "matic"].contains(&chain) {
                 return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
-                    "unsupported chain `{chain}`",
+                    format!("unsupported chain `{chain}`"),
                 ))));
             }
 
