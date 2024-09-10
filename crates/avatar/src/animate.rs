@@ -243,6 +243,7 @@ pub struct ActiveEmote {
     repeat: bool,
     finished: bool,
     transition_seconds: f32,
+    initial_audio_mark: Option<f32>,
 }
 
 impl Default for ActiveEmote {
@@ -254,6 +255,7 @@ impl Default for ActiveEmote {
             repeat: false,
             finished: false,
             transition_seconds: 0.2,
+            initial_audio_mark: None,
         }
     }
 }
@@ -417,10 +419,9 @@ fn animate(
         } else {
             // otherwise play a default emote based on motion
             let time_to_peak = (jump_height * -gravity * 2.0).sqrt() / -gravity;
-            if dynamic_state.ground_height > 0.2
-                || dynamic_state.velocity.y > 0.0
-                    && dynamic_state.jump_time
-                        > (time.elapsed_seconds() - time_to_peak / 2.0).max(0.0)
+            let just_jumped =
+                dynamic_state.jump_time > (time.elapsed_seconds() - time_to_peak / 2.0).max(0.0);
+            if dynamic_state.ground_height > 0.2 || (dynamic_state.velocity.y > 0.0 && just_jumped)
             {
                 ActiveEmote {
                     urn: EmoteUrn::new("jump").unwrap(),
@@ -429,6 +430,7 @@ fn animate(
                     restart: dynamic_state.jump_time
                         > time.elapsed_seconds() - time.delta_seconds(),
                     transition_seconds: 0.1,
+                    initial_audio_mark: if !just_jumped { Some(0.1) } else { None },
                     ..Default::default()
                 }
             } else if active_emote.urn == EmoteUrn::new("jump").unwrap() && !active_emote.finished {
@@ -439,6 +441,7 @@ fn animate(
                     repeat: false,
                     restart: false,
                     transition_seconds: 0.1,
+                    initial_audio_mark: Some(0.1),
                     ..Default::default()
                 }
             } else {
@@ -725,14 +728,15 @@ fn play_current_emote(
             }
         }
 
+        let default_audio_mark = active_emote.initial_audio_mark.unwrap_or(f32::NEG_INFINITY);
         let last_audio_mark = if active_emote.restart {
-            f32::NEG_INFINITY
+            default_audio_mark
         } else {
             spawned_extras
                 .get(&entity)
                 .and_then(|extras| extras.audio.as_ref())
                 .map(|(_, mark)| *mark)
-                .unwrap_or(f32::NEG_INFINITY)
+                .unwrap_or(default_audio_mark)
         };
 
         let Some(clip_duration) = anim_clips.get(&clip).map(|c| c.duration()) else {
@@ -759,6 +763,10 @@ fn play_current_emote(
             Ok(None) => None,
             Err(_) => continue,
         };
+        debug!(
+            "audio with mark {last_audio_mark} -> {:?}",
+            sound.as_ref().map(|(t, _)| t)
+        );
         let sound = if sound.is_none() && active_emote.repeat {
             match emote.audio(&sounds, f32::NEG_INFINITY) {
                 Ok(None) => None,
@@ -840,6 +848,16 @@ fn play_current_emote(
             });
 
         let elapsed = play(transitions, &mut player, *clip_ix, &active_emote);
+        // reset audio mark if we've rewound (jump hacks again)
+        if let Some(mark) = spawned_extras
+            .get_mut(&entity)
+            .and_then(|extras| extras.audio.as_mut())
+            .map(|a| &mut a.1)
+        {
+            if elapsed < *mark {
+                *mark = elapsed;
+            }
+        }
 
         if !active_emote.finished && player.all_finished() {
             active_emote.finished = true;

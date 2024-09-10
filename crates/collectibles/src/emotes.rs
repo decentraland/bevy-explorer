@@ -488,6 +488,9 @@ impl Emote {
             .iter()
             .find(|(t, _)| *t > after)
             .map(|(t, clips)| {
+                if clips.is_empty() {
+                    return Ok(None);
+                }
                 let clip = &clips[fastrand::usize(0..clips.len())];
                 if audio.get(clip.id()).is_some() {
                     Ok(Some((*t, clip.clone())))
