@@ -156,7 +156,7 @@ tokio = { workspace = true }
 prost-build = "0.11.8"
 
 [patch.crates-io]
-bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.14-dcl-cosmic" }
+bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.14-dcl-cosmic-noimage" }
 # bevy = { path="../bevy" }
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
 # parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "try_convex" }
