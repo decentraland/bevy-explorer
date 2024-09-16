@@ -48,7 +48,11 @@ use ipfs::{EntityDefinition, IpfsAssetServer};
 use scene_material::{SceneBound, SceneMaterial};
 
 use super::{
-    animation::Clips, lights::LightEntity, mesh_collider::{MeshCollider, MeshColliderShape}, transform_and_parent::TransformHelperPub, AddCrdtInterfaceExt, ComponentTracker
+    animation::Clips,
+    lights::LightEntity,
+    mesh_collider::{MeshCollider, MeshColliderShape},
+    transform_and_parent::TransformHelperPub,
+    AddCrdtInterfaceExt, ComponentTracker,
 };
 
 pub struct GltfDefinitionPlugin;
@@ -453,7 +457,9 @@ fn update_ready_gltfs(
                                 shadows_enabled: true,
                                 ..*point
                             },
-                            LightEntity { scene: dcl_scene_entity.root },
+                            LightEntity {
+                                scene: dcl_scene_entity.root,
+                            },
                         ));
                     }
                     if let Some(spot) = maybe_spot {
@@ -462,7 +468,9 @@ fn update_ready_gltfs(
                                 shadows_enabled: true,
                                 ..*spot
                             },
-                            LightEntity { scene: dcl_scene_entity.root },
+                            LightEntity {
+                                scene: dcl_scene_entity.root,
+                            },
                         ));
                     }
 

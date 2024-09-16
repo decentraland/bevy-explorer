@@ -115,7 +115,7 @@ fn manage_player_visibility(
 
         #[allow(clippy::collapsible_else_if)]
         if distance < 0.5 {
-            for child in children.iter_descendants(player) { 
+            for child in children.iter_descendants(player) {
                 // don't retarget the profile texture spotlight which we've attached to the avatar directly
                 if spotlights.get(child).is_ok() {
                     continue;
