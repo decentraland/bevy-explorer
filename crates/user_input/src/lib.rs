@@ -92,6 +92,7 @@ fn manage_player_visibility(
         With<PrimaryUser>,
     >,
     children: Query<&Children>,
+    spotlights: Query<Has<SpotLight>>,
 ) {
     if let (Ok(cam_transform), Ok((player, player_transform, mut vis, is_oow, modifiers))) =
         (camera.get_single(), player.get_single_mut())
@@ -114,13 +115,20 @@ fn manage_player_visibility(
 
         #[allow(clippy::collapsible_else_if)]
         if distance < 0.5 {
-            for child in children.iter_descendants(player) {
+            for child in children.iter_descendants(player) { 
+                // don't retarget the profile texture spotlight which we've attached to the avatar directly
+                if spotlights.get(child).is_ok() {
+                    continue;
+                }
                 if let Some(mut commands) = commands.get_entity(child) {
                     commands.insert(PRIMARY_AVATAR_LIGHT_LAYER.union(&AVATAR_TEXTURE_RENDERLAYER));
                 }
             }
         } else {
             for child in children.iter_descendants(player) {
+                if spotlights.get(child).is_ok() {
+                    continue;
+                }
                 if let Some(mut commands) = commands.get_entity(child) {
                     commands.insert(RenderLayers::default().union(&AVATAR_TEXTURE_RENDERLAYER));
                 }

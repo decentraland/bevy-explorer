@@ -191,7 +191,7 @@ fn update_directional_light(
 
 #[derive(Component)]
 pub struct LightEntity {
-    scene: Entity,
+    pub scene: Entity,
 }
 
 fn update_point_lights(

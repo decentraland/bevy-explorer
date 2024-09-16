@@ -3,6 +3,7 @@
 // - clean up of cached colliders (when mesh is unloaded?)
 use std::{
     collections::BTreeMap,
+    f32::consts::PI,
     hash::{Hash, Hasher},
 };
 
@@ -27,7 +28,10 @@ use serde::Deserialize;
 
 use crate::{
     renderer_context::RendererSceneContext,
-    update_world::material::{dcl_material_from_standard_material, BaseMaterial},
+    update_world::{
+        lights::{Light, SpotlightAngles},
+        material::{dcl_material_from_standard_material, BaseMaterial},
+    },
     ContainerEntity, SceneEntity, SceneSets,
 };
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -35,7 +39,7 @@ use dcl_component::{
     proto_components::sdk::components::{
         common::LoadingState, pb_material, pb_mesh_collider, pb_mesh_renderer, ColliderLayer,
         GltfNodeStateValue, PbGltfContainer, PbGltfContainerLoadingState, PbGltfNode,
-        PbGltfNodeState, PbMaterial, PbMeshCollider, PbMeshRenderer,
+        PbGltfNodeState, PbLight, PbMaterial, PbMeshCollider, PbMeshRenderer, PbSpotlight,
     },
     transform_and_parent::DclTransformAndParent,
     SceneComponentId, SceneEntityId,
@@ -44,10 +48,7 @@ use ipfs::{EntityDefinition, IpfsAssetServer};
 use scene_material::{SceneBound, SceneMaterial};
 
 use super::{
-    animation::Clips,
-    mesh_collider::{MeshCollider, MeshColliderShape},
-    transform_and_parent::TransformHelperPub,
-    AddCrdtInterfaceExt, ComponentTracker,
+    animation::Clips, lights::LightEntity, mesh_collider::{MeshCollider, MeshColliderShape}, transform_and_parent::TransformHelperPub, AddCrdtInterfaceExt, ComponentTracker
 };
 
 pub struct GltfDefinitionPlugin;
@@ -219,7 +220,7 @@ fn update_gltf(
             &scene_def.id,
             |s| {
                 s.load_cameras = false;
-                s.load_lights = false;
+                s.load_lights = true;
                 s.load_materials = RenderAssetUsages::RENDER_WORLD;
                 s.include_source = true;
             },
@@ -338,6 +339,9 @@ fn update_ready_gltfs(
         Option<&SkinnedMesh>,
         Option<&Handle<StandardMaterial>>,
         Option<&AnimationTarget>,
+        Option<&DirectionalLight>,
+        Option<&PointLight>,
+        Option<&SpotLight>,
     )>,
     (base_mats, mut bound_mats, mut graphs, mut meshes): (
         Res<Assets<StandardMaterial>>,
@@ -431,8 +435,37 @@ fn update_ready_gltfs(
                     maybe_skin,
                     maybe_material,
                     maybe_target,
+                    maybe_directional,
+                    maybe_point,
+                    maybe_spot,
                 )) = gltf_spawned_entities.get(spawned_ent)
                 {
+                    // remove directional lights
+                    if maybe_directional.is_some() {
+                        commands.entity(spawned_ent).despawn_recursive();
+                        continue;
+                    }
+
+                    // enable shadows for other lights
+                    if let Some(point) = maybe_point {
+                        commands.entity(spawned_ent).try_insert((
+                            PointLight {
+                                shadows_enabled: true,
+                                ..*point
+                            },
+                            LightEntity { scene: dcl_scene_entity.root },
+                        ));
+                    }
+                    if let Some(spot) = maybe_spot {
+                        commands.entity(spawned_ent).try_insert((
+                            SpotLight {
+                                shadows_enabled: true,
+                                ..*spot
+                            },
+                            LightEntity { scene: dcl_scene_entity.root },
+                        ));
+                    }
+
                     // collect named nodes to push to scene on request
                     if let Some(name) = maybe_name {
                         let mut name = name.to_string();
@@ -1024,6 +1057,12 @@ pub struct HiddenMaterial(Handle<SceneMaterial>);
 #[derive(Component)]
 pub struct HiddenCollider(MeshCollider);
 
+#[derive(Component)]
+pub struct HiddenPointLight(PointLight);
+
+#[derive(Component)]
+pub struct HiddenSpotLight(SpotLight);
+
 fn expose_gltfs(
     mut commands: Commands,
     new_links: Query<
@@ -1051,6 +1090,8 @@ fn expose_gltfs(
         Option<&SkinnedMesh>,
         Option<&MeshCollider>,
         Option<&Name>,
+        Option<&PointLight>,
+        Option<&SpotLight>,
     )>,
     mats: Res<Assets<SceneMaterial>>,
     images: Res<Assets<Image>>,
@@ -1210,6 +1251,8 @@ fn expose_gltfs(
                     maybe_skin,
                     maybe_collider,
                     maybe_name,
+                    maybe_point,
+                    maybe_spot,
                 ) = node_data.get(gltf_entity).unwrap_or_default();
 
                 if let Some(mesh) = maybe_mesh {
@@ -1294,6 +1337,77 @@ fn expose_gltfs(
                     );
                 }
 
+                if let Some(point) = maybe_point {
+                    debug!("link point light ({})", src);
+                    // hide
+                    commands
+                        .entity(gltf_entity)
+                        .remove::<PointLight>()
+                        .insert(HiddenPointLight(*point));
+                    // copy
+                    commands.entity(ent).insert(Light {
+                        enabled: true,
+                        illuminance: Some(point.intensity / (4.0 * PI)),
+                        shadows: Some(true),
+                        color: Some(point.color),
+                    });
+                    // write to scene
+                    scene.update_crdt(
+                        SceneComponentId::LIGHT,
+                        CrdtType::LWW_ANY,
+                        scene_ent.id,
+                        &PbLight {
+                            enabled: None,
+                            illuminance: Some(point.intensity / (4.0 * PI)),
+                            shadows: Some(true),
+                            color: Some(point.color.into()),
+                        },
+                    );
+                }
+
+                if let Some(spot) = maybe_spot {
+                    debug!("link spot light ({})", src);
+                    // hide
+                    commands
+                        .entity(gltf_entity)
+                        .remove::<SpotLight>()
+                        .insert(HiddenSpotLight(*spot));
+                    // copy
+                    commands.entity(ent).insert((
+                        Light {
+                            enabled: true,
+                            illuminance: Some(spot.intensity / (4.0 * PI)),
+                            shadows: Some(true),
+                            color: Some(spot.color),
+                        },
+                        SpotlightAngles {
+                            inner_angle: spot.inner_angle,
+                            outer_angle: spot.outer_angle,
+                        },
+                    ));
+                    // write to scene
+                    scene.update_crdt(
+                        SceneComponentId::LIGHT,
+                        CrdtType::LWW_ANY,
+                        scene_ent.id,
+                        &PbLight {
+                            enabled: None,
+                            illuminance: Some(spot.intensity / (4.0 * PI)),
+                            shadows: Some(true),
+                            color: Some(spot.color.into()),
+                        },
+                    );
+                    scene.update_crdt(
+                        SceneComponentId::SPOTLIGHT,
+                        CrdtType::LWW_ANY,
+                        scene_ent.id,
+                        &PbSpotlight {
+                            angle: spot.outer_angle,
+                            inner_angle: Some(spot.inner_angle),
+                        },
+                    );
+                }
+
                 commands.entity(ent).insert(SceneNodeLink {
                     gltf_entity,
                     gltf_parent,
@@ -1313,6 +1427,8 @@ fn update_gltf_linked_transforms(
         &Parent,
         Option<&HiddenMaterial>,
         Option<&HiddenCollider>,
+        Option<&HiddenPointLight>,
+        Option<&HiddenSpotLight>,
     )>,
     scene_nodes: Query<(&SceneEntity, Ref<Transform>, &Parent, &SceneNodeLink)>,
     mut scenes: Query<&mut RendererSceneContext>,
@@ -1342,8 +1458,16 @@ fn update_gltf_linked_transforms(
     let mut node_movement_state = HashMap::default();
 
     // init parents and positions, check for changes
-    for (gltf_entity, link, container, parent, maybe_hidden_material, maybe_hidden_collider) in
-        gltf_nodes.iter()
+    for (
+        gltf_entity,
+        link,
+        container,
+        parent,
+        maybe_hidden_material,
+        maybe_hidden_collider,
+        maybe_hidden_point,
+        maybe_hidden_spot,
+    ) in gltf_nodes.iter()
     {
         let unlink = |gltf_entity: Entity, commands: &mut Commands| {
             // scene link removed, reset
@@ -1360,6 +1484,18 @@ fn update_gltf_linked_transforms(
                     .entity(gltf_entity)
                     .remove::<HiddenCollider>()
                     .insert(hidden.0.clone());
+            }
+            if let Some(hidden) = maybe_hidden_point {
+                commands
+                    .entity(gltf_entity)
+                    .remove::<HiddenPointLight>()
+                    .insert(hidden.0);
+            }
+            if let Some(hidden) = maybe_hidden_spot {
+                commands
+                    .entity(gltf_entity)
+                    .remove::<HiddenSpotLight>()
+                    .insert(hidden.0);
             }
         };
 
