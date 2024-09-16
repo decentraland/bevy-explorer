@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr};
+use std::str::FromStr;
 
 use analytics::segment_system::SegmentConfig;
 use bevy::{
@@ -11,7 +11,7 @@ use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
     structs::{ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin, SystemAudio},
-    util::{project_directories, FireEventEx, TaskExt},
+    util::{config_file, FireEventEx, TaskExt},
 };
 use comms::{
     preview::PreviewMode,
@@ -51,10 +51,6 @@ enum LoginType {
     NewRemote,
     Guest,
     Cancel,
-}
-
-pub fn config_file() -> PathBuf {
-    project_directories().config_dir().join("config.json")
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]

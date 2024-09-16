@@ -7,14 +7,17 @@ use bevy::{
     ui::RelativeCursorPosition,
 };
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use common::structs::{
-    AaSetting, AppConfig, BloomSetting, FogSetting, SettingsTab, ShadowSetting, SsaoSetting,
-    WindowSetting,
+use common::{
+    structs::{
+        AaSetting, AppConfig, BloomSetting, FogSetting, SettingsTab, ShadowSetting, SsaoSetting,
+        WindowSetting,
+    },
+    util::config_file,
 };
 use shadow_settings::ShadowCasterCountSetting;
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
-use crate::{login::config_file, profile::SettingsDialog};
+use crate::profile::SettingsDialog;
 
 use self::{
     ambient_brightness_setting::AmbientSetting,

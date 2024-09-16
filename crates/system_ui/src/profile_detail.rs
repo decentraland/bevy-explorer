@@ -6,7 +6,7 @@ use ui_core::{
     button::{DuiButton, TabSelection},
     focus::Focus,
     interact_style::{InteractStyle, InteractStyles},
-    text_entry::TextEntry,
+    text_entry::TextEntryValue,
     ui_actions::{DataChanged, On, UiCaller},
 };
 
@@ -72,7 +72,7 @@ fn set_profile_detail_content(
                         .with_prop("label", $label.to_owned())
                         .with_prop("initial", $init.clone())
                         .with_prop("multi-line", $multiline)
-                        .with_prop("onchanged", On::<DataChanged>::new(|caller: Res<UiCaller>, data: Query<&TextEntry>, mut profile: Query<&mut ProfileDetail>, mut settings: Query<&mut SettingsDialog>| {
+                        .with_prop("onchanged", On::<DataChanged>::new(|caller: Res<UiCaller>, data: Query<&TextEntryValue>, mut profile: Query<&mut ProfileDetail>, mut settings: Query<&mut SettingsDialog>| {
                             let Ok(data) = data.get(caller.0) else {
                                 warn!("no entry");
                                 return;
@@ -86,7 +86,7 @@ fn set_profile_detail_content(
                                 return;
                             };
                             #[allow(clippy::redundant_closure_call)]
-                            $set(&mut profile.0, data.content.clone());
+                            $set(&mut profile.0, data.0.clone());
                             settings.modified = true;
                         }))
                 ).unwrap()

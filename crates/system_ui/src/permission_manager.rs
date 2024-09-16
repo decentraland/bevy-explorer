@@ -7,6 +7,7 @@ use common::{
         ActiveDialog, AppConfig, PermissionTarget, PermissionValue, PrimaryPlayerRes, SettingsTab,
         ShowSettingsEvent,
     },
+    util::config_file,
 };
 use ipfs::CurrentRealm;
 use scene_runner::{
@@ -20,8 +21,6 @@ use ui_core::{
     combo_box::ComboBox,
     ui_actions::{DataChanged, EventCloneExt, On, UiCaller},
 };
-
-use crate::login::config_file;
 
 pub struct PermissionPlugin;
 

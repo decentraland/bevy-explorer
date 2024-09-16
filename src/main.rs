@@ -38,7 +38,7 @@ use common::{
         AppConfig, AttachPoints, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes,
         PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, Version, PRIMARY_AVATAR_LIGHT_LAYER,
     },
-    util::{project_directories, UtilsPlugin},
+    util::{config_file, project_directories, UtilsPlugin},
 };
 use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
@@ -56,7 +56,7 @@ use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
 use ipfs::IpfsIoPlugin;
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
-use system_ui::{crash_report::CrashReportPlugin, login::config_file, SystemUiPlugin};
+use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
 use user_input::UserInputPlugin;

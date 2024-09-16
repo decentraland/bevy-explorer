@@ -117,6 +117,7 @@ pub fn update_text_entry_components(
                             ..textbox.text_style.clone().unwrap_or_default()
                         }),
                     },
+                    value: TextInputValue(textbox.content.clone()),
                     ..Default::default()
                 },
                 Focusable,
@@ -156,13 +157,16 @@ pub fn update_fontsize(
 }
 
 fn propagate_focus(
-    q: Query<&Children, (Changed<Focus>, With<TextEntry>)>,
+    q: Query<(&TextEntry, &Children), Changed<Focus>>,
     child: Query<Entity, With<TextInputSettings>>,
     focussed_text: Query<Entity, (With<TextInputSettings>, With<Focus>)>,
     key_events: Res<ButtonInput<KeyCode>>,
     mut commands: Commands,
 ) {
-    for children in q.iter() {
+    for (textbox, children) in q.iter() {
+        if !textbox.enabled {
+            continue;
+        }
         if let Some(child) = children.iter().find(|c| child.get(**c).is_ok()) {
             commands.entity(*child).insert(Focus);
         }
@@ -250,6 +254,7 @@ impl DuiTemplate for DuiTextEntryTemplate {
             multiline,
             ..Default::default()
         };
+        debug!("initial: {}", textentry.content);
         commands.insert(textentry);
 
         if let Some(onchanged) = props.take::<On<DataChanged>>("onchanged")? {
