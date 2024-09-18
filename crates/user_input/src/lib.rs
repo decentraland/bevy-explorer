@@ -92,7 +92,7 @@ fn manage_player_visibility(
         With<PrimaryUser>,
     >,
     children: Query<&Children>,
-    spotlights: Query<Has<SpotLight>>,
+    spotlights: Query<(), With<SpotLight>>,
 ) {
     if let (Ok(cam_transform), Ok((player, player_transform, mut vis, is_oow, modifiers))) =
         (camera.get_single(), player.get_single_mut())
