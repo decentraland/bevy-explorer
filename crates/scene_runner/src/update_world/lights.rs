@@ -35,7 +35,7 @@ impl Plugin for LightsPlugin {
         );
         app.add_crdt_lww_component::<PbGlobalLight, GlobalLight>(
             SceneComponentId::GLOBAL_LIGHT,
-            ComponentPosition::EntityOnly,
+            ComponentPosition::RootOnly,
         );
         app.add_systems(
             Update,
