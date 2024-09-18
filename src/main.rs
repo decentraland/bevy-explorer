@@ -357,7 +357,7 @@ fn main() {
 
     app.run();
 
-    std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
+    let _ = std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap()));
 }
 
 fn setup(
