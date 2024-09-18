@@ -12,12 +12,12 @@
             </div>
             <hr />
             <div style="flex-direction: column;">
-                <med-text text="Latest Updates (2024-08-31)" />
+                <med-text text="Latest Updates (2024-09-18)" />
                 <hr-thin />
+                <med-text text="• Scene-defined Lights" />
                 <med-text text="• In-world / diegetic UI" />
                 <med-text text="• GltfNode, GltfMaterial and GltfMesh support" />
                 <med-text text="• scrollable ui areas" />
-                <med-text text="• text wrapping" />
             </div>
         </div>
     </dialog>
