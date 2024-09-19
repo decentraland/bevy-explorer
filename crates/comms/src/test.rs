@@ -31,7 +31,7 @@ fn test_livekit() {
 
     let meta = SignedLoginMeta::new(
         true,
-        Uri::try_from("https://worlds-content-server.decentraland.org/world/shibu.dcl.eth")
+        Uri::try_from("https://worlds-content-server.decentraland.org/world/mannakia.dcl.eth")
             .unwrap(),
     );
 
@@ -43,7 +43,7 @@ fn test_livekit() {
     );
 
     let task = rt.spawn(async move {
-        let login = signed_login(Uri::try_from("https://worlds-content-server.decentraland.org/get-comms-adapter/world-prd-shibu.dcl.eth").unwrap(), wallet, meta).await.unwrap();
+        let login = signed_login(Uri::try_from("https://worlds-content-server.decentraland.org/get-comms-adapter/world-prd-mannakia.dcl.eth").unwrap(), wallet, meta).await.unwrap();
         let adapter = login.fixed_adapter.unwrap();
         let (protocol, remote_address) = adapter.split_once(':').unwrap();
         assert_eq!(protocol, "livekit");
