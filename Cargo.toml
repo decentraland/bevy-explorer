@@ -156,6 +156,7 @@ tokio = { workspace = true }
 prost-build = "0.11.8"
 
 [patch.crates-io]
+curl-sys = { git = "https://github.com/alexcrichton/curl-rust", rev = "0622181ca980b074ba8558e4b62ed8800f19a3c7" }
 bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.14-dcl-cosmic-noimage" }
 # bevy = { path="../bevy" }
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
