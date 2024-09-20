@@ -44,6 +44,9 @@ fn main() -> Result<()> {
         "nft_shape",
         "tween",
         "tween_state",
+        "light",
+        "global_light",
+        "spotlight",
     ];
 
     let mut sources = components

@@ -4,8 +4,8 @@ use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     dcl_assert,
-    structs::{PrimaryUser, ToolTips},
-    util::{RingBuffer, RingBufferReceiver, TryPushChildrenEx},
+    structs::{PrimaryUser, SystemAudio, ToolTips},
+    util::{FireEventEx, RingBuffer, RingBufferReceiver, TryPushChildrenEx},
 };
 use comms::{
     chat_marker_things, global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport,
@@ -82,15 +82,19 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             ..Default::default()
         },
         Interaction::default(),
-        On::<Click>::new(|mut q: Query<&mut Style, With<ChatboxContainer>>| {
-            if let Ok(mut style) = q.get_single_mut() {
-                style.display = if style.display == Display::Flex {
-                    Display::None
-                } else {
-                    Display::Flex
-                };
-            }
-        }),
+        On::<Click>::new(
+            |mut commands: Commands, mut q: Query<&mut Style, With<ChatboxContainer>>| {
+                if let Ok(mut style) = q.get_single_mut() {
+                    style.display = if style.display == Display::Flex {
+                        commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+                        Display::None
+                    } else {
+                        commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                        Display::Flex
+                    };
+                }
+            },
+        ),
         On::<HoverEnter>::new(|mut tooltip: ResMut<ToolTips>| {
             tooltip.0.insert(
                 "chat-button",
@@ -113,6 +117,7 @@ fn keyboard_popup(
     if input.just_pressed(KeyCode::Enter) || input.just_pressed(KeyCode::NumpadEnter) {
         if let Ok(mut style) = container.get_single_mut() {
             if style.display == Display::None {
+                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                 style.display = Display::Flex;
                 res = "Nearby";
             };
@@ -152,11 +157,12 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
         })
         .pipe(select_chat_tab);
 
-    let close_ui = |mut q: Query<&mut Style, With<ChatboxContainer>>| {
+    let close_ui = |mut commands: Commands, mut q: Query<&mut Style, With<ChatboxContainer>>| {
         let Ok(mut style) = q.get_single_mut() else {
             return;
         };
         style.display = Display::None;
+        commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
     };
 
     let props = DuiProps::new()
@@ -502,6 +508,9 @@ fn emit_user_chat(
                     );
                 }
             } else if output.active_tab == "Nearby" {
+                commands.fire_event(SystemAudio(
+                    "sounds/ui/widget_chat_message_private_send.wav".to_owned(),
+                ));
                 for transport in transports.iter() {
                     let _ = transport
                         .sender

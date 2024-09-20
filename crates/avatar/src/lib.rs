@@ -37,7 +37,10 @@ pub mod npc_dynamics;
 
 use common::{
     sets::SetupSets,
-    structs::{AppConfig, AttachPoints, PrimaryUser},
+    structs::{
+        AppConfig, AttachPoints, PrimaryUser, AVATAR_TEXTURE_RENDERLAYER,
+        PRIMARY_AVATAR_LIGHT_LAYER,
+    },
     util::{DespawnWith, TryPushChildrenEx},
 };
 use comms::{
@@ -63,7 +66,7 @@ use scene_runner::{
 };
 use world_ui::{spawn_world_ui_view, WorldUi};
 
-use crate::{animate::AvatarAnimPlayer, avatar_texture::PRIMARY_AVATAR_RENDERLAYER};
+use crate::animate::AvatarAnimPlayer;
 
 use self::{
     animate::AvatarAnimationPlugin,
@@ -450,7 +453,11 @@ fn select_avatar(
                     scene: update.current_source,
                     shape,
                     render_layers: if maybe_player.is_none() {
-                        Some(PRIMARY_AVATAR_RENDERLAYER)
+                        Some(
+                            RenderLayers::default()
+                                .union(&PRIMARY_AVATAR_LIGHT_LAYER)
+                                .union(&AVATAR_TEXTURE_RENDERLAYER),
+                        )
                     } else {
                         None
                     },
@@ -1380,19 +1387,16 @@ fn debug_dump_avatar(
             .shape
             .emotes
             .iter()
-            .map(|e| {
+            .inspect(|e| {
                 info!("0 {e:?}");
-                e
             })
             .flat_map(|e| EmoteUrn::new(e).ok())
-            .map(|e| {
+            .inspect(|e| {
                 info!("1 {e:?}");
-                e
             })
             .flat_map(|emote| emotes.get_hash(emote).ok())
-            .map(|e| {
+            .inspect(|e| {
                 info!("2 {e:?}");
-                e
             })
             .collect();
 

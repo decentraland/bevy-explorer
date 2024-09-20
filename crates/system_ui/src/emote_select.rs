@@ -10,8 +10,8 @@ use bevy::{
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};
 use common::{
-    structs::{ActiveDialog, PrimaryUser},
-    util::ModifyComponentExt,
+    structs::{ActiveDialog, PrimaryUser, SystemAudio},
+    util::{FireEventEx, ModifyComponentExt},
 };
 use comms::profile::CurrentUserProfile;
 use ui_core::{
@@ -248,6 +248,7 @@ fn show_emote_ui(
 
     if let Some(ev) = ev {
         for ent in existing.iter() {
+            commands.fire_event(SystemAudio("sounds/ui/widget_emotes_close.wav".to_owned()));
             commands.entity(ent).despawn_recursive();
 
             for (button, interact) in &buttons {
@@ -313,6 +314,8 @@ fn show_emote_ui(
             return;
         }
 
+        commands.fire_event(SystemAudio("sounds/ui/widget_emotes_open.wav".to_owned()));
+
         let buttons = commands
             .spawn((
                 EmoteDialog,
@@ -343,7 +346,12 @@ fn show_emote_ui(
                 Interaction::default(),
                 FocusPolicy::Block,
                 On::<HoverEnter>::new(
-                    move |mut color: Query<&mut UiImage>, mut text: Query<&mut Text>| {
+                    move |mut commands: Commands,
+                          mut color: Query<&mut UiImage>,
+                          mut text: Query<&mut Text>| {
+                        commands.fire_event(SystemAudio(
+                            "sounds/ui/widget_emotes_highlight.wav".to_owned(),
+                        ));
                         if let Ok(mut img) = color.get_mut(button) {
                             img.color = Color::srgb(1.0, 1.0, 1.50);
                         }

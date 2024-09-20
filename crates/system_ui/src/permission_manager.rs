@@ -7,6 +7,7 @@ use common::{
         ActiveDialog, AppConfig, PermissionTarget, PermissionValue, PrimaryPlayerRes, SettingsTab,
         ShowSettingsEvent,
     },
+    util::config_file,
 };
 use ipfs::CurrentRealm;
 use scene_runner::{
@@ -20,8 +21,6 @@ use ui_core::{
     combo_box::ComboBox,
     ui_actions::{DataChanged, EventCloneExt, On, UiCaller},
 };
-
-use crate::login::config_file;
 
 pub struct PermissionPlugin;
 
@@ -178,13 +177,19 @@ fn update_permissions(
                     .with_prop(
                         "buttons",
                         vec![
-                            DuiButton::new_enabled_and_close("Allow", send(PermissionValue::Allow)),
-                            DuiButton::new_enabled_and_close("Deny", send(PermissionValue::Deny)),
+                            DuiButton::new_enabled_and_close_happy(
+                                "Allow",
+                                send(PermissionValue::Allow),
+                            ),
+                            DuiButton::new_enabled_and_close_sad(
+                                "Deny",
+                                send(PermissionValue::Deny),
+                            ),
                         ],
                     )
                     .with_prop(
                         "buttons2",
-                        vec![DuiButton::new_enabled_and_close(
+                        vec![DuiButton::new_enabled_and_close_silent(
                             "Manage Permissions",
                             (move |mut target: ResMut<PermissionTarget>| {
                                 target.scene = Some(scene_ent);

@@ -15,7 +15,7 @@ use bevy::{
     window::PrimaryWindow,
 };
 
-use common::sets::SceneSets;
+use common::{sets::SceneSets, structs::SystemAudio, util::FireEventEx};
 
 use super::focus::Focus;
 
@@ -104,13 +104,13 @@ impl<M: ActionMarker> On<M> {
 
     pub fn close_and<S>(system: impl IntoSystem<(), (), S>) -> Self {
         Self(
-            Some(ActionImpl::new(close_ui.pipe(system))),
+            Some(ActionImpl::new(close_ui_happy.pipe(system))),
             Default::default(),
         )
     }
 }
 
-pub fn close_ui(mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller>) {
+pub fn close_ui_silent(mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller>) {
     let mut ent = c.0;
     while let Ok(p) = parents.get(ent) {
         ent = **p;
@@ -118,6 +118,16 @@ pub fn close_ui(mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller
     if let Some(commands) = commands.get_entity(ent) {
         commands.despawn_recursive();
     }
+}
+
+pub fn close_ui_happy(mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller>) {
+    commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+    close_ui_silent(commands, parents, c)
+}
+
+pub fn close_ui_sad(mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller>) {
+    commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+    close_ui_silent(commands, parents, c)
 }
 
 pub trait ActionMarker: Send + Sync + 'static {
@@ -490,7 +500,7 @@ impl EntityActionExt for Entity {
 
     fn despawn_recursive_and_close_on<A: ActionMarker>(&self) -> On<A> {
         let ent = *self;
-        On::<A>::new(close_ui.pipe(move |mut commands: Commands| {
+        On::<A>::new(close_ui_happy.pipe(move |mut commands: Commands| {
             commands.entity(ent).despawn_recursive();
         }))
     }

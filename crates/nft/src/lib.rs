@@ -1,4 +1,5 @@
 pub mod asset_source;
+mod extended_image_loader;
 
 use std::{f32::consts::FRAC_PI_2, path::PathBuf};
 
@@ -15,6 +16,7 @@ use dcl_component::{
     proto_components::sdk::components::{NftFrameType, PbNftShape},
     SceneComponentId,
 };
+use extended_image_loader::ExtendedImageLoader;
 use ipfs::ipfs_path::IpfsPath;
 use once_cell::sync::Lazy;
 use scene_runner::update_world::AddCrdtInterfaceExt;
@@ -24,6 +26,7 @@ pub struct NftShapePlugin;
 impl Plugin for NftShapePlugin {
     fn build(&self, app: &mut App) {
         app.register_asset_loader(NftLoader);
+        app.preregister_asset_loader::<ExtendedImageLoader>(&["image"]);
         app.init_asset::<Nft>();
         app.add_crdt_lww_component::<PbNftShape, NftShape>(
             SceneComponentId::NFT_SHAPE,
@@ -33,6 +36,10 @@ impl Plugin for NftShapePlugin {
             Update,
             (update_nft_shapes, load_frame, load_nft, resize_nft).in_set(SceneSets::PostLoop),
         );
+    }
+
+    fn finish(&self, app: &mut App) {
+        app.init_asset_loader::<ExtendedImageLoader>();
     }
 }
 

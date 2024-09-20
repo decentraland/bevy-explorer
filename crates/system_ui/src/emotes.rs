@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use avatar::{
-    avatar_texture::{BoothInstance, PhotoBooth, PROFILE_UI_RENDERLAYER},
+    avatar_texture::{BoothInstance, PhotoBooth},
     AvatarShape,
 };
 use bevy::{
@@ -20,7 +20,7 @@ use collectibles::{
     BaseEmotes, CollectibleData, CollectibleError, CollectibleManager,
 };
 use common::{
-    structs::{PrimaryUser, SettingsTab},
+    structs::{PrimaryUser, SettingsTab, PROFILE_UI_RENDERLAYER},
     util::TaskExt,
 };
 use comms::profile::CurrentUserProfile;

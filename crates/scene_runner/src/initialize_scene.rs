@@ -1201,10 +1201,6 @@ impl Material for LoadingMaterial {
         ShaderRef::Path("shaders/loading.wgsl".into())
     }
 
-    fn prepass_fragment_shader() -> ShaderRef {
-        ShaderRef::Path("shaders/loading.wgsl".into())
-    }
-
     fn alpha_mode(&self) -> AlphaMode {
         AlphaMode::Blend
     }

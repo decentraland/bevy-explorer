@@ -60,5 +60,9 @@ message PBMaterial {
   }
   
   // A gltf material that may provide additional features not supported by the PbMaterial fields.
+  // If both gltf and material fields are provided, the gltf will be used only for extended features not 
+  // supported by the PbMaterial.
+  // If this is provided and the `material` field is not provided, the renderer will update the material
+  // field with data that reflects the gltf material once it is loaded.
   optional GltfMaterial gltf = 3;
 }

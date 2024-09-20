@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, marker::PhantomData};
+use std::{collections::VecDeque, marker::PhantomData, path::PathBuf};
 
 use bevy::{
     app::Update,
@@ -25,6 +25,10 @@ impl Plugin for UtilsPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.add_systems(Update, despawn_with);
     }
+}
+
+pub fn config_file() -> PathBuf {
+    project_directories().config_dir().join("config.json")
 }
 
 // get results from a task

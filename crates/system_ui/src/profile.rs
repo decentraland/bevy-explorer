@@ -6,7 +6,10 @@ use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::{AvatarColor, AvatarEmote, SerializedProfile},
     rpc::RpcCall,
-    structs::{ActiveDialog, AppConfig, PermissionTarget, SettingsTab, ShowSettingsEvent},
+    structs::{
+        ActiveDialog, AppConfig, PermissionTarget, SettingsTab, ShowSettingsEvent, SystemAudio,
+    },
+    util::FireEventEx,
 };
 use comms::profile::CurrentUserProfile;
 use ipfs::{ChangeRealmEvent, CurrentRealm};
@@ -65,7 +68,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 target.scene = None;
                 target.ty = None;
             })
-            .pipe(ShowSettingsEvent(SettingsTab::Discover).send_value()),
+            .pipe(ShowSettingsEvent(SettingsTab::Discover).send_value())
+            .pipe(SystemAudio("sounds/ui/mainmenu_widget_open.wav".to_owned()).send_value()),
         ),
     ));
 }
@@ -82,7 +86,7 @@ impl InfoDialog {
                     DuiProps::new()
                         .with_prop("title", title.clone())
                         .with_prop("body", body.clone())
-                        .with_prop("buttons", vec![DuiButton::close("Ok")]),
+                        .with_prop("buttons", vec![DuiButton::close_happy("Ok")]),
                 )
                 .unwrap();
         })
@@ -248,15 +252,15 @@ pub fn close_settings(
                     .with_prop(
                         "buttons",
                         vec![
-                            DuiButton::new_enabled_and_close(
+                            DuiButton::new_enabled_and_close_happy(
                                 "Save Changes",
                                 save_settings.pipe(send_onclose.clone()),
                             ),
-                            DuiButton::new_enabled_and_close(
+                            DuiButton::new_enabled_and_close_sad(
                                 "Discard",
                                 really_close_settings.pipe(send_onclose),
                             ),
-                            DuiButton::new_enabled_and_close(
+                            DuiButton::new_enabled_and_close_sad(
                                 "Cancel",
                                 |mut q: Query<&mut SettingsDialog>| {
                                     if let Ok(mut settings) = q.get_single_mut() {
@@ -274,9 +278,11 @@ pub fn close_settings(
             Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
                 cr.send(cr_ev.clone());
                 rpc.send(rpc_ev.clone());
+                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
             }
-            Some(OnCloseEvent::SomethingElse) => (),
-            _ => (),
+            _ => {
+                commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+            }
         }
     }
 }

@@ -1,0 +1,21 @@
+syntax = "proto3";
+package decentraland.sdk.components;
+
+import "decentraland/common/colors.proto";
+import "decentraland/common/vectors.proto";
+
+import "decentraland/sdk/components/common/id.proto";
+option (common.ecs_component_id) = 1206;
+
+// defines the global scene light settings. must be added to the scene root.
+// to control sunlight color, intensity, shadows etc, you can also add a PBLight to the scene root.
+message PBGlobalLight {
+  // the direction the directional light shines in.
+  // default depends on time of day and explorer implementation
+  optional decentraland.common.Vector3 direction = 1;
+  // ambient light color
+  optional decentraland.common.Color3 ambient_color = 2;
+  // ambient light intensity. the explorer default ambient brightness is multiplied by this non-physical quantity.
+  // default 1
+  optional float ambient_brightness = 3;
+}

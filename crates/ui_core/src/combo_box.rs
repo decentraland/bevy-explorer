@@ -17,7 +17,7 @@ use crate::{
     interact_style::{Active, InteractStyle, InteractStyles},
     scrollable::ScrollTargetEvent,
     text_size::FontSize,
-    ui_actions::{close_ui, Click, DataChanged, Defocus, On},
+    ui_actions::{close_ui_silent, Click, DataChanged, Defocus, On},
 };
 
 #[derive(Component, Debug, Clone)]
@@ -275,7 +275,7 @@ fn update_comboboxen(
                                 },
                                 Interaction::default(),
                                 Focus,
-                                On::<Defocus>::new(close_ui),
+                                On::<Defocus>::new(close_ui_silent),
                                 On::<Click>::new(move |mut commands: Commands| {
                                     debug!("selected {ix:?}");
                                     commands.entity(popup.root).despawn_recursive();

@@ -251,7 +251,7 @@ fn update_text_shapes(
 
         let add_y_pix = (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * PIX_PER_M;
 
-        let font_size = text_shape.0.font_size.unwrap_or(10.0) * PIX_PER_M * 0.077;
+        let font_size = 30.0;
 
         let wrapping = text_shape.0.text_wrapping() && !text_shape.0.font_auto_size();
 
@@ -349,7 +349,7 @@ fn update_text_shapes(
             PriorTextShapeUi(ui_node, text_shape.0.clone()),
             WorldUi {
                 dbg: format!("TextShape `{}`", text_shape.0.text),
-                pix_per_m: PIX_PER_M,
+                pix_per_m: 375.0 / text_shape.0.font_size.unwrap_or(10.0),
                 valign,
                 halign: halign_wui,
                 add_y_pix,

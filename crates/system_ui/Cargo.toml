@@ -43,6 +43,7 @@ chrono = { workspace = true }
 clap = { workspace = true }
 opener = { workspace = true }
 urlencoding = { workspace = true }
+build-time = { workspace = true }
 
 copypasta = "0.10"
 shlex = "1"

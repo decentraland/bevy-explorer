@@ -7,13 +7,17 @@ use bevy::{
     ui::RelativeCursorPosition,
 };
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use common::structs::{
-    AaSetting, AppConfig, BloomSetting, FogSetting, SettingsTab, ShadowSetting, SsaoSetting,
-    WindowSetting,
+use common::{
+    structs::{
+        AaSetting, AppConfig, BloomSetting, FogSetting, SettingsTab, ShadowSetting, SsaoSetting,
+        WindowSetting,
+    },
+    util::config_file,
 };
+use shadow_settings::ShadowCasterCountSetting;
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
-use crate::{login::config_file, profile::SettingsDialog};
+use crate::profile::SettingsDialog;
 
 use self::{
     ambient_brightness_setting::AmbientSetting,
@@ -32,7 +36,8 @@ use self::{
     shadow_settings::ShadowDistanceSetting,
     video_threads::VideoThreadsSetting,
     volume_settings::{
-        MasterVolumeSetting, SceneVolumeSetting, SystemVolumeSetting, VoiceVolumeSetting,
+        AvatarVolumeSetting, MasterVolumeSetting, SceneVolumeSetting, SystemVolumeSetting,
+        VoiceVolumeSetting,
     },
 };
 
@@ -67,6 +72,7 @@ impl Plugin for AppSettingsPlugin {
 
         apply_schedule.add_systems((
             apply_setting::<ShadowDistanceSetting>,
+            apply_setting::<ShadowCasterCountSetting>,
             apply_setting::<ShadowSetting>.after(apply_setting::<ShadowDistanceSetting>),
             apply_setting::<FogSetting>,
             apply_setting::<BloomSetting>,
@@ -84,9 +90,10 @@ impl Plugin for AppSettingsPlugin {
             apply_setting::<SceneVolumeSetting>,
             apply_setting::<VoiceVolumeSetting>,
             apply_setting::<SystemVolumeSetting>,
-            apply_setting::<ConstrainUiSetting>,
+            apply_setting::<AvatarVolumeSetting>,
         ));
         apply_schedule.add_systems((
+            apply_setting::<ConstrainUiSetting>,
             apply_setting::<RunSpeedSetting>,
             apply_setting::<WalkSpeedSetting>,
             apply_setting::<FrictionSetting>,
@@ -170,6 +177,7 @@ fn set_app_settings_content(
             AmbientSetting::spawn_template(&mut commands, &dui, &config),
             ShadowSetting::spawn_template(&mut commands, &dui, &config),
             ShadowDistanceSetting::spawn_template(&mut commands, &dui, &config),
+            ShadowCasterCountSetting::spawn_template(&mut commands, &dui, &config),
             FogSetting::spawn_template(&mut commands, &dui, &config),
             BloomSetting::spawn_template(&mut commands, &dui, &config),
             SsaoSetting::spawn_template(&mut commands, &dui, &config),
@@ -203,6 +211,7 @@ fn set_app_settings_content(
             SceneVolumeSetting::spawn_template(&mut commands, &dui, &config),
             VoiceVolumeSetting::spawn_template(&mut commands, &dui, &config),
             SystemVolumeSetting::spawn_template(&mut commands, &dui, &config),
+            AvatarVolumeSetting::spawn_template(&mut commands, &dui, &config),
             commands
                 .spawn_template(
                     &dui,

@@ -100,6 +100,9 @@ impl DclProtoComponent for sdk::components::PbAvatarModifierArea {}
 impl DclProtoComponent for sdk::components::PbNftShape {}
 impl DclProtoComponent for sdk::components::PbTween {}
 impl DclProtoComponent for sdk::components::PbTweenState {}
+impl DclProtoComponent for sdk::components::PbLight {}
+impl DclProtoComponent for sdk::components::PbSpotlight {}
+impl DclProtoComponent for sdk::components::PbGlobalLight {}
 
 // VECTOR2 conversions
 impl Copy for common::Vector2 {}

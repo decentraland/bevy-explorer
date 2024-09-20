@@ -20,7 +20,7 @@ use ui_core::{
     combo_box::ComboBox,
     interact_style::Active,
     toggle::Toggled,
-    ui_actions::{close_ui, Click, DataChanged, On, UiCaller},
+    ui_actions::{close_ui_happy, Click, DataChanged, On, UiCaller},
 };
 
 use crate::profile::{close_settings, OnCloseEvent, SettingsDialog};
@@ -521,7 +521,7 @@ pub fn spawn_discover_popup(
         }
     };
 
-    let jump_in = On::<Click>::new(system.pipe(close_settings).pipe(close_ui));
+    let jump_in = On::<Click>::new(system.pipe(close_settings).pipe(close_ui_happy));
 
     let image_path = IpfsPath::new_from_url(&item.image, "image");
     let h_image = asset_server.load::<Image>(PathBuf::from(&image_path));
