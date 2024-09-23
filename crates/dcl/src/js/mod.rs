@@ -300,6 +300,7 @@ pub(crate) fn scene_thread(
     let start_time = std::time::Instant::now();
     let mut prev_time = start_time;
     let mut elapsed;
+    let mut sequential_fails = 0;
     loop {
         let now = std::time::Instant::now();
         let dt = now.saturating_duration_since(prev_time);
@@ -326,15 +327,19 @@ pub(crate) fn scene_thread(
         }
 
         if let Err(e) = result {
-            error!("[{scene_id:?}] onUpdate err: {e:?}");
-            let _ = state
-                .borrow_mut()
-                .take::<SyncSender<SceneResponse>>()
-                .send(SceneResponse::Error(scene_id, format!("{e:?}")));
-            rt.block_on(async move {
-                drop(runtime);
-            });
-            return;
+            sequential_fails += 1;
+            if sequential_fails == 10 {
+                error!("[{scene_id:?}] dropping scene after 10 consecutive fail ticks");
+                error!("[{scene_id:?}] last error: {e:?}");
+                let _ = state
+                    .borrow_mut()
+                    .take::<SyncSender<SceneResponse>>()
+                    .send(SceneResponse::Error(scene_id, format!("{e:?}")));
+                rt.block_on(async move {
+                    drop(runtime);
+                });
+                return;
+            }
         }
     }
 }

@@ -122,7 +122,7 @@ jobs:
             run: cargo build --release --bin decentra-bevy
           - name: Cargo build (linux)
             if: runner.os == 'linux'
-            run: cargo build --release --bin decentra-bevy --no-default-features --features "ffmpeg,inspect"
+            run: cargo build --release --bin decentra-bevy
 
           - name: Package common
             run: |

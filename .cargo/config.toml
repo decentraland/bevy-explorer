@@ -1,5 +1,5 @@
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+crt-static", "-C", "link-args=/force:multiple"]
+rustflags = ["-C", "target-feature=+crt-static"]
 
 [target.aarch64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
@@ -12,3 +12,4 @@ rustflags = ["-C", "link-args=-ObjC"]
 
 [env]
 RUST_BACKTRACE = "1"
+CARGO_FEATURE_CRT_STATIC = "ohyes"

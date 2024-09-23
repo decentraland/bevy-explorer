@@ -114,7 +114,7 @@ jobs:
         if: runner.os == 'linux'
         with:
           command: test
-          args: --all --release --no-default-features --features "ffmpeg"
+          args: --all --release
       - uses: actions-rs/cargo@v1
         if: runner.os == 'macos'
         with:
