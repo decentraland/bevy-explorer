@@ -67,9 +67,10 @@ fn test_livekit() {
             echo_cancellation: true,
             noise_suppression: true,
             auto_gain_control: true,
-        }, 44_100, 1, Some(false));
+        }, 44_100, 1, None);
         let mic_track = LocalTrack::Audio(LocalAudioTrack::create_audio_track("mic", RtcAudioSource::Native(native_source.clone())));
         room.local_participant().publish_track(mic_track, TrackPublishOptions{ source: TrackSource::Microphone, ..Default::default() }).await.unwrap();
+        println!("ok");
     });
 
     rt.block_on(task).unwrap();
