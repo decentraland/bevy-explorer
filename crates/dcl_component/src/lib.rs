@@ -116,6 +116,10 @@ impl SceneComponentId {
 
     pub const TWEEN: SceneComponentId = SceneComponentId(1102);
     pub const TWEEN_STATE: SceneComponentId = SceneComponentId(1103);
+
+    pub const LIGHT: SceneComponentId = SceneComponentId(1204);
+    pub const SPOTLIGHT: SceneComponentId = SceneComponentId(1205);
+    pub const GLOBAL_LIGHT: SceneComponentId = SceneComponentId(1206);
 }
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy, Default)]

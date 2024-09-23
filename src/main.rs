@@ -25,7 +25,7 @@ use bevy::{
     prelude::*,
     render::{
         render_resource::{TextureViewDescriptor, TextureViewDimension},
-        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
+        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
     },
     window::WindowResolution,
 };
@@ -36,9 +36,9 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AttachPoints, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes,
-        PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, Version,
+        PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, Version, PRIMARY_AVATAR_LIGHT_LAYER,
     },
-    util::{project_directories, UtilsPlugin},
+    util::{config_file, project_directories, UtilsPlugin},
 };
 use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
@@ -56,7 +56,7 @@ use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
 use ipfs::IpfsIoPlugin;
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
-use system_ui::{crash_report::CrashReportPlugin, login::config_file, SystemUiPlugin};
+use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
 use user_input::UserInputPlugin;
@@ -357,7 +357,7 @@ fn main() {
 
     app.run();
 
-    std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
+    let _ = std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap()));
 }
 
 fn setup(
@@ -437,6 +437,7 @@ fn setup(
                 image: skybox.clone(),
                 brightness: 1000.0,
             },
+            RenderLayers::layer(0),
         ))
         .id();
 
@@ -449,20 +450,23 @@ fn setup(
     cam_resource.0 = camera_id;
 
     // add a directional light so it looks nicer
-    commands.spawn(DirectionalLightBundle {
-        directional_light: DirectionalLight {
-            color: Color::srgb(1.0, 1.0, 0.7),
-            shadows_enabled: true,
+    commands.spawn((
+        DirectionalLightBundle {
+            directional_light: DirectionalLight {
+                color: Color::srgb(1.0, 1.0, 0.7),
+                shadows_enabled: true,
+                ..Default::default()
+            },
+            transform: Transform::default().looking_at(Vec3::new(0.2, -0.5, -1.0), Vec3::Y),
+            cascade_shadow_config: CascadeShadowConfigBuilder {
+                maximum_distance: 100.0,
+                ..Default::default()
+            }
+            .into(),
             ..Default::default()
         },
-        transform: Transform::default().looking_at(Vec3::new(0.2, -0.5, -1.0), Vec3::Y),
-        cascade_shadow_config: CascadeShadowConfigBuilder {
-            maximum_distance: 100.0,
-            ..Default::default()
-        }
-        .into(),
-        ..Default::default()
-    });
+        RenderLayers::default().union(&PRIMARY_AVATAR_LIGHT_LAYER),
+    ));
 }
 
 #[derive(Resource)]

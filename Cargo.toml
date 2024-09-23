@@ -106,6 +106,8 @@ bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = 
 bevy_simple_text_input = { git = "https://github.com/robtfm/bevy_simple_text_input", features=["clipboard"], branch="multiline" }
 directories = "5"
 uuid = { version = "1.7", features = ["v4"] }
+build-time = "0.1.3"
+fastrand = "2"
 
 [dependencies]
 analytics = { workspace = true }
@@ -140,7 +142,7 @@ uuid = { workspace = true }
 
 pico-args = "0.5.0"
 mimalloc = { version = "*", default-features = false }
-build-time = "0.1.3"
+build-time = { workspace = true }
 chrono = { workspace = true }
 tracing-appender = "0.2.3"
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
@@ -154,7 +156,8 @@ tokio = { workspace = true }
 prost-build = "0.11.8"
 
 [patch.crates-io]
-bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.14-dcl-cosmic" }
+curl-sys = { git = "https://github.com/alexcrichton/curl-rust", rev = "0622181ca980b074ba8558e4b62ed8800f19a3c7" }
+bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.14-dcl-cosmic-noimage" }
 # bevy = { path="../bevy" }
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
 # parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "try_convex" }
@@ -166,3 +169,6 @@ deno_ops = { git = "https://github.com/robtfm/deno_core", branch = "0_280_hotfix
 
 # [patch."https://github.com/robtfm/bevy_dui"]
 # bevy_dui = { path = "../bevy_dui" }
+
+# [patch."https://github.com/robtfm/bevy_simple_text_input"]
+# bevy_simple_text_input = { path = "../bevy_simple_text_input" }

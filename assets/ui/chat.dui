@@ -22,7 +22,7 @@
             </vscroll>
         </div>
         <div style="width: 100%;">
-            <text-entry id="chat-entry" style="flex-grow: 1; background-color: #000000aa;" accept-line="true" retain-focus="true" />
+            <text-entry id="chat-entry" style="max-width: 100%; flex-grow: 1; background-color: #000000aa;" accept-line="true" retain-focus="true" />
         </div>
     </bounds>
 </define-template>

@@ -15,6 +15,7 @@ pub struct InteractStyle {
     pub background: Option<Color>,
     pub image: Option<Handle<Image>>,
     pub border: Option<Color>,
+    pub sound: Option<&'static str>,
 }
 
 #[derive(Component, Clone, Default, Debug)]

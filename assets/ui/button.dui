@@ -14,6 +14,7 @@
             border-size="0.75vmin"
             border-color="#9c73af"
             styles="active: #b2a1ff; inactive: #7f569e; hover: #e2d1ff; disabled: #555555;"
+            sounds="hover: 'generic_button_hover.wav'; press: 'generic_button_press.wav'"
         />
         <div style="
             margin: 1vmin;
@@ -46,6 +47,7 @@
             border-size="0.75vmin"
             border-color="#9c73af"
             styles="active: #b2a1bf; inactive: #7f569e; hover: #d2c1df; disabled: #555555;"
+            sounds="hover: 'generic_button_hover.wav'; press: 'generic_button_press.wav'"
         />
     </div>
 </define-template>
@@ -69,6 +71,7 @@
             border-color="#9c73af"
             bound-image="@img"
             styles="active: #b2a1bf; inactive: #7f569e; hover: #d2c1df; disabled: #555555;"
+            sounds="hover: 'generic_button_hover.wav'; press: 'generic_button_press.wav'"
         >
         </bounds>
     </div>

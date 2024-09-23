@@ -6,11 +6,11 @@ import "decentraland/sdk/components/common/id.proto";
 
 option (common.ecs_component_id) = 1073;
 
-// The AvatarAttach component automatically repositions an Entity to maintain the same position and 
-// rotation relative to some part of an avatar, called the "anchor point". The Entity 
+// The AvatarAttach component automatically repositions an Entity to maintain the same position and
+// rotation relative to some part of an avatar, called the "anchor point". The Entity
 // will follow this anchor as it moves.
 //
-// The Entity's own Transform is overridden by this component. To offset position and adjust scale, 
+// The Entity's own Transform is overridden by this component. To offset position and adjust scale,
 // add a child to the anchored Entity and set a Transform on it instead.
 //
 // AvatarAnchorPointType indicates which part of the avatar the Entity must follow.
@@ -21,7 +21,8 @@ message PBAvatarAttach {
 
 // AvatarAnchorPointType determines the part of the avatar's body that anchors the Entity.
 enum AvatarAnchorPointType {
-AAPT_POSITION = 0;
+  // @deprecated consider parenting to `engine.PlayerEntity`, this will attach to player position with an arbitrary offset
+  AAPT_POSITION = 0;
   AAPT_NAME_TAG = 1;
   AAPT_HEAD = 4;
   AAPT_NECK = 5;

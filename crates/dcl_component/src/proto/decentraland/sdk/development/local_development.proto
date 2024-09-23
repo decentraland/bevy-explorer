@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package decentraland.sdk.development;
+
+// ts code & main.crdt updates
+message UpdateScene {
+  string scene_id = 1;
+}
+
+enum UpdateModelType {
+  UMT_CHANGE = 0;
+  UMT_REMOVE = 1;
+}
+
+// .glb & .gltf model udpates
+message UpdateModel {
+  string scene_id = 1;
+  string src = 2;
+  string hash = 3;
+  UpdateModelType type = 4;
+}
+
+message WsSceneMessage {
+  oneof message {
+    // direction: scene -> explorer
+    UpdateScene update_scene = 1;
+    UpdateModel update_model = 2;
+  }
+}

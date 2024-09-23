@@ -126,6 +126,7 @@ fn load_animations(
                                 is_male,
                                 is_female,
                                 register_base,
+                                sound,
                             )) = DEFAULT_ANIMATION_LOOKUP
                                 .iter()
                                 .find(|(_, anim)| {
@@ -140,6 +141,7 @@ fn load_animations(
                                         anim.male.eq_ignore_ascii_case(&clip_name),
                                         anim.female.eq_ignore_ascii_case(&clip_name),
                                         anim.register_base_emote,
+                                        &anim.sound,
                                     )
                                 })
                             else {
@@ -168,10 +170,24 @@ fn load_animations(
                             let urn = EmoteUrn::new(&network_name).unwrap();
                             debug!("loaded default anim {:?} from {:?}", urn, h_gltf.path());
 
+                            let sound = sound
+                                .iter()
+                                .map(|(t, fs)| {
+                                    (
+                                        *t,
+                                        fs.iter()
+                                            .map(|f| {
+                                                asset_server.load(format!("sounds/avatar/{f}.wav"))
+                                            })
+                                            .collect(),
+                                    )
+                                })
+                                .collect();
+
                             let emote = Emote {
                                 gltf: new_gltf,
                                 default_repeat: repeat,
-                                sound: None,
+                                sound,
                             };
 
                             let mut representations = HashMap::default();
@@ -233,6 +249,7 @@ struct DefaultAnim {
     name: &'static str,
     repeat: bool,
     register_base_emote: bool,
+    sound: Vec<(f32, Vec<String>)>,
 }
 
 impl DefaultAnim {
@@ -249,6 +266,17 @@ impl DefaultAnim {
             female,
             repeat,
             register_base_emote: base,
+            sound: Default::default(),
+        }
+    }
+
+    fn with_sounds(self, sounds: &[(f32, &[&'static str])]) -> Self {
+        Self {
+            sound: sounds
+                .iter()
+                .map(|(t, files)| (*t, files.iter().map(|s| s.to_string()).collect()))
+                .collect(),
+            ..self
         }
     }
 }
@@ -356,21 +384,58 @@ static DEFAULT_ANIMATION_LOOKUP: Lazy<HashMap<&str, DefaultAnim>> = Lazy::new(||
         ),
         (
             "walk",
-            DefaultAnim::new("walk", "Walk", "Walk", true, false),
+            DefaultAnim::new("walk", "Walk", "Walk", true, false)
+                .with_sounds(&[(0.41, WALK_STEPS), (0.91, WALK_STEPS)]),
         ),
-        ("run", DefaultAnim::new("run", "Run", "Run", true, false)),
+        (
+            "run",
+            DefaultAnim::new("run", "Run", "Run", true, false)
+                .with_sounds(&[(0.21, RUN_STEPS), (0.54, RUN_STEPS)]),
+        ),
         (
             "jump",
-            DefaultAnim::new("jump", "Jump", "Jump", true, false),
+            DefaultAnim::new("jump", "Jump", "Jump", true, false).with_sounds(&[
+                (
+                    0.0,
+                    &[
+                        "avatar_footstep_jump01",
+                        "avatar_footstep_jump02",
+                        "avatar_footstep_jump03",
+                    ],
+                ),
+                (0.6, &["avatar_footstep_land01", "avatar_footstep_land02"]),
+            ]),
         ),
     ])
 });
 
-#[derive(PartialEq, Eq, Hash, Debug, TypePath, Clone)]
+static RUN_STEPS: &[&str] = &[
+    "avatar_footstep_run01",
+    "avatar_footstep_run02",
+    "avatar_footstep_run03",
+    "avatar_footstep_run04",
+    "avatar_footstep_run05",
+    "avatar_footstep_run06",
+    "avatar_footstep_run07",
+    "avatar_footstep_run08",
+];
+
+static WALK_STEPS: &[&str] = &[
+    "avatar_footstep_walk01",
+    "avatar_footstep_walk02",
+    "avatar_footstep_walk03",
+    "avatar_footstep_walk04",
+    "avatar_footstep_walk05",
+    "avatar_footstep_walk06",
+    "avatar_footstep_walk07",
+    "avatar_footstep_walk08",
+];
+
+#[derive(PartialEq, Debug, TypePath, Clone)]
 pub struct Emote {
     pub gltf: Handle<Gltf>,
     pub default_repeat: bool,
-    pub sound: Option<Handle<bevy_kira_audio::AudioSource>>,
+    pub sound: Vec<(f32, Vec<Handle<bevy_kira_audio::AudioSource>>)>,
 }
 
 impl Emote {
@@ -417,12 +482,18 @@ impl Emote {
     pub fn audio(
         &self,
         audio: &Assets<bevy_kira_audio::AudioSource>,
-    ) -> Result<Option<Handle<bevy_kira_audio::AudioSource>>, CollectibleError> {
+        after: f32,
+    ) -> Result<Option<(f32, Handle<bevy_kira_audio::AudioSource>)>, CollectibleError> {
         self.sound
-            .as_ref()
-            .map(|s| {
-                if audio.get(s.id()).is_some() {
-                    Ok(Some(s.clone()))
+            .iter()
+            .find(|(t, _)| *t > after)
+            .map(|(t, clips)| {
+                if clips.is_empty() {
+                    return Ok(None);
+                }
+                let clip = &clips[fastrand::usize(0..clips.len())];
+                if audio.get(clip.id()).is_some() {
+                    Ok(Some((*t, clip.clone())))
                 } else {
                     Err(CollectibleError::Loading)
                 }
@@ -496,7 +567,7 @@ impl AssetLoader for EmoteLoader {
                         Emote {
                             gltf: gltf.clone(),
                             default_repeat: meta.emote_extended_data.loops,
-                            sound: sound.clone(),
+                            sound: vec![(0.0, sound.iter().cloned().collect())],
                         },
                     );
                 }

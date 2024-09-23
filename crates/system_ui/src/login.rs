@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::str::FromStr;
 
 use analytics::segment_system::SegmentConfig;
 use bevy::{
@@ -10,8 +10,8 @@ use bevy::{
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
-    structs::{ActiveDialog, AppConfig, ChainLink, PreviousLogin},
-    util::{project_directories, TaskExt},
+    structs::{ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin, SystemAudio},
+    util::{config_file, FireEventEx, TaskExt},
 };
 use comms::{
     preview::PreviewMode,
@@ -23,7 +23,7 @@ use ipfs::{CurrentRealm, IpfsAssetServer};
 use scene_runner::Toaster;
 use ui_core::{
     button::DuiButton,
-    ui_actions::{close_ui, Click, EventCloneExt, On},
+    ui_actions::{close_ui_happy, Click, EventCloneExt, On},
 };
 use wallet::{
     browser_auth::{
@@ -31,6 +31,8 @@ use wallet::{
     },
     Wallet,
 };
+
+use crate::version_check::check_update;
 
 pub struct LoginPlugin;
 
@@ -49,10 +51,6 @@ enum LoginType {
     NewRemote,
     Guest,
     Cancel,
-}
-
-pub fn config_file() -> PathBuf {
-    project_directories().config_dir().join("config.json")
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -81,16 +79,46 @@ fn login(
     mut motd_shown: Local<bool>,
 ) {
     if !*motd_shown {
+        let update = check_update();
         let permit = active_dialog.try_acquire().unwrap();
-        let components = commands
-            .spawn_template(
-                &dui,
-                "motd",
-                DuiProps::default()
-                    .with_prop("buttons", vec![DuiButton::new_enabled("Ok", close_ui)]),
-            )
-            .unwrap();
-        commands.entity(components.root).insert(permit);
+
+        if let Some((desc, url)) = update {
+            let components = commands
+                .spawn_template(
+                    &dui,
+                    "update-available",
+                    DuiProps::new()
+                        .with_prop("download", url)
+                        .with_prop("body", desc)
+                        .with_prop("buttons", vec![DuiButton::new_enabled("Ok", (|mut commands: Commands, dui: Res<DuiRegistry>, mut permit: Query<&mut DialogPermit>| {
+                            let mut permit = permit.single_mut();
+                            let permit = permit.take();
+                            let components = commands
+                                .spawn_template(
+                                    &dui,
+                                    "motd",
+                                    DuiProps::default()
+                                        .with_prop("buttons", vec![DuiButton::new_enabled("Ok", close_ui_happy)]),
+                                )
+                                .unwrap();
+                            commands.entity(components.root).insert(permit);
+                        }).pipe(close_ui_happy))]),
+                )
+                .unwrap();
+            commands.entity(components.root).insert(permit);
+        } else {
+            let components = commands
+                .spawn_template(
+                    &dui,
+                    "motd",
+                    DuiProps::default().with_prop(
+                        "buttons",
+                        vec![DuiButton::new_enabled("Ok", close_ui_happy)],
+                    ),
+                )
+                .unwrap();
+            commands.entity(components.root).insert(permit);
+        }
         *motd_shown = true;
         return;
     }
@@ -151,6 +179,29 @@ fn login(
             .and_then(|f| serde_json::from_slice::<AppConfig>(&f).ok())
             .unwrap_or_default()
             .previous_login;
+
+        let mut expired = false;
+        if let Some(prev) = previous_login.as_ref() {
+            for link in &prev.auth {
+                if link.ty == "ECDSA_EPHEMERAL" {
+                    for line in link.payload.lines() {
+                        if line.starts_with("Expiration:") {
+                            let exp = line.split_once(':').unwrap().1;
+                            if let Ok(exp) = chrono::DateTime::<chrono::Utc>::from_str(exp.trim()) {
+                                let now: chrono::DateTime<chrono::Utc> =
+                                    std::time::SystemTime::now().into();
+                                if now > exp {
+                                    warn!("previous login expired, removing");
+                                    expired = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let previous_login = if expired { None } else { previous_login };
 
         let mut dlg = commands.spawn(permit);
         *dialog = Some(dlg.id());
@@ -320,6 +371,7 @@ fn login(
 
                     Ok((previous_login.root_address, local_wallet, auth, profile))
                 }));
+                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
             }
             LoginType::NewRemote => {
                 info!("new remote");
@@ -345,6 +397,7 @@ fn login(
                     .unwrap();
 
                 *dialog = Some(components.root);
+                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
             }
             LoginType::Guest => {
                 info!("guest");
@@ -364,10 +417,12 @@ fn login(
                     base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
                 });
                 current_profile.is_deployed = true;
+                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
             }
             LoginType::Cancel => {
                 *final_task = None;
                 *dialog = None;
+                commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
             }
         }
     }

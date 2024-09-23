@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use bevy::{prelude::*, ui::FocusPolicy};
 use bevy_dui::{DuiRegistry, DuiTemplate};
+use common::{structs::SystemAudio, util::FireEventEx};
 
 use crate::ui_actions::{Click, DataChanged, On};
 
@@ -64,9 +65,11 @@ impl DuiTemplate for ToggleTemplate {
                     if toggle.0 {
                         toggle.0 = false;
                         image.texture = asset_server.load("images/toggle-off.png");
+                        commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
                     } else {
                         toggle.0 = true;
                         image.texture = asset_server.load("images/toggle-on.png");
+                        commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                     }
 
                     commands.entity(id).try_insert(DataChanged);

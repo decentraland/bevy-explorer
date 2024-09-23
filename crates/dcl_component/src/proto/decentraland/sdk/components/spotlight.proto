@@ -1,0 +1,21 @@
+syntax = "proto3";
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+option (common.ecs_component_id) = 1205;
+
+// defines a spotlight.
+// spotlights are point lights that emit light only in a cone around the transform's forward direction.
+// add this component together with the PBLight component to transform a point light into a spotlight.
+// note that spotlights do not model any internal reflections / focus, they only restrict the area of effect.
+// so for e.g. a torch beam, the bulb illuminance should be multiplied by the solid angle. 
+// a typical torch with a beam width of 15 degrees would use outer angle of 0.15 (7.5 degrees in radians),
+// and an illuminance approximately equal to the bulb's lumens, e.g. 1200.
+message PBSpotlight {
+  // the cone radius in radians. distance away from forward in which the light is visible. 
+  // for a torch a value around 0.15 is appropriate.    
+  float angle = 1;
+  // optional angle at which the light is brightest. should be <= outer angle. 
+  // if specified, the light will fall off smoothly between `inner_angle` and `angle`.
+  optional float inner_angle = 2;
+}

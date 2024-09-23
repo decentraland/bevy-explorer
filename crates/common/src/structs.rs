@@ -1,6 +1,6 @@
 use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr, sync::Arc};
 
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{prelude::*, render::view::RenderLayers, utils::HashMap};
 use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -272,6 +272,7 @@ pub struct GraphicsSettings {
     pub fps_target: usize,
     pub shadow_distance: f32,
     pub shadow_settings: ShadowSetting,
+    pub shadow_caster_count: usize,
     pub window: WindowSetting,
     // removed until bevy window resizing bugs are fixed
     // pub fullscreen_res: FullscreenResSetting,
@@ -291,6 +292,7 @@ impl Default for GraphicsSettings {
             fps_target: 60,
             shadow_distance: 200.0,
             shadow_settings: ShadowSetting::High,
+            shadow_caster_count: 8,
             window: WindowSetting::Windowed,
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
             fog: FogSetting::Atmospheric,
@@ -308,6 +310,7 @@ pub struct AudioSettings {
     pub voice: i32,
     pub scene: i32,
     pub system: i32,
+    pub avatar: i32,
 }
 
 impl Default for AudioSettings {
@@ -317,6 +320,7 @@ impl Default for AudioSettings {
             voice: 100,
             scene: 100,
             system: 100,
+            avatar: 100,
         }
     }
 }
@@ -330,6 +334,9 @@ impl AudioSettings {
     }
     pub fn system(&self) -> f32 {
         (self.system * self.master) as f32 / 10_000.0
+    }
+    pub fn avatar(&self) -> f32 {
+        (self.avatar * self.master) as f32 / 10_000.0
     }
 }
 
@@ -537,7 +544,7 @@ impl ActiveDialog {
             .clone()
             .try_acquire_owned()
             .ok()
-            .map(|p| DialogPermit { _p: p })
+            .map(|p| DialogPermit { _p: Some(p) })
     }
 
     pub fn in_use(&self) -> bool {
@@ -547,7 +554,15 @@ impl ActiveDialog {
 
 #[derive(Component)]
 pub struct DialogPermit {
-    _p: OwnedSemaphorePermit,
+    _p: Option<OwnedSemaphorePermit>,
+}
+
+impl DialogPermit {
+    pub fn take(&mut self) -> Self {
+        Self {
+            _p: Some(self._p.take().unwrap()),
+        }
+    }
 }
 
 #[derive(Component, Default, Clone, Copy, PartialEq, Eq)]
@@ -565,8 +580,40 @@ pub enum SettingsTab {
 #[derive(Event, Clone)]
 pub struct ShowSettingsEvent(pub SettingsTab);
 
+#[derive(Event, Clone)]
+pub struct SystemAudio(pub String);
+
+impl From<&str> for SystemAudio {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl From<String> for SystemAudio {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&String> for SystemAudio {
+    fn from(value: &String) -> Self {
+        Self(value.to_owned())
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct PermissionTarget {
     pub scene: Option<Entity>,
     pub ty: Option<PermissionType>,
 }
+
+// render layers
+// 0 is default
+// - normally 0 and 1 is used for the player, when in first person only 1 is used for the player
+// - world lights target both 0 and 1, the main camera uses 0
+// - this allows shadows to be cast by the player without the player being visible
+pub const PRIMARY_AVATAR_LIGHT_LAYER: RenderLayers = RenderLayers::layer(1);
+// primary avatar texture layer
+pub const AVATAR_TEXTURE_RENDERLAYER: RenderLayers = RenderLayers::layer(2);
+// layer for profile content
+pub const PROFILE_UI_RENDERLAYER: RenderLayers = RenderLayers::layer(3);

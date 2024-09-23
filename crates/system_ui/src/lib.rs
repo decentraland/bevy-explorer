@@ -16,6 +16,7 @@ pub mod profile_detail;
 pub mod sysinfo;
 pub mod toasts;
 pub mod tooltip;
+pub mod version_check;
 pub mod wearables;
 
 use bevy::prelude::*;
