@@ -256,7 +256,6 @@ fn update_source_volume(
     let mut prev_instances = std::mem::take(&mut *all_instances);
 
     for (ent, maybe_scene, maybe_source, emitter, transform) in query.iter() {
-        println!("setting pan for {:?}", ent);
         if maybe_scene.map_or(true, |scene| current_scenes.contains(&scene.root)) {
             let (volume, panning) = if maybe_source.map_or(false, |source| source.0.global()) {
                 (
@@ -276,7 +275,6 @@ fn update_source_volume(
 
                 (volume * volume_adjust, panning)
             };
-            println!("-> {panning} @ {volume}");
 
             for h_instance in &emitter.instances {
                 if let Some(instance) = audio_instances.get_mut(h_instance) {
