@@ -177,13 +177,13 @@ jobs:
               cd deploy/linux
               mkdir BevyExplorer.AppDir/usr
               mkdir BevyExplorer.AppDir/usr/bin
-              cp ../target/release/decentra-bevy BevyExplorer.AppDir/usr/bin
-              cp ../assets BevyExplorer.AppDir/usr/bin -r
+              cp ../../target/release/decentra-bevy BevyExplorer.AppDir/usr/bin
+              cp ../../assets BevyExplorer.AppDir/usr/bin -r
               wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
               wget https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage              
               chmod +x ./linuxdeploy-x86_64.AppImage
               chmod +x ./appimagetool-x86_64.AppImage
-              ./linuxdeploy-x86_64.AppImage --appdir BevyExplorer.AppDir --output appimage --create-desktop-file --executable=../target/release/decentra-bevy --icon-file=decentra-bevy.png
+              ./linuxdeploy-x86_64.AppImage --appdir BevyExplorer.AppDir --output appimage --create-desktop-file --executable=../../target/release/decentra-bevy --icon-file=decentra-bevy.png
               mv ./decentra-bevy-x86_64.AppImage ${{ env.APPIMAGE_FILE }}
               gh release upload "${{ needs.create-release.outputs.tag_name }}" ${{ env.APPIMAGE_FILE }}
             env:
