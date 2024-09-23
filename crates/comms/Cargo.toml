@@ -34,7 +34,7 @@ async-trait = "0.1.68"
 async-tungstenite = { version = "0.22.0", features = ["async-std-runtime", "async-tls"] }
 async-tls = "0.12.0"
 futures-util = "0.3.28"
-livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch="0.6-h264-false", features=["rustls-tls-webpki-roots"], optional = true }
+livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch="0.6-h264-false-2", features=["rustls-tls-webpki-roots"], optional = true }
 rand = "0.8.5"
 multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
 cid = "0.11.0"

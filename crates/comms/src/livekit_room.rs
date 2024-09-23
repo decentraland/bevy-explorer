@@ -10,10 +10,14 @@ use bevy::{
 };
 use futures_lite::StreamExt;
 use livekit::{
-    id::TrackSid, options::TrackPublishOptions, track::{LocalAudioTrack, LocalTrack, TrackSource}, webrtc::{
+    id::TrackSid,
+    options::TrackPublishOptions,
+    track::{LocalAudioTrack, LocalTrack, TrackSource},
+    webrtc::{
         audio_source::native::NativeAudioSource,
         prelude::{AudioFrame, AudioSourceOptions, RtcAudioSource},
-    }, RoomOptions
+    },
+    RoomOptions,
 };
 use prost::Message;
 use tokio::sync::mpsc::{error::TryRecvError, Receiver, Sender};
