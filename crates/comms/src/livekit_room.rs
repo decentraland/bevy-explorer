@@ -199,7 +199,7 @@ async fn livekit_handler_inner(
                         },
                         frame.sample_rate,
                         frame.num_channels,
-                        10
+                        Some(false)
                     ));
                     let mic_track = LocalTrack::Audio(LocalAudioTrack::create_audio_track("mic", RtcAudioSource::Native(new_source.clone())));
                     mic_sid = Some(local_participant.publish_track(mic_track, TrackPublishOptions{ source: TrackSource::Microphone, ..Default::default() }).await.unwrap().sid());
