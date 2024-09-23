@@ -5,13 +5,14 @@ use bevy::{
     ecs::{
         component::Component,
         event::{Event, Events},
-        system::{Commands, EntityCommand, EntityCommands, Query},
+        system::{Commands, EntityCommand, EntityCommands, Query, SystemParam},
         world::Command,
     },
     hierarchy::DespawnRecursiveExt,
+    math::Vec3,
     prelude::{
-        despawn_with_children_recursive, BuildWorldChildren, Bundle, Entity, IntoSystemConfigs,
-        Plugin, World,
+        despawn_with_children_recursive, BuildWorldChildren, Bundle, Entity, GlobalTransform,
+        IntoSystemConfigs, Plugin, With, World,
     },
     tasks::Task,
 };
@@ -396,4 +397,30 @@ macro_rules! anim_last_system {
     () => {
         bevy::prelude::expire_completed_transitions
     };
+}
+
+#[derive(Component)]
+pub struct AudioReceiver;
+
+#[derive(SystemParam)]
+pub struct VolumePanning<'w, 's> {
+    receiver: Query<'w, 's, &'static GlobalTransform, With<AudioReceiver>>,
+}
+
+impl<'w, 's> VolumePanning<'w, 's> {
+    pub fn volume_and_panning(&self, translation: Vec3) -> (f32, f32) {
+        let Ok(receiver) = self.receiver.get_single() else {
+            return (1.0, 0.5);
+        };
+        let sound_path = translation - receiver.translation();
+        let volume = (1. - sound_path.length() / 75.0).clamp(0., 1.).powi(2);
+        let panning = if sound_path.length() > f32::EPSILON {
+            let right_ear_angle = receiver.right().angle_between(sound_path);
+            (right_ear_angle.cos() + 1.) / 2.
+        } else {
+            0.5
+        };
+
+        (volume, panning)
+    }
 }
