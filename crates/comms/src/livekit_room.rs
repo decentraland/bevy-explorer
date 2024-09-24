@@ -20,7 +20,10 @@ use livekit::{
     RoomOptions,
 };
 use prost::Message;
-use tokio::sync::mpsc::{error::TryRecvError, Receiver, Sender};
+use tokio::sync::{
+    mpsc::{error::TryRecvError, Receiver, Sender},
+    Mutex,
+};
 
 use common::{structs::AudioDecoderError, util::AsH160};
 use dcl_component::proto_components::kernel::comms::rfc4;
@@ -133,17 +136,32 @@ async fn livekit_handler(
     sender: Sender<PlayerUpdate>,
     mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
 ) {
-    if let Err(e) = livekit_handler_inner(transport_id, remote_address, receiver, sender, mic).await
-    {
-        warn!("livekit error: {e}");
+    let receiver = Arc::new(Mutex::new(receiver));
+
+    loop {
+        if let Err(e) = livekit_handler_inner(
+            transport_id,
+            &remote_address,
+            receiver.clone(),
+            sender.clone(),
+            mic.resubscribe(),
+        )
+        .await
+        {
+            warn!("livekit error: {e}");
+        }
+        if receiver.lock().await.is_closed() {
+            // caller closed the channel
+            return;
+        }
+        warn!("livekit connection dropped, reconnecting");
     }
-    warn!("livekit thread exit");
 }
 
 async fn livekit_handler_inner(
     transport_id: Entity,
-    remote_address: String,
-    mut app_rx: Receiver<NetworkMessage>,
+    remote_address: &str,
+    app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,
     sender: Sender<PlayerUpdate>,
     mut mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
 ) -> Result<(), anyhow::Error> {
@@ -216,6 +234,7 @@ async fn livekit_handler_inner(
             }
         });
 
+        let mut app_rx = app_rx.lock().await;
         'stream: loop {
             tokio::select!(
                 incoming = network_rx.recv() => {

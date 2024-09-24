@@ -1,4 +1,9 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    rc::Rc,
+    sync::{mpsc::SyncSender, Arc},
+};
 
 use bevy::utils::tracing::{debug, error, info_span};
 use deno_core::{
@@ -7,7 +12,7 @@ use deno_core::{
     include_js_files, op2, v8, Extension, JsRuntime, OpDecl, OpState, PollEventLoopOptions,
     RuntimeOptions,
 };
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::{mpsc::Receiver, Mutex};
 
 use ipfs::{IpfsResource, SceneJsFile};
 use wallet::Wallet;
@@ -207,7 +212,7 @@ pub(crate) fn scene_thread(
 
     // store channels
     state.borrow_mut().put(thread_sx);
-    state.borrow_mut().put(thread_rx);
+    state.borrow_mut().put(Arc::new(Mutex::new(thread_rx)));
     state.borrow_mut().put(global_update_receiver);
 
     // store asset server and wallet
