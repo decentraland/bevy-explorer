@@ -16,7 +16,19 @@ pub fn set_ui_pointer_events(
             Or<(Changed<PointerEvents>, Changed<UiLink>)>,
         ),
     >,
+    links: Query<&UiLink>,
+    mut removed: RemovedComponents<PointerEvents>,
 ) {
+    for ent in removed.read() {
+        let Ok(link) = links.get(ent) else {
+            continue;
+        };
+
+        if let Some(mut commands) = commands.get_entity(link.ui_entity) {
+            commands.remove::<(On<HoverEnter>, On<HoverExit>)>();
+        }
+    }
+
     for (ent, link) in pes.iter() {
         if let Some(mut commands) = commands.get_entity(link.ui_entity) {
             let is_primary = link.is_window_ui;
