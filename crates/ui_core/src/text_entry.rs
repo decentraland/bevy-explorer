@@ -198,7 +198,7 @@ fn pipe_events(
         if let Some(mut commands) = commands.get_entity(parent.get()) {
             commands
                 .try_insert(Submit)
-                .insert(TextEntrySubmit(ev.value.clone()));
+                .insert(TextEntrySubmit(ev.value.trim().to_owned()));
             debug!("{:?} submit to {}", commands.id(), ev.value);
         }
 
@@ -219,7 +219,7 @@ fn pipe_events(
         {
             commands
                 .try_insert(DataChanged)
-                .insert(TextEntryValue(value.0.clone()));
+                .insert(TextEntryValue(value.0.trim().to_owned()));
             debug!("{:?} update to {}", commands.id(), value.0);
         }
     }
