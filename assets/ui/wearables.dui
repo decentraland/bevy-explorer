@@ -14,16 +14,16 @@
                 </div>
                 <div style="align-items: center; flex-direction: column; width: 25%; flex-grow: 1; margin: 1vmin;">
                     <med-text style="align-self: center;" text="collection" />
-                    <combo-box id="collections" style="align-self: center; height: 3vmin; width: 100%;" empty-text="choose a collection" options="@collections" selected="@initial-collection" allow-null="true" disabled="true" />
+                    <combo-box id="collections" style="align-self: center; height: 3vmin; width: 100%; background-color: #00000055;" empty-text="choose a collection" options="@collections" selected="@initial-collection" allow-null="true" disabled="true" />
                 </div>
                 <space />
                 <div style="align-items: center; flex-direction: column; width: 25%; flex-grow: 1; margin: 1vmin;">
                     <med-text style="align-self: center;" text="sort by" />
-                    <combo-box style="align-self: center; height: 3vmin; width: 100%;" options="@sort-by" selected="@initial-sort-by" onchanged="@sort-by-changed" allow-null="false" disabled="false" />
+                    <combo-box style="align-self: center; height: 3vmin; width: 100%; background-color: #00000055;" options="@sort-by" selected="@initial-sort-by" onchanged="@sort-by-changed" allow-null="false" disabled="false" />
                 </div>
                 <div style="align-items: center; flex-direction: column; width: 25%; flex-grow: 1; margin: 1vmin;">
                     <med-text style="align-self: center;" text="filter" />
-                    <text-entry style="align-self: center; height: 3vmin; width: 100%;" hint-text="(type to filter)" initial-text="@initial-filter" onchanged="@filter-changed" />
+                    <text-entry style="align-self: center; height: 3vmin; width: 100%; background-color: #00000055;" hint-text="(type to filter)" initial-text="@initial-filter" onchanged="@filter-changed" />
                 </div>
     
             </div>

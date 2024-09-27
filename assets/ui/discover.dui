@@ -6,13 +6,17 @@
                 <div style="width: 80%">
                     <button-set style="width: 100%; flex-wrap: wrap; align-content: center; align-items: center; justify-content: center;" buttons="@category-buttons" />
                 </div>
-                <div style="flex-direction: column; width: 10%; align-items: center;">
+                <div style="flex-direction: column; width: 15%; align-items: center;">
                     <med-text text="sort by" />
-                    <combo-box style="width: 80%; height: 2.8vmin;" options="@sort-options" selected="@initial-sort" onchanged="@sort-by-changed"/>
+                    <combo-box style="width: 80%; height: 2.8vmin; background-color: #00000055;" options="@sort-options" selected="@initial-sort" onchanged="@sort-by-changed"/>
                 </div>
                 <div style="flex-direction: column; width: 10%; align-items: center;">
                     <med-text text="worlds" />
                     <div style="width: 6.2vmin; height: 2.8vmin;"><toggle ontoggle="@world-toggle" /></div>
+                </div>
+                <div style="align-items: center; flex-direction: column; width: 25%; flex-grow: 1; margin: 1vmin;">
+                    <med-text style="align-self: center;" text="filter" />
+                    <text-entry style="align-self: center; height: 3vmin; width: 100%; background-color: #00000055;" hint-text="(type to filter)" initial-text="@initial-filter" onchanged="@filter-changed" />
                 </div>
             </div>
             <hr-thin />

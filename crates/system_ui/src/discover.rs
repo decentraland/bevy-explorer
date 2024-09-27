@@ -19,6 +19,7 @@ use ui_core::{
     button::DuiButton,
     combo_box::ComboBox,
     interact_style::Active,
+    text_entry::TextEntryValue,
     toggle::Toggled,
     ui_actions::{close_ui_happy, Click, DataChanged, On, UiCaller},
 };
@@ -171,12 +172,14 @@ impl SortBy {
 
 #[derive(Component, Default)]
 pub struct DiscoverSettings {
-    filter: HashSet<DiscoverCategory>,
+    category_filter: HashSet<DiscoverCategory>,
+    search_filter: Option<String>,
     data: Vec<DiscoverPage>,
     has_more: bool,
     task: Option<Task<Result<DiscoverPages, anyhow::Error>>>,
     order_by: SortBy,
     worlds: bool,
+    search_timer: f32,
 }
 
 impl DiscoverSettings {
@@ -188,19 +191,21 @@ impl DiscoverSettings {
 
     fn request(&mut self) {
         let mut url = if self.worlds {
-            "https://places.decentraland.org/api/worlds/?limit=20"
+            "https://places.decentraland.org/api/worlds/?limit=50"
         } else {
-            "https://places.decentraland.org/api/places/?limit=20"
+            "https://places.decentraland.org/api/places/?limit=50"
         }
         .to_string();
 
         url = format!("{url}&offset={}", self.data.len());
 
-        for cat in &self.filter {
+        for cat in &self.category_filter {
             url = format!("{url}&categories={}", cat.param());
         }
 
         url = format!("{url}&order_by={}", self.order_by.param());
+
+        debug!("request: {url}");
 
         self.task = Some(IoTaskPool::get().spawn(async move {
             let mut response = isahc::get_async(url).await?;
@@ -273,10 +278,10 @@ fn set_discover_content(
 
                             if is_active {
                                 commands.entity(caller.0).insert(Active(false));
-                                settings.filter.remove(&cat);
+                                settings.category_filter.remove(&cat);
                             } else {
                                 commands.entity(caller.0).insert(Active(true));
-                                settings.filter.insert(cat);
+                                settings.category_filter.insert(cat);
                             }
 
                             settings.clear_and_request();
@@ -331,6 +336,34 @@ fn set_discover_content(
 
                         settings.worlds = toggle.0;
                         settings.clear_and_request();
+                    },
+                ),
+            )
+            .with_prop(
+                "initial-filter",
+                discover_settings.search_filter.clone().unwrap_or_default(),
+            )
+            .with_prop(
+                "filter-changed",
+                On::<DataChanged>::new(
+                    |caller: Res<UiCaller>,
+                     q: Query<&TextEntryValue>,
+                     mut settings: Query<&mut DiscoverSettings>| {
+                        let Ok(value) = q.get(caller.0).map(|te| te.0.clone()) else {
+                            warn!("no value from text entry?");
+                            return;
+                        };
+                        if settings.single().search_filter.as_deref().unwrap_or("") == value {
+                            // no change
+                            return;
+                        }
+                        if value.is_empty() {
+                            settings.single_mut().search_filter = None;
+                        } else {
+                            let mut settings = settings.single_mut();
+                            settings.search_filter = Some(value);
+                            settings.search_timer = 1.0;
+                        }
                     },
                 ),
             );
@@ -401,89 +434,157 @@ fn update_results(mut q: Query<&mut DiscoverSettings>) {
 
 fn update_page(
     mut commands: Commands,
-    settings: Query<(&DiscoverSettings, &DuiEntities), Changed<DiscoverSettings>>,
-    content: Query<(Entity, Option<&Children>)>,
+    settings: Query<(Entity, &DiscoverSettings, &DuiEntities), Changed<DiscoverSettings>>,
     dui: Res<DuiRegistry>,
     ipfas: IpfsAssetServer,
+    mut prev_count: Local<usize>,
+    mut prev_search: Local<Option<String>>,
+    time: Res<Time>,
 ) {
-    let Ok((settings, components)) = settings.get_single() else {
+    let Ok((settings_ent, settings, components)) = settings.get_single() else {
         return;
     };
 
-    let Some((cont_ent, children)) = components
+    if settings.task.is_some() {
+        return;
+    }
+
+    let Some(mut commands) = components
         .get_named("items")
-        .and_then(|e| content.get(e).ok())
+        .and_then(|e| commands.get_entity(e))
     else {
         warn!("no content node");
         return;
     };
 
-    let expected = settings.data.len() + if settings.has_more { 1 } else { 0 };
-    let mut actual = children.map_or(0, |c| c.len());
-
-    if actual > expected {
-        commands.entity(cont_ent).despawn_descendants();
-        actual = 0;
+    if settings.search_timer > 0.0 {
+        let delta = time.delta_seconds();
+        commands.commands().entity(settings_ent).modify_component(
+            move |settings: &mut DiscoverSettings| {
+                settings.search_timer = 0f32.max(settings.search_timer - delta);
+            },
+        );
+        return;
     }
 
-    if actual != expected {
-        for item in settings.data.iter().skip(actual) {
-            let item = item.clone();
-            let image_path = IpfsPath::new_from_url(&item.image, "image");
-            let h_image = ipfas
-                .asset_server()
-                .load::<Image>(PathBuf::from(&image_path));
+    commands.despawn_descendants();
+    let mut visible_count = 0;
 
-            let button = commands
-                .entity(cont_ent)
-                .spawn_template(
-                    &dui,
-                    "discover-page",
-                    DuiProps::new()
-                        .with_prop("img", h_image.clone())
-                        .with_prop("label", item.title.clone())
-                        .with_prop("author", item.contact_name.clone().unwrap_or_default())
-                        .with_prop("views", format!("{}", item.user_visits.unwrap_or_default()))
-                        .with_prop(
-                            "likes",
-                            format!("{:.0}%", item.like_score.unwrap_or(0.0) * 100.0),
-                        ),
-                )
-                .unwrap();
-            commands.entity(button.root).insert((
-                Interaction::default(),
-                On::<Click>::new(
-                    move |mut commands: Commands,
-                          dui: Res<DuiRegistry>,
-                          asset_server: Res<AssetServer>| {
-                        spawn_discover_popup(&mut commands, &dui, &asset_server, &item);
-                    },
-                ),
-            ));
+    if settings.search_filter != *prev_search {
+        commands.commands().entity(settings_ent).modify_component(
+            move |settings: &mut DiscoverSettings| {
+                settings.clear_and_request();
+            },
+        );
+        *prev_search = settings.search_filter.clone();
+        return;
+    }
+
+    for item in settings.data.iter() {
+        let visible = settings.search_filter.as_ref().map_or(true, |filter| {
+            item.title.to_lowercase().contains(&filter.to_lowercase())
+        });
+
+        if !visible {
+            continue;
         }
 
-        if settings.has_more {
-            let components = commands.entity(cont_ent).spawn_template(&dui, "button", DuiProps::new().with_prop("button-data", DuiButton::new_enabled("Load More", 
-                    |caller: Res<UiCaller>,
-                        mut commands: Commands,
-                        mut settings: Query<&mut DiscoverSettings>| {
-                        commands.entity(caller.0).despawn_recursive();
-                        let Ok(mut settings) = settings.get_single_mut() else {
-                            warn!("no settings");
-                            return;
-                        };
+        visible_count += 1;
 
-                        settings.has_more = false;
-                        settings.request();
-                    },
-                ),
-            )).unwrap();
+        let item = item.clone();
+        let image_path = IpfsPath::new_from_url(&item.image, "image");
+        let h_image = ipfas
+            .asset_server()
+            .load::<Image>(PathBuf::from(&image_path));
+
+        let button = commands
+            .spawn_template(
+                &dui,
+                "discover-page",
+                DuiProps::new()
+                    .with_prop("img", h_image.clone())
+                    .with_prop("label", item.title.clone())
+                    .with_prop("author", item.contact_name.clone().unwrap_or_default())
+                    .with_prop("views", format!("{}", item.user_visits.unwrap_or_default()))
+                    .with_prop(
+                        "likes",
+                        format!("{:.0}%", item.like_score.unwrap_or(0.0) * 100.0),
+                    ),
+            )
+            .unwrap();
+        commands.commands().entity(button.root).insert((
+            Interaction::default(),
+            On::<Click>::new(
+                move |mut commands: Commands,
+                      dui: Res<DuiRegistry>,
+                      asset_server: Res<AssetServer>| {
+                    spawn_discover_popup(&mut commands, &dui, &asset_server, &item);
+                },
+            ),
+        ));
+    }
+
+    if settings.has_more {
+        if visible_count == *prev_count || visible_count == 0 {
+            let components = commands
+                .spawn_template(
+                    &dui,
+                    "button",
+                    DuiProps::new().with_prop(
+                        "button-data",
+                        DuiButton::new_disabled(format!(
+                            "Loading {} ...",
+                            settings.data.len() + 50
+                        )),
+                    ),
+                )
+                .unwrap();
 
             commands
+                .commands()
+                .entity(components.root)
+                .modify_component(|style: &mut Style| style.min_width = Val::Vw(80.0));
+
+            commands.commands().entity(settings_ent).modify_component(
+                |settings: &mut DiscoverSettings| {
+                    settings.has_more = false;
+                    settings.request();
+                },
+            );
+        } else {
+            let components = commands
+            .spawn_template(
+                &dui,
+                "button",
+                DuiProps::new().with_prop(
+                    "button-data",
+                    DuiButton::new_enabled(
+                        "Load More",
+                        |caller: Res<UiCaller>,
+                         mut commands: Commands,
+                         mut settings: Query<&mut DiscoverSettings>| {
+                            commands.entity(caller.0).despawn_recursive();
+                            let Ok(mut settings) = settings.get_single_mut() else {
+                                warn!("no settings");
+                                return;
+                            };
+
+                            settings.has_more = false;
+                            settings.request();
+                        },
+                    ),
+                ),
+            )
+            .unwrap();
+
+            commands
+                .commands()
                 .entity(components.root)
                 .modify_component(|style: &mut Style| style.min_width = Val::Vw(80.0));
         }
     }
+
+    *prev_count = visible_count;
 }
 
 pub fn spawn_discover_popup(
