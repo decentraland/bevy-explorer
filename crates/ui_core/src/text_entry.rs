@@ -151,6 +151,9 @@ pub fn update_fontsize(
         return;
     };
     let win_size = window.width().min(window.height());
+    if win_size <= 0.0 {
+        return;
+    }
     for (mut text, size) in q.iter_mut().filter(|(_, sz)| resized || sz.is_changed()) {
         text.0.font_size = win_size * size.0;
     }
@@ -195,7 +198,7 @@ fn pipe_events(
         if let Some(mut commands) = commands.get_entity(parent.get()) {
             commands
                 .try_insert(Submit)
-                .insert(TextEntrySubmit(ev.value.clone()));
+                .insert(TextEntrySubmit(ev.value.trim().to_owned()));
             debug!("{:?} submit to {}", commands.id(), ev.value);
         }
 
@@ -216,7 +219,7 @@ fn pipe_events(
         {
             commands
                 .try_insert(DataChanged)
-                .insert(TextEntryValue(value.0.clone()));
+                .insert(TextEntryValue(value.0.trim().to_owned()));
             debug!("{:?} update to {}", commands.id(), value.0);
         }
     }

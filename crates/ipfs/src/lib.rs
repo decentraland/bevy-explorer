@@ -1029,7 +1029,7 @@ impl AssetReader for IpfsIo {
                             .insert(remote.clone(), Instant::now());
                         return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
                             ErrorKind::Other,
-                            format!("[{token:?}]: server responded {e} rqeuesting `{remote}`"),
+                            format!("[{token:?}]: server responded `{e}` requesting `{remote}`"),
                         ))));
                     }
                     Ok(response) if !matches!(response.status(), StatusCode::OK) => {

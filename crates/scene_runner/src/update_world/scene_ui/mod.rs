@@ -714,10 +714,13 @@ fn layout_scene_ui(
                         true
                     } else {
                         // we use entity id as zindex. this is rubbish but mimics the foundation behaviour for multiple overlapping root nodes.
-                        let mut ent_cmds = commands.spawn(NodeBundle {
-                            z_index: ZIndex::Local(scene_id.id as i32),
-                            ..Default::default()
-                        });
+                        let mut ent_cmds = commands.spawn((
+                            NodeBundle {
+                                z_index: ZIndex::Local(scene_id.id as i32),
+                                ..Default::default()
+                            },
+                            DespawnWith(*bevy_entity),
+                        ));
                         ent_cmds.set_parent(parent_link.content_entity);
                         let ui_entity = ent_cmds.id();
                         debug!("{scene_id} create linked {:?}", ui_entity);

@@ -1,14 +1,14 @@
+use std::time::Duration;
+
 use bevy::{
     prelude::*,
     utils::{HashMap, HashSet},
 };
-use bevy_kira_audio::{
-    prelude::{AudioEmitter, AudioReceiver},
-    AudioControl, AudioInstance, AudioTween,
-};
+use bevy_kira_audio::{prelude::AudioEmitter, AudioControl, AudioInstance, AudioTween};
 use common::{
-    sets::{SceneSets, SetupSets},
+    sets::SetupSets,
     structs::{AudioSettings, PrimaryCameraRes, PrimaryUser, SystemAudio},
+    util::{AudioReceiver, VolumePanning},
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{proto_components::sdk::components::PbAudioSource, SceneComponentId};
@@ -37,8 +37,9 @@ impl Plugin for AudioSourcePlugin {
             ComponentPosition::EntityOnly,
         );
         app.add_systems(
-            Update,
-            (update_audio, update_source_volume, play_system_audio).in_set(SceneSets::PostLoop),
+            PostUpdate,
+            (update_audio, update_source_volume, play_system_audio)
+                .after(TransformSystem::TransformPropagate),
         );
         app.add_systems(Startup, setup_audio.in_set(SetupSets::Main));
     }
@@ -229,12 +230,12 @@ fn play_system_audio(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_source_volume(
     query: Query<(
         Entity,
-        &SceneEntity,
-        &AudioSource,
+        Option<&SceneEntity>,
+        Option<&AudioSource>,
         &AudioEmitter,
         &GlobalTransform,
     )>,
@@ -242,7 +243,7 @@ fn update_source_volume(
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
     mut prev_scenes: Local<HashSet<Entity>>,
-    receiver: Query<&GlobalTransform, With<AudioReceiver>>,
+    pan: VolumePanning,
     settings: Res<AudioSettings>,
     mut all_instances: Local<HashMap<Entity, Vec<Handle<AudioInstance>>>>,
 ) {
@@ -252,39 +253,38 @@ fn update_source_volume(
         .map(|p| containing_scene.get(p))
         .unwrap_or_default();
 
-    let Ok(receiver) = receiver.get_single() else {
-        return;
-    };
-
     let mut prev_instances = std::mem::take(&mut *all_instances);
 
-    for (ent, scene, source, emitter, transform) in query.iter() {
-        if current_scenes.contains(&scene.root) {
-            let (volume, panning) = if source.0.global() {
-                (source.0.volume.unwrap_or(1.0), 0.5)
+    for (ent, maybe_scene, maybe_source, emitter, transform) in query.iter() {
+        if maybe_scene.map_or(true, |scene| current_scenes.contains(&scene.root)) {
+            let (volume, panning) = if maybe_source.map_or(false, |source| source.0.global()) {
+                (
+                    maybe_source
+                        .and_then(|source| source.0.volume)
+                        .unwrap_or(1.0),
+                    0.5,
+                )
             } else {
-                let sound_path = transform.translation() - receiver.translation();
-                let volume = (1. - sound_path.length() / 125.0).clamp(0., 1.).powi(2)
-                    * source.0.volume.unwrap_or(1.0)
-                    * settings.scene();
-
-                let panning = if sound_path.length() > f32::EPSILON {
-                    let right_ear_angle = receiver.right().angle_between(sound_path);
-                    (right_ear_angle.cos() + 1.) / 2.
+                let volume_adjust = if maybe_scene.is_some() {
+                    settings.scene()
                 } else {
-                    0.5
+                    settings.avatar()
                 };
 
-                (volume, panning)
+                let (volume, panning) = pan.volume_and_panning(transform.translation());
+
+                (volume * volume_adjust, panning)
             };
 
             for h_instance in &emitter.instances {
                 if let Some(instance) = audio_instances.get_mut(h_instance) {
-                    instance.set_volume(volume as f64, AudioTween::default());
+                    instance.set_volume(volume as f64, AudioTween::linear(Duration::ZERO));
                     instance.set_panning(panning as f64, AudioTween::default());
+                } else {
+                    warn!("missing audio instance");
                 }
             }
-        } else if prev_scenes.contains(&scene.root) {
+        } else if maybe_scene.map_or(false, |scene| prev_scenes.contains(&scene.root)) {
             debug!("stop [{:?}]", ent);
             for h_instance in &emitter.instances {
                 if let Some(instance) = audio_instances.get_mut(h_instance) {

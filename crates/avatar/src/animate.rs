@@ -19,6 +19,7 @@ use common::{
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
     structs::{AppConfig, PrimaryUser},
+    util::{TryPushChildrenEx, VolumePanning},
 };
 use comms::{
     chat_marker_things,
@@ -503,7 +504,13 @@ impl SpawnedExtras {
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn play_current_emote(
     mut commands: Commands,
-    mut q: Query<(Entity, &mut ActiveEmote, &AvatarAnimPlayer, &Children)>,
+    mut q: Query<(
+        Entity,
+        &mut ActiveEmote,
+        &AvatarAnimPlayer,
+        &Children,
+        &GlobalTransform,
+    )>,
     definitions: Query<&AvatarDefinition>,
     mut emote_loader: CollectibleManager<Emote>,
     mut gltfs: ResMut<Assets<Gltf>>,
@@ -519,11 +526,12 @@ fn play_current_emote(
     mut cached_gltf_handles: Local<HashSet<Handle<Gltf>>>,
     mut spawned_extras: Local<HashMap<Entity, SpawnedExtras>>,
     mut scene_spawner: ResMut<SceneSpawner>,
-    (audio, sounds, anim_clips, config): (
+    (audio, sounds, anim_clips, config, pan): (
         Res<bevy_kira_audio::Audio>,
         Res<Assets<bevy_kira_audio::AudioSource>>,
         Res<Assets<AnimationClip>>,
         Res<AppConfig>,
+        VolumePanning,
     ),
     mut emitters: Query<&mut bevy_kira_audio::prelude::AudioEmitter>,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
@@ -532,7 +540,7 @@ fn play_current_emote(
     let prior_playing = std::mem::take(&mut *playing);
     let mut prev_spawned_extras = std::mem::take(&mut *spawned_extras);
 
-    for (entity, mut active_emote, target_entity, children) in q.iter_mut() {
+    for (entity, mut active_emote, target_entity, children, transform) in q.iter_mut() {
         debug!("emote {}", active_emote.urn);
         let Some(definition) = children
             .iter()
@@ -877,6 +885,7 @@ fn play_current_emote(
             if elapsed >= play_time {
                 debug!("duration {}", clip_duration);
                 debug!("play {:?} @ {}>{}", sound.path(), elapsed, play_time);
+                let (volume, panning) = pan.volume_and_panning(transform.translation());
                 let existing = spawned_extras
                     .get_mut(&entity)
                     .and_then(|extras| extras.audio.as_mut());
@@ -892,14 +901,16 @@ fn play_current_emote(
                     existing_emitter.instances.push(
                         audio
                             .play(sound)
-                            .with_volume(config.audio.avatar() as f64)
+                            .with_volume((volume * config.audio.avatar()) as f64)
+                            .with_panning(panning as f64)
                             .handle(),
                     );
                     existing.unwrap().1 = elapsed;
                 } else {
                     let handle = audio
                         .play(sound)
-                        .with_volume(config.audio.avatar() as f64)
+                        .with_volume((volume * config.audio.avatar()) as f64)
+                        .with_panning(panning as f64)
                         .handle();
 
                     let audio_entity = commands
@@ -910,6 +921,10 @@ fn play_current_emote(
                             },
                         ))
                         .id();
+
+                    if let Some(mut commands) = commands.get_entity(ent) {
+                        commands.try_push_children(&[audio_entity]);
+                    }
 
                     spawned_extras
                         .entry(entity)

@@ -5,8 +5,12 @@ use bevy::{
     utils::tracing::{debug, info, info_span, warn},
 };
 use deno_core::{op2, OpDecl, OpState};
-use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
-use tokio::sync::{broadcast::error::TryRecvError, mpsc::Receiver};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{mpsc::SyncSender, Arc},
+};
+use tokio::sync::{broadcast::error::TryRecvError, mpsc::Receiver, Mutex};
 
 use crate::{
     crdt::{append_component, put_component},
@@ -68,12 +72,15 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
 #[op2(async)]
 #[serde]
 async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<OpState>>) -> Vec<Vec<u8>> {
-    let mut receiver = op_state.borrow_mut().take::<Receiver<RendererResponse>>();
-    let span = op_state.borrow_mut().take::<EnteredSpan>();
+    let span = op_state.borrow_mut().try_take::<EnteredSpan>();
     drop(span); // don't hold it over the await point so we get a clearer view of when js is running
 
     debug!("op_crdt_recv_from_renderer");
-    let response = receiver.recv().await;
+    let receiver = op_state
+        .borrow_mut()
+        .borrow_mut::<Arc<Mutex<Receiver<RendererResponse>>>>()
+        .clone();
+    let response = receiver.lock().await.recv().await;
 
     let mut op_state = op_state.borrow_mut();
     let span = info_span!("js update").entered();

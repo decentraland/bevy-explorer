@@ -129,6 +129,9 @@ pub fn update_fontsize(
         return;
     };
     let win_size = window.width().min(window.height());
+    if win_size <= 0.0 {
+        return;
+    }
     for (mut text, size) in q.iter_mut().filter(|(_, sz)| resized || sz.is_changed()) {
         if size.is_added() {
             let raw_text = text

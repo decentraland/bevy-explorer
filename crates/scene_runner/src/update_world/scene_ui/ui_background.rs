@@ -123,6 +123,17 @@ pub fn set_ui_background(
     }
 
     for (scene_ent, background, link) in backgrounds.iter() {
+        if let Ok(children) = children.get(link.ui_entity) {
+            for child in children
+                .iter()
+                .filter(|c| prev_backgrounds.get(**c).is_ok())
+            {
+                if let Some(commands) = commands.get_entity(*child) {
+                    commands.despawn_recursive();
+                }
+            }
+        }
+
         let Some(mut commands) = commands.get_entity(link.ui_entity) else {
             continue;
         };
@@ -167,21 +178,25 @@ pub fn set_ui_background(
                                     center_region: rect.into(),
                                     tint: Some(image_color),
                                 },
+                                UiBackgroundMarker,
                             ));
                         });
                     }
                     BackgroundTextureMode::Stretch(ref uvs) => {
                         commands.try_with_children(|c| {
-                            c.spawn(NodeBundle {
-                                style: Style {
-                                    position_type: PositionType::Absolute,
-                                    width: Val::Percent(100.0),
-                                    height: Val::Percent(100.0),
-                                    overflow: Overflow::clip(),
+                            c.spawn((
+                                NodeBundle {
+                                    style: Style {
+                                        position_type: PositionType::Absolute,
+                                        width: Val::Percent(100.0),
+                                        height: Val::Percent(100.0),
+                                        overflow: Overflow::clip(),
+                                        ..Default::default()
+                                    },
                                     ..Default::default()
                                 },
-                                ..Default::default()
-                            })
+                                UiBackgroundMarker,
+                            ))
                             .try_with_children(|c| {
                                 c.spawn((MaterialNodeBundle {
                                     style: Style {
@@ -203,20 +218,23 @@ pub fn set_ui_background(
                     BackgroundTextureMode::Center => {
                         commands.try_with_children(|c| {
                             // make a stretchy grid
-                            c.spawn(NodeBundle {
-                                style: Style {
-                                    position_type: PositionType::Absolute,
-                                    left: Val::Px(0.0),
-                                    right: Val::Px(0.0),
-                                    top: Val::Px(0.0),
-                                    bottom: Val::Px(0.0),
-                                    justify_content: JustifyContent::Center,
-                                    overflow: Overflow::clip(),
-                                    width: Val::Percent(100.0),
+                            c.spawn((
+                                NodeBundle {
+                                    style: Style {
+                                        position_type: PositionType::Absolute,
+                                        left: Val::Px(0.0),
+                                        right: Val::Px(0.0),
+                                        top: Val::Px(0.0),
+                                        bottom: Val::Px(0.0),
+                                        justify_content: JustifyContent::Center,
+                                        overflow: Overflow::clip(),
+                                        width: Val::Percent(100.0),
+                                        ..Default::default()
+                                    },
                                     ..Default::default()
                                 },
-                                ..Default::default()
-                            })
+                                UiBackgroundMarker,
+                            ))
                             .try_with_children(|c| {
                                 c.spacer();
                                 c.spawn(NodeBundle {

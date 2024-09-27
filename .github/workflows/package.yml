@@ -54,7 +54,7 @@ jobs:
                   #   os: macos-14-large
         
                   - build_name: windows-x86_64
-                    os: self-hosted-windows
+                    os: bigwin
                   #  target: x86_64-pc-windows-msvc
 
         env:
@@ -102,7 +102,7 @@ jobs:
             run: |
               $VCINSTALLDIR = $(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
               Add-Content $env:GITHUB_ENV "LIBCLANG_PATH=${VCINSTALLDIR}\VC\Tools\LLVM\x64\bin`n"
-              Invoke-WebRequest "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-6.0-full_build-shared.7z" -OutFile ffmpeg-6.0-full_build-shared.7z
+              Invoke-WebRequest "https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-full_build-shared.7z" -OutFile ffmpeg-6.0-full_build-shared.7z
               7z x ffmpeg-6.0-full_build-shared.7z
               mkdir ffmpeg
               mv ffmpeg-*/* ffmpeg/
@@ -122,7 +122,7 @@ jobs:
             run: cargo build --release --bin decentra-bevy
           - name: Cargo build (linux)
             if: runner.os == 'linux'
-            run: cargo build --release --bin decentra-bevy --no-default-features --features "ffmpeg,inspect"
+            run: cargo build --release --bin decentra-bevy
 
           - name: Package common
             run: |
@@ -177,13 +177,13 @@ jobs:
               cd deploy/linux
               mkdir BevyExplorer.AppDir/usr
               mkdir BevyExplorer.AppDir/usr/bin
-              cp ../target/release/decentra-bevy BevyExplorer.AppDir/usr/bin
-              cp ../assets BevyExplorer.AppDir/usr/bin -r
+              cp ../../target/release/decentra-bevy BevyExplorer.AppDir/usr/bin
+              cp ../../assets BevyExplorer.AppDir/usr/bin -r
               wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
               wget https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage              
               chmod +x ./linuxdeploy-x86_64.AppImage
               chmod +x ./appimagetool-x86_64.AppImage
-              ./linuxdeploy-x86_64.AppImage --appdir BevyExplorer.AppDir --output appimage --create-desktop-file --executable=../target/release/decentra-bevy --icon-file=decentra-bevy.png
+              ./linuxdeploy-x86_64.AppImage --appdir BevyExplorer.AppDir --output appimage --create-desktop-file --executable=../../target/release/decentra-bevy --icon-file=decentra-bevy.png
               mv ./decentra-bevy-x86_64.AppImage ${{ env.APPIMAGE_FILE }}
               gh release upload "${{ needs.create-release.outputs.tag_name }}" ${{ env.APPIMAGE_FILE }}
             env:

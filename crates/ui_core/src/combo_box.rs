@@ -158,11 +158,10 @@ fn update_comboboxen(
         } else {
             cbox.selected.max(0)
         };
-        let selection = if selected < 0 {
-            cbox.empty_text.as_str()
-        } else {
-            cbox.options[selected as usize].as_str()
-        };
+        let selection = cbox
+            .options
+            .get(selected as usize)
+            .unwrap_or(&cbox.empty_text);
 
         let components = commands
             .spawn_template(

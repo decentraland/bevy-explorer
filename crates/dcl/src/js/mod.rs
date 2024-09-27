@@ -1,4 +1,9 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    rc::Rc,
+    sync::{mpsc::SyncSender, Arc},
+};
 
 use bevy::utils::tracing::{debug, error, info_span};
 use deno_core::{
@@ -7,7 +12,7 @@ use deno_core::{
     include_js_files, op2, v8, Extension, JsRuntime, OpDecl, OpState, PollEventLoopOptions,
     RuntimeOptions,
 };
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::{mpsc::Receiver, Mutex};
 
 use ipfs::{IpfsResource, SceneJsFile};
 use wallet::Wallet;
@@ -207,7 +212,7 @@ pub(crate) fn scene_thread(
 
     // store channels
     state.borrow_mut().put(thread_sx);
-    state.borrow_mut().put(thread_rx);
+    state.borrow_mut().put(Arc::new(Mutex::new(thread_rx)));
     state.borrow_mut().put(global_update_receiver);
 
     // store asset server and wallet
@@ -300,6 +305,7 @@ pub(crate) fn scene_thread(
     let start_time = std::time::Instant::now();
     let mut prev_time = start_time;
     let mut elapsed;
+    let mut reported_errors = 0;
     loop {
         let now = std::time::Instant::now();
         let dt = now.saturating_duration_since(prev_time);
@@ -326,15 +332,22 @@ pub(crate) fn scene_thread(
         }
 
         if let Err(e) = result {
-            error!("[{scene_id:?}] onUpdate err: {e:?}");
-            let _ = state
-                .borrow_mut()
-                .take::<SyncSender<SceneResponse>>()
-                .send(SceneResponse::Error(scene_id, format!("{e:?}")));
-            rt.block_on(async move {
-                drop(runtime);
-            });
-            return;
+            reported_errors += 1;
+            if reported_errors <= 10 {
+                error!("[{scene_id:?}] uncaught error: {e:?}");
+                if reported_errors == 10 {
+                    error!("[{scene_id:?} not logging any further uncaught errors.")
+                }
+            }
+            // we no longer exit on uncaught `onUpdate` errors
+            // let _ = state
+            //     .borrow_mut()
+            //     .take::<SyncSender<SceneResponse>>()
+            //     .send(SceneResponse::Error(scene_id, format!("{e:?}")));
+            // rt.block_on(async move {
+            //     drop(runtime);
+            // });
+            // return;
         }
     }
 }

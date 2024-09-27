@@ -10,16 +10,20 @@ use bevy::{
 };
 use futures_lite::StreamExt;
 use livekit::{
+    id::TrackSid,
     options::TrackPublishOptions,
     track::{LocalAudioTrack, LocalTrack, TrackSource},
     webrtc::{
         audio_source::native::NativeAudioSource,
         prelude::{AudioFrame, AudioSourceOptions, RtcAudioSource},
     },
-    DataPacketKind, RoomOptions,
+    RoomOptions,
 };
 use prost::Message;
-use tokio::sync::mpsc::{error::TryRecvError, Receiver, Sender};
+use tokio::sync::{
+    mpsc::{error::TryRecvError, Receiver, Sender},
+    Mutex,
+};
 
 use common::{structs::AudioDecoderError, util::AsH160};
 use dcl_component::proto_components::kernel::comms::rfc4;
@@ -132,17 +136,32 @@ async fn livekit_handler(
     sender: Sender<PlayerUpdate>,
     mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
 ) {
-    if let Err(e) = livekit_handler_inner(transport_id, remote_address, receiver, sender, mic).await
-    {
-        warn!("livekit error: {e}");
+    let receiver = Arc::new(Mutex::new(receiver));
+
+    loop {
+        if let Err(e) = livekit_handler_inner(
+            transport_id,
+            &remote_address,
+            receiver.clone(),
+            sender.clone(),
+            mic.resubscribe(),
+        )
+        .await
+        {
+            warn!("livekit error: {e}");
+        }
+        if receiver.lock().await.is_closed() {
+            // caller closed the channel
+            return;
+        }
+        warn!("livekit connection dropped, reconnecting");
     }
-    warn!("livekit thread exit");
 }
 
 async fn livekit_handler_inner(
     transport_id: Entity,
-    remote_address: String,
-    mut app_rx: Receiver<NetworkMessage>,
+    remote_address: &str,
+    app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,
     sender: Sender<PlayerUpdate>,
     mut mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
 ) -> Result<(), anyhow::Error> {
@@ -173,27 +192,49 @@ async fn livekit_handler_inner(
     let rt2 = rt.clone();
 
     let task = rt.spawn(async move {
-        let (room, mut network_rx) = livekit::prelude::Room::connect(&address, &token, RoomOptions{ auto_subscribe: true, adaptive_stream: false, dynacast: false }).await.unwrap();
-        let native_source = NativeAudioSource::new(AudioSourceOptions{
-            echo_cancellation: true,
-            noise_suppression: true,
-            auto_gain_control: true,
-        });
-        let mic_track = LocalTrack::Audio(LocalAudioTrack::create_audio_track("mic", RtcAudioSource::Native(native_source.clone())));
-        room.local_participant().publish_track(mic_track, TrackPublishOptions{ source: TrackSource::Microphone, ..Default::default() }).await.unwrap();
+        let (room, mut network_rx) = livekit::prelude::Room::connect(&address, &token, RoomOptions{ auto_subscribe: true, adaptive_stream: false, dynacast: false, ..Default::default() }).await.unwrap();
+        let local_participant = room.local_participant();
+
+        let mut native_source: Option<NativeAudioSource> = None;
+        let mut mic_sid: Option<TrackSid> = None;
 
         rt2.spawn(async move {
             while let Ok(frame) = mic.recv().await {
                 let data = frame.data.iter().map(|f| (f * i16::MAX as f32) as i16).collect();
-                native_source.capture_frame(&AudioFrame {
+                if native_source.as_ref().map_or(true, |ns| ns.sample_rate() != frame.sample_rate || ns.num_channels() != frame.num_channels) {
+                    // update track
+                    if let Some(sid) = mic_sid.take() {
+                        if let Err(e) = local_participant.unpublish_track(&sid).await {
+                            warn!("error unpublishing previous mic track: {e}");
+                        }
+                        warn!("unpub");
+                    }
+                    let new_source = native_source.insert(NativeAudioSource::new(
+                        AudioSourceOptions{
+                            echo_cancellation: true,
+                            noise_suppression: true,
+                            auto_gain_control: true,
+                        },
+                        frame.sample_rate,
+                        frame.num_channels,
+                        None
+                    ));
+                    let mic_track = LocalTrack::Audio(LocalAudioTrack::create_audio_track("mic", RtcAudioSource::Native(new_source.clone())));
+                    mic_sid = Some(local_participant.publish_track(mic_track, TrackPublishOptions{ source: TrackSource::Microphone, ..Default::default() }).await.unwrap().sid());
+                    warn!("set sid");
+                }
+                if let Err(e) = native_source.as_mut().unwrap().capture_frame(&AudioFrame {
                     data,
                     sample_rate: frame.sample_rate,
                     num_channels: frame.num_channels,
-                    samples_per_channel: frame.data.len() as u32,
-                })
+                    samples_per_channel: frame.data.len() as u32 / frame.num_channels,
+                }).await {
+                    warn!("failed to capture from mic: {e}");
+                };
             }
         });
 
+        let mut app_rx = app_rx.lock().await;
         'stream: loop {
             tokio::select!(
                 incoming = network_rx.recv() => {
@@ -205,7 +246,7 @@ async fn livekit_handler_inner(
 
                     match incoming {
                         livekit::RoomEvent::DataReceived { payload, participant, .. } => {
-                            if let Some(address) = participant.identity().0.as_str().as_h160() {
+                            if let Some(address) = participant.and_then(|p| p.identity().0.as_str().as_h160()) {
                                 let packet = match rfc4::Packet::decode(payload.as_slice()) {
                                     Ok(packet) => packet,
                                     Err(e) => {
@@ -234,7 +275,7 @@ async fn livekit_handler_inner(
                                     livekit::track::RemoteTrack::Audio(audio) => {
                                         let sender = sender.clone();
                                         rt2.spawn(async move {
-                                            let mut x = livekit::webrtc::audio_stream::native::NativeAudioStream::new(audio.rtc_track());
+                                            let mut x = livekit::webrtc::audio_stream::native::NativeAudioStream::new(audio.rtc_track(), 48_000, 1);
 
                                             // get first frame to set sample rate
                                             let Some(frame) = x.next().await else {
@@ -248,6 +289,8 @@ async fn livekit_handler_inner(
                                                 sample_rate: frame.sample_rate,
                                                 receiver: frame_receiver,
                                             };
+
+                                            println!("recced with {} / {}", frame.sample_rate, frame.num_channels);
 
                                             let sound_data = kira::sound::streaming::StreamingSoundData::from_decoder(
                                                 bridge,
@@ -289,12 +332,8 @@ async fn livekit_handler_inner(
                         break 'stream;
                     };
 
-                    let kind = if outgoing.unreliable {
-                        DataPacketKind::Lossy
-                    } else {
-                        DataPacketKind::Reliable
-                    };
-                    if let Err(_e) = room.local_participant().publish_data(outgoing.data, kind, Default::default()).await {
+                    let packet = livekit::DataPacket { payload: outgoing.data, topic: None, reliable: !outgoing.unreliable, destination_identities: Default::default() };
+                    if let Err(_e) = room.local_participant().publish_data(packet).await {
                         // debug!("outgoing failed: {_e}; not exiting loop though since it often fails at least once or twice at the start...");
                         break 'stream;
                     };
@@ -311,7 +350,7 @@ async fn livekit_handler_inner(
 
 struct LivekitKiraBridge {
     sample_rate: u32,
-    receiver: tokio::sync::mpsc::Receiver<AudioFrame>,
+    receiver: tokio::sync::mpsc::Receiver<AudioFrame<'static>>,
 }
 
 impl kira::sound::streaming::Decoder for LivekitKiraBridge {
