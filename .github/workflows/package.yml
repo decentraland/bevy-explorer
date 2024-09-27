@@ -54,7 +54,7 @@ jobs:
                   #   os: macos-14-large
         
                   - build_name: windows-x86_64
-                    os: self-hosted-windows
+                    os: bigwin
                   #  target: x86_64-pc-windows-msvc
 
         env:
