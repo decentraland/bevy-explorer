@@ -40,6 +40,13 @@ pub mod common {
     include!(concat!(env!("OUT_DIR"), "/decentraland.common.rs"));
 }
 
+pub mod social {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/decentraland.social.friendships.rs"
+    ));
+}
+
 trait DclProtoComponent: prost::Message + Default {}
 
 impl<T: DclProtoComponent + Sync + Send + 'static> FromDclReader for T {

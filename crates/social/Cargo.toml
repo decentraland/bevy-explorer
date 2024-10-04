@@ -1,0 +1,42 @@
+[package]
+name = "social"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { workspace = true }
+comms = { workspace = true }
+dcl = { workspace = true }
+dcl_component = { workspace = true }
+ipfs = { workspace = true }
+wallet = { workspace = true }
+
+bevy = { workspace = true }
+bevy_egui = { workspace = true }
+bevy_dui = { workspace = true }
+bevy_console = { workspace = true }
+urn = { workspace = true }
+ethers-core = { workspace = true }
+ethers-signers = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+isahc = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+opener = { workspace = true }
+urlencoding = { workspace = true }
+build-time = { workspace = true }
+
+futures-lite = { workspace = true }
+
+async-tungstenite = { workspace = true }
+
+prost = { workspace = true }
+dcl-rpc = { workspace = true }
+futures-util = { workspace = true }
+
+matrix-sdk = { version = "0.7.1", default-features = false, features = ["e2e-encryption", "rustls-tls"] }

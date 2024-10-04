@@ -50,6 +50,7 @@ nft = { path="crates/nft" }
 tween = { path="crates/tween" }
 world_ui = { path="crates/world_ui" }
 collectibles = { path="crates/collectibles" }
+social = { path="crates/social" }
 
 bevy = { version = "0.14", default-features = false, features=[
     "animation",
@@ -107,7 +108,11 @@ bevy_simple_text_input = { git = "https://github.com/robtfm/bevy_simple_text_inp
 directories = "5"
 uuid = { version = "1.7", features = ["v4"] }
 build-time = "0.1.3"
+async-tungstenite = { version = "0.22.0", features = ["async-std-runtime", "async-tls"] }
+dcl-rpc = { version = "2.3.5", default-features = false, features=["client", "websockets", "codegen", "server", "tungstenite"] }
+async-trait = "0.1.68"
 fastrand = "2"
+futures-util = "0.3.28"
 
 [dependencies]
 analytics = { workspace = true }
@@ -131,6 +136,7 @@ tween = { workspace = true }
 scene_material = { workspace = true }
 world_ui = { workspace = true }
 collectibles = { workspace = true }
+social = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }
@@ -139,18 +145,19 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }
 uuid = { workspace = true }
+build-time = { workspace = true }
 
 pico-args = "0.5.0"
 mimalloc = { version = "*", default-features = false }
-build-time = { workspace = true }
 chrono = { workspace = true }
 tracing-appender = "0.2.3"
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 
-# break_test dependencies
+# non-main dependencies
 futures-lite = { workspace = true }
 dcl_component = { workspace = true }
 tokio = { workspace = true }
+bevy_simple_text_input = { workspace = true }
 
 [build-dependencies]
 prost-build = "0.11.8"

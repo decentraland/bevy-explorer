@@ -1,6 +1,8 @@
 use anyhow::anyhow;
 use bevy::{ecs::system::EntityCommands, prelude::*, ui::FocusPolicy};
-use bevy_dui::{DuiContext, DuiProps, DuiTemplate, NodeMap};
+use bevy_dui::{
+    DuiCommandsExt, DuiContext, DuiEntities, DuiProps, DuiRegistry, DuiTemplate, NodeMap,
+};
 use common::util::{ModifyComponentExt, TryPushChildrenEx};
 
 use crate::{
@@ -257,17 +259,78 @@ impl DuiTemplate for DuiButtonSetTemplate {
 
 #[derive(Component)]
 pub struct TabSelection {
+    entity: Entity,
     pub selected: Option<usize>,
-    active_entities: Vec<NodeMap>,
+    active_entities: Vec<DuiEntities>,
 }
 
 impl TabSelection {
-    pub fn selected_entity(&self) -> Option<&NodeMap> {
+    pub fn selected_entity(&self) -> Option<&DuiEntities> {
         self.selected.and_then(|ix| self.active_entities.get(ix))
     }
 
-    pub fn nth_entity(&self, ix: usize) -> Option<&NodeMap> {
+    pub fn nth_entity(&self, ix: usize) -> Option<&DuiEntities> {
         self.active_entities.get(ix)
+    }
+
+    pub fn add(
+        &mut self,
+        commands: &mut Commands,
+        dui: &DuiRegistry,
+        ix: usize,
+        button: DuiButton,
+        toggle: bool,
+        edge_scale: Option<UiRect>,
+    ) -> Result<&DuiEntities, anyhow::Error> {
+        let id = self.entity;
+        let components = commands.spawn_template(
+            dui,
+            "button",
+            DuiProps::new().with_prop("button-data", button).with_prop(
+                "onclick",
+                On::<Click>::new(
+                    move |mut commands: Commands,
+                          mut q: Query<&mut TabSelection>,
+                          mut active: Query<&mut Active>| {
+                        // TODO find self to get up-to-date ix
+                        if let Ok(mut sel) = q.get_mut(id) {
+                            if toggle && sel.selected == Some(ix) {
+                                sel.selected = None;
+                            } else {
+                                sel.selected = Some(ix);
+                            }
+                            for (i, child) in sel.active_entities.iter().enumerate() {
+                                active.get_mut(child.named("button-background")).unwrap().0 =
+                                    Some(i) == sel.selected;
+                            }
+                        }
+
+                        if let Some(mut cmd) = commands.get_entity(id) {
+                            cmd.try_insert(DataChanged);
+                        }
+                    },
+                ),
+            ),
+        )?;
+
+        let mut bg = commands.entity(components.named("button-background"));
+        bg.insert(Active(Some(ix) == self.selected));
+        if let Some(flat_side) = edge_scale {
+            bg.modify_component(move |bounds: &mut NodeBounds| bounds.edge_scale = flat_side);
+        }
+
+        commands.entity(id).try_push_children(&[components.root]);
+        self.active_entities.insert(ix, components);
+        Ok(self.active_entities.get(ix).unwrap())
+    }
+
+    pub fn remove(&mut self, commands: &mut Commands, ix: usize) {
+        if let Some(components) = self.active_entities.get(ix) {
+            if let Some(commands) = commands.get_entity(components.root) {
+                commands.despawn_recursive();
+            }
+            self.active_entities.remove(ix);
+        }
     }
 }
 
@@ -291,73 +354,34 @@ impl DuiTemplate for DuiTabGroupTemplate {
         let toggle = props.take_as::<bool>(ctx, "toggle")?.unwrap_or(false);
         let edge_scale = props.take_as::<UiRect>(ctx, "edge-scale")?;
 
-        let mut active_entities = Vec::default();
+        let mut selection = TabSelection {
+            entity: id,
+            selected: start_index,
+            active_entities: Default::default(),
+        };
 
-        let children = buttons
-            .into_iter()
-            .enumerate()
-            .map(|(ix, button)| {
-                ctx.render_template(
-                    &mut commands.commands().spawn_empty(),
-                    "button",
-                    DuiProps::new().with_prop("button-data", button).with_prop(
-                        "onclick",
-                        On::<Click>::new(
-                            move |mut commands: Commands,
-                                  mut q: Query<&mut TabSelection>,
-                                  mut active: Query<&mut Active>| {
-                                if let Ok(mut sel) = q.get_mut(id) {
-                                    if toggle && sel.selected == Some(ix) {
-                                        sel.selected = None;
-                                    } else {
-                                        sel.selected = Some(ix);
-                                    }
-                                    for (i, child) in sel.active_entities.iter().enumerate() {
-                                        active.get_mut(child["button-background"]).unwrap().0 =
-                                            Some(i) == sel.selected;
-                                    }
-                                }
+        for (ix, button) in buttons.into_iter().enumerate() {
+            selection.add(
+                &mut commands.commands(),
+                ctx.registry(),
+                ix,
+                button,
+                toggle,
+                edge_scale,
+            )?;
+        }
 
-                                if let Some(mut cmd) = commands.get_entity(id) {
-                                    cmd.try_insert(DataChanged);
-                                }
-                            },
-                        ),
-                    ),
-                )
-                .map(|nodes| {
-                    let mut new_commands = commands.commands();
-                    let mut bg = new_commands.entity(nodes["button-background"]);
-
-                    bg.insert(Active(Some(ix) == start_index));
-
-                    if let Some(flat_side) = edge_scale {
-                        bg.modify_component(move |bounds: &mut NodeBounds| {
-                            bounds.edge_scale = flat_side
-                        });
-                    }
-
-                    active_entities.push(nodes.clone());
-                    nodes["root"]
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        commands.try_push_children(&children);
-        commands.insert((
-            on_changed,
-            TabSelection {
-                selected: start_index,
-                active_entities,
-            },
-        ));
-
-        Ok(NodeMap::from_iter(
-            children
-                .into_iter()
+        let nodemap = NodeMap::from_iter(
+            selection
+                .active_entities
+                .iter()
                 .enumerate()
-                .map(|(i, c)| (format!("tab {i}"), c)),
-        ))
+                .map(|(i, c)| (format!("tab {i}"), c.root)),
+        );
+
+        commands.insert((on_changed, selection));
+
+        Ok(nodemap)
     }
 }
 
