@@ -239,6 +239,11 @@ async fn websocket_room_handler_inner(
                 // send challenge response
                 debug!("<< challenge received; {challenge_to_sign}");
 
+                if !challenge_to_sign.starts_with("dcl-") {
+                    error!("invalid challenge to sign");
+                    return Err(anyhow!("invalid challenge to sign"));
+                }
+
                 // sign challenge
                 let chain = wallet.sign_message(challenge_to_sign).await?;
                 let auth_chain_json = serde_json::to_string(&chain)?;
