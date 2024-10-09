@@ -5,6 +5,7 @@ pub mod crash_report;
 pub mod discover;
 pub mod emote_select;
 pub mod emotes;
+pub mod friends;
 pub mod login;
 pub mod map;
 pub mod mic;

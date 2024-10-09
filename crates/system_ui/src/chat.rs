@@ -1,27 +1,33 @@
 use bevy::{color::palettes::css, core::FrameCount, prelude::*};
 
-use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine};
-use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
+use bevy_console::{ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine};
+use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     dcl_assert,
     structs::{PrimaryUser, SystemAudio, ToolTips},
-    util::{FireEventEx, RingBuffer, RingBufferReceiver, TryPushChildrenEx},
+    util::{FireEventEx, ModifyComponentExt, RingBuffer, RingBufferReceiver, TryPushChildrenEx},
 };
 use comms::{
     chat_marker_things, global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport,
 };
+use console::DoAddConsoleCommand;
 use copypasta::{ClipboardContext, ClipboardProvider};
 use dcl::{SceneLogLevel, SceneLogMessage};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use input_manager::should_accept_key;
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene, Toaster};
 use shlex::Shlex;
+use social::FriendshipEvent;
 use ui_core::{
     button::{DuiButton, TabSelection},
     focus::Focus,
     text_entry::{TextEntry, TextEntrySubmit},
     text_size::FontSize,
-    ui_actions::{Click, DataChanged, HoverEnter, HoverExit, On, UiCaller},
+    ui_actions::{Click, DataChanged, HoverEnter, HoverExit, On},
+};
+
+use crate::friends::{
+    resolve_addresses, show_popups, update_conversations, update_friends,
 };
 
 use super::SystemUiRoot;
@@ -33,12 +39,20 @@ impl Plugin for ChatPanelPlugin {
         app.add_systems(Update, display_chat);
         app.add_systems(Update, append_chat_messages);
         app.add_systems(Update, emit_user_chat);
-        app.add_systems(Startup, setup);
-        app.add_systems(OnEnter::<ui_core::State>(ui_core::State::Ready), chat_popup);
         app.add_systems(
             Update,
-            (keyboard_popup.pipe(select_chat_tab)).run_if(should_accept_key),
+            (
+                update_friends,
+                resolve_addresses,
+                update_conversations,
+                show_popups,
+            ),
         );
+        app.add_systems(Startup, setup);
+        app.add_systems(OnEnter::<ui_core::State>(ui_core::State::Ready), chat_popup);
+        app.add_systems(Update, keyboard_popup.run_if(should_accept_key));
+        app.add_console_command::<Rechat, _>(debug_chat);
+        app.add_event::<PrivateChatEntered>();
     }
 }
 
@@ -58,7 +72,7 @@ pub struct DisplayChatMessage {
 #[derive(Component)]
 pub struct ChatBox {
     chat_log: RingBuffer<DisplayChatMessage>,
-    active_tab: &'static str,
+    pub active_tab: &'static str,
     active_chat_sink: Option<RingBufferReceiver<DisplayChatMessage>>,
     active_log_sink: Option<(Entity, RingBufferReceiver<SceneLogMessage>)>,
 }
@@ -112,14 +126,12 @@ fn keyboard_popup(
     input: Res<ButtonInput<KeyCode>>,
     mut container: Query<&mut Style, With<ChatboxContainer>>,
     entry: Query<Entity, With<ChatInput>>,
-) -> &'static str {
-    let mut res = "";
+) {
     if input.just_pressed(KeyCode::Enter) || input.just_pressed(KeyCode::NumpadEnter) {
         if let Ok(mut style) = container.get_single_mut() {
             if style.display == Display::None {
                 commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                 style.display = Display::Flex;
-                res = "Nearby";
             };
         }
 
@@ -127,18 +139,60 @@ fn keyboard_popup(
             commands.entity(entry).insert(Focus);
         }
     }
-
-    res
 }
+
+fn debug_chat(
+    mut input: ConsoleCommand<Rechat>,
+    mut commands: Commands,
+    root: Res<SystemUiRoot>,
+    dui: Res<DuiRegistry>,
+    existing: Query<(Entity, &DuiEntities), With<ChatboxContainer>>,
+    mut tab: Query<&mut TabSelection, With<ChatTab>>,
+) {
+    if let Some(Ok(Rechat { arg })) = input.take() {
+        match arg.as_str() {
+            "reload" => {
+                if let Ok((existing, _)) = existing.get_single() {
+                    commands.entity(existing).despawn_recursive();
+                }
+
+                commands.fire_event(FriendshipEvent(None));
+                chat_popup(commands, root, dui);
+            }
+            "add" => {
+                tab.single_mut()
+                    .add(
+                        &mut commands,
+                        &dui,
+                        Some(3),
+                        DuiButton::new_enabled("new tab", || {}),
+                        false,
+                        None,
+                    )
+                    .unwrap();
+            }
+            _ => (),
+        }
+    }
+}
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/cdb")]
+struct Rechat {
+    arg: String,
+}
+
+#[derive(Component)]
+pub struct ChatTab;
 
 fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegistry>) {
     dcl_assert!(root.0 != Entity::PLACEHOLDER);
 
     let chat_tab = |label: &'static str| -> DuiButton {
-        DuiButton::new_enabled(label, (move || label).pipe(select_chat_tab))
+        DuiButton::new_enabled(label, (move || Some(label)).pipe(select_chat_tab))
     };
 
-    let tab_labels = vec!["Nearby", "Scene Log", "System Log"];
+    let tab_labels = vec!["Nearby", "Scene Log"];
     let chat_tabs = tab_labels
         .clone()
         .into_iter()
@@ -147,13 +201,15 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
 
     let tab_labels_changed = tab_labels.clone();
     let tab_changed =
-        (move |caller: Res<UiCaller>, selection: Query<&TabSelection>| -> &'static str {
-            selection
-                .get(caller.0)
-                .ok()
-                .and_then(|ts| ts.selected)
-                .and_then(|sel| tab_labels_changed.get(sel))
-                .unwrap_or(&"")
+        (move |selection: Query<&TabSelection, With<ChatTab>>| -> Option<&'static str> {
+            Some(
+                selection
+                    .get_single()
+                    .ok()
+                    .and_then(|ts| ts.selected)
+                    .and_then(|sel| tab_labels_changed.get(sel))
+                    .unwrap_or(&""),
+            )
         })
         .pipe(select_chat_tab);
 
@@ -190,10 +246,6 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
         .entity(components.named("chat-entry"))
         .insert(ChatInput);
 
-    // commands
-    //     .entity(components.named("chat-output"))
-    //     .insert(BackgroundColor(Color::srgba(0.0, 0.0, 0.25, 0.2)));
-
     commands
         .entity(components.named("chat-output-inner"))
         .insert(ChatBox {
@@ -202,14 +254,45 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
             active_chat_sink: None,
             active_log_sink: None,
         });
+
+    commands.entity(components.named("tabs")).insert(ChatTab);
 }
 
 fn copy_chat(
+    container: Query<&DuiEntities, With<ChatboxContainer>>,
+    mut commands: Commands,
     chatbox: Query<&Children, With<ChatBox>>,
     msgs: Query<&DisplayChatMessage>,
     mut toaster: Toaster,
     frame: Res<FrameCount>,
 ) {
+    let components = container
+        .get_single()
+        .ok()
+        .map(|ents| (ents.root, ents.named("friends-panel")));
+    if let Some((container, friends)) = components {
+        commands
+            .entity(container)
+            .modify_component(|style: &mut Style| {
+                if style.width == Val::VMin(90.0) {
+                    style.width = Val::VMin(45.0);
+                    style.min_width = Val::VMin(30.0);
+                } else {
+                    style.width = Val::VMin(90.0);
+                    style.min_width = Val::VMin(75.0);
+                }
+            });
+        commands
+            .entity(friends)
+            .modify_component(|style: &mut Style| {
+                style.display = if style.display == Display::Flex {
+                    Display::None
+                } else {
+                    Display::Flex
+                };
+            });
+    }
+
     let mut copy = String::default();
     let Ok(children) = chatbox.get_single() else {
         return;
@@ -271,7 +354,7 @@ fn append_chat_messages(
     }
 }
 
-fn make_chat(
+pub(crate) fn make_chat(
     commands: &mut Commands,
     asset_server: &AssetServer,
     msg: DisplayChatMessage,
@@ -392,6 +475,8 @@ fn display_chat(
             let msg = make_chat(&mut commands, &asset_server, chat);
             commands.entity(entity).add_child(msg);
         }
+
+        return;
     }
 
     if chatbox.active_tab == "Scene Log" {
@@ -447,10 +532,14 @@ fn display_chat(
 #[derive(Component)]
 pub struct ChatInput;
 
+#[derive(Event)]
+pub struct PrivateChatEntered(pub String);
+
 #[allow(clippy::too_many_arguments)]
 fn emit_user_chat(
     mut commands: Commands,
     mut chats: EventWriter<ChatEvent>,
+    mut private: EventWriter<PrivateChatEntered>,
     transports: Query<&Transport>,
     player: Query<Entity, With<PrimaryUser>>,
     time: Res<Time>,
@@ -477,6 +566,12 @@ fn emit_user_chat(
                 commands.entity(e).remove::<Focus>();
             }
         } else {
+            if output.active_tab.is_empty() {
+                // private chat (what a hacky approach this is)
+                private.send(PrivateChatEntered(message.clone()));
+                return;
+            }
+
             // cmds.insert(Focus);
             let sender = if message.starts_with('/') {
                 Entity::PLACEHOLDER
@@ -538,17 +633,20 @@ fn emit_user_chat(
 
 #[allow(clippy::too_many_arguments)]
 fn select_chat_tab(
-    In(tab): In<&'static str>,
+    In(tab): In<Option<&'static str>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut chatbox: Query<(Entity, &mut ChatBox)>,
     mut text_entry: Query<&mut TextEntry, With<ChatInput>>,
     time: Res<Time>,
 ) {
-    if tab.is_empty() {
+    let Some(tab) = tab else {
         return;
-    }
-    let (entity, mut chatbox) = chatbox.single_mut();
+    };
+
+    let Ok((entity, mut chatbox)) = chatbox.get_single_mut() else {
+        return;
+    };
 
     let clicked_current = chatbox.active_tab == tab;
 
@@ -576,7 +674,7 @@ fn select_chat_tab(
             }
             commands.entity(entity).replace_children(&msgs);
             text_entry.single_mut().enabled = true;
-        } else {
+        } else if tab == "Scene Log" {
             text_entry.single_mut().enabled = false;
         }
 

@@ -56,6 +56,7 @@ use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
 use ipfs::IpfsIoPlugin;
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
+use social::SocialPlugin;
 use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
@@ -303,6 +304,7 @@ fn main() {
         .add_plugins(VisualsPlugin { no_fog })
         .add_plugins(WalletPlugin)
         .add_plugins(CommsPlugin)
+        .add_plugins(SocialPlugin)
         .add_plugins(NftShapePlugin)
         .add_plugins(TweenPlugin)
         .add_plugins(SceneBoundPlugin)

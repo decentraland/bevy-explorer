@@ -4,8 +4,10 @@ use bevy_simple_text_input::{
 };
 use common::util::AsH160;
 use dcl_component::proto_components::social::friendship_event_response;
-use futures_lite::future::block_on;
-use social::{DirectChatMessage, SocialClient, SocialClientHandler, SocialPlugin};
+use social::{
+    client::{DirectChatMessage, SocialClientHandler},
+    SocialClient, SocialPlugin,
+};
 use tokio::sync::mpsc::unbounded_channel;
 use wallet::{Wallet, WalletPlugin};
 
@@ -54,17 +56,14 @@ fn setup(
     let (sx, rx) = unbounded_channel();
     let (sx_c, rx_c) = unbounded_channel();
     commands.insert_resource(SocEvents(rx, rx_c));
-    client.0 = Some(
-        block_on(SocialClientHandler::connect(
-            wallet.clone(),
-            move |ev: &friendship_event_response::Body| {
-                let _ = sx.send(ev.clone());
-            },
-            move |ev: DirectChatMessage| {
-                let _ = sx_c.send(ev);
-            },
-        ))
-        .unwrap(),
+    client.0 = SocialClientHandler::connect(
+        wallet.clone(),
+        move |ev: &friendship_event_response::Body| {
+            let _ = sx.send(ev.clone());
+        },
+        move |ev: DirectChatMessage| {
+            let _ = sx_c.send(ev);
+        },
     );
 
     commands.spawn(Camera3dBundle::default());

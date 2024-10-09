@@ -10,6 +10,7 @@ use common::{
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
     structs::{ActiveDialog, PrimaryCamera, ToolTips, PROFILE_UI_RENDERLAYER},
+    util::{AsH160, FireEventEx},
 };
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
 use input_manager::AcceptInput;
@@ -26,6 +27,7 @@ use scene_runner::{
     },
 };
 use serde_json::json;
+use social::{FriendshipEvent, SocialClient};
 use ui_core::button::DuiButton;
 
 use crate::{avatar_texture::PhotoBooth, AvatarMaterials, AvatarShape};
@@ -250,6 +252,7 @@ fn update_avatar_collider_actions(
                 return;
             };
 
+            let address = profile.content.eth_address.as_h160();
             let components = commands
                 .spawn_template(
                     &dui,
@@ -258,7 +261,31 @@ fn update_avatar_collider_actions(
                         .with_prop("title", format!("{} profile", profile.content.name))
                         .with_prop("booth-instance", instance)
                         .with_prop("eth-address", profile.content.eth_address.clone())
-                        .with_prop("buttons", vec![DuiButton::close_happy("Ok")]),
+                        .with_prop(
+                            "buttons",
+                            vec![
+                                DuiButton::new_enabled(
+                                    "Add Friend",
+                                    move |mut client: ResMut<SocialClient>, mut commands: Commands| {
+                                        let Some(h160) = address else {
+                                            warn!("bad address?");
+                                            return;
+                                        };
+                                        let Some(client) = client.0.as_mut() else {
+                                            warn!("not connected");
+                                            return;
+                                        };
+
+                                        if let Err(e) = client.friend_request(h160, None) {
+                                            warn!("error: {e}");
+                                        } else {
+                                            commands.fire_event(FriendshipEvent(None));
+                                        }
+                                    },
+                                ),
+                                DuiButton::close_happy("Ok"),
+                            ],
+                        ),
                 )
                 .unwrap();
 
