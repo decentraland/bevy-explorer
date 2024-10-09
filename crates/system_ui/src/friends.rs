@@ -114,7 +114,7 @@ pub fn update_friends(
                                             name
                                         };
 
-                                        let button_content = commands.spawn_template(&dui, "direct-chat-button", DuiProps::default().with_prop("name", format!("{short_name}")).with_prop("close", On::<Click>::new(move |
+                                        let button_content = commands.spawn_template(&dui, "direct-chat-button", DuiProps::default().with_prop("name", short_name).with_prop("close", On::<Click>::new(move |
                                             mut tab_manager: TabManager,
                                             tab: Query<Entity, With<ChatTab>>,
                                             buttons: Query<(Entity, &PrivateChat)>,

@@ -26,9 +26,7 @@ use ui_core::{
     ui_actions::{Click, DataChanged, HoverEnter, HoverExit, On},
 };
 
-use crate::friends::{
-    resolve_addresses, show_popups, update_conversations, update_friends,
-};
+use crate::friends::{resolve_addresses, show_popups, update_conversations, update_friends};
 
 use super::SystemUiRoot;
 
