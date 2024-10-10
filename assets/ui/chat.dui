@@ -33,13 +33,14 @@
                 <div style="position-type: absolute; top: 0vmin; bottom: 0vmin; left: 0vmin; right: 0vmin; flex-direction: column; min-width: 100%;">
                     <scroll>
                         <div style="flex-direction: column; min-width: 100%;">
-                            <med-text text="friends" />
-                            <hr-thin />
+                            <div style="background-color: #00000000; padding: 1vmin; justify-content: center;">
+                                <med-text text="Friends" style="color: white; " />
+                            </div>
                             <div id="friends" style="flex-direction: column">
                             </div>
-                            <hr-thin />
-                            <med-text text="pending friends" />
-                            <hr-thin />
+                            <div style="background-color: #00000000; padding: 1vmin; justify-content: center;">
+                                <med-text text="Pending Invites" style="color: white; " />
+                            </div>
                             <div id="pending-friends" style="flex-direction: column">
                             </div>
                         </div>
@@ -59,7 +60,7 @@
         border-color="#7f569e"
         color="#b2a1bf"
     >
-        <med-text id="name" text="@name" />
+        <med-text id="name" text="@name" style="color: black;" />
         <space />
         <button img="images/chat_button.png" onclick="@chat" image-width="3.3vmin" image-height="3.3vmin"/>
         <button img="images/redx.png" onclick="@delete" image-width="3.3vmin" image-height="3.3vmin"/>

@@ -196,7 +196,7 @@ impl<'w, 's> AdapterManager<'w, 's> {
             }
             "fixed-adapter" => {
                 // fixed-adapter should be ignored and we use the tail as the full protocol:address
-                return self.connect(address)
+                return self.connect(address);
             }
             _ => {
                 warn!("unrecognised adapter protocol: {protocol}");

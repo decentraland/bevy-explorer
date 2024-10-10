@@ -12,7 +12,7 @@ use bevy::{
 use common::{
     anim_last_system,
     sets::SceneSets,
-    structs::{PrimaryCamera, PrimaryUser, AVATAR_TEXTURE_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER},
+    structs::{PrimaryCamera, PrimaryUser, PRIMARY_AVATAR_LIGHT_LAYER},
 };
 use console::DoAddConsoleCommand;
 use dynamics::{
@@ -121,7 +121,7 @@ fn manage_player_visibility(
                     continue;
                 }
                 if let Some(mut commands) = commands.get_entity(child) {
-                    commands.insert(PRIMARY_AVATAR_LIGHT_LAYER.union(&AVATAR_TEXTURE_RENDERLAYER));
+                    commands.insert(PRIMARY_AVATAR_LIGHT_LAYER);
                 }
             }
         } else {
@@ -130,7 +130,7 @@ fn manage_player_visibility(
                     continue;
                 }
                 if let Some(mut commands) = commands.get_entity(child) {
-                    commands.insert(RenderLayers::default().union(&AVATAR_TEXTURE_RENDERLAYER));
+                    commands.insert(RenderLayers::default());
                 }
             }
         }

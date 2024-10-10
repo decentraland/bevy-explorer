@@ -26,7 +26,7 @@ use ui_core::{
     ui_actions::{Click, DataChanged, HoverEnter, HoverExit, On},
 };
 
-use crate::friends::{resolve_addresses, show_popups, update_conversations, update_friends};
+use crate::friends::{show_popups, update_conversations, update_friends, update_profile_names};
 
 use super::SystemUiRoot;
 
@@ -41,9 +41,9 @@ impl Plugin for ChatPanelPlugin {
             Update,
             (
                 update_friends,
-                resolve_addresses,
                 update_conversations,
                 show_popups,
+                update_profile_names,
             ),
         );
         app.add_systems(Startup, setup);

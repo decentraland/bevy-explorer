@@ -590,7 +590,7 @@ async fn social_socket_handler_inner(
             let client = client.clone();
             tokio::spawn(async move {
                 if let Err(e) = handle_history(address, alias, client, sx).await {
-                    warn!("history err: {e:?}");
+                    warn!("history err: {e}");
                 }
             });
         }

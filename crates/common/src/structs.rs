@@ -77,10 +77,6 @@ impl AttachPoints {
     }
 }
 
-// component holding avatar texture (just the face currently)
-#[derive(Component, Default)]
-pub struct AvatarTextureHandle(pub Handle<Image>);
-
 // main camera entity
 #[derive(Component)]
 pub struct PrimaryCamera {
@@ -613,7 +609,5 @@ pub struct PermissionTarget {
 // - world lights target both 0 and 1, the main camera uses 0
 // - this allows shadows to be cast by the player without the player being visible
 pub const PRIMARY_AVATAR_LIGHT_LAYER: RenderLayers = RenderLayers::layer(1);
-// primary avatar texture layer
-pub const AVATAR_TEXTURE_RENDERLAYER: RenderLayers = RenderLayers::layer(2);
 // layer for profile content
 pub const PROFILE_UI_RENDERLAYER: RenderLayers = RenderLayers::layer(3);

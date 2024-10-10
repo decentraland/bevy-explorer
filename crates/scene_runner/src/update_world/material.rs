@@ -9,8 +9,8 @@ use bevy::{
         texture::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
     },
 };
-use common::structs::{AppConfig, AvatarTextureHandle};
-use comms::profile::UserProfile;
+use common::{structs::AppConfig, util::AsH160};
+use comms::profile::ProfileManager;
 use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 
 use crate::{
@@ -229,7 +229,7 @@ pub struct TextureResolver<'w, 's> {
     ipfas: IpfsAssetServer<'w, 's>,
     videos: Query<'w, 's, &'static VideoTextureOutput>,
     uis: Query<'w, 's, &'static UiTextureOutput>,
-    avatars: Query<'w, 's, (&'static UserProfile, &'static AvatarTextureHandle)>,
+    profiles: ProfileManager<'w, 's>,
 }
 
 #[derive(Debug)]
@@ -241,7 +241,7 @@ pub struct ResolvedTexture {
 
 impl<'w, 's> TextureResolver<'w, 's> {
     pub fn resolve_texture(
-        &self,
+        &mut self,
         scene: &RendererSceneContext,
         texture: &texture_union::Tex,
     ) -> Result<ResolvedTexture, TextureResolveError> {
@@ -257,16 +257,23 @@ impl<'w, 's> TextureResolver<'w, 's> {
                     camera_target: None,
                 })
             }
-            texture_union::Tex::AvatarTexture(at) => self
-                .avatars
-                .iter()
-                .find(|(profile, _)| profile.content.eth_address == at.user_id)
-                .map(|(_, tex)| ResolvedTexture {
-                    image: tex.0.clone(),
+            texture_union::Tex::AvatarTexture(at) => {
+                let h160 = at
+                    .user_id
+                    .as_h160()
+                    .ok_or(TextureResolveError::AvatarNotFound)?;
+                let image = self
+                    .profiles
+                    .get_image(h160)
+                    .map_err(|_| TextureResolveError::AvatarNotFound)?
+                    .ok_or(TextureResolveError::SourceNotReady)?;
+
+                Ok(ResolvedTexture {
+                    image,
                     source_entity: None,
                     camera_target: None,
                 })
-                .ok_or(TextureResolveError::AvatarNotFound),
+            }
             texture_union::Tex::VideoTexture(vt) => {
                 let Some(video_entity) =
                     scene.bevy_entity(SceneEntityId::from_proto_u32(vt.video_player_entity))
@@ -333,7 +340,7 @@ fn update_materials(
     >,
     mut materials: ResMut<Assets<SceneMaterial>>,
     sourced: Query<(Entity, &Handle<SceneMaterial>, &MaterialSource)>,
-    resolver: TextureResolver,
+    mut resolver: TextureResolver,
     mut scenes: Query<&mut RendererSceneContext>,
     config: Res<AppConfig>,
     mut gltf_resolver: GltfMaterialResolver,

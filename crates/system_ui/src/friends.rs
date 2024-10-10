@@ -1,16 +1,10 @@
-use std::sync::Arc;
-
-use bevy::{
-    prelude::*,
-    tasks::{IoTaskPool, Task},
-    utils::hashbrown::HashMap,
-};
+use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
-use common::util::{AsH160, FireEventEx, TaskExt, TryPushChildrenEx};
-use comms::profile::{get_remote_profile, UserProfile};
-use dcl_component::proto_components::social::friendship_event_response::Body;
+use common::util::{AsH160, FireEventEx, TryPushChildrenEx};
+use comms::profile::ProfileManager;
+use dcl_component::proto_components::social::friendship_event_response::{self, Body};
 use ethers_core::types::Address;
-use ipfs::{IpfsAssetServer, IpfsIo};
+use ipfs::IpfsAssetServer;
 use scene_runner::Toaster;
 use social::{client::DirectChatMessage, DirectChatEvent, FriendshipEvent, SocialClient};
 use tokio::sync::mpsc::Receiver;
@@ -33,6 +27,65 @@ pub struct PrivateChat {
     messages: Vec<DirectChatMessage>,
 }
 
+#[derive(Component)]
+pub struct PendingProfileName(Address);
+
+pub fn update_profile_names(
+    mut cache: ProfileManager,
+    mut commands: Commands,
+    mut q: Query<(Entity, &PendingProfileName, &mut Text)>,
+) {
+    for (ent, pending, mut text) in q.iter_mut() {
+        match cache.get_data(pending.0) {
+            Err(_) => {
+                for section in &mut text.sections {
+                    section.style.color = Color::srgb(0.5, 0.0, 0.0);
+                }
+            }
+            Ok(Some(data)) => {
+                for section in &mut text.sections {
+                    section.style.color = Color::srgb(0.0, 0.0, 0.0);
+                    if section.value.starts_with("0x") {
+                        let str_address = format!("{:x}", pending.0);
+                        let str_address = str_address
+                            .chars()
+                            .skip(str_address.len().saturating_sub(4))
+                            .collect::<String>();
+                        section.value = format!("{}#{}", data.name, str_address);
+                    }
+                }
+                commands.entity(ent).remove::<PendingProfileName>();
+            }
+            Ok(None) => (),
+        }
+    }
+}
+
+// #[derive(Component)]
+// pub struct PendingProfileImage(Address);
+
+// pub fn update_profile_images(
+//     mut cache: ProfileManager,
+//     mut commands: Commands,
+//     mut q: Query<(Entity, &PendingProfileImage, &mut Text)>,
+// ) {
+//     for (ent, pending, mut text) in q.iter_mut() {
+//         match cache.get_data(pending.0) {
+//             Err(_) => for mut section in &mut text.sections {
+//                 section.style.color = Color::srgb(0.5, 0.0, 0.0);
+//             }
+//             Ok(Some(data)) => {
+//                 for mut section in &mut text.sections {
+//                     section.style.color = Color::srgb(0.0, 0.0, 0.0);
+//                 }
+//                 text.sections[1].value = data.name;
+//                 commands.entity(ent).remove::<PendingProfileName>();
+//             }
+//             Ok(None) => (),
+//         }
+//     }
+// }
+
 #[allow(clippy::too_many_arguments)]
 pub fn update_friends(
     mut commands: Commands,
@@ -41,8 +94,6 @@ pub fn update_friends(
     components: Query<&DuiEntities, With<ChatboxContainer>>,
     dui: Res<DuiRegistry>,
     mut friend_events: EventReader<FriendshipEvent>,
-    ipfas: IpfsAssetServer,
-    profiles: Query<&UserProfile>,
 ) {
     let is_init = client.0.as_ref().map_or(false, |c| c.is_initialized);
     if is_init != *init || friend_events.read().next().is_some() {
@@ -53,25 +104,12 @@ pub fn update_friends(
         if !is_init {
             // clean up, disconnected
         } else {
-            // TODO don't build this every time
-            let names = profiles
-                .iter()
-                .filter_map(|p| {
-                    p.content
-                        .eth_address
-                        .as_h160()
-                        .map(|address| (address, &p.content.name))
-                })
-                .collect::<HashMap<_, _>>();
-
             //initialize
             let client = client.0.as_ref().unwrap();
             let new_friends = client
                 .friends
                 .iter()
                 .map(|friend| {
-                    let found_name = names.get(friend).map(ToString::to_string);
-                    let have_name = found_name.is_some();
                     let friend = *friend;
                     let mut root = commands.spawn_empty();
                     let root_id = root.id();
@@ -82,7 +120,7 @@ pub fn update_friends(
                             DuiProps::default()
                                 .with_prop(
                                     "name",
-                                    found_name.unwrap_or_else(|| format!("{friend:#x}")),
+                                    format!("<b>{friend:#x}</b>"),
                                 )
                                 .with_prop(
                                     "chat",
@@ -106,7 +144,7 @@ pub fn update_friends(
                                             return;
                                         }
 
-                                        let name = me.get(root_id).ok().and_then(|ents| text.get(ents.named("name")).ok()).map(|text| text.sections[0].value.clone()).unwrap_or_else(|| format!("{friend:#x}"));
+                                        let name = me.get(root_id).ok().and_then(|ents| text.get(ents.named("name")).ok()).map(|text| text.sections[1].value.clone()).unwrap_or_else(|| format!("{friend:#x}"));
 
                                         let short_name = if name.len() > 20 {
                                             format!("{}...", name.chars().take(17).collect::<String>())
@@ -185,11 +223,9 @@ pub fn update_friends(
                         )
                         .unwrap();
 
-                    if !have_name {
-                        commands
-                            .entity(components.named("name"))
-                            .insert(ResolveAddressTask::new(ipfas.ipfs(), friend));
-                    }
+                    commands
+                        .entity(components.named("name"))
+                        .insert(PendingProfileName(friend));
                     components.root
                 })
                 .collect::<Vec<_>>();
@@ -201,8 +237,6 @@ pub fn update_friends(
                 .sent_requests
                 .iter()
                 .map(|friend| {
-                    let found_name = names.get(friend).map(ToString::to_string);
-                    let have_name = found_name.is_some();
                     let friend = *friend;
                     let components = commands
                         .spawn_template(
@@ -211,7 +245,7 @@ pub fn update_friends(
                             DuiProps::default()
                                 .with_prop(
                                     "name",
-                                    found_name.unwrap_or_else(|| format!("{friend:#x}")),
+                                    format!("<b>{friend:#x}</b>"),
                                 )
                                 .with_prop(
                                     "cancel",
@@ -228,11 +262,9 @@ pub fn update_friends(
                         )
                         .unwrap();
 
-                    if !have_name {
-                        commands
-                            .entity(components.named("name"))
-                            .insert(ResolveAddressTask::new(ipfas.ipfs(), friend));
-                    }
+                    commands
+                        .entity(components.named("name"))
+                        .insert(PendingProfileName(friend));
                     components.root
                 })
                 .collect::<Vec<_>>();
@@ -240,8 +272,6 @@ pub fn update_friends(
                 .received_requests
                 .iter()
                 .map(|(friend, _msg)| {
-                    let found_name = names.get(friend).map(ToString::to_string);
-                    let have_name = found_name.is_some();
                     let friend = *friend;
                     let components = commands
                         .spawn_template(
@@ -250,7 +280,7 @@ pub fn update_friends(
                             DuiProps::default()
                                 .with_prop(
                                     "name",
-                                    found_name.unwrap_or_else(|| format!("{friend:#x}")),
+                                    format!("<b>{friend:#x}</b>"),
                                 )
                                 .with_prop(
                                     "accept",
@@ -279,11 +309,9 @@ pub fn update_friends(
                         )
                         .unwrap();
 
-                    if !have_name {
-                        commands
-                            .entity(components.named("name"))
-                            .insert(ResolveAddressTask::new(ipfas.ipfs(), friend));
-                    }
+                    commands
+                        .entity(components.named("name"))
+                        .insert(PendingProfileName(friend));
                     components.root
                 })
                 .collect::<Vec<_>>();
@@ -291,44 +319,6 @@ pub fn update_friends(
             pending.despawn_descendants();
             pending.try_push_children(&new_sent);
             pending.try_push_children(&new_recd);
-        }
-    }
-}
-
-#[derive(Component)]
-pub struct ResolveAddressTask(Task<Result<String, anyhow::Error>>);
-
-impl ResolveAddressTask {
-    fn new(ipfs: &Arc<IpfsIo>, address: Address) -> Self {
-        let ipfs = Arc::clone(ipfs);
-        let task = IoTaskPool::get().spawn(async move {
-            debug!("resolve address: starting profile fetch");
-            let str_address = format!("{address:x}");
-            let str_address = str_address
-                .chars()
-                .skip(str_address.len().saturating_sub(4))
-                .collect::<String>();
-            let res = get_remote_profile(address, ipfs)
-                .await
-                .map(|profile| format!("{}#{}", profile.content.name, str_address));
-            debug!("resolve address: ending profile fetch: {:?}", res);
-            res
-        });
-        Self(task)
-    }
-}
-
-pub fn resolve_addresses(
-    mut commands: Commands,
-    mut q: Query<(Entity, &mut ResolveAddressTask, &mut Text)>,
-) {
-    for (ent, mut task, mut text) in q.iter_mut() {
-        if let Some(name) = task.0.complete() {
-            match name {
-                Ok(name) => text.sections[0].value = name,
-                Err(e) => warn!("failed to resolve user name: {e}"),
-            };
-            commands.entity(ent).remove::<ResolveAddressTask>();
         }
     }
 }
@@ -485,29 +475,18 @@ pub fn show_popups(
     mut toaster: Toaster,
     mut friends: EventReader<FriendshipEvent>,
     mut chats: EventReader<DirectChatEvent>,
-    mut tasks: Local<Vec<(String, Task<String>)>>,
     mut ix: Local<usize>,
-    profiles: Query<&UserProfile>,
-    ipfas: IpfsAssetServer,
+    mut pending_friends: Local<Vec<friendship_event_response::Body>>,
+    mut pending_chats: Local<Vec<DirectChatMessage>>,
+    mut cache: ProfileManager,
 ) {
-    if friends.is_empty() && chats.is_empty() && tasks.is_empty() {
-        return;
-    }
+    pending_friends.extend(friends.read().filter_map(|f| f.0.clone()));
+    pending_chats.extend(chats.read().map(|e| e.0.clone()));
 
-    // TODO don't build this every time
-    let names = profiles
-        .iter()
-        .filter_map(|p| {
-            p.content
-                .eth_address
-                .as_h160()
-                .map(|address| (address, &p.content.name))
-        })
-        .collect::<HashMap<_, _>>();
-
-    for friend in friends.read() {
-        if let Some(body) = friend.0.as_ref() {
-            let (message, address) = match body {
+    *pending_friends = pending_friends
+        .drain(..)
+        .filter_map(|friend| {
+            let (message, address) = match &friend {
                 Body::Request(r) => (
                     "you received a friend request",
                     &r.user.as_ref().map(|u| &u.address),
@@ -530,49 +509,46 @@ pub fn show_popups(
                 ),
             };
 
-            let user_task = if let Some(h160) = address.and_then(AsH160::as_h160) {
-                if let Some(name) = names.get(&h160).map(ToString::to_string) {
-                    let name = name.clone();
-                    IoTaskPool::get().spawn(async move { name })
-                } else {
-                    let task = ResolveAddressTask::new(ipfas.ipfs(), h160);
-                    let address = address.cloned();
-                    IoTaskPool::get().spawn(async move {
-                        let resolved = task.0.await;
-                        resolved.unwrap_or(address.unwrap())
-                    })
-                }
-            } else {
-                let address = address.cloned();
-                IoTaskPool::get().spawn(async move { address.unwrap_or_default() })
+            let Some(address) = address else {
+                warn!("no address?");
+                return None;
             };
-            tasks.push((message.to_string(), user_task));
-        }
-    }
+            let Some(h160) = address.as_h160() else {
+                warn!("not h160?");
+                return None;
+            };
 
-    for chat in chats.read().filter(|&chat| !chat.0.me_speaking) {
-        let user_task = if let Some(name) = names.get(&chat.0.partner).map(ToString::to_string) {
-            let name = name.clone();
-            IoTaskPool::get().spawn(async move { name })
-        } else {
-            let task = ResolveAddressTask::new(ipfas.ipfs(), chat.0.partner);
-            let address = chat.0.partner;
-            IoTaskPool::get().spawn(async move {
-                let resolved = task.0.await;
-                resolved.unwrap_or_else(|_| format!("{address:#x}"))
-            })
-        };
+            let name = match cache.get_data(h160) {
+                Ok(None) => return Some(friend),
+                Ok(Some(data)) => data.name,
+                Err(_) => address.to_string(),
+            };
 
-        tasks.push((chat.0.message.clone(), user_task));
-    }
-
-    tasks.retain_mut(|(msg, task)| {
-        if let Some(name) = task.complete() {
-            toaster.add_toast(format!("friendy {}", *ix), format!("{}: {}", name, msg));
+            toaster.add_toast(format!("friendy {}", *ix), format!("{}: {}", name, message));
             *ix += 1;
-            false
-        } else {
-            true
-        }
-    });
+            None
+        })
+        .collect();
+
+    *pending_chats = pending_chats
+        .drain(..)
+        .filter_map(|chat| {
+            if chat.me_speaking {
+                return None;
+            }
+
+            let name = match cache.get_data(chat.partner) {
+                Ok(None) => return Some(chat),
+                Ok(Some(data)) => data.name,
+                Err(_) => format!("{:#x}", chat.partner),
+            };
+
+            toaster.add_toast(
+                format!("friendy {}", *ix),
+                format!("{}: {}", name, chat.message),
+            );
+            *ix += 1;
+            None
+        })
+        .collect();
 }
