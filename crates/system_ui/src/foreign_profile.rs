@@ -2,7 +2,9 @@ use avatar::{avatar_texture::PhotoBooth, AvatarShape};
 use bevy::{prelude::*, render::render_resource::Extent3d};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
-    profile::SerializedProfile, structs::{ActiveDialog, ShowProfileEvent, PROFILE_UI_RENDERLAYER}, util::FireEventEx
+    profile::SerializedProfile,
+    structs::{ActiveDialog, ShowProfileEvent, PROFILE_UI_RENDERLAYER},
+    util::FireEventEx,
 };
 use comms::profile::{ProfileManager, UserProfile};
 use ethers_core::types::Address;
@@ -36,43 +38,45 @@ fn show_foreign_profiles(
 ) {
     pending_events.extend(evs.read().map(|ev| ev.0));
 
-    *pending_events = pending_events.drain(..).filter(|&address| {
-        let default_profile = UserProfile {
-            content: SerializedProfile {
-                name: "Profile could not be loaded ...".to_owned(),
+    *pending_events = pending_events
+        .drain(..)
+        .filter(|&address| {
+            let default_profile = UserProfile {
+                content: SerializedProfile {
+                    name: "Profile could not be loaded ...".to_owned(),
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            ..Default::default()
-        };
-        let profile = match cache.get_data(address) {
-            Ok(None) => return true,
-            Err(_) => &default_profile,
-            Ok(Some(profile)) => profile
-        };
+            };
+            let profile = match cache.get_data(address) {
+                Ok(None) => return true,
+                Err(_) => &default_profile,
+                Ok(Some(profile)) => profile,
+            };
 
-        let Some(permit) = active_dialog.try_acquire() else {
-            return true;
-        };
+            let Some(permit) = active_dialog.try_acquire() else {
+                return true;
+            };
 
-        // display profile
-        let instance = photo_booth.spawn_booth(
-            PROFILE_UI_RENDERLAYER,
-            AvatarShape::from(profile),
-            Extent3d::default(),
-            false,
-        );
+            // display profile
+            let instance = photo_booth.spawn_booth(
+                PROFILE_UI_RENDERLAYER,
+                AvatarShape::from(profile),
+                Extent3d::default(),
+                false,
+            );
 
-        let components = commands
-            .spawn_template(
-                &dui,
-                "foreign-profile",
-                DuiProps::new()
-                    .with_prop("title", format!("{} profile", profile.content.name))
-                    .with_prop("booth-instance", instance)
-                    .with_prop("eth-address", profile.content.eth_address.clone())
-                    .with_prop(
-                        "buttons",
-                        vec![
+            let components = commands
+                .spawn_template(
+                    &dui,
+                    "foreign-profile",
+                    DuiProps::new()
+                        .with_prop("title", format!("{} profile", profile.content.name))
+                        .with_prop("booth-instance", instance)
+                        .with_prop("eth-address", profile.content.eth_address.clone())
+                        .with_prop(
+                            "buttons",
+                            vec![
                             DuiButton::new_enabled(
                                 "Add Friend",
                                 move |mut client: ResMut<SocialClient>, mut commands: Commands| {
@@ -150,13 +154,16 @@ fn show_foreign_profiles(
                             ),
                             DuiButton::close_happy("Ok"),
                         ],
-                    ),
-            )
-            .unwrap();
+                        ),
+                )
+                .unwrap();
 
-        commands.entity(components.root).insert((ProfileDialog(address), permit));
-        false
-    }).collect();
+            commands
+                .entity(components.root)
+                .insert((ProfileDialog(address), permit));
+            false
+        })
+        .collect();
 }
 
 fn update_profile_friend_buttons(

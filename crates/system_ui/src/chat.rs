@@ -257,10 +257,7 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
     commands.entity(components.named("tabs")).insert(ChatTab);
 }
 
-fn toggle_friends(
-    container: Query<&DuiEntities, With<ChatboxContainer>>,
-    mut commands: Commands,
-) {
+fn toggle_friends(container: Query<&DuiEntities, With<ChatboxContainer>>, mut commands: Commands) {
     let components = container
         .get_single()
         .ok()

@@ -88,7 +88,10 @@ pub fn format_address(address: H160, name: Option<&str>) -> String {
     if let Some(name) = name {
         format!("{name}#{str_address}")
     } else {
-        format!("0x{}...{str_address}", str_address.chars().take(4).collect::<String>())
+        format!(
+            "0x{}...{str_address}",
+            str_address.chars().take(4).collect::<String>()
+        )
     }
 }
 
