@@ -1,6 +1,6 @@
 <define-template id="nft-dialog">
     <dialog title="@title" buttons="@buttons">
-        <div>
+        <vscroll>
             <div style="width: 35vw; height: 35vw;">
                 <bounds style="width: 100%; height: 100%;"
                     corner-size="1vmin"
@@ -24,6 +24,6 @@
                 </div>
                 <hr />
             </div>
-        </div>
+        </vscroll>
     </dialog>
 </define-template>

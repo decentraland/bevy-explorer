@@ -20,13 +20,15 @@
             border-color="#1C298aff"
             color="#aa1fc166"
         >
-            <large-text style="margin: 2vmin; text-align: center; color: white;" text="@title" />
-            <hr />
-            <apply-children />
-            <hr />
-            <div style="width: 100%">
+            <div style="flex-direction: column; align-items: center; min-height: 0px; flex-grow: 1;">
+                <large-text style="margin: 2vmin; text-align: center; color: white;" text="@title" />
+                <hr />
+                <apply-children />
+                <hr />
+            </div>
+            <div style="width: 100%;">
                 <space />
-                <button-set buttons="@buttons" />
+                <button-set id="button-set" buttons="@buttons" />
             </div>
         </bounds>
     </fullscreen-block>

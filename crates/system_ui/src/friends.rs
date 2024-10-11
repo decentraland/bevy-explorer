@@ -36,13 +36,13 @@ pub fn update_profile_names(
     mut q: Query<(Entity, &PendingProfileName, &mut Text)>,
 ) {
     for (ent, pending, mut text) in q.iter_mut() {
-        match cache.get_data(pending.0) {
+        match cache.get_name(pending.0) {
             Err(_) => {
                 for section in &mut text.sections {
                     section.style.color = Color::srgb(0.5, 0.0, 0.0);
                 }
             }
-            Ok(Some(data)) => {
+            Ok(Some(name)) => {
                 for section in &mut text.sections {
                     section.style.color = Color::srgb(0.0, 0.0, 0.0);
                     if section.value.starts_with("0x") {
@@ -51,7 +51,7 @@ pub fn update_profile_names(
                             .chars()
                             .skip(str_address.len().saturating_sub(4))
                             .collect::<String>();
-                        section.value = format!("{}#{}", data.name, str_address);
+                        section.value = format!("{}#{}", name, str_address);
                     }
                 }
                 commands.entity(ent).remove::<PendingProfileName>();
@@ -518,9 +518,9 @@ pub fn show_popups(
                 return None;
             };
 
-            let name = match cache.get_data(h160) {
+            let name = match cache.get_name(h160) {
                 Ok(None) => return Some(friend),
-                Ok(Some(data)) => data.name,
+                Ok(Some(name)) => name.to_owned(),
                 Err(_) => address.to_string(),
             };
 
@@ -537,9 +537,9 @@ pub fn show_popups(
                 return None;
             }
 
-            let name = match cache.get_data(chat.partner) {
+            let name = match cache.get_name(chat.partner) {
                 Ok(None) => return Some(chat),
-                Ok(Some(data)) => data.name,
+                Ok(Some(name)) => name.to_owned(),
                 Err(_) => format!("{:#x}", chat.partner),
             };
 

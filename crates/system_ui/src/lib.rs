@@ -5,6 +5,7 @@ pub mod crash_report;
 pub mod discover;
 pub mod emote_select;
 pub mod emotes;
+pub mod foreign_profile;
 pub mod friends;
 pub mod login;
 pub mod map;
@@ -28,6 +29,7 @@ use common::{
     structs::{ActiveDialog, UiRoot},
 };
 use emote_select::EmoteUiPlugin;
+use foreign_profile::ForeignProfilePlugin;
 use input_manager::MouseInteractionComponent;
 use login::LoginPlugin;
 use map::MapPlugin;
@@ -65,6 +67,7 @@ impl Plugin for SystemUiPlugin {
             ProfileDetailPlugin,
             OowUiPlugin,
             PermissionPlugin,
+            ForeignProfilePlugin,
         ));
     }
 }

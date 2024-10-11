@@ -5,7 +5,7 @@ use bevy::{
     ecs::system::SystemParam,
     prelude::*,
     tasks::{IoTaskPool, Task},
-    utils::{hashbrown::hash_map::Entry, HashMap},
+    utils::HashMap,
 };
 use dcl::interface::CrdtType;
 use ethers_core::types::Address;
@@ -52,27 +52,8 @@ impl Plugin for UserProfilePlugin {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct ProfileDisplayData {
-    pub name: String,
-    pub image_path: Option<PathBuf>,
-}
-
-impl From<UserProfile> for ProfileDisplayData {
-    fn from(profile: UserProfile) -> Self {
-        Self {
-            name: profile.content.name,
-            image_path: profile.content.avatar.snapshots.map(|snapshots| {
-                let url = format!("{}{}", profile.base_url, snapshots.face256);
-                let ipfs_path = IpfsPath::new_from_url(&url, "png");
-                PathBuf::from(&ipfs_path)
-            }),
-        }
-    }
-}
-
 enum ProfileDisplayState {
-    Loaded(ProfileDisplayData),
+    Loaded(Box<UserProfile>),
     Loading(Task<Result<UserProfile, anyhow::Error>>),
     Failed,
 }
@@ -92,53 +73,55 @@ impl<'w, 's> ProfileManager<'w, 's> {
     pub fn get_data(
         &mut self,
         address: Address,
-    ) -> Result<Option<ProfileDisplayData>, ProfileMissingError> {
-        match self.cache.0.entry(address) {
-            Entry::Occupied(mut o) => match o.get_mut() {
-                ProfileDisplayState::Loaded(data) => Ok(Some(data.clone())),
-                ProfileDisplayState::Loading(task) => match task.complete() {
-                    Some(Ok(profile)) => {
-                        let data = ProfileDisplayData::from(profile);
-                        o.insert(ProfileDisplayState::Loaded(data.clone()));
-                        Ok(Some(data))
-                    }
-                    Some(Err(_)) => {
-                        o.insert(ProfileDisplayState::Failed);
-                        Err(ProfileMissingError)
-                    }
-                    None => Ok(None),
-                },
-                ProfileDisplayState::Failed => Err(ProfileMissingError),
-            },
-            Entry::Vacant(v) => {
-                let task =
-                    IoTaskPool::get().spawn(get_remote_profile(address, self.ipfs.ipfs().clone()));
-                v.insert(ProfileDisplayState::Loading(task));
-                Ok(None)
+    ) -> Result<Option<&UserProfile>, ProfileMissingError> {
+        let state = self.cache.0.entry(address).or_insert_with(|| {
+            ProfileDisplayState::Loading(
+                IoTaskPool::get().spawn(get_remote_profile(address, self.ipfs.ipfs().clone())),
+            )
+        });
+
+        if let ProfileDisplayState::Loading(task) = state {
+            match task.complete() {
+                Some(Ok(profile)) => *state = ProfileDisplayState::Loaded(Box::new(profile)),
+                Some(Err(_)) => *state = ProfileDisplayState::Failed,
+                None => (),
             }
         }
+
+        Ok(match state {
+            ProfileDisplayState::Loaded(data) => Some(data),
+            ProfileDisplayState::Loading(_) => None,
+            ProfileDisplayState::Failed => return Err(ProfileMissingError),
+        })
     }
 
     pub fn get_image(
         &mut self,
         address: Address,
     ) -> Result<Option<Handle<Image>>, ProfileMissingError> {
-        let data = self.get_data(address)?;
-        let Some(data) = data else {
+        let profile = self.get_data(address)?;
+        let Some(profile) = profile else {
             return Ok(None);
         };
-        Ok(Some(
-            self.ipfs
-                .asset_server()
-                .load(data.image_path.ok_or(ProfileMissingError)?),
-        ))
+        let Some(path) = profile.content.avatar.snapshots.as_ref().map(|snapshots| {
+            let url = format!("{}{}", profile.base_url, snapshots.face256);
+            let ipfs_path = IpfsPath::new_from_url(&url, "png");
+            PathBuf::from(&ipfs_path)
+        }) else {
+            return Err(ProfileMissingError);
+        };
+        Ok(Some(self.ipfs.asset_server().load(path)))
+    }
+
+    pub fn get_name(&mut self, address: Address) -> Result<Option<&String>, ProfileMissingError> {
+        Ok(self.get_data(address)?.map(|profile| &profile.content.name))
     }
 
     pub fn update(&mut self, profile: UserProfile) {
         if let Some(address) = profile.content.eth_address.as_h160() {
             self.cache
                 .0
-                .insert(address, ProfileDisplayState::Loaded(profile.into()));
+                .insert(address, ProfileDisplayState::Loaded(Box::new(profile)));
         }
     }
 }

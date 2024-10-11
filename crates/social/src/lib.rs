@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use client::{DirectChatMessage, SocialClientHandler};
 use common::util::FireEventEx;
 use dcl_component::proto_components::social::friendship_event_response;
+use ethers_core::types::Address;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use wallet::Wallet;
 
@@ -57,6 +58,33 @@ pub fn init_social_client(
 
 #[derive(Resource, Default)]
 pub struct SocialClient(pub Option<SocialClientHandler>);
+
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
+pub enum FriendshipState {
+    NotFriends,
+    SentRequest,
+    RecdRequested,
+    Friends,
+    Error,
+}
+
+impl SocialClient {
+    pub fn get_state(&self, address: Address) -> FriendshipState {
+        let Some(client) = self.0.as_ref() else {
+            return FriendshipState::Error;
+        };
+        if client.friends.contains(&address) {
+            return FriendshipState::Friends;
+        }
+        if client.sent_requests.contains(&address) {
+            return FriendshipState::SentRequest;
+        }
+        if client.received_requests.contains_key(&address) {
+            return FriendshipState::RecdRequested;
+        }
+        FriendshipState::NotFriends
+    }
+}
 
 #[derive(Event)]
 pub struct FriendshipEvent(pub Option<friendship_event_response::Body>);
