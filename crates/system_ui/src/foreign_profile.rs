@@ -2,12 +2,10 @@ use avatar::{avatar_texture::PhotoBooth, AvatarShape};
 use bevy::{prelude::*, render::render_resource::Extent3d};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
-    structs::{ActiveDialog, ShowProfileEvent, PROFILE_UI_RENDERLAYER},
-    util::FireEventEx,
+    profile::SerializedProfile, structs::{ActiveDialog, ShowProfileEvent, PROFILE_UI_RENDERLAYER}, util::FireEventEx
 };
-use comms::profile::ProfileManager;
+use comms::profile::{ProfileManager, UserProfile};
 use ethers_core::types::Address;
-use scene_runner::Toaster;
 use social::{FriendshipEvent, FriendshipState, SocialClient};
 use ui_core::button::DuiButton;
 
@@ -33,128 +31,131 @@ fn show_foreign_profiles(
     mut cache: ProfileManager,
     mut pending_events: Local<Vec<Address>>,
     active_dialog: Res<ActiveDialog>,
-    mut toaster: Toaster,
     mut photo_booth: PhotoBooth,
     dui: Res<DuiRegistry>,
 ) {
     pending_events.extend(evs.read().map(|ev| ev.0));
 
     *pending_events = pending_events.drain(..).filter(|&address| {
-        match cache.get_data(address) {
-            Err(_) => {
-                toaster.add_toast(format!("missing {address:x}"), format!("Profile not found for user {address:#x}"));
-                false
-            }
-            Ok(None) => true,
-            Ok(Some(profile)) => {
-                let Some(permit) = active_dialog.try_acquire() else {
-                    return true;
-                };
+        let default_profile = UserProfile {
+            content: SerializedProfile {
+                name: "Profile could not be loaded ...".to_owned(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let profile = match cache.get_data(address) {
+            Ok(None) => return true,
+            Err(_) => &default_profile,
+            Ok(Some(profile)) => profile
+        };
 
-                // display profile
-                let instance = photo_booth.spawn_booth(
-                    PROFILE_UI_RENDERLAYER,
-                    AvatarShape::from(profile),
-                    Extent3d::default(),
-                    false,
-                );
+        let Some(permit) = active_dialog.try_acquire() else {
+            return true;
+        };
 
-                let components = commands
-                    .spawn_template(
-                        &dui,
-                        "foreign-profile",
-                        DuiProps::new()
-                            .with_prop("title", format!("{} profile", profile.content.name))
-                            .with_prop("booth-instance", instance)
-                            .with_prop("eth-address", profile.content.eth_address.clone())
-                            .with_prop(
-                                "buttons",
-                                vec![
-                                    DuiButton::new_enabled(
-                                        "Add Friend",
-                                        move |mut client: ResMut<SocialClient>, mut commands: Commands| {
-                                            let Some(client) = client.0.as_mut() else {
-                                                warn!("not connected");
-                                                return;
-                                            };
+        // display profile
+        let instance = photo_booth.spawn_booth(
+            PROFILE_UI_RENDERLAYER,
+            AvatarShape::from(profile),
+            Extent3d::default(),
+            false,
+        );
 
-                                            if let Err(e) = client.friend_request(address, None) {
-                                                warn!("error: {e}");
-                                            } else {
-                                                commands.fire_event(FriendshipEvent(None));
-                                            }
-                                        },
-                                    ),
-                                    DuiButton::new_enabled(
-                                        "Cancel Friend Request",
-                                        move |mut client: ResMut<SocialClient>, mut commands: Commands| {
-                                            let Some(client) = client.0.as_mut() else {
-                                                warn!("not connected");
-                                                return;
-                                            };
+        let components = commands
+            .spawn_template(
+                &dui,
+                "foreign-profile",
+                DuiProps::new()
+                    .with_prop("title", format!("{} profile", profile.content.name))
+                    .with_prop("booth-instance", instance)
+                    .with_prop("eth-address", profile.content.eth_address.clone())
+                    .with_prop(
+                        "buttons",
+                        vec![
+                            DuiButton::new_enabled(
+                                "Add Friend",
+                                move |mut client: ResMut<SocialClient>, mut commands: Commands| {
+                                    let Some(client) = client.0.as_mut() else {
+                                        warn!("not connected");
+                                        return;
+                                    };
 
-                                            if let Err(e) = client.cancel_request(address) {
-                                                warn!("error: {e}");
-                                            } else {
-                                                commands.fire_event(FriendshipEvent(None));
-                                            }
-                                        },
-                                    ),
-                                    DuiButton::new_enabled(
-                                        "Reject Friend Request",
-                                        move |mut client: ResMut<SocialClient>, mut commands: Commands| {
-                                            let Some(client) = client.0.as_mut() else {
-                                                warn!("not connected");
-                                                return;
-                                            };
-
-                                            if let Err(e) = client.reject_request(address) {
-                                                warn!("error: {e}");
-                                            } else {
-                                                commands.fire_event(FriendshipEvent(None));
-                                            }
-                                        },
-                                    ),
-                                    DuiButton::new_enabled(
-                                        "Accept Friend Request",
-                                        move |mut client: ResMut<SocialClient>, mut commands: Commands| {
-                                            let Some(client) = client.0.as_mut() else {
-                                                warn!("not connected");
-                                                return;
-                                            };
-
-                                            if let Err(e) = client.accept_request(address) {
-                                                warn!("error: {e}");
-                                            } else {
-                                                commands.fire_event(FriendshipEvent(None));
-                                            }
-                                        },
-                                    ),
-                                    DuiButton::new_enabled(
-                                        "End Friendship",
-                                        move |mut client: ResMut<SocialClient>, mut commands: Commands| {
-                                            let Some(client) = client.0.as_mut() else {
-                                                warn!("not connected");
-                                                return;
-                                            };
-
-                                            if let Err(e) = client.delete_friend(address) {
-                                                warn!("error: {e}");
-                                            } else {
-                                                commands.fire_event(FriendshipEvent(None));
-                                            }
-                                        },
-                                    ),
-                                    DuiButton::close_happy("Ok"),
-                                ],
+                                    if let Err(e) = client.friend_request(address, None) {
+                                        warn!("error: {e}");
+                                    } else {
+                                        commands.fire_event(FriendshipEvent(None));
+                                    }
+                                },
                             ),
-                    )
-                    .unwrap();
+                            DuiButton::new_enabled(
+                                "Cancel Friend Request",
+                                move |mut client: ResMut<SocialClient>, mut commands: Commands| {
+                                    let Some(client) = client.0.as_mut() else {
+                                        warn!("not connected");
+                                        return;
+                                    };
 
-                commands.entity(components.root).insert((ProfileDialog(address), permit));
-                false
-            }
-        }
+                                    if let Err(e) = client.cancel_request(address) {
+                                        warn!("error: {e}");
+                                    } else {
+                                        commands.fire_event(FriendshipEvent(None));
+                                    }
+                                },
+                            ),
+                            DuiButton::new_enabled(
+                                "Reject Friend Request",
+                                move |mut client: ResMut<SocialClient>, mut commands: Commands| {
+                                    let Some(client) = client.0.as_mut() else {
+                                        warn!("not connected");
+                                        return;
+                                    };
+
+                                    if let Err(e) = client.reject_request(address) {
+                                        warn!("error: {e}");
+                                    } else {
+                                        commands.fire_event(FriendshipEvent(None));
+                                    }
+                                },
+                            ),
+                            DuiButton::new_enabled(
+                                "Accept Friend Request",
+                                move |mut client: ResMut<SocialClient>, mut commands: Commands| {
+                                    let Some(client) = client.0.as_mut() else {
+                                        warn!("not connected");
+                                        return;
+                                    };
+
+                                    if let Err(e) = client.accept_request(address) {
+                                        warn!("error: {e}");
+                                    } else {
+                                        commands.fire_event(FriendshipEvent(None));
+                                    }
+                                },
+                            ),
+                            DuiButton::new_enabled(
+                                "End Friendship",
+                                move |mut client: ResMut<SocialClient>, mut commands: Commands| {
+                                    let Some(client) = client.0.as_mut() else {
+                                        warn!("not connected");
+                                        return;
+                                    };
+
+                                    if let Err(e) = client.delete_friend(address) {
+                                        warn!("error: {e}");
+                                    } else {
+                                        commands.fire_event(FriendshipEvent(None));
+                                    }
+                                },
+                            ),
+                            DuiButton::close_happy("Ok"),
+                        ],
+                    ),
+            )
+            .unwrap();
+
+        commands.entity(components.root).insert((ProfileDialog(address), permit));
+        false
     }).collect();
 }
 

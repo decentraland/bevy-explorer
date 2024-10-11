@@ -100,6 +100,7 @@ pub fn update_tooltip(
                     },
                     border_color: Color::srgba(1.0, 1.0, 1.0, 1.0 * *vis).into(),
                     background_color: Color::srgba(0.0, 0.0, 0.0, 0.5 * *vis).into(),
+                    z_index: ZIndex::Global(200),
                     ..Default::default()
                 },
                 ToolTipNode,

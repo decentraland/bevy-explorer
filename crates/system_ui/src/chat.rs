@@ -224,7 +224,8 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
         .with_prop("tab-changed", On::<DataChanged>::new(tab_changed))
         .with_prop("initial-tab", Some(0usize))
         .with_prop("close", On::<Click>::new(close_ui))
-        .with_prop("copy", On::<Click>::new(copy_chat));
+        .with_prop("copy", On::<Click>::new(copy_chat))
+        .with_prop("friends", On::<Click>::new(toggle_friends));
 
     let components = commands
         .entity(root.0)
@@ -256,13 +257,9 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
     commands.entity(components.named("tabs")).insert(ChatTab);
 }
 
-fn copy_chat(
+fn toggle_friends(
     container: Query<&DuiEntities, With<ChatboxContainer>>,
     mut commands: Commands,
-    chatbox: Query<&Children, With<ChatBox>>,
-    msgs: Query<&DisplayChatMessage>,
-    mut toaster: Toaster,
-    frame: Res<FrameCount>,
 ) {
     let components = container
         .get_single()
@@ -290,7 +287,14 @@ fn copy_chat(
                 };
             });
     }
+}
 
+fn copy_chat(
+    chatbox: Query<&Children, With<ChatBox>>,
+    msgs: Query<&DisplayChatMessage>,
+    mut toaster: Toaster,
+    frame: Res<FrameCount>,
+) {
     let mut copy = String::default();
     let Ok(children) = chatbox.get_single() else {
         return;

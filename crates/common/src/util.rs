@@ -79,6 +79,19 @@ impl AsH160 for String {
     }
 }
 
+pub fn format_address(address: H160, name: Option<&str>) -> String {
+    let str_address = format!("{:x}", address);
+    let str_address = str_address
+        .chars()
+        .skip(str_address.len().saturating_sub(4))
+        .collect::<String>();
+    if let Some(name) = name {
+        format!("{name}#{str_address}")
+    } else {
+        format!("0x{}...{str_address}", str_address.chars().take(4).collect::<String>())
+    }
+}
+
 /// a struct for buffering a certain amount of history and providing a subscription mechanism for updates
 #[derive(Debug)]
 pub struct RingBuffer<T: Clone + std::fmt::Debug> {

@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
-use common::util::{AsH160, FireEventEx, TryPushChildrenEx};
+use common::{
+    structs::ShowProfileEvent,
+    util::{format_address, AsH160, FireEventEx, TryPushChildrenEx},
+};
 use comms::profile::ProfileManager;
 use dcl_component::proto_components::social::friendship_event_response::{self, Body};
 use ethers_core::types::Address;
@@ -46,12 +49,7 @@ pub fn update_profile_names(
                 for section in &mut text.sections {
                     section.style.color = Color::srgb(0.0, 0.0, 0.0);
                     if section.value.starts_with("0x") {
-                        let str_address = format!("{:x}", pending.0);
-                        let str_address = str_address
-                            .chars()
-                            .skip(str_address.len().saturating_sub(4))
-                            .collect::<String>();
-                        section.value = format!("{}#{}", name, str_address);
+                        section.value = format_address(pending.0, Some(name));
                     }
                 }
                 commands.entity(ent).remove::<PendingProfileName>();
@@ -120,8 +118,9 @@ pub fn update_friends(
                             DuiProps::default()
                                 .with_prop(
                                     "name",
-                                    format!("<b>{friend:#x}</b>"),
+                                    format!("<b>{}</b>", format_address(friend, None)),
                                 )
+                                .with_prop("profile", On::<Click>::new(move |mut commands: Commands| { commands.fire_event(ShowProfileEvent(friend)); }))
                                 .with_prop(
                                     "chat",
 
@@ -144,10 +143,10 @@ pub fn update_friends(
                                             return;
                                         }
 
-                                        let name = me.get(root_id).ok().and_then(|ents| text.get(ents.named("name")).ok()).map(|text| text.sections[1].value.clone()).unwrap_or_else(|| format!("{friend:#x}"));
+                                        let name = me.get(root_id).ok().and_then(|ents| text.get(ents.named("name")).ok()).map(|text| text.sections[1].value.clone()).unwrap_or_else(|| format_address(friend, None));
 
-                                        let short_name = if name.len() > 20 {
-                                            format!("{}...", name.chars().take(17).collect::<String>())
+                                        let short_name = if name.len() > 25 {
+                                            format!("{}...{}", name.chars().take(17).collect::<String>(), name.chars().skip(name.len() - 8).collect::<String>())
                                         } else {
                                             name
                                         };
@@ -207,18 +206,6 @@ pub fn update_friends(
 
 
 
-                                )
-                                .with_prop(
-                                    "delete",
-                                    On::<Click>::new(move |mut client: ResMut<SocialClient>, mut commands: Commands| {
-                                        let Some(client) = client.0.as_mut() else {
-                                            warn!("no client");
-                                            return;
-                                        };
-
-                                        let _ = client.delete_friend(friend);
-                                        commands.fire_event(FriendshipEvent(None));
-                                    }),
                                 ),
                         )
                         .unwrap();
@@ -245,8 +232,9 @@ pub fn update_friends(
                             DuiProps::default()
                                 .with_prop(
                                     "name",
-                                    format!("<b>{friend:#x}</b>"),
+                                    format!("<b>{}</b>", format_address(friend, None)),
                                 )
+                                .with_prop("profile", On::<Click>::new(move |mut commands: Commands| { commands.fire_event(ShowProfileEvent(friend)); }))
                                 .with_prop(
                                     "cancel",
                                     On::<Click>::new(move |mut client: ResMut<SocialClient>, mut commands: Commands| {
@@ -268,6 +256,11 @@ pub fn update_friends(
                     components.root
                 })
                 .collect::<Vec<_>>();
+
+            let mut sent_pending = commands.entity(components.named("sent-friends"));
+            sent_pending.despawn_descendants();
+            sent_pending.try_push_children(&new_sent);
+
             let new_recd = client
                 .received_requests
                 .iter()
@@ -280,8 +273,9 @@ pub fn update_friends(
                             DuiProps::default()
                                 .with_prop(
                                     "name",
-                                    format!("<b>{friend:#x}</b>"),
+                                    format!("<b>{}</b>", format_address(friend, None)),
                                 )
+                                .with_prop("profile", On::<Click>::new(move |mut commands: Commands| { commands.fire_event(ShowProfileEvent(friend)); }))
                                 .with_prop(
                                     "accept",
                                     On::<Click>::new(move |mut client: ResMut<SocialClient>, mut commands: Commands| {
@@ -315,10 +309,10 @@ pub fn update_friends(
                     components.root
                 })
                 .collect::<Vec<_>>();
-            let mut pending = commands.entity(components.named("pending-friends"));
-            pending.despawn_descendants();
-            pending.try_push_children(&new_sent);
-            pending.try_push_children(&new_recd);
+
+            let mut recd_pending = commands.entity(components.named("received-friends"));
+            recd_pending.despawn_descendants();
+            recd_pending.try_push_children(&new_recd);
         }
     }
 }
@@ -539,8 +533,8 @@ pub fn show_popups(
 
             let name = match cache.get_name(chat.partner) {
                 Ok(None) => return Some(chat),
-                Ok(Some(name)) => name.to_owned(),
-                Err(_) => format!("{:#x}", chat.partner),
+                Ok(Some(name)) => format_address(chat.partner, Some(name)),
+                Err(_) => format_address(chat.partner, None),
             };
 
             toaster.add_toast(

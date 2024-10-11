@@ -1,6 +1,6 @@
 <define-template id="chat">
     <bounds 
-        style="display: none; width: 45vmin; min-width: 30vmin; flex-direction: column; margin: auto 0px 0px 0px;" 
+        style="display: none; width: 90vmin; min-width: 75vmin; flex-direction: column; margin: auto 0px 0px 0px;" 
         focus="block" 
         interact="true"
         corner-size="2vmin"
@@ -10,8 +10,9 @@
         color="#aa1fc166"
     >
         <div style="justify-content: flex-end;">
-            <button img="images/copy.png" onclick="@copy" image-width="3.3vmin" image-height="3.3vmin" />
-            <button img="images/redx.png" onclick="@close" image-width="3.3vmin" image-height="3.3vmin" />
+            <button img="images/copy.png" tooltip="Copy Chat History" onclick="@copy" image-width="3.3vmin" image-height="3.3vmin" />
+            <button img="images/FriendsIcon.png" tooltip="Toggle Friends" onclick="@friends" image-width="3.3vmin" image-height="3.3vmin" />
+            <button img="images/redx.png" tooltip="Hide Chat Panel" onclick="@close" image-width="3.3vmin" image-height="3.3vmin" />
         </div>
         <div style="flex-direction: row; max-height: 100%;">
             <div style="flex-direction: column; flex-grow: 1; padding: 1vmin; justify-content: flex-end;">
@@ -29,7 +30,7 @@
                     </div>
                 </div>
             </div>
-            <div id="friends-panel" style="flex-direction: column; display: none; min-width: 45vmin; max-width: 45vmin; background-color: #000000aa;">
+            <div id="friends-panel" style="flex-direction: column; min-width: 45vmin; max-width: 45vmin; background-color: #000000aa;">
                 <div style="position-type: absolute; top: 0vmin; bottom: 0vmin; left: 0vmin; right: 0vmin; flex-direction: column; min-width: 100%;">
                     <scroll>
                         <div style="flex-direction: column; min-width: 100%;">
@@ -41,7 +42,12 @@
                             <div style="background-color: #00000000; padding: 1vmin; justify-content: center;">
                                 <med-text text="Pending Invites" style="color: white; " />
                             </div>
-                            <div id="pending-friends" style="flex-direction: column">
+                            <div id="received-friends" style="flex-direction: column">
+                            </div>
+                            <div style="background-color: #00000000; padding: 1vmin; justify-content: center;">
+                                <med-text text="Sent Invites" style="color: white; " />
+                            </div>
+                            <div id="sent-friends" style="flex-direction: column">
                             </div>
                         </div>
                     </scroll>
@@ -62,8 +68,8 @@
     >
         <med-text id="name" text="@name" style="color: black;" />
         <space />
-        <button img="images/chat_button.png" onclick="@chat" image-width="3.3vmin" image-height="3.3vmin"/>
-        <button img="images/redx.png" onclick="@delete" image-width="3.3vmin" image-height="3.3vmin"/>
+        <button img="images/chat_button.png" tooltip="Open Chat" onclick="@chat" image-width="3.3vmin" image-height="3.3vmin"/>
+        <button img="images/person_button.png" tooltip="View Profile" onclick="@profile" image-width="3.3vmin" image-height="3.3vmin"/>
     </bounds>
 </define-template>
 
@@ -78,8 +84,9 @@
     >
         <med-text id="name" text="@name" />
         <space />
-        <button img="images/tick.png" onclick="@accept" image-width="3.3vmin" image-height="3.3vmin"/>
-        <button img="images/redx.png" onclick="@reject" image-width="3.3vmin" image-height="3.3vmin"/>
+        <button img="images/person_button.png" tooltip="View Profile" onclick="@profile" image-width="3.3vmin" image-height="3.3vmin"/>
+        <button img="images/tick.png" tooltip="Accept Request" onclick="@accept" image-width="3.3vmin" image-height="3.3vmin"/>
+        <button img="images/redx.png" tooltip="Reject Request" onclick="@reject" image-width="3.3vmin" image-height="3.3vmin"/>
     </bounds>
 </define-template>
 
@@ -94,13 +101,14 @@
     >
         <med-text id="name" text="@name" />
         <space />
-        <button img="images/redx.png" onclick="@cancel" image-width="3.3vmin" image-height="3.3vmin" />
+        <button img="images/person_button.png" tooltip="View Profile" onclick="@profile" image-width="3.3vmin" image-height="3.3vmin"/>
+        <button img="images/redx.png" tooltip="Cancel Request" onclick="@cancel" image-width="3.3vmin" image-height="3.3vmin" />
     </bounds>
 </define-template>
 
 <define-template id="direct-chat-button">
     <div style="flex-direction: row; align-items: center;">
         <med-text text="@name" style="text-align: center; color: black;"/>
-        <button img="images/redx.png" onclick="@close" image-width="3.3vmin" image-height="3.3vmin" />
+        <button img="images/redx.png" tooltip="Close Chat" onclick="@close" image-width="3.3vmin" image-height="3.3vmin" />
     </div>
 </define-template>

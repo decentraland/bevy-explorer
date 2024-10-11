@@ -7,7 +7,10 @@ use bevy::{
 use bevy_dui::{
     DuiCommandsExt, DuiContext, DuiEntities, DuiProps, DuiRegistry, DuiTemplate, NodeMap,
 };
-use common::util::{ModifyComponentExt, TryPushChildrenEx};
+use common::{
+    structs::ToolTips,
+    util::{ModifyComponentExt, TryPushChildrenEx},
+};
 
 use crate::{
     bound_node::NodeBounds,
@@ -15,7 +18,7 @@ use crate::{
     interact_style::{Active, InteractStyles},
     ui_actions::{
         close_ui_happy, close_ui_sad, close_ui_silent, Click, ClickRepeat, DataChanged, Enabled,
-        On, UiCaller,
+        HoverEnter, HoverExit, On, UiCaller,
     },
 };
 
@@ -29,6 +32,7 @@ pub struct DuiButton {
     pub image: Option<Handle<Image>>,
     pub image_width: Option<Val>,
     pub image_height: Option<Val>,
+    pub tooltip: Option<String>,
 }
 
 impl Default for DuiButton {
@@ -43,6 +47,7 @@ impl Default for DuiButton {
             image: None,
             image_width: None,
             image_height: None,
+            tooltip: None,
         }
     }
 }
@@ -153,6 +158,9 @@ impl DuiTemplate for DuiButtonTemplate {
             data.image_width = props.take_as::<Val>(ctx, "image-width")?;
             data.image_height = props.take_as::<Val>(ctx, "image-height")?;
         };
+        if let Some(tooltip) = props.take::<String>("tooltip")? {
+            data.tooltip = Some(tooltip);
+        }
 
         let mut components = match (data.label, data.image) {
             (Some(label), _) => ctx.render_template(
@@ -184,6 +192,22 @@ impl DuiTemplate for DuiButtonTemplate {
 
         if let Some(styles) = data.styles {
             button.insert(styles);
+        }
+
+        if let Some(tooltip) = data.tooltip {
+            button.insert(On::<HoverEnter>::new(
+                move |mut tooltips: ResMut<ToolTips>,
+                      enabled: Query<&Enabled>,
+                      caller: Res<UiCaller>| {
+                    let enabled = enabled.get(caller.0).map(|e| e.0).unwrap_or(false);
+                    tooltips
+                        .0
+                        .insert("button-tip", vec![(tooltip.clone(), enabled)]);
+                },
+            ));
+            button.insert(On::<HoverExit>::new(|mut tooltips: ResMut<ToolTips>| {
+                tooltips.0.remove("button-tip");
+            }));
         }
 
         if let Some(onclick) = data.onclick {
