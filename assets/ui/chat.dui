@@ -108,7 +108,7 @@
 
 <define-template id="direct-chat-button">
     <div style="flex-direction: row; align-items: center;">
-        <med-text text="@name" style="text-align: center; color: black;"/>
+        <med-text id="name" text="@name" style="text-align: center; color: black;"/>
         <button img="images/redx.png" tooltip="Close Chat" onclick="@close" image-width="3.3vmin" image-height="3.3vmin" />
     </div>
 </define-template>

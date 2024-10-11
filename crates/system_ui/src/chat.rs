@@ -26,7 +26,7 @@ use ui_core::{
     ui_actions::{Click, DataChanged, HoverEnter, HoverExit, On},
 };
 
-use crate::friends::{show_popups, update_conversations, update_friends, update_profile_names};
+use crate::friends::FriendsPlugin;
 
 use super::SystemUiRoot;
 
@@ -37,20 +37,12 @@ impl Plugin for ChatPanelPlugin {
         app.add_systems(Update, display_chat);
         app.add_systems(Update, append_chat_messages);
         app.add_systems(Update, emit_user_chat);
-        app.add_systems(
-            Update,
-            (
-                update_friends,
-                update_conversations,
-                show_popups,
-                update_profile_names,
-            ),
-        );
         app.add_systems(Startup, setup);
         app.add_systems(OnEnter::<ui_core::State>(ui_core::State::Ready), chat_popup);
         app.add_systems(Update, keyboard_popup.run_if(should_accept_key));
         app.add_console_command::<Rechat, _>(debug_chat);
         app.add_event::<PrivateChatEntered>();
+        app.add_plugins(FriendsPlugin);
     }
 }
 

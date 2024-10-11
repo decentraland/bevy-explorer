@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, utils::hashbrown::HashMap};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     structs::ShowProfileEvent,
@@ -15,12 +15,30 @@ use ui_core::{
     button::{DuiButton, TabManager, TabSelection},
     text_entry::TextEntry,
     ui_actions::{Click, On, UiCaller},
+    user_font, FontName, WeightName,
 };
 
 use crate::chat::{
     make_chat, ChatBox, ChatInput, ChatTab, ChatboxContainer, DisplayChatMessage,
     PrivateChatEntered,
 };
+
+pub struct FriendsPlugin;
+
+impl Plugin for FriendsPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            Update,
+            (
+                update_friends,
+                update_conversations,
+                show_popups,
+                update_profile_names,
+                bold_unread,
+            ),
+        );
+    }
+}
 
 #[derive(Component)]
 pub struct PrivateChat {
@@ -166,11 +184,13 @@ pub fn update_friends(
                                             };
 
                                             tab_manager.remove_entity(tab, this);
-                                        }))).unwrap().root;
+                                        }))).unwrap();
+
+                                        commands.entity(button_content.named("name")).insert(BoldUnread(friend));
 
                                         let button = DuiButton {
                                             enabled: true,
-                                            children: Some(button_content),
+                                            children: Some(button_content.root),
                                             ..Default::default()
                                         };
 
@@ -212,7 +232,8 @@ pub fn update_friends(
 
                     commands
                         .entity(components.named("name"))
-                        .insert(PendingProfileName(friend));
+                        .insert(PendingProfileName(friend))
+                        .insert(BoldUnread(friend));
                     components.root
                 })
                 .collect::<Vec<_>>();
@@ -252,7 +273,8 @@ pub fn update_friends(
 
                     commands
                         .entity(components.named("name"))
-                        .insert(PendingProfileName(friend));
+                        .insert(PendingProfileName(friend))
+                        .insert(BoldUnread(friend));
                     components.root
                 })
                 .collect::<Vec<_>>();
@@ -305,7 +327,8 @@ pub fn update_friends(
 
                     commands
                         .entity(components.named("name"))
-                        .insert(PendingProfileName(friend));
+                        .insert(PendingProfileName(friend))
+                        .insert(BoldUnread(friend));
                     components.root
                 })
                 .collect::<Vec<_>>();
@@ -322,7 +345,7 @@ pub fn update_conversations(
     mut commands: Commands,
     dui: Res<DuiRegistry>,
     ipfas: IpfsAssetServer,
-    client: Res<SocialClient>,
+    mut client: ResMut<SocialClient>,
     tab: Query<&TabSelection, With<ChatTab>>,
     mut private_chats: Query<&mut PrivateChat>,
     mut last_chat: Local<Option<Address>>,
@@ -355,6 +378,10 @@ pub fn update_conversations(
         *last_chat = None;
         return;
     };
+
+    if let Some(client) = client.0.as_mut() {
+        client.mark_as_read(private_chat.address);
+    }
 
     let Ok(entity) = chatbox.get_single() else {
         return;
@@ -545,4 +572,29 @@ pub fn show_popups(
             None
         })
         .collect();
+}
+
+#[derive(Component)]
+pub struct BoldUnread(Address);
+
+pub fn bold_unread(mut q: Query<(&mut Text, Ref<BoldUnread>)>, client: Res<SocialClient>) {
+    let default = HashMap::default();
+    let unread = client
+        .0
+        .as_ref()
+        .map(|client| client.unread_messages())
+        .unwrap_or(&default);
+    for (mut text, b) in q.iter_mut() {
+        let bold = unread.get(&b.0).copied().unwrap_or(0) > 0;
+        for section in &mut text.sections {
+            section.style.font = user_font(
+                FontName::Sans,
+                if bold {
+                    WeightName::Bold
+                } else {
+                    WeightName::Regular
+                },
+            );
+        }
+    }
 }
