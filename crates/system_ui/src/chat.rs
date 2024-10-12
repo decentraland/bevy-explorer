@@ -179,7 +179,10 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
     dcl_assert!(root.0 != Entity::PLACEHOLDER);
 
     let chat_tab = |label: &'static str| -> DuiButton {
-        DuiButton::new_enabled(label, (move || Some(label)).pipe(select_chat_tab))
+        DuiButton {
+            text_size: Some(0.025 / 1.3),
+            ..DuiButton::new_enabled(label, (move || Some(label)).pipe(select_chat_tab))
+        }
     };
 
     let tab_labels = vec!["Nearby", "Scene Log"];

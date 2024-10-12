@@ -16,6 +16,7 @@ use crate::{
     bound_node::NodeBounds,
     dui_utils::PropsExt,
     interact_style::{Active, InteractStyles},
+    text_size::FontSize,
     ui_actions::{
         close_ui_happy, close_ui_sad, close_ui_silent, Click, ClickRepeat, DataChanged, Enabled,
         HoverEnter, HoverExit, On, UiCaller,
@@ -32,6 +33,7 @@ pub struct DuiButton {
     pub image: Option<Handle<Image>>,
     pub image_width: Option<Val>,
     pub image_height: Option<Val>,
+    pub text_size: Option<f32>,
     pub tooltip: Option<String>,
 }
 
@@ -47,6 +49,7 @@ impl Default for DuiButton {
             image: None,
             image_width: None,
             image_height: None,
+            text_size: None,
             tooltip: None,
         }
     }
@@ -158,6 +161,9 @@ impl DuiTemplate for DuiButtonTemplate {
             data.image_width = props.take_as::<Val>(ctx, "image-width")?;
             data.image_height = props.take_as::<Val>(ctx, "image-height")?;
         };
+        if let Some(text_size) = props.take_as::<f32>(ctx, "text-size")? {
+            data.text_size = Some(text_size);
+        }
         if let Some(tooltip) = props.take::<String>("tooltip")? {
             data.tooltip = Some(tooltip);
         }
@@ -172,9 +178,11 @@ impl DuiTemplate for DuiButtonTemplate {
                 let mut props = DuiProps::new().with_prop("img", img);
                 if let Some(image_width) = data.image_width {
                     props = props.with_prop("width", image_width.style_string());
+                    props = props.with_prop("min-width", image_width.style_string());
                 }
                 if let Some(image_height) = data.image_height {
                     props = props.with_prop("height", image_height.style_string());
+                    props = props.with_prop("min-height", image_height.style_string());
                 }
                 ctx.render_template(commands, "button-base-image", props)
             }
@@ -182,6 +190,13 @@ impl DuiTemplate for DuiButtonTemplate {
         }?;
 
         let mut new_commands = commands.commands();
+
+        if let Some(text_size) = data.text_size {
+            if let Some(label) = components.get("label") {
+                new_commands.entity(*label).insert(FontSize(text_size));
+            }
+        }
+
         let mut button = new_commands.entity(components["button-background"]);
 
         button.insert((

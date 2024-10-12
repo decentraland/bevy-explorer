@@ -30,6 +30,7 @@ macro_rules! impl_dui_str {
 
 impl_dui_str!(bool);
 impl_dui_str!(u32);
+impl_dui_str!(f32);
 impl_dui_str!(usize);
 impl_dui_str!(isize);
 

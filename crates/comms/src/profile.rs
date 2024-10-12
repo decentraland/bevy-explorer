@@ -241,6 +241,7 @@ pub fn setup_primary_profile(
                     .avatar
                     .snapshots = Some(AvatarSnapshots { face256, body });
                 current_profile.snapshots = None;
+                cache.update(current_profile.profile.clone().unwrap());
             }
             Some(Err(e)) => {
                 error!("failed to deploy profile: {e}");

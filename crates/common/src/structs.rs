@@ -576,7 +576,7 @@ pub enum SettingsTab {
 #[derive(Event, Clone)]
 pub struct ShowSettingsEvent(pub SettingsTab);
 
-#[derive(Event)]
+#[derive(Event, Clone)]
 pub struct ShowProfileEvent(pub Address);
 
 #[derive(Event, Clone)]

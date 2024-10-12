@@ -1,27 +1,25 @@
-use bevy::{prelude::*, utils::hashbrown::HashMap};
+use bevy::{core::FrameCount, prelude::*, utils::hashbrown::HashMap};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     structs::ShowProfileEvent,
     util::{format_address, AsH160, FireEventEx, TryPushChildrenEx},
 };
 use comms::profile::ProfileManager;
+use copypasta::{ClipboardContext, ClipboardProvider};
 use dcl_component::proto_components::social::friendship_event_response::{self, Body};
 use ethers_core::types::Address;
-use ipfs::IpfsAssetServer;
 use scene_runner::Toaster;
 use social::{client::DirectChatMessage, DirectChatEvent, FriendshipEvent, SocialClient};
 use tokio::sync::mpsc::Receiver;
 use ui_core::{
     button::{DuiButton, TabManager, TabSelection},
     text_entry::TextEntry,
-    ui_actions::{Click, On, UiCaller},
+    ui_actions::{Click, EventCloneExt, On, UiCaller},
     user_font, FontName, WeightName,
 };
+use wallet::Wallet;
 
-use crate::chat::{
-    make_chat, ChatBox, ChatInput, ChatTab, ChatboxContainer, DisplayChatMessage,
-    PrivateChatEntered,
-};
+use crate::chat::{ChatBox, ChatInput, ChatTab, ChatboxContainer, PrivateChatEntered};
 
 pub struct FriendsPlugin;
 
@@ -34,6 +32,7 @@ impl Plugin for FriendsPlugin {
                 update_conversations,
                 show_popups,
                 update_profile_names,
+                update_profile_images,
                 bold_unread,
             ),
         );
@@ -62,6 +61,7 @@ pub fn update_profile_names(
                 for section in &mut text.sections {
                     section.style.color = Color::srgb(0.5, 0.0, 0.0);
                 }
+                commands.entity(ent).remove::<PendingProfileName>();
             }
             Ok(Some(name)) => {
                 for section in &mut text.sections {
@@ -77,30 +77,27 @@ pub fn update_profile_names(
     }
 }
 
-// #[derive(Component)]
-// pub struct PendingProfileImage(Address);
+#[derive(Component)]
+pub struct PendingProfileUiImage(Address);
 
-// pub fn update_profile_images(
-//     mut cache: ProfileManager,
-//     mut commands: Commands,
-//     mut q: Query<(Entity, &PendingProfileImage, &mut Text)>,
-// ) {
-//     for (ent, pending, mut text) in q.iter_mut() {
-//         match cache.get_data(pending.0) {
-//             Err(_) => for mut section in &mut text.sections {
-//                 section.style.color = Color::srgb(0.5, 0.0, 0.0);
-//             }
-//             Ok(Some(data)) => {
-//                 for mut section in &mut text.sections {
-//                     section.style.color = Color::srgb(0.0, 0.0, 0.0);
-//                 }
-//                 text.sections[1].value = data.name;
-//                 commands.entity(ent).remove::<PendingProfileName>();
-//             }
-//             Ok(None) => (),
-//         }
-//     }
-// }
+pub fn update_profile_images(
+    mut commands: Commands,
+    mut cache: ProfileManager,
+    mut q: Query<(Entity, &PendingProfileUiImage, &mut UiImage)>,
+) {
+    for (ent, pending, mut ui_image) in q.iter_mut() {
+        match cache.get_image(pending.0) {
+            Err(_) => {
+                commands.entity(ent).remove::<PendingProfileName>();
+            }
+            Ok(Some(image)) => {
+                ui_image.texture = image;
+                commands.entity(ent).remove::<PendingProfileUiImage>();
+            }
+            Ok(None) => (),
+        }
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn update_friends(
@@ -138,7 +135,7 @@ pub fn update_friends(
                                     "name",
                                     format!("<b>{}</b>", format_address(friend, None)),
                                 )
-                                .with_prop("profile", On::<Click>::new(move |mut commands: Commands| { commands.fire_event(ShowProfileEvent(friend)); }))
+                                .with_prop("profile", ShowProfileEvent(friend).send_value_on::<Click>())
                                 .with_prop(
                                     "chat",
 
@@ -255,7 +252,7 @@ pub fn update_friends(
                                     "name",
                                     format!("<b>{}</b>", format_address(friend, None)),
                                 )
-                                .with_prop("profile", On::<Click>::new(move |mut commands: Commands| { commands.fire_event(ShowProfileEvent(friend)); }))
+                                .with_prop("profile", ShowProfileEvent(friend).send_value_on::<Click>())
                                 .with_prop(
                                     "cancel",
                                     On::<Click>::new(move |mut client: ResMut<SocialClient>, mut commands: Commands| {
@@ -297,7 +294,7 @@ pub fn update_friends(
                                     "name",
                                     format!("<b>{}</b>", format_address(friend, None)),
                                 )
-                                .with_prop("profile", On::<Click>::new(move |mut commands: Commands| { commands.fire_event(ShowProfileEvent(friend)); }))
+                                .with_prop("profile", ShowProfileEvent(friend).send_value_on::<Click>())
                                 .with_prop(
                                     "accept",
                                     On::<Click>::new(move |mut client: ResMut<SocialClient>, mut commands: Commands| {
@@ -340,19 +337,23 @@ pub fn update_friends(
     }
 }
 
+#[derive(Component)]
+pub struct ChatContainer(pub Option<Address>);
+
 #[allow(clippy::too_many_arguments)]
 pub fn update_conversations(
     mut commands: Commands,
     dui: Res<DuiRegistry>,
-    ipfas: IpfsAssetServer,
     mut client: ResMut<SocialClient>,
     tab: Query<&TabSelection, With<ChatTab>>,
     mut private_chats: Query<&mut PrivateChat>,
     mut last_chat: Local<Option<Address>>,
-    chatbox: Query<Entity, With<ChatBox>>,
+    chatbox: Query<(Entity, Option<&Children>), With<ChatBox>>,
     mut text_entry: Query<&mut TextEntry, With<ChatInput>>,
     mut new_chats: EventReader<DirectChatEvent>,
     mut new_chats_outbound: EventReader<PrivateChatEntered>,
+    containers: Query<(&ChatContainer, &DuiEntities)>,
+    wallet: Res<Wallet>,
 ) {
     let Ok(tab) = tab.get_single() else {
         return;
@@ -383,24 +384,118 @@ pub fn update_conversations(
         client.mark_as_read(private_chat.address);
     }
 
-    let Ok(entity) = chatbox.get_single() else {
+    let Ok((entity, children)) = chatbox.get_single() else {
         return;
     };
+    let mut containers = children
+        .map(|c| c.iter().copied())
+        .unwrap_or_default()
+        .flat_map(|c| {
+            containers
+                .get(c)
+                .ok()
+                .map(|(c, ents)| (c.0, ents.named("content")))
+        })
+        .collect::<Vec<_>>();
 
-    let make_conv = |commands: &mut Commands, msg: DirectChatMessage| -> Entity {
-        make_chat(
+    let mut get_container =
+        |commands: &mut Commands, address: Option<Address>, historic: bool| -> Entity {
+            let potential_container = if historic {
+                containers.first()
+            } else {
+                containers.last()
+            };
+
+            if let Some((existing_address, content)) = potential_container {
+                if *existing_address == address {
+                    debug!("{:?} -> existing {}", address, *content);
+                    return *content;
+                }
+            }
+
+            let components = if let Some(address) = address {
+                let components = commands
+                    .spawn_template(&dui, "other-chat-container", DuiProps::new())
+                    .unwrap();
+                commands
+                    .entity(components.named("image"))
+                    .insert(ShowProfileEvent(address).send_value_on::<Click>());
+                components
+            } else {
+                commands
+                    .spawn_template(&dui, "me-chat-container", DuiProps::default())
+                    .unwrap()
+            };
+            if let Some(address) = address.or_else(|| wallet.address()) {
+                commands
+                    .entity(components.named("image"))
+                    .insert(PendingProfileUiImage(address));
+            }
+            commands
+                .entity(components.root)
+                .insert(ChatContainer(address));
+
+            let content = components.named("content");
+
+            if historic {
+                commands
+                    .entity(entity)
+                    .insert_children(0, &[components.root]);
+                containers.insert(0, (address, content));
+            } else {
+                commands.entity(entity).push_children(&[components.root]);
+                containers.push((address, content));
+            }
+
+            debug!("{:?} -> new {}", address, content);
+            content
+        };
+
+    let mut make_conv = |commands: &mut Commands, message: DirectChatMessage, historic: bool| {
+        let container = get_container(
             commands,
-            ipfas.asset_server(),
-            DisplayChatMessage {
-                timestamp: 0.0,
-                sender: Some(if msg.me_speaking {
-                    "me".to_owned()
+            (!message.me_speaking).then_some(message.partner),
+            historic,
+        );
+        debug!("container: {container:?}");
+
+        let message_copy = message.message.clone();
+        let message = commands
+            .spawn_template(
+                &dui,
+                if message.me_speaking {
+                    "chat-content-me"
                 } else {
-                    "them".to_owned()
-                }),
-                message: msg.message,
-            },
-        )
+                    "chat-content-other"
+                },
+                DuiProps::new()
+                    .with_prop("text", message.message.clone())
+                    .with_prop(
+                        "copy",
+                        On::<Click>::new(move |mut toaster: Toaster, frame: Res<FrameCount>| {
+                            let Ok(mut ctx) = ClipboardContext::new() else {
+                                warn!("failed to copy");
+                                return;
+                            };
+
+                            if ctx.set_contents(message_copy.clone()).is_ok() {
+                                toaster.add_toast(
+                                    format!("chatcopy {}", frame.0),
+                                    "Message copied to clipboard",
+                                );
+                            } else {
+                                toaster.add_toast(
+                                    format!("chatcopy {}", frame.0),
+                                    "Failed to copy message",
+                                );
+                            }
+                        }),
+                    ),
+            )
+            .unwrap()
+            .root;
+        commands.entity(container).try_push_children(&[message]);
+        debug!("added");
     };
 
     let make_history_button = |commands: &mut Commands, private_chat_ent: Entity| {
@@ -448,20 +543,18 @@ pub fn update_conversations(
         }
 
         // add current messages
-        let messages = private_chat
-            .messages
-            .iter()
-            .map(|msg| make_conv(&mut commands, msg.clone()))
-            .collect::<Vec<_>>();
-        commands.entity(entity).try_push_children(&messages);
+        for message in &private_chat.messages {
+            debug!("make conv");
+            make_conv(&mut commands, message.clone(), false);
+        }
     } else {
         // check for new chats
-        let new_messages = new_chats
+        for new_message in new_chats
             .iter()
             .filter(|c| c.0.partner == private_chat.address)
-            .map(|msg| make_conv(&mut commands, msg.0.clone()))
-            .collect::<Vec<_>>();
-        commands.entity(entity).try_push_children(&new_messages);
+        {
+            make_conv(&mut commands, new_message.0.clone(), false);
+        }
     }
 
     if private_chat.wants_history_count > 0 {
@@ -472,8 +565,7 @@ pub fn update_conversations(
             while let Ok(history) = private_chat.history_receiver.try_recv() {
                 debug!("got history: {:?}", history);
                 private_chat.messages.insert(0, history.clone());
-                let history = make_conv(&mut commands, history);
-                commands.entity(entity).insert_children(0, &[history]);
+                make_conv(&mut commands, history, true);
                 private_chat.wants_history_count -= 1;
                 if private_chat.wants_history_count == 0 {
                     // add button

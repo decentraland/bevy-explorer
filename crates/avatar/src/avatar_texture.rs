@@ -10,9 +10,12 @@ use bevy::{
     ecs::system::SystemParam,
     prelude::*,
     render::{
-        camera::RenderTarget, render_asset::RenderAssetUsages, render_resource::{
+        camera::RenderTarget,
+        render_asset::RenderAssetUsages,
+        render_resource::{
             Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
-        }, view::{screenshot::ScreenshotManager, RenderLayers}
+        },
+        view::{screenshot::ScreenshotManager, RenderLayers},
     },
     window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution},
 };
@@ -452,7 +455,7 @@ fn snapshot(
             error!("target {:?} not found", target);
             continue;
         };
-        
+
         *target = image;
         target.asset_usage = RenderAssetUsages::default();
     }
