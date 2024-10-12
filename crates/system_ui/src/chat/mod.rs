@@ -1,21 +1,27 @@
-use bevy::{color::palettes::css, core::FrameCount, prelude::*};
+pub mod conversation_manager;
+pub mod friends;
+
+use bevy::{color::palettes::css, prelude::*};
 
 use bevy_console::{ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     dcl_assert,
     structs::{PrimaryUser, SystemAudio, ToolTips},
-    util::{FireEventEx, ModifyComponentExt, RingBuffer, RingBufferReceiver, TryPushChildrenEx},
+    util::{
+        AsH160, FireEventEx, ModifyComponentExt, RingBuffer, RingBufferReceiver, TryPushChildrenEx,
+    },
 };
 use comms::{
     chat_marker_things, global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport,
 };
 use console::DoAddConsoleCommand;
-use copypasta::{ClipboardContext, ClipboardProvider};
+use conversation_manager::ConversationManager;
 use dcl::{SceneLogLevel, SceneLogMessage};
 use dcl_component::proto_components::kernel::comms::rfc4;
+use ethers_core::types::Address;
 use input_manager::should_accept_key;
-use scene_runner::{renderer_context::RendererSceneContext, ContainingScene, Toaster};
+use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
 use shlex::Shlex;
 use social::FriendshipEvent;
 use ui_core::{
@@ -26,7 +32,7 @@ use ui_core::{
     ui_actions::{Click, DataChanged, HoverEnter, HoverExit, On},
 };
 
-use crate::friends::FriendsPlugin;
+use friends::FriendsPlugin;
 
 use super::SystemUiRoot;
 
@@ -54,7 +60,7 @@ pub struct ChatboxContainer;
 #[derive(Component, Clone, Debug)]
 pub struct DisplayChatMessage {
     pub timestamp: f64,
-    pub sender: Option<String>,
+    pub sender: Option<Address>,
     pub message: String,
 }
 
@@ -219,7 +225,6 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
         .with_prop("tab-changed", On::<DataChanged>::new(tab_changed))
         .with_prop("initial-tab", Some(0usize))
         .with_prop("close", On::<Click>::new(close_ui))
-        .with_prop("copy", On::<Click>::new(copy_chat))
         .with_prop("friends", On::<Click>::new(toggle_friends));
 
     let components = commands
@@ -281,41 +286,6 @@ fn toggle_friends(container: Query<&DuiEntities, With<ChatboxContainer>>, mut co
     }
 }
 
-fn copy_chat(
-    chatbox: Query<&Children, With<ChatBox>>,
-    msgs: Query<&DisplayChatMessage>,
-    mut toaster: Toaster,
-    frame: Res<FrameCount>,
-) {
-    let mut copy = String::default();
-    let Ok(children) = chatbox.get_single() else {
-        return;
-    };
-    for ent in children.iter() {
-        if let Ok(msg) = msgs.get(*ent) {
-            copy.push_str(
-                format!(
-                    "[{}] {}\n",
-                    msg.sender.as_deref().unwrap_or("log"),
-                    msg.message
-                )
-                .as_str(),
-            );
-        }
-    }
-
-    let label = format!("chatcopy {}", frame.0);
-
-    if let Ok(mut ctx) = ClipboardContext::new() {
-        if ctx.set_contents(copy).is_ok() {
-            toaster.add_toast(&label, "history copied to clipboard");
-            return;
-        }
-    }
-
-    toaster.add_toast("chat copy", "failed to set clipboard ...");
-}
-
 fn append_chat_messages(
     mut chats: EventReader<ChatEvent>,
     mut chatbox: Query<&mut ChatBox>,
@@ -337,7 +307,7 @@ fn append_chat_messages(
                 warn!("can't get profile for chat sender {:?}", ev.sender);
                 continue;
             };
-            Some(profile.content.name.to_owned())
+            profile.content.eth_address.as_h160()
         };
 
         chatbox.chat_log.send(DisplayChatMessage {
@@ -346,51 +316,6 @@ fn append_chat_messages(
             message: ev.message.to_owned(),
         });
     }
-}
-
-pub(crate) fn make_chat(
-    commands: &mut Commands,
-    asset_server: &AssetServer,
-    msg: DisplayChatMessage,
-) -> Entity {
-    commands
-        .spawn((
-            FontSize(0.0175),
-            TextBundle {
-                text: Text::from_sections([
-                    TextSection::new(
-                        format!(
-                            "{}: ",
-                            msg.sender.clone().unwrap_or_else(|| "[SYSTEM]".to_owned())
-                        ),
-                        TextStyle {
-                            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
-                            font_size: 15.0,
-                            color: if msg.sender.is_some() {
-                                css::YELLOW.into()
-                            } else {
-                                css::GRAY.into()
-                            },
-                        },
-                    ),
-                    TextSection::new(
-                        msg.message.clone(),
-                        TextStyle {
-                            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
-                            font_size: 15.0,
-                            color: if msg.sender.is_some() {
-                                css::WHITE.into()
-                            } else {
-                                css::GRAY.into()
-                            },
-                        },
-                    ),
-                ]),
-                ..Default::default()
-            },
-            msg,
-        ))
-        .id()
 }
 
 fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMessage) -> Entity {
@@ -442,6 +367,7 @@ fn display_chat(
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
     contexts: Query<&RendererSceneContext>,
+    mut conversation: ConversationManager,
 ) {
     let Ok((entity, mut chatbox, maybe_children)) = chatbox.get_single_mut() else {
         return;
@@ -466,8 +392,7 @@ fn display_chat(
             panic!()
         };
         while let Ok(chat) = rec.try_recv() {
-            let msg = make_chat(&mut commands, &asset_server, chat);
-            commands.entity(entity).add_child(msg);
+            conversation.add_message(chat.sender.or(Some(Address::zero())), chat.message, false);
         }
 
         return;
@@ -629,10 +554,9 @@ fn emit_user_chat(
 fn select_chat_tab(
     In(tab): In<Option<&'static str>>,
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
     mut chatbox: Query<(Entity, &mut ChatBox)>,
     mut text_entry: Query<&mut TextEntry, With<ChatInput>>,
-    time: Res<Time>,
+    mut conversation: ConversationManager,
 ) {
     let Some(tab) = tab else {
         return;
@@ -649,24 +573,16 @@ fn select_chat_tab(
         chatbox.active_log_sink = None;
         chatbox.active_chat_sink = None;
         if tab == "Nearby" {
-            let mut msgs = Vec::new();
-            let (missed, backlog, receiver) = chatbox.chat_log.read();
+            conversation.clear();
+            let (_, backlog, receiver) = chatbox.chat_log.read();
             chatbox.active_chat_sink = Some(receiver);
-            if missed > 0 {
-                msgs.push(make_chat(
-                    &mut commands,
-                    &asset_server,
-                    DisplayChatMessage {
-                        timestamp: time.elapsed_seconds_f64(),
-                        sender: None,
-                        message: format!("(missed {missed} prior messages)"),
-                    },
-                ));
-            }
             for message in backlog.into_iter() {
-                msgs.push(make_chat(&mut commands, &asset_server, message));
+                conversation.add_message(
+                    message.sender.or(Some(Address::zero())),
+                    message.message,
+                    false,
+                );
             }
-            commands.entity(entity).replace_children(&msgs);
             text_entry.single_mut().enabled = true;
         } else if tab == "Scene Log" {
             text_entry.single_mut().enabled = false;

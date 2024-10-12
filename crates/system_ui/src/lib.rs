@@ -6,7 +6,6 @@ pub mod discover;
 pub mod emote_select;
 pub mod emotes;
 pub mod foreign_profile;
-pub mod friends;
 pub mod login;
 pub mod map;
 pub mod mic;

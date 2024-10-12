@@ -396,8 +396,8 @@ fn snapshot(
             let face_window = timer.1.take().unwrap();
             let face_cam = cam(
                 face_window,
-                Transform::from_translation(Vec3::new(0.0, 1.8, -1.0))
-                    .looking_at(Vec3::Y * 1.8, Vec3::Y),
+                Transform::from_translation(Vec3::new(0.0, 1.7, -1.0))
+                    .looking_at(Vec3::Y * 1.7, Vec3::Y),
             );
 
             let body_window = timer.2.take().unwrap();

@@ -10,7 +10,6 @@
         color="#aa1fc166"
     >
         <div style="position-type: absolute; right: 0vmin; top: 0vmin;">
-            <button img="images/copy.png" tooltip="Copy Chat History" onclick="@copy" image-width="3.3vmin" image-height="3.3vmin" />
             <button img="images/FriendsIcon.png" tooltip="Toggle Friends" onclick="@friends" image-width="3.3vmin" image-height="3.3vmin" />
             <button img="images/redx.png" tooltip="Hide Chat Panel" onclick="@close" image-width="3.3vmin" image-height="3.3vmin" />
         </div>
@@ -128,7 +127,7 @@
             <div id="content" style="flex-grow: 1; align-self: center; flex-direction: column;" />
             <div style="flex-direction: column; align-items: flex-end;">
                 <space />
-                <div id="image" style="width: 5vmin; height: 5vmin; margin: 1vmin;" image="images/genesis_tx.png" />
+                <div id="image" style="width: 5vmin; height: 5vmin; margin: 1vmin;" image="images/unknown_person.png" />
             </div>
         </bounds>
 </define-template>
@@ -144,7 +143,7 @@
         >
             <div style="flex-direction: column; align-items: flex-end;">
                 <space />
-                <div id="image" style="width: 5vmin; height: 5vmin; margin: 1vmin;" image="images/person_button.png" interact="true" focus="block" />
+                <div id="image" style="width: 5vmin; height: 5vmin; margin: 1vmin;" image="images/unknown_person.png" interact="true" focus="block" />
             </div>
             <div id="content" style="flex-grow: 1; align-self: center; flex-direction: column;" />
         </bounds>

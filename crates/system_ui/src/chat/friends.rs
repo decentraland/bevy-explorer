@@ -1,11 +1,10 @@
-use bevy::{core::FrameCount, prelude::*, utils::hashbrown::HashMap};
+use bevy::{prelude::*, utils::hashbrown::HashMap};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     structs::ShowProfileEvent,
     util::{format_address, AsH160, FireEventEx, TryPushChildrenEx},
 };
 use comms::profile::ProfileManager;
-use copypasta::{ClipboardContext, ClipboardProvider};
 use dcl_component::proto_components::social::friendship_event_response::{self, Body};
 use ethers_core::types::Address;
 use scene_runner::Toaster;
@@ -14,12 +13,13 @@ use tokio::sync::mpsc::Receiver;
 use ui_core::{
     button::{DuiButton, TabManager, TabSelection},
     text_entry::TextEntry,
-    ui_actions::{Click, EventCloneExt, On, UiCaller},
+    ui_actions::{Click, EventCloneExt, On},
     user_font, FontName, WeightName,
 };
-use wallet::Wallet;
 
-use crate::chat::{ChatBox, ChatInput, ChatTab, ChatboxContainer, PrivateChatEntered};
+use crate::chat::{ChatInput, ChatTab, ChatboxContainer, PrivateChatEntered};
+
+use super::conversation_manager::ConversationManager;
 
 pub struct FriendsPlugin;
 
@@ -41,10 +41,10 @@ impl Plugin for FriendsPlugin {
 
 #[derive(Component)]
 pub struct PrivateChat {
-    address: Address,
-    history_receiver: Receiver<DirectChatMessage>,
-    wants_history_count: usize,
-    messages: Vec<DirectChatMessage>,
+    pub address: Address,
+    pub history_receiver: Receiver<DirectChatMessage>,
+    pub wants_history_count: usize,
+    pub messages: Vec<DirectChatMessage>,
 }
 
 #[derive(Component)]
@@ -78,7 +78,7 @@ pub fn update_profile_names(
 }
 
 #[derive(Component)]
-pub struct PendingProfileUiImage(Address);
+pub struct PendingProfileUiImage(pub Address);
 
 pub fn update_profile_images(
     mut commands: Commands,
@@ -337,23 +337,16 @@ pub fn update_friends(
     }
 }
 
-#[derive(Component)]
-pub struct ChatContainer(pub Option<Address>);
-
 #[allow(clippy::too_many_arguments)]
 pub fn update_conversations(
-    mut commands: Commands,
-    dui: Res<DuiRegistry>,
     mut client: ResMut<SocialClient>,
     tab: Query<&TabSelection, With<ChatTab>>,
     mut private_chats: Query<&mut PrivateChat>,
     mut last_chat: Local<Option<Address>>,
-    chatbox: Query<(Entity, Option<&Children>), With<ChatBox>>,
     mut text_entry: Query<&mut TextEntry, With<ChatInput>>,
     mut new_chats: EventReader<DirectChatEvent>,
     mut new_chats_outbound: EventReader<PrivateChatEntered>,
-    containers: Query<(&ChatContainer, &DuiEntities)>,
-    wallet: Res<Wallet>,
+    mut conversation: ConversationManager,
 ) {
     let Ok(tab) = tab.get_single() else {
         return;
@@ -384,153 +377,11 @@ pub fn update_conversations(
         client.mark_as_read(private_chat.address);
     }
 
-    let Ok((entity, children)) = chatbox.get_single() else {
-        return;
-    };
-    let mut containers = children
-        .map(|c| c.iter().copied())
-        .unwrap_or_default()
-        .flat_map(|c| {
-            containers
-                .get(c)
-                .ok()
-                .map(|(c, ents)| (c.0, ents.named("content")))
-        })
-        .collect::<Vec<_>>();
-
-    let mut get_container =
-        |commands: &mut Commands, address: Option<Address>, historic: bool| -> Entity {
-            let potential_container = if historic {
-                containers.first()
-            } else {
-                containers.last()
-            };
-
-            if let Some((existing_address, content)) = potential_container {
-                if *existing_address == address {
-                    debug!("{:?} -> existing {}", address, *content);
-                    return *content;
-                }
-            }
-
-            let components = if let Some(address) = address {
-                let components = commands
-                    .spawn_template(&dui, "other-chat-container", DuiProps::new())
-                    .unwrap();
-                commands
-                    .entity(components.named("image"))
-                    .insert(ShowProfileEvent(address).send_value_on::<Click>());
-                components
-            } else {
-                commands
-                    .spawn_template(&dui, "me-chat-container", DuiProps::default())
-                    .unwrap()
-            };
-            if let Some(address) = address.or_else(|| wallet.address()) {
-                commands
-                    .entity(components.named("image"))
-                    .insert(PendingProfileUiImage(address));
-            }
-            commands
-                .entity(components.root)
-                .insert(ChatContainer(address));
-
-            let content = components.named("content");
-
-            if historic {
-                commands
-                    .entity(entity)
-                    .insert_children(0, &[components.root]);
-                containers.insert(0, (address, content));
-            } else {
-                commands.entity(entity).push_children(&[components.root]);
-                containers.push((address, content));
-            }
-
-            debug!("{:?} -> new {}", address, content);
-            content
-        };
-
-    let mut make_conv = |commands: &mut Commands, message: DirectChatMessage, historic: bool| {
-        let container = get_container(
-            commands,
-            (!message.me_speaking).then_some(message.partner),
-            historic,
-        );
-        debug!("container: {container:?}");
-
-        let message_copy = message.message.clone();
-        let message = commands
-            .spawn_template(
-                &dui,
-                if message.me_speaking {
-                    "chat-content-me"
-                } else {
-                    "chat-content-other"
-                },
-                DuiProps::new()
-                    .with_prop("text", message.message.clone())
-                    .with_prop(
-                        "copy",
-                        On::<Click>::new(move |mut toaster: Toaster, frame: Res<FrameCount>| {
-                            let Ok(mut ctx) = ClipboardContext::new() else {
-                                warn!("failed to copy");
-                                return;
-                            };
-
-                            if ctx.set_contents(message_copy.clone()).is_ok() {
-                                toaster.add_toast(
-                                    format!("chatcopy {}", frame.0),
-                                    "Message copied to clipboard",
-                                );
-                            } else {
-                                toaster.add_toast(
-                                    format!("chatcopy {}", frame.0),
-                                    "Failed to copy message",
-                                );
-                            }
-                        }),
-                    ),
-            )
-            .unwrap()
-            .root;
-        commands.entity(container).try_push_children(&[message]);
-        debug!("added");
-    };
-
-    let make_history_button = |commands: &mut Commands, private_chat_ent: Entity| {
-        commands
-            .spawn_template(
-                &dui,
-                "button",
-                DuiProps::new()
-                    .with_prop("label", "load more history".to_string())
-                    .with_prop(
-                        "onclick",
-                        On::<Click>::new(
-                            move |mut chat: Query<&mut PrivateChat>,
-                                  caller: Res<UiCaller>,
-                                  parent: Query<&Parent>,
-                                  mut commands: Commands| {
-                                if let Ok(parent) = parent.get(caller.0) {
-                                    commands.entity(parent.get()).despawn_recursive();
-                                }
-                                if let Ok(mut chat) = chat.get_mut(private_chat_ent) {
-                                    chat.wants_history_count = 10;
-                                }
-                            },
-                        ),
-                    ),
-            )
-            .unwrap()
-            .root
-    };
-
     if *last_chat != Some(private_chat.address) {
         // init
         *last_chat = Some(private_chat.address);
 
-        commands.entity(entity).despawn_descendants();
+        conversation.clear();
         text_entry.single_mut().enabled = true;
 
         if private_chat.wants_history_count == 0
@@ -538,14 +389,17 @@ pub fn update_conversations(
                 && private_chat.history_receiver.is_empty())
         {
             // add button
-            let button = make_history_button(&mut commands, private_chat_ent);
-            commands.entity(entity).insert_children(0, &[button]);
+            conversation.add_history_button(private_chat_ent);
         }
 
         // add current messages
         for message in &private_chat.messages {
             debug!("make conv");
-            make_conv(&mut commands, message.clone(), false);
+            conversation.add_message(
+                (!message.me_speaking).then_some(message.partner),
+                &message.message,
+                false,
+            );
         }
     } else {
         // check for new chats
@@ -553,7 +407,11 @@ pub fn update_conversations(
             .iter()
             .filter(|c| c.0.partner == private_chat.address)
         {
-            make_conv(&mut commands, new_message.0.clone(), false);
+            conversation.add_message(
+                (!new_message.0.me_speaking).then_some(new_message.0.partner),
+                &new_message.0.message,
+                false,
+            );
         }
     }
 
@@ -565,12 +423,15 @@ pub fn update_conversations(
             while let Ok(history) = private_chat.history_receiver.try_recv() {
                 debug!("got history: {:?}", history);
                 private_chat.messages.insert(0, history.clone());
-                make_conv(&mut commands, history, true);
+                conversation.add_message(
+                    (!history.me_speaking).then_some(history.partner),
+                    &history.message,
+                    true,
+                );
                 private_chat.wants_history_count -= 1;
                 if private_chat.wants_history_count == 0 {
                     // add button
-                    let button = make_history_button(&mut commands, private_chat_ent);
-                    commands.entity(entity).insert_children(0, &[button]);
+                    conversation.add_history_button(private_chat_ent);
                     break;
                 }
             }

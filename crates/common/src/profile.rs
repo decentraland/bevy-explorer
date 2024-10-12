@@ -95,10 +95,6 @@ impl Default for SerializedProfile {
                     {\"slot\": 8, \"urn\": \"headexplode\" },
                     {\"slot\": 9, \"urn\": \"shrug\" }
                 ],
-                \"snapshots\": {
-                    \"face256\":\"bafkreifxucgpg7w2rnnfevjzvlokojxnxqh7uvxhe2nwwyks4xr4unx4bu\",
-                    \"body\":\"bafkreicdr2mdferawy7bwl3vwitqg37sohjmkt6zsaqbhlmxwprcquaacy\"
-                },
                 \"eyes\":{
                     \"color\":{\"r\":0.3,\"g\":0.2235294133424759,\"b\":0.99,\"a\":1}
                 },
