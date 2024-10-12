@@ -235,7 +235,7 @@ fn main() {
                     ..Default::default()
                 })
                 .set(bevy::log::LogPlugin {
-                    filter: "wgpu=error,naga=error,bevy_animation=error".to_string(),
+                    filter: "wgpu=error,naga=error,bevy_animation=error,matrix=error".to_string(),
                     custom_layer: |_| {
                         let (non_blocking, guard) = tracing_appender::non_blocking(
                             File::options()
