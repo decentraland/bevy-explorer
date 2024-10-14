@@ -98,7 +98,7 @@ pub fn set_ui_background(
     children: Query<&Children>,
     prev_backgrounds: Query<Entity, With<UiBackgroundMarker>>,
     contexts: Query<&RendererSceneContext>,
-    resolver: TextureResolver,
+    mut resolver: TextureResolver,
     mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
 ) {
     for ent in removed.read() {

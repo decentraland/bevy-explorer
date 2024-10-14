@@ -645,7 +645,7 @@ fn update_scrollables(
                 Interaction::default(),
                 InteractStyles {
                     hover: Some(InteractStyle {
-                        background: Some(Color::srgba(0.3, 0.3, 0.3, 0.8)),
+                        background: Some(Color::srgba(0.3, 0.3, 0.3, 0.6)),
                         ..Default::default()
                     }),
                     press: Some(InteractStyle {
@@ -653,7 +653,7 @@ fn update_scrollables(
                         ..Default::default()
                     }),
                     inactive: Some(InteractStyle {
-                        background: Some(Color::srgba(0.3, 0.3, 0.3, 0.5)),
+                        background: Some(Color::srgba(0.3, 0.3, 0.3, 0.3)),
                         ..Default::default()
                     }),
                     ..Default::default()

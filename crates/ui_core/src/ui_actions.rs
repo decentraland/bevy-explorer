@@ -50,10 +50,10 @@ impl Plugin for UiActionPlugin {
                     update_drag,
                     update_wheel,
                     (
+                        gather_actions::<HoverExit>,
                         gather_actions::<HoverEnter>,
                         gather_actions::<Click>,
                         gather_actions::<ClickRepeat>,
-                        gather_actions::<HoverExit>,
                         gather_actions::<DataChanged>,
                         gather_actions::<Submit>,
                         gather_actions::<Dragged>,
@@ -63,10 +63,10 @@ impl Plugin for UiActionPlugin {
                         .chain(),
                     apply_deferred,
                     (
+                        run_actions::<HoverExit>,
                         run_actions::<HoverEnter>,
                         run_actions::<Click>,
                         run_actions::<ClickRepeat>,
-                        run_actions::<HoverExit>,
                         run_actions::<DataChanged>,
                         run_actions::<Submit>,
                         run_actions::<Dragged>,

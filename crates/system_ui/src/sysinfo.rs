@@ -362,9 +362,12 @@ fn setup_minimap(
     preview: Res<PreviewMode>,
 ) {
     let components = commands
-        .entity(root.0)
         .spawn_template(&dui, "minimap", Default::default())
         .unwrap();
+    commands
+        .entity(root.0)
+        .insert_children(0, &[components.root]);
+
     commands.entity(components.root).insert(Minimap);
     commands.entity(components.named("map-node")).insert((
         MapTexture {
@@ -689,12 +692,16 @@ fn entity_count(
 }
 
 fn display_tracked_components(
-    track: Res<TrackComponents>,
+    track: Option<Res<TrackComponents>>,
     f: Res<FrameCount>,
     player: Query<Entity, With<PrimaryUser>>,
     containing_scene: ContainingScene,
     components: Query<&ComponentTracker>,
 ) {
+    let Some(track) = track else {
+        return;
+    };
+
     if !track.0 || f.0 % 100 != 0 {
         return;
     }
@@ -718,8 +725,11 @@ struct TrackComponentCommand {
 
 fn set_track_components(
     mut input: ConsoleCommand<TrackComponentCommand>,
-    mut track: ResMut<TrackComponents>,
+    track: Option<ResMut<TrackComponents>>,
 ) {
+    let Some(mut track) = track else {
+        return;
+    };
     if let Some(Ok(command)) = input.take() {
         let on = command.on.unwrap_or(true);
         track.0 = on;

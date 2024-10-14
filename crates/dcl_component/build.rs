@@ -1,5 +1,5 @@
 use std::io::Result;
-fn main() -> Result<()> {
+fn gen_sdk_components() -> Result<()> {
     let components = [
         "engine_info",
         "billboard",
@@ -57,6 +57,7 @@ fn main() -> Result<()> {
     sources.push("src/proto/decentraland/kernel/comms/rfc5/ws_comms.proto".into());
     sources.push("src/proto/decentraland/kernel/comms/rfc4/comms.proto".into());
     sources.push("src/proto/decentraland/kernel/comms/v3/archipelago.proto".into());
+    sources.push("src/proto/decentraland/social/friendships/friendships.proto".into());
 
     let serde_components = ["Color3"];
 
@@ -71,5 +72,22 @@ fn main() -> Result<()> {
         println!("cargo:rerun-if-changed={source}");
     }
 
+    Ok(())
+}
+
+fn gen_social_service() -> Result<()> {
+    let mut conf = prost_build::Config::new();
+    conf.service_generator(Box::new(dcl_rpc::codegen::RPCServiceGenerator::new()));
+    conf.type_attribute("*", "#[derive(Debug)]");
+    conf.compile_protos(
+        &["src/proto/decentraland/social/friendships/friendships.proto"],
+        &["src/proto"],
+    )?;
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    gen_sdk_components()?;
+    gen_social_service()?;
     Ok(())
 }

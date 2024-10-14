@@ -1,14 +1,15 @@
-use std::{io::Read, sync::Arc};
+use std::{io::Read, path::PathBuf, sync::Arc};
 
 use anyhow::anyhow;
 use bevy::{
+    ecs::system::SystemParam,
     prelude::*,
     tasks::{IoTaskPool, Task},
     utils::HashMap,
 };
 use dcl::interface::CrdtType;
 use ethers_core::types::Address;
-use ipfs::{IpfsAssetServer, IpfsIo, TypedIpfsRef};
+use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer, IpfsIo, TypedIpfsRef};
 use isahc::{http::StatusCode, AsyncReadResponseExt, ReadResponseExt, RequestExt};
 use multihash_codetable::MultihashDigest;
 use serde::{Deserialize, Serialize};
@@ -47,6 +48,81 @@ impl Plugin for UserProfilePlugin {
         );
 
         app.insert_resource(CurrentUserProfile::default());
+        app.init_resource::<ProfileCache>();
+    }
+}
+
+enum ProfileDisplayState {
+    Loaded(Box<UserProfile>),
+    Loading(Task<Result<UserProfile, anyhow::Error>>),
+    Failed,
+}
+
+#[derive(Resource, Default)]
+pub struct ProfileCache(HashMap<Address, ProfileDisplayState>);
+
+#[derive(SystemParam)]
+pub struct ProfileManager<'w, 's> {
+    cache: ResMut<'w, ProfileCache>,
+    ipfs: IpfsAssetServer<'w, 's>,
+}
+
+pub struct ProfileMissingError;
+
+impl<'w, 's> ProfileManager<'w, 's> {
+    pub fn get_data(
+        &mut self,
+        address: Address,
+    ) -> Result<Option<&UserProfile>, ProfileMissingError> {
+        let state = self.cache.0.entry(address).or_insert_with(|| {
+            ProfileDisplayState::Loading(
+                IoTaskPool::get().spawn(get_remote_profile(address, self.ipfs.ipfs().clone())),
+            )
+        });
+
+        if let ProfileDisplayState::Loading(task) = state {
+            match task.complete() {
+                Some(Ok(profile)) => *state = ProfileDisplayState::Loaded(Box::new(profile)),
+                Some(Err(_)) => *state = ProfileDisplayState::Failed,
+                None => (),
+            }
+        }
+
+        Ok(match state {
+            ProfileDisplayState::Loaded(data) => Some(data),
+            ProfileDisplayState::Loading(_) => None,
+            ProfileDisplayState::Failed => return Err(ProfileMissingError),
+        })
+    }
+
+    pub fn get_image(
+        &mut self,
+        address: Address,
+    ) -> Result<Option<Handle<Image>>, ProfileMissingError> {
+        let profile = self.get_data(address)?;
+        let Some(profile) = profile else {
+            return Ok(None);
+        };
+        let Some(path) = profile.content.avatar.snapshots.as_ref().map(|snapshots| {
+            let url = format!("{}{}", profile.base_url, snapshots.face256);
+            let ipfs_path = IpfsPath::new_from_url(&url, "png");
+            PathBuf::from(&ipfs_path)
+        }) else {
+            return Err(ProfileMissingError);
+        };
+        Ok(Some(self.ipfs.asset_server().load(path)))
+    }
+
+    pub fn get_name(&mut self, address: Address) -> Result<Option<&String>, ProfileMissingError> {
+        Ok(self.get_data(address)?.map(|profile| &profile.content.name))
+    }
+
+    pub fn update(&mut self, profile: UserProfile) {
+        if let Some(address) = profile.content.eth_address.as_h160() {
+            self.cache
+                .0
+                .insert(address, ProfileDisplayState::Loaded(Box::new(profile)));
+        }
     }
 }
 
@@ -63,6 +139,7 @@ pub fn setup_primary_profile(
     ipfas: IpfsAssetServer,
     images: Res<Assets<Image>>,
     mut global_crdt: ResMut<GlobalCrdtState>,
+    mut cache: ProfileManager,
 ) {
     // gather any event receivers
     for sender in subscribe_events.read().filter_map(|ev| match ev {
@@ -81,6 +158,9 @@ pub fn setup_primary_profile(
 
             // update component
             commands.entity(player).try_insert(profile.clone());
+
+            // update cache
+            cache.update(profile.clone());
 
             // send to scenes
             global_crdt.update_crdt(
@@ -161,6 +241,7 @@ pub fn setup_primary_profile(
                     .avatar
                     .snapshots = Some(AvatarSnapshots { face256, body });
                 current_profile.snapshots = None;
+                cache.update(current_profile.profile.clone().unwrap());
             }
             Some(Err(e)) => {
                 error!("failed to deploy profile: {e}");
@@ -237,6 +318,7 @@ pub fn process_profile_events(
     transports: Query<&Transport>,
     current_profile: Res<CurrentUserProfile>,
     mut global_crdt: ResMut<GlobalCrdtState>,
+    mut cache: ProfileManager,
 ) {
     for ev in events.read() {
         match &ev.event {
@@ -325,6 +407,8 @@ pub fn process_profile_events(
                         },
                     );
 
+                    cache.update(profile.clone());
+
                     if let Some(mut existing_profile) = maybe_profile {
                         if existing_profile.as_ref() != &profile {
                             *existing_profile = profile;
@@ -342,7 +426,7 @@ pub fn process_profile_events(
     last_sent_request.retain(|_, req_time| *req_time > time.elapsed_seconds() - 10.0);
 }
 
-#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
 pub struct UserProfile {
     pub version: u32,
     pub content: SerializedProfile,

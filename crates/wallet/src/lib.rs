@@ -8,6 +8,7 @@ use common::structs::ChainLink;
 use ethers_core::types::{Address, Signature};
 use ethers_signers::{LocalWallet, Signer, WalletError};
 use isahc::http::Uri;
+use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
@@ -55,6 +56,15 @@ impl Wallet {
     pub fn finalize_as_guest(&mut self) {
         let inner: Box<dyn ObjSafeWalletSigner + Send + Sync> =
             Box::new(LocalWallet::new(&mut rand::thread_rng()));
+        let mut write = self.0.try_write().unwrap();
+        write.root_address = Some(inner.address());
+        write.delegates.clear();
+        write.inner = Some(inner);
+    }
+
+    pub fn finalize_as_guest_with_seed(&mut self, seed: [u8; 32]) {
+        let inner: Box<dyn ObjSafeWalletSigner + Send + Sync> =
+            Box::new(LocalWallet::new(&mut rand::rngs::StdRng::from_seed(seed)));
         let mut write = self.0.try_write().unwrap();
         write.root_address = Some(inner.address());
         write.delegates.clear();

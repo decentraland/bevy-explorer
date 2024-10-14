@@ -857,7 +857,7 @@ fn update_wearables_list(
                                 .get(caller.0)
                                 .ok()
                                 .and_then(|tab| tab.selected_entity())
-                                .and_then(|nodes| wearable.get(nodes["label"]).ok());
+                                .and_then(|nodes| wearable.get(nodes.named("label")).ok());
                             e.send(SelectItem(selection.cloned()));
                             debug!("selected {:?}", selection)
                         },

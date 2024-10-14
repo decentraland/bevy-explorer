@@ -19,6 +19,7 @@ input_manager = { workspace = true }
 world_ui = { workspace = true }
 collectibles = { workspace = true }
 scene_material = { workspace = true }
+social = { workspace = true }
 
 bevy = { workspace = true }
 bevy_kira_audio = { workspace = true }

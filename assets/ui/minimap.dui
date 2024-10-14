@@ -1,6 +1,6 @@
 <define-template id="minimap">
     <bounds 
-        style="flex-direction: column; position-type: absolute; left: 1vmin; top: 1vmin; width: 25vmin; overflow-x: hidden;"
+        style="flex-direction: column; left: 1vmin; top: 1vmin; width: 25vmin; overflow-x: hidden;"
         corner-size="2vmin"
         blend-size="0.25vmin"
         border-size="1vmin"

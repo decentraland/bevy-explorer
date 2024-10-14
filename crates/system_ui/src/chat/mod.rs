@@ -1,28 +1,40 @@
-use bevy::{color::palettes::css, core::FrameCount, prelude::*};
+pub mod conversation_manager;
+pub mod friends;
+pub mod history;
 
-use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine};
-use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
+use bevy::{color::palettes::css, prelude::*};
+
+use bevy_console::{ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine};
+use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     dcl_assert,
-    structs::{PrimaryUser, SystemAudio, ToolTips},
-    util::{FireEventEx, RingBuffer, RingBufferReceiver, TryPushChildrenEx},
+    structs::{PrimaryUser, SystemAudio, ToolTips, TooltipSource},
+    util::{
+        AsH160, FireEventEx, ModifyComponentExt, RingBuffer, RingBufferReceiver, TryPushChildrenEx,
+    },
 };
 use comms::{
     chat_marker_things, global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport,
 };
-use copypasta::{ClipboardContext, ClipboardProvider};
+use console::DoAddConsoleCommand;
+use conversation_manager::ConversationManager;
 use dcl::{SceneLogLevel, SceneLogMessage};
 use dcl_component::proto_components::kernel::comms::rfc4;
+use ethers_core::types::Address;
+use history::ChatHistoryPlugin;
 use input_manager::should_accept_key;
-use scene_runner::{renderer_context::RendererSceneContext, ContainingScene, Toaster};
+use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
 use shlex::Shlex;
+use social::FriendshipEvent;
 use ui_core::{
     button::{DuiButton, TabSelection},
     focus::Focus,
     text_entry::{TextEntry, TextEntrySubmit},
     text_size::FontSize,
-    ui_actions::{Click, DataChanged, HoverEnter, HoverExit, On, UiCaller},
+    ui_actions::{Click, DataChanged, HoverEnter, HoverExit, On},
 };
+
+use friends::FriendsPlugin;
 
 use super::SystemUiRoot;
 
@@ -34,11 +46,14 @@ impl Plugin for ChatPanelPlugin {
         app.add_systems(Update, append_chat_messages);
         app.add_systems(Update, emit_user_chat);
         app.add_systems(Startup, setup);
-        app.add_systems(OnEnter::<ui_core::State>(ui_core::State::Ready), chat_popup);
         app.add_systems(
-            Update,
-            (keyboard_popup.pipe(select_chat_tab)).run_if(should_accept_key),
+            OnEnter::<ui_core::State>(ui_core::State::Ready),
+            setup_chat_popup,
         );
+        app.add_systems(Update, keyboard_popup.run_if(should_accept_key));
+        app.add_console_command::<Rechat, _>(debug_chat);
+        app.add_event::<PrivateChatEntered>();
+        app.add_plugins((FriendsPlugin, ChatHistoryPlugin));
     }
 }
 
@@ -50,7 +65,7 @@ pub struct ChatboxContainer;
 #[derive(Component, Clone, Debug)]
 pub struct DisplayChatMessage {
     pub timestamp: f64,
-    pub sender: Option<String>,
+    pub sender: Option<Address>,
     pub message: String,
 }
 
@@ -58,7 +73,7 @@ pub struct DisplayChatMessage {
 #[derive(Component)]
 pub struct ChatBox {
     chat_log: RingBuffer<DisplayChatMessage>,
-    active_tab: &'static str,
+    pub active_tab: &'static str,
     active_chat_sink: Option<RingBufferReceiver<DisplayChatMessage>>,
     active_log_sink: Option<(Entity, RingBufferReceiver<SceneLogMessage>)>,
 }
@@ -97,12 +112,12 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         ),
         On::<HoverEnter>::new(|mut tooltip: ResMut<ToolTips>| {
             tooltip.0.insert(
-                "chat-button",
+                TooltipSource::Label("chat-button"),
                 vec![("Toggle Chat: Click or press Enter".to_owned(), true)],
             );
         }),
         On::<HoverExit>::new(|mut tooltip: ResMut<ToolTips>| {
-            tooltip.0.remove("chat-button");
+            tooltip.0.remove(&TooltipSource::Label("chat-button"));
         }),
     ));
 }
@@ -112,14 +127,12 @@ fn keyboard_popup(
     input: Res<ButtonInput<KeyCode>>,
     mut container: Query<&mut Style, With<ChatboxContainer>>,
     entry: Query<Entity, With<ChatInput>>,
-) -> &'static str {
-    let mut res = "";
+) {
     if input.just_pressed(KeyCode::Enter) || input.just_pressed(KeyCode::NumpadEnter) {
         if let Ok(mut style) = container.get_single_mut() {
             if style.display == Display::None {
                 commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                 style.display = Display::Flex;
-                res = "Nearby";
             };
         }
 
@@ -127,18 +140,63 @@ fn keyboard_popup(
             commands.entity(entry).insert(Focus);
         }
     }
-
-    res
 }
 
-fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegistry>) {
+fn debug_chat(
+    mut input: ConsoleCommand<Rechat>,
+    mut commands: Commands,
+    root: Res<SystemUiRoot>,
+    dui: Res<DuiRegistry>,
+    existing: Query<(Entity, &DuiEntities), With<ChatboxContainer>>,
+    mut tab: Query<&mut TabSelection, With<ChatTab>>,
+) {
+    if let Some(Ok(Rechat { arg })) = input.take() {
+        match arg.as_str() {
+            "reload" => {
+                if let Ok((existing, _)) = existing.get_single() {
+                    commands.entity(existing).despawn_recursive();
+                }
+
+                commands.fire_event(FriendshipEvent(None));
+                setup_chat_popup(commands, root, dui);
+            }
+            "add" => {
+                tab.single_mut()
+                    .add(
+                        &mut commands,
+                        &dui,
+                        Some(3),
+                        DuiButton::new_enabled("new tab", || {}),
+                        false,
+                        None,
+                    )
+                    .unwrap();
+            }
+            _ => (),
+        }
+    }
+}
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/cdb")]
+struct Rechat {
+    arg: String,
+}
+
+#[derive(Component)]
+pub struct ChatTab;
+
+fn setup_chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegistry>) {
     dcl_assert!(root.0 != Entity::PLACEHOLDER);
 
     let chat_tab = |label: &'static str| -> DuiButton {
-        DuiButton::new_enabled(label, (move || label).pipe(select_chat_tab))
+        DuiButton {
+            text_size: Some(0.025 / 1.3),
+            ..DuiButton::new_enabled(label, (move || Some(label)).pipe(select_chat_tab))
+        }
     };
 
-    let tab_labels = vec!["Nearby", "Scene Log", "System Log"];
+    let tab_labels = vec!["Nearby", "Scene Log"];
     let chat_tabs = tab_labels
         .clone()
         .into_iter()
@@ -147,13 +205,15 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
 
     let tab_labels_changed = tab_labels.clone();
     let tab_changed =
-        (move |caller: Res<UiCaller>, selection: Query<&TabSelection>| -> &'static str {
-            selection
-                .get(caller.0)
-                .ok()
-                .and_then(|ts| ts.selected)
-                .and_then(|sel| tab_labels_changed.get(sel))
-                .unwrap_or(&"")
+        (move |selection: Query<&TabSelection, With<ChatTab>>| -> Option<&'static str> {
+            Some(
+                selection
+                    .get_single()
+                    .ok()
+                    .and_then(|ts| ts.selected)
+                    .and_then(|sel| tab_labels_changed.get(sel))
+                    .unwrap_or(&""),
+            )
         })
         .pipe(select_chat_tab);
 
@@ -170,7 +230,7 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
         .with_prop("tab-changed", On::<DataChanged>::new(tab_changed))
         .with_prop("initial-tab", Some(0usize))
         .with_prop("close", On::<Click>::new(close_ui))
-        .with_prop("copy", On::<Click>::new(copy_chat));
+        .with_prop("friends", On::<Click>::new(toggle_friends));
 
     let components = commands
         .entity(root.0)
@@ -190,10 +250,6 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
         .entity(components.named("chat-entry"))
         .insert(ChatInput);
 
-    // commands
-    //     .entity(components.named("chat-output"))
-    //     .insert(BackgroundColor(Color::srgba(0.0, 0.0, 0.25, 0.2)));
-
     commands
         .entity(components.named("chat-output-inner"))
         .insert(ChatBox {
@@ -202,41 +258,37 @@ fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegis
             active_chat_sink: None,
             active_log_sink: None,
         });
+
+    commands.entity(components.named("tabs")).insert(ChatTab);
 }
 
-fn copy_chat(
-    chatbox: Query<&Children, With<ChatBox>>,
-    msgs: Query<&DisplayChatMessage>,
-    mut toaster: Toaster,
-    frame: Res<FrameCount>,
-) {
-    let mut copy = String::default();
-    let Ok(children) = chatbox.get_single() else {
-        return;
-    };
-    for ent in children.iter() {
-        if let Ok(msg) = msgs.get(*ent) {
-            copy.push_str(
-                format!(
-                    "[{}] {}\n",
-                    msg.sender.as_deref().unwrap_or("log"),
-                    msg.message
-                )
-                .as_str(),
-            );
-        }
+fn toggle_friends(container: Query<&DuiEntities, With<ChatboxContainer>>, mut commands: Commands) {
+    let components = container
+        .get_single()
+        .ok()
+        .map(|ents| (ents.root, ents.named("friends-panel")));
+    if let Some((container, friends)) = components {
+        commands
+            .entity(container)
+            .modify_component(|style: &mut Style| {
+                if style.width == Val::VMin(90.0) {
+                    style.width = Val::VMin(45.0);
+                    style.min_width = Val::VMin(30.0);
+                } else {
+                    style.width = Val::VMin(90.0);
+                    style.min_width = Val::VMin(75.0);
+                }
+            });
+        commands
+            .entity(friends)
+            .modify_component(|style: &mut Style| {
+                style.display = if style.display == Display::Flex {
+                    Display::None
+                } else {
+                    Display::Flex
+                };
+            });
     }
-
-    let label = format!("chatcopy {}", frame.0);
-
-    if let Ok(mut ctx) = ClipboardContext::new() {
-        if ctx.set_contents(copy).is_ok() {
-            toaster.add_toast(&label, "history copied to clipboard");
-            return;
-        }
-    }
-
-    toaster.add_toast("chat copy", "failed to set clipboard ...");
 }
 
 fn append_chat_messages(
@@ -260,7 +312,7 @@ fn append_chat_messages(
                 warn!("can't get profile for chat sender {:?}", ev.sender);
                 continue;
             };
-            Some(profile.content.name.to_owned())
+            profile.content.eth_address.as_h160()
         };
 
         chatbox.chat_log.send(DisplayChatMessage {
@@ -269,51 +321,6 @@ fn append_chat_messages(
             message: ev.message.to_owned(),
         });
     }
-}
-
-fn make_chat(
-    commands: &mut Commands,
-    asset_server: &AssetServer,
-    msg: DisplayChatMessage,
-) -> Entity {
-    commands
-        .spawn((
-            FontSize(0.0175),
-            TextBundle {
-                text: Text::from_sections([
-                    TextSection::new(
-                        format!(
-                            "{}: ",
-                            msg.sender.clone().unwrap_or_else(|| "[SYSTEM]".to_owned())
-                        ),
-                        TextStyle {
-                            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
-                            font_size: 15.0,
-                            color: if msg.sender.is_some() {
-                                css::YELLOW.into()
-                            } else {
-                                css::GRAY.into()
-                            },
-                        },
-                    ),
-                    TextSection::new(
-                        msg.message.clone(),
-                        TextStyle {
-                            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
-                            font_size: 15.0,
-                            color: if msg.sender.is_some() {
-                                css::WHITE.into()
-                            } else {
-                                css::GRAY.into()
-                            },
-                        },
-                    ),
-                ]),
-                ..Default::default()
-            },
-            msg,
-        ))
-        .id()
 }
 
 fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMessage) -> Entity {
@@ -365,6 +372,7 @@ fn display_chat(
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
     contexts: Query<&RendererSceneContext>,
+    mut conversation: ConversationManager,
 ) {
     let Ok((entity, mut chatbox, maybe_children)) = chatbox.get_single_mut() else {
         return;
@@ -389,9 +397,20 @@ fn display_chat(
             panic!()
         };
         while let Ok(chat) = rec.try_recv() {
-            let msg = make_chat(&mut commands, &asset_server, chat);
-            commands.entity(entity).add_child(msg);
+            conversation.add_message(
+                entity,
+                chat.sender.or(Some(Address::zero())),
+                if chat.sender.is_none() {
+                    Color::srgb(0.7, 0.7, 0.7)
+                } else {
+                    Color::srgb(0.9, 0.9, 0.9)
+                },
+                chat.message,
+                false,
+            );
         }
+
+        return;
     }
 
     if chatbox.active_tab == "Scene Log" {
@@ -447,10 +466,14 @@ fn display_chat(
 #[derive(Component)]
 pub struct ChatInput;
 
+#[derive(Event)]
+pub struct PrivateChatEntered(pub String);
+
 #[allow(clippy::too_many_arguments)]
 fn emit_user_chat(
     mut commands: Commands,
     mut chats: EventWriter<ChatEvent>,
+    mut private: EventWriter<PrivateChatEntered>,
     transports: Query<&Transport>,
     player: Query<Entity, With<PrimaryUser>>,
     time: Res<Time>,
@@ -477,6 +500,12 @@ fn emit_user_chat(
                 commands.entity(e).remove::<Focus>();
             }
         } else {
+            if output.active_tab.is_empty() {
+                // private chat (what a hacky approach this is)
+                private.send(PrivateChatEntered(message.clone()));
+                return;
+            }
+
             // cmds.insert(Focus);
             let sender = if message.starts_with('/') {
                 Entity::PLACEHOLDER
@@ -537,18 +566,20 @@ fn emit_user_chat(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn select_chat_tab(
-    In(tab): In<&'static str>,
+pub(crate) fn select_chat_tab(
+    In(tab): In<Option<&'static str>>,
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
     mut chatbox: Query<(Entity, &mut ChatBox)>,
     mut text_entry: Query<&mut TextEntry, With<ChatInput>>,
-    time: Res<Time>,
+    mut conversation: ConversationManager,
 ) {
-    if tab.is_empty() {
+    let Some(tab) = tab else {
         return;
-    }
-    let (entity, mut chatbox) = chatbox.single_mut();
+    };
+
+    let Ok((entity, mut chatbox)) = chatbox.get_single_mut() else {
+        return;
+    };
 
     let clicked_current = chatbox.active_tab == tab;
 
@@ -557,26 +588,24 @@ fn select_chat_tab(
         chatbox.active_log_sink = None;
         chatbox.active_chat_sink = None;
         if tab == "Nearby" {
-            let mut msgs = Vec::new();
-            let (missed, backlog, receiver) = chatbox.chat_log.read();
+            conversation.clear(entity);
+            let (_, backlog, receiver) = chatbox.chat_log.read();
             chatbox.active_chat_sink = Some(receiver);
-            if missed > 0 {
-                msgs.push(make_chat(
-                    &mut commands,
-                    &asset_server,
-                    DisplayChatMessage {
-                        timestamp: time.elapsed_seconds_f64(),
-                        sender: None,
-                        message: format!("(missed {missed} prior messages)"),
-                    },
-                ));
-            }
             for message in backlog.into_iter() {
-                msgs.push(make_chat(&mut commands, &asset_server, message));
+                conversation.add_message(
+                    entity,
+                    message.sender.or(Some(Address::zero())),
+                    if message.sender.is_none() {
+                        Color::srgb(0.7, 0.7, 0.7)
+                    } else {
+                        Color::srgb(0.9, 0.9, 0.9)
+                    },
+                    message.message,
+                    false,
+                );
             }
-            commands.entity(entity).replace_children(&msgs);
             text_entry.single_mut().enabled = true;
-        } else {
+        } else if tab == "Scene Log" {
             text_entry.single_mut().enabled = false;
         }
 

@@ -42,20 +42,14 @@ jobs:
         strategy:
             matrix:
                 include:
-                  # linux livekit disabled until i figure out the multiple symbol definitions issue (webrtc and v8 both use abseil)
                   - build_name: linux-x86_64
                     os: ubuntu-latest
 
                   - build_name: macos-m1m2
                     os: macos-14-xlarge
 
-                  # some ffmpeg thing is failing
-                  # - build_name: macos-x86_64
-                  #   os: macos-14-large
-        
                   - build_name: windows-x86_64
-                    os: bigwin
-                  #  target: x86_64-pc-windows-msvc
+                    os: windows-latest
 
         env:
             PACKAGE_FILE: ${{ needs.create-release.outputs.package_prefix }}-${{ matrix.build_name }}.${{ startsWith(matrix.build_name, 'lin') && 'tar.gz' || 'zip' }}
@@ -72,7 +66,6 @@ jobs:
                 profile: minimal
                 toolchain: stable
                 override: true
-#         - uses: Swatinem/rust-cache@v2
           - name: add darwin target
             if: runner.os == 'macos'
             run: rustup target add aarch64-apple-darwin

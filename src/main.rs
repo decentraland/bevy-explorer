@@ -56,6 +56,7 @@ use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
 use ipfs::IpfsIoPlugin;
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
+use social::SocialPlugin;
 use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
@@ -234,7 +235,7 @@ fn main() {
                     ..Default::default()
                 })
                 .set(bevy::log::LogPlugin {
-                    filter: "wgpu=error,naga=error,bevy_animation=error".to_string(),
+                    filter: "wgpu=error,naga=error,bevy_animation=error,matrix=error".to_string(),
                     custom_layer: |_| {
                         let (non_blocking, guard) = tracing_appender::non_blocking(
                             File::options()
@@ -303,6 +304,7 @@ fn main() {
         .add_plugins(VisualsPlugin { no_fog })
         .add_plugins(WalletPlugin)
         .add_plugins(CommsPlugin)
+        .add_plugins(SocialPlugin)
         .add_plugins(NftShapePlugin)
         .add_plugins(TweenPlugin)
         .add_plugins(SceneBoundPlugin)

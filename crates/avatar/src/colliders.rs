@@ -1,15 +1,15 @@
+use crate::AvatarMaterials;
 use bevy::{
     core::FrameCount,
     prelude::*,
-    render::render_resource::Extent3d,
     utils::{HashMap, HashSet},
 };
-use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
-    structs::{ActiveDialog, PrimaryCamera, ToolTips, PROFILE_UI_RENDERLAYER},
+    structs::{PrimaryCamera, ShowProfileEvent, ToolTips, TooltipSource},
+    util::{AsH160, FireEventEx},
 };
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
 use input_manager::AcceptInput;
@@ -26,9 +26,6 @@ use scene_runner::{
     },
 };
 use serde_json::json;
-use ui_core::button::DuiButton;
-
-use crate::{avatar_texture::PhotoBooth, AvatarMaterials, AvatarShape};
 
 pub struct AvatarColliderPlugin;
 
@@ -110,12 +107,7 @@ fn update_avatar_collider_actions(
     mut colliders: ResMut<AvatarColliders>,
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
     windows: Query<&Window>,
-    (accept_input, pointer_target, frame, active_dialog): (
-        Res<AcceptInput>,
-        Res<PointerTarget>,
-        Res<FrameCount>,
-        Res<ActiveDialog>,
-    ),
+    (accept_input, pointer_target, frame): (Res<AcceptInput>, Res<PointerTarget>, Res<FrameCount>),
     mut tooltips: ResMut<ToolTips>,
     profiles: Query<(
         &ForeignPlayer,
@@ -126,8 +118,6 @@ fn update_avatar_collider_actions(
     mouse_input: Res<ButtonInput<MouseButton>>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
-    mut photo_booth: PhotoBooth,
-    dui: Res<DuiRegistry>,
     mut hilighted_materials: Local<HashSet<AssetId<SceneMaterial>>>,
     mut scene_materials: ResMut<Assets<SceneMaterial>>,
 ) {
@@ -139,7 +129,7 @@ fn update_avatar_collider_actions(
         senders.push(sender.clone());
     }
 
-    tooltips.0.remove("avatar_pointer");
+    tooltips.0.remove(&TooltipSource::Label("avatar_pointer"));
 
     // check for scene ui
     if !matches!(*ui_target, UiPointerTarget::None) {
@@ -219,11 +209,11 @@ fn update_avatar_collider_actions(
         }
 
         tooltips.0.insert(
-            "avatar_pointer",
+            TooltipSource::Label("avatar_pointer"),
             vec![("Middle Click : Profile".to_owned(), true)],
         );
 
-        if mouse_input.just_pressed(MouseButton::Middle) {
+        if mouse_input.just_pressed(MouseButton::Left) {
             // send event
             let event = json!({
                 "userId": format!("{:#x}", player.address),
@@ -236,33 +226,15 @@ fn update_avatar_collider_actions(
             for sender in senders.iter() {
                 let _ = sender.send(event.clone());
             }
+        }
 
+        if mouse_input.just_pressed(MouseButton::Middle) {
             // display profile
-            let instance = photo_booth.spawn_booth(
-                PROFILE_UI_RENDERLAYER,
-                AvatarShape::from(profile),
-                Extent3d::default(),
-                false,
-            );
-
-            let Some(permit) = active_dialog.try_acquire() else {
-                warn!("can't open profile with other active dialog");
-                return;
-            };
-
-            let components = commands
-                .spawn_template(
-                    &dui,
-                    "foreign-profile",
-                    DuiProps::new()
-                        .with_prop("title", format!("{} profile", profile.content.name))
-                        .with_prop("booth-instance", instance)
-                        .with_prop("eth-address", profile.content.eth_address.clone())
-                        .with_prop("buttons", vec![DuiButton::close_happy("Ok")]),
-                )
-                .unwrap();
-
-            commands.entity(components.root).insert(permit);
+            if let Some(address) = profile.content.eth_address.as_h160() {
+                commands.fire_event(ShowProfileEvent(address));
+            } else {
+                warn!("Profile has a bad address {}", profile.content.eth_address);
+            }
         }
     }
 

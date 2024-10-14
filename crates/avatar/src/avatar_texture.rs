@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, path::PathBuf, sync::Arc};
+use std::{collections::VecDeque, sync::Arc};
 
 use anyhow::anyhow;
 use bevy::{
@@ -11,6 +11,7 @@ use bevy::{
     prelude::*,
     render::{
         camera::RenderTarget,
+        render_asset::RenderAssetUsages,
         render_resource::{
             Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
         },
@@ -20,13 +21,8 @@ use bevy::{
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};
 use collectibles::{urn::CollectibleUrn, Emote};
-use common::{
-    sets::SetupSets,
-    structs::{AvatarTextureHandle, PrimaryPlayerRes, AVATAR_TEXTURE_RENDERLAYER},
-};
-use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
+use common::sets::SetupSets;
 use dcl_component::proto_components::sdk::components::PbAvatarEmoteCommand;
-use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 use ui_core::ui_actions::{DragData, Dragged, On};
 
 use crate::{
@@ -41,16 +37,8 @@ const SNAPSHOT_FRAMES: u32 = 5;
 impl Plugin for AvatarTexturePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LiveBooths>();
-        app.add_systems(Startup, setup_primary_avatar_camera.in_set(SetupSets::Main));
-        app.add_systems(
-            Update,
-            (
-                load_foreign_textures,
-                update_booth_image,
-                snapshot,
-                clean_booths,
-            ),
-        );
+        app.add_systems(Startup, setup.in_set(SetupSets::Main));
+        app.add_systems(Update, (update_booth_image, snapshot, clean_booths));
     }
 }
 
@@ -227,30 +215,7 @@ impl BoothInstance {
     }
 }
 
-fn setup_primary_avatar_camera(
-    mut commands: Commands,
-    player: Res<PrimaryPlayerRes>,
-    mut images: ResMut<Assets<Image>>,
-    mut dui: ResMut<DuiRegistry>,
-) {
-    let size = Extent3d {
-        width: 512,
-        height: 512,
-        ..default()
-    };
-
-    let (avatar_texture, _) = add_booth_camera(
-        &mut commands,
-        &mut images,
-        player.0,
-        size,
-        AVATAR_TEXTURE_RENDERLAYER,
-    );
-
-    commands
-        .entity(player.0)
-        .insert(AvatarTextureHandle(avatar_texture));
-
+fn setup(mut dui: ResMut<DuiRegistry>) {
     dui.register_template("photobooth", DuiBooth);
 }
 
@@ -326,27 +291,6 @@ fn add_booth_camera(
     });
 
     (avatar_texture, camera.unwrap())
-}
-
-#[allow(clippy::type_complexity)]
-fn load_foreign_textures(
-    mut q: Query<
-        (&mut AvatarTextureHandle, &UserProfile),
-        (With<ForeignPlayer>, Changed<UserProfile>),
-    >,
-    ipfas: IpfsAssetServer,
-) {
-    for (mut texture, profile) in q.iter_mut() {
-        if let Some(snapshots) = profile.content.avatar.snapshots.as_ref() {
-            let url = format!("{}{}", profile.base_url, snapshots.face256);
-            let ipfs_path = IpfsPath::new_from_url(&url, "png");
-            texture.0 = ipfas.asset_server().load(PathBuf::from(&ipfs_path));
-            debug!(
-                "loaded remote avatar texture ({}) for {}",
-                url, profile.content.eth_address
-            );
-        }
-    }
 }
 
 fn update_booth_image(
@@ -452,8 +396,8 @@ fn snapshot(
             let face_window = timer.1.take().unwrap();
             let face_cam = cam(
                 face_window,
-                Transform::from_translation(Vec3::new(0.0, 1.8, -1.0))
-                    .looking_at(Vec3::Y * 1.8, Vec3::Y),
+                Transform::from_translation(Vec3::new(0.0, 1.7, -1.0))
+                    .looking_at(Vec3::Y * 1.7, Vec3::Y),
             );
 
             let body_window = timer.2.take().unwrap();
@@ -508,11 +452,12 @@ fn snapshot(
         commands.entity(camera).despawn_recursive();
 
         let Some(target) = images.get_mut(&target) else {
-            error!("target not found");
+            error!("target {:?} not found", target);
             continue;
         };
 
         *target = image;
+        target.asset_usage = RenderAssetUsages::default();
     }
 }
 
