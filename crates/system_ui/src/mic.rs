@@ -1,7 +1,7 @@
 use av::microphone::MicState;
 use bevy::prelude::*;
 use common::{
-    structs::{SystemAudio, ToolTips},
+    structs::{SystemAudio, ToolTips, TooltipSource},
     util::FireEventEx,
 };
 use comms::{Transport, TransportType};
@@ -66,7 +66,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>) {
                     .iter()
                     .any(|t| t.transport_type == TransportType::Livekit);
                 tooltip.0.insert(
-                    "mic",
+                    TooltipSource::Label("mic"),
                     vec![(
                         "LCtrl : Push to talk".to_owned(),
                         transport_available && state.available,
@@ -75,7 +75,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>) {
             },
         ),
         On::<HoverExit>::new(|mut tooltip: ResMut<ToolTips>| {
-            tooltip.0.remove("mic");
+            tooltip.0.remove(&TooltipSource::Label("mic"));
         }),
         MicUiMarker,
     ));

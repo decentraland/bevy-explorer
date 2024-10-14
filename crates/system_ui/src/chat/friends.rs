@@ -1,17 +1,16 @@
 use bevy::{prelude::*, utils::hashbrown::HashMap};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
-    structs::ShowProfileEvent,
-    util::{format_address, AsH160, FireEventEx, TryPushChildrenEx},
+    structs::{ShowProfileEvent, SystemAudio},
+    util::{format_address, FireEventEx, TryPushChildrenEx},
 };
 use comms::profile::ProfileManager;
-use dcl_component::proto_components::social::friendship_event_response::{self, Body};
 use ethers_core::types::Address;
-use scene_runner::Toaster;
 use social::{client::DirectChatMessage, DirectChatEvent, FriendshipEvent, SocialClient};
 use tokio::sync::mpsc::Receiver;
 use ui_core::{
     button::{DuiButton, TabManager, TabSelection},
+    focus::Focus,
     text_entry::TextEntry,
     ui_actions::{Click, EventCloneExt, On},
     user_font, FontName, WeightName,
@@ -19,7 +18,7 @@ use ui_core::{
 
 use crate::chat::{ChatInput, ChatTab, ChatboxContainer, PrivateChatEntered};
 
-use super::conversation_manager::ConversationManager;
+use super::{conversation_manager::ConversationManager, ChatBox};
 
 pub struct FriendsPlugin;
 
@@ -30,12 +29,13 @@ impl Plugin for FriendsPlugin {
             (
                 update_friends,
                 update_conversations,
-                show_popups,
+                show_conversation,
                 update_profile_names,
                 update_profile_images,
                 bold_unread,
             ),
         );
+        app.add_event::<ShowConversationEvent>();
     }
 }
 
@@ -99,6 +99,145 @@ pub fn update_profile_images(
     }
 }
 
+#[derive(Event, Clone)]
+pub struct ShowConversationEvent(pub Address);
+
+#[allow(clippy::too_many_arguments)]
+pub fn show_conversation(
+    mut show_events: EventReader<ShowConversationEvent>,
+    mut pending_event: Local<Option<Address>>,
+    mut commands: Commands,
+    client: Res<SocialClient>,
+    dui: Res<DuiRegistry>,
+    existing_chats: Query<(Entity, &PrivateChat)>,
+    mut tab_manager: TabManager,
+    tab: Query<Entity, With<ChatTab>>,
+    mut profile_cache: ProfileManager,
+    mut container: Query<&mut Style, With<ChatboxContainer>>,
+    entry: Query<Entity, With<ChatInput>>,
+) {
+    if let Some(event) = show_events.read().last() {
+        *pending_event = Some(event.0);
+    }
+
+    let Ok(tab) = tab.get_single() else {
+        return;
+    };
+
+    let Some(&friend) = pending_event.as_ref() else {
+        return;
+    };
+    println!("got ev");
+
+    let name = match profile_cache.get_name(friend) {
+        Ok(Some(name)) => name.to_owned(),
+        Ok(None) => return,
+        Err(_) => format!("{friend:#x}"),
+    };
+
+    // we're going ahead after these checks, so clear the pending
+    pending_event.take();
+    println!("going ahead");
+
+    if let Ok(mut style) = container.get_single_mut() {
+        if style.display == Display::None {
+            commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+            style.display = Display::Flex;
+        };
+    }
+
+    if let Ok(entry) = entry.get_single() {
+        commands.entity(entry).insert(Focus);
+    }
+
+    if let Some((existing, _)) = existing_chats.iter().find(|(_, c)| c.address == friend) {
+        tab_manager.set_selected_entity(tab, existing);
+        return;
+    }
+
+    let short_name = if name.len() > 25 {
+        format!(
+            "{}...{}",
+            name.chars().take(17).collect::<String>(),
+            name.chars().skip(name.len() - 8).collect::<String>()
+        )
+    } else {
+        name
+    };
+
+    let button_content = commands
+        .spawn_template(
+            &dui,
+            "direct-chat-button",
+            DuiProps::default().with_prop("name", short_name).with_prop(
+                "close",
+                On::<Click>::new(
+                    move |mut tab_manager: TabManager,
+                          tab: Query<Entity, With<ChatTab>>,
+                          buttons: Query<(Entity, &PrivateChat)>| {
+                        // delete this tab
+                        let Ok(tab) = tab.get_single() else {
+                            return;
+                        };
+
+                        let Some((this, _)) = buttons.iter().find(|(_, b)| b.address == friend)
+                        else {
+                            return;
+                        };
+
+                        tab_manager.remove_entity(tab, this);
+                    },
+                ),
+            ),
+        )
+        .unwrap();
+
+    commands
+        .entity(button_content.named("name"))
+        .insert(BoldUnread(friend));
+
+    let button = DuiButton {
+        enabled: true,
+        children: Some(button_content.root),
+        ..Default::default()
+    };
+
+    let new_tab = tab_manager
+        .add(
+            tab,
+            None,
+            button,
+            false,
+            Some(UiRect::new(
+                Val::Px(1.0),
+                Val::Px(1.0),
+                Val::Px(1.0),
+                Val::Px(0.0),
+            )),
+        )
+        .unwrap()
+        .root;
+
+    let Some(client) = client.0.as_ref() else {
+        warn!("social not connected");
+        return;
+    };
+
+    let Ok(history_receiver) = client.get_chat_history(friend) else {
+        warn!("failed to get history");
+        return;
+    };
+
+    commands.entity(new_tab).insert(PrivateChat {
+        address: friend,
+        history_receiver,
+        wants_history_count: 10,
+        messages: Vec::default(),
+    });
+
+    tab_manager.set_selected_entity(tab, new_tab);
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn update_friends(
     mut commands: Commands,
@@ -125,7 +264,6 @@ pub fn update_friends(
                 .map(|friend| {
                     let friend = *friend;
                     let mut root = commands.spawn_empty();
-                    let root_id = root.id();
                     let components = dui
                         .apply_template(
                             &mut root,
@@ -135,94 +273,13 @@ pub fn update_friends(
                                     "name",
                                     format!("<b>{}</b>", format_address(friend, None)),
                                 )
-                                .with_prop("profile", ShowProfileEvent(friend).send_value_on::<Click>())
+                                .with_prop(
+                                    "profile",
+                                    ShowProfileEvent(friend).send_value_on::<Click>(),
+                                )
                                 .with_prop(
                                     "chat",
-
-                                    On::<Click>::new(move |
-                                        mut commands: Commands,
-                                        client: Res<SocialClient>,
-                                        dui: Res<DuiRegistry>,
-                                        existing_chats: Query<(Entity, &PrivateChat)>,
-                                        mut tab_manager: TabManager,
-                                        tab: Query<Entity, With<ChatTab>>,
-                                        me: Query<&DuiEntities>,
-                                        text: Query<&Text>,
-                                    | {
-                                        let Ok(tab) = tab.get_single() else {
-                                            return;
-                                        };
-
-                                        if let Some((existing, _)) = existing_chats.iter().find(|(_, c)| c.address == friend) {
-                                            tab_manager.set_selected_entity(tab, existing);
-                                            return;
-                                        }
-
-                                        let name = me.get(root_id).ok().and_then(|ents| text.get(ents.named("name")).ok()).map(|text| text.sections[1].value.clone()).unwrap_or_else(|| format_address(friend, None));
-
-                                        let short_name = if name.len() > 25 {
-                                            format!("{}...{}", name.chars().take(17).collect::<String>(), name.chars().skip(name.len() - 8).collect::<String>())
-                                        } else {
-                                            name
-                                        };
-
-                                        let button_content = commands.spawn_template(&dui, "direct-chat-button", DuiProps::default().with_prop("name", short_name).with_prop("close", On::<Click>::new(move |
-                                            mut tab_manager: TabManager,
-                                            tab: Query<Entity, With<ChatTab>>,
-                                            buttons: Query<(Entity, &PrivateChat)>,
-                                        | {
-                                            // delete this tab
-                                            let Ok(tab) = tab.get_single() else {
-                                                return;
-                                            };
-
-                                            let Some((this, _)) = buttons.iter().find(|(_, b)| b.address == friend) else {
-                                                return;
-                                            };
-
-                                            tab_manager.remove_entity(tab, this);
-                                        }))).unwrap();
-
-                                        commands.entity(button_content.named("name")).insert(BoldUnread(friend));
-
-                                        let button = DuiButton {
-                                            enabled: true,
-                                            children: Some(button_content.root),
-                                            ..Default::default()
-                                        };
-
-                                        let new_tab = tab_manager.add(
-                                            tab,
-                                            None,
-                                            button,
-                                            false,
-                                            Some(UiRect::new(Val::Px(1.0), Val::Px(1.0), Val::Px(1.0), Val::Px(0.0))),
-                                        )
-                                        .unwrap()
-                                        .root;
-
-                                        let Some(client) = client.0.as_ref() else {
-                                            warn!("social not connected");
-                                            return;
-                                        };
-
-                                        let Ok(history_receiver) = client.get_chat_history(friend) else {
-                                            warn!("failed to get history");
-                                            return;
-                                        };
-
-                                        commands.entity(new_tab).insert(PrivateChat {
-                                            address: friend,
-                                            history_receiver,
-                                            wants_history_count: 10,
-                                            messages: Vec::default(),
-                                        });
-
-                                        tab_manager.set_selected_entity(tab, new_tab);
-                                    }),
-
-
-
+                                    ShowConversationEvent(friend).send_value_on::<Click>(),
                                 ),
                         )
                         .unwrap();
@@ -341,6 +398,7 @@ pub fn update_friends(
 pub fn update_conversations(
     mut client: ResMut<SocialClient>,
     tab: Query<&TabSelection, With<ChatTab>>,
+    chatbox: Query<Entity, With<ChatBox>>,
     mut private_chats: Query<&mut PrivateChat>,
     mut last_chat: Local<Option<Address>>,
     mut text_entry: Query<&mut TextEntry, With<ChatInput>>,
@@ -348,7 +406,7 @@ pub fn update_conversations(
     mut new_chats_outbound: EventReader<PrivateChatEntered>,
     mut conversation: ConversationManager,
 ) {
-    let Ok(tab) = tab.get_single() else {
+    let (Ok(tab), Ok(chatbox)) = (tab.get_single(), chatbox.get_single()) else {
         return;
     };
 
@@ -381,7 +439,7 @@ pub fn update_conversations(
         // init
         *last_chat = Some(private_chat.address);
 
-        conversation.clear();
+        conversation.clear(chatbox);
         text_entry.single_mut().enabled = true;
 
         if private_chat.wants_history_count == 0
@@ -389,17 +447,29 @@ pub fn update_conversations(
                 && private_chat.history_receiver.is_empty())
         {
             // add button
-            conversation.add_history_button(private_chat_ent);
+            conversation.add_history_button(chatbox, private_chat_ent);
         }
 
         // add current messages
         for message in &private_chat.messages {
             debug!("make conv");
-            conversation.add_message(
-                (!message.me_speaking).then_some(message.partner),
-                &message.message,
-                false,
-            );
+            if message.me_speaking {
+                conversation.add_message(
+                    chatbox,
+                    None,
+                    Color::srgb(0.8, 0.8, 1.0),
+                    &message.message,
+                    false,
+                );
+            } else {
+                conversation.add_message(
+                    chatbox,
+                    Some(message.partner),
+                    Color::srgb(0.8, 1.0, 0.8),
+                    &message.message,
+                    false,
+                );
+            }
         }
     } else {
         // check for new chats
@@ -407,11 +477,23 @@ pub fn update_conversations(
             .iter()
             .filter(|c| c.0.partner == private_chat.address)
         {
-            conversation.add_message(
-                (!new_message.0.me_speaking).then_some(new_message.0.partner),
-                &new_message.0.message,
-                false,
-            );
+            if new_message.0.me_speaking {
+                conversation.add_message(
+                    chatbox,
+                    None,
+                    Color::srgb(0.8, 0.8, 1.0),
+                    &new_message.0.message,
+                    false,
+                );
+            } else {
+                conversation.add_message(
+                    chatbox,
+                    Some(new_message.0.partner),
+                    Color::srgb(0.8, 1.0, 0.8),
+                    &new_message.0.message,
+                    false,
+                );
+            }
         }
     }
 
@@ -423,15 +505,27 @@ pub fn update_conversations(
             while let Ok(history) = private_chat.history_receiver.try_recv() {
                 debug!("got history: {:?}", history);
                 private_chat.messages.insert(0, history.clone());
-                conversation.add_message(
-                    (!history.me_speaking).then_some(history.partner),
-                    &history.message,
-                    true,
-                );
+                if history.me_speaking {
+                    conversation.add_message(
+                        chatbox,
+                        None,
+                        Color::srgb(0.8, 0.8, 1.0),
+                        &history.message,
+                        true,
+                    );
+                } else {
+                    conversation.add_message(
+                        chatbox,
+                        Some(history.partner),
+                        Color::srgb(0.8, 1.0, 0.8),
+                        &history.message,
+                        true,
+                    );
+                }
                 private_chat.wants_history_count -= 1;
                 if private_chat.wants_history_count == 0 {
                     // add button
-                    conversation.add_history_button(private_chat_ent);
+                    conversation.add_history_button(chatbox, private_chat_ent);
                     break;
                 }
             }
@@ -443,88 +537,6 @@ pub fn update_conversations(
             client.chat(private_chat.address, chat.0.clone()).unwrap();
         }
     }
-}
-
-pub fn show_popups(
-    mut toaster: Toaster,
-    mut friends: EventReader<FriendshipEvent>,
-    mut chats: EventReader<DirectChatEvent>,
-    mut ix: Local<usize>,
-    mut pending_friends: Local<Vec<friendship_event_response::Body>>,
-    mut pending_chats: Local<Vec<DirectChatMessage>>,
-    mut cache: ProfileManager,
-) {
-    pending_friends.extend(friends.read().filter_map(|f| f.0.clone()));
-    pending_chats.extend(chats.read().map(|e| e.0.clone()));
-
-    *pending_friends = pending_friends
-        .drain(..)
-        .filter_map(|friend| {
-            let (message, address) = match &friend {
-                Body::Request(r) => (
-                    "you received a friend request",
-                    &r.user.as_ref().map(|u| &u.address),
-                ),
-                Body::Accept(r) => (
-                    "your friend request was accepted",
-                    &r.user.as_ref().map(|u| &u.address),
-                ),
-                Body::Reject(r) => (
-                    "your friend request was rejected",
-                    &r.user.as_ref().map(|u| &u.address),
-                ),
-                Body::Delete(r) => (
-                    "your friendship is over",
-                    &r.user.as_ref().map(|u| &u.address),
-                ),
-                Body::Cancel(r) => (
-                    "the friend request was cancelled",
-                    &r.user.as_ref().map(|u| &u.address),
-                ),
-            };
-
-            let Some(address) = address else {
-                warn!("no address?");
-                return None;
-            };
-            let Some(h160) = address.as_h160() else {
-                warn!("not h160?");
-                return None;
-            };
-
-            let name = match cache.get_name(h160) {
-                Ok(None) => return Some(friend),
-                Ok(Some(name)) => name.to_owned(),
-                Err(_) => address.to_string(),
-            };
-
-            toaster.add_toast(format!("friendy {}", *ix), format!("{}: {}", name, message));
-            *ix += 1;
-            None
-        })
-        .collect();
-
-    *pending_chats = pending_chats
-        .drain(..)
-        .filter_map(|chat| {
-            if chat.me_speaking {
-                return None;
-            }
-
-            let name = match cache.get_name(chat.partner) {
-                Ok(None) => return Some(chat),
-                Ok(Some(name)) => format_address(chat.partner, Some(name)),
-                Err(_) => format_address(chat.partner, None),
-            };
-
-            toaster.add_toast(
-                format!("friendy {}", *ix),
-                format!("{}: {}", name, chat.message),
-            );
-            *ix += 1;
-            None
-        })
-        .collect();
 }
 
 #[derive(Component)]

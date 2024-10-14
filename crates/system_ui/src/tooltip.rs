@@ -1,7 +1,7 @@
 use std::collections::{btree_map::Entry, BTreeMap};
 
 use bevy::prelude::*;
-use common::structs::ToolTips;
+use common::structs::{ToolTips, TooltipSource};
 use ui_core::{ui_builder::SpawnSpacer, HOVER_TEXT_STYLE};
 
 #[derive(Component)]
@@ -22,7 +22,7 @@ pub fn update_tooltip(
     mut commands: Commands,
     mut tips: ResMut<ToolTips>,
     cur_tips: Query<Entity, With<ToolTipNode>>,
-    mut active_tips: Local<BTreeMap<&'static str, (Vec<(String, bool)>, f32)>>,
+    mut active_tips: Local<BTreeMap<TooltipSource, (Vec<(String, bool)>, f32)>>,
     time: Res<Time>,
 ) {
     let Ok(window) = windows.get_single() else {
@@ -39,7 +39,13 @@ pub fn update_tooltip(
         cursor_position
     };
 
-    tips.0.retain(|_, content| !content.is_empty());
+    tips.0.retain(|key, content| {
+        !content.is_empty()
+            && match key {
+                TooltipSource::Label(_) => true,
+                TooltipSource::Entity(e) => commands.get_entity(*e).is_some(),
+            }
+    });
 
     active_tips.retain(|key, (_, vis)| {
         if tips.0.contains_key(key) {
@@ -52,7 +58,7 @@ pub fn update_tooltip(
     });
 
     for (key, content) in tips.0.iter() {
-        match active_tips.entry(key) {
+        match active_tips.entry(*key) {
             Entry::Occupied(mut o) => {
                 o.get_mut().0.clone_from(content);
             }

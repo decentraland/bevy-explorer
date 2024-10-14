@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use common::structs::ToolTips;
+use common::structs::{ToolTips, TooltipSource};
 use input_manager::InputMap;
 
 use crate::update_scene::pointer_results::{PointerTarget, PointerTargetInfo};
@@ -74,5 +74,7 @@ fn hover_text(
         }
     }
 
-    tooltip.0.insert("pointer_events", texts);
+    tooltip
+        .0
+        .insert(TooltipSource::Label("pointer_events"), texts);
 }

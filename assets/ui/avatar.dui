@@ -11,7 +11,7 @@
             >
             </bounds>
             <div style="margin: 5px">
-                <med-text text="@name" />
+                <med-text text="@name" style="text-align: center;" />
             </div>
         </div>
     </div>

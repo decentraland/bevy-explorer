@@ -9,16 +9,16 @@ use wallet::Wallet;
 
 use crate::chat::friends::PendingProfileUiImage;
 
-use super::{friends::PrivateChat, ChatBox};
+use super::friends::PrivateChat;
 
 #[derive(Component)]
-pub struct ChatContainer(pub Option<Address>);
+pub struct ChatBubble(pub Option<Address>, pub Color);
 
 #[allow(clippy::type_complexity)]
 #[derive(SystemParam)]
 pub struct ConversationManager<'w, 's> {
-    chatbox: Query<'w, 's, (Entity, Option<&'static Children>), With<ChatBox>>,
-    containers: Query<'w, 's, (&'static ChatContainer, &'static DuiEntities)>,
+    children: Query<'w, 's, &'static Children>,
+    containers: Query<'w, 's, (&'static ChatBubble, &'static DuiEntities)>,
     commands: Commands<'w, 's>,
     dui: Res<'w, DuiRegistry>,
     wallet: Res<'w, Wallet>,
@@ -28,20 +28,26 @@ pub struct ConversationManager<'w, 's> {
         's,
         Option<(
             u32,
-            Option<(Option<Address>, Entity)>,
-            Option<(Option<Address>, Entity)>,
+            Option<(Option<Address>, Color, (Entity, Entity))>,
+            Option<(Option<Address>, Color, (Entity, Entity))>,
         )>,
     >,
 }
 
 impl<'w, 's> ConversationManager<'w, 's> {
-    fn existing_container(&self, address: Option<Address>, historic: bool) -> Option<Entity> {
+    fn existing_bubble(
+        &self,
+        container: Entity,
+        address: Option<Address>,
+        color: Color,
+        historic: bool,
+    ) -> Option<(Entity, Entity)> {
         if let Some((frame, top, bottom)) = self.added_this_frame.as_ref() {
             if *frame == self.frame.0 {
-                if let Some((existing_address, existing_entity)) =
+                if let Some((existing_address, existing_color, existing_entity)) =
                     if historic { top } else { bottom }
                 {
-                    if *existing_address == address {
+                    if *existing_address == address && *existing_color == color {
                         return Some(*existing_entity);
                     } else {
                         return None;
@@ -50,8 +56,7 @@ impl<'w, 's> ConversationManager<'w, 's> {
             }
         }
 
-        let (_, children) = self.chatbox.get_single().ok()?;
-        let children = children?;
+        let children = self.children.get(container).ok()?;
 
         let potential_container = if historic {
             children.iter().next()
@@ -60,16 +65,15 @@ impl<'w, 's> ConversationManager<'w, 's> {
         }?;
 
         let (potential_container, entities) = self.containers.get(*potential_container).ok()?;
-        (potential_container.0 == address).then_some(entities.named("content"))
+        (potential_container.0 == address && potential_container.1 == color)
+            .then_some((entities.root, entities.named("content")))
     }
 
-    pub fn clear(&mut self) {
-        self.commands
-            .entity(self.chatbox.single().0)
-            .despawn_descendants();
+    pub fn clear(&mut self, container: Entity) {
+        self.commands.entity(container).despawn_descendants();
     }
 
-    pub fn add_history_button(&mut self, chat_ent: Entity) {
+    pub fn add_history_button(&mut self, container: Entity, private_chat_ent: Entity) {
         let button = self
             .commands
             .spawn_template(
@@ -87,7 +91,7 @@ impl<'w, 's> ConversationManager<'w, 's> {
                                 if let Ok(parent) = parent.get(caller.0) {
                                     commands.entity(parent.get()).despawn_recursive();
                                 }
-                                if let Ok(mut chat) = private_chats.get_mut(chat_ent) {
+                                if let Ok(mut chat) = private_chats.get_mut(private_chat_ent) {
                                     chat.wants_history_count = 10;
                                 }
                             },
@@ -98,19 +102,29 @@ impl<'w, 's> ConversationManager<'w, 's> {
             .root;
 
         self.commands
-            .entity(self.chatbox.single().0)
+            .entity(container)
             .insert_children(0, &[button]);
     }
 
-    pub fn get_container(&mut self, address: Option<Address>, historic: bool) -> Entity {
-        if let Some(content) = self.existing_container(address, historic) {
-            return content;
+    pub fn get_bubble(
+        &mut self,
+        container: Entity,
+        address: Option<Address>,
+        color: Color,
+        historic: bool,
+    ) -> (Entity, Entity) {
+        if let Some((bubble, content)) = self.existing_bubble(container, address, color, historic) {
+            return (bubble, content);
         }
 
         let components = if let Some(address) = address {
             let components = self
                 .commands
-                .spawn_template(&self.dui, "other-chat-container", DuiProps::new())
+                .spawn_template(
+                    &self.dui,
+                    "chat-container-other",
+                    DuiProps::new().with_prop("color", color),
+                )
                 .unwrap();
             if address != Address::zero() {
                 self.commands
@@ -120,7 +134,11 @@ impl<'w, 's> ConversationManager<'w, 's> {
             components
         } else {
             self.commands
-                .spawn_template(&self.dui, "me-chat-container", DuiProps::default())
+                .spawn_template(
+                    &self.dui,
+                    "chat-container-me",
+                    DuiProps::new().with_prop("color", color),
+                )
                 .unwrap()
         };
         if let Some(address) = address.or_else(|| self.wallet.address()) {
@@ -137,13 +155,13 @@ impl<'w, 's> ConversationManager<'w, 's> {
                     ));
             }
         }
-        self.commands
-            .entity(components.root)
-            .insert(ChatContainer(address));
 
+        let bubble = components.root;
         let content = components.named("content");
 
-        let chatbox = self.chatbox.get_single().unwrap().0;
+        self.commands
+            .entity(bubble)
+            .insert(ChatBubble(address, color));
 
         let added = self.added_this_frame.get_or_insert_with(Default::default);
         if added.0 != self.frame.0 {
@@ -153,24 +171,34 @@ impl<'w, 's> ConversationManager<'w, 's> {
         }
         if historic {
             self.commands
-                .entity(chatbox)
-                .insert_children(0, &[components.root]);
-            added.1 = Some((address, content));
+                .entity(container)
+                .insert_children(0, &[bubble]);
+            added.1 = Some((address, color, (bubble, content)));
         } else {
-            self.commands
-                .entity(chatbox)
-                .push_children(&[components.root]);
-            added.2 = Some((address, content));
+            self.commands.entity(container).push_children(&[bubble]);
+            added.2 = Some((address, color, (bubble, content)));
         }
 
-        debug!("{:?} -> new {}", address, content);
-        content
+        debug!("{:?} -> new {:?}", address, (bubble, content));
+        (bubble, content)
     }
 
-    pub fn add_message(&mut self, sender: Option<Address>, message: impl ToString, historic: bool) {
+    pub fn add_message(
+        &mut self,
+        container: Entity,
+        sender: Option<Address>,
+        color: Color,
+        message: impl ToString,
+        historic: bool,
+    ) -> (Entity, Entity) {
         let me_speaking = sender.is_none() || self.wallet.address() == sender;
-        let container = self.get_container((!me_speaking).then(|| sender.unwrap()), historic);
-        debug!("container: {container:?}");
+        let (bubble, content) = self.get_bubble(
+            container,
+            (!me_speaking).then(|| sender.unwrap()),
+            color,
+            historic,
+        );
+        debug!("container: {content:?}");
 
         let message_body = message.to_string();
         let message = self
@@ -209,14 +237,11 @@ impl<'w, 's> ConversationManager<'w, 's> {
             .unwrap()
             .root;
         if historic {
-            self.commands
-                .entity(container)
-                .insert_children(0, &[message]);
+            self.commands.entity(content).insert_children(0, &[message]);
         } else {
-            self.commands
-                .entity(container)
-                .try_push_children(&[message]);
+            self.commands.entity(content).try_push_children(&[message]);
         }
         debug!("added");
+        (bubble, message)
     }
 }

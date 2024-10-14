@@ -8,7 +8,7 @@ use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
-    structs::{PrimaryCamera, ShowProfileEvent, ToolTips},
+    structs::{PrimaryCamera, ShowProfileEvent, ToolTips, TooltipSource},
     util::{AsH160, FireEventEx},
 };
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
@@ -129,7 +129,7 @@ fn update_avatar_collider_actions(
         senders.push(sender.clone());
     }
 
-    tooltips.0.remove("avatar_pointer");
+    tooltips.0.remove(&TooltipSource::Label("avatar_pointer"));
 
     // check for scene ui
     if !matches!(*ui_target, UiPointerTarget::None) {
@@ -209,7 +209,7 @@ fn update_avatar_collider_actions(
         }
 
         tooltips.0.insert(
-            "avatar_pointer",
+            TooltipSource::Label("avatar_pointer"),
             vec![("Middle Click : Profile".to_owned(), true)],
         );
 

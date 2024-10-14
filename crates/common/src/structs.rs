@@ -146,8 +146,14 @@ pub struct PrimaryCameraRes(pub Entity);
 #[derive(Component)]
 pub struct UiRoot;
 
+#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Clone, Copy)]
+pub enum TooltipSource {
+    Label(&'static str),
+    Entity(Entity),
+}
+
 #[derive(Resource, Default)]
-pub struct ToolTips(pub HashMap<&'static str, Vec<(String, bool)>>);
+pub struct ToolTips(pub HashMap<TooltipSource, Vec<(String, bool)>>);
 
 // web3 authorization chain link
 #[derive(Serialize, Deserialize, Clone, Debug)]

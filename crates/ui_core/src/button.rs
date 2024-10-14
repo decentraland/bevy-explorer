@@ -8,7 +8,7 @@ use bevy_dui::{
     DuiCommandsExt, DuiContext, DuiEntities, DuiProps, DuiRegistry, DuiTemplate, NodeMap,
 };
 use common::{
-    structs::ToolTips,
+    structs::{ToolTips, TooltipSource},
     util::{ModifyComponentExt, TryPushChildrenEx},
 };
 
@@ -197,7 +197,8 @@ impl DuiTemplate for DuiButtonTemplate {
             }
         }
 
-        let mut button = new_commands.entity(components["button-background"]);
+        let button_id = components["button-background"];
+        let mut button = new_commands.entity(button_id);
 
         button.insert((
             Enabled(data.enabled),
@@ -215,14 +216,17 @@ impl DuiTemplate for DuiButtonTemplate {
                       enabled: Query<&Enabled>,
                       caller: Res<UiCaller>| {
                     let enabled = enabled.get(caller.0).map(|e| e.0).unwrap_or(false);
-                    tooltips
-                        .0
-                        .insert("button-tip", vec![(tooltip.clone(), enabled)]);
+                    tooltips.0.insert(
+                        TooltipSource::Entity(button_id),
+                        vec![(tooltip.clone(), enabled)],
+                    );
                 },
             ));
-            button.insert(On::<HoverExit>::new(|mut tooltips: ResMut<ToolTips>| {
-                tooltips.0.remove("button-tip");
-            }));
+            button.insert(On::<HoverExit>::new(
+                move |mut tooltips: ResMut<ToolTips>| {
+                    tooltips.0.remove(&TooltipSource::Entity(button_id));
+                },
+            ));
         }
 
         if let Some(onclick) = data.onclick {
@@ -316,17 +320,14 @@ pub struct TabManager<'w, 's> {
 }
 
 impl<'w, 's> TabManager<'w, 's> {
-    pub fn set_selected_entity(&mut self, tab_entity: Entity, entity: Entity) {
+    pub fn set_selected(&mut self, tab_entity: Entity, index: Option<usize>) {
         let Ok(mut tab) = self.tabs.get_mut(tab_entity) else {
             warn!("no tab");
             return;
         };
-        tab.selected = tab
-            .active_entities
-            .iter()
-            .enumerate()
-            .find(|(_, ents)| ents.root == entity)
-            .map(|(ix, _)| ix);
+
+        tab.selected = index;
+
         self.commands.entity(tab_entity).insert(DataChanged);
         for (i, child) in tab.active_entities.iter().enumerate() {
             if let Ok(mut active) = self.active.get_mut(child.named("button-background")) {
@@ -337,6 +338,20 @@ impl<'w, 's> TabManager<'w, 's> {
                     .insert(Active(Some(i) == tab.selected));
             }
         }
+    }
+
+    pub fn set_selected_entity(&mut self, tab_entity: Entity, entity: Entity) {
+        let Ok(tab) = self.tabs.get_mut(tab_entity) else {
+            warn!("no tab");
+            return;
+        };
+        let index = tab
+            .active_entities
+            .iter()
+            .enumerate()
+            .find(|(_, ents)| ents.root == entity)
+            .map(|(ix, _)| ix);
+        self.set_selected(tab_entity, index)
     }
 
     pub fn remove(&mut self, tab_entity: Entity, ix: usize) {

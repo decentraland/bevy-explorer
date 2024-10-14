@@ -1,5 +1,6 @@
 pub mod conversation_manager;
 pub mod friends;
+pub mod history;
 
 use bevy::{color::palettes::css, prelude::*};
 
@@ -7,7 +8,7 @@ use bevy_console::{ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, 
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     dcl_assert,
-    structs::{PrimaryUser, SystemAudio, ToolTips},
+    structs::{PrimaryUser, SystemAudio, ToolTips, TooltipSource},
     util::{
         AsH160, FireEventEx, ModifyComponentExt, RingBuffer, RingBufferReceiver, TryPushChildrenEx,
     },
@@ -20,6 +21,7 @@ use conversation_manager::ConversationManager;
 use dcl::{SceneLogLevel, SceneLogMessage};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
+use history::ChatHistoryPlugin;
 use input_manager::should_accept_key;
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
 use shlex::Shlex;
@@ -44,11 +46,14 @@ impl Plugin for ChatPanelPlugin {
         app.add_systems(Update, append_chat_messages);
         app.add_systems(Update, emit_user_chat);
         app.add_systems(Startup, setup);
-        app.add_systems(OnEnter::<ui_core::State>(ui_core::State::Ready), chat_popup);
+        app.add_systems(
+            OnEnter::<ui_core::State>(ui_core::State::Ready),
+            setup_chat_popup,
+        );
         app.add_systems(Update, keyboard_popup.run_if(should_accept_key));
         app.add_console_command::<Rechat, _>(debug_chat);
         app.add_event::<PrivateChatEntered>();
-        app.add_plugins(FriendsPlugin);
+        app.add_plugins((FriendsPlugin, ChatHistoryPlugin));
     }
 }
 
@@ -107,12 +112,12 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         ),
         On::<HoverEnter>::new(|mut tooltip: ResMut<ToolTips>| {
             tooltip.0.insert(
-                "chat-button",
+                TooltipSource::Label("chat-button"),
                 vec![("Toggle Chat: Click or press Enter".to_owned(), true)],
             );
         }),
         On::<HoverExit>::new(|mut tooltip: ResMut<ToolTips>| {
-            tooltip.0.remove("chat-button");
+            tooltip.0.remove(&TooltipSource::Label("chat-button"));
         }),
     ));
 }
@@ -153,7 +158,7 @@ fn debug_chat(
                 }
 
                 commands.fire_event(FriendshipEvent(None));
-                chat_popup(commands, root, dui);
+                setup_chat_popup(commands, root, dui);
             }
             "add" => {
                 tab.single_mut()
@@ -181,7 +186,7 @@ struct Rechat {
 #[derive(Component)]
 pub struct ChatTab;
 
-fn chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegistry>) {
+fn setup_chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<DuiRegistry>) {
     dcl_assert!(root.0 != Entity::PLACEHOLDER);
 
     let chat_tab = |label: &'static str| -> DuiButton {
@@ -392,7 +397,17 @@ fn display_chat(
             panic!()
         };
         while let Ok(chat) = rec.try_recv() {
-            conversation.add_message(chat.sender.or(Some(Address::zero())), chat.message, false);
+            conversation.add_message(
+                entity,
+                chat.sender.or(Some(Address::zero())),
+                if chat.sender.is_none() {
+                    Color::srgb(0.7, 0.7, 0.7)
+                } else {
+                    Color::srgb(0.9, 0.9, 0.9)
+                },
+                chat.message,
+                false,
+            );
         }
 
         return;
@@ -551,7 +566,7 @@ fn emit_user_chat(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn select_chat_tab(
+pub(crate) fn select_chat_tab(
     In(tab): In<Option<&'static str>>,
     mut commands: Commands,
     mut chatbox: Query<(Entity, &mut ChatBox)>,
@@ -573,12 +588,18 @@ fn select_chat_tab(
         chatbox.active_log_sink = None;
         chatbox.active_chat_sink = None;
         if tab == "Nearby" {
-            conversation.clear();
+            conversation.clear(entity);
             let (_, backlog, receiver) = chatbox.chat_log.read();
             chatbox.active_chat_sink = Some(receiver);
             for message in backlog.into_iter() {
                 conversation.add_message(
+                    entity,
                     message.sender.or(Some(Address::zero())),
+                    if message.sender.is_none() {
+                        Color::srgb(0.7, 0.7, 0.7)
+                    } else {
+                        Color::srgb(0.9, 0.9, 0.9)
+                    },
                     message.message,
                     false,
                 );

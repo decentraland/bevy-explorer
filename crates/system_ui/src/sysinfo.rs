@@ -362,9 +362,12 @@ fn setup_minimap(
     preview: Res<PreviewMode>,
 ) {
     let components = commands
-        .entity(root.0)
         .spawn_template(&dui, "minimap", Default::default())
         .unwrap();
+    commands
+        .entity(root.0)
+        .insert_children(0, &[components.root]);
+
     commands.entity(components.root).insert(Minimap);
     commands.entity(components.named("map-node")).insert((
         MapTexture {

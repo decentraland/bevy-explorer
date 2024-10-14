@@ -1,3 +1,11 @@
+<define-template id="chat-history">
+    <div style="flex-grow: 1; min-height: 0px; width: 45vmin; min-width: 30vmin; justify-content: flex-end; flex-direction: column;">
+        <space />
+        <div id="chat-content" style="min-width: 100%; min-height: 0px; justify-content: flex-end; flex-direction: column; overflow-y: hidden;">
+        </div>
+    </div>
+</define-template>
+
 <define-template id="chat">
     <bounds 
         style="display: none; width: 90vmin; min-width: 75vmin; flex-direction: column; margin: auto 0px 0px 0px;" 
@@ -19,7 +27,7 @@
                     <tab-group id="tabs" style="justify-content: flex-start; width: 100%; flex-wrap: wrap-reverse;" tabs="@chat-tabs" onchanged="@tab-changed" initial="@initial-tab" edge-scale="1px 1px -0px 1px"/>
                 </div>
                 <div style="max-height: 31vmin; flex-direction: column;">
-                    <div style="border: 0.2vmin; border-colorx: #b2a1bf; min-height: 0px;">
+                    <div style="border: 0.2vmin; min-height: 0px;">
                         <vscroll id="chat-output" interact="true" start-position="end">
                             <div id="chat-output-inner" interact="true" style="flex-direction: column; justify-content: flex-end; width: 100%;" />
                         </vscroll>
@@ -115,14 +123,14 @@
     </div>
 </define-template>
 
-<define-template id="me-chat-container">
+<define-template id="chat-container-me">
         <bounds 
             style="margin: 0px 2vmin 0px 5vmin;"
             corner-size="2vmin"
             blend-size="0.25vmin"
             border-size="0.5vmin"
             border-color="#7f569e"
-            color="#ccccff"
+            color="@color"
         >
             <div id="content" style="flex-grow: 1; align-self: center; flex-direction: column;" />
             <div style="flex-direction: column; align-items: flex-end;">
@@ -132,14 +140,14 @@
         </bounds>
 </define-template>
 
-<define-template id="other-chat-container">
+<define-template id="chat-container-other">
         <bounds 
             style="margin: 0px 7vmin 0px 0vmin;"
             corner-size="2vmin"
             blend-size="0.25vmin"
             border-size="0.5vmin"
             border-color="#7f569e"
-            color="#ccffcc"
+            color="@color"
         >
             <div style="flex-direction: column; align-items: flex-end;">
                 <space />
