@@ -309,7 +309,7 @@ pub fn update_camera_position(
         target_transform.translation = translation;
         target_transform.rotation =
             rotation * Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
-        let target_fov = FRAC_PI_4 / options.distance;
+        let target_fov = FRAC_PI_4 * 1.25 / options.distance;
         let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
         else {
             panic!();
@@ -318,7 +318,7 @@ pub fn update_camera_position(
             *fov = target_fov;
         }
     } else {
-        let target_fov = (dynamic_state.velocity.length() / 4.0).clamp(1.0, 1.0) * FRAC_PI_4;
+        let target_fov = (dynamic_state.velocity.length() / 4.0).clamp(1.25, 1.25) * FRAC_PI_4;
         let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
         else {
             panic!();
