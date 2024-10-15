@@ -198,7 +198,8 @@ pub fn update_mesh(
                     let mut mesh = Rectangle::default()
                         .mesh()
                         .build()
-                        .rotated_by(Quat::from_rotation_z(-FRAC_PI_2));
+                        .rotated_by(Quat::from_rotation_z(FRAC_PI_2))
+                        .scaled_by(Vec3::new(1.0, -1.0, -1.0));
                     let Some(VertexAttributeValues::Float32x2(mesh_uvs)) =
                         mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
                     else {
