@@ -775,7 +775,10 @@ mod test {
 
     use super::SocialClientHandler;
 
-    fn blocking_recv_timeout<T>(client: &mut SocialClientHandler, r: &mut UnboundedReceiver<T>) -> Option<T> {
+    fn blocking_recv_timeout<T>(
+        client: &mut SocialClientHandler,
+        r: &mut UnboundedReceiver<T>,
+    ) -> Option<T> {
         for _ in 0..10 {
             client.update();
             if let Ok(data) = r.try_recv() {
@@ -789,7 +792,6 @@ mod test {
 
     #[test]
     fn social_test() {
-        
         IoTaskPool::get_or_init(|| TaskPoolBuilder::new().num_threads(4).build());
 
         let mut wallet_a = Wallet::default();
@@ -803,7 +805,7 @@ mod test {
         let (chat_b_sx, mut chat_b) = unbounded_channel();
         let (friend_b_sx, mut friend_b) = unbounded_channel();
 
-        let mut client_a = SocialClientHandler::connect( 
+        let mut client_a = SocialClientHandler::connect(
             wallet_a.clone(),
             move |ev| {
                 friend_a_sx.send(ev.clone()).unwrap();
