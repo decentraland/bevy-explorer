@@ -81,7 +81,7 @@ impl SocialLogin {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectChatMessage {
     pub partner: Address,
     pub me_speaking: bool,
@@ -362,6 +362,16 @@ fn dbgerr<E: std::fmt::Debug>(e: E) -> anyhow::Error {
     anyhow!(format!("{e:?}"))
 }
 
+#[cfg(test)]
+const MATRIX_URL: &str = "https://social.decentraland.org"; // zone doesn't work
+#[cfg(not(test))]
+const MATRIX_URL: &str = "https://social.decentraland.org";
+
+#[cfg(test)]
+const SOCIAL_URL: &str = "wss://rpc-social-service.decentraland.org"; // zone doesn't work
+#[cfg(not(test))]
+const SOCIAL_URL: &str = "wss://rpc-social-service.decentraland.org";
+
 async fn social_socket_handler_inner(
     wallet: wallet::Wallet,
     mut rx: UnboundedReceiver<FriendshipOutbound>,
@@ -374,7 +384,7 @@ async fn social_socket_handler_inner(
         .unwrap()
         .clone();
     let matrix_client = matrix_sdk::Client::builder()
-        .homeserver_url("https://social.decentraland.org")
+        .homeserver_url(MATRIX_URL)
         .build()
         .await?;
     let login = matrix_client
@@ -387,11 +397,9 @@ async fn social_socket_handler_inner(
 
     // create connection
     let service_connection =
-        dcl_rpc::transports::web_sockets::tungstenite::WebSocketClient::connect(
-            "wss://rpc-social-service.decentraland.org",
-        )
-        .await
-        .map_err(dbgerr)?;
+        dcl_rpc::transports::web_sockets::tungstenite::WebSocketClient::connect(SOCIAL_URL)
+            .await
+            .map_err(dbgerr)?;
     let service_transport = WebSocketTransport::new(service_connection);
     let mut service_client = RpcClient::new(service_transport).await.unwrap();
     let port = service_client.create_port("whatever").await.unwrap();
@@ -749,5 +757,172 @@ async fn social_socket_handler_inner(
         r = f_service_write => r,
         r = f_matrix_write => r,
         r = f_matrix_history => r,
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{thread, time::Duration};
+
+    use bevy::tasks::{IoTaskPool, TaskPoolBuilder};
+    use dcl_component::proto_components::social::{
+        friendship_event_response::Body, AcceptResponse, DeleteResponse, RequestResponse,
+    };
+    use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+    use wallet::Wallet;
+
+    use crate::client::DirectChatMessage;
+
+    use super::SocialClientHandler;
+
+    fn blocking_recv_timeout<T>(client: &mut SocialClientHandler, r: &mut UnboundedReceiver<T>) -> Option<T> {
+        for _ in 0..10 {
+            client.update();
+            if let Ok(data) = r.try_recv() {
+                return Some(data);
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        return None;
+    }
+
+    #[test]
+    fn social_test() {
+        
+        IoTaskPool::get_or_init(|| TaskPoolBuilder::new().num_threads(4).build());
+
+        let mut wallet_a = Wallet::default();
+        wallet_a.finalize_as_guest();
+        let mut wallet_b = Wallet::default();
+        wallet_b.finalize_as_guest();
+
+        let (chat_a_sx, mut chat_a) = unbounded_channel();
+        let (friend_a_sx, mut friend_a) = unbounded_channel();
+
+        let (chat_b_sx, mut chat_b) = unbounded_channel();
+        let (friend_b_sx, mut friend_b) = unbounded_channel();
+
+        let mut client_a = SocialClientHandler::connect( 
+            wallet_a.clone(),
+            move |ev| {
+                friend_a_sx.send(ev.clone()).unwrap();
+            },
+            move |chat| {
+                chat_a_sx.send(chat).unwrap();
+            },
+        )
+        .unwrap();
+        let mut client_b = SocialClientHandler::connect(
+            wallet_b.clone(),
+            move |ev| {
+                friend_b_sx.send(ev.clone()).unwrap();
+            },
+            move |chat| {
+                chat_b_sx.send(chat).unwrap();
+            },
+        )
+        .unwrap();
+
+        let mut i = 0;
+        while (!client_a.is_initialized || !client_b.is_initialized) && i < 10 {
+            println!("waiting for connection...");
+            thread::sleep(Duration::from_secs(1));
+            client_a.update();
+            client_b.update();
+            i += 1;
+        }
+        assert!(client_a.is_initialized);
+        assert!(client_b.is_initialized);
+
+        client_a
+            .friend_request(wallet_b.address().unwrap(), None)
+            .unwrap();
+        println!("waiting for request...");
+        let Some(Body::Request(RequestResponse {
+            user: Some(user), ..
+        })) = blocking_recv_timeout(&mut client_b, &mut friend_b)
+        else {
+            panic!()
+        };
+        assert_eq!(user.address, format!("{:#x}", wallet_a.address().unwrap()));
+
+        client_b
+            .accept_request(wallet_a.address().unwrap())
+            .unwrap();
+        println!("waiting for accept...");
+        let Some(Body::Accept(AcceptResponse {
+            user: Some(user), ..
+        })) = blocking_recv_timeout(&mut client_a, &mut friend_a)
+        else {
+            panic!()
+        };
+        assert_eq!(user.address, format!("{:#x}", wallet_b.address().unwrap()));
+
+        client_a
+            .chat(wallet_b.address().unwrap(), "Hi".to_owned())
+            .unwrap();
+        println!("waiting for chat a->b");
+        let Some(chat) = blocking_recv_timeout(&mut client_a, &mut chat_a) else {
+            panic!()
+        };
+        assert_eq!(
+            chat,
+            DirectChatMessage {
+                partner: wallet_b.address().unwrap(),
+                me_speaking: true,
+                message: "Hi".to_owned()
+            }
+        );
+        let Some(chat) = blocking_recv_timeout(&mut client_b, &mut chat_b) else {
+            panic!()
+        };
+        assert_eq!(
+            chat,
+            DirectChatMessage {
+                partner: wallet_a.address().unwrap(),
+                me_speaking: false,
+                message: "Hi".to_owned()
+            }
+        );
+
+        client_b
+            .chat(wallet_a.address().unwrap(), "Hello!".to_owned())
+            .unwrap();
+        println!("waiting for chat b->a");
+        let Some(chat) = blocking_recv_timeout(&mut client_a, &mut chat_a) else {
+            panic!()
+        };
+        assert_eq!(
+            chat,
+            DirectChatMessage {
+                partner: wallet_b.address().unwrap(),
+                me_speaking: false,
+                message: "Hello!".to_owned()
+            }
+        );
+        let Some(chat) = blocking_recv_timeout(&mut client_b, &mut chat_b) else {
+            panic!()
+        };
+        assert_eq!(
+            chat,
+            DirectChatMessage {
+                partner: wallet_a.address().unwrap(),
+                me_speaking: true,
+                message: "Hello!".to_owned()
+            }
+        );
+
+        client_a.delete_friend(wallet_b.address().unwrap()).unwrap();
+        println!("waiting for delete");
+        let Some(Body::Delete(DeleteResponse {
+            user: Some(user), ..
+        })) = blocking_recv_timeout(&mut client_b, &mut friend_b)
+        else {
+            panic!()
+        };
+        assert_eq!(user.address, format!("{:#x}", wallet_a.address().unwrap()));
+
+        println!("done");
     }
 }
