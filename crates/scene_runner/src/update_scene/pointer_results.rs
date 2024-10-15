@@ -138,7 +138,7 @@ fn update_pointer_target(
                     ray.origin,
                     ray.direction.into(),
                     f32::MAX,
-                    ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32,
+                    ColliderLayer::ClPointer as u32,
                     true,
                 );
 
