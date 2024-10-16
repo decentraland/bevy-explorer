@@ -386,24 +386,43 @@ pub fn make_text_section(
     // split by <b>s and <i>s
     let mut b_count = 0usize;
     let mut i_count = 0usize;
-    let mut b_offset = text.find("<b>");
-    let mut i_offset = text.find("<i>");
-    let mut xb_offset = text.find("</b>");
-    let mut xi_offset = text.find("</i>");
-    let mut section_start = 0;
+    let mut section_start = 0usize;
 
     let mut sections = Vec::default();
 
     loop {
-        let section_end = [b_offset, i_offset, xb_offset, xi_offset]
-            .iter()
-            .fold(usize::MAX, |c, o| c.min(o.unwrap_or(c)));
+        // read initial tags
+        while text[section_start..].starts_with('<') {
+            if let Some((close, _)) = text[section_start..]
+                .char_indices()
+                .find(|(_, c)| *c == '>')
+            {
+                let tag = text[section_start + 1..section_start + close]
+                    .trim()
+                    .to_ascii_lowercase();
+                match tag.as_str() {
+                    "b" => b_count += 1,
+                    "i" => i_count += 1,
+                    "/b" => b_count = b_count.saturating_sub(1),
+                    "/i" => i_count = i_count.saturating_sub(1),
+                    _ => warn!("unrecognised text tag `{tag}`"),
+                }
+                section_start = section_start + close + 1;
+            }
+        }
+
         let weight = match (b_count, i_count) {
             (0, 0) => WeightName::Regular,
             (0, _) => WeightName::Italic,
             (_, 0) => WeightName::Bold,
             (_, _) => WeightName::BoldItalic,
         };
+
+        let section_end = text[section_start..]
+            .char_indices()
+            .find(|(_, c)| *c == '<')
+            .map(|(ix, _)| section_start + ix)
+            .unwrap_or(usize::MAX);
 
         if section_end == usize::MAX {
             sections.push(TextSection::new(
@@ -426,40 +445,7 @@ pub fn make_text_section(
             },
         ));
 
-        match &text[section_end..section_end + 3] {
-            "<b>" => {
-                b_count += 1;
-                b_offset = text[section_end + 1..]
-                    .find("<b>")
-                    .map(|v| v + section_end + 1);
-                section_start = section_end + 3;
-            }
-            "<i>" => {
-                i_count += 1;
-                i_offset = text[section_end + 1..]
-                    .find("<i>")
-                    .map(|v| v + section_end + 1);
-                section_start = section_end + 3;
-            }
-            "</b" => {
-                b_count = b_count.saturating_sub(1);
-                xb_offset = text[section_end + 1..]
-                    .find("</b>")
-                    .map(|v| v + section_end + 1);
-                section_start = section_end + 4;
-            }
-            "</i" => {
-                i_count = i_count.saturating_sub(1);
-                xi_offset = text[section_end + 1..]
-                    .find("</i>")
-                    .map(|v| v + section_end + 1);
-                section_start = section_end + 4;
-            }
-            _ => {
-                error!("{}", &text[section_end..=section_end + 2]);
-                panic!()
-            }
-        }
+        section_start = section_end;
     }
 
     Text {
