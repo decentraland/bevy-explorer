@@ -232,11 +232,11 @@ fn play_system_audio(
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_source_volume(
-    query: Query<(
+    mut query: Query<(
         Entity,
         Option<&SceneEntity>,
         Option<&AudioSource>,
-        &AudioEmitter,
+        &mut AudioEmitter,
         &GlobalTransform,
     )>,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
@@ -255,7 +255,7 @@ fn update_source_volume(
 
     let mut prev_instances = std::mem::take(&mut *all_instances);
 
-    for (ent, maybe_scene, maybe_source, emitter, transform) in query.iter() {
+    for (ent, maybe_scene, maybe_source, mut emitter, transform) in query.iter_mut() {
         if maybe_scene.map_or(true, |scene| current_scenes.contains(&scene.root)) {
             let (volume, panning) = if maybe_source.map_or(false, |source| source.0.global()) {
                 (
@@ -276,14 +276,15 @@ fn update_source_volume(
                 (volume * volume_adjust, panning)
             };
 
-            for h_instance in &emitter.instances {
+            emitter.instances.retain_mut(|h_instance| {
                 if let Some(instance) = audio_instances.get_mut(h_instance) {
                     instance.set_volume(volume as f64, AudioTween::linear(Duration::ZERO));
                     instance.set_panning(panning as f64, AudioTween::default());
+                    true
                 } else {
-                    warn!("missing audio instance");
+                    false
                 }
-            }
+            });
         } else if maybe_scene.map_or(false, |scene| prev_scenes.contains(&scene.root)) {
             debug!("stop [{:?}]", ent);
             for h_instance in &emitter.instances {

@@ -103,11 +103,21 @@ impl<'w, 's> ProfileManager<'w, 's> {
         let Some(profile) = profile else {
             return Ok(None);
         };
-        let Some(path) = profile.content.avatar.snapshots.as_ref().map(|snapshots| {
-            let url = format!("{}{}", profile.base_url, snapshots.face256);
-            let ipfs_path = IpfsPath::new_from_url(&url, "png");
-            PathBuf::from(&ipfs_path)
-        }) else {
+        let Some(path) = profile
+            .content
+            .avatar
+            .snapshots
+            .as_ref()
+            .and_then(|snapshots| {
+                if snapshots.face256.is_empty() {
+                    None
+                } else {
+                    let url = format!("{}{}", profile.base_url, snapshots.face256);
+                    let ipfs_path = IpfsPath::new_from_url(&url, "png");
+                    Some(PathBuf::from(&ipfs_path))
+                }
+            })
+        else {
             return Err(ProfileMissingError);
         };
         Ok(Some(self.ipfs.asset_server().load(path)))

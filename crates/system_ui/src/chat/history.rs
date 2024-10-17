@@ -6,7 +6,7 @@ use common::{
     structs::{ShowProfileEvent, SystemAudio},
     util::{AsH160, FireEventEx},
 };
-use comms::{global_crdt::ChatEvent, profile::UserProfile};
+use comms::{chat_marker_things, global_crdt::ChatEvent, profile::UserProfile};
 use dcl_component::proto_components::social::friendship_event_response::{self, Body};
 use social::{client::DirectChatMessage, DirectChatEvent, FriendshipEvent};
 use ui_core::{
@@ -69,6 +69,13 @@ fn update_chat_history(
     pending_private_chats.extend(private_chats.read().map(|ev| ev.0.clone()));
     pending_nearby_chats.extend(nearby_chats.read().filter_map(|ev| {
         if ev.channel != "Nearby" {
+            return None;
+        }
+
+        if chat_marker_things::ALL
+            .iter()
+            .any(|marker| ev.message.starts_with(*marker))
+        {
             return None;
         }
 

@@ -120,8 +120,6 @@ pub fn add_worldui_materials(
                     base_color: Color::srgb(2.0, 2.0, 2.0),
                     base_color_texture: Some(target.clone()),
                     unlit: true,
-                    double_sided: true,
-                    cull_mode: None,
                     alpha_mode: AlphaMode::Blend,
                     ..Default::default()
                 },

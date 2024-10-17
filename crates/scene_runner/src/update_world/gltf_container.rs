@@ -381,7 +381,13 @@ fn update_ready_gltfs(
         }
         let instance = loaded.0.as_ref().unwrap();
         if scene_spawner.instance_is_ready(*instance) {
-            let gltf = gltfs.get(h_gltf).unwrap();
+            let Some(gltf) = gltfs.get(h_gltf) else {
+                commands
+                    .entity(bevy_scene_entity)
+                    .try_insert(GltfProcessed::default());
+                error!("gltf was unloaded mysteriously. this shouldn't happen and things will be broken as a result.");
+                continue;
+            };
 
             // let graph = _node_graph(&_debug_query, bevy_scene_entity);
             // println!("{bevy_scene_entity:?}");

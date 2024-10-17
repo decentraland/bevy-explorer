@@ -90,38 +90,87 @@ impl Plugin for MeshDefinitionPlugin {
             mesh.generate_tangents().unwrap();
             mesh
         };
-        let _flip_uv = |mut mesh: Mesh| {
-            let Some(VertexAttributeValues::Float32x3(ref mut positions)) =
-                mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION)
+        let cube_uvs = |mut mesh: Mesh| {
+            let Some(VertexAttributeValues::Float32x2(ref mut uvs)) =
+                mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
             else {
                 panic!()
             };
-            for pos in positions.iter_mut() {
-                *pos = [pos[0], -pos[2], pos[1]];
+            let mut uvs = uvs.iter_mut();
+            for uv in uvs.by_ref().take(4) {
+                *uv = [uv[0], 1.0 - uv[1]];
             }
-            let Some(VertexAttributeValues::Float32x3(ref mut normals)) =
-                mesh.attribute_mut(Mesh::ATTRIBUTE_NORMAL)
-            else {
-                panic!()
-            };
-            for pos in normals.iter_mut() {
-                *pos = [pos[0], -pos[2], pos[1]];
+            for uv in uvs.by_ref().take(4) {
+                *uv = [1.0 - uv[0], 1.0 - uv[1]];
+            }
+            for uv in uvs.by_ref().take(4) {
+                *uv = [uv[0], 1.0 - uv[1]];
+            }
+            for uv in uvs.by_ref().take(4) {
+                *uv = [1.0 - uv[0], 1.0 - uv[1]];
+            }
+            for uv in uvs.by_ref().take(4) {
+                *uv = [1.0 - uv[1], uv[0]];
+            }
+            for uv in uvs.by_ref().take(4) {
+                *uv = [uv[1], uv[0]];
             }
             mesh
         };
-
+        let plane_uvs = |mut mesh: Mesh| {
+            let Some(VertexAttributeValues::Float32x2(ref mut uvs)) =
+                mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
+            else {
+                panic!()
+            };
+            uvs[0] = [0.0, 1.0];
+            uvs[1] = [1.0, 1.0];
+            uvs[2] = [1.0, 0.0];
+            uvs[3] = [0.0, 0.0];
+            uvs[4] = [0.0, 0.0];
+            uvs[5] = [1.0, 0.0];
+            uvs[6] = [1.0, 1.0];
+            uvs[7] = [0.0, 1.0];
+            mesh
+        };
+        let yflip_uvs = |mut mesh: Mesh| {
+            let Some(VertexAttributeValues::Float32x2(ref mut uvs)) =
+                mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
+            else {
+                panic!()
+            };
+            for uv in uvs.iter_mut() {
+                uv[1] = 1.0 - uv[1];
+            }
+            mesh
+        };
+        let xyflip_uvs = |mut mesh: Mesh| {
+            let Some(VertexAttributeValues::Float32x2(ref mut uvs)) =
+                mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
+            else {
+                panic!()
+            };
+            for uv in uvs.iter_mut() {
+                uv[0] = 1.0 - uv[0];
+                uv[1] = 1.0 - uv[1];
+            }
+            mesh
+        };
         let mut assets = app.world_mut().resource_mut::<Assets<Mesh>>();
-        let boxx = assets.add(generate_tangents(
-            bevy::math::primitives::Cuboid::default().into(),
-        ));
-        let cylinder = assets.add(generate_tangents(Cylinder::default().into()));
-        let plane = assets.add(generate_tangents(Rectangle::default().mesh().into()));
-        let sphere = assets.add(generate_tangents(
+        let boxx = assets.add(generate_tangents(cube_uvs(Cuboid::default().into())));
+        let cylinder = assets.add(generate_tangents(yflip_uvs(Cylinder::default().into())));
+        let plane = assets.add(generate_tangents(plane_uvs(
+            Cuboid::default()
+                .mesh()
+                .build()
+                .scaled_by(Vec3::new(1.0, 1.0, 0.0)),
+        )));
+        let sphere = assets.add(xyflip_uvs(generate_tangents(
             Sphere::new(0.5)
                 .mesh()
                 .uv(36, 18)
                 .rotated_by(Quat::from_rotation_x(-FRAC_PI_2)),
-        ));
+        )));
         app.insert_resource(MeshPrimitiveDefaults {
             boxx,
             plane,
@@ -162,7 +211,7 @@ pub fn update_mesh(
         commands.entity(ent).remove::<RetryMeshDefinition>();
         let handle = match prim {
             MeshDefinition::Box { uvs } => {
-                if uvs.is_empty() {
+                if uvs.len() != 24 {
                     defaults.boxx.clone()
                 } else {
                     let mut mesh = Mesh::from(bevy::math::primitives::Cuboid::default());
@@ -171,8 +220,34 @@ pub fn update_mesh(
                     else {
                         panic!("uvs are not f32x2")
                     };
-                    for (attr, uv) in mesh_uvs.iter_mut().zip(uvs) {
-                        *attr = *uv
+                    for (from, to) in [
+                        (0, 17),
+                        (1, 16),
+                        (2, 19),
+                        (3, 18),
+                        (4, 22),
+                        (5, 23),
+                        (6, 20),
+                        (7, 21),
+                        (8, 14),
+                        (9, 13),
+                        (10, 12),
+                        (11, 15),
+                        (12, 9),
+                        (13, 10),
+                        (14, 11),
+                        (15, 8),
+                        (16, 4),
+                        (17, 5),
+                        (18, 6),
+                        (19, 7),
+                        (20, 3),
+                        (21, 2),
+                        (22, 1),
+                        (23, 0),
+                    ] {
+                        mesh_uvs[to][0] = uvs[from][0];
+                        mesh_uvs[to][1] = 1.0 - uvs[from][1];
                     }
                     meshes.add(mesh)
                 }
@@ -192,21 +267,30 @@ pub fn update_mesh(
                 }
             }
             MeshDefinition::Plane { uvs } => {
-                if uvs.is_empty() {
+                if uvs.len() != 8 {
                     defaults.plane.clone()
                 } else {
-                    let mut mesh = Rectangle::default()
+                    let mut mesh = Cuboid::default()
                         .mesh()
                         .build()
-                        .rotated_by(Quat::from_rotation_z(-FRAC_PI_2));
+                        .scaled_by(Vec3::new(1.0, 1.0, 0.0));
                     let Some(VertexAttributeValues::Float32x2(mesh_uvs)) =
                         mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
                     else {
                         panic!("uvs are not f32x2")
                     };
-                    for (attr, uv) in mesh_uvs.iter_mut().zip(uvs) {
-                        attr[0] = uv[0];
-                        attr[1] = 1.0 - uv[1];
+                    for (from, to) in [
+                        (0, 0),
+                        (1, 3),
+                        (2, 2),
+                        (3, 1),
+                        (4, 6),
+                        (5, 5),
+                        (6, 4),
+                        (7, 7),
+                    ] {
+                        mesh_uvs[to][0] = uvs[from][0];
+                        mesh_uvs[to][1] = 1.0 - uvs[from][1];
                     }
                     meshes.add(mesh)
                 }
@@ -241,8 +325,6 @@ pub fn update_mesh(
                     .unwrap_or_default();
                 materials.add(SceneMaterial {
                     base: StandardMaterial {
-                        double_sided: true,
-                        cull_mode: None,
                         ..Default::default()
                     },
                     extension: SceneBound::new(bounds, config.graphics.oob),

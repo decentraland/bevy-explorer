@@ -2,10 +2,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use async_tungstenite::tungstenite::{
-    client::IntoClientRequest,
-    http::{HeaderValue, Uri},
-};
+use async_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValue};
 #[cfg(feature = "livekit")]
 use livekit::{
     options::TrackPublishOptions,
@@ -26,6 +23,8 @@ fn test_tls() {
 #[cfg(feature = "livekit")]
 #[test]
 fn test_livekit() {
+    use isahc::http::Uri;
+
     let mut wallet = Wallet::default();
     wallet.finalize_as_guest();
 
