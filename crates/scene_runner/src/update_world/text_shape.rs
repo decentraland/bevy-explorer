@@ -529,7 +529,7 @@ fn apply_text_extras(
                     z_index: ZIndex::Local(1),
                     view_visibility,
                     node: Node {
-                        stack_index: node.stack_index + 1000,
+                        stack_index: node.stack_index + 1,
                         calculated_size: round_layout_coords(size),
                         outline_width: 0.0,
                         outline_offset: 0.0,
