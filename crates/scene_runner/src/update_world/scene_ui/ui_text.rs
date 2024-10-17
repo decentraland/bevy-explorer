@@ -106,7 +106,7 @@ pub fn set_ui_text(
             continue;
         };
 
-        let text = make_text_section(
+        let (text, extras) = make_text_section(
             ui_text.text.as_str(),
             ui_text.font_size,
             ui_text
@@ -207,11 +207,15 @@ pub fn set_ui_text(
                     ..Default::default()
                 })
                 .try_with_children(|c| {
-                    c.spawn(TextBundle {
+                    let mut cmds = c.spawn(TextBundle {
                         text,
                         z_index: ZIndex::Local(1),
                         ..Default::default()
                     });
+
+                    if let Some(extras) = extras {
+                        cmds.insert(extras);
+                    }
                 });
             });
         });
