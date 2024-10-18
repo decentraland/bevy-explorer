@@ -9,7 +9,9 @@ use ui_core::{
 };
 
 use crate::{
-    renderer_context::RendererSceneContext, update_world::material::TextureResolver, SceneEntity,
+    renderer_context::RendererSceneContext,
+    update_world::material::{TextureResolveError, TextureResolver},
+    SceneEntity,
 };
 
 use super::UiLink;
@@ -87,11 +89,18 @@ impl From<PbUiBackground> for UiBackground {
 #[derive(Component)]
 pub struct UiBackgroundMarker;
 
+#[derive(Component)]
+pub struct RetryBackground;
+
 pub fn set_ui_background(
     mut commands: Commands,
     backgrounds: Query<
-        (&SceneEntity, &UiBackground, &UiLink),
-        Or<(Changed<UiBackground>, Changed<UiLink>)>,
+        (Entity, &SceneEntity, &UiBackground, &UiLink),
+        Or<(
+            Changed<UiBackground>,
+            Changed<UiLink>,
+            With<RetryBackground>,
+        )>,
     >,
     mut removed: RemovedComponents<UiBackground>,
     links: Query<&UiLink>,
@@ -122,7 +131,7 @@ pub fn set_ui_background(
         }
     }
 
-    for (scene_ent, background, link) in backgrounds.iter() {
+    for (ent, scene_ent, background, link) in backgrounds.iter() {
         if let Ok(children) = children.get(link.ui_entity) {
             for child in children
                 .iter()
@@ -133,6 +142,8 @@ pub fn set_ui_background(
                 }
             }
         }
+
+        commands.entity(ent).remove::<RetryBackground>();
 
         let Some(mut commands) = commands.get_entity(link.ui_entity) else {
             continue;
@@ -149,7 +160,12 @@ pub fn set_ui_background(
                 .tex
                 .tex
                 .as_ref()
-                .and_then(|tex| resolver.resolve_texture(ctx, tex).ok());
+                .map(|tex| resolver.resolve_texture(ctx, tex));
+            if let Some(Err(TextureResolveError::SourceNotReady)) = image.as_ref() {
+                commands.commands().entity(ent).insert(RetryBackground);
+                continue;
+            }
+            let image = image.and_then(|r| r.ok());
 
             let texture_mode = match texture.tex.tex {
                 Some(texture_union::Tex::Texture(_)) => texture.mode,

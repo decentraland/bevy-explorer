@@ -213,6 +213,7 @@ pub struct MaterialSource(pub Entity);
 #[derive(Component)]
 pub struct VideoTextureOutput(pub Handle<Image>);
 
+#[derive(Debug)]
 pub enum TextureResolveError {
     SourceNotAvailable,
     SourceNotReady,
