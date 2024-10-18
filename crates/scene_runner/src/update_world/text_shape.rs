@@ -270,8 +270,14 @@ fn update_text_shapes(
         };
 
         // create ui layout
+        let source = if text_shape.0.text.len() > 2048 {
+            warn!("textshape text truncated from {} to 2048 chars", text_shape.0.text.len());
+            &text_shape.0.text.as_str()[0..2048]
+        } else {
+            text_shape.0.text.as_str()
+        };
         let (text, extras) = make_text_section(
-            text_shape.0.text.as_str(),
+            source,
             font_size,
             text_shape
                 .0
@@ -359,7 +365,7 @@ fn update_text_shapes(
         commands.entity(ent).try_insert((
             PriorTextShapeUi(ui_node, text_shape.0.clone()),
             WorldUi {
-                dbg: format!("TextShape `{}`", text_shape.0.text),
+                dbg: format!("TextShape `{}`", source),
                 pix_per_m: 375.0 / text_shape.0.font_size.unwrap_or(10.0),
                 valign,
                 halign: halign_wui,

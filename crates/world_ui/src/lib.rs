@@ -3,13 +3,10 @@ use bevy::{
     pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster},
     prelude::*,
     render::{
-        camera::RenderTarget,
-        render_asset::RenderAssetUsages,
-        render_resource::{
+        camera::RenderTarget, render_asset::RenderAssetUsages, render_resource::{
             AsBindGroup, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
             TextureUsages,
-        },
-        view::NoFrustumCulling,
+        }, renderer::RenderDevice, view::NoFrustumCulling
     },
     transform::TransformSystem,
     ui::UiSystem,
@@ -174,6 +171,8 @@ pub fn update_worldui_materials(
     mut mats: ResMut<Assets<TextShapeMaterial>>,
     mut images: ResMut<Assets<Image>>,
     frame: Res<FrameCount>,
+    render_device: Res<RenderDevice>,
+
 ) {
     let mut target_sizes: HashMap<AssetId<Image>, UVec2> = HashMap::default();
 
@@ -208,6 +207,12 @@ pub fn update_worldui_materials(
         };
 
         if image.size().cmplt(req_size).any() {
+            let max_size = UVec2::splat(render_device.limits().max_texture_dimension_2d);
+            if req_size.cmpge(max_size).any() {
+                warn!("too many textshapes, truncating image");
+                // TODO: split out to separate textures
+            }
+            let req_size = req_size.min(max_size);
             debug!("resized to {}", req_size);
             images.get_mut(id).unwrap().resize(Extent3d {
                 width: req_size.x,
