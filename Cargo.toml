@@ -113,6 +113,7 @@ dcl-rpc = { version = "2.3.5", default-features = false, features=["client", "we
 async-trait = "0.1.68"
 fastrand = "2"
 futures-util = "0.3.28"
+async-tls = "0.13.0"
 
 [dependencies]
 analytics = { workspace = true }
