@@ -83,7 +83,10 @@ fn update_animations(
                 .collect(),
         };
 
-        let mut prev_anims: HashSet<_> = player.playing_animations().map(|(ix, _)| *ix).collect();
+        let mut prev_anims: HashSet<_> = player
+            .playing_animations()
+            .filter_map(|(ix, anim)| (!anim.is_finished()).then_some(*ix))
+            .collect();
 
         for (ix, (duration, state)) in targets.into_iter() {
             let playing = state.playing.unwrap_or(true);

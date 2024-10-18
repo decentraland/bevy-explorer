@@ -90,8 +90,9 @@ bevy: not implemented
 use bevy::{
     core::FrameCount,
     prelude::*,
-    text::{BreakLineOn, CosmicBuffer},
-    utils::hashbrown::HashMap,
+    text::{BreakLineOn, CosmicBuffer, TextLayoutInfo},
+    ui::{update::update_clipping_system, widget::text_system},
+    utils::{hashbrown::HashMap, HashSet},
 };
 use common::{
     sets::{SceneLoopSets, SceneSets},
@@ -124,6 +125,13 @@ impl Plugin for TextShapePlugin {
         app.add_systems(
             Update,
             add_cosmic_buffers.after(SceneSets::RestrictedActions),
+        );
+        app.add_systems(
+            PostUpdate,
+            apply_text_extras
+                .after(text_system)
+                .after(TransformSystem::TransformPropagate)
+                .before(update_clipping_system),
         );
     }
 }
@@ -262,7 +270,7 @@ fn update_text_shapes(
         };
 
         // create ui layout
-        let text = make_text_section(
+        let (text, extras) = make_text_section(
             text_shape.0.text.as_str(),
             font_size,
             text_shape
@@ -308,7 +316,7 @@ fn update_text_shapes(
                     ..Default::default()
                 })
                 .with_children(|c| {
-                    c.spawn(TextBundle {
+                    let mut cmds = c.spawn(TextBundle {
                         text,
                         style: Style {
                             align_self: match halign {
@@ -321,6 +329,9 @@ fn update_text_shapes(
                         },
                         ..Default::default()
                     });
+                    if let Some(extras) = extras {
+                        cmds.insert(extras);
+                    }
                 });
 
                 if halign != JustifyText::Right {
@@ -363,6 +374,229 @@ fn update_text_shapes(
     }
 }
 
+#[derive(Component)]
+pub struct TextExtraMarker;
+
+#[inline]
+fn round_ties_up(value: f32) -> f32 {
+    if value.fract() != -0.5 {
+        value.round()
+    } else {
+        value.ceil()
+    }
+}
+
+#[inline]
+fn round_layout_coords(value: Vec2) -> Vec2 {
+    Vec2 {
+        x: round_ties_up(value.x),
+        y: round_ties_up(value.y),
+    }
+}
+fn apply_text_extras(
+    mut commands: Commands,
+    q: Query<
+        (
+            &Text,
+            &TextExtras,
+            &CosmicBuffer,
+            &Parent,
+            &GlobalTransform,
+            &Node,
+            Option<&TargetCamera>,
+            Option<&Children>,
+        ),
+        Or<(Changed<Text>, Changed<TextLayoutInfo>, Changed<TextExtras>)>,
+    >,
+    existing: Query<(), With<TextExtraMarker>>,
+    mut removed: RemovedComponents<TextExtras>,
+    children: Query<&Children>,
+) {
+    for removed in removed.read() {
+        if let Ok(children) = children.get(removed) {
+            for child in children {
+                if existing.get(*child).is_ok() {
+                    commands.entity(*child).despawn_recursive();
+                }
+            }
+        }
+    }
+
+    let find_bounds = |buffer: &CosmicBuffer, text: &Text, section: usize| -> Vec<Vec4> {
+        let mut segments = Vec::default();
+        let preceding_text = text.sections[..section]
+            .iter()
+            .map(|s| s.value.clone())
+            .collect::<Vec<_>>()
+            .join("");
+        let start_line = preceding_text.chars().filter(|c| *c == '\n').count();
+        let start_line_index = preceding_text
+            .char_indices()
+            .rfind(|(_, c)| *c == '\n')
+            .map(|(ix, _)| ix)
+            .unwrap_or(0);
+        let start_section_index = preceding_text
+            .char_indices()
+            .last()
+            .map(|(ix, _)| ix)
+            .unwrap_or(0)
+            - start_line_index;
+
+        let end_line = start_line
+            + text.sections[section]
+                .value
+                .chars()
+                .filter(|c| *c == '\n')
+                .count();
+        let end_line_index = text.sections[section]
+            .value
+            .char_indices()
+            .last()
+            .map(|(ix, _)| ix)
+            .unwrap_or(0);
+        let end_section_index = text.sections[section]
+            .value
+            .char_indices()
+            .rfind(|(_, c)| *c == '\n')
+            .map(|(ix, _)| end_line_index - ix)
+            .unwrap_or(start_section_index + end_line_index + 1);
+
+        let mut segment_y = f32::NEG_INFINITY;
+        let runs = buffer
+            .layout_runs()
+            .skip_while(|run| run.line_i < start_line)
+            .take_while(|run| run.line_i <= end_line);
+
+        for run in runs {
+            let glyphs = run
+                .glyphs
+                .iter()
+                .skip_while(|g| run.line_i == start_line && g.start < start_section_index)
+                .take_while(|g| run.line_i < end_line || g.end <= end_section_index);
+
+            for glyph in glyphs {
+                debug!("g: {},{}", glyph.x, glyph.y);
+                if run.line_top + glyph.y != segment_y {
+                    segments.push(Vec4::new(
+                        glyph.x,
+                        run.line_top + glyph.y,
+                        glyph.w,
+                        run.line_height,
+                    ));
+                    segment_y = run.line_top + glyph.y;
+                } else {
+                    let segment = segments.last_mut().unwrap();
+                    segment.z = glyph.x + glyph.w - segment.x;
+                }
+            }
+        }
+
+        segments
+    };
+
+    for (text, extras, buffer, parent, gt, node, maybe_camera, maybe_children) in q.iter() {
+        for &child in maybe_children.map(|c| c.iter()).unwrap_or_default() {
+            if existing.get(child).is_ok() {
+                commands.entity(child).despawn_recursive();
+            }
+        }
+        let mut ents = Vec::default();
+
+        let mut make_mark = |bound: Vec4, color: Color, top: f32, height: f32| -> Entity {
+            // because we make marks based on calculated text positions, we have to run after the ui layout functions
+            // but that means our marks won't be positioned until next frame. if text is deleted/replaced every frame
+            // then it never shows.
+            // so we do the layouting ourselves, copying bevy's `update_uinode_geometry_recursive`, and set the visibility explicitly.
+            // we have to also add the equivalent style settings, or it will be overwritten next frame.
+            let mut view_visibility = ViewVisibility::default();
+            view_visibility.set();
+            let height = (bound.w * height).max(1.0);
+            let size = Vec2::new(bound.z, height);
+            let parent_tl = gt.translation().truncate() - node.calculated_size * 0.5;
+            let my_tl = parent_tl + Vec2::new(bound.x, bound.y + bound.w * top);
+            let my_translation = round_layout_coords(my_tl + size * 0.5);
+            let mut cmds = commands.spawn((
+                NodeBundle {
+                    style: Style {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(bound.x),
+                        top: Val::Px(bound.y + bound.w * top),
+                        width: Val::Px(bound.z),
+                        height: Val::Px(height),
+                        ..Default::default()
+                    },
+                    background_color: color.into(),
+                    z_index: ZIndex::Local(1),
+                    view_visibility,
+                    node: Node {
+                        stack_index: node.stack_index + 1,
+                        calculated_size: round_layout_coords(size),
+                        outline_width: 0.0,
+                        outline_offset: 0.0,
+                        unrounded_size: size,
+                    },
+                    global_transform: GlobalTransform::from_translation(my_translation.extend(0.0)),
+                    ..Default::default()
+                },
+                TextExtraMarker,
+            ));
+
+            if let Some(target_camera) = maybe_camera {
+                cmds.insert(target_camera.clone());
+            }
+
+            cmds.id()
+        };
+
+        for strike in extras.strike.iter() {
+            let bounds = find_bounds(buffer, text, *strike);
+            for bound in bounds {
+                ents.push(make_mark(
+                    bound,
+                    text.sections[*strike].style.color,
+                    0.6,
+                    0.1,
+                ));
+            }
+        }
+
+        for under in extras.underline.iter() {
+            let bounds = find_bounds(buffer, text, *under);
+            for bound in bounds {
+                ents.push(make_mark(
+                    bound,
+                    text.sections[*under].style.color,
+                    0.95,
+                    0.1,
+                ));
+            }
+        }
+
+        for (mark_section, mark_color) in extras.mark.iter() {
+            let bounds = find_bounds(buffer, text, *mark_section);
+            for bound in bounds {
+                ents.push(make_mark(bound, *mark_color, 0.0, 1.0));
+            }
+        }
+
+        commands
+            .entity(parent.get())
+            .try_push_children(ents.as_slice());
+    }
+}
+
+#[derive(Component, Default)]
+pub struct TextExtras {
+    strike: HashSet<usize>,
+    underline: HashSet<usize>,
+    mark: HashMap<usize, Color>,
+}
+
+impl TextExtras {
+    pub fn is_empty(&self) -> bool {
+        self.strike.is_empty() && self.underline.is_empty() && self.mark.is_empty()
+    }
+}
 pub fn make_text_section(
     text: &str,
     font_size: f32,
@@ -370,8 +604,9 @@ pub fn make_text_section(
     font: dcl_component::proto_components::sdk::components::common::Font,
     justify: JustifyText,
     wrapping: bool,
-) -> Text {
+) -> (Text, Option<TextExtras>) {
     let text = text.replace("\\n", "\n");
+    let mut extras = TextExtras::default();
 
     let font_name = match font {
         dcl_component::proto_components::sdk::components::common::Font::FSansSerif => {
@@ -386,24 +621,74 @@ pub fn make_text_section(
     // split by <b>s and <i>s
     let mut b_count = 0usize;
     let mut i_count = 0usize;
-    let mut b_offset = text.find("<b>");
-    let mut i_offset = text.find("<i>");
-    let mut xb_offset = text.find("</b>");
-    let mut xi_offset = text.find("</i>");
-    let mut section_start = 0;
+    let mut u_count = 0usize;
+    let mut s_count = 0usize;
+    let mut marks = Vec::<Color>::default();
+    let mut section_start = 0usize;
 
     let mut sections = Vec::default();
 
     loop {
-        let section_end = [b_offset, i_offset, xb_offset, xi_offset]
-            .iter()
-            .fold(usize::MAX, |c, o| c.min(o.unwrap_or(c)));
+        // read initial tags
+        while text[section_start..].starts_with('<') {
+            if let Some((close, _)) = text[section_start..]
+                .char_indices()
+                .find(|(_, c)| *c == '>')
+            {
+                let tag = text[section_start + 1..section_start + close]
+                    .trim()
+                    .to_ascii_lowercase();
+                match tag.as_str() {
+                    "b" => b_count += 1,
+                    "i" => i_count += 1,
+                    "s" => s_count += 1,
+                    "u" => u_count += 1,
+                    "/b" => b_count = b_count.saturating_sub(1),
+                    "/i" => i_count = i_count.saturating_sub(1),
+                    "/s" => s_count = s_count.saturating_sub(1),
+                    "/u" => u_count = u_count.saturating_sub(1),
+                    i if i.get(0..4) == Some("mark") => {
+                        marks.push(
+                            i.get(5..)
+                                .and_then(|color| Srgba::hex(color).map(Color::from).ok())
+                                .unwrap_or_else(|| {
+                                    warn!("unrecognised mark color `{i}`");
+                                    let mut mark_color = color;
+                                    mark_color.set_alpha(color.alpha() * 0.5);
+                                    mark_color
+                                }),
+                        );
+                    }
+                    "/mark" => {
+                        marks.pop();
+                    }
+                    _ => warn!("unrecognised text tag `{tag}`"),
+                }
+                section_start = section_start + close + 1;
+            }
+        }
+
         let weight = match (b_count, i_count) {
             (0, 0) => WeightName::Regular,
             (0, _) => WeightName::Italic,
             (_, 0) => WeightName::Bold,
             (_, _) => WeightName::BoldItalic,
         };
+        if s_count > 0 {
+            extras.strike.insert(sections.len());
+        }
+        if u_count > 0 {
+            extras.underline.insert(sections.len());
+        }
+        if let Some(mark) = marks.last().as_ref() {
+            extras.mark.insert(sections.len(), **mark);
+        }
+
+        let section_end = text[section_start..]
+            .char_indices()
+            .find(|(_, c)| *c == '<')
+            .map(|(ix, _)| section_start + ix)
+            .unwrap_or(usize::MAX);
 
         if section_end == usize::MAX {
             sections.push(TextSection::new(
@@ -426,51 +711,21 @@ pub fn make_text_section(
             },
         ));
 
-        match &text[section_end..section_end + 3] {
-            "<b>" => {
-                b_count += 1;
-                b_offset = text[section_end + 1..]
-                    .find("<b>")
-                    .map(|v| v + section_end + 1);
-                section_start = section_end + 3;
-            }
-            "<i>" => {
-                i_count += 1;
-                i_offset = text[section_end + 1..]
-                    .find("<i>")
-                    .map(|v| v + section_end + 1);
-                section_start = section_end + 3;
-            }
-            "</b" => {
-                b_count = b_count.saturating_sub(1);
-                xb_offset = text[section_end + 1..]
-                    .find("</b>")
-                    .map(|v| v + section_end + 1);
-                section_start = section_end + 4;
-            }
-            "</i" => {
-                i_count = i_count.saturating_sub(1);
-                xi_offset = text[section_end + 1..]
-                    .find("</i>")
-                    .map(|v| v + section_end + 1);
-                section_start = section_end + 4;
-            }
-            _ => {
-                error!("{}", &text[section_end..=section_end + 2]);
-                panic!()
-            }
-        }
+        section_start = section_end;
     }
 
-    Text {
-        sections,
-        linebreak_behavior: if wrapping {
-            BreakLineOn::WordBoundary
-        } else {
-            BreakLineOn::NoWrap
+    (
+        Text {
+            sections,
+            linebreak_behavior: if wrapping {
+                BreakLineOn::WordBoundary
+            } else {
+                BreakLineOn::NoWrap
+            },
+            justify,
         },
-        justify,
-    }
+        (!extras.is_empty()).then_some(extras),
+    )
 }
 
 // workaround for using bevy cosmic buffer patch without lib support

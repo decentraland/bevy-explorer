@@ -30,6 +30,6 @@ chrono = { workspace = true }
 async-trait = { workspace = true }
 async-tungstenite = { workspace = true }
 futures-util = { workspace = true }
+async-tls = { workspace = true }
 
-async-tls = "0.12.0"
 rand = "0.8.5"

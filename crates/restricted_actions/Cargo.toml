@@ -16,9 +16,11 @@ wallet = { workspace = true }
 dcl_component = { workspace = true }
 nft = { workspace = true }
 system_ui = { workspace = true }
+console = { workspace = true }
 
 bevy = { workspace = true }
 bevy_dui = { workspace = true }
+bevy_console = { workspace = true }
 tokio = { workspace = true }
 isahc = { workspace = true }
 serde_json = { workspace = true }
@@ -26,3 +28,4 @@ ethers-core = { workspace = true }
 urlencoding = { workspace = true }
 opener = { workspace = true }
 anyhow = { workspace = true }
+clap = { workspace = true }

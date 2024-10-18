@@ -10,6 +10,7 @@ use bevy::{
     tasks::{IoTaskPool, Task},
     utils::{HashMap, HashSet},
 };
+use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
@@ -26,6 +27,7 @@ use comms::{
     profile::{CurrentUserProfile, UserProfile},
     NetworkMessage, Transport,
 };
+use console::DoAddConsoleCommand;
 use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
 use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, IpfsAssetServer, ServerAbout};
@@ -78,10 +80,14 @@ impl Plugin for RestrictedActionsPlugin {
                     handle_eth_async,
                     handle_texture_size,
                     handle_generic_perm,
+                    handle_spawned_command,
                 ),
             )
                 .in_set(SceneSets::RestrictedActions),
         );
+        app.init_resource::<PendingPortableCommands>();
+        app.add_console_command::<SpawnPortableCommand, _>(spawn_portable_command);
+        app.add_console_command::<KillPortableCommand, _>(kill_portable_command);
     }
 }
 
@@ -247,6 +253,52 @@ fn external_url(
     }
 }
 
+async fn lookup_ens(
+    parent_scene: Option<String>,
+    ens: String,
+) -> Result<(String, PortableSource), String> {
+    let mut about = isahc::get_async(format!(
+        "https://worlds-content-server.decentraland.org/world/{ens}/about"
+    ))
+    .await
+    .map_err(|e| e.to_string())?;
+    if about.status() != StatusCode::OK {
+        return Err(format!("status: {}", about.status()));
+    }
+
+    let about = about
+        .json::<ServerAbout>()
+        .await
+        .map_err(|e| e.to_string())?;
+    let Some(config) = about.configurations else {
+        return Err("No configurations on server/about".to_owned());
+    };
+    let Some(scenes) = config.scenes_urn else {
+        return Err("No scenesUrn on server/about/configurations".to_owned());
+    };
+    let Some(urn) = scenes.first() else {
+        return Err("Empty scenesUrn on server/about/configurations".to_owned());
+    };
+    let hacked_urn = urn.replace('?', "?=&");
+
+    let Ok(path) = IpfsPath::new_from_urn::<EntityDefinition>(&hacked_urn) else {
+        return Err("failed to parse urn".to_owned());
+    };
+
+    let Ok(Some(hash)) = path.context_free_hash() else {
+        return Err("failed to resolve content hash from urn".to_owned());
+    };
+
+    Ok((
+        hash,
+        PortableSource {
+            pid: hacked_urn,
+            parent_scene,
+            ens: Some(ens),
+        },
+    ))
+}
+
 type SpawnResponseChannel = Option<tokio::sync::oneshot::Sender<Result<SpawnResponse, String>>>;
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -324,49 +376,7 @@ fn spawn_portable(
             PortableLocation::Ens(ens) => {
                 let ens = ens.clone();
                 pending_lookups.push((
-                    IoTaskPool::get().spawn(async move {
-                        let mut about = isahc::get_async(format!(
-                            "https://worlds-content-server.decentraland.org/world/{ens}/about"
-                        ))
-                        .await
-                        .map_err(|e| e.to_string())?;
-                        if about.status() != StatusCode::OK {
-                            return Err(format!("status: {}", about.status()));
-                        }
-
-                        let about = about
-                            .json::<ServerAbout>()
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        let Some(config) = about.configurations else {
-                            return Err("No configurations on server/about".to_owned());
-                        };
-                        let Some(scenes) = config.scenes_urn else {
-                            return Err("No scenesUrn on server/about/configurations".to_owned());
-                        };
-                        let Some(urn) = scenes.first() else {
-                            return Err("Empty scenesUrn on server/about/configurations".to_owned());
-                        };
-                        let hacked_urn = urn.replace('?', "?=&");
-
-                        let Ok(path) = IpfsPath::new_from_urn::<EntityDefinition>(&hacked_urn)
-                        else {
-                            return Err("failed to parse urn".to_owned());
-                        };
-
-                        let Ok(Some(hash)) = path.context_free_hash() else {
-                            return Err("failed to resolve content hash from urn".to_owned());
-                        };
-
-                        Ok((
-                            hash,
-                            PortableSource {
-                                pid: hacked_urn,
-                                parent_scene: Some(parent_hash),
-                                ens: Some(ens),
-                            },
-                        ))
-                    }),
+                    IoTaskPool::get().spawn(lookup_ens(Some(parent_hash), ens)),
                     Some(response.take()),
                 ));
             }
@@ -1140,4 +1150,92 @@ pub fn handle_generic_perm(
             response.send(false);
         }
     }
+}
+
+enum PortableAction {
+    Spawn,
+    Kill,
+}
+
+#[allow(clippy::type_complexity)]
+#[derive(Resource, Default)]
+struct PendingPortableCommands(
+    Vec<(
+        Task<Result<(String, PortableSource), String>>,
+        PortableAction,
+    )>,
+);
+
+/// manually spawn a portable
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/spawn")]
+struct SpawnPortableCommand {
+    ens: String,
+}
+
+fn spawn_portable_command(
+    mut input: ConsoleCommand<SpawnPortableCommand>,
+    mut pending: ResMut<PendingPortableCommands>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        pending.0.push((
+            IoTaskPool::get().spawn(lookup_ens(None, command.ens)),
+            PortableAction::Spawn,
+        ));
+    }
+}
+
+/// manually kill a portable
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/kill")]
+struct KillPortableCommand {
+    ens: String,
+}
+
+fn kill_portable_command(
+    mut input: ConsoleCommand<KillPortableCommand>,
+    mut pending: ResMut<PendingPortableCommands>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        pending.0.push((
+            IoTaskPool::get().spawn(lookup_ens(None, command.ens)),
+            PortableAction::Kill,
+        ));
+    }
+}
+
+fn handle_spawned_command(
+    mut pending: ResMut<PendingPortableCommands>,
+    mut portables: ResMut<PortableScenes>,
+    mut reply: EventWriter<PrintConsoleLine>,
+) {
+    pending.0.retain_mut(|(task, action)| {
+        if let Some(result) = task.complete() {
+            match result {
+                Ok((hash, source)) => match action {
+                    PortableAction::Spawn => {
+                        portables.0.insert(hash.clone(), source);
+                        reply.send(PrintConsoleLine::new("[ok]".into()));
+                    }
+                    PortableAction::Kill => {
+                        if portables.0.remove(&hash).is_some() {
+                            reply.send(PrintConsoleLine::new("[ok]".into()));
+                        } else {
+                            reply.send(PrintConsoleLine::new("portable not running".into()));
+                            reply.send(PrintConsoleLine::new("[failed]".into()));
+                        }
+                    }
+                },
+                Err(e) => {
+                    reply.send(PrintConsoleLine::new(
+                        format!("failed to lookup ens: {e}").into(),
+                    ));
+                    reply.send(PrintConsoleLine::new("[failed]".into()));
+                }
+            }
+            false
+        } else {
+            true
+        }
+    })
 }

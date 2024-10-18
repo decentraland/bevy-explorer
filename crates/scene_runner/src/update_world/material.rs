@@ -64,12 +64,10 @@ impl MaterialDefinition {
             .map(|b| &b.material)
             .unwrap_or(DEFAULT_BASE.get_or_init(|| StandardMaterial {
                 base_color: Color::WHITE,
-                double_sided: true,
                 emissive: LinearRgba::BLACK,
                 perceptual_roughness: 0.5,
                 metallic: 0.5,
                 reflectance: 0.5,
-                cull_mode: None,
                 ..Default::default()
             }));
 
@@ -93,7 +91,6 @@ impl MaterialDefinition {
                 (
                     StandardMaterial {
                         base_color,
-                        double_sided: true,
                         unlit: true,
                         alpha_mode,
                         ..base.clone()
