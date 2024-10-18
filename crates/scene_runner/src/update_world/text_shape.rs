@@ -293,6 +293,7 @@ fn update_text_shapes(
             .spawn((
                 NodeBundle {
                     style: Style {
+                        margin: UiRect::all(Val::Px(1.0)),
                         flex_direction: FlexDirection::Row,
                         max_width: Val::Px(width),
                         ..Default::default()
