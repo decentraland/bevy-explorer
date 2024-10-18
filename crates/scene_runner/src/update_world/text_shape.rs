@@ -213,6 +213,8 @@ fn update_text_shapes(
                                 max_height: Val::Px(8192.0),
                                 flex_direction: FlexDirection::Row,
                                 flex_wrap: FlexWrap::Wrap,
+                                align_items: AlignItems::FlexStart,
+                                align_content: AlignContent::FlexStart,
                                 ..Default::default()
                             },
                             ..Default::default()
