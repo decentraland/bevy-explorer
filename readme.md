@@ -2,6 +2,10 @@
 
 A forward-looking implementation of the Decentraland protocol.
 
+visit our [Releases](https://github.com/decentraland/bevy-explorer/releases/latest) page for the latest client downloads.
+
+![screenshots](assets/images/screenshots/montage.png)
+
 This implementation uses [rust](https://www.rust-lang.org/) and the [Bevy](https://bevyengine.org) engine, and targets desktop clients.
 
 This project's goals are to:
@@ -10,7 +14,7 @@ This project's goals are to:
 - increase the field of alternative Explorers
 - prioritize solid fundamentals, extensibility, and the use of modern open-source frameworks
 
-# Building and Running
+# Building from source
 
 1. Clone the repo using `git clone https://github.com/decentraland/bevy-explorer`
 2. Install [rust](https://www.rust-lang.org/tools/install)
@@ -19,7 +23,7 @@ This project's goals are to:
       - *note: livekit networking (main-realm transport) in the linux build is temporarily disabled due to conflicting imports in webrtc and deno. we hope this will be resolved soon*
       - Install alsa and udev: `sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev`
       - Install ffmpeg deps: `sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev`
-      - (*not needed currently*) Install Livekit deps: `sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev`
+      - Install Livekit deps: `sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev`
     - on macos: 
       - `brew install ffmpeg@6 pkg-config`
       - `export PKG_CONFIG_PATH=/opt/homebrew/opt/ffmpeg@6/lib/pkgconfig`
