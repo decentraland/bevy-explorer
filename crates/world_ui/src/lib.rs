@@ -3,10 +3,14 @@ use bevy::{
     pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster},
     prelude::*,
     render::{
-        camera::RenderTarget, render_asset::RenderAssetUsages, render_resource::{
+        camera::RenderTarget,
+        render_asset::RenderAssetUsages,
+        render_resource::{
             AsBindGroup, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
             TextureUsages,
-        }, renderer::RenderDevice, view::NoFrustumCulling
+        },
+        renderer::RenderDevice,
+        view::NoFrustumCulling,
     },
     transform::TransformSystem,
     ui::UiSystem,
@@ -172,7 +176,6 @@ pub fn update_worldui_materials(
     mut images: ResMut<Assets<Image>>,
     frame: Res<FrameCount>,
     render_device: Res<RenderDevice>,
-
 ) {
     let mut target_sizes: HashMap<AssetId<Image>, UVec2> = HashMap::default();
 

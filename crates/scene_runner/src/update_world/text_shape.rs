@@ -273,7 +273,10 @@ fn update_text_shapes(
 
         // create ui layout
         let source = if text_shape.0.text.len() > 2048 {
-            warn!("textshape text truncated from {} to 2048 chars", text_shape.0.text.len());
+            warn!(
+                "textshape text truncated from {} to 2048 chars",
+                text_shape.0.text.len()
+            );
             &text_shape.0.text.as_str()[0..2048]
         } else {
             text_shape.0.text.as_str()
