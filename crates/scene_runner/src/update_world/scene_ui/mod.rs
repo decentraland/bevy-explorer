@@ -831,6 +831,8 @@ fn layout_scene_ui(
                             ..Default::default()
                         };
 
+                        debug!("{scene_id} set style {ui_transform:?} -> {style:?}");
+
                         // update inner style
                         if link.content_entity != link.ui_entity {
                             let new_style = style.clone();

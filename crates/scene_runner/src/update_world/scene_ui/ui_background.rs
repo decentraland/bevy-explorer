@@ -182,8 +182,10 @@ pub fn set_ui_background(
                                 NodeBundle {
                                     style: Style {
                                         position_type: PositionType::Absolute,
-                                        width: Val::Percent(100.0),
-                                        height: Val::Percent(100.0),
+                                        top: Val::Px(0.0),
+                                        right: Val::Px(0.0),
+                                        left: Val::Px(0.0),
+                                        bottom: Val::Px(0.0),
                                         overflow: Overflow::clip(),
                                         ..Default::default()
                                     },
@@ -204,8 +206,10 @@ pub fn set_ui_background(
                                 NodeBundle {
                                     style: Style {
                                         position_type: PositionType::Absolute,
-                                        width: Val::Percent(100.0),
-                                        height: Val::Percent(100.0),
+                                        top: Val::Px(0.0),
+                                        right: Val::Px(0.0),
+                                        left: Val::Px(0.0),
+                                        bottom: Val::Px(0.0),
                                         overflow: Overflow::clip(),
                                         ..Default::default()
                                     },
@@ -217,8 +221,10 @@ pub fn set_ui_background(
                                 c.spawn((MaterialNodeBundle {
                                     style: Style {
                                         position_type: PositionType::Absolute,
-                                        width: Val::Percent(100.0),
-                                        height: Val::Percent(100.0),
+                                        top: Val::Px(0.0),
+                                        right: Val::Px(0.0),
+                                        left: Val::Px(0.0),
+                                        bottom: Val::Px(0.0),
                                         ..Default::default()
                                     },
                                     material: stretch_uvs.add(StretchUvMaterial {
