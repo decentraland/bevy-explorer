@@ -22,7 +22,7 @@
             <button img="images/redx.png" tooltip="Hide Chat Panel" onclick="@close" image-width="3.3vmin" image-height="3.3vmin" />
         </div>
         <div style="flex-direction: row; max-height: 100%;">
-            <div style="flex-direction: column; flex-grow: 1; padding: 1vmin 0px 1vmin 1vmin; justify-content: flex-end;">
+            <div style="flex-direction: column; flex-grow: 1; max-width: 44.4vmin; padding: 1vmin 0px 1vmin 1vmin; justify-content: flex-end;">
                 <div>
                     <tab-group id="tabs" style="justify-content: flex-start; width: 100%; flex-wrap: wrap-reverse;" tabs="@chat-tabs" onchanged="@tab-changed" initial="@initial-tab" edge-scale="1px 1px -0px 1px"/>
                 </div>

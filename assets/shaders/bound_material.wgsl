@@ -12,6 +12,7 @@
 
 struct SceneBounds {
     bounds: vec4<f32>,
+    height: f32,
     distance: f32,
     flags: u32,
 }
@@ -88,7 +89,9 @@ fn fragment(
 
     // check bounds
     let world_position = pbr_input.world_position.xyz;
-    let outside_amt = max(max(max(0.0, bounds.bounds.x - world_position.x), max(world_position.x - bounds.bounds.z, bounds.bounds.y - world_position.z)), world_position.z - bounds.bounds.w);
+    let outside_xy = max(max(max(0.0, bounds.bounds.x - world_position.x), max(world_position.x - bounds.bounds.z, bounds.bounds.y - world_position.z)), world_position.z - bounds.bounds.w);
+    let outside_height = max(world_position.y - bounds.height, 0.0);
+    let outside_amt = max(outside_height, outside_xy);
 
     var noise = 0.05;
     var should_discard = false;

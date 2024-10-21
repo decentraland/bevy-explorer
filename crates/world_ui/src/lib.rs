@@ -42,6 +42,7 @@ pub struct WorldUi {
     pub halign: f32,
     pub add_y_pix: f32,
     pub bounds: Vec4,
+    pub height: f32,
     pub view: Entity,
     pub ui_node: Entity,
 }
@@ -124,7 +125,7 @@ pub fn add_worldui_materials(
                     alpha_mode: AlphaMode::Blend,
                     ..Default::default()
                 },
-                extension: SceneBound::new(wui.bounds, config.graphics.oob),
+                extension: SceneBound::new(wui.bounds, wui.height, config.graphics.oob),
             },
             extension: TextQuad {
                 data: material_data,

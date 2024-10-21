@@ -41,6 +41,7 @@ pub struct RendererSceneContext {
     pub parcels: HashSet<IVec2>,
     // world-space bounds for the scene
     pub bounds: Vec4,
+    pub height: f32,
     pub spawn_points: Vec<SpawnPoint>,
     pub priority: f32,
     pub size: UVec2,
@@ -103,6 +104,7 @@ impl RendererSceneContext {
         base: IVec2,
         parcels: HashSet<IVec2>,
         bounds: Vec4,
+        height: f32,
         spawn_points: Vec<SpawnPoint>,
         root: Entity,
         size: UVec2,
@@ -119,6 +121,7 @@ impl RendererSceneContext {
             base,
             parcels,
             bounds,
+            height,
             spawn_points,
             size,
             nascent: Default::default(),

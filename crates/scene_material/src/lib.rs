@@ -51,10 +51,11 @@ pub struct SceneBound {
 }
 
 impl SceneBound {
-    pub fn new(bounds: Vec4, distance: f32) -> Self {
+    pub fn new(bounds: Vec4, height: f32, distance: f32) -> Self {
         Self {
             data: SceneBoundData {
                 bounds,
+                height,
                 distance,
                 flags: 0,
             },
@@ -70,6 +71,7 @@ impl SceneBound {
                     f32::INFINITY,
                     f32::INFINITY,
                 ),
+                height: f32::INFINITY,
                 distance: 0.0,
                 flags: SCENE_MATERIAL_OUTLINE
                     + if force_outline {
@@ -85,6 +87,7 @@ impl SceneBound {
 #[derive(ShaderType, Clone)]
 pub struct SceneBoundData {
     pub bounds: Vec4,
+    pub height: f32,
     pub distance: f32,
     pub flags: u32,
 }

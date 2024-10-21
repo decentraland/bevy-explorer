@@ -1303,6 +1303,7 @@ fn process_avatar(
                             halign: 0.0,
                             add_y_pix: 0.0,
                             bounds: Vec4::new(f32::MIN, f32::MIN, f32::MAX, f32::MAX),
+                            height: f32::INFINITY,
                             view: ui_view.view,
                             ui_node: label_ui,
                         },

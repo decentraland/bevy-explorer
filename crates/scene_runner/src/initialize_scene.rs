@@ -262,7 +262,7 @@ pub(crate) fn load_scene_javascript(
         // populate pointers
         let mut extent_min = IVec2::MAX;
         let mut extent_max = IVec2::MIN;
-        let parcels = meta
+        let parcels: HashSet<_> = meta
             .scene
             .parcels
             .iter()
@@ -287,6 +287,7 @@ pub(crate) fn load_scene_javascript(
             -extent_min.y * 16,
         )
         .as_vec4();
+        let height = f32::log2(parcels.len() as f32 + 1.0) * 20.0;
 
         // get main.crdt
         let maybe_serialized_crdt = match crdt {
@@ -343,6 +344,7 @@ pub(crate) fn load_scene_javascript(
             base,
             parcels,
             bounds,
+            height,
             meta.spawn_points.clone().unwrap_or_default(),
             root,
             size,

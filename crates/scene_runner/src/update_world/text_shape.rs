@@ -377,6 +377,7 @@ fn update_text_shapes(
                 halign: halign_wui,
                 add_y_pix,
                 bounds: scene.bounds,
+                height: scene.height,
                 view: world_ui.view,
                 ui_node,
             },

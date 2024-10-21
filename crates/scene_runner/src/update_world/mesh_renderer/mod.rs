@@ -319,15 +319,15 @@ pub fn update_mesh(
 
         if maybe_material.is_none() {
             let mat = default_material.entry(scene_ent.root).or_insert_with(|| {
-                let bounds = scenes
+                let (bounds, height) = scenes
                     .get(scene_ent.root)
-                    .map(|c| c.bounds)
+                    .map(|c| (c.bounds, c.height))
                     .unwrap_or_default();
                 materials.add(SceneMaterial {
                     base: StandardMaterial {
                         ..Default::default()
                     },
-                    extension: SceneBound::new(bounds, config.graphics.oob),
+                    extension: SceneBound::new(bounds, height, config.graphics.oob),
                 })
             });
 
