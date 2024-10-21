@@ -636,6 +636,7 @@ pub fn make_text_section(
     let mut u_count = 0usize;
     let mut s_count = 0usize;
     let mut marks = Vec::<Color>::default();
+    let mut override_colors = Vec::<Color>::default();
     let mut section_start = 0usize;
 
     let mut sections = Vec::default();
@@ -674,6 +675,19 @@ pub fn make_text_section(
                     "/mark" => {
                         marks.pop();
                     }
+                    i if i.get(0..5) == Some("color") => {
+                        override_colors.push(
+                            i.get(6..)
+                                .and_then(|color| Srgba::hex(color).map(Color::from).ok())
+                                .unwrap_or_else(|| {
+                                    warn!("unrecognised text color `{i}`");
+                                    color
+                                }),
+                        );
+                    }
+                    "/color" => {
+                        override_colors.pop();
+                    }
                     _ => warn!("unrecognised text tag `{tag}`"),
                 }
                 section_start = section_start + close + 1;
@@ -702,26 +716,18 @@ pub fn make_text_section(
             .map(|(ix, _)| section_start + ix)
             .unwrap_or(usize::MAX);
 
+        let style = TextStyle {
+            font: user_font(font_name, weight),
+            font_size: font_size * 0.95,
+            color: override_colors.last().copied().unwrap_or(color),
+        };
+
         if section_end == usize::MAX {
-            sections.push(TextSection::new(
-                &text[section_start..],
-                TextStyle {
-                    font: user_font(font_name, weight),
-                    font_size: font_size * 0.95,
-                    color,
-                },
-            ));
+            sections.push(TextSection::new(&text[section_start..], style));
             break;
         }
 
-        sections.push(TextSection::new(
-            &text[section_start..section_end],
-            TextStyle {
-                font: user_font(font_name, weight),
-                font_size: font_size * 0.95,
-                color,
-            },
-        ));
+        sections.push(TextSection::new(&text[section_start..section_end], style));
 
         section_start = section_end;
     }
