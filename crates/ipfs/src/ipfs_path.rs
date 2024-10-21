@@ -38,6 +38,7 @@ use std::{
     str::FromStr,
 };
 
+use bevy::log::error;
 use urn::Urn;
 
 use crate::ServerAbout;
@@ -403,7 +404,14 @@ impl IpfsPath {
             })
             .ok_or_else(|| anyhow::anyhow!("base url not specified in asset path or context"))?;
 
-        self.ipfs_type.url_target(context, &base_url)
+        // self.ipfs_type.url_target(context, &base_url)
+
+        let url_str = self.ipfs_type.url_target(context, &base_url)?;
+        let url = url::Url::parse(&url_str).map_err(|e| {
+            error!("failed to parse as url: {self:?}");
+            anyhow::anyhow!(e)
+        })?;
+        Ok(url.to_string())
     }
 
     pub fn hash(&self, context: &IpfsContext) -> Option<String> {
