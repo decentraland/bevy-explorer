@@ -25,7 +25,7 @@ use collectibles::{
 use colliders::AvatarColliderPlugin;
 use console::DoAddConsoleCommand;
 use npc_dynamics::NpcMovementPlugin;
-use scene_material::{SceneMaterial, SceneMaterialExt};
+use scene_material::{BoundRegion, SceneBound, SceneMaterial};
 
 pub mod animate;
 pub mod attach;
@@ -57,6 +57,7 @@ use ipfs::{
     EntityDefinition, IpfsAssetServer,
 };
 use scene_runner::{
+    renderer_context::RendererSceneContext,
     update_world::{animation::Clips, billboard::Billboard, AddCrdtInterfaceExt},
     util::ConsoleRelay,
     ContainingScene, SceneEntity,
@@ -481,6 +482,7 @@ pub struct AvatarDefinition {
     wearables: Vec<Wearable>,
     hides: HashSet<WearableCategory>,
     render_layer: Option<RenderLayers>,
+    bounds: Vec<BoundRegion>,
 }
 
 #[derive(Component)]
@@ -496,6 +498,7 @@ fn update_render_avatar(
             &AvatarSelection,
             Option<&Children>,
             Option<&AttachPoints>,
+            Option<&SceneEntity>,
         ),
         Or<(Changed<AvatarSelection>, With<RetryRenderAvatar>)>,
     >,
@@ -503,6 +506,7 @@ fn update_render_avatar(
     children: Query<(&Children, &AttachPoints)>,
     avatar_render_entities: Query<(), With<AvatarDefinition>>,
     mut wearable_loader: CollectibleManager<Wearable>,
+    scenes: Query<&RendererSceneContext>,
 ) {
     // remove renderable entities when avatar selection is removed
     for entity in removed_selections.read() {
@@ -520,7 +524,7 @@ fn update_render_avatar(
         }
     }
 
-    for (entity, selection, maybe_children, maybe_attach_points) in &query {
+    for (entity, selection, maybe_children, maybe_attach_points, maybe_scene_ent) in &query {
         commands.entity(entity).remove::<RetryRenderAvatar>();
 
         debug!("updating render avatar");
@@ -710,6 +714,10 @@ fn update_render_avatar(
                         })
                         .into(),
                     render_layer: selection.render_layers.clone(),
+                    bounds: maybe_scene_ent
+                        .and_then(|se| scenes.get(se.root).ok())
+                        .map(|ctx| ctx.bounds.clone())
+                        .unwrap_or_default(),
                 },
                 UsedWearables(urns),
             ));
@@ -874,7 +882,7 @@ fn process_avatar(
     mut meshes: ResMut<Assets<Mesh>>,
     gltfs: Res<Assets<Gltf>>,
     attach_points: Query<&AttachPoints>,
-    (ui_view, dui): (Res<AvatarWorldUi>, Res<DuiRegistry>),
+    (ui_view, dui, config): (Res<AvatarWorldUi>, Res<DuiRegistry>, Res<AppConfig>),
     mut emote_loader: CollectibleManager<Emote>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
     names: Query<(&Name, &Parent)>,
@@ -990,13 +998,17 @@ fn process_avatar(
                         mat.base_color
                     };
 
-                    let new_mat = SceneMaterial::unbounded_outlined(
-                        StandardMaterial {
+                    let new_mat = SceneMaterial {
+                        base: StandardMaterial {
                             base_color,
                             ..mat.clone()
                         },
-                        false,
-                    );
+                        extension: SceneBound::new_outlined(
+                            def.bounds.clone(),
+                            config.graphics.oob,
+                            false,
+                        ),
+                    };
                     let instance_mat = instance_scene_materials
                         .entry(h_mat.clone_weak())
                         .or_insert_with(|| scene_materials.add(new_mat));
@@ -1030,19 +1042,21 @@ fn process_avatar(
                         debug!("setting {suffix} color {:?}", color);
                         if let Some(mask) = wearable.mask.as_ref() {
                             debug!("using mask for {suffix}");
-                            let mask_material = mask_materials.add(MaskMaterial {
-                                color: color.to_linear().to_vec4(),
-                                base_texture: wearable.texture.clone().unwrap(),
-                                mask_texture: mask.clone(),
-                            });
+                            let mask_material = mask_materials.add(MaskMaterial::new(
+                                color,
+                                wearable.texture.clone().unwrap(),
+                                mask.clone(),
+                                def.bounds.clone(),
+                                config.graphics.oob,
+                            ));
                             commands
                                 .entity(scene_ent)
                                 .try_insert(mask_material)
                                 .remove::<Handle<SceneMaterial>>();
                         } else {
                             debug!("no mask for {suffix}");
-                            let material = scene_materials.add(SceneMaterial::unbounded_outlined(
-                                StandardMaterial {
+                            let new_mat = SceneMaterial {
+                                base: StandardMaterial {
                                     base_color: if no_mask_means_ignore_color {
                                         Color::WHITE
                                     } else {
@@ -1052,8 +1066,13 @@ fn process_avatar(
                                     alpha_mode: AlphaMode::Blend,
                                     ..Default::default()
                                 },
-                                true,
-                            ));
+                                extension: SceneBound::new_outlined(
+                                    def.bounds.clone(),
+                                    config.graphics.oob,
+                                    true,
+                                ),
+                            };
+                            let material = scene_materials.add(new_mat);
                             commands.entity(scene_ent).try_insert(material);
                         };
                         *vis = Visibility::Inherited;
@@ -1220,13 +1239,17 @@ fn process_avatar(
                             mat.base_color
                         };
 
-                        let new_mat = SceneMaterial::unbounded_outlined(
-                            StandardMaterial {
+                        let new_mat = SceneMaterial {
+                            base: StandardMaterial {
                                 base_color,
                                 ..mat.clone()
                             },
-                            false,
-                        );
+                            extension: SceneBound::new_outlined(
+                                def.bounds.clone(),
+                                config.graphics.oob,
+                                false,
+                            ),
+                        };
                         let instance_mat = instance_scene_materials
                             .entry(h_mat.clone_weak())
                             .or_insert_with(|| scene_materials.add(new_mat));
@@ -1302,7 +1325,7 @@ fn process_avatar(
                             valign: 0.0,
                             halign: 0.0,
                             add_y_pix: 0.0,
-                            bounds: Default::default(),
+                            bounds: def.bounds.clone(),
                             view: ui_view.view,
                             ui_node: label_ui,
                         },

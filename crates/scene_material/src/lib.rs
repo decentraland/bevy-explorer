@@ -73,6 +73,20 @@ impl SceneBound {
         }
     }
 
+    pub fn new_outlined(bounds: Vec<BoundRegion>, distance: f32, force_outline: bool) -> Self {
+        Self {
+            data: SceneBoundData {
+                flags: SCENE_MATERIAL_OUTLINE
+                    + if force_outline {
+                        SCENE_MATERIAL_OUTLINE_FORCE
+                    } else {
+                        0
+                    },
+                ..Self::new(bounds, distance).data
+            },
+        }
+    }
+
     pub fn unbounded_outlined(force_outline: bool) -> Self {
         Self {
             data: SceneBoundData {
