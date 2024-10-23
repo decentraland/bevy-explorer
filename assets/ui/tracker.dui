@@ -11,8 +11,11 @@
 </define-template>
 
 <define-template id="tracker-item">
-    <div style="flex-direction: row">
-        <div style="align-content: center; max-width: 70%; width: 70%;"><small-text text="@label" /></div>
-        <div style="align-content: center; max-width: 30%; width: 30%; align-items: flex-end;"><small-text text="@value" /></div>
+    <div style="flex-direction: column">
+        <div style="flex-direction: row">
+            <div style="align-content: center; max-width: 70%; width: 70%;"><small-text text="@label" /></div>
+            <div style="align-content: center; max-width: 30%; width: 30%; align-items: flex-end; justify-content: flex-end"><small-text text="@value" /></div>
+        </div>
+        <hr-thin />
     </div>
 </define-template>
