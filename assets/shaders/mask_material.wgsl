@@ -2,7 +2,9 @@
     forward_io::{VertexOutput, FragmentOutput},
     pbr_fragment::pbr_input_from_vertex_output,
     pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
+    mesh_view_bindings::globals,
 }
+#import "shaders/simplex.wgsl"::simplex_noise_3d
 #import "shaders/outline.wgsl"::apply_outline
 
 struct Bounds {
@@ -10,12 +12,6 @@ struct Bounds {
     max: u32,
     height: f32,
     _padding0: u32,
-}
-
-struct SceneBounds {
-    bounds: array<Bounds,8>,
-    distance: f32,
-    num_bounds: u32,
 }
 
 fn unpack_bounds(packed: u32) -> vec2<f32> {
@@ -29,6 +25,8 @@ fn unpack_bounds(packed: u32) -> vec2<f32> {
 struct MaskMaterial {
     bounds: array<Bounds,8>,
     color: vec4<f32>,
+    distance: f32,
+    num_bounds: u32,
 };
 
 @group(2) @binding(0)
@@ -61,16 +59,16 @@ fn fragment(
     var outside_amt: f32 = 9999.0;
     var nearest_region_distance: f32 = 9999.0;
     var nearest_region_height: f32 = 9999.0;
-    if bounds.num_bounds > 0 {
-        for (var ix = 0u; ix < bounds.num_bounds; ix += 1u) {
-            let min_wp = unpack_bounds(bounds.bounds[ix].min);
-            let max_wp = unpack_bounds(bounds.bounds[ix].max);
+    if material.num_bounds > 0 {
+        for (var ix = 0u; ix < material.num_bounds; ix += 1u) {
+            let min_wp = unpack_bounds(material.bounds[ix].min);
+            let max_wp = unpack_bounds(material.bounds[ix].max);
 
             let outside_xy = abs(clamp(world_position.xz, min_wp, max_wp) - world_position.xz);
             let distance = max(outside_xy.x, outside_xy.y);
             if distance < nearest_region_distance {
                 nearest_region_distance = distance;
-                nearest_region_height = bounds.bounds[ix].height;
+                nearest_region_height = material.bounds[ix].height;
             }
             outside_amt = min(outside_amt, distance);
         }
@@ -82,7 +80,7 @@ fn fragment(
 
     var noise = 0.05;
     if outside_amt > 0.00 {
-        if outside_amt < bounds.distance {
+        if outside_amt < material.distance {
             noise = simplex_noise_3d(world_position * 2.0 + globals.time * vec3(0.2, 0.16, 0.24)) * 0.5 + 0.55;
             if noise < (outside_amt - 0.125) / 2.0 {
                 discard;

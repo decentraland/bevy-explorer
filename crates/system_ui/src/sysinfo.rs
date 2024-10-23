@@ -7,6 +7,7 @@ use bevy::{
     render::mesh::Indices,
     text::JustifyText,
     ui::FocusPolicy,
+    utils::hashbrown::HashSet,
 };
 
 use bevy_console::ConsoleCommand;
@@ -494,6 +495,7 @@ fn update_tracker(
     meshes: Res<Assets<Mesh>>,
     materials: Res<Assets<SceneMaterial>>,
     diagnostics: Res<DiagnosticsStore>,
+    images: Res<Assets<Image>>,
 ) {
     let Ok((tracker, entities)) = q.get_single_mut() else {
         return;
@@ -568,13 +570,38 @@ fn update_tracker(
             .filter(|h| materials.get(h.id()).is_some())
             .count(),
     ));
-    display_data.push((
-        "Visible Material Count",
-        material_handles
-            .iter()
-            .filter(|(_, c, v)| &c.root == scene && !matches!(v, Visibility::Hidden))
-            .count(),
-    ));
+
+    let visible_mats = material_handles
+        .iter()
+        .filter(|(_, c, v)| &c.root == scene && !matches!(v, Visibility::Hidden))
+        .map(|(h, ..)| h)
+        .collect::<HashSet<_>>();
+
+    display_data.push(("Visible Material Count", visible_mats.len()));
+
+    let textures = visible_mats
+        .iter()
+        .flat_map(|h| materials.get(h.id()))
+        .map(|mat| {
+            mat.base
+                .base_color_texture
+                .iter()
+                .chain(mat.base.emissive_texture.as_ref())
+                .chain(mat.base.normal_map_texture.as_ref())
+        })
+        .flatten()
+        .collect::<HashSet<_>>();
+
+    display_data.push(("Total Texture Count", textures.len()));
+
+    let total_memory = textures
+        .iter()
+        .flat_map(|h| images.get(h.id()))
+        .map(|t| t.data.len())
+        .sum::<usize>();
+    let total_mb = (total_memory as f32 / 1024.0 / 1024.0).round() as usize;
+
+    display_data.push(("Total Texture Memory (mb)", total_mb));
 
     display_data.push((
         "Total Entities",

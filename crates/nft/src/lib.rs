@@ -187,7 +187,6 @@ fn process_frame(
                 continue;
             };
             for spawned_ent in scene_spawner.iter_instance_entities(frame.0) {
-                println!("swapped");
                 if let Some(mat) = mat_nodes
                     .get(spawned_ent)
                     .ok()
