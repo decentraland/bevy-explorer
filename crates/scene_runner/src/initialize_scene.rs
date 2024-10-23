@@ -29,12 +29,14 @@ use ipfs::{
     ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsAssetServer,
     IpfsResource, SceneIpfsLocation, SceneJsFile,
 };
+use scene_material::BoundRegion;
 use wallet::Wallet;
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 use crate::{
-    renderer_context::RendererSceneContext, update_world::ComponentTracker, ContainerEntity,
-    DeletedSceneEntities, OutOfWorld, SceneEntity, SceneThreadHandle,
+    bounds_calc::scene_regions, renderer_context::RendererSceneContext,
+    update_world::ComponentTracker, ContainerEntity, DeletedSceneEntities, OutOfWorld, SceneEntity,
+    SceneThreadHandle,
 };
 
 #[derive(Default)]
@@ -262,7 +264,7 @@ pub(crate) fn load_scene_javascript(
         // populate pointers
         let mut extent_min = IVec2::MAX;
         let mut extent_max = IVec2::MIN;
-        let parcels = meta
+        let parcels: HashSet<_> = meta
             .scene
             .parcels
             .iter()
@@ -280,13 +282,11 @@ pub(crate) fn load_scene_javascript(
             .collect();
 
         let size = (extent_max - extent_min).as_uvec2();
-        let bounds = IVec4::new(
-            extent_min.x * 16,
-            -(extent_max.y + 1) * 16,
-            (extent_max.x + 1) * 16,
-            -extent_min.y * 16,
-        )
-        .as_vec4();
+        let regions = scene_regions(parcels.clone().into_iter());
+        let bounds = regions
+            .into_iter()
+            .map(|region| BoundRegion::new(region.min, region.max, region.count))
+            .collect();
 
         // get main.crdt
         let maybe_serialized_crdt = match crdt {

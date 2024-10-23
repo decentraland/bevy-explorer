@@ -9,6 +9,7 @@ use dcl::{
     SceneId, SceneLogMessage,
 };
 use dcl_component::{DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter};
+use scene_material::BoundRegion;
 
 use crate::{
     primary_entities::PrimaryEntities,
@@ -40,7 +41,7 @@ pub struct RendererSceneContext {
     pub base: IVec2,
     pub parcels: HashSet<IVec2>,
     // world-space bounds for the scene
-    pub bounds: Vec4,
+    pub bounds: Vec<BoundRegion>,
     pub spawn_points: Vec<SpawnPoint>,
     pub priority: f32,
     pub size: UVec2,
@@ -102,7 +103,7 @@ impl RendererSceneContext {
         title: String,
         base: IVec2,
         parcels: HashSet<IVec2>,
-        bounds: Vec4,
+        bounds: Vec<BoundRegion>,
         spawn_points: Vec<SpawnPoint>,
         root: Entity,
         size: UVec2,

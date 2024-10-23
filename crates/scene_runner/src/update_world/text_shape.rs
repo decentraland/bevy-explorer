@@ -213,6 +213,8 @@ fn update_text_shapes(
                                 max_height: Val::Px(8192.0),
                                 flex_direction: FlexDirection::Row,
                                 flex_wrap: FlexWrap::Wrap,
+                                align_items: AlignItems::FlexStart,
+                                align_content: AlignContent::FlexStart,
                                 ..Default::default()
                             },
                             ..Default::default()
@@ -270,8 +272,17 @@ fn update_text_shapes(
         };
 
         // create ui layout
+        let source = if text_shape.0.text.len() > 2048 {
+            warn!(
+                "textshape text truncated from {} to 2048 chars",
+                text_shape.0.text.len()
+            );
+            &text_shape.0.text.as_str()[0..2048]
+        } else {
+            text_shape.0.text.as_str()
+        };
         let (text, extras) = make_text_section(
-            text_shape.0.text.as_str(),
+            source,
             font_size,
             text_shape
                 .0
@@ -287,6 +298,7 @@ fn update_text_shapes(
             .spawn((
                 NodeBundle {
                     style: Style {
+                        margin: UiRect::all(Val::Px(1.0)),
                         flex_direction: FlexDirection::Row,
                         max_width: Val::Px(width),
                         ..Default::default()
@@ -359,12 +371,12 @@ fn update_text_shapes(
         commands.entity(ent).try_insert((
             PriorTextShapeUi(ui_node, text_shape.0.clone()),
             WorldUi {
-                dbg: format!("TextShape `{}`", text_shape.0.text),
+                dbg: format!("TextShape `{}`", source),
                 pix_per_m: 375.0 / text_shape.0.font_size.unwrap_or(10.0),
                 valign,
                 halign: halign_wui,
                 add_y_pix,
-                bounds: scene.bounds,
+                bounds: scene.bounds.clone(),
                 view: world_ui.view,
                 ui_node,
             },
@@ -624,6 +636,7 @@ pub fn make_text_section(
     let mut u_count = 0usize;
     let mut s_count = 0usize;
     let mut marks = Vec::<Color>::default();
+    let mut override_colors = Vec::<Color>::default();
     let mut section_start = 0usize;
 
     let mut sections = Vec::default();
@@ -662,6 +675,19 @@ pub fn make_text_section(
                     "/mark" => {
                         marks.pop();
                     }
+                    i if i.get(0..5) == Some("color") => {
+                        override_colors.push(
+                            i.get(6..)
+                                .and_then(|color| Srgba::hex(color).map(Color::from).ok())
+                                .unwrap_or_else(|| {
+                                    warn!("unrecognised text color `{i}`");
+                                    color
+                                }),
+                        );
+                    }
+                    "/color" => {
+                        override_colors.pop();
+                    }
                     _ => warn!("unrecognised text tag `{tag}`"),
                 }
                 section_start = section_start + close + 1;
@@ -690,26 +716,18 @@ pub fn make_text_section(
             .map(|(ix, _)| section_start + ix)
             .unwrap_or(usize::MAX);
 
+        let style = TextStyle {
+            font: user_font(font_name, weight),
+            font_size: font_size * 0.95,
+            color: override_colors.last().copied().unwrap_or(color),
+        };
+
         if section_end == usize::MAX {
-            sections.push(TextSection::new(
-                &text[section_start..],
-                TextStyle {
-                    font: user_font(font_name, weight),
-                    font_size: font_size * 0.95,
-                    color,
-                },
-            ));
+            sections.push(TextSection::new(&text[section_start..], style));
             break;
         }
 
-        sections.push(TextSection::new(
-            &text[section_start..section_end],
-            TextStyle {
-                font: user_font(font_name, weight),
-                font_size: font_size * 0.95,
-                color,
-            },
-        ));
+        sections.push(TextSection::new(&text[section_start..section_end], style));
 
         section_start = section_end;
     }

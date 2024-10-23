@@ -9,6 +9,7 @@ use bevy::{
             AsBindGroup, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
             TextureUsages,
         },
+        renderer::RenderDevice,
         view::NoFrustumCulling,
     },
     transform::TransformSystem,
@@ -16,7 +17,7 @@ use bevy::{
     utils::HashMap,
 };
 use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
-use scene_material::{SceneBound, SceneMaterial};
+use scene_material::{BoundRegion, SceneBound, SceneMaterial};
 
 pub struct WorldUiPlugin;
 
@@ -40,7 +41,7 @@ pub struct WorldUi {
     pub valign: f32,
     pub halign: f32,
     pub add_y_pix: f32,
-    pub bounds: Vec4,
+    pub bounds: Vec<BoundRegion>,
     pub view: Entity,
     pub ui_node: Entity,
 }
@@ -123,7 +124,7 @@ pub fn add_worldui_materials(
                     alpha_mode: AlphaMode::Blend,
                     ..Default::default()
                 },
-                extension: SceneBound::new(wui.bounds, config.graphics.oob),
+                extension: SceneBound::new(wui.bounds.clone(), config.graphics.oob),
             },
             extension: TextQuad {
                 data: material_data,
@@ -174,6 +175,7 @@ pub fn update_worldui_materials(
     mut mats: ResMut<Assets<TextShapeMaterial>>,
     mut images: ResMut<Assets<Image>>,
     frame: Res<FrameCount>,
+    render_device: Res<RenderDevice>,
 ) {
     let mut target_sizes: HashMap<AssetId<Image>, UVec2> = HashMap::default();
 
@@ -208,6 +210,12 @@ pub fn update_worldui_materials(
         };
 
         if image.size().cmplt(req_size).any() {
+            let max_size = UVec2::splat(render_device.limits().max_texture_dimension_2d);
+            if req_size.cmpge(max_size).any() {
+                warn!("too many textshapes, truncating image");
+                // TODO: split out to separate textures
+            }
+            let req_size = req_size.min(max_size);
             debug!("resized to {}", req_size);
             images.get_mut(id).unwrap().resize(Extent3d {
                 width: req_size.x,

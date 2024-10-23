@@ -48,6 +48,7 @@ use self::{
 };
 
 pub mod automatic_testing;
+pub mod bounds_calc;
 pub mod gltf_resolver;
 pub mod initialize_scene;
 pub mod permissions;
@@ -97,7 +98,7 @@ pub struct LoadSceneEvent {
 }
 
 // this component is present on the bevy entity which maps to a scene entity explicitly
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Clone)]
 pub struct SceneEntity {
     pub root: Entity,
     pub scene_id: SceneId,

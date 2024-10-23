@@ -5,16 +5,17 @@
             <space />
             <!-- <button img="images/redx.png" onclick="@toggle" image-width="3.5vmin" image-height="3.5vmin" /> -->
         </div>
-        <div id="content" style="flex-direction: row; margin: 0px 2vmin 2vmin 2vmin;">
-            <div id="labels" style="flex-direction: column; width: 70%">
-                <med-text text="hello?" />
-            </div>
-            <div id="values" style="flex-direction: column; width: 30%" />
-        </div>
+        <div id="content" style="flex-direction: column; margin: 0px 2vmin 2vmin 2vmin;" />
         <button label="Inspect" onclick="@inspect" enabled="@inspect-enabled" />
     </div>
 </define-template>
 
 <define-template id="tracker-item">
-    <div style="align-content: center"><small-text text="@label" /></div>
+    <div style="flex-direction: column">
+        <div style="flex-direction: row">
+            <div style="align-content: center; max-width: 70%; width: 70%;"><small-text text="@label" /></div>
+            <div style="align-content: center; max-width: 30%; width: 30%; align-items: flex-end; justify-content: flex-end"><small-text text="@value" /></div>
+        </div>
+        <hr-thin />
+    </div>
 </define-template>

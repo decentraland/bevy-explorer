@@ -7,6 +7,7 @@ use bevy::{
     render::mesh::Indices,
     text::JustifyText,
     ui::FocusPolicy,
+    utils::hashbrown::HashSet,
 };
 
 use bevy_console::ConsoleCommand;
@@ -494,6 +495,7 @@ fn update_tracker(
     meshes: Res<Assets<Mesh>>,
     materials: Res<Assets<SceneMaterial>>,
     diagnostics: Res<DiagnosticsStore>,
+    images: Res<Assets<Image>>,
 ) {
     let Ok((tracker, entities)) = q.get_single_mut() else {
         return;
@@ -504,10 +506,7 @@ fn update_tracker(
     }
 
     commands
-        .entity(entities.named("labels"))
-        .despawn_descendants();
-    commands
-        .entity(entities.named("values"))
+        .entity(entities.named("content"))
         .despawn_descendants();
 
     if !tracker.0 {
@@ -571,13 +570,37 @@ fn update_tracker(
             .filter(|h| materials.get(h.id()).is_some())
             .count(),
     ));
-    display_data.push((
-        "Visible Material Count",
-        material_handles
-            .iter()
-            .filter(|(_, c, v)| &c.root == scene && !matches!(v, Visibility::Hidden))
-            .count(),
-    ));
+
+    let visible_mats = material_handles
+        .iter()
+        .filter(|(_, c, v)| &c.root == scene && !matches!(v, Visibility::Hidden))
+        .map(|(h, ..)| h)
+        .collect::<HashSet<_>>();
+
+    display_data.push(("Visible Material Count", visible_mats.len()));
+
+    let textures = visible_mats
+        .iter()
+        .flat_map(|h| materials.get(h.id()))
+        .flat_map(|mat| {
+            mat.base
+                .base_color_texture
+                .iter()
+                .chain(mat.base.emissive_texture.as_ref())
+                .chain(mat.base.normal_map_texture.as_ref())
+        })
+        .collect::<HashSet<_>>();
+
+    display_data.push(("Total Texture Count", textures.len()));
+
+    let total_memory = textures
+        .iter()
+        .flat_map(|h| images.get(h.id()))
+        .map(|t| t.data.len())
+        .sum::<usize>();
+    let total_mb = (total_memory as f32 / 1024.0 / 1024.0).round() as usize;
+
+    display_data.push(("Total Texture Memory (mb)", total_mb));
 
     display_data.push((
         "Total Entities",
@@ -586,19 +609,13 @@ fn update_tracker(
 
     for (key, value) in display_data {
         commands
-            .entity(entities.named("labels"))
+            .entity(entities.named("content"))
             .spawn_template(
                 &dui,
                 "tracker-item",
-                DuiProps::new().with_prop("label", key.to_string()),
-            )
-            .unwrap();
-        commands
-            .entity(entities.named("values"))
-            .spawn_template(
-                &dui,
-                "tracker-item",
-                DuiProps::new().with_prop("label", format!("{}", value)),
+                DuiProps::new()
+                    .with_prop("label", key.to_string())
+                    .with_prop("value", format!("{}", value)),
             )
             .unwrap();
     }

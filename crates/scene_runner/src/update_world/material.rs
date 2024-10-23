@@ -213,6 +213,7 @@ pub struct MaterialSource(pub Entity);
 #[derive(Component)]
 pub struct VideoTextureOutput(pub Handle<Image>);
 
+#[derive(Debug)]
 pub enum TextureResolveError {
     SourceNotAvailable,
     SourceNotReady,
@@ -433,7 +434,7 @@ fn update_materials(
 
         let bounds = scenes
             .get(container.root)
-            .map(|c| c.bounds)
+            .map(|c| c.bounds.clone())
             .unwrap_or_default();
 
         let mut commands = commands.entity(ent);

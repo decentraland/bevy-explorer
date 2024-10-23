@@ -51,9 +51,21 @@ pub struct SceneBound {
 }
 
 impl SceneBound {
-    pub fn new(bounds: Vec4, distance: f32) -> Self {
+    pub fn new(bounds: Vec<BoundRegion>, distance: f32) -> Self {
+        if bounds.len() > 8 {
+            warn!("super janky scene shape not supported");
+        }
+        let num_bounds = bounds.len() as u32;
+        let bounds: [BoundRegion; 8] = bounds
+            .into_iter()
+            .chain(std::iter::repeat(Default::default()))
+            .take(8)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
         Self {
             data: SceneBoundData {
+                num_bounds,
                 bounds,
                 distance,
                 flags: 0,
@@ -61,15 +73,25 @@ impl SceneBound {
         }
     }
 
+    pub fn new_outlined(bounds: Vec<BoundRegion>, distance: f32, force_outline: bool) -> Self {
+        Self {
+            data: SceneBoundData {
+                flags: SCENE_MATERIAL_OUTLINE
+                    + if force_outline {
+                        SCENE_MATERIAL_OUTLINE_FORCE
+                    } else {
+                        0
+                    },
+                ..Self::new(bounds, distance).data
+            },
+        }
+    }
+
     pub fn unbounded_outlined(force_outline: bool) -> Self {
         Self {
             data: SceneBoundData {
-                bounds: Vec4::new(
-                    f32::NEG_INFINITY,
-                    f32::NEG_INFINITY,
-                    f32::INFINITY,
-                    f32::INFINITY,
-                ),
+                num_bounds: 0,
+                bounds: Default::default(),
                 distance: 0.0,
                 flags: SCENE_MATERIAL_OUTLINE
                     + if force_outline {
@@ -82,11 +104,31 @@ impl SceneBound {
     }
 }
 
+#[derive(ShaderType, Clone, Debug, Default)]
+pub struct BoundRegion {
+    pub min: u32, // 2x i16
+    pub max: u32, // 2x i16
+    pub height: f32,
+    _padding0: u32,
+}
+
+impl BoundRegion {
+    pub fn new(min: IVec2, max: IVec2, parcel_count: usize) -> Self {
+        Self {
+            min: (min.x as i16 as u16 as u32) << 16 | (-(max.y + 1) as i16 as u16 as u32),
+            max: ((max.x + 1) as i16 as u16 as u32) << 16 | (-min.y as i16 as u16 as u32),
+            height: f32::log2(parcel_count as f32 + 1.0) * 20.0,
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(ShaderType, Clone)]
 pub struct SceneBoundData {
-    pub bounds: Vec4,
+    bounds: [BoundRegion; 8],
     pub distance: f32,
     pub flags: u32,
+    pub num_bounds: u32,
 }
 
 impl MaterialExtension for SceneBound {

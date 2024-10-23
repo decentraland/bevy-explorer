@@ -46,18 +46,21 @@ impl Plugin for Ui9SlicePlugin {
     }
 }
 
+#[derive(Component)]
+struct Retry9Slice;
+
 #[allow(clippy::type_complexity)]
 fn update_slices(
     mut commands: Commands,
     images: Res<Assets<Image>>,
-    mut new_slices: Query<
-        (
-            Entity,
-            &Node,
-            &mut Ui9Slice,
-            Option<&Handle<NineSliceMaterial>>,
-        ),
-        Or<(Changed<Ui9Slice>, Added<Ui9Slice>, Changed<Node>)>,
+    new_slices: Query<
+        (Entity, &Node, &Ui9Slice, Option<&Handle<NineSliceMaterial>>),
+        Or<(
+            Changed<Ui9Slice>,
+            Added<Ui9Slice>,
+            Changed<Node>,
+            With<Retry9Slice>,
+        )>,
     >,
     mut removed: RemovedComponents<Ui9Slice>,
     mut mats: ResMut<Assets<NineSliceMaterial>>,
@@ -69,11 +72,12 @@ fn update_slices(
         }
     }
 
-    for (ent, node, mut slice, maybe_material) in new_slices.iter_mut() {
+    for (ent, node, slice, maybe_material) in new_slices.iter() {
         let Some(image_size) = images.get(&slice.image).map(Image::size_f32) else {
-            slice.set_changed();
+            commands.entity(ent).insert(Retry9Slice);
             continue;
         };
+        commands.entity(ent).remove::<Retry9Slice>();
 
         let new_mat = NineSliceMaterial {
             image: slice.image.clone(),
@@ -195,8 +199,10 @@ impl DuiTemplate for Ui9SliceTemplate {
             NodeBundle {
                 style: Style {
                     position_type: PositionType::Absolute,
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
+                    top: Val::Px(0.0),
+                    right: Val::Px(0.0),
+                    left: Val::Px(0.0),
+                    bottom: Val::Px(0.0),
                     ..Default::default()
                 },
                 ..Default::default()

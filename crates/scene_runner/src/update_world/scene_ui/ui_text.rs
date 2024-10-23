@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use dcl_component::proto_components::sdk::components::{self, PbUiText};
 
-use crate::update_world::text_shape::make_text_section;
+use crate::{update_world::text_shape::make_text_section, SceneEntity};
 use common::util::TryPushChildrenEx;
 
 use super::{UiLink, UiTransform};
@@ -68,7 +68,10 @@ pub struct UiTextMarker;
 
 pub fn set_ui_text(
     mut commands: Commands,
-    texts: Query<(&UiText, &UiTransform, &UiLink), Or<(Changed<UiText>, Changed<UiLink>)>>,
+    texts: Query<
+        (&SceneEntity, &UiText, &UiTransform, &UiLink),
+        Or<(Changed<UiText>, Changed<UiLink>)>,
+    >,
     mut removed: RemovedComponents<UiText>,
     links: Query<&UiLink>,
     children: Query<&Children>,
@@ -88,7 +91,9 @@ pub fn set_ui_text(
         }
     }
 
-    for (ui_text, ui_transform, link) in texts.iter() {
+    for (scene_ent, ui_text, ui_transform, link) in texts.iter() {
+        debug!("{} added text {:?}", scene_ent.id, ui_text);
+
         // remove old text
         if let Ok(children) = children.get(link.ui_entity) {
             for child in children.iter().filter(|c| prev_texts.get(**c).is_ok()) {
@@ -132,6 +137,7 @@ pub fn set_ui_text(
         let inner_style = if any_axis_specified {
             Style {
                 position_type: PositionType::Relative,
+                margin: UiRect::all(Val::Px(ui_text.font_size * 0.5)),
                 ..Default::default()
             }
         } else {
