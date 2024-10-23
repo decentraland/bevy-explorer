@@ -504,10 +504,7 @@ fn update_tracker(
     }
 
     commands
-        .entity(entities.named("labels"))
-        .despawn_descendants();
-    commands
-        .entity(entities.named("values"))
+        .entity(entities.named("content"))
         .despawn_descendants();
 
     if !tracker.0 {
@@ -586,19 +583,13 @@ fn update_tracker(
 
     for (key, value) in display_data {
         commands
-            .entity(entities.named("labels"))
+            .entity(entities.named("content"))
             .spawn_template(
                 &dui,
                 "tracker-item",
-                DuiProps::new().with_prop("label", key.to_string()),
-            )
-            .unwrap();
-        commands
-            .entity(entities.named("values"))
-            .spawn_template(
-                &dui,
-                "tracker-item",
-                DuiProps::new().with_prop("label", format!("{}", value)),
+                DuiProps::new()
+                    .with_prop("label", key.to_string())
+                    .with_prop("value", format!("{}", value)),
             )
             .unwrap();
     }
