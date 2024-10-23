@@ -12,19 +12,25 @@
 @group(0) @binding(1) var<uniform> globals: Globals;
 
 struct Bounds {
-    min: vec2<f32>,
-    max: vec2<f32>,
+    min: u32,
+    max: u32,
     height: f32,
-    _padding0: f32,
-    _padding1: f32,
-    _padding2: f32,
+    _padding0: u32,
 }
 
 struct SceneBounds {
+    bounds: array<Bounds,8>,
     distance: f32,
     flags: u32,
     num_bounds: u32,
-    bounds: array<Bounds,10>,
+}
+
+fn unpack_bounds(packed: u32) -> vec2<f32> {
+    let x = i32((packed >> 16) & 0xFFFF);
+    let x_signed = select(x, x - 0x10000, (x & 0x8000) != 0);
+    let y = i32(packed & 0xFFFF);
+    let y_signed = select(y, y - 0x10000, (y & 0x8000) != 0);
+    return vec2<f32>(f32((x_signed) * 16), f32((y_signed) * 16));
 }
 
 @group(2) @binding(100)
@@ -77,7 +83,10 @@ fn fragment(
     var nearest_region_height: f32 = 9999.0;
     if bounds.num_bounds > 0 {
         for (var ix = 0u; ix < bounds.num_bounds; ix += 1u) {
-            let outside_xy = abs(clamp(world_position.xz, bounds.bounds[ix].min, bounds.bounds[ix].max) - world_position.xz);
+            let min_wp = unpack_bounds(bounds.bounds[ix].min);
+            let max_wp = unpack_bounds(bounds.bounds[ix].max);
+
+            let outside_xy = abs(clamp(world_position.xz, min_wp, max_wp) - world_position.xz);
             let distance = max(outside_xy.x, outside_xy.y);
             if distance < nearest_region_distance {
                 nearest_region_distance = distance;
@@ -90,7 +99,7 @@ fn fragment(
     } else {
         outside_amt = 0.0;
     }
-    
+
     var noise = 0.0;
     if outside_amt > 0.0 {
         if outside_amt < bounds.distance {

@@ -52,11 +52,14 @@ pub struct SceneBound {
 
 impl SceneBound {
     pub fn new(bounds: Vec<BoundRegion>, distance: f32) -> Self {
+        if bounds.len() > 8 {
+            warn!("super janky scene shape not supported");
+        }
         let num_bounds = bounds.len() as u32;
-        let bounds: [BoundRegion; 10] = bounds
+        let bounds: [BoundRegion; 8] = bounds
             .into_iter()
             .chain(std::iter::repeat(Default::default()))
-            .take(10)
+            .take(8)
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
@@ -89,19 +92,17 @@ impl SceneBound {
 
 #[derive(ShaderType, Clone, Debug, Default)]
 pub struct BoundRegion {
-    pub min: Vec2,
-    pub max: Vec2,
+    pub min: u32, // 2x i16
+    pub max: u32, // 2x i16
     pub height: f32,
-    pub _padding0: f32,
-    pub _padding1: f32,
-    pub _padding2: f32,
+    _padding0: u32,
 }
 
 impl BoundRegion {
     pub fn new(min: IVec2, max: IVec2, parcel_count: usize) -> Self {
         Self {
-            min: IVec2::new(min.x * 16, -(max.y + 1) * 16).as_vec2(),
-            max: IVec2::new((max.x + 1) * 16, -min.y * 16).as_vec2(),
+            min: (min.x as i16 as u16 as u32) << 16 | (-(max.y + 1) as i16 as u16 as u32),
+            max: ((max.x + 1) as i16 as u16 as u32) << 16 | (-min.y as i16 as u16 as u32),
             height: f32::log2(parcel_count as f32 + 1.0) * 20.0,
             ..Default::default()
         }
@@ -110,10 +111,10 @@ impl BoundRegion {
 
 #[derive(ShaderType, Clone)]
 pub struct SceneBoundData {
+    bounds: [BoundRegion; 8],
     pub distance: f32,
     pub flags: u32,
     pub num_bounds: u32,
-    bounds: [BoundRegion; 10],
 }
 
 impl MaterialExtension for SceneBound {
