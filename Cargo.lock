@@ -6976,6 +6976,7 @@ dependencies = [
  "num",
  "once_cell",
  "resvg",
+ "scene_material",
  "scene_runner",
  "serde",
  "serde_json",

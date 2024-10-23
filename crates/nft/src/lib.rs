@@ -8,9 +8,10 @@ use bevy::{
     asset::LoadState,
     gltf::Gltf,
     prelude::*,
+    scene::InstanceId,
     utils::{HashMap, HashSet},
 };
-use common::{sets::SceneSets, util::TryPushChildrenEx};
+use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::sdk::components::{NftFrameType, PbNftShape},
@@ -19,7 +20,10 @@ use dcl_component::{
 use extended_image_loader::ExtendedImageLoader;
 use ipfs::ipfs_path::IpfsPath;
 use once_cell::sync::Lazy;
-use scene_runner::update_world::AddCrdtInterfaceExt;
+use scene_material::{SceneBound, SceneMaterial};
+use scene_runner::{
+    renderer_context::RendererSceneContext, update_world::AddCrdtInterfaceExt, SceneEntity,
+};
 
 pub struct NftShapePlugin;
 
@@ -34,7 +38,14 @@ impl Plugin for NftShapePlugin {
         );
         app.add_systems(
             Update,
-            (update_nft_shapes, load_frame, load_nft, resize_nft).in_set(SceneSets::PostLoop),
+            (
+                update_nft_shapes,
+                load_frame,
+                process_frame,
+                load_nft,
+                resize_nft,
+            )
+                .in_set(SceneSets::PostLoop),
         );
     }
 
@@ -60,7 +71,7 @@ pub struct RetryNftShape;
 
 fn update_nft_shapes(
     mut commands: Commands,
-    query: Query<(Entity, &NftShape), Changed<NftShape>>,
+    query: Query<(Entity, &NftShape, &SceneEntity), Changed<NftShape>>,
     existing: Query<(Entity, &Parent), With<NftShapeMarker>>,
     mut removed: RemovedComponents<NftShape>,
     asset_server: Res<AssetServer>,
@@ -78,7 +89,7 @@ fn update_nft_shapes(
     }
 
     // add new nodes
-    for (ent, nft_shape) in query.iter() {
+    for (ent, nft_shape, scene_ent) in query.iter() {
         // spawn parent
         let nft_ent = commands
             .spawn((
@@ -90,7 +101,11 @@ fn update_nft_shapes(
             ))
             .with_children(|c| {
                 // spawn frame
-                c.spawn((SpatialBundle::default(), FrameLoading(nft_shape.0.style())));
+                c.spawn((
+                    SpatialBundle::default(),
+                    FrameLoading(nft_shape.0.style()),
+                    scene_ent.clone(),
+                ));
 
                 // spawn content
                 c.spawn((
@@ -109,6 +124,9 @@ fn update_nft_shapes(
 
 #[derive(Component)]
 pub struct FrameLoading(NftFrameType);
+
+#[derive(Component)]
+pub struct FrameProcess(InstanceId);
 
 fn load_frame(
     mut commands: Commands,
@@ -142,27 +160,68 @@ fn load_frame(
             })
             .id();
 
-        scene_spawner.spawn_as_child(gltf.default_scene.clone().unwrap(), child);
+        let instance = scene_spawner.spawn_as_child(gltf.default_scene.clone().unwrap(), child);
         commands
             .entity(ent)
             .remove::<FrameLoading>()
+            .insert(FrameProcess(instance))
             .try_push_children(&[child]);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_frame(
+    mut commands: Commands,
+    q: Query<(Entity, &FrameProcess, &SceneEntity)>,
+    scene_spawner: Res<SceneSpawner>,
+    mat_nodes: Query<&Handle<StandardMaterial>>,
+    mats: ResMut<Assets<StandardMaterial>>,
+    mut new_mats: ResMut<Assets<SceneMaterial>>,
+    scenes: Query<&RendererSceneContext>,
+    config: Res<AppConfig>,
+) {
+    for (ent, frame, scene_ent) in q.iter() {
+        if scene_spawner.instance_is_ready(frame.0) {
+            commands.entity(ent).remove::<FrameProcess>();
+            let Ok(bounds) = scenes.get(scene_ent.root).map(|ctx| ctx.bounds.clone()) else {
+                continue;
+            };
+            for spawned_ent in scene_spawner.iter_instance_entities(frame.0) {
+                println!("swapped");
+                if let Some(mat) = mat_nodes
+                    .get(spawned_ent)
+                    .ok()
+                    .and_then(|h_mat| mats.get(h_mat))
+                {
+                    commands
+                        .entity(spawned_ent)
+                        .remove::<Handle<StandardMaterial>>()
+                        .insert(new_mats.add(SceneMaterial {
+                            base: mat.clone(),
+                            extension: SceneBound::new(bounds.clone(), config.graphics.oob),
+                        }));
+                }
+            }
+        }
     }
 }
 
 #[derive(Component)]
 pub struct NftLoading(Handle<Nft>);
 
+#[allow(clippy::too_many_arguments)]
 fn load_nft(
     mut commands: Commands,
-    q: Query<(Entity, &NftLoading)>,
+    q: Query<(Entity, &SceneEntity, &NftLoading)>,
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<SceneMaterial>>,
     mut mesh: Local<Option<Handle<Mesh>>>,
+    scenes: Query<&RendererSceneContext>,
     nfts: Res<Assets<Nft>>,
+    config: Res<AppConfig>,
 ) {
-    for (ent, nft) in q.iter() {
+    for (ent, scene_ent, nft) in q.iter() {
         let Some(nft) = nfts.get(nft.0.id()) else {
             if let LoadState::Failed(_) = asset_server.load_state(nft.0.id()) {
                 debug!("nft failed");
@@ -178,17 +237,25 @@ fn load_nft(
         let ipfs_path = IpfsPath::new_from_url(url, "image");
         let h_image = asset_server.load(PathBuf::from(&ipfs_path));
 
+        // get bounds
+        let Ok(bounds) = scenes.get(scene_ent.root).map(|ctx| ctx.bounds.clone()) else {
+            continue;
+        };
+
         commands
             .entity(ent)
             .try_insert((
-                PbrBundle {
+                MaterialMeshBundle {
                     transform: Transform::from_translation(Vec3::Z * 0.03),
                     mesh: mesh
                         .get_or_insert_with(|| meshes.add(Rectangle::default()))
                         .clone(),
-                    material: materials.add(StandardMaterial {
-                        base_color_texture: Some(h_image.clone()),
-                        ..Default::default()
+                    material: materials.add(SceneMaterial {
+                        base: StandardMaterial {
+                            base_color_texture: Some(h_image.clone()),
+                            ..Default::default()
+                        },
+                        extension: SceneBound::new(bounds, config.graphics.oob),
                     }),
                     ..Default::default()
                 },
