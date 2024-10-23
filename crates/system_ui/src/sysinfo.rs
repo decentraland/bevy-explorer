@@ -582,14 +582,13 @@ fn update_tracker(
     let textures = visible_mats
         .iter()
         .flat_map(|h| materials.get(h.id()))
-        .map(|mat| {
+        .flat_map(|mat| {
             mat.base
                 .base_color_texture
                 .iter()
                 .chain(mat.base.emissive_texture.as_ref())
                 .chain(mat.base.normal_map_texture.as_ref())
         })
-        .flatten()
         .collect::<HashSet<_>>();
 
     display_data.push(("Total Texture Count", textures.len()));
