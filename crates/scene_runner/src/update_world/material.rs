@@ -432,9 +432,9 @@ fn update_materials(
             }
         }
 
-        let (bounds, height) = scenes
+        let bounds = scenes
             .get(container.root)
-            .map(|c| (c.bounds, c.height))
+            .map(|c| c.bounds.clone())
             .unwrap_or_default();
 
         let mut commands = commands.entity(ent);
@@ -452,7 +452,7 @@ fn update_materials(
                         .or(base.and_then(|b| b.material.normal_map_texture.clone())),
                     ..defn.material.clone()
                 },
-                extension: SceneBound::new(bounds, height, config.graphics.oob),
+                extension: SceneBound::new(bounds, config.graphics.oob),
             }),
         );
         if defn.shadow_caster {

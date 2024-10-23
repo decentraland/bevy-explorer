@@ -48,6 +48,7 @@ use self::{
 };
 
 pub mod automatic_testing;
+pub mod bounds_calc;
 pub mod gltf_resolver;
 pub mod initialize_scene;
 pub mod permissions;

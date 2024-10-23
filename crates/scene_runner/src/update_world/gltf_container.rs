@@ -628,8 +628,7 @@ fn update_ready_gltfs(
                             let h_scene_material = bound_mats.add(ExtendedMaterial {
                                 base: base.clone(),
                                 extension: SceneBound::new(
-                                    context.bounds,
-                                    context.height,
+                                    context.bounds.clone(),
                                     config.graphics.oob,
                                 ),
                             });

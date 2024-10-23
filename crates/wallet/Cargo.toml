@@ -31,5 +31,4 @@ async-trait = { workspace = true }
 async-tungstenite = { workspace = true }
 futures-util = { workspace = true }
 async-tls = { workspace = true }
-
-rand = "0.8.5"
+rand = { workspace = true }

@@ -17,7 +17,7 @@ use bevy::{
     utils::HashMap,
 };
 use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
-use scene_material::{SceneBound, SceneMaterial};
+use scene_material::{BoundRegion, SceneBound, SceneMaterial};
 
 pub struct WorldUiPlugin;
 
@@ -41,8 +41,7 @@ pub struct WorldUi {
     pub valign: f32,
     pub halign: f32,
     pub add_y_pix: f32,
-    pub bounds: Vec4,
-    pub height: f32,
+    pub bounds: Vec<BoundRegion>,
     pub view: Entity,
     pub ui_node: Entity,
 }
@@ -125,7 +124,7 @@ pub fn add_worldui_materials(
                     alpha_mode: AlphaMode::Blend,
                     ..Default::default()
                 },
-                extension: SceneBound::new(wui.bounds, wui.height, config.graphics.oob),
+                extension: SceneBound::new(wui.bounds.clone(), config.graphics.oob),
             },
             extension: TextQuad {
                 data: material_data,
