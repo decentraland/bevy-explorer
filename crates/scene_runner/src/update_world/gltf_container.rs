@@ -649,7 +649,7 @@ fn update_ready_gltfs(
                     // process collider
                     let mut collider_base_name = maybe_name
                         .map(Name::as_str)
-                        .filter(|name| name.contains("_collider"));
+                        .filter(|name| name.to_ascii_lowercase().contains("_collider"));
 
                     if collider_base_name.is_none() {
                         // check parent name also
@@ -658,7 +658,7 @@ fn update_ready_gltfs(
                             .ok()
                             .and_then(|(name, ..)| name)
                             .map(|name| name.as_str())
-                            .filter(|name| name.contains("_collider"))
+                            .filter(|name| name.to_ascii_lowercase().contains("_collider"))
                     }
                     let is_collider = collider_base_name.is_some();
 
