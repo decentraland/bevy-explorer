@@ -74,11 +74,9 @@ pub fn scene_regions(parcels: impl Iterator<Item = IVec2>) -> Vec<Region> {
 
             // gather horizontal
             loop {
-                let next_col = (0..=extent.y)
-                    .map(|y| rect_base + IVec2::new(extent.x + 1, y))
-                    .collect::<Vec<_>>();
-                if next_col.iter().all(|p| region.contains(p)) {
-                    for p in next_col {
+                let next_col = || (0..=extent.y).map(|y| rect_base + IVec2::new(extent.x + 1, y));
+                if next_col().all(|p| region.contains(&p)) {
+                    for p in next_col() {
                         region.remove(&p);
                     }
                     extent.x += 1;
