@@ -66,8 +66,20 @@ macro_rules! val {
         match $pb.$u() {
             YgUnit::YguUndefined => $d,
             YgUnit::YguAuto => Val::Auto,
-            YgUnit::YguPoint => Val::Px($pb.$v),
-            YgUnit::YguPercent => Val::Percent($pb.$v),
+            YgUnit::YguPoint => {
+                if $pb.$v.is_nan() {
+                    $d
+                } else {
+                    Val::Px($pb.$v)
+                }
+            }
+            YgUnit::YguPercent => {
+                if $pb.$v.is_nan() {
+                    $d
+                } else {
+                    Val::Percent($pb.$v)
+                }
+            }
         }
     };
 }
@@ -87,8 +99,12 @@ macro_rules! maybe_val {
         match $pb.$u() {
             YgUnit::YguUndefined => None,
             YgUnit::YguAuto => Some(Val::Auto),
-            YgUnit::YguPoint => Some(Val::Px($pb.$v)),
-            YgUnit::YguPercent => Some(Val::Percent($pb.$v)),
+            YgUnit::YguPoint => Some(if $pb.$v.is_nan() { $d } else { Val::Px($pb.$v) }),
+            YgUnit::YguPercent => Some(if $pb.$v.is_nan() {
+                $d
+            } else {
+                Val::Percent($pb.$v)
+            }),
         }
     };
 }
