@@ -164,7 +164,7 @@ fn load_frame(
         commands
             .entity(ent)
             .remove::<FrameLoading>()
-            .insert(FrameProcess(instance))
+            .try_insert(FrameProcess(instance))
             .try_push_children(&[child]);
     }
 }
@@ -195,7 +195,7 @@ fn process_frame(
                     commands
                         .entity(spawned_ent)
                         .remove::<Handle<StandardMaterial>>()
-                        .insert(new_mats.add(SceneMaterial {
+                        .try_insert(new_mats.add(SceneMaterial {
                             base: mat.clone(),
                             extension: SceneBound::new(bounds.clone(), config.graphics.oob),
                         }));
