@@ -166,7 +166,10 @@ fn update_audio(
                                 warn!("seek error: {}", err);
                             }
                         } else {
-                            warn!("ignoring ridiculous time offset {} for audio clip `{}`", time, audio_source.0.audio_clip_url);
+                            warn!(
+                                "ignoring ridiculous time offset {} for audio clip `{}`",
+                                time, audio_source.0.audio_clip_url
+                            );
                         }
                     }
                 }
@@ -184,7 +187,10 @@ fn update_audio(
                         if time < 1e6 {
                             new_instance.start_from(time as f64);
                         } else {
-                            warn!("ignoring ridiculous start time {} for audio clip `{}`", time, audio_source.0.audio_clip_url);
+                            warn!(
+                                "ignoring ridiculous start time {} for audio clip `{}`",
+                                time, audio_source.0.audio_clip_url
+                            );
                         }
                     }
 
