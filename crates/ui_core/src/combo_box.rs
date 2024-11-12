@@ -277,7 +277,9 @@ fn update_comboboxen(
                                 On::<Defocus>::new(close_ui_silent),
                                 On::<Click>::new(move |mut commands: Commands| {
                                     debug!("selected {ix:?}");
-                                    commands.entity(popup.root).despawn_recursive();
+                                    if let Some(commands) = commands.get_entity(popup.root) {
+                                        commands.despawn_recursive();
+                                    }
                                     let Some(mut commands) = commands.get_entity(ent) else {
                                         warn!("no combo");
                                         return;
