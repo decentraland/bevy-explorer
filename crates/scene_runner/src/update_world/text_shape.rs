@@ -691,6 +691,8 @@ pub fn make_text_section(
                     _ => warn!("unrecognised text tag `{tag}`"),
                 }
                 section_start = section_start + close + 1;
+            } else {
+                break;
             }
         }
 
@@ -713,7 +715,7 @@ pub fn make_text_section(
         let section_end = text[section_start..]
             .char_indices()
             .find(|(_, c)| *c == '<')
-            .map(|(ix, _)| section_start + ix)
+            .map(|(ix, _)| section_start + ix.max(1))
             .unwrap_or(usize::MAX);
 
         let style = TextStyle {

@@ -1,7 +1,6 @@
 use anyhow::anyhow;
 use bevy::{
     log::{debug, warn},
-    tasks::IoTaskPool,
     utils::{HashMap, HashSet},
 };
 use common::util::AsH160;
@@ -128,9 +127,8 @@ impl SocialClientHandler {
         let (event_sx, event_rx) = mpsc::unbounded_channel();
         let (response_sx, response_rx) = mpsc::unbounded_channel();
 
-        IoTaskPool::get()
-            .spawn(social_socket_handler(wallet, event_rx, response_sx))
-            .detach();
+        std::thread::spawn(move || social_socket_handler(wallet, event_rx, response_sx));
+
         Some(Self {
             is_initialized: false,
             sender: event_sx,
@@ -336,7 +334,7 @@ impl SocialClientHandler {
     }
 }
 
-async fn social_socket_handler(
+fn social_socket_handler(
     wallet: wallet::Wallet,
     event_rx: UnboundedReceiver<FriendshipOutbound>,
     response_sx: UnboundedSender<FriendData>,

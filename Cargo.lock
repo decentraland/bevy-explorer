@@ -866,7 +866,7 @@ dependencies = [
 [[package]]
 name = "bevy"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_internal",
 ]
@@ -874,7 +874,7 @@ dependencies = [
 [[package]]
 name = "bevy_a11y"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "accesskit",
  "bevy_app",
@@ -885,7 +885,7 @@ dependencies = [
 [[package]]
 name = "bevy_animation"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -914,7 +914,7 @@ dependencies = [
 [[package]]
 name = "bevy_app"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_derive",
  "bevy_ecs",
@@ -931,7 +931,7 @@ dependencies = [
 [[package]]
 name = "bevy_asset"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "async-broadcast",
  "async-fs",
@@ -963,7 +963,7 @@ dependencies = [
 [[package]]
 name = "bevy_asset_macros"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_macro_utils 0.14.1",
  "proc-macro2",
@@ -996,7 +996,7 @@ dependencies = [
 [[package]]
 name = "bevy_audio"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1014,7 +1014,7 @@ dependencies = [
 [[package]]
 name = "bevy_color"
 version = "0.14.2"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_math",
  "bevy_reflect",
@@ -1051,7 +1051,7 @@ dependencies = [
 [[package]]
 name = "bevy_core"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1064,7 +1064,7 @@ dependencies = [
 [[package]]
 name = "bevy_core_pipeline"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1088,7 +1088,7 @@ dependencies = [
 [[package]]
 name = "bevy_derive"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_macro_utils 0.14.1",
  "quote",
@@ -1098,7 +1098,7 @@ dependencies = [
 [[package]]
 name = "bevy_diagnostic"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_core",
@@ -1124,7 +1124,7 @@ dependencies = [
 [[package]]
 name = "bevy_ecs"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "arrayvec",
  "bevy_ecs_macros",
@@ -1144,7 +1144,7 @@ dependencies = [
 [[package]]
 name = "bevy_ecs_macros"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_macro_utils 0.14.1",
  "proc-macro2",
@@ -1189,7 +1189,7 @@ dependencies = [
 [[package]]
 name = "bevy_encase_derive"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_macro_utils 0.14.1",
  "encase_derive_impl",
@@ -1198,7 +1198,7 @@ dependencies = [
 [[package]]
 name = "bevy_gilrs"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1212,7 +1212,7 @@ dependencies = [
 [[package]]
 name = "bevy_gizmos"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1234,7 +1234,7 @@ dependencies = [
 [[package]]
 name = "bevy_gizmos_macros"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_macro_utils 0.14.1",
  "proc-macro2",
@@ -1245,7 +1245,7 @@ dependencies = [
 [[package]]
 name = "bevy_gltf"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "base64 0.22.1",
  "bevy_animation",
@@ -1275,7 +1275,7 @@ dependencies = [
 [[package]]
 name = "bevy_hierarchy"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_core",
@@ -1288,7 +1288,7 @@ dependencies = [
 [[package]]
 name = "bevy_input"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1302,7 +1302,7 @@ dependencies = [
 [[package]]
 name = "bevy_internal"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_a11y",
  "bevy_animation",
@@ -1355,7 +1355,7 @@ dependencies = [
 [[package]]
 name = "bevy_log"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "android_log-sys",
  "bevy_app",
@@ -1371,7 +1371,7 @@ dependencies = [
 [[package]]
 name = "bevy_macro_utils"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1394,7 +1394,7 @@ dependencies = [
 [[package]]
 name = "bevy_math"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_reflect",
  "glam 0.27.0",
@@ -1407,7 +1407,7 @@ dependencies = [
 [[package]]
 name = "bevy_mikktspace"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "glam 0.27.0",
 ]
@@ -1415,7 +1415,7 @@ dependencies = [
 [[package]]
 name = "bevy_pbr"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1441,12 +1441,12 @@ dependencies = [
 [[package]]
 name = "bevy_ptr"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 
 [[package]]
 name = "bevy_reflect"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_ptr",
  "bevy_reflect_derive",
@@ -1465,7 +1465,7 @@ dependencies = [
 [[package]]
 name = "bevy_reflect_derive"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_macro_utils 0.14.1",
  "proc-macro2",
@@ -1477,7 +1477,7 @@ dependencies = [
 [[package]]
 name = "bevy_render"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "async-channel 2.3.1",
  "bevy_app",
@@ -1525,7 +1525,7 @@ dependencies = [
 [[package]]
 name = "bevy_render_macros"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_macro_utils 0.14.1",
  "proc-macro2",
@@ -1536,7 +1536,7 @@ dependencies = [
 [[package]]
 name = "bevy_scene"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1565,7 +1565,7 @@ dependencies = [
 [[package]]
 name = "bevy_sprite"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1590,7 +1590,7 @@ dependencies = [
 [[package]]
 name = "bevy_state"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1603,7 +1603,7 @@ dependencies = [
 [[package]]
 name = "bevy_state_macros"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_macro_utils 0.14.1",
  "proc-macro2",
@@ -1614,7 +1614,7 @@ dependencies = [
 [[package]]
 name = "bevy_tasks"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "async-channel 2.3.1",
  "async-executor",
@@ -1626,7 +1626,7 @@ dependencies = [
 [[package]]
 name = "bevy_text"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1650,7 +1650,7 @@ dependencies = [
 [[package]]
 name = "bevy_time"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1663,7 +1663,7 @@ dependencies = [
 [[package]]
 name = "bevy_transform"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1676,7 +1676,7 @@ dependencies = [
 [[package]]
 name = "bevy_ui"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_a11y",
  "bevy_app",
@@ -1705,7 +1705,7 @@ dependencies = [
 [[package]]
 name = "bevy_utils"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "ahash",
  "bevy_utils_proc_macros",
@@ -1719,7 +1719,7 @@ dependencies = [
 [[package]]
 name = "bevy_utils_proc_macros"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1729,7 +1729,7 @@ dependencies = [
 [[package]]
 name = "bevy_window"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "bevy_a11y",
  "bevy_app",
@@ -1744,7 +1744,7 @@ dependencies = [
 [[package]]
 name = "bevy_winit"
 version = "0.14.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#5cd52a4e31c9561926b98bb404db3e81db6bccc2"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.14-dcl-cosmic-noimage#4cc52109337b58b36eebd4c453890754916386dc"
 dependencies = [
  "accesskit_winit",
  "approx",

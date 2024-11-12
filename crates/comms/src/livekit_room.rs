@@ -3,11 +3,7 @@
 use std::sync::Arc;
 
 use async_tungstenite::tungstenite::http::Uri;
-use bevy::{
-    prelude::*,
-    tasks::{IoTaskPool, Task},
-    utils::HashMap,
-};
+use bevy::{prelude::*, utils::HashMap};
 use futures_lite::StreamExt;
 use livekit::{
     id::TrackSid,
@@ -62,7 +58,7 @@ pub struct LivekitTransport {
 }
 
 #[derive(Component)]
-pub struct LivekitConnection(pub Task<()>);
+pub struct LivekitConnection;
 
 pub fn start_livekit(
     mut commands: Commands,
@@ -116,20 +112,17 @@ fn connect_livekit(
         let receiver = new_transport.receiver.take().unwrap();
         let sender = player_state.get_sender();
 
-        let task = IoTaskPool::get().spawn(livekit_handler(
-            transport_id,
-            remote_address,
-            receiver,
-            sender,
-            mic.subscribe(),
-        ));
-        commands
-            .entity(transport_id)
-            .try_insert(LivekitConnection(task));
+        let subscription = mic.subscribe();
+
+        std::thread::spawn(move || {
+            livekit_handler(transport_id, remote_address, receiver, sender, subscription)
+        });
+
+        commands.entity(transport_id).try_insert(LivekitConnection);
     }
 }
 
-async fn livekit_handler(
+fn livekit_handler(
     transport_id: Entity,
     remote_address: String,
     receiver: Receiver<NetworkMessage>,
@@ -145,12 +138,10 @@ async fn livekit_handler(
             receiver.clone(),
             sender.clone(),
             mic.resubscribe(),
-        )
-        .await
-        {
+        ) {
             warn!("livekit error: {e}");
         }
-        if receiver.lock().await.is_closed() {
+        if receiver.blocking_lock().is_closed() {
             // caller closed the channel
             return;
         }
@@ -158,7 +149,7 @@ async fn livekit_handler(
     }
 }
 
-async fn livekit_handler_inner(
+fn livekit_handler_inner(
     transport_id: Entity,
     remote_address: &str,
     app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,

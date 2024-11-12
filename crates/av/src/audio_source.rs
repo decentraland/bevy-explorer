@@ -113,6 +113,7 @@ fn update_audio(
                     continue;
                 };
 
+                error!("clip {:?}", audio_source.0);
                 new_state = Some(AudioSourceState {
                     handle,
                     clip_url: audio_source.0.audio_clip_url.clone(),
@@ -160,8 +161,15 @@ fn update_audio(
                     );
                     playing_instance.set_playback_rate(playback_rate, AudioTween::default());
                     if let Some(time) = audio_source.0.current_time {
-                        if let Some(err) = playing_instance.seek_to(time as f64) {
-                            warn!("seek error: {}", err);
+                        if time < 1e6 {
+                            if let Some(err) = playing_instance.seek_to(time as f64) {
+                                warn!("seek error: {}", err);
+                            }
+                        } else {
+                            warn!(
+                                "ignoring ridiculous time offset {} for audio clip `{}`",
+                                time, audio_source.0.audio_clip_url
+                            );
                         }
                     }
                 }
@@ -176,7 +184,14 @@ fn update_audio(
                         new_instance.with_playback_rate(audio_source.0.pitch.unwrap_or(1.0) as f64);
 
                     if let Some(time) = audio_source.0.current_time {
-                        new_instance.start_from(time as f64);
+                        if time < 1e6 {
+                            new_instance.start_from(time as f64);
+                        } else {
+                            warn!(
+                                "ignoring ridiculous start time {} for audio clip `{}`",
+                                time, audio_source.0.audio_clip_url
+                            );
+                        }
                     }
 
                     commands.entity(ent).try_insert(AudioEmitter {
