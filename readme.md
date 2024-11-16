@@ -28,6 +28,7 @@ This project's goals are to:
       - `brew install ffmpeg@6 pkg-config`
       - `export PKG_CONFIG_PATH=/opt/homebrew/opt/ffmpeg@6/lib/pkgconfig`
     - on windows: 
+      - install `clang`, (most easily done via https://github.com/llvm/llvm-project/releases/)
       - download and unzip `https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-full_build-shared.7z`
       - set `LIBCLANG_PATH` = `path to LLVM\x64\bin` (this is packaged with visual studio, or can be downloaded separately)
       - set `FFMPEG_DIR` = `root folder where ffmpeg has been unzipped`

@@ -30,6 +30,7 @@ use dcl_component::{
     transform_and_parent::DclTransformAndParent,
     DclReader, DclWriter, FromDclReader, SceneComponentId, SceneEntityId,
 };
+use imposters::ImposterPlugin;
 use initialize_scene::{PortableScenes, TestingData};
 use ipfs::SceneIpfsLocation;
 use primary_entities::PrimaryEntities;
@@ -50,6 +51,7 @@ use self::{
 pub mod automatic_testing;
 pub mod bounds_calc;
 pub mod gltf_resolver;
+pub mod imposters;
 pub mod initialize_scene;
 pub mod permissions;
 pub mod primary_entities;
@@ -314,6 +316,7 @@ impl Plugin for SceneRunnerPlugin {
         app.add_plugins(SceneOutputPlugin);
         app.add_plugins(SceneUtilPlugin);
         app.add_plugins(LightsPlugin);
+        app.add_plugins(ImposterPlugin);
     }
 }
 

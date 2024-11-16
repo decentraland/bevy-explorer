@@ -69,6 +69,7 @@ pub struct SceneLifecyclePlugin;
 
 impl Plugin for SceneLifecyclePlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<CurrentImposterScene>();
         app.init_resource::<LiveScenes>();
         app.init_resource::<ScenePointers>();
         app.init_resource::<PortableScenes>();
@@ -286,7 +287,20 @@ pub(crate) fn load_scene_javascript(
         let bounds = regions
             .into_iter()
             .map(|region| BoundRegion::new(region.min, region.max, region.count))
-            .collect();
+            .collect::<Vec<_>>();
+
+        for bound in &bounds {
+            if bound.world_min().z > 10000.0 {
+                println!("wtf");
+                println!("parcels: {:?}", parcels);
+                for region in scene_regions(parcels.clone().into_iter()) {
+                    println!("region: {:?}", region);
+                }
+                println!("bound@: {:?}", bound);
+                println!("world_min: {:?}", bound.world_min());
+                panic!();
+            }
+        }
 
         // get main.crdt
         let maybe_serialized_crdt = match crdt {
@@ -606,7 +620,7 @@ pub enum PointerResult {
 }
 
 impl PointerResult {
-    fn hash_and_urn(&self) -> Option<(String, Option<String>)> {
+    pub fn hash_and_urn(&self) -> Option<(String, Option<String>)> {
         match self {
             PointerResult::Nothing { .. } => None,
             PointerResult::Exists { hash, urn, .. } => Some((hash.clone(), urn.clone())),
@@ -621,7 +635,7 @@ impl PointerResult {
     }
 }
 
-fn parcels_in_range(focus: &GlobalTransform, range: f32) -> Vec<(IVec2, f32)> {
+pub fn parcels_in_range(focus: &GlobalTransform, range: f32) -> Vec<(IVec2, f32)> {
     let focus = focus.translation().xz() * Vec2::new(1.0, -1.0);
 
     let min_point = focus - Vec2::splat(range);
@@ -732,16 +746,17 @@ fn load_active_entities(
             return;
         };
 
-        let required_parcels: HashSet<_> = parcels_in_range(focus, range.load)
-            .into_iter()
-            .filter_map(|(parcel, _)| match pointers.0.get(&parcel) {
-                Some(PointerResult::Exists { realm, .. })
-                | Some(PointerResult::Nothing { realm, .. }) => {
-                    (realm != &current_realm.address).then_some(parcel)
-                }
-                _ => Some(parcel),
-            })
-            .collect();
+        let required_parcels: HashSet<_> =
+            parcels_in_range(focus, range.load.max(range.load_imposter))
+                .into_iter()
+                .filter_map(|(parcel, _)| match pointers.0.get(&parcel) {
+                    Some(PointerResult::Exists { realm, .. })
+                    | Some(PointerResult::Nothing { realm, .. }) => {
+                        (realm != &current_realm.address).then_some(parcel)
+                    }
+                    _ => Some(parcel),
+                })
+                .collect();
 
         if !has_scene_urns {
             // load required pointers
@@ -876,6 +891,9 @@ fn load_active_entities(
     }
 }
 
+#[derive(Resource, Default)]
+pub struct CurrentImposterScene(pub Option<PointerResult>);
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_scene_lifecycle(
     mut commands: Commands,
@@ -891,6 +909,7 @@ pub fn process_scene_lifecycle(
     mut spawn: EventWriter<LoadSceneEvent>,
     pointers: Res<ScenePointers>,
     config: Res<AppConfig>,
+    imposter_scene: Res<CurrentImposterScene>,
 ) {
     let mut required_scene_ids: HashSet<(String, Option<String>)> = HashSet::default();
 
@@ -926,10 +945,18 @@ pub fn process_scene_lifecycle(
             .map(|(hash, source)| (hash.clone(), Some(source.pid.clone()))),
     );
 
+    // add imposter scene
+    required_scene_ids.extend(
+        imposter_scene
+            .0
+            .as_ref()
+            .and_then(PointerResult::hash_and_urn),
+    );
+
     // record additional optional scenes
     let mut keep_scene_ids = required_scene_ids.clone();
     keep_scene_ids.extend(pir.iter().flat_map(|(parcel, dist)| {
-        if *dist >= range.load {
+        if *dist >= range.load && *dist <= range.unload {
             pointers
                 .0
                 .get(parcel)
@@ -1043,6 +1070,7 @@ fn animate_ready_scene(
     preview: Res<PreviewMode>,
     mut handles: Local<Option<(Handle<Mesh>, Handle<StandardMaterial>)>>,
     asset_server: Res<AssetServer>,
+    current_imposter_scene: Res<CurrentImposterScene>,
 ) {
     if handles.is_none() {
         *handles = Some((
@@ -1060,6 +1088,16 @@ fn animate_ready_scene(
     }
 
     for (root, mut transform, ctx, children) in q.iter_mut() {
+        // skip animating imposters
+        if current_imposter_scene
+            .0
+            .as_ref()
+            .and_then(PointerResult::hash_and_urn)
+            .map_or(false, |(hash, _)| hash == ctx.hash)
+        {
+            continue;
+        }
+
         if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken) {
             if transform.translation.y == -1000.0 {
                 for child in children.map(|c| c.iter()).unwrap_or_default() {
@@ -1069,10 +1107,10 @@ fn animate_ready_scene(
                 }
             }
 
-            transform.translation.y *= 0.75;
-            if transform.translation.y > -0.01 {
-                transform.translation.y = 0.0;
-            }
+            // transform.translation.y *= 0.75;
+            // if transform.translation.y > -0.01 {
+            transform.translation.y = 0.0;
+            // }
         }
 
         if ctx.is_added() {

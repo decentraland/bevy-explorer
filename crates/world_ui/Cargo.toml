@@ -11,3 +11,4 @@ ui_core = { workspace = true }
 scene_material = { workspace = true }
 
 bevy = { workspace = true }
+boimp = { workspace = true }

@@ -16,6 +16,7 @@ use bevy::{
     ui::UiSystem,
     utils::HashMap,
 };
+use boimp::bake::{ImposterBakeMaterialExtension, ImposterMaterialPlugin, STANDARD_BAKE_HANDLE};
 use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
 use scene_material::{BoundRegion, SceneBound, SceneMaterial};
 
@@ -23,7 +24,10 @@ pub struct WorldUiPlugin;
 
 impl Plugin for WorldUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<TextShapeMaterial>::default());
+        app.add_plugins((
+            MaterialPlugin::<TextShapeMaterial>::default(),
+            ImposterMaterialPlugin::<TextShapeMaterial>::default(),
+        ));
         app.add_systems(Update, add_worldui_materials.in_set(SceneSets::PostLoop));
         app.add_systems(
             PostUpdate,
@@ -250,5 +254,11 @@ impl MaterialExtension for TextQuad {
 
     fn prepass_vertex_shader() -> ShaderRef {
         ShaderRef::Path("shaders/text_quad_vertex.wgsl".into())
+    }
+}
+
+impl ImposterBakeMaterialExtension for TextQuad {
+    fn imposter_fragment_shader() -> bevy::render::render_resource::ShaderRef {
+        STANDARD_BAKE_HANDLE.into()
     }
 }

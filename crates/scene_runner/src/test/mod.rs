@@ -135,6 +135,8 @@ fn init_test_app(entity_json: &str) -> App {
     app.insert_resource(SceneLoadDistance {
         load: 1.0,
         unload: 0.0,
+        load_imposter: 0.0,
+        imposter_height_ratio: 6.0,
     });
     app.init_resource::<PreviewMode>();
     app.finish();

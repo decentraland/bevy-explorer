@@ -4,7 +4,7 @@ use bevy::{math::IVec2, utils::HashSet};
 pub struct Region {
     pub min: IVec2,
     pub max: IVec2,
-    pub count: usize,
+    pub count: u32,
 }
 
 pub fn scene_regions(parcels: impl Iterator<Item = IVec2>) -> Vec<Region> {
@@ -47,7 +47,7 @@ pub fn scene_regions(parcels: impl Iterator<Item = IVec2>) -> Vec<Region> {
     for mut region in contiguous_regions {
         let min = region.iter().fold(IVec2::MAX, |a, b| a.min(*b));
         let max = region.iter().fold(IVec2::MIN, |a, b| a.max(*b));
-        let count = region.len();
+        let count = region.len() as u32;
 
         // fast path for rectangular regions
         let size = max - min;

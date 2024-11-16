@@ -249,7 +249,7 @@ pub fn update_camera(
                 if (event.y > 0.0) == zoom_range.is_none() {
                     options.distance = 0f32.max((options.distance - 0.05) * 0.9);
                 } else {
-                    options.distance = 50f32.min((options.distance / 0.9) + 0.05);
+                    options.distance = 500f32.min((options.distance / 0.9) + 0.05);
                 }
             }
         }

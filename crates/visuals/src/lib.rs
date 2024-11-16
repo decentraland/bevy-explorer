@@ -14,6 +14,7 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser, SceneLoadDistance,
+        GROUND_RENDERLAYER,
     },
 };
 use console::DoAddConsoleCommand;
@@ -62,7 +63,7 @@ fn setup(
         PbrBundle {
             mesh: meshes.add(Plane3d::default().mesh().size(50000.0, 50000.0)),
             material: materials.add(StandardMaterial {
-                base_color: Color::srgb(0.15, 0.2, 0.05),
+                base_color: Color::srgb(0.3, 0.45, 0.2),
                 perceptual_roughness: 1.0,
                 metallic: 0.0,
                 depth_bias: -100.0,
@@ -71,6 +72,7 @@ fn setup(
             ..Default::default()
         },
         Ground,
+        GROUND_RENDERLAYER.clone(),
     ));
 }
 
@@ -147,10 +149,15 @@ fn apply_global_light(
         directional.color = next_light.dir_color;
 
         if let Ok(mut fog) = fog.get_single_mut() {
-            let distance = scene_distance.load + scene_distance.unload + camera.distance * 5.0;
+            let distance = (scene_distance.load + scene_distance.unload)
+                .max(scene_distance.load_imposter * 0.333)
+                + camera.distance * 5.0;
 
-            let base_color =
-                next_light.ambient_color.to_srgba() * next_light.ambient_brightness * 0.5;
+            let base_color = next_light.ambient_color.to_srgba()
+                * next_light.ambient_brightness
+                * 0.5
+                * skybox.brightness
+                / 2000.0;
             let base_color = Color::from(base_color).with_alpha(1.0);
 
             fog.color = base_color;

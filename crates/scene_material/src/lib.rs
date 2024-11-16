@@ -3,6 +3,7 @@ use bevy::{
     prelude::*,
     render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
 };
+use boimp::bake::ImposterBakeMaterialExtension;
 use comms::preview::PreviewMode;
 
 pub type SceneMaterial = ExtendedMaterial<StandardMaterial, SceneBound>;
@@ -104,21 +105,104 @@ impl SceneBound {
     }
 }
 
-#[derive(ShaderType, Clone, Debug, Default)]
+#[derive(ShaderType, Clone, Copy, Debug, Default)]
 pub struct BoundRegion {
     pub min: u32, // 2x i16
     pub max: u32, // 2x i16
     pub height: f32,
-    _padding0: u32,
+    pub parcel_count: u32,
 }
 
 impl BoundRegion {
-    pub fn new(min: IVec2, max: IVec2, parcel_count: usize) -> Self {
+    pub fn new(min: IVec2, max: IVec2, parcel_count: u32) -> Self {
         Self {
             min: (min.x as i16 as u16 as u32) << 16 | (-(max.y + 1) as i16 as u16 as u32),
             max: ((max.x + 1) as i16 as u16 as u32) << 16 | (-min.y as i16 as u16 as u32),
             height: f32::log2(parcel_count as f32 + 1.0) * 20.0,
-            ..Default::default()
+            parcel_count,
+        }
+    }
+}
+
+impl BoundRegion {
+    fn unpack_parcel_coords(input: u32) -> IVec2 {
+        let x = ((input >> 16) & 0xFFFF) as i32;
+        let y = (input & 0xFFFF) as i32;
+        IVec2::new(
+            if (x & 0x8000) != 0 { x - 0x10000 } else { x },
+            if (y & 0x8000) != 0 { y - 0x10000 } else { y },
+        )
+    }
+
+    pub fn parcel_min(&self) -> IVec2 {
+        IVec2::new(
+            Self::unpack_parcel_coords(self.min).x,
+            -Self::unpack_parcel_coords(self.max).y,
+        )
+    }
+
+    pub fn parcel_max(&self) -> IVec2 {
+        IVec2::new(
+            Self::unpack_parcel_coords(self.max).x - 1,
+            -Self::unpack_parcel_coords(self.min).y - 1,
+        )
+    }
+
+    pub fn world_min(&self) -> Vec3 {
+        let coords = Self::unpack_parcel_coords(self.min).as_vec2() * 16.0;
+        Vec3::new(coords.x, 0.0, coords.y)
+    }
+
+    pub fn world_max(&self) -> Vec3 {
+        let coords = Self::unpack_parcel_coords(self.max).as_vec2() * 16.0;
+        Vec3::new(coords.x, self.height, coords.y)
+    }
+
+    pub fn world_size(&self) -> Vec3 {
+        self.world_max() - self.world_min()
+    }
+
+    pub fn world_midpoint(&self) -> Vec3 {
+        (self.world_max() + self.world_min()) * 0.5
+    }
+
+    pub fn world_radius(&self) -> f32 {
+        (self.world_max() - self.world_min()).length() * 0.5
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use bevy::math::{IVec2, Vec3};
+
+    use crate::BoundRegion;
+
+    #[test]
+    fn test_bounds() {
+        for x in [-10, 0, 10] {
+            for y in [-10, 0, 10] {
+                let region = BoundRegion::new(IVec2::new(x, y), IVec2::new(x, y), 1);
+
+                println!(
+                    "[{},{}] -> {:x},{:x} -> {}, {}",
+                    x,
+                    y,
+                    region.min,
+                    region.max,
+                    region.world_min(),
+                    region.world_max()
+                );
+                assert_eq!(
+                    region.world_min(),
+                    Vec3::new(x as f32 * 16.0, 0.0, (-y - 1) as f32 * 16.0)
+                );
+                assert_eq!(
+                    region.world_max(),
+                    Vec3::new((x + 1) as f32 * 16.0, 20.0, -y as f32 * 16.0)
+                );
+                assert_eq!(region.parcel_min(), IVec2::new(x, y));
+                assert_eq!(region.parcel_max(), IVec2::new(x, y));
+            }
         }
     }
 }
@@ -158,6 +242,12 @@ impl MaterialExtension for SceneBound {
     // fn shadow_material_key(&self, base_key: Option<u64>) -> Option<u64> {
     //     base_key.map(|_| (((self.bounds.x as i64) << 32) | (self.bounds.y as i64)) as u64)
     // }
+}
+
+impl ImposterBakeMaterialExtension for SceneBound {
+    fn imposter_fragment_shader() -> bevy::render::render_resource::ShaderRef {
+        "shaders/bound_material_baker.wgsl".into()
+    }
 }
 pub struct SceneBoundPlugin;
 
