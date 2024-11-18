@@ -1,0 +1,22 @@
+[package]
+name = "imposters"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { workspace = true }
+ipfs = { workspace = true }
+scene_material = { workspace = true }
+scene_runner = { workspace = true }
+
+bevy = { workspace = true }
+boimp = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+async-fs = "2.0"
+
+[lints]
+workspace = true

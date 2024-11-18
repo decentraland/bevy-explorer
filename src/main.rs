@@ -5,6 +5,7 @@ use std::{fs::File, io::Write, sync::OnceLock};
 
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use build_time::build_time_utc;
+use imposters::{render::ImposterLoadDistance, DclImposterPlugin};
 use mimalloc::MiMalloc;
 
 #[global_allocator]
@@ -170,10 +171,17 @@ fn main() {
             .value_from_str("--unload")
             .ok()
             .unwrap_or(base_config.scene_unload_extra_distance),
-        scene_imposter_distance: args
+        scene_imposter_distances: args
             .value_from_str("--impost")
             .ok()
-            .unwrap_or(base_config.scene_imposter_distance),
+            .map(|distances: String| {
+                distances
+                    .split(",")
+                    .map(str::parse::<f32>)
+                    .collect::<Result<Vec<f32>, _>>()
+                    .unwrap()
+            })
+            .unwrap_or(base_config.scene_imposter_distances),
         scene_imposter_height_ratio: args
             .value_from_str("--impost_height")
             .ok()
@@ -304,9 +312,17 @@ fn main() {
     app.insert_resource(SceneLoadDistance {
         load: final_config.scene_load_distance,
         unload: final_config.scene_unload_extra_distance,
-        load_imposter: final_config.scene_imposter_distance,
+        load_imposter: final_config
+            .scene_imposter_distances
+            .last()
+            .copied()
+            .unwrap_or(0.0),
         imposter_height_ratio: final_config.scene_imposter_height_ratio,
     });
+
+    app.insert_resource(ImposterLoadDistance(
+        final_config.scene_imposter_distances.clone(),
+    ));
 
     app.insert_resource(final_config);
     if no_gltf {
@@ -330,7 +346,8 @@ fn main() {
         .add_plugins(NftShapePlugin)
         .add_plugins(TweenPlugin)
         .add_plugins(CollectiblesPlugin)
-        .add_plugins(WorldUiPlugin);
+        .add_plugins(WorldUiPlugin)
+        .add_plugins(DclImposterPlugin);
 
     if let Some(crashed) = crash_file {
         app.add_plugins(CrashReportPlugin {

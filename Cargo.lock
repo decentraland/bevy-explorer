@@ -1997,7 +1997,6 @@ dependencies = [
 [[package]]
 name = "boimp"
 version = "0.1.0"
-source = "git+https://github.com/robtfm/boimp?branch=master#83e29c351c2eab1245e57d9c6631ce8655f3570e"
 dependencies = [
  "anyhow",
  "async-channel 2.3.1",
@@ -3273,6 +3272,7 @@ dependencies = [
  "dcl",
  "dcl_component",
  "futures-lite 1.13.0",
+ "imposters",
  "input_manager",
  "ipfs",
  "log-panics",
@@ -5499,6 +5499,22 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "imposters"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-fs",
+ "bevy",
+ "boimp",
+ "common",
+ "ipfs",
+ "scene_material",
+ "scene_runner",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

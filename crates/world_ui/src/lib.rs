@@ -16,7 +16,9 @@ use bevy::{
     ui::UiSystem,
     utils::HashMap,
 };
-use boimp::bake::{ImposterBakeMaterialExtension, ImposterMaterialPlugin, STANDARD_BAKE_HANDLE};
+use boimp::bake::{
+    ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin, STANDARD_BAKE_HANDLE,
+};
 use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
 use scene_material::{BoundRegion, SceneBound, SceneMaterial};
 
@@ -26,7 +28,7 @@ impl Plugin for WorldUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
             MaterialPlugin::<TextShapeMaterial>::default(),
-            ImposterMaterialPlugin::<TextShapeMaterial>::default(),
+            ImposterBakeMaterialPlugin::<TextShapeMaterial>::default(),
         ));
         app.add_systems(Update, add_worldui_materials.in_set(SceneSets::PostLoop));
         app.add_systems(

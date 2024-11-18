@@ -51,6 +51,7 @@ tween = { path="crates/tween" }
 world_ui = { path="crates/world_ui" }
 collectibles = { path="crates/collectibles" }
 social = { path="crates/social" }
+imposters = { path="crates/imposters" }
 
 bevy = { version = "0.14", default-features = false, features=[
     "animation",
@@ -140,6 +141,7 @@ scene_material = { workspace = true }
 world_ui = { workspace = true }
 collectibles = { workspace = true }
 social = { workspace = true }
+imposters = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }
@@ -188,3 +190,6 @@ deno_websocket = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix
 
 # [patch."https://github.com/robtfm/bevy_simple_text_input"]
 # bevy_simple_text_input = { path = "../bevy_simple_text_input" }
+
+[patch."https://github.com/robtfm/boimp"]
+boimp = { path = "../boimp" }
