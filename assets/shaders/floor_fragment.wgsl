@@ -7,6 +7,9 @@
 #import boimp::shared::{ImposterVertexOut, unpack_pbrinput};
 #import boimp::bindings::sample_tile_material;
 
+@group(2) @binding(100)
+var<uniform> offset: f32;
+
 @fragment
 fn fragment(in: ImposterVertexOut) -> FragmentOutput {
     var out: FragmentOutput;
@@ -17,11 +20,12 @@ fn fragment(in: ImposterVertexOut) -> FragmentOutput {
         in.inverse_rotation_2c,
     );
 
-    var props = sample_tile_material(in.uv_c, vec2(0u,0u), vec2(-0.5));
+    var props = sample_tile_material(clamp(in.uv_c, vec2(0.0001), vec2(17.0/18.0 - 0.0001)), vec2(0u,0u), vec2(offset, offset));
 
-    if props.rgba.a < 0.5 {
+    if props.rgba.a == 0.0 {
         discard;
     }
+
     props.rgba.a = 1.0;
 
     var pbr_input = unpack_pbrinput(props, in.position);

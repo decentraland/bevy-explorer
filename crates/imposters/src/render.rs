@@ -2,42 +2,48 @@ use bevy::{
     core::FrameCount,
     pbr::{NotShadowCaster, NotShadowReceiver},
     prelude::*,
-    render::mesh::VertexAttributeValues,
+    render::{mesh::VertexAttributeValues, view::RenderLayers},
     tasks::{IoTaskPool, Task},
     utils::{hashbrown::HashSet, HashMap},
 };
-use boimp::{asset_loader::ImposterVertexMode, render::Imposter, ImposterLoaderSettings};
+use boimp::{
+    asset_loader::ImposterVertexMode, bake::ImposterBakeMaterialPlugin, render::Imposter,
+    ImposterLoaderSettings,
+};
 use common::{structs::PrimaryUser, util::TaskExt};
-use ipfs::IpfsAssetServer;
+use ipfs::{ChangeRealmEvent, CurrentRealm, IpfsAssetServer};
 
-use scene_runner::initialize_scene::{LiveScenes, PointerResult, ScenePointers};
+use scene_runner::initialize_scene::{LiveScenes, PointerResult, ScenePointers, PARCEL_SIZE};
 
 use crate::{
     floor_imposter::{FloorImposter, FloorImposterLoader},
-    imposter_spec::{
-        load_scene_imposter, scene_floor_path, scene_texture_path, BakedScene, ImposterSpec,
-    },
+    imposter_spec::{floor_path, load_imposter, texture_path, BakedScene, ImposterSpec},
 };
 
 pub struct DclImposterRenderPlugin;
 
 impl Plugin for DclImposterRenderPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((MaterialPlugin::<FloorImposter>::default(),))
-            .init_resource::<ImposterLoadDistance>()
-            .init_resource::<ImposterLookup>()
-            .init_asset_loader::<FloorImposterLoader>()
-            .add_systems(Startup, setup)
-            .add_systems(
-                Update,
-                (
-                    spawn_imposters,
-                    load_imposters,
-                    render_imposters,
-                    update_imposter_visibility,
-                    debug_write_imposters,
-                ),
-            );
+        app.add_plugins((
+            MaterialPlugin::<FloorImposter>::default(),
+            ImposterBakeMaterialPlugin::<FloorImposter>::default(),
+        ))
+        .init_resource::<ImposterLoadDistance>()
+        .init_resource::<ImposterLookup>()
+        .init_resource::<BakingIngredients>()
+        .init_asset_loader::<FloorImposterLoader>()
+        .add_systems(Startup, setup)
+        .add_systems(
+            Update,
+            (
+                spawn_imposters,
+                load_imposters,
+                render_imposters,
+                update_imposter_visibility,
+                debug_write_imposters,
+            )
+                .chain(),
+        );
     }
 }
 
@@ -61,12 +67,26 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
         uvs[ix][1] = 1.0;
     }
     let cube = meshes.add(cube);
+
+    let mut floor = Plane3d {
+        normal: Dir3::Y,
+        half_size: Vec2::splat(0.5),
+    }
+    .mesh()
+    .build();
+
+    let Some(VertexAttributeValues::Float32x2(uvs)) = floor.attribute_mut(Mesh::ATTRIBUTE_UV_0)
+    else {
+        panic!()
+    };
+    for uv in uvs.iter_mut() {
+        uv[0] = 0.0 / 18.0 + 17.0 / 18.0 * uv[0];
+        uv[1] = 0.0 / 18.0 + 17.0 / 18.0 * uv[1];
+    }
+
     commands.insert_resource(ImposterMeshes {
         cube,
-        floor: meshes.add(Plane3d {
-            normal: Dir3::Y,
-            half_size: Vec2::splat(0.5),
-        }),
+        floor: meshes.add(floor),
     })
 }
 
@@ -91,24 +111,53 @@ pub struct SceneImposter {
 }
 
 #[derive(Component)]
-pub struct SceneImposterLoadTask(Task<Option<BakedScene>>);
+pub struct ImposterLoadTask(Task<Option<BakedScene>>);
 
-impl SceneImposterLoadTask {
+impl ImposterLoadTask {
     pub fn new_scene(ipfas: &IpfsAssetServer, scene_hash: &str) -> Self {
-        Self(IoTaskPool::get().spawn(load_scene_imposter(
+        Self(IoTaskPool::get().spawn(load_imposter(
             ipfas.ipfs().clone(),
             scene_hash.to_string(),
+            IVec2::MAX,
+            0,
+        )))
+    }
+
+    pub fn new_mip(ipfas: &IpfsAssetServer, address: &str, parcel: IVec2, level: usize) -> Self {
+        Self(IoTaskPool::get().spawn(load_imposter(
+            ipfas.ipfs().clone(),
+            address.to_string(),
+            parcel,
+            level,
         )))
     }
 }
 
-fn spawn_imposters(
+#[derive(Resource, Default)]
+pub struct BakingIngredients(pub HashSet<(IVec2, usize)>);
+
+pub fn spawn_imposters(
     mut commands: Commands,
     mut lookup: ResMut<ImposterLookup>,
     load_distance: Res<ImposterLoadDistance>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
     mut required: Local<HashSet<(IVec2, usize)>>,
+    realm_changed: EventReader<ChangeRealmEvent>,
+    ingredients: Res<BakingIngredients>,
+    pointers: Res<ScenePointers>,
 ) {
+    if !realm_changed.is_empty() {
+        for (_, entity) in lookup.0.drain() {
+            if let Some(commands) = commands.get_entity(entity) {
+                commands.despawn_recursive();
+            }
+        }
+
+        return;
+    }
+
+    required.extend(&ingredients.0);
+
     let Some(origin) = focus.get_single().ok().map(|gt| gt.translation().xz()) else {
         return;
     };
@@ -125,6 +174,9 @@ fn spawn_imposters(
         let max_parcel = ((origin + next_distance) / 16.0 / tile_size as f32)
             .ceil()
             .as_ivec2();
+
+        let min_parcel = min_parcel.max(pointers.min());
+        let max_parcel = max_parcel.min(pointers.max());
 
         for x in min_parcel.x..=max_parcel.x {
             for y in min_parcel.y..=max_parcel.y {
@@ -146,7 +198,11 @@ fn spawn_imposters(
                     // next level will need these tiles since we don't
                     for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
                         let smaller_tile_origin = tile_origin + offset * next_tile_size;
-                        required.insert((smaller_tile_origin, level - 1));
+                        if smaller_tile_origin.clamp(pointers.min(), pointers.max())
+                            == smaller_tile_origin
+                        {
+                            required.insert((smaller_tile_origin, level - 1));
+                        }
                     }
                 };
             }
@@ -157,8 +213,10 @@ fn spawn_imposters(
 
     // remove old
     lookup.0.retain(|&(pos, level), ent| {
-        let required = required.remove(&(pos, level));
+        let mut required = required.remove(&(pos, level));
+        required |= ingredients.0.contains(&(pos, level));
         if !required {
+            println!("remove {}: {}", level, pos);
             if let Some(mut commands) = commands.get_entity(*ent) {
                 commands.try_insert(ImposterTransitionOut);
                 // for now
@@ -174,12 +232,12 @@ fn spawn_imposters(
             .spawn((SpatialBundle::default(), SceneImposter { parcel, level }))
             .id();
 
-        println!("require {}", parcel);
+        println!("require {}: {}", level, parcel);
         lookup.0.insert((parcel, level), id);
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub struct ImposterReady(pub Option<String>);
 
 #[derive(Component)]
@@ -190,7 +248,8 @@ pub struct RetryImposter;
 
 fn load_imposters(
     mut commands: Commands,
-    mut loading_scenes: Local<HashMap<String, (SceneImposterLoadTask, Vec<Entity>)>>,
+    mut loading_scenes: Local<HashMap<String, (ImposterLoadTask, Vec<(Entity, IVec2)>)>>,
+    mut loading_parcels: Query<(Entity, &mut ImposterLoadTask, &SceneImposter)>,
     new_imposters: Query<
         (Entity, &SceneImposter),
         Or<(Changed<SceneImposter>, With<RetryImposter>)>,
@@ -198,22 +257,21 @@ fn load_imposters(
     all_imposters: Query<&SceneImposter>,
     scene_pointers: Res<ScenePointers>,
     ipfas: IpfsAssetServer,
+    current_realm: Res<CurrentRealm>,
 ) {
     // create any new load tasks
     for (ent, imposter) in new_imposters.iter() {
         if imposter.level == 0 {
-            match scene_pointers.0.get(&imposter.parcel) {
+            match scene_pointers.get(imposter.parcel) {
                 Some(PointerResult::Exists { hash, .. }) => {
+                    println!("found ptr {} @ {}", hash, imposter.parcel);
                     loading_scenes
                         .entry(hash.clone())
                         .or_insert_with(|| {
-                            (
-                                SceneImposterLoadTask::new_scene(&ipfas, hash),
-                                Vec::default(),
-                            )
+                            (ImposterLoadTask::new_scene(&ipfas, hash), Vec::default())
                         })
                         .1
-                        .push(ent);
+                        .push((ent, imposter.parcel));
                     commands.entity(ent).remove::<RetryImposter>();
                 }
                 Some(_) => {
@@ -224,6 +282,22 @@ fn load_imposters(
                     commands.entity(ent).try_insert(RetryImposter);
                 }
             }
+        } else if current_realm.address.is_empty() {
+            commands.entity(ent).try_insert(RetryImposter);
+        } else {
+            commands
+                .entity(ent)
+                .remove::<RetryImposter>()
+                .try_insert(ImposterLoadTask::new_mip(
+                    &ipfas,
+                    &current_realm.address,
+                    imposter.parcel,
+                    imposter.level,
+                ));
+            println!(
+                "req mip {}:{} @ {}",
+                imposter.parcel, &current_realm.address, imposter.level
+            );
         }
     }
 
@@ -234,7 +308,8 @@ fn load_imposters(
                 if let Some(mut scene) = res {
                     println!("load success {hash}");
                     // loaded successfully
-                    for entity in entities.iter() {
+                    for (entity, parcel) in entities.iter() {
+                        println!(" @ {parcel}");
                         if let Ok(imposter) = all_imposters.get(*entity) {
                             let mut commands = commands.entity(*entity);
 
@@ -247,7 +322,8 @@ fn load_imposters(
                 } else {
                     // didn't exist
                     println!("load fail {hash}");
-                    for entity in entities.iter() {
+                    for (entity, parcel) in entities.iter() {
+                        println!(" @ {parcel}");
                         if let Some(mut commands) = commands.get_entity(*entity) {
                             commands.try_insert(ImposterMissing(Some(hash.clone())));
                         }
@@ -258,6 +334,28 @@ fn load_imposters(
             None => true,
         }
     });
+
+    for (ent, mut task, imposter) in loading_parcels.iter_mut() {
+        if let Some(res) = task.0.complete() {
+            if let Some(mut commands) = commands.get_entity(ent) {
+                match res {
+                    Some(mut baked) => {
+                        println!("load success {:?}", imposter);
+                        if let Some(spec) = baked.imposters.remove(&imposter.parcel) {
+                            commands.try_insert(spec);
+                        }
+                        commands.try_insert(ImposterReady(None));
+                    }
+                    None => {
+                        // didn't exist
+                        println!("load fail {:?}", imposter);
+                        commands.try_insert(ImposterMissing(None));
+                    }
+                }
+                commands.remove::<ImposterLoadTask>();
+            };
+        }
+    }
 }
 
 fn render_imposters(
@@ -274,80 +372,97 @@ fn render_imposters(
     imposter_meshes: Res<ImposterMeshes>,
     asset_server: Res<AssetServer>,
     ipfas: IpfsAssetServer,
+    current_realm: Res<CurrentRealm>,
 ) {
     // spawn/update required
     for (entity, req, maybe_spec, ready) in new_imposters.iter() {
         println!("spawn imposter {:?} {:?}", req, maybe_spec);
-        if req.level == 0 {
-            commands.entity(entity).with_children(|c| {
-                if let Some(spec) = maybe_spec {
-                    // spawn imposter
-                    let path =
-                        scene_texture_path(ipfas.ipfs(), ready.0.as_ref().unwrap(), req.parcel);
-                    let mut scale = spec.region_max - spec.region_min;
-                    scale.y = spec.scale * 2.0;
-                    c.spawn((
-                        MaterialMeshBundle {
-                            mesh: imposter_meshes.cube.clone(),
-                            material: asset_server
-                                .load_with_settings::<Imposter, ImposterLoaderSettings>(
-                                    path,
-                                    |s| {
-                                        *s = ImposterLoaderSettings {
-                                            vertex_mode: ImposterVertexMode::NoBillboard,
-                                            multisample: true,
-                                            use_source_uv_y: true,
-                                            alpha: 1.0,
-                                        }
-                                    },
-                                ),
-                            transform: Transform::from_translation(
-                                (spec.region_min + spec.region_max) * 0.5,
-                            )
-                            .with_scale(scale),
-                            ..Default::default()
-                        },
-                        ImposterTransitionIn,
-                        NotShadowCaster,
-                        NotShadowReceiver,
-                    ));
-                }
-
-                //spawn floor
-                let size = ((1i32 << req.level) * 16) as f32;
-                let mid =
-                    (req.parcel * IVec2::new(1, -1) * 16).as_vec2() + Vec2::new(size, -size) * 0.5;
-
-                let path = scene_floor_path(ipfas.ipfs(), ready.0.as_ref().unwrap(), req.parcel);
+        commands.entity(entity).with_children(|c| {
+            if let Some(spec) = maybe_spec {
+                // spawn imposter
+                let path = texture_path(
+                    ipfas.ipfs(),
+                    ready.0.as_ref().unwrap_or(&current_realm.address),
+                    req.parcel,
+                    req.level,
+                );
+                let mut scale = spec.region_max - spec.region_min;
+                scale.y = spec.scale * 2.0;
                 c.spawn((
                     MaterialMeshBundle {
-                        transform: Transform::from_translation(Vec3::new(mid.x, -0.01, mid.y))
-                            .with_scale(Vec3::new(size + 2.0, 1.0, size + 2.0)),
-                        mesh: imposter_meshes.floor.clone(),
-                        material: asset_server.load::<FloorImposter>(path),
+                        mesh: imposter_meshes.cube.clone(),
+                        material: asset_server
+                            .load_with_settings::<Imposter, ImposterLoaderSettings>(path, |s| {
+                                *s = ImposterLoaderSettings {
+                                    vertex_mode: ImposterVertexMode::NoBillboard,
+                                    multisample: true,
+                                    use_source_uv_y: true,
+                                    alpha: 1.0,
+                                    alpha_blend: 0.0,
+                                }
+                            }),
+                        transform: Transform::from_translation(
+                            (spec.region_min + spec.region_max) * 0.5,
+                        )
+                        .with_scale(scale),
                         ..Default::default()
                     },
+                    ImposterTransitionIn,
                     NotShadowCaster,
                     NotShadowReceiver,
+                    RenderLayers::default(),
+                    ready.clone(),
                 ));
-            });
-        }
+            }
+
+            //spawn floor
+            let offset = match req.level {
+                0 => 0.0,
+                _ => 0.0,
+            };
+            let size = (1i32 << req.level) as f32 * PARCEL_SIZE;
+            let mid = (req.parcel * IVec2::new(1, -1)).as_vec2() * PARCEL_SIZE
+                + Vec2::new(size, -size) * 0.5;
+
+            let path = floor_path(
+                ipfas.ipfs(),
+                ready.0.as_ref().unwrap_or(&current_realm.address),
+                req.parcel,
+                req.level,
+            );
+            c.spawn((
+                MaterialMeshBundle {
+                    transform: Transform::from_translation(Vec3::new(mid.x, -0.01, mid.y))
+                        .with_scale(Vec3::new(size, 1.0, size)),
+                    mesh: imposter_meshes.floor.clone(),
+                    material: asset_server
+                        .load_with_settings::<FloorImposter, f32>(path, move |s: &mut f32| {
+                            *s = offset
+                        }),
+                    ..Default::default()
+                },
+                NotShadowCaster,
+                NotShadowReceiver,
+                RenderLayers::default(),
+                ready.clone(),
+            ));
+        });
     }
 }
 
 fn update_imposter_visibility(
-    mut q: Query<(&mut Visibility, &ImposterReady)>,
+    mut q: Query<(&mut RenderLayers, &ImposterReady)>,
     live_scenes: Res<LiveScenes>,
 ) {
-    for (mut vis, ready) in q.iter_mut() {
+    for (mut layers, ready) in q.iter_mut() {
         let show = ready
             .0
             .as_ref()
             .map_or(true, |hash| !live_scenes.0.contains_key(hash));
-        *vis = if show {
-            Visibility::Inherited
+        *layers = if show {
+            layers.clone().with(0)
         } else {
-            Visibility::Hidden
+            layers.clone().without(0)
         };
     }
 }

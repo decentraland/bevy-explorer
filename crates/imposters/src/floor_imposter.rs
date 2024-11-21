@@ -4,18 +4,34 @@ use bevy::{
     prelude::*,
     render::render_resource::AsBindGroup,
 };
-use boimp::{asset_loader::ImposterLoader, render::Imposter, ImposterLoaderSettings};
+use boimp::{
+    asset_loader::ImposterLoader, bake::ImposterBakeMaterialExtension, render::Imposter,
+    ImposterLoaderSettings,
+};
 
 #[derive(Clone, AsBindGroup, Asset, TypePath)]
-pub struct FloorMaterialExt {}
+pub struct FloorMaterialExt {
+    #[uniform(100)]
+    offset: f32,
+}
 
 impl MaterialExtension for FloorMaterialExt {
     fn vertex_shader() -> bevy::render::render_resource::ShaderRef {
         "shaders/floor_vertex.wgsl".into()
     }
 
+    fn prepass_vertex_shader() -> bevy::render::render_resource::ShaderRef {
+        "shaders/floor_vertex.wgsl".into()
+    }
+
     fn fragment_shader() -> bevy::render::render_resource::ShaderRef {
         "shaders/floor_fragment.wgsl".into()
+    }
+}
+
+impl ImposterBakeMaterialExtension for FloorMaterialExt {
+    fn imposter_fragment_shader() -> bevy::render::render_resource::ShaderRef {
+        "shaders/floor_bake.wgsl".into()
     }
 }
 
@@ -26,13 +42,13 @@ pub struct FloorImposterLoader;
 
 impl AssetLoader for FloorImposterLoader {
     type Asset = FloorImposter;
-    type Settings = ();
+    type Settings = f32;
     type Error = anyhow::Error;
 
     fn load<'a>(
         &'a self,
         reader: &'a mut bevy::asset::io::Reader,
-        _: &'a Self::Settings,
+        settings: &'a Self::Settings,
         load_context: &'a mut bevy::asset::LoadContext,
     ) -> impl bevy::utils::ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
@@ -41,6 +57,7 @@ impl AssetLoader for FloorImposterLoader {
                     reader,
                     &ImposterLoaderSettings {
                         multisample: true,
+                        alpha_blend: 0.5,
                         ..Default::default()
                     },
                     load_context,
@@ -48,7 +65,7 @@ impl AssetLoader for FloorImposterLoader {
                 .await?;
             Ok(FloorImposter {
                 base,
-                extension: FloorMaterialExt {},
+                extension: FloorMaterialExt { offset: *settings },
             })
         })
     }

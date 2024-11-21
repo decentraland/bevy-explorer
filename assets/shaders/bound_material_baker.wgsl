@@ -126,7 +126,7 @@ fn fragment(
         outside_amt = 0.0;
     }
 
-    if outside_amt > 0.00 {
+    if outside_amt > bounds.distance {
         discard;
     }
 

@@ -315,7 +315,17 @@ fn main() {
         load_imposter: final_config
             .scene_imposter_distances
             .last()
-            .copied()
+            .map(|last| {
+                // actual distance we need is last + diagonal of the largest mip size
+                let mip_size =
+                    (1 << (final_config.scene_imposter_distances.len() - 1)) as f32 * 16.0;
+                let req = last + (2.0 * mip_size * mip_size).sqrt();
+                println!(
+                    "imposter mips: {:?} -> distance {}",
+                    final_config.scene_imposter_distances, req
+                );
+                req
+            })
             .unwrap_or(0.0),
         imposter_height_ratio: final_config.scene_imposter_height_ratio,
     });
@@ -464,6 +474,7 @@ fn setup(
                     },
                 },
                 projection: PerspectiveProjection {
+                // projection: OrthographicProjection {
                     far: 100000.0,
                     ..Default::default()
                 }

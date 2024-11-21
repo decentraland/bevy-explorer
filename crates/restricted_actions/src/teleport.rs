@@ -103,11 +103,11 @@ pub fn handle_out_of_world(
         .floor()
         .as_ivec2();
 
-    let hash = match pointers.0.get(&parcel) {
+    let hash = match pointers.get(parcel) {
         Some(PointerResult::Exists { hash, .. }) => hash,
-        Some(PointerResult::Nothing { .. }) => {
+        Some(PointerResult::Nothing) => {
             debug!("scene {parcel} doesn't exist, returning to world");
-            debug!("everything: {:?}", pointers.0);
+            debug!("everything: {:?}", pointers);
             commands.entity(player).remove::<OutOfWorld>();
             return;
         }

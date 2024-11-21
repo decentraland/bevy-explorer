@@ -508,6 +508,7 @@ pub struct CurrentRealm {
     pub address: String,
     pub config: ServerConfiguration,
     pub comms: Option<CommsConfig>,
+    pub public_url: String,
 }
 
 #[allow(clippy::type_complexity)]
@@ -527,6 +528,11 @@ pub fn change_realm(
                         address: realm.clone(),
                         config: about.configurations.clone().unwrap_or_default(),
                         comms: about.comms.clone(),
+                        public_url: about
+                            .content
+                            .as_ref()
+                            .map(|c| c.public_url.clone())
+                            .unwrap_or_default(),
                     };
 
                     match about.configurations {

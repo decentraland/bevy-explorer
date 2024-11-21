@@ -319,13 +319,11 @@ pub fn update_camera_position(
         }
     } else {
         let target_fov = (dynamic_state.velocity.length() / 4.0).clamp(1.25, 1.25) * FRAC_PI_4;
-        let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
-        else {
-            panic!();
+        if let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection {
+            if *fov != target_fov {
+                *fov = target_fov;
+            }
         };
-        if *fov != target_fov {
-            *fov = target_fov;
-        }
 
         let distance = match options.scene_override {
             Some(CameraOverride::Distance(d)) => d,

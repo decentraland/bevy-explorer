@@ -42,34 +42,52 @@ where
 
 impl BakedScene {}
 
-fn scene_path(ipfs: &IpfsIo, hash: &str) -> PathBuf {
+fn file_root(ipfs: &IpfsIo, id: &str, level: usize) -> PathBuf {
     let mut path = ipfs.cache_path().to_owned();
-    path.push("imposters");
-    path.push("scenes");
-    path.push(hash);
+
+    if level == 0 {
+        path.push("imposters");
+        path.push("scenes");
+        path.push(id);
+    } else {
+        path.push("imposters");
+        path.push("realms");
+        path.push(urlencoding::encode(id).into_owned());
+        path.push(format!("{level}"));
+    }
     path
 }
 
-pub(crate) fn scene_spec_path(ipfs: &IpfsIo, hash: &str) -> PathBuf {
-    let mut path = scene_path(ipfs, hash);
-    path.push("spec.json");
+pub(crate) fn spec_path(ipfs: &IpfsIo, id: &str, parcel: IVec2, level: usize) -> PathBuf {
+    let mut path = file_root(ipfs, id, level);
+    if level == 0 {
+        path.push("spec.json");
+    } else {
+        path.push(format!("{},{}-spec.json", parcel.x, parcel.y));
+    }
     path
 }
 
-pub(crate) fn scene_texture_path(ipfs: &IpfsIo, hash: &str, parcel: IVec2) -> PathBuf {
-    let mut path = scene_path(ipfs, hash);
+pub(crate) fn texture_path(ipfs: &IpfsIo, id: &str, parcel: IVec2, level: usize) -> PathBuf {
+    let mut path = file_root(ipfs, id, level);
     path.push(format!("{},{}.boimp", parcel.x, parcel.y));
     path
 }
 
-pub(crate) fn scene_floor_path(ipfs: &IpfsIo, hash: &str, parcel: IVec2) -> PathBuf {
-    let mut path = scene_path(ipfs, hash);
+pub(crate) fn floor_path(ipfs: &IpfsIo, id: &str, parcel: IVec2, level: usize) -> PathBuf {
+    let mut path = file_root(ipfs, id, level);
     path.push(format!("{},{}-floor.boimp", parcel.x, parcel.y));
     path
 }
 
-pub(crate) fn write_scene_imposter(ipfas: &IpfsAssetServer, hash: &str, imposter: &BakedScene) {
-    let path = scene_spec_path(ipfas.ipfs(), hash);
+pub(crate) fn write_imposter(
+    ipfas: &IpfsAssetServer,
+    id: &str,
+    parcel: IVec2,
+    level: usize,
+    imposter: &BakedScene,
+) {
+    let path = spec_path(ipfas.ipfs(), id, parcel, level);
     let _ = std::fs::create_dir_all(path.parent().unwrap());
     if let Err(e) = std::fs::File::create(path)
         .map_err(|e| e.to_string())
@@ -79,13 +97,21 @@ pub(crate) fn write_scene_imposter(ipfas: &IpfsAssetServer, hash: &str, imposter
     }
 }
 
-pub async fn load_scene_imposter(ipfs: Arc<IpfsIo>, scene_hash: String) -> Option<BakedScene> {
+pub async fn load_imposter(
+    ipfs: Arc<IpfsIo>,
+    id: String,
+    parcel: IVec2,
+    level: usize,
+) -> Option<BakedScene> {
     // try locally
-    if let Ok(mut file) = async_fs::File::open(scene_spec_path(&ipfs, &scene_hash)).await {
+    let path = spec_path(&ipfs, &id, parcel, level);
+    if let Ok(mut file) = async_fs::File::open(&path).await {
         let mut buf = Vec::default();
         if file.read_to_end(&mut buf).await.is_ok() {
             if let Ok(imposter) = serde_json::from_slice(&buf) {
                 return Some(imposter);
+            } else {
+                warn!("failed to deserialize {path:?}");
             }
         };
     }

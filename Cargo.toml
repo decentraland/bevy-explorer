@@ -191,5 +191,5 @@ deno_websocket = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix
 # [patch."https://github.com/robtfm/bevy_simple_text_input"]
 # bevy_simple_text_input = { path = "../bevy_simple_text_input" }
 
-[patch."https://github.com/robtfm/boimp"]
-boimp = { path = "../boimp" }
+# [patch."https://github.com/robtfm/boimp"]
+# boimp = { path = "../boimp" }

@@ -472,7 +472,7 @@ impl<'w, 's> ContainingScene<'w, 's> {
     pub fn get_parcel_position(&self, position: Vec3) -> Option<Entity> {
         let parcel = vec3_to_parcel(position);
 
-        if let Some(PointerResult::Exists { hash, .. }) = self.pointers.0.get(&parcel) {
+        if let Some(PointerResult::Exists { hash, .. }) = self.pointers.get(parcel) {
             self.live_scenes.0.get(hash).copied()
         } else {
             None
@@ -506,7 +506,7 @@ impl<'w, 's> ContainingScene<'w, 's> {
 
         let mut results = HashSet::default();
 
-        if let Some(PointerResult::Exists { hash, .. }) = self.pointers.0.get(&parcel) {
+        if let Some(PointerResult::Exists { hash, .. }) = self.pointers.get(parcel) {
             if let Some(scene) = self.live_scenes.0.get(hash) {
                 results.insert(*scene);
             }
@@ -562,7 +562,7 @@ impl<'w, 's> ContainingScene<'w, 's> {
         for parcel_x in min_parcel.x..=max_parcel.x {
             for parcel_y in min_parcel.y..=max_parcel.y {
                 if let Some(PointerResult::Exists { hash, .. }) =
-                    self.pointers.0.get(&IVec2::new(parcel_x, parcel_y))
+                    self.pointers.get(IVec2::new(parcel_x, parcel_y))
                 {
                     if let Some(scene) = self.live_scenes.0.get(hash).copied() {
                         results.insert(scene);

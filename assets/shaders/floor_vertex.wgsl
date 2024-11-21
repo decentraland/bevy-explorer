@@ -1,8 +1,13 @@
 #import bevy_pbr::{
     mesh_functions,
-    forward_io::Vertex,
     view_transformations::{position_world_to_clip, position_view_to_world},
 }
+
+#ifdef PREPASS_PIPELINE
+    #import bevy_pbr::prepass_io::Vertex;
+#else
+    #import bevy_pbr::forward_io::Vertex;
+#endif
 
 #import boimp::shared::ImposterVertexOut;
 #import boimp::bindings::{imposter_data, sample_uvs_unbounded, grid_weights, sample_positions_from_camera_dir};
