@@ -170,18 +170,18 @@ pub fn spawn_imposters(
         let next_tile_size = tile_size / 2;
         let tile_size_world = (tile_size * 16) as f32;
 
-        let min_parcel = ((origin - next_distance) / 16.0 / tile_size as f32).as_ivec2();
-        let max_parcel = ((origin + next_distance) / 16.0 / tile_size as f32)
+        let min_tile = ((origin - next_distance) / 16.0 / tile_size as f32).as_ivec2();
+        let max_tile = ((origin + next_distance) / 16.0 / tile_size as f32)
             .ceil()
             .as_ivec2();
 
-        let min_parcel = min_parcel.max(pointers.min());
-        let max_parcel = max_parcel.min(pointers.max());
+        let min_tile = min_tile.max(pointers.min() / tile_size);
+        let max_tile = max_tile.min(pointers.max() / tile_size);
 
-        for x in min_parcel.x..=max_parcel.x {
-            for y in min_parcel.y..=max_parcel.y {
-                let tile_origin = IVec2::new(x, y) * tile_size;
-                let tile_origin_world = tile_origin.as_vec2() * 16.0;
+        for x in min_tile.x..=max_tile.x {
+            for y in min_tile.y..=max_tile.y {
+                let tile_origin_parcel = IVec2::new(x, y) * tile_size;
+                let tile_origin_world = tile_origin_parcel.as_vec2() * 16.0;
 
                 let closest_point =
                     origin.clamp(tile_origin_world, tile_origin_world + tile_size_world);
@@ -192,12 +192,12 @@ pub fn spawn_imposters(
                     .length();
 
                 if closest_distance >= prev_distance && closest_distance < next_distance {
-                    required.insert((tile_origin, level));
+                    required.insert((tile_origin_parcel, level));
                 } else if closest_distance < prev_distance && furthest_distance > prev_distance {
                     // this tile crosses the boundary, make sure the next level down includes all tiles we are not including here
                     // next level will need these tiles since we don't
                     for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
-                        let smaller_tile_origin = tile_origin + offset * next_tile_size;
+                        let smaller_tile_origin = tile_origin_parcel + offset * next_tile_size;
                         if smaller_tile_origin.clamp(pointers.min(), pointers.max())
                             == smaller_tile_origin
                         {
