@@ -157,7 +157,7 @@ fn init_test_app(entity_json: &str) -> App {
         ..Default::default()
     });
 
-    app.world_mut().resource_mut::<ScenePointers>().0.insert(
+    app.world_mut().resource_mut::<ScenePointers>().insert(
         IVec2::ZERO,
         PointerResult::Exists {
             realm: "manual value".to_owned(),
