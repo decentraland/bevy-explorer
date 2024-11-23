@@ -675,7 +675,12 @@ impl PointerResult {
     }
 }
 
-pub fn parcels_in_range(focus: &GlobalTransform, range: f32, min: IVec2, max: IVec2) -> Vec<(IVec2, f32)> {
+pub fn parcels_in_range(
+    focus: &GlobalTransform,
+    range: f32,
+    min: IVec2,
+    max: IVec2,
+) -> Vec<(IVec2, f32)> {
     let focus = focus.translation().xz() * Vec2::new(1.0, -1.0);
 
     let min_point = focus - Vec2::splat(range);
@@ -788,17 +793,21 @@ fn load_active_entities(
             return;
         };
 
-        let required_parcels: HashSet<_> =
-            parcels_in_range(focus, range.load.max(range.load_imposter), pointers.min(), pointers.max())
-                .into_iter()
-                .filter_map(|(parcel, _)| match pointers.get(parcel) {
-                    Some(PointerResult::Exists { realm, .. }) => {
-                        (realm != &current_realm.address).then_some(parcel)
-                    }
-                    Some(PointerResult::Nothing) => None,
-                    _ => Some(parcel),
-                })
-                .collect();
+        let required_parcels: HashSet<_> = parcels_in_range(
+            focus,
+            range.load.max(range.load_imposter),
+            pointers.min(),
+            pointers.max(),
+        )
+        .into_iter()
+        .filter_map(|(parcel, _)| match pointers.get(parcel) {
+            Some(PointerResult::Exists { realm, .. }) => {
+                (realm != &current_realm.address).then_some(parcel)
+            }
+            Some(PointerResult::Nothing) => None,
+            _ => Some(parcel),
+        })
+        .collect();
 
         if !has_scene_urns {
             // load required pointers
@@ -931,7 +940,7 @@ fn load_active_entities(
 }
 
 #[derive(Resource, Default)]
-pub struct CurrentImposterScene(pub Option<PointerResult>);
+pub struct CurrentImposterScene(pub Option<(PointerResult, bool)>);
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_scene_lifecycle(
@@ -962,7 +971,12 @@ pub fn process_scene_lifecycle(
         .and_then(|(p, _)| pointers.get(p))
         .and_then(PointerResult::hash_and_urn);
 
-    let pir = parcels_in_range(focus, range.load + range.unload, pointers.min(), pointers.max());
+    let pir = parcels_in_range(
+        focus,
+        range.load + range.unload,
+        pointers.min(),
+        pointers.max(),
+    );
 
     required_scene_ids.extend(pir.iter().flat_map(|(parcel, dist)| {
         if *dist < range.load {
@@ -985,7 +999,7 @@ pub fn process_scene_lifecycle(
         imposter_scene
             .0
             .as_ref()
-            .and_then(PointerResult::hash_and_urn),
+            .and_then(|(scene, _)| scene.hash_and_urn()),
     );
 
     // record additional optional scenes
@@ -1034,7 +1048,9 @@ pub fn process_scene_lifecycle(
 
         // check if the current scene is still loading
         if let Some((current_hash, _)) = current_scene.as_ref() {
-            if &scene_hash.0 == current_hash && maybe_ctx.map_or(true, |ctx| ctx.tick_number <= 6) {
+            if &scene_hash.0 == current_hash
+                && maybe_ctx.map_or(true, |ctx| ctx.tick_number <= 6 && !ctx.broken)
+            {
                 current_scene_loading = true;
             }
         }
@@ -1126,7 +1142,7 @@ fn animate_ready_scene(
         if current_imposter_scene
             .0
             .as_ref()
-            .and_then(PointerResult::hash_and_urn)
+            .and_then(|(scene, _)| scene.hash_and_urn())
             .map_or(false, |(hash, _)| hash == ctx.hash)
         {
             continue;

@@ -474,7 +474,7 @@ fn setup(
                     },
                 },
                 projection: PerspectiveProjection {
-                // projection: OrthographicProjection {
+                    // projection: OrthographicProjection {
                     far: 100000.0,
                     ..Default::default()
                 }

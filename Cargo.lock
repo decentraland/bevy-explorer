@@ -1997,7 +1997,7 @@ dependencies = [
 [[package]]
 name = "boimp"
 version = "0.1.0"
-source = "git+https://github.com/robtfm/boimp?branch=master#1e7210661c093e6f3f010ae6daa923067455d6d2"
+source = "git+https://github.com/robtfm/boimp?branch=master#f7016c85ea1db5fbf360316818045970b72f3edc"
 dependencies = [
  "anyhow",
  "async-channel 2.3.1",

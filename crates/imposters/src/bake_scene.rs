@@ -26,14 +26,17 @@ use scene_runner::{
 
 use crate::{
     imposter_spec::{floor_path, texture_path, write_imposter, BakedScene, ImposterSpec},
-    render::{BakingIngredients, ImposterLookup, ImposterMissing, ImposterReady, SceneImposter},
+    render::{
+        BakingIngredients, ImposterEntities, ImposterLookup, ImposterMissing, ImposterReady,
+        ImposterState, ImposterTransitionOut, SceneImposter,
+    },
 };
 pub struct DclImposterBakeScenePlugin;
 
 const GRID_SIZE: u32 = 8;
 const TILE_SIZE: u32 = 128;
 
-const IMPOSTERCEPTION_LAYER: RenderLayers = RenderLayers::layer(5);
+pub const IMPOSTERCEPTION_LAYER: RenderLayers = RenderLayers::layer(5);
 
 impl Plugin for DclImposterBakeScenePlugin {
     fn build(&self, app: &mut App) {
@@ -78,7 +81,7 @@ fn make_scene_oven(
         return;
     }
 
-    let Some(PointerResult::Exists { hash, .. }) = &current_imposter.0 else {
+    let Some((PointerResult::Exists { hash, .. }, false)) = &current_imposter.0 else {
         return;
     };
 
@@ -159,11 +162,11 @@ fn bake_scene_imposters(
     meshes: Query<(&GlobalTransform, &Aabb), With<Handle<Mesh>>>,
     bound_materials: Query<&Handle<SceneMaterial>>,
     mut materials: ResMut<Assets<SceneMaterial>>,
-    lookup: Res<ImposterLookup>,
+    lookup: Res<ImposterEntities>,
 ) {
     if let Ok((baking_ent, mut oven)) = baking.get_single_mut() {
         let current_scene_ent = {
-            let Some(PointerResult::Exists { hash, .. }) = &current_imposter.0 else {
+            let Some((PointerResult::Exists { hash, .. }, false)) = &current_imposter.0 else {
                 return;
             };
             let Some(entity) = live_scenes.0.get(hash) else {
@@ -187,19 +190,21 @@ fn bake_scene_imposters(
                 }
 
                 for parcel in std::mem::take(&mut oven.all_parcels).drain() {
-                    if let Some(entity) = lookup.0.get(&(parcel, 0)) {
-                        if let Some(mut commands) = commands.get_entity(*entity) {
-                            commands.remove::<ImposterMissing>();
+                    for ingredient in [true, false] {
+                        if let Some(entity) = lookup.0.get(&(parcel, 0, ingredient)) {
+                            if let Some(mut commands) = commands.get_entity(*entity) {
+                                commands.remove::<ImposterMissing>();
 
-                            if let Some(spec) = oven.baked_scene.imposters.get(&parcel) {
-                                commands.try_insert(spec.clone());
+                                if let Some(spec) = oven.baked_scene.imposters.get(&parcel) {
+                                    commands.try_insert(spec.clone());
+                                }
+                                commands.try_insert(ImposterReady(Some(oven.hash.clone())));
                             }
-                            commands.try_insert(ImposterReady(Some(oven.hash.clone())));
                         }
                     }
                 }
 
-                current_imposter.0 = None;
+                current_imposter.0.as_mut().unwrap().1 = true;
                 commands.entity(baking_ent).despawn_recursive();
                 return;
             };
@@ -364,7 +369,7 @@ fn bake_imposter_imposter(
     mut current_imposter: ResMut<CurrentImposterImposter>,
     existing_imposters: Query<(Option<&ImposterSpec>, &Children)>,
     mut all_baking_cams: Query<(Entity, &mut ImposterBakeCamera)>,
-    lookup: Res<ImposterLookup>,
+    lookup: Res<ImposterEntities>,
     mut baking: Local<Option<(u32, BakedScene)>>,
     ipfas: IpfsAssetServer,
     current_realm: Res<CurrentRealm>,
@@ -379,19 +384,21 @@ fn bake_imposter_imposter(
         if all_cams_finished {
             let (_, baking) = baking.take().unwrap();
             warn!("all cams done");
-            let Some((parcel, level)) = current_imposter.0 else {
+            let Some((parcel, level, _)) = current_imposter.0 else {
                 return;
             };
             write_imposter(&ipfas, &current_realm.address, parcel, level, &baking);
 
-            if let Some(entity) = lookup.0.get(&(parcel, level)) {
-                if let Some(mut commands) = commands.get_entity(*entity) {
-                    commands.remove::<ImposterMissing>();
+            for ingredient in [true, false] {
+                if let Some(entity) = lookup.0.get(&(parcel, level, ingredient)) {
+                    if let Some(mut commands) = commands.get_entity(*entity) {
+                        commands.remove::<ImposterMissing>();
 
-                    if let Some(spec) = baking.imposters.get(&parcel) {
-                        commands.try_insert(spec.clone());
+                        if let Some(spec) = baking.imposters.get(&parcel) {
+                            commands.try_insert(spec.clone());
+                        }
+                        commands.try_insert(ImposterReady(None));
                     }
-                    commands.try_insert(ImposterReady(None));
                 }
             }
 
@@ -400,7 +407,7 @@ fn bake_imposter_imposter(
                     commands.despawn_recursive();
                 }
             }
-            current_imposter.0 = None;
+            current_imposter.0.as_mut().unwrap().2 = true;
         } else if tick.0 > baking.as_ref().unwrap().0 + 100 {
             for (_, mut cam) in all_baking_cams.iter_mut() {
                 warn!("forcing failed imposter bake ...");
@@ -411,7 +418,7 @@ fn bake_imposter_imposter(
         return;
     }
 
-    if let Some((parcel, level)) = current_imposter.0.as_ref() {
+    if let Some((parcel, level, false)) = current_imposter.0.as_ref() {
         warn!("baking mip: {:?}-{}", parcel, level);
         let size = 1 << level;
         let next_size = 1 << (level - 1);
@@ -420,21 +427,14 @@ fn bake_imposter_imposter(
         let mut min = Vec3::MAX;
         let mut max = Vec3::MIN;
         for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
-            let key = (*parcel + offset * next_size, level - 1);
+            let key = (*parcel + offset * next_size, level - 1, true);
 
-            if let Some(ingredient) = lookup.0.get(&key) {
+            if let Some((maybe_spec, children)) = lookup
+                .0
+                .get(&key)
+                .and_then(|e| existing_imposters.get(*e).ok())
+            {
                 // content bounds
-                let Ok((maybe_spec, children)) = existing_imposters.get(*ingredient) else {
-                    warn!("missing children for imposter ingredient, don't know why, gonna bail");
-                    for (ent, _) in all_baking_cams.iter() {
-                        if let Some(commands) = commands.get_entity(ent) {
-                            commands.despawn_recursive();
-                        }
-                    }        
-                    *baking = None;
-                    current_imposter.0 = None;
-                    return;
-                };
                 assert_eq!(
                     children.iter().count(),
                     if maybe_spec.is_some() { 2 } else { 1 }
@@ -545,13 +545,18 @@ pub enum ImposterToBake {
 pub struct ImposterBakeList(Vec<ImposterToBake>);
 
 fn pick_imposter_to_bake(
-    q: Query<(&SceneImposter, &ImposterMissing)>,
+    q: Query<(&SceneImposter, &ImposterMissing), Without<ImposterTransitionOut>>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
     scene_pointers: Res<ScenePointers>,
     live_scenes: Res<LiveScenes>,
     mut baking: ResMut<ImposterBakeList>,
     current_realm: Res<CurrentRealm>,
 ) {
+    if current_realm.is_changed() {
+        baking.0.clear();
+        return;
+    }
+
     if current_realm.address.is_empty() {
         return;
     }
@@ -571,11 +576,11 @@ fn pick_imposter_to_bake(
                 + ((1 << imposter.level) as f32 * PARCEL_SIZE) * 0.5;
             ((midpoint - focus.xz()).length_squared(), imposter, missing)
         })
-        .filter(|(_, _, missing)| {
+        .filter(|(_, imposter, missing)| {
             missing
                 .0
                 .as_ref()
-                .map_or(true, |m| !live_scenes.0.contains_key(m))
+                .map_or(imposter.level > 0, |m| !live_scenes.0.contains_key(m))
         })
         .collect::<Vec<_>>();
 
@@ -585,7 +590,7 @@ fn pick_imposter_to_bake(
         if imposter.level == 0 {
             if let Some(pointer) = scene_pointers.get(imposter.parcel).cloned() {
                 if matches!(pointer, PointerResult::Exists { .. }) {
-                    println!("picked {imposter:?}");
+                    info!("baking picked {imposter:?}");
                     baking
                         .0
                         .push(ImposterToBake::Scene(imposter.parcel, pointer));
@@ -593,7 +598,7 @@ fn pick_imposter_to_bake(
                 }
             }
         } else {
-            println!("picked {imposter:?}");
+            info!("baking picked {imposter:?}");
             baking
                 .0
                 .push(ImposterToBake::Mip(imposter.parcel, imposter.level));
@@ -603,42 +608,18 @@ fn pick_imposter_to_bake(
 }
 
 #[derive(Resource, Default, Debug)]
-pub struct CurrentImposterImposter(Option<(IVec2, usize)>);
+pub struct CurrentImposterImposter(Option<(IVec2, usize, bool)>);
 
 fn check_bake_state(
     mut baking: ResMut<ImposterBakeList>,
     mut current_imposter_scene: ResMut<CurrentImposterScene>,
     mut current_imposter_imposter: ResMut<CurrentImposterImposter>,
     mut ingredients: ResMut<BakingIngredients>,
-    lookup: Res<ImposterLookup>,
-    imposter_state: Query<
-        (Option<&ImposterReady>, Option<&ImposterMissing>),
-        Or<(With<ImposterReady>, With<ImposterMissing>)>,
-    >,
+    lookup: ImposterLookup,
     scene_pointers: Res<ScenePointers>,
     mut debug_info: ResMut<DebugInfo>,
+    live_scenes: Res<LiveScenes>,
 ) {
-    #[derive(PartialEq, Debug)]
-    enum State {
-        Ready,
-        Missing,
-        Pending,
-    }
-
-    let check_state = |(parcel, level): &(IVec2, usize)| -> State {
-        match lookup
-            .0
-            .get(&(*parcel, *level))
-            .and_then(|e| imposter_state.get(*e).ok())
-        {
-            Some((Some(_), None)) => State::Ready,
-            Some((None, Some(_))) => State::Missing,
-            _ => State::Pending,
-        }
-    };
-
-    ingredients.0.clear();
-
     if !baking.0.is_empty() {
         debug_info.info.insert(
             "Imposter Generation",
@@ -653,38 +634,71 @@ fn check_bake_state(
             ),
         );
     } else {
+        ingredients.0.clear();
         debug_info.info.remove("Imposter Generation");
     }
 
     if let Some(imposter) = baking.0.last() {
-        println!("bake: {:?}", imposter);
+        debug!("bake: {:?}", imposter);
         match imposter {
             ImposterToBake::Scene(parcel, pointer_result) => {
-                let key = (*parcel, 0);
-                if check_state(&key) == State::Ready {
+                if current_imposter_scene
+                    .0
+                    .as_ref()
+                    .map_or(false, |(_, done)| *done)
+                {
                     // done
-                    println!("scene done!");
+                    info!("scene done!");
                     baking.0.pop();
+                    ingredients.0.pop();
+                    current_imposter_scene.0 = None;
                 } else {
+                    if live_scenes
+                        .0
+                        .get(&pointer_result.hash_and_urn().unwrap().0)
+                        .is_some()
+                    {
+                        warn!("cancelling bake due to live scene");
+                        ingredients.0.clear();
+                        baking.0.clear();
+                        return;
+                    }
+
                     // don't need to check for constituents, just go
-                    println!("scene running!");
-                    current_imposter_scene.0 = Some(pointer_result.clone());
-                    ingredients.0.insert((*parcel, 0));
+                    debug!("scene running!");
+                    if current_imposter_scene.0.is_none() {
+                        current_imposter_scene.0 = Some((pointer_result.clone(), false));
+                        ingredients.0.push((*parcel, 0));
+                    }
                 }
             }
             ImposterToBake::Mip(parcel, level) => {
-                if check_state(&(*parcel, *level)) == State::Ready {
+                if current_imposter_imposter
+                    .0
+                    .as_ref()
+                    .map_or(false, |(_, _, done)| *done)
+                {
+                    info!("mip done!");
                     current_imposter_imposter.0 = None;
                     baking.0.pop();
-                    ingredients.0.clear();
-                    println!("mip done!");
+                    for _ in 0..5 {
+                        ingredients.0.pop();
+                    }
                     return;
                 } else {
-                    println!("mip bake state: {:?}", check_state(&(*parcel, *level)));
+                    debug!("mip bake state: {:?}", lookup.state(*parcel, *level, true));
                 }
-                ingredients.0.insert((*parcel, *level));
 
                 let next_size = 1 << (level - 1);
+
+                if ingredients.0.last() != Some(&(*parcel, *level)) {
+                    for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
+                        let key = (*parcel + offset * next_size, level - 1);
+                        ingredients.0.push(key);
+                    }
+                    ingredients.0.push((*parcel, *level));
+                }
+
                 let mut any_pending = false;
                 for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
                     let key = (*parcel + offset * next_size, level - 1);
@@ -698,11 +712,17 @@ fn check_bake_state(
                                 return;
                             }
                         }
+                    } else {
+                        let min = scene_pointers.min() & !(next_size - 1);
+                        let max = scene_pointers.max() & !(next_size - 1);
+                        if key.0.clamp(min, max) != key.0 {
+                            continue;
+                        }
                     }
-                    ingredients.0.insert(key);
-                    match check_state(&key) {
-                        State::Ready => (),
-                        State::Missing => {
+
+                    match lookup.state(key.0, key.1, true) {
+                        ImposterState::Ready | ImposterState::NoScene => (),
+                        ImposterState::Missing => {
                             if *level == 1 {
                                 baking
                                     .0
@@ -712,8 +732,8 @@ fn check_bake_state(
                             }
                             return;
                         }
-                        State::Pending => {
-                            println!("waiting for pending {key:?}");
+                        _ => {
+                            debug!("waiting for pending {key:?}");
                             any_pending = true;
                         }
                     }
@@ -724,7 +744,7 @@ fn check_bake_state(
                 }
 
                 // run the bake
-                current_imposter_imposter.0 = Some((*parcel, *level));
+                current_imposter_imposter.0 = Some((*parcel, *level, false));
             }
         }
     }

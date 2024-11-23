@@ -319,7 +319,8 @@ pub fn update_camera_position(
         }
     } else {
         let target_fov = (dynamic_state.velocity.length() / 4.0).clamp(1.25, 1.25) * FRAC_PI_4;
-        if let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection {
+        if let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
+        {
             if *fov != target_fov {
                 *fov = target_fov;
             }
