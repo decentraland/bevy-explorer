@@ -1,5 +1,4 @@
 // Engine module
-
 use bevy::{
     utils::tracing::span::EnteredSpan,
     utils::tracing::{debug, info, info_span, warn},
@@ -15,7 +14,7 @@ use tokio::sync::{broadcast::error::TryRecvError, mpsc::Receiver, Mutex};
 use crate::{
     crdt::{append_component, put_component},
     interface::crdt_context::CrdtContext,
-    js::{RendererStore, ShuttingDown},
+    js::{CommunicatedWithRenderer, RendererStore, ShuttingDown},
     CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
     SceneLogMessage, SceneResponse,
 };
@@ -141,6 +140,8 @@ async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<OpState>>) -> Vec<Vec<u
             }
         }
     }
+
+    op_state.put(CommunicatedWithRenderer);
 
     results
 }
