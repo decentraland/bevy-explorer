@@ -37,8 +37,8 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AttachPoints, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes,
-        PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, Version, GROUND_RENDERLAYER,
-        PRIMARY_AVATAR_LIGHT_LAYER,
+        PrimaryPlayerRes, PrimaryUser, SceneImposterBake, SceneLoadDistance, Version,
+        GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER,
     },
     util::{config_file, project_directories, UtilsPlugin},
 };
@@ -171,6 +171,16 @@ fn main() {
             .value_from_str("--unload")
             .ok()
             .unwrap_or(base_config.scene_unload_extra_distance),
+        scene_imposter_bake: args
+            .value_from_str("--bake")
+            .ok()
+            .map(|bake: String| match bake.to_lowercase().chars().next() {
+                None | Some("f") => SceneImposterBake::FullSpeed,
+                Some("h") => SceneImposterBake::HalfSpeed,
+                Some("q") => SceneImposterBake::QuarterSpeed,
+                Some("o") => SceneImposterBake::Off,
+            })
+            .unwrap_or(SceneImposterBake::Off),
         scene_imposter_distances: args
             .value_from_str("--impost")
             .ok()

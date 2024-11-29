@@ -12,7 +12,10 @@ use boimp::{
     bake::{BakeState, ImposterBakeBundle, ImposterBakeCamera},
     GridMode, ImposterBakePlugin,
 };
-use common::{sets::SceneSets, structs::PrimaryUser};
+use common::{
+    sets::SceneSets,
+    structs::{AppConfig, PrimaryUser, SceneImposterBake},
+};
 use ipfs::{CurrentRealm, IpfsAssetServer};
 use scene_material::{BoundRegion, SceneBound, SceneMaterial};
 
@@ -175,6 +178,7 @@ fn bake_scene_imposters(
     bound_materials: Query<&Handle<SceneMaterial>>,
     mut materials: ResMut<Assets<SceneMaterial>>,
     lookup: Res<ImposterEntities>,
+    config: Res<AppConfig>,
 ) {
     if let Ok((baking_ent, mut oven)) = baking.get_single_mut() {
         let current_scene_ent = {
@@ -296,12 +300,16 @@ fn bake_scene_imposters(
                     .clamp(2.0, TILE_SIZE as f32 * 2.0) as u32;
                 warn!("tile size: {tile_size}");
 
+                let max_tiles_per_frame = ((GRID_SIZE * GRID_SIZE) as f32
+                    * config.scene_imposter_bake.as_mult())
+                .ceil() as usize;
+
                 let mut camera = ImposterBakeCamera {
                     radius,
                     grid_size: GRID_SIZE,
                     tile_size,
                     grid_mode: GridMode::Hemispherical,
-                    // max_tiles_per_frame: 5,
+                    max_tiles_per_frame,
                     ..Default::default()
                 };
 
@@ -388,6 +396,7 @@ fn bake_imposter_imposter(
     current_realm: Res<CurrentRealm>,
     mut layers: Query<&mut RenderLayers>,
     tick: Res<FrameCount>,
+    config: Res<AppConfig>,
 ) {
     if baking.is_some() {
         let all_cams_finished = all_baking_cams
@@ -480,12 +489,16 @@ fn bake_imposter_imposter(
                 .clamp(2.0, 256.0) as u32;
             warn!("tile size: {tile_size}");
 
+            let max_tiles_per_frame = ((GRID_SIZE * GRID_SIZE) as f32
+                * config.scene_imposter_bake.as_mult())
+            .ceil() as usize;
+
             let mut camera = ImposterBakeCamera {
                 radius,
                 grid_size: GRID_SIZE,
                 tile_size,
                 grid_mode: GridMode::Hemispherical,
-                // max_tiles_per_frame: 5,
+                max_tiles_per_frame,
                 multisample: 8,
                 ..Default::default()
             };
@@ -564,7 +577,12 @@ fn pick_imposter_to_bake(
     live_scenes: Res<LiveScenes>,
     mut baking: ResMut<ImposterBakeList>,
     current_realm: Res<CurrentRealm>,
+    config: Res<AppConfig>,
 ) {
+    if config.scene_imposter_bake == SceneImposterBake::Off {
+        return;
+    }
+
     if current_realm.is_changed() {
         baking.0.clear();
         return;
