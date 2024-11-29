@@ -236,7 +236,7 @@ pub struct IpfsAssetServer<'w, 's> {
     _p: PhantomData<&'s ()>,
 }
 
-impl<'w, 's> IpfsAssetServer<'w, 's> {
+impl IpfsAssetServer<'_, '_> {
     pub fn load_content_file<T: Asset>(
         &self,
         file_path: &str,

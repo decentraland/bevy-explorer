@@ -16,7 +16,7 @@ pub struct GltfResolver<'w, 's> {
     gltfs: Res<'w, Assets<Gltf>>,
 }
 
-impl<'w, 's> GltfResolver<'w, 's> {
+impl GltfResolver<'_, '_> {
     pub fn begin_frame(&mut self) {
         *self.prev_pending_gltfs = std::mem::take(&mut *self.pending_gltfs);
     }
@@ -61,7 +61,7 @@ pub struct GltfMeshResolver<'w, 's> {
     gltf_meshes: Res<'w, Assets<GltfMesh>>,
 }
 
-impl<'w, 's> GltfMeshResolver<'w, 's> {
+impl GltfMeshResolver<'_, '_> {
     pub fn begin_frame(&mut self) {
         self.gltf_resolver.begin_frame();
     }
@@ -119,7 +119,7 @@ pub struct GltfMaterialResolver<'w, 's> {
     std_materials: Res<'w, Assets<StandardMaterial>>,
 }
 
-impl<'w, 's> GltfMaterialResolver<'w, 's> {
+impl GltfMaterialResolver<'_, '_> {
     pub fn begin_frame(&mut self) {
         self.gltf_resolver.begin_frame();
     }

@@ -319,7 +319,7 @@ pub struct TabManager<'w, 's> {
     commands: Commands<'w, 's>,
 }
 
-impl<'w, 's> TabManager<'w, 's> {
+impl TabManager<'_, '_> {
     pub fn set_selected(&mut self, tab_entity: Entity, index: Option<usize>) {
         let Ok(mut tab) = self.tabs.get_mut(tab_entity) else {
             warn!("no tab");

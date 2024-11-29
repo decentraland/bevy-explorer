@@ -175,10 +175,11 @@ fn main() {
             .value_from_str("--bake")
             .ok()
             .map(|bake: String| match bake.to_lowercase().chars().next() {
-                None | Some("f") => SceneImposterBake::FullSpeed,
-                Some("h") => SceneImposterBake::HalfSpeed,
-                Some("q") => SceneImposterBake::QuarterSpeed,
-                Some("o") => SceneImposterBake::Off,
+                None | Some('f') => SceneImposterBake::FullSpeed,
+                Some('h') => SceneImposterBake::HalfSpeed,
+                Some('q') => SceneImposterBake::QuarterSpeed,
+                Some('o') => SceneImposterBake::Off,
+                _ => panic!(),
             })
             .unwrap_or(SceneImposterBake::Off),
         scene_imposter_distances: args

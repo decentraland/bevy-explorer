@@ -146,7 +146,7 @@ pub enum CollectibleError {
 
 const RETAIN_TICKS: u32 = 3;
 
-impl<'w, 's, T: CollectibleType> CollectibleManager<'w, 's, T> {
+impl<T: CollectibleType> CollectibleManager<'_, '_, T> {
     pub fn get_hash(
         &mut self,
         urn: impl AsRef<CollectibleUrn<T>>,

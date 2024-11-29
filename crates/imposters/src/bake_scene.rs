@@ -634,7 +634,7 @@ fn pick_imposter_to_bake(
             for x in imposter.parcel.x..imposter.parcel.x + size {
                 for y in imposter.parcel.y..imposter.parcel.y + size {
                     if let Some(PointerResult::Exists { hash, .. }) =
-                        scene_pointers.get(&IVec2::new(x, y))
+                        scene_pointers.get(IVec2::new(x, y))
                     {
                         if live_scenes.0.get(hash).is_some() {
                             // skip due to live scene

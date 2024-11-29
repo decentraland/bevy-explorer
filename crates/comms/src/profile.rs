@@ -69,7 +69,7 @@ pub struct ProfileManager<'w, 's> {
 
 pub struct ProfileMissingError;
 
-impl<'w, 's> ProfileManager<'w, 's> {
+impl ProfileManager<'_, '_> {
     pub fn get_data(
         &mut self,
         address: Address,

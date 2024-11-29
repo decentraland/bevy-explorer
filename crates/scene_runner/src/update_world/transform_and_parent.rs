@@ -292,7 +292,7 @@ pub struct TransformHelperPub<'w, 's> {
     pub transform_query: Query<'w, 's, &'static Transform>,
 }
 
-impl<'w, 's> TransformHelperPub<'w, 's> {
+impl TransformHelperPub<'_, '_> {
     /// Computes the [`GlobalTransform`] of the given entity from the [`Transform`] component on it and its ancestors.
     pub fn compute_global_transform(
         &self,

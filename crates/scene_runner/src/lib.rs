@@ -133,7 +133,7 @@ pub struct Toaster<'w, 's> {
     _p: PhantomData<&'s ()>,
 }
 
-impl<'w, 's> Toaster<'w, 's> {
+impl Toaster<'_, '_> {
     pub fn do_add_toast(
         &mut self,
         key: impl Into<String>,
@@ -467,7 +467,7 @@ pub fn vec3_to_parcel(position: Vec3) -> IVec2 {
         .as_ivec2()
 }
 
-impl<'w, 's> ContainingScene<'w, 's> {
+impl ContainingScene<'_, '_> {
     // just the parcel at the position
     pub fn get_parcel_position(&self, position: Vec3) -> Option<Entity> {
         let parcel = vec3_to_parcel(position);

@@ -27,7 +27,6 @@ use ui_core::scrollable::UsedScrollWheel;
 use crate::TRANSITION_TIME;
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-
 pub struct CinematicInitialData {
     base_yaw: f32,
     base_pitch: f32,
@@ -54,7 +53,7 @@ pub enum ClickState {
     Released,
 }
 
-impl<'w, 's> MouseInteractionState<'w, 's> {
+impl MouseInteractionState<'_, '_> {
     pub fn update(&mut self, button: MouseButton) -> ClickState {
         let state = self.states.entry(button).or_default();
 

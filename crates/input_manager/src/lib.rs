@@ -73,7 +73,7 @@ pub struct InputManager<'w> {
     should_accept: Res<'w, AcceptInput>,
 }
 
-impl<'w> InputManager<'w> {
+impl InputManager<'_> {
     pub fn any_just_acted(&self) -> bool {
         self.mouse_input.get_just_pressed().len() != 0
             || self.mouse_input.get_just_released().len() != 0

@@ -136,7 +136,7 @@ pub struct ImposterLookup<'w, 's> {
     asset_server: Res<'w, AssetServer>,
 }
 
-impl<'w, 's> ImposterLookup<'w, 's> {
+impl ImposterLookup<'_, '_> {
     fn imposter_state(
         entities: &HashMap<(IVec2, usize, bool), Entity>,
         imposters: &Query<(Option<&ImposterMissing>, Option<&Children>)>,

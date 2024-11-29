@@ -137,6 +137,7 @@ mod test {
             }
         }
 
+        #[allow(clippy::single_element_loop)]
         for test in [vec![
             IVec2::new(0, 0),
             IVec2::new(1, 1),
