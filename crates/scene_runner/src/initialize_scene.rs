@@ -776,7 +776,9 @@ fn load_active_entities(
         *pointer_request = None;
         // set current realm and clear
         // TODO base this on the actual bounds
-        pointers.set_realm(IVec2::splat(-152), IVec2::splat(152));
+        // pointers.set_realm(IVec2::new(-15, -33), IVec2::new(-1,-12));
+        // pointers.set_realm(IVec2::new(100, -94), IVec2::new(123,-85));
+        pointers.set_realm(IVec2::new(-152, -152), IVec2::new(152, 152));
     }
 
     if pointer_request.is_none()

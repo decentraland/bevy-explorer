@@ -27,6 +27,10 @@ impl MaterialExtension for FloorMaterialExt {
     fn fragment_shader() -> bevy::render::render_resource::ShaderRef {
         "shaders/floor_fragment.wgsl".into()
     }
+
+    fn prepass_fragment_shader() -> bevy::render::render_resource::ShaderRef {
+        "shaders/floor_fragment.wgsl".into()
+    }
 }
 
 impl ImposterBakeMaterialExtension for FloorMaterialExt {

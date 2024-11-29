@@ -133,8 +133,12 @@ fn fragment(
     // alpha discard
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
 
+    if pbr_input.material.base_color.a < 0.5 {
+        discard;
+    }    
+
     // use max of emissive and color (imposters only take albedo)
-    pbr_input.material.base_color = max(pbr_input.material.base_color, pbr_input.material.emissive);
+    // pbr_input.material.base_color = max(pbr_input.material.base_color, pbr_input.material.emissive);
 
     return pack_pbrinput(pbr_input);
 }

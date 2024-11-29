@@ -10,6 +10,8 @@ common = { workspace = true }
 ipfs = { workspace = true }
 scene_material = { workspace = true }
 scene_runner = { workspace = true }
+tween = { workspace = true }
+console = { workspace = true }
 
 bevy = { workspace = true }
 boimp = { workspace = true }
@@ -17,7 +19,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 urlencoding = { workspace = true }
+bevy_console = { workspace = true }
 async-fs = "2.0"
+clap = { workspace = true }
 
 [lints]
 workspace = true

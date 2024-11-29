@@ -12,9 +12,17 @@
 #import boimp::shared::ImposterVertexOut;
 #import boimp::bindings::{imposter_data, sample_uvs_unbounded, grid_weights, sample_positions_from_camera_dir};
 
+struct VertexOut {
+    @builtin(position) position: vec4<f32>,
+    @location(0) inverse_rotation_0c: vec3<f32>,
+    @location(1) inverse_rotation_1c: vec3<f32>,
+    @location(2) inverse_rotation_2c: vec3<f32>,
+    @location(3) uv: vec2<f32>,
+}
+
 @vertex
-fn vertex(vertex: Vertex) -> ImposterVertexOut {
-    var out: ImposterVertexOut;
+fn vertex(vertex: Vertex) -> VertexOut {
+    var out: VertexOut;
 
     var model = mesh_functions::get_world_from_local(vertex.instance_index);
 
@@ -30,11 +38,10 @@ fn vertex(vertex: Vertex) -> ImposterVertexOut {
     out.inverse_rotation_0c = inv_rot[0];
     out.inverse_rotation_1c = inv_rot[1];
     out.inverse_rotation_2c = inv_rot[2];
-    out.base_world_position = imposter_world_position;
 
-    out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0)).xyz;
-    out.position = position_world_to_clip(out.world_position);
-    out.uv_c = vertex.uv;
+    let world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0)).xyz;
+    out.position = position_world_to_clip(world_position);
+    out.uv = vertex.uv;
 
     return out;
 }

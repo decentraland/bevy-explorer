@@ -184,7 +184,7 @@ pub struct AppConfig {
     pub scene_load_distance: f32,
     pub scene_unload_extra_distance: f32,
     pub scene_imposter_distances: Vec<f32>,
-    pub scene_imposter_height_ratio: f32,
+    pub scene_imposter_multisample: bool,
     pub sysinfo_visible: bool,
     pub scene_log_to_console: bool,
     pub max_avatars: usize,
@@ -211,8 +211,8 @@ impl Default for AppConfig {
             scene_threads: 4,
             scene_load_distance: 50.0,
             scene_unload_extra_distance: 15.0,
-            scene_imposter_distances: vec![200.0],
-            scene_imposter_height_ratio: 25.0,
+            scene_imposter_distances: vec![150.0, 300.0, 600.0, 1200.0, 2400.0, 4800.0],
+            scene_imposter_multisample: true,
             sysinfo_visible: true,
             scene_log_to_console: false,
             max_avatars: 100,
@@ -405,7 +405,6 @@ pub struct SceneLoadDistance {
     pub load: f32,
     pub unload: f32, // additional
     pub load_imposter: f32,
-    pub imposter_height_ratio: f32,
 }
 
 #[derive(Debug)]

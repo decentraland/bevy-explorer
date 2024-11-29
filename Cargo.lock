@@ -1997,7 +1997,7 @@ dependencies = [
 [[package]]
 name = "boimp"
 version = "0.1.0"
-source = "git+https://github.com/robtfm/boimp?branch=master#f7016c85ea1db5fbf360316818045970b72f3edc"
+source = "git+https://github.com/robtfm/boimp?branch=master#7c2109c0f0650fcb0cafbc30077f0ca48673b904"
 dependencies = [
  "anyhow",
  "async-channel 2.3.1",
@@ -5509,13 +5509,17 @@ dependencies = [
  "anyhow",
  "async-fs",
  "bevy",
+ "bevy_console",
  "boimp",
+ "clap",
  "common",
+ "console",
  "ipfs",
  "scene_material",
  "scene_runner",
  "serde",
  "serde_json",
+ "tween",
  "urlencoding",
 ]
 

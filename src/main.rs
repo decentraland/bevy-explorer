@@ -5,7 +5,7 @@ use std::{fs::File, io::Write, sync::OnceLock};
 
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use build_time::build_time_utc;
-use imposters::{render::ImposterLoadDistance, DclImposterPlugin};
+use imposters::DclImposterPlugin;
 use mimalloc::MiMalloc;
 
 #[global_allocator]
@@ -182,10 +182,10 @@ fn main() {
                     .unwrap()
             })
             .unwrap_or(base_config.scene_imposter_distances),
-        scene_imposter_height_ratio: args
-            .value_from_str("--impost_height")
+        scene_imposter_multisample: args
+            .value_from_str("--impost_multi")
             .ok()
-            .unwrap_or(base_config.scene_imposter_height_ratio),
+            .unwrap_or(base_config.scene_imposter_multisample),
         sysinfo_visible: false,
         scene_log_to_console: args.contains("--scene_log_to_console"),
         ..base_config
@@ -327,12 +327,7 @@ fn main() {
                 req
             })
             .unwrap_or(0.0),
-        imposter_height_ratio: final_config.scene_imposter_height_ratio,
     });
-
-    app.insert_resource(ImposterLoadDistance(
-        final_config.scene_imposter_distances.clone(),
-    ));
 
     app.insert_resource(final_config);
     if no_gltf {

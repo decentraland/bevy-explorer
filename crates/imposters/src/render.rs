@@ -4,7 +4,10 @@ use bevy::{
     ecs::system::SystemParam,
     pbr::{NotShadowCaster, NotShadowReceiver},
     prelude::*,
-    render::{mesh::VertexAttributeValues, view::RenderLayers},
+    render::{
+        mesh::VertexAttributeValues,
+        view::{NoFrustumCulling, RenderLayers},
+    },
     tasks::{IoTaskPool, Task},
     utils::{hashbrown::HashSet, HashMap},
 };
@@ -12,7 +15,10 @@ use boimp::{
     asset_loader::ImposterVertexMode, bake::ImposterBakeMaterialPlugin, render::Imposter,
     ImposterLoaderSettings,
 };
-use common::{structs::PrimaryUser, util::TaskExt};
+use common::{
+    structs::{AppConfig, PrimaryUser},
+    util::TaskExt,
+};
 use ipfs::{ChangeRealmEvent, CurrentRealm, IpfsAssetServer};
 
 use scene_runner::{
@@ -34,7 +40,6 @@ impl Plugin for DclImposterRenderPlugin {
             MaterialPlugin::<FloorImposter>::default(),
             ImposterBakeMaterialPlugin::<FloorImposter>::default(),
         ))
-        .init_resource::<ImposterLoadDistance>()
         .init_resource::<ImposterEntities>()
         .init_resource::<ImposterEntitiesTransitioningOut>()
         .init_resource::<BakingIngredients>()
@@ -62,19 +67,19 @@ struct ImposterMeshes {
 }
 
 fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
-    let mut cube = Cuboid::default().mesh().build();
-    let Some(VertexAttributeValues::Float32x2(uvs)) = cube.attribute_mut(Mesh::ATTRIBUTE_UV_0)
-    else {
-        panic!()
-    };
+    // let mut cube = Cuboid::default().mesh().build();
+    // let Some(VertexAttributeValues::Float32x2(uvs)) = cube.attribute_mut(Mesh::ATTRIBUTE_UV_0)
+    // else {
+    //     panic!()
+    // };
 
-    for ix in [0, 1, 6, 7, 8, 11, 12, 15, 20, 21, 22, 23] {
-        uvs[ix][1] = 0.0;
-    }
-    for ix in [2, 3, 4, 5, 9, 10, 13, 14, 16, 17, 18, 19] {
-        uvs[ix][1] = 1.0;
-    }
-    let cube = meshes.add(cube);
+    // for ix in [0, 1, 6, 7, 8, 11, 12, 15, 20, 21, 22, 23] {
+    //     uvs[ix][1] = 0.0;
+    // }
+    // for ix in [2, 3, 4, 5, 9, 10, 13, 14, 16, 17, 18, 19] {
+    //     uvs[ix][1] = 1.0;
+    // }
+    // let cube = meshes.add(cube);
 
     let mut floor = Plane3d {
         normal: Dir3::Y,
@@ -93,7 +98,8 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
     }
 
     commands.insert_resource(ImposterMeshes {
-        cube,
+        cube: meshes.add(Plane3d::new(Vec3::Z, Vec2::splat(0.5))),
+        // cube,
         floor: meshes.add(floor),
     })
 }
@@ -104,7 +110,7 @@ pub struct ImposterTransitionIn;
 #[derive(Component)]
 pub struct ImposterTransitionOut(bool);
 
-pub const TRANSITION_TIME: f32 = 1.0;
+pub const TRANSITION_TIME: f32 = 0.25;
 
 #[derive(PartialEq, Debug)]
 pub enum ImposterState {
@@ -201,9 +207,6 @@ pub struct ImposterEntities(pub HashMap<(IVec2, usize, bool), Entity>);
 #[derive(Resource, Default)]
 pub struct ImposterEntitiesTransitioningOut(pub HashMap<(IVec2, usize), Entity>);
 
-#[derive(Resource, Default)]
-pub struct ImposterLoadDistance(pub Vec<f32>);
-
 #[derive(Component, Debug)]
 pub struct SceneImposter {
     pub parcel: IVec2,
@@ -241,7 +244,7 @@ pub fn spawn_imposters(
     mut commands: Commands,
     mut lookup: ResMut<ImposterEntities>,
     mut transitioning_out: ResMut<ImposterEntitiesTransitioningOut>,
-    load_distance: Res<ImposterLoadDistance>,
+    config: Res<AppConfig>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
     mut required: Local<HashSet<(IVec2, usize, bool)>>,
     realm_changed: EventReader<ChangeRealmEvent>,
@@ -275,18 +278,20 @@ pub fn spawn_imposters(
 
     // gather required
     let mut prev_distance = 0.0;
-    for (level, &next_distance) in load_distance.0.iter().enumerate() {
+    for (level, &next_distance) in config.scene_imposter_distances.iter().enumerate() {
         let tile_size = 1 << level;
         let next_tile_size = tile_size / 2;
         let tile_size_world = (tile_size * 16) as f32;
 
-        let min_tile = ((origin - next_distance) / 16.0 / tile_size as f32).as_ivec2();
+        let min_tile = ((origin - next_distance) / 16.0 / tile_size as f32)
+            .floor()
+            .as_ivec2();
         let max_tile = ((origin + next_distance) / 16.0 / tile_size as f32)
             .ceil()
             .as_ivec2();
 
-        let min_tile = min_tile.max(pointers.min() / tile_size);
-        let max_tile = max_tile.min(pointers.max() / tile_size);
+        let min_tile = min_tile.max((pointers.min() & !(tile_size - 1)) / tile_size);
+        let max_tile = max_tile.min((pointers.max() & !(tile_size - 1)) / tile_size);
 
         for x in min_tile.x..=max_tile.x {
             for y in min_tile.y..=max_tile.y {
@@ -350,8 +355,8 @@ pub fn spawn_imposters(
                 let distance = (origin.clamp(world_min, world_max) - origin).length();
 
                 // check smaller
-                if level > 0 && distance < load_distance.0[level - 1] {
-                    if level > 2 && distance < load_distance.0[level - 2] {
+                if level > 0 && distance < *config.scene_imposter_distances.get(level - 1).unwrap_or(&0.0) {
+                    if level > 2 && distance < *config.scene_imposter_distances.get(level - 2).unwrap_or(&0.0) {
                         // skip checks for 2 levels
                     } else {
                         for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
@@ -373,15 +378,15 @@ pub fn spawn_imposters(
                 }
 
                 // check larger
-                if distance > load_distance.0[level] && level < load_distance.0.len() - 1 {
-                    if level < load_distance.0.len() - 2 && distance > load_distance.0[level + 1] {
+                if distance > *config.scene_imposter_distances.get(level).unwrap_or(&0.0) && level < config.scene_imposter_distances.len() - 1 {
+                    if level < config.scene_imposter_distances.len() - 2 && distance > *config.scene_imposter_distances.get(level + 1).unwrap_or(&0.0) {
                         // skip checks for 2 levels
                     } else {
                         let larger = pos & !(larger_tile_size - 1);
                         match ImposterLookup::imposter_state(&prev_entities, &imposters, &handles, &asset_server, larger, level + 1, false) {
                             ImposterState::NotSpawned |
                             ImposterState::Pending => {
-                                debug!("(dist {} vs range {}) not despawning {}:{} because larger {}:{} is {:?}", distance, load_distance.0[level], pos, level, larger, level+1, ImposterLookup::imposter_state(&prev_entities, &imposters, &handles, &asset_server, larger, level + 1, false));
+                                debug!("(dist {} vs range {:?}) not despawning {}:{} because larger {}:{} is {:?}", distance, config.scene_imposter_distances.get(level), pos, level, larger, level+1, ImposterLookup::imposter_state(&prev_entities, &imposters, &handles, &asset_server, larger, level + 1, false));
                                 required = true
                             }
                             ImposterState::Ready |
@@ -415,6 +420,14 @@ pub fn spawn_imposters(
 
         debug!("require {}: {} [{}]", level, parcel, as_ingredient);
         lookup.0.insert((parcel, level, as_ingredient), cmds.id());
+
+        if !as_ingredient {
+            if let Some(ent) = transitioning_out.0.remove(&(parcel, level)) {
+                if let Some(commands) = commands.get_entity(ent) {
+                    commands.despawn_recursive();
+                }
+            }
+        }
     }
 }
 
@@ -552,13 +565,14 @@ fn render_imposters(
     asset_server: Res<AssetServer>,
     ipfas: IpfsAssetServer,
     current_realm: Res<CurrentRealm>,
+    config: Res<AppConfig>,
 ) {
     // spawn/update required
     for (entity, req, maybe_spec, ready) in new_imposters.iter() {
-        let layer = if req.as_ingredient {
-            IMPOSTERCEPTION_LAYER
+        let (layer, initial_alpha) = if req.as_ingredient {
+            (IMPOSTERCEPTION_LAYER, 1.0)
         } else {
-            RenderLayers::default()
+            (RenderLayers::default(), 0.0)
         };
         debug!("spawn imposter {:?} {:?}", req, maybe_spec);
         commands.entity(entity).with_children(|c| {
@@ -572,26 +586,30 @@ fn render_imposters(
                 );
                 let mut scale = spec.region_max - spec.region_min;
                 scale.y = spec.scale * 2.0;
+                let multisample = config.scene_imposter_multisample;
                 c.spawn((
                     MaterialMeshBundle {
                         mesh: imposter_meshes.cube.clone(),
                         material: asset_server
-                            .load_with_settings::<Imposter, ImposterLoaderSettings>(path, |s| {
-                                *s = ImposterLoaderSettings {
-                                    vertex_mode: ImposterVertexMode::NoBillboard,
-                                    multisample: true,
-                                    use_source_uv_y: true,
-                                    alpha: 0.0,
-                                    alpha_blend: 0.0,
-                                }
-                            }),
+                            .load_with_settings::<Imposter, ImposterLoaderSettings>(
+                                path,
+                                move |s| {
+                                    *s = ImposterLoaderSettings {
+                                        vertex_mode: ImposterVertexMode::Billboard,
+                                        multisample,
+                                        use_source_uv_y: false,
+                                        alpha: initial_alpha,
+                                        alpha_blend: 0.0, // blend
+                                    }
+                                },
+                            ),
                         transform: Transform::from_translation(
                             (spec.region_min + spec.region_max) * 0.5,
                         )
                         .with_scale(scale * (1.0 + req.level as f32 / 1000.0)),
                         ..Default::default()
                     },
-                    ImposterTransitionIn,
+                    NoFrustumCulling,
                     NotShadowCaster,
                     NotShadowReceiver,
                     layer.clone(),
@@ -627,7 +645,7 @@ fn render_imposters(
                 },
                 NotShadowCaster,
                 NotShadowReceiver,
-                layer.clone(),
+                layer,
                 ready.clone(),
             ));
         });
@@ -712,7 +730,6 @@ fn transition_imposters(
             for child in children {
                 if let Ok(h_in) = handles.get(*child) {
                     let Some(asset) = assets.get_mut(h_in.id()) else {
-                        warn!("no asset");
                         still_transitioning = true;
                         continue;
                     };
@@ -748,7 +765,6 @@ fn transition_imposters(
             for child in children {
                 if let Ok(h_out) = handles.get(*child) {
                     let Some(asset) = assets.get_mut(h_out.id()) else {
-                        warn!("no asset");
                         continue;
                     };
 

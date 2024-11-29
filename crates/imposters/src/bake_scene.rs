@@ -12,7 +12,7 @@ use boimp::{
     bake::{BakeState, ImposterBakeBundle, ImposterBakeCamera},
     GridMode, ImposterBakePlugin,
 };
-use common::structs::PrimaryUser;
+use common::{sets::SceneSets, structs::PrimaryUser};
 use ipfs::{CurrentRealm, IpfsAssetServer};
 use scene_material::{BoundRegion, SceneBound, SceneMaterial};
 
@@ -33,8 +33,8 @@ use crate::{
 };
 pub struct DclImposterBakeScenePlugin;
 
-const GRID_SIZE: u32 = 8;
-const TILE_SIZE: u32 = 128;
+const GRID_SIZE: u32 = 9;
+const TILE_SIZE: u32 = 96;
 
 pub const IMPOSTERCEPTION_LAYER: RenderLayers = RenderLayers::layer(5);
 
@@ -53,7 +53,8 @@ impl Plugin for DclImposterBakeScenePlugin {
                     pick_imposter_to_bake,
                 )
                     .chain()
-                    .before(crate::render::spawn_imposters),
+                    .before(crate::render::spawn_imposters)
+                    .before(SceneSets::UiActions),
             );
     }
 }
@@ -76,6 +77,7 @@ fn make_scene_oven(
     tick: Res<FrameCount>,
     mut start_tick: Local<Option<(String, u32)>>,
     bake_list: Res<ImposterBakeList>,
+    children: Query<&Children>,
 ) {
     if !baking.is_empty() {
         return;
@@ -113,16 +115,27 @@ fn make_scene_oven(
 
         transform.translation.y = -2000.0;
 
-        if context.tick_number < 10
-            && !context.broken
-            && tick.0 < start_tick.as_ref().unwrap().1 + 1000
-        {
+        let spawning_forever = tick.0 > start_tick.as_ref().unwrap().1 + 1000;
+
+        if context.tick_number < 10 && !context.broken && !spawning_forever {
             return;
         }
 
         context.blocked.insert("imposter_baking");
+        if context.in_flight && !context.broken && !spawning_forever {
+            return;
+        }
 
         warn!("baking scene {:?}", hash);
+
+        // disable animations and tweens
+        for child in children.iter_descendants(*entity) {
+            if let Some(mut commands) = commands.get_entity(child) {
+                commands
+                    .remove::<AnimationPlayer>()
+                    .remove::<tween::Tween>();
+            }
+        }
 
         // gather regions
         let unbaked_parcels = context
@@ -154,22 +167,18 @@ fn bake_scene_imposters(
     mut current_imposter: ResMut<CurrentImposterScene>,
     mut baking: Query<(Entity, &mut ImposterOven)>,
     mut all_baking_cams: Query<(Entity, &mut ImposterBakeCamera)>,
-    mut scenes: Query<(&mut RendererSceneContext, &mut Transform)>,
-    live_scenes: Res<LiveScenes>,
+    mut live_scenes: ResMut<LiveScenes>,
     ipfas: IpfsAssetServer,
     tick: Res<FrameCount>,
     children: Query<&Children>,
-    meshes: Query<(&GlobalTransform, &Aabb), With<Handle<Mesh>>>,
+    meshes: Query<(&GlobalTransform, &Aabb, &Visibility), With<Handle<Mesh>>>,
     bound_materials: Query<&Handle<SceneMaterial>>,
     mut materials: ResMut<Assets<SceneMaterial>>,
     lookup: Res<ImposterEntities>,
 ) {
     if let Ok((baking_ent, mut oven)) = baking.get_single_mut() {
         let current_scene_ent = {
-            let Some((PointerResult::Exists { hash, .. }, false)) = &current_imposter.0 else {
-                return;
-            };
-            let Some(entity) = live_scenes.0.get(hash) else {
+            let Some(entity) = live_scenes.0.get(&oven.hash) else {
                 return;
             };
             *entity
@@ -185,9 +194,9 @@ fn bake_scene_imposters(
                 warn!("no regions left");
                 write_imposter(&ipfas, &oven.hash, IVec2::MAX, 0, &oven.baked_scene);
 
-                if let Ok((mut context, _)) = scenes.get_mut(current_scene_ent) {
-                    context.blocked.remove("imposter_baking");
-                }
+                // delete the scene since we messed with it a lot to get it stable
+                commands.entity(current_scene_ent).despawn_recursive();
+                live_scenes.0.remove(&oven.hash);
 
                 for parcel in std::mem::take(&mut oven.all_parcels).drain() {
                     for ingredient in [true, false] {
@@ -228,10 +237,13 @@ fn bake_scene_imposters(
 
             // content bounds
             let mut points = Vec::default();
-            for (gt, aabb) in children
+            for (gt, aabb, vis) in children
                 .iter_descendants(current_scene_ent)
                 .filter_map(|e| meshes.get(e).ok())
             {
+                if matches!(vis, Visibility::Hidden) {
+                    continue;
+                };
                 let corners = [
                     Vec3::new(-1.0, -1.0, -1.0),
                     Vec3::new(-1.0, -1.0, 1.0),
@@ -256,8 +268,9 @@ fn bake_scene_imposters(
                 // skip things that don't intersect our rendered region
                 let min = new_points.iter().fold(Vec3::MAX, |m, p| m.min(*p));
                 let max = new_points.iter().fold(Vec3::MIN, |m, p| m.max(*p));
-                let intersects = max.cmpge(rmin).all() || min.cmple(rmax).all();
-                if max.y > -1999.0 && max.y > min.y && intersects {
+                let intersects = (max + Vec3::Y * 2000.0).cmpge(rmin).all()
+                    && (min + Vec3::Y * 2000.0).cmple(rmax).all();
+                if max.y > -1999.0 /* && max.y > min.y */ && intersects {
                     points.extend(new_points);
                 }
             }
@@ -280,14 +293,14 @@ fn bake_scene_imposters(
                 let tile_size = (TILE_SIZE as f32
                     * aabb.half_extents.xz().length().max(aabb.half_extents.y)
                     / 16.0)
-                    .clamp(2.0, 256.0) as u32;
+                    .clamp(2.0, TILE_SIZE as f32 * 2.0) as u32;
                 warn!("tile size: {tile_size}");
 
                 let mut camera = ImposterBakeCamera {
                     radius,
                     grid_size: GRID_SIZE,
                     tile_size,
-                    grid_mode: GridMode::Horizontal,
+                    grid_mode: GridMode::Hemispherical,
                     // max_tiles_per_frame: 5,
                     ..Default::default()
                 };
@@ -471,9 +484,9 @@ fn bake_imposter_imposter(
                 radius,
                 grid_size: GRID_SIZE,
                 tile_size,
-                grid_mode: GridMode::Horizontal,
+                grid_mode: GridMode::Hemispherical,
                 // max_tiles_per_frame: 5,
-                multisample: 1,
+                multisample: 8,
                 ..Default::default()
             };
 
@@ -586,7 +599,7 @@ fn pick_imposter_to_bake(
 
     missing.sort_by_key(|(dist, ..)| FloatOrd(*dist));
 
-    for (_, imposter, _) in missing.into_iter() {
+    'imposter: for (_, imposter, _) in missing.into_iter() {
         if imposter.level == 0 {
             if let Some(pointer) = scene_pointers.get(imposter.parcel).cloned() {
                 if matches!(pointer, PointerResult::Exists { .. }) {
@@ -598,6 +611,21 @@ fn pick_imposter_to_bake(
                 }
             }
         } else {
+            // check all scenes in the parcel
+            let size = 1 << imposter.level;
+            for x in imposter.parcel.x..imposter.parcel.x + size {
+                for y in imposter.parcel.y..imposter.parcel.y + size {
+                    if let Some(PointerResult::Exists { hash, .. }) =
+                        scene_pointers.get(&IVec2::new(x, y))
+                    {
+                        if live_scenes.0.get(hash).is_some() {
+                            // skip due to live scene
+                            continue 'imposter;
+                        }
+                    }
+                }
+            }
+
             info!("baking picked {imposter:?}");
             baking
                 .0
@@ -618,7 +646,6 @@ fn check_bake_state(
     lookup: ImposterLookup,
     scene_pointers: Res<ScenePointers>,
     mut debug_info: ResMut<DebugInfo>,
-    live_scenes: Res<LiveScenes>,
 ) {
     if !baking.0.is_empty() {
         debug_info.info.insert(
@@ -634,9 +661,10 @@ fn check_bake_state(
             ),
         );
     } else {
-        ingredients.0.clear();
         debug_info.info.remove("Imposter Generation");
     }
+
+    ingredients.0.clear();
 
     if let Some(imposter) = baking.0.last() {
         debug!("bake: {:?}", imposter);
@@ -650,20 +678,8 @@ fn check_bake_state(
                     // done
                     info!("scene done!");
                     baking.0.pop();
-                    ingredients.0.pop();
                     current_imposter_scene.0 = None;
                 } else {
-                    if live_scenes
-                        .0
-                        .get(&pointer_result.hash_and_urn().unwrap().0)
-                        .is_some()
-                    {
-                        warn!("cancelling bake due to live scene");
-                        ingredients.0.clear();
-                        baking.0.clear();
-                        return;
-                    }
-
                     // don't need to check for constituents, just go
                     debug!("scene running!");
                     if current_imposter_scene.0.is_none() {
@@ -680,10 +696,7 @@ fn check_bake_state(
                 {
                     info!("mip done!");
                     current_imposter_imposter.0 = None;
-                    baking.0.pop();
-                    for _ in 0..5 {
-                        ingredients.0.pop();
-                    }
+                    baking.0.clear();
                     return;
                 } else {
                     debug!("mip bake state: {:?}", lookup.state(*parcel, *level, true));
@@ -709,6 +722,8 @@ fn check_bake_state(
                             Some(PointerResult::Nothing) => continue,
                             None => {
                                 error!("missing scene pointer for {}, bailing", &key.0);
+                                ingredients.0.clear();
+                                baking.0.clear();
                                 return;
                             }
                         }
