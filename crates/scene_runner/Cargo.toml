@@ -42,6 +42,7 @@ itertools = { workspace = true }
 analytics = { workspace = true }
 bevy_dui = { workspace = true }
 rand = { workspace = true }
+crc = { workspace = true }
 
 petgraph = "0.6.3"
 spin_sleep = "1.1.1"

@@ -22,6 +22,7 @@ urlencoding = { workspace = true }
 bevy_console = { workspace = true }
 async-fs = "2.0"
 clap = { workspace = true }
+crc = { workspace = true }
 
 [lints]
 workspace = true

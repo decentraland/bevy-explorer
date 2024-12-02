@@ -606,6 +606,7 @@ pub const PARCEL_SIZE: f32 = 16.0;
 pub struct ScenePointers {
     pointers: HashMap<IVec2, PointerResult>,
     realm_bounds: (IVec2, IVec2),
+    crcs: Vec<Vec<Option<u32>>>,
 }
 
 impl Default for ScenePointers {
@@ -613,6 +614,7 @@ impl Default for ScenePointers {
         Self {
             pointers: Default::default(),
             realm_bounds: (IVec2::MIN, IVec2::MAX),
+            crcs: Default::default(),
         }
     }
 }
@@ -631,6 +633,7 @@ impl ScenePointers {
         // clear nothings
         self.pointers.retain(|_, r| r != &PointerResult::Nothing);
         // exists will be rechecked / replaced when active entities returns
+        self.crcs.clear();
     }
     pub fn insert(&mut self, parcel: IVec2, result: PointerResult) {
         self.pointers.insert(parcel, result);
@@ -642,6 +645,70 @@ impl ScenePointers {
 
     pub fn max(&self) -> IVec2 {
         self.realm_bounds.1
+    }
+
+    pub fn crc(&mut self, parcel: impl Borrow<IVec2>, level: usize) -> Option<u32> {
+        let parcel: IVec2 = *parcel.borrow();
+
+        // println!("crc {parcel} {level}");
+        while self.crcs.len() <= level {
+            let add_level = self.crcs.len() as u32;
+            let bounds = (self.realm_bounds.1 >> add_level) - (self.realm_bounds.0 >> add_level);
+            let count = (bounds.x + 1) * (bounds.y + 1);
+            self.crcs
+                .push(Vec::from_iter(std::iter::repeat(None).take(count as usize)));
+            // println!("added {} entry with {} members", self.crcs.len(), self.crcs[self.crcs.len()-1].len());
+        }
+
+        let level_bounds_min = self.realm_bounds.0 >> level as u32;
+        let level_bounds_max = self.realm_bounds.1 >> level as u32;
+        let level_bounds = level_bounds_max - level_bounds_min;
+        let level_parcel = parcel >> level as u32;
+        if level_parcel.cmplt(level_bounds_min).any() || level_parcel.cmpgt(level_bounds_max).any()
+        {
+            return Some(0);
+        }
+
+        let level_parcel_offset = level_parcel - level_bounds_min;
+        let index = (level_parcel_offset.y * level_bounds.x + level_parcel_offset.x) as usize;
+
+        // println!("parcel index {parcel} @ {level} [in {level_bounds} from {level_bounds_min}] = {level_parcel} / {index}");
+
+        if let Some(crc) = self.crcs[level][index] {
+            // println!("cached");
+            return Some(crc);
+        }
+
+        if level == 0 {
+            let crc = match self.get(parcel) {
+                Some(PointerResult::Exists { hash, .. }) => {
+                    crc::Crc::<u32>::new(&crc::CRC_32_CKSUM).checksum(hash.as_bytes())
+                }
+                Some(PointerResult::Nothing) => 0,
+                None => return None,
+            };
+
+            // println!("computing level 0");
+            self.crcs[level][index] = Some(crc);
+            return Some(crc);
+        }
+
+        let mut calc = 0;
+        // println!("checking sub levels");
+        for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
+            if let Some(sub_crc) = self.crc(
+                (level_parcel << level as u32) + (offset << (level - 1) as u32),
+                level - 1,
+            ) {
+                calc |= sub_crc;
+            } else {
+                // println!("failed {level}");
+                return None;
+            }
+        }
+        // println!("success {level}");
+        self.crcs[level][index] = Some(calc);
+        Some(calc)
     }
 }
 

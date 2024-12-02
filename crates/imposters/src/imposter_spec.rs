@@ -12,11 +12,12 @@ pub struct ImposterSpec {
     pub region_max: Vec3,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct BakedScene {
     #[serde(serialize_with = "imposter_serialize")]
     #[serde(deserialize_with = "imposter_deserialize")]
     pub imposters: HashMap<IVec2, ImposterSpec>,
+    pub crc: u32,
 }
 
 fn imposter_serialize<S>(val: &HashMap<IVec2, ImposterSpec>, s: S) -> Result<S::Ok, S::Error>
@@ -85,13 +86,13 @@ pub(crate) fn write_imposter(
     id: &str,
     parcel: IVec2,
     level: usize,
-    imposter: &BakedScene,
+    baked_scene: &BakedScene,
 ) {
     let path = spec_path(ipfas.ipfs(), id, parcel, level);
     let _ = std::fs::create_dir_all(path.parent().unwrap());
     if let Err(e) = std::fs::File::create(path)
         .map_err(|e| e.to_string())
-        .and_then(|f| serde_json::to_writer(f, &imposter).map_err(|e| e.to_string()))
+        .and_then(|f| serde_json::to_writer(f, baked_scene).map_err(|e| e.to_string()))
     {
         warn!("failed to write imposter spec: {e}");
     }
@@ -102,14 +103,19 @@ pub async fn load_imposter(
     id: String,
     parcel: IVec2,
     level: usize,
+    required_crc: Option<u32>,
 ) -> Option<BakedScene> {
     // try locally
     let path = spec_path(&ipfs, &id, parcel, level);
     if let Ok(mut file) = async_fs::File::open(&path).await {
         let mut buf = Vec::default();
         if file.read_to_end(&mut buf).await.is_ok() {
-            if let Ok(imposter) = serde_json::from_slice(&buf) {
-                return Some(imposter);
+            if let Ok(baked_scene) = serde_json::from_slice::<BakedScene>(&buf) {
+                if required_crc.map_or(true, |crc| crc == baked_scene.crc) {
+                    return Some(baked_scene);
+                } else {
+                    warn!("mismatched hash for {path:?}");
+                }
             } else {
                 warn!("failed to deserialize {path:?}");
             }

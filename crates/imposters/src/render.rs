@@ -11,14 +11,12 @@ use bevy::{
     tasks::{IoTaskPool, Task},
     utils::{hashbrown::HashSet, HashMap},
 };
-use boimp::{
-    asset_loader::ImposterVertexMode, bake::ImposterBakeMaterialPlugin, render::Imposter,
-    ImposterLoaderSettings,
-};
+use boimp::{bake::ImposterBakeMaterialPlugin, render::Imposter, ImposterLoaderSettings};
 use common::{
     structs::{AppConfig, PrimaryUser},
     util::TaskExt,
 };
+use crc::CRC_32_CKSUM;
 use ipfs::{ChangeRealmEvent, CurrentRealm, IpfsAssetServer};
 
 use scene_runner::{
@@ -116,7 +114,7 @@ pub const TRANSITION_TIME: f32 = 0.25;
 pub enum ImposterState {
     NotSpawned,
     Pending,
-    Ready,
+    Ready(u32),
     Missing,
     NoScene,
 }
@@ -124,7 +122,15 @@ pub enum ImposterState {
 #[derive(SystemParam)]
 pub struct ImposterLookup<'w, 's> {
     entities: Res<'w, ImposterEntities>,
-    imposters: Query<'w, 's, (Option<&'static ImposterMissing>, Option<&'static Children>)>,
+    imposters: Query<
+        'w,
+        's,
+        (
+            Option<&'static ImposterMissing>,
+            Option<&'static Children>,
+            Option<&'static ImposterReady>,
+        ),
+    >,
     handles: Query<
         'w,
         's,
@@ -139,7 +145,11 @@ pub struct ImposterLookup<'w, 's> {
 impl ImposterLookup<'_, '_> {
     fn imposter_state(
         entities: &HashMap<(IVec2, usize, bool), Entity>,
-        imposters: &Query<(Option<&ImposterMissing>, Option<&Children>)>,
+        imposters: &Query<(
+            Option<&ImposterMissing>,
+            Option<&Children>,
+            Option<&ImposterReady>,
+        )>,
         handles: &Query<(Option<&Handle<Imposter>>, Option<&Handle<FloorImposter>>)>,
         asset_server: &AssetServer,
         parcel: IVec2,
@@ -150,7 +160,7 @@ impl ImposterLookup<'_, '_> {
             return ImposterState::NotSpawned;
         };
 
-        let Ok((maybe_missing, maybe_children)) = imposters.get(*entity) else {
+        let Ok((maybe_missing, maybe_children, maybe_ready)) = imposters.get(*entity) else {
             return ImposterState::Pending;
         };
 
@@ -185,7 +195,7 @@ impl ImposterLookup<'_, '_> {
             }
         }
 
-        ImposterState::Ready
+        ImposterState::Ready(maybe_ready.map(|r| r.crc).unwrap_or(0))
     }
 
     pub fn state(&self, parcel: IVec2, size: usize, ingredient: bool) -> ImposterState {
@@ -224,15 +234,23 @@ impl ImposterLoadTask {
             scene_hash.to_string(),
             IVec2::MAX,
             0,
+            None, // don't need to check since we load by id
         )))
     }
 
-    pub fn new_mip(ipfas: &IpfsAssetServer, address: &str, parcel: IVec2, level: usize) -> Self {
+    pub fn new_mip(
+        ipfas: &IpfsAssetServer,
+        address: &str,
+        parcel: IVec2,
+        level: usize,
+        crc: u32,
+    ) -> Self {
         Self(IoTaskPool::get().spawn(load_imposter(
             ipfas.ipfs().clone(),
             address.to_string(),
             parcel,
             level,
+            Some(crc),
         )))
     }
 }
@@ -250,7 +268,11 @@ pub fn spawn_imposters(
     realm_changed: EventReader<ChangeRealmEvent>,
     ingredients: Res<BakingIngredients>,
     pointers: Res<ScenePointers>,
-    imposters: Query<(Option<&ImposterMissing>, Option<&Children>)>,
+    imposters: Query<(
+        Option<&ImposterMissing>,
+        Option<&Children>,
+        Option<&ImposterReady>,
+    )>,
     handles: Query<(Option<&Handle<Imposter>>, Option<&Handle<FloorImposter>>)>,
     asset_server: Res<AssetServer>,
 ) {
@@ -265,7 +287,7 @@ pub fn spawn_imposters(
     }
 
     // skip if no realm
-    if pointers.min() == IVec2::MIN {
+    if pointers.min() == IVec2::MAX {
         return;
     }
 
@@ -290,8 +312,8 @@ pub fn spawn_imposters(
             .ceil()
             .as_ivec2();
 
-        let min_tile = min_tile.max((pointers.min() & !(tile_size - 1)) / tile_size);
-        let max_tile = max_tile.min((pointers.max() & !(tile_size - 1)) / tile_size);
+        let min_tile = min_tile.max(pointers.min() >> level as u32);
+        let max_tile = max_tile.min(pointers.max() >> level as u32);
 
         for x in min_tile.x..=max_tile.x {
             for y in min_tile.y..=max_tile.y {
@@ -347,8 +369,6 @@ pub fn spawn_imposters(
                 transitioning_out.0.insert((pos, level), *ent);
 
                 let tile_size = 1 << level;
-                let smaller_tile_size = tile_size / 2;
-                let larger_tile_size = tile_size * 2;
 
                 let world_min = pos.as_vec2() * PARCEL_SIZE;
                 let world_max = world_min + IVec2::splat(tile_size).as_vec2() * PARCEL_SIZE;
@@ -360,7 +380,7 @@ pub fn spawn_imposters(
                         // skip checks for 2 levels
                     } else {
                         for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
-                            let smaller = pos + offset * smaller_tile_size;
+                            let smaller = pos + (offset << (level - 1) as u32);
                             if smaller.clamp(pointers.min(), pointers.max()) == smaller {
                                 match ImposterLookup::imposter_state(&prev_entities, &imposters, &handles, &asset_server, smaller, level - 1, false) {
                                     ImposterState::NotSpawned |
@@ -368,7 +388,7 @@ pub fn spawn_imposters(
                                         debug!("not despawning {}:{} because smaller {}:{} is {:?}", pos, level, smaller, level-1, ImposterLookup::imposter_state(&prev_entities, &imposters, &handles, &asset_server, smaller, level - 1, false));
                                         required = true
                                     }
-                                    ImposterState::Ready |
+                                    ImposterState::Ready(_) |
                                     ImposterState::Missing |
                                     ImposterState::NoScene  => (),
                                 }
@@ -382,14 +402,14 @@ pub fn spawn_imposters(
                     if level < config.scene_imposter_distances.len() - 2 && distance > *config.scene_imposter_distances.get(level + 1).unwrap_or(&0.0) {
                         // skip checks for 2 levels
                     } else {
-                        let larger = pos & !(larger_tile_size - 1);
+                        let larger = (pos >> (level + 1) as u32) << (level + 1) as u32;
                         match ImposterLookup::imposter_state(&prev_entities, &imposters, &handles, &asset_server, larger, level + 1, false) {
                             ImposterState::NotSpawned |
                             ImposterState::Pending => {
                                 debug!("(dist {} vs range {:?}) not despawning {}:{} because larger {}:{} is {:?}", distance, config.scene_imposter_distances.get(level), pos, level, larger, level+1, ImposterLookup::imposter_state(&prev_entities, &imposters, &handles, &asset_server, larger, level + 1, false));
                                 required = true
                             }
-                            ImposterState::Ready |
+                            ImposterState::Ready(_) |
                             ImposterState::Missing |
                             ImposterState::NoScene => (),
                         }
@@ -432,7 +452,10 @@ pub fn spawn_imposters(
 }
 
 #[derive(Component, Clone)]
-pub struct ImposterReady(pub Option<String>);
+pub struct ImposterReady {
+    pub scene: Option<String>,
+    pub crc: u32,
+}
 
 #[derive(Component)]
 pub struct ImposterMissing(pub Option<String>);
@@ -449,7 +472,7 @@ fn load_imposters(
         Or<(Changed<SceneImposter>, With<RetryImposter>)>,
     >,
     all_imposters: Query<&SceneImposter>,
-    scene_pointers: Res<ScenePointers>,
+    mut scene_pointers: ResMut<ScenePointers>,
     ipfas: IpfsAssetServer,
     current_realm: Res<CurrentRealm>,
 ) {
@@ -480,16 +503,18 @@ fn load_imposters(
             }
         } else if current_realm.address.is_empty() {
             commands.entity(ent).try_insert(RetryImposter);
-        } else {
-            commands
-                .entity(ent)
-                .remove::<RetryImposter>()
-                .try_insert(ImposterLoadTask::new_mip(
+        } else if let Some(crc) = scene_pointers.crc(imposter.parcel, imposter.level) {
+            commands.entity(ent).remove::<RetryImposter>().try_insert(
+                ImposterLoadTask::new_mip(
                     &ipfas,
                     &current_realm.address,
                     imposter.parcel,
                     imposter.level,
-                ));
+                    crc,
+                ),
+            );
+        } else {
+            commands.entity(ent).try_insert(RetryImposter);
         }
     }
 
@@ -508,7 +533,10 @@ fn load_imposters(
                             if let Some(spec) = scene.imposters.remove(&imposter.parcel) {
                                 commands.try_insert(spec);
                             }
-                            commands.try_insert(ImposterReady(Some(hash.clone())));
+                            commands.try_insert(ImposterReady {
+                                scene: Some(hash.clone()),
+                                crc: crc::Crc::<u32>::new(&CRC_32_CKSUM).checksum(hash.as_bytes()),
+                            });
                         }
                     }
                 } else {
@@ -536,7 +564,10 @@ fn load_imposters(
                         if let Some(spec) = baked.imposters.remove(&imposter.parcel) {
                             commands.try_insert(spec);
                         }
-                        commands.try_insert(ImposterReady(None));
+                        commands.try_insert(ImposterReady {
+                            scene: None,
+                            crc: baked.crc,
+                        });
                     }
                     None => {
                         // didn't exist
@@ -580,7 +611,7 @@ fn render_imposters(
                 // spawn imposter
                 let path = texture_path(
                     ipfas.ipfs(),
-                    ready.0.as_ref().unwrap_or(&current_realm.address),
+                    ready.scene.as_ref().unwrap_or(&current_realm.address),
                     req.parcel,
                     req.level,
                 );
@@ -595,9 +626,7 @@ fn render_imposters(
                                 path,
                                 move |s| {
                                     *s = ImposterLoaderSettings {
-                                        vertex_mode: ImposterVertexMode::Billboard,
                                         multisample,
-                                        use_source_uv_y: false,
                                         alpha: initial_alpha,
                                         alpha_blend: 0.0, // blend
                                     }
@@ -628,7 +657,7 @@ fn render_imposters(
 
             let path = floor_path(
                 ipfas.ipfs(),
-                ready.0.as_ref().unwrap_or(&current_realm.address),
+                ready.scene.as_ref().unwrap_or(&current_realm.address),
                 req.parcel,
                 req.level,
             );
@@ -659,7 +688,7 @@ fn update_imposter_visibility(
 ) {
     for (mut layers, ready) in q.iter_mut() {
         let show = ready
-            .0
+            .scene
             .as_ref()
             // either a non-scene mip, or not a live scene, or live and translation != 0 (i.e. tick < 10)
             .map_or(true, |hash| {
@@ -702,8 +731,7 @@ fn transition_imposters(
         }
         let mut ready = true;
 
-        let size = 1 << imp.level;
-        let parent_tile = imp.parcel & !(size * 2 - 1);
+        let parent_tile = (imp.parcel >> (imp.level + 1) as u32) << (imp.level + 1) as u32;
         if let Some(parent) = lookup.0.get(&(parent_tile, imp.level + 1)) {
             dont_transition_out.push(*parent);
             if !q_out.get(*parent).map_or(true, |(_, _, _, t)| t.0) {
@@ -714,7 +742,7 @@ fn transition_imposters(
 
         if imp.level > 0 {
             for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
-                let child_tile = imp.parcel + offset * (size >> 1);
+                let child_tile = imp.parcel + (offset << (imp.level - 1) as u32);
                 if let Some(child) = lookup.0.get(&(child_tile, imp.level - 1)) {
                     dont_transition_out.push(*child);
                     if !q_out.get(*child).map_or(true, |(_, _, _, t)| t.0) {
