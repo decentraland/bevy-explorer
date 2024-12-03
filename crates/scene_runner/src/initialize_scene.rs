@@ -613,7 +613,7 @@ impl Default for ScenePointers {
     fn default() -> Self {
         Self {
             pointers: Default::default(),
-            realm_bounds: (IVec2::MIN, IVec2::MAX),
+            realm_bounds: (IVec2::MAX, IVec2::MIN),
             crcs: Default::default(),
         }
     }
@@ -695,12 +695,15 @@ impl ScenePointers {
 
         let mut calc = 0;
         // println!("checking sub levels");
-        for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
+        for (ix, offset) in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE]
+            .into_iter()
+            .enumerate()
+        {
             if let Some(sub_crc) = self.crc(
                 (level_parcel << level as u32) + (offset << (level - 1) as u32),
                 level - 1,
             ) {
-                calc |= sub_crc;
+                calc ^= sub_crc.rotate_right(ix as u32);
             } else {
                 // println!("failed {level}");
                 return None;
@@ -753,8 +756,8 @@ pub fn parcels_in_range(
     let min_point = focus - Vec2::splat(range);
     let max_point = focus + Vec2::splat(range);
 
-    let min_parcel = (min_point / 16.0).floor().as_ivec2();
-    let max_parcel = (max_point / 16.0).ceil().as_ivec2();
+    let min_parcel = (min_point / 16.0).floor().as_ivec2().max(min);
+    let max_parcel = (max_point / 16.0).ceil().as_ivec2().min(max);
 
     let mut results = Vec::default();
 

@@ -27,7 +27,6 @@ use visuals::SceneGlobalLight;
 use wallet::Wallet;
 
 fn main() {
-    println!("??");
     let mut args = pico_args::Arguments::from_env();
     let config_file = config_file();
 

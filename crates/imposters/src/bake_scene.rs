@@ -795,7 +795,10 @@ fn check_bake_state(
 
                 let mut any_pending = false;
                 let mut crc = 0u32;
-                for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
+                for (ix, offset) in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE]
+                    .into_iter()
+                    .enumerate()
+                {
                     let key = (*parcel + offset * next_size, level - 1);
                     let mut pointer = None;
                     if *level == 1 {
@@ -821,7 +824,7 @@ fn check_bake_state(
 
                     match lookup.state(key.0, key.1, true) {
                         ImposterState::Ready(sub_crc) => {
-                            crc |= sub_crc;
+                            crc ^= sub_crc.rotate_right(ix as u32);
                         }
                         ImposterState::NoScene => (),
                         ImposterState::Missing => {
