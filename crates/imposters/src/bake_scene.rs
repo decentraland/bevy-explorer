@@ -512,11 +512,6 @@ fn bake_imposter_imposter(
                 .get(&key)
                 .and_then(|e| existing_imposters.get(*e).ok())
             {
-                // content bounds
-                assert_eq!(
-                    children.iter().count(),
-                    if maybe_spec.is_some() { 2 } else { 1 }
-                );
                 if let Some(spec) = maybe_spec {
                     min = min.min(spec.region_min);
                     max = max.max(spec.region_max);
@@ -583,35 +578,37 @@ fn bake_imposter_imposter(
             );
         }
 
-        // always generate top-down
-        let mid = (*parcel * IVec2::new(1, -1) * 16).as_vec2()
-            + Vec2::new(size as f32, -(size as f32)) * 16.0 * 0.5;
-        let mut top_down = ImposterBakeCamera {
-            grid_size: 1,
-            radius: (size as f32) * PARCEL_SIZE * 0.5 + size as f32,
-            tile_size: 16 + 2,
-            order: -98,
-            multisample: 1,
-            manual_camera_transforms: Some(vec![Transform::from_translation(Vec3::new(
-                mid.x, 2.0, mid.y,
-            ))
-            .looking_at(Vec3::new(mid.x, 0.0, mid.y), Vec3::NEG_Z)
-            .into()]),
-            ..Default::default()
-        };
-
-        let path = floor_path(ipfas.ipfs(), &current_realm.address, *parcel, *level);
-        let callback = top_down.save_asset_callback(path, true, true);
-        top_down.set_callback(callback);
-
-        commands.spawn((
-            ImposterBakeBundle {
-                transform: Transform::from_translation(Vec3::new(mid.x, 0.0, mid.y)),
-                camera: top_down,
+        // generate top-down unless crc == 0
+        if *crc != 0 {
+            let mid = (*parcel * IVec2::new(1, -1) * 16).as_vec2()
+                + Vec2::new(size as f32, -(size as f32)) * 16.0 * 0.5;
+            let mut top_down = ImposterBakeCamera {
+                grid_size: 1,
+                radius: (size as f32) * PARCEL_SIZE * 0.5 + size as f32,
+                tile_size: 16 + 2,
+                order: -98,
+                multisample: 1,
+                manual_camera_transforms: Some(vec![Transform::from_translation(Vec3::new(
+                    mid.x, 2.0, mid.y,
+                ))
+                .looking_at(Vec3::new(mid.x, 0.0, mid.y), Vec3::NEG_Z)
+                .into()]),
                 ..Default::default()
-            },
-            IMPOSTERCEPTION_LAYER,
-        ));
+            };
+
+            let path = floor_path(ipfas.ipfs(), &current_realm.address, *parcel, *level);
+            let callback = top_down.save_asset_callback(path, true, true);
+            top_down.set_callback(callback);
+
+            commands.spawn((
+                ImposterBakeBundle {
+                    transform: Transform::from_translation(Vec3::new(mid.x, 0.0, mid.y)),
+                    camera: top_down,
+                    ..Default::default()
+                },
+                IMPOSTERCEPTION_LAYER,
+            ));
+        }
 
         *baking = Some((tick.0, baked_scene));
     }
@@ -652,15 +649,17 @@ fn pick_imposter_to_bake(
         return;
     }
 
-    let Ok(focus) = focus.get_single().map(|gt| gt.translation()) else {
-        return;
-    };
+    let focus = focus
+        .get_single()
+        .map(|gt| gt.translation())
+        .unwrap_or_default();
 
     let mut missing = q
         .iter()
         .map(|(imposter, missing)| {
-            let midpoint = (imposter.parcel * IVec2::new(1, -1)).as_vec2() * PARCEL_SIZE
-                + ((1 << imposter.level) as f32 * PARCEL_SIZE) * 0.5;
+            let midpoint = (imposter.parcel.as_vec2() + ((1 << imposter.level) as f32) * 0.5)
+                * Vec2::new(1.0, -1.0)
+                * PARCEL_SIZE;
             ((midpoint - focus.xz()).length_squared(), imposter, missing)
         })
         .filter(|(_, imposter, missing)| {

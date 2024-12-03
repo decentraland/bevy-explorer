@@ -666,8 +666,20 @@ fn send_scene_updates(
 
     let mut buf = Vec::default();
     for (mut affine, id) in [
-        (player.single().compute_affine(), SceneEntityId::PLAYER),
-        (camera.single().compute_affine(), SceneEntityId::CAMERA),
+        (
+            player
+                .get_single()
+                .map(Transform::compute_affine)
+                .unwrap_or_default(),
+            SceneEntityId::PLAYER,
+        ),
+        (
+            camera
+                .get_single()
+                .map(Transform::compute_affine)
+                .unwrap_or_default(),
+            SceneEntityId::CAMERA,
+        ),
     ] {
         buf.clear();
         affine.translation -= scene_transform.affine().translation * Vec3A::new(1.0, 0.0, 1.0);

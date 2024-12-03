@@ -172,6 +172,10 @@ impl ImposterLookup<'_, '_> {
             }
         }
 
+        if maybe_ready.map_or(false, |r| r.crc == 0) {
+            return ImposterState::Ready(maybe_ready.map(|r| r.crc).unwrap_or(0));
+        }
+
         let Some(children) = maybe_children else {
             return ImposterState::Pending;
         };
@@ -504,15 +508,16 @@ fn load_imposters(
         } else if current_realm.address.is_empty() {
             commands.entity(ent).try_insert(RetryImposter);
         } else if let Some(crc) = scene_pointers.crc(imposter.parcel, imposter.level) {
-            commands.entity(ent).remove::<RetryImposter>().try_insert(
-                ImposterLoadTask::new_mip(
+            commands
+                .entity(ent)
+                .remove::<RetryImposter>()
+                .try_insert(ImposterLoadTask::new_mip(
                     &ipfas,
                     &current_realm.address,
                     imposter.parcel,
                     imposter.level,
                     crc,
-                ),
-            );
+                ));
         } else {
             commands.entity(ent).try_insert(RetryImposter);
         }
@@ -646,37 +651,39 @@ fn render_imposters(
                 ));
             }
 
-            //spawn floor
-            let offset = match req.level {
-                0 => 0.0,
-                _ => 0.0,
-            };
-            let size = (1i32 << req.level) as f32 * PARCEL_SIZE;
-            let mid = (req.parcel * IVec2::new(1, -1)).as_vec2() * PARCEL_SIZE
-                + Vec2::new(size, -size) * 0.5;
+            if ready.crc != 0 {
+                //spawn floor
+                let offset = match req.level {
+                    0 => 0.0,
+                    _ => 0.0,
+                };
+                let size = (1i32 << req.level) as f32 * PARCEL_SIZE;
+                let mid = (req.parcel * IVec2::new(1, -1)).as_vec2() * PARCEL_SIZE
+                    + Vec2::new(size, -size) * 0.5;
 
-            let path = floor_path(
-                ipfas.ipfs(),
-                ready.scene.as_ref().unwrap_or(&current_realm.address),
-                req.parcel,
-                req.level,
-            );
-            c.spawn((
-                MaterialMeshBundle {
-                    transform: Transform::from_translation(Vec3::new(mid.x, -0.01, mid.y))
-                        .with_scale(Vec3::new(size, 1.0, size)),
-                    mesh: imposter_meshes.floor.clone(),
-                    material: asset_server
-                        .load_with_settings::<FloorImposter, f32>(path, move |s: &mut f32| {
-                            *s = offset
-                        }),
-                    ..Default::default()
-                },
-                NotShadowCaster,
-                NotShadowReceiver,
-                layer,
-                ready.clone(),
-            ));
+                let path = floor_path(
+                    ipfas.ipfs(),
+                    ready.scene.as_ref().unwrap_or(&current_realm.address),
+                    req.parcel,
+                    req.level,
+                );
+                c.spawn((
+                    MaterialMeshBundle {
+                        transform: Transform::from_translation(Vec3::new(mid.x, -0.01, mid.y))
+                            .with_scale(Vec3::new(size, 1.0, size)),
+                        mesh: imposter_meshes.floor.clone(),
+                        material: asset_server
+                            .load_with_settings::<FloorImposter, f32>(path, move |s: &mut f32| {
+                                *s = offset
+                            }),
+                        ..Default::default()
+                    },
+                    NotShadowCaster,
+                    NotShadowReceiver,
+                    layer,
+                    ready.clone(),
+                ));
+            }
         });
     }
 }
