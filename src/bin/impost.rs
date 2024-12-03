@@ -15,6 +15,8 @@ use common::{
     util::{config_file, UtilsPlugin},
 };
 use input_manager::{AcceptInput, InputMap};
+use nft::asset_source::Nft;
+use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
     initialize_scene::ScenePointers, permissions::PermissionManager,
@@ -153,6 +155,7 @@ fn main() {
         .add_plugins(SceneBoundPlugin)
         .add_plugins(SceneRunnerPlugin)
         .add_plugins(CommsPlugin)
+        .add_plugins(RestrictedActionsPlugin)
         .add_plugins(DclImposterPlugin);
 
     app.insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
@@ -160,8 +163,10 @@ fn main() {
         .add_systems(Startup, setup.in_set(SetupSets::Init));
 
     // add required things that don't get initialized by their plugins
+    let mut wallet = Wallet::default();
+    wallet.finalize_as_guest();
     app.init_resource::<ProfileCache>()
-        .init_resource::<Wallet>()
+        .insert_resource(wallet)
         .add_event::<SystemAudio>()
         .init_resource::<PermissionManager>()
         .init_resource::<InputMap>()
@@ -170,7 +175,8 @@ fn main() {
         .init_resource::<SceneGlobalLight>()
         .add_event::<RpcCall>()
         .add_event::<ScrollTargetEvent>()
-        .init_resource::<PreviewMode>();
+        .init_resource::<PreviewMode>()
+        .init_asset::<Nft>();
 
     // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
     // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
