@@ -439,6 +439,7 @@ fn op_require(
         "~system/EthereumController" => {
             Ok(include_str!("modules/EthereumController.js").to_owned())
         }
+        "~system/BevyExplorerApi" => Ok(include_str!("modules/BevyExplorerApi.js").to_owned()),
         "~system/Players" => Ok(include_str!("modules/Players.js").to_owned()),
         "~system/PortableExperiences" => {
             Ok(include_str!("modules/PortableExperiences.js").to_owned())

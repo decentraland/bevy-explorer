@@ -891,9 +891,11 @@ fn load_active_entities(
                 *pointer_request = Some((
                     required_parcels,
                     HashMap::default(),
-                    ipfas
-                        .ipfs()
-                        .active_entities(ipfs::ActiveEntitiesRequest::Pointers(pointers), None),
+                    ipfas.ipfs().active_entities(
+                        ipfs::ActiveEntitiesRequest::Pointers(pointers),
+                        None,
+                        true,
+                    ),
                 ));
             }
         } else {
@@ -947,9 +949,11 @@ fn load_active_entities(
                 *pointer_request = Some((
                     required_parcels,
                     lookup,
-                    ipfas
-                        .ipfs()
-                        .active_entities(ipfs::ActiveEntitiesRequest::Urns(required_paths), None),
+                    ipfas.ipfs().active_entities(
+                        ipfs::ActiveEntitiesRequest::Urns(required_paths),
+                        None,
+                        false,
+                    ),
                 ));
             }
         }

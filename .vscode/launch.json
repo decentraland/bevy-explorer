@@ -1,63 +1,55 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [    
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug executable 'social'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=social",
-                    "--package=social"
-                ],
-                "filter": {
-                    "name": "social",
-                    "kind": "bin"
-                }
-            },
-            "args": ["step-4"],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug executable 'decentra-bevy'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=decentra-bevy",
-                    "--package=decentra-bevy"
-                ],
-                "filter": {
-                    "name": "decentra-bevy",
-                    "kind": "bin"
-                }
-            },
-            "args": ["step-4"],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug unit tests in executable 'decentra-bevy'",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=decentra-bevy",
-                    "--package=decentra-bevy"
-                ],
-                "filter": {
-                    "name": "decentra-bevy",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'social'",
+      "cargo": {
+        "args": ["build", "--bin=social", "--package=social"],
+        "filter": {
+          "name": "social",
+          "kind": "bin"
         }
-    ]
+      },
+      "args": ["step-4"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'decentra-bevy'",
+      "cargo": {
+        "args": ["build", "--bin=decentra-bevy", "--package=decentra-bevy"],
+        "filter": {
+          "name": "decentra-bevy",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'decentra-bevy'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=decentra-bevy",
+          "--package=decentra-bevy"
+        ],
+        "filter": {
+          "name": "decentra-bevy",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
 }

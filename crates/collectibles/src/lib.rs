@@ -364,9 +364,11 @@ pub fn request_collectibles<T: CollectibleType>(
         if !pointers.is_empty() {
             debug!("requesting: {:?} ({:?})", requested, pointers);
             *active_task = Some((
-                ipfas
-                    .ipfs()
-                    .active_entities(ipfs::ActiveEntitiesRequest::Pointers(pointers), None),
+                ipfas.ipfs().active_entities(
+                    ipfs::ActiveEntitiesRequest::Pointers(pointers),
+                    None,
+                    false,
+                ),
                 requested,
             ));
         }

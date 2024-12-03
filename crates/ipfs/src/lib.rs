@@ -369,6 +369,7 @@ pub struct ServerConfiguration {
     pub scenes_urn: Option<Vec<String>>,
     pub realm_name: Option<String>,
     pub network_id: Option<u32>,
+    pub city_loader_content_server: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -741,15 +742,33 @@ impl IpfsIo {
         self: &Arc<Self>,
         request: ActiveEntitiesRequest,
         endpoint: Option<&str>,
+        city_pointer: bool,
     ) -> ActiveEntityTask {
         let active_url = match endpoint {
             Some(url) => Some(url.to_owned()),
-            None => self
-                .realm_config_receiver
-                .borrow()
-                .as_ref()
-                .and_then(|(_, about)| about.content.as_ref())
-                .map(|content| content.public_url.to_owned()),
+            None => {
+                let content = self
+                    .realm_config_receiver
+                    .borrow()
+                    .as_ref()
+                    .and_then(|(_, about)| about.content.as_ref())
+                    .map(|content| content.public_url.to_owned());
+
+                let city_content = self
+                    .realm_config_receiver
+                    .borrow()
+                    .as_ref()
+                    .and_then(|(_, about)| about.configurations.as_ref())
+                    .and_then(|config| config.city_loader_content_server.as_ref())
+                    .map(|city_url| city_url.to_owned());
+
+                info!("{:?} ; {:?} ; {:?}", content, city_content, city_pointer);
+                if city_content.is_some() && city_pointer {
+                    city_content
+                } else {
+                    content
+                }
+            }
         }
         .map(|url| format!("{url}/entities/active"));
 
@@ -759,6 +778,15 @@ impl IpfsIo {
             ActiveEntitiesRequest::Pointers(pointers) => {
                 IoTaskPool::get().spawn(async move {
                     let active_url = active_url.ok_or(anyhow!("not connected"))?;
+
+                    // Log first 10 pointers and active_url
+                    info!(
+                        "Requesting first {:?} pointers: {:?} from {}",
+                        pointers.len().min(10),
+                        pointers.iter().take(10).collect::<Vec<_>>(),
+                        active_url
+                    );
+
                     let body = serde_json::to_string(&ActiveEntitiesPointersRequest { pointers })?;
                     let mut response = isahc::Request::post(active_url)
                         .header("content-type", "application/json")
@@ -796,6 +824,10 @@ impl IpfsIo {
                                 }),
                             )),
                         });
+
+                        if city_pointer {
+                            info!("active entity: {:?}", res.last().unwrap());
+                        }
                     }
 
                     Ok(res)

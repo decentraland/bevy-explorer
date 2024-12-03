@@ -61,6 +61,7 @@ fn break_everything(parcel: IVec2, urn: Option<String>) {
         let entities = block_on(ipfs_io.active_entities(
             ipfs::ActiveEntitiesRequest::Pointers(vec![format!("{},{}", parcel.x, parcel.y)]),
             None,
+            true,
         ))
         .unwrap();
         entities.into_iter().next().unwrap()
