@@ -714,10 +714,10 @@ fn send_scene_updates(
     }
 
     // add canvas info
-    if let Ok(window) = window.get_single() {
+    let canvas_info = if let Ok(window) = window.get_single() {
         let vmin = window.resolution.width().min(window.resolution.height());
 
-        let canvas_info = if config.constrain_scene_ui {
+        if config.constrain_scene_ui {
             // we optionally misreport window size and constrain scene ui directly as nobody uses this info properly
             PbUiCanvasInformation {
                 device_pixel_ratio: window.resolution.scale_factor(),
@@ -742,17 +742,24 @@ fn send_scene_updates(
                     bottom: 0.05 * vmin,
                 }),
             }
-        };
+        }
+    } else {
+        PbUiCanvasInformation {
+            device_pixel_ratio: 1.0,
+            width: 1280,
+            height: 720,
+            interactable_area: Some(BorderRect::default()),
+        }
+    };
 
-        buf.clear();
-        DclWriter::new(&mut buf).write(&canvas_info);
-        crdt_store.force_update(
-            SceneComponentId::CANVAS_INFO,
-            CrdtType::LWW_ROOT,
-            SceneEntityId::ROOT,
-            Some(&mut DclReader::new(&buf)),
-        );
-    }
+    buf.clear();
+    DclWriter::new(&mut buf).write(&canvas_info);
+    crdt_store.force_update(
+        SceneComponentId::CANVAS_INFO,
+        CrdtType::LWW_ROOT,
+        SceneEntityId::ROOT,
+        Some(&mut DclReader::new(&buf)),
+    );
 
     if let Err(e) = handle
         .sender

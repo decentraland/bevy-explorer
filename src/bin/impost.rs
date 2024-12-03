@@ -9,7 +9,7 @@ use common::{
     rpc::RpcCall,
     sets::SetupSets,
     structs::{
-        AppConfig, GraphicsSettings, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes,
+        AppConfig, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes,
         SceneImposterBake, SceneLoadDistance, SystemAudio, ToolTips,
     },
     util::{config_file, UtilsPlugin},
@@ -46,6 +46,11 @@ fn main() {
             .value_from_str("--server")
             .ok()
             .unwrap_or(base_config.server),
+        location: args
+            .value_from_str::<_, IVec2Arg>("--location")
+            .ok()
+            .map(|va| va.0)
+            .unwrap_or(IVec2::ZERO),
         graphics: GraphicsSettings {
             vsync: false,
             log_fps: false,
@@ -183,6 +188,7 @@ fn check_done(
     realm: Res<CurrentRealm>,
     pointers: Res<ScenePointers>,
     mut counter: Local<usize>,
+    config: Res<AppConfig>,
 ) {
     // wait for realm
     if realm.address.is_empty() {
@@ -191,7 +197,7 @@ fn check_done(
     }
 
     // wait for pointers
-    if pointers.get(IVec2::ZERO).is_none() {
+    if pointers.get(config.location).is_none() {
         *counter = 0;
         return;
     }
