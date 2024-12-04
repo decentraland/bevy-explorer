@@ -54,7 +54,7 @@ impl<'a> DclWriter<'a> {
     }
 }
 
-impl<'a> Deref for DclWriter<'a> {
+impl Deref for DclWriter<'_> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -73,7 +73,7 @@ pub trait ToDclWriter {
     }
 }
 
-unsafe impl<'a> prost::bytes::BufMut for DclWriter<'a> {
+unsafe impl prost::bytes::BufMut for DclWriter<'_> {
     fn remaining_mut(&self) -> usize {
         self.buffer.remaining_mut()
     }

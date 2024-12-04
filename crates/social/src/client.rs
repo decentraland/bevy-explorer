@@ -785,7 +785,7 @@ mod test {
             thread::sleep(Duration::from_secs(1));
         }
 
-        return None;
+        None
     }
 
     #[test]

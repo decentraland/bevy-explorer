@@ -85,7 +85,7 @@ pub struct TargetCameraProps {
     pub scale_factor: f32,
 }
 
-impl<'w, 's> TargetCameraHelper<'w, 's> {
+impl TargetCameraHelper<'_, '_> {
     fn get_props(&self, e: Entity) -> Option<TargetCameraProps> {
         let target_camera = self.target_camera.get(e).ok().cloned();
         let (window_ref, texture_ref) = match &target_camera {

@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, num::ParseIntError, str::FromStr};
+use std::{borrow::Borrow, collections::VecDeque, num::ParseIntError, str::FromStr};
 
 use analytics::segment_system::SegmentConfig;
 use bevy::{
@@ -35,7 +35,7 @@ use wallet::Wallet;
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 use crate::{
     bounds_calc::scene_regions, renderer_context::RendererSceneContext,
-    update_world::ComponentTracker, ContainerEntity, DeletedSceneEntities, OutOfWorld, SceneEntity,
+    update_world::ComponentTracker, ContainerEntity, DeletedSceneEntities, SceneEntity,
     SceneThreadHandle,
 };
 
@@ -69,6 +69,7 @@ pub struct SceneLifecyclePlugin;
 
 impl Plugin for SceneLifecyclePlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<CurrentImposterScene>();
         app.init_resource::<LiveScenes>();
         app.init_resource::<ScenePointers>();
         app.init_resource::<PortableScenes>();
@@ -286,7 +287,20 @@ pub(crate) fn load_scene_javascript(
         let bounds = regions
             .into_iter()
             .map(|region| BoundRegion::new(region.min, region.max, region.count))
-            .collect();
+            .collect::<Vec<_>>();
+
+        for bound in &bounds {
+            if bound.world_min().z > 10000.0 {
+                println!("wtf");
+                println!("parcels: {:?}", parcels);
+                for region in scene_regions(parcels.clone().into_iter()) {
+                    println!("region: {:?}", region);
+                }
+                println!("bound@: {:?}", bound);
+                println!("world_min: {:?}", bound.world_min());
+                panic!();
+            }
+        }
 
         // get main.crdt
         let maybe_serialized_crdt = match crdt {
@@ -588,16 +602,122 @@ pub struct PortableScenes(pub HashMap<String, PortableSource>);
 
 pub const PARCEL_SIZE: f32 = 16.0;
 
-#[derive(Resource, Default, Debug)]
-pub struct ScenePointers(pub HashMap<IVec2, PointerResult>);
+#[derive(Resource, Debug)]
+pub struct ScenePointers {
+    pointers: HashMap<IVec2, PointerResult>,
+    realm_bounds: (IVec2, IVec2),
+    crcs: Vec<Vec<Option<u32>>>,
+}
+
+impl Default for ScenePointers {
+    fn default() -> Self {
+        Self {
+            pointers: Default::default(),
+            realm_bounds: (IVec2::MAX, IVec2::MIN),
+            crcs: Default::default(),
+        }
+    }
+}
+
+impl ScenePointers {
+    pub fn get(&self, parcel: impl Borrow<IVec2>) -> Option<&PointerResult> {
+        let parcel: &IVec2 = parcel.borrow();
+        if parcel.cmplt(self.realm_bounds.0).any() || parcel.cmpgt(self.realm_bounds.1).any() {
+            return Some(&PointerResult::NOTHING);
+        }
+        self.pointers.get(parcel)
+    }
+
+    pub fn set_realm(&mut self, min_bound: IVec2, max_bound: IVec2) {
+        self.realm_bounds = (min_bound, max_bound);
+        // clear nothings
+        self.pointers.retain(|_, r| r != &PointerResult::Nothing);
+        // exists will be rechecked / replaced when active entities returns
+        self.crcs.clear();
+    }
+    pub fn insert(&mut self, parcel: IVec2, result: PointerResult) {
+        self.pointers.insert(parcel, result);
+    }
+
+    pub fn min(&self) -> IVec2 {
+        self.realm_bounds.0
+    }
+
+    pub fn max(&self) -> IVec2 {
+        self.realm_bounds.1
+    }
+
+    pub fn crc(&mut self, parcel: impl Borrow<IVec2>, level: usize) -> Option<u32> {
+        let parcel: IVec2 = *parcel.borrow();
+
+        // println!("crc {parcel} {level}");
+        while self.crcs.len() <= level {
+            let add_level = self.crcs.len() as u32;
+            let bounds = (self.realm_bounds.1 >> add_level) - (self.realm_bounds.0 >> add_level);
+            let count = (bounds.x + 1) * (bounds.y + 1);
+            self.crcs
+                .push(Vec::from_iter(std::iter::repeat(None).take(count as usize)));
+            // println!("added {} entry with {} members", self.crcs.len(), self.crcs[self.crcs.len()-1].len());
+        }
+
+        let level_bounds_min = self.realm_bounds.0 >> level as u32;
+        let level_bounds_max = self.realm_bounds.1 >> level as u32;
+        let level_bounds = level_bounds_max - level_bounds_min;
+        let level_parcel = parcel >> level as u32;
+        if level_parcel.cmplt(level_bounds_min).any() || level_parcel.cmpgt(level_bounds_max).any()
+        {
+            return Some(0);
+        }
+
+        let level_parcel_offset = level_parcel - level_bounds_min;
+        let index = (level_parcel_offset.y * level_bounds.x + level_parcel_offset.x) as usize;
+
+        // println!("parcel index {parcel} @ {level} [in {level_bounds} from {level_bounds_min}] = {level_parcel} / {index}");
+
+        if let Some(crc) = self.crcs[level][index] {
+            // println!("cached");
+            return Some(crc);
+        }
+
+        if level == 0 {
+            let crc = match self.get(parcel) {
+                Some(PointerResult::Exists { hash, .. }) => {
+                    crc::Crc::<u32>::new(&crc::CRC_32_CKSUM).checksum(hash.as_bytes())
+                }
+                Some(PointerResult::Nothing) => 0,
+                None => return None,
+            };
+
+            // println!("computing level 0");
+            self.crcs[level][index] = Some(crc);
+            return Some(crc);
+        }
+
+        let mut calc = 0;
+        // println!("checking sub levels");
+        for (ix, offset) in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE]
+            .into_iter()
+            .enumerate()
+        {
+            if let Some(sub_crc) = self.crc(
+                (level_parcel << level as u32) + (offset << (level - 1) as u32),
+                level - 1,
+            ) {
+                calc ^= sub_crc.rotate_right(ix as u32);
+            } else {
+                // println!("failed {level}");
+                return None;
+            }
+        }
+        // println!("success {level}");
+        self.crcs[level][index] = Some(calc);
+        Some(calc)
+    }
+}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone)]
 pub enum PointerResult {
-    Nothing {
-        realm: String,
-        x: i32,
-        y: i32,
-    },
+    Nothing,
     Exists {
         realm: String,
         hash: String,
@@ -606,29 +726,38 @@ pub enum PointerResult {
 }
 
 impl PointerResult {
-    fn hash_and_urn(&self) -> Option<(String, Option<String>)> {
+    const NOTHING: Self = Self::Nothing;
+}
+
+impl PointerResult {
+    pub fn hash_and_urn(&self) -> Option<(String, Option<String>)> {
         match self {
-            PointerResult::Nothing { .. } => None,
+            PointerResult::Nothing => None,
             PointerResult::Exists { hash, urn, .. } => Some((hash.clone(), urn.clone())),
         }
     }
 
-    fn realm(&self) -> &str {
+    fn realm(&self) -> Option<&str> {
         match self {
-            PointerResult::Nothing { realm, .. } => realm,
-            PointerResult::Exists { realm, .. } => realm,
+            PointerResult::Nothing => None,
+            PointerResult::Exists { realm, .. } => Some(realm),
         }
     }
 }
 
-fn parcels_in_range(focus: &GlobalTransform, range: f32) -> Vec<(IVec2, f32)> {
+pub fn parcels_in_range(
+    focus: &GlobalTransform,
+    range: f32,
+    min: IVec2,
+    max: IVec2,
+) -> Vec<(IVec2, f32)> {
     let focus = focus.translation().xz() * Vec2::new(1.0, -1.0);
 
     let min_point = focus - Vec2::splat(range);
     let max_point = focus + Vec2::splat(range);
 
-    let min_parcel = (min_point / 16.0).floor().as_ivec2();
-    let max_parcel = (max_point / 16.0).ceil().as_ivec2();
+    let min_parcel = (min_point / 16.0).floor().as_ivec2().max(min);
+    let max_parcel = (max_point / 16.0).ceil().as_ivec2().min(max);
 
     let mut results = Vec::default();
 
@@ -640,7 +769,7 @@ fn parcels_in_range(focus: &GlobalTransform, range: f32) -> Vec<(IVec2, f32)> {
             let nearest_point = focus.clamp(parcel_min_point, parcel_max_point);
             let distance = nearest_point.distance(focus);
 
-            if distance <= range {
+            if distance <= range && parcel.clamp(min, max) == parcel {
                 results.push((parcel, distance));
             }
         }
@@ -651,7 +780,6 @@ fn parcels_in_range(focus: &GlobalTransform, range: f32) -> Vec<(IVec2, f32)> {
 
 pub fn process_realm_change(
     current_realm: Res<CurrentRealm>,
-    // mut pointers: ResMut<ScenePointers>,
     mut live_scenes: ResMut<LiveScenes>,
     mut segment_config: Option<ResMut<SegmentConfig>>,
 ) {
@@ -716,6 +844,11 @@ fn load_active_entities(
     if current_realm.is_changed() {
         // drop current request
         *pointer_request = None;
+        // set current realm and clear
+        // TODO base this on the actual bounds
+        // pointers.set_realm(IVec2::new(-15, -33), IVec2::new(-1,-12));
+        // pointers.set_realm(IVec2::new(100, -94), IVec2::new(123,-85));
+        pointers.set_realm(IVec2::new(-152, -152), IVec2::new(152, 152));
     }
 
     if pointer_request.is_none()
@@ -732,25 +865,32 @@ fn load_active_entities(
             return;
         };
 
-        let required_parcels: HashSet<_> = parcels_in_range(focus, range.load)
-            .into_iter()
-            .filter_map(|(parcel, _)| match pointers.0.get(&parcel) {
-                Some(PointerResult::Exists { realm, .. })
-                | Some(PointerResult::Nothing { realm, .. }) => {
-                    (realm != &current_realm.address).then_some(parcel)
-                }
-                _ => Some(parcel),
-            })
-            .collect();
+        let required_parcels: HashSet<_> = parcels_in_range(
+            focus,
+            range.load.max(range.load_imposter),
+            pointers.min(),
+            pointers.max(),
+        )
+        .into_iter()
+        .filter_map(|(parcel, _)| match pointers.get(parcel) {
+            Some(PointerResult::Exists { realm, .. }) => {
+                (realm != &current_realm.address).then_some(parcel)
+            }
+            Some(PointerResult::Nothing) => None,
+            _ => Some(parcel),
+        })
+        .collect();
 
         if !has_scene_urns {
             // load required pointers
             let pointers = required_parcels
                 .iter()
                 .map(|parcel| format!("{},{}", parcel.x, parcel.y))
-                .collect();
+                .collect::<Vec<_>>();
 
             if !required_parcels.is_empty() {
+                info!("requesting {} parcels", pointers.len());
+
                 *pointer_request = Some((
                     required_parcels,
                     HashMap::default(),
@@ -762,10 +902,10 @@ fn load_active_entities(
         } else {
             // TODO perf might be worth caching available and required
             let available_hashes = pointers
-                .0
+                .pointers
                 .iter()
                 .flat_map(|(_, ptr)| match ptr {
-                    PointerResult::Nothing { .. } => None,
+                    PointerResult::Nothing => None,
                     PointerResult::Exists { realm, hash, .. } => {
                         if realm == &current_realm.address {
                             Some(hash)
@@ -851,7 +991,7 @@ fn load_active_entities(
                 let parcel = IVec2::new(x, y);
 
                 requested_parcels.remove(&parcel);
-                pointers.0.insert(
+                pointers.pointers.insert(
                     parcel,
                     PointerResult::Exists {
                         realm: current_realm.address.clone(),
@@ -864,24 +1004,22 @@ fn load_active_entities(
 
         // any remaining requested parcels are empty
         for empty_parcel in requested_parcels {
-            pointers.0.insert(
-                empty_parcel,
-                PointerResult::Nothing {
-                    realm: current_realm.address.clone(),
-                    x: empty_parcel.x,
-                    y: empty_parcel.y,
-                },
-            );
+            pointers
+                .pointers
+                .insert(empty_parcel, PointerResult::Nothing);
         }
     }
 }
+
+#[derive(Resource, Default)]
+pub struct CurrentImposterScene(pub Option<(PointerResult, bool)>);
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_scene_lifecycle(
     mut commands: Commands,
     current_realm: Res<CurrentRealm>,
     portables: Res<PortableScenes>,
-    focus: Query<(&GlobalTransform, Option<&OutOfWorld>), With<PrimaryUser>>,
+    focus: Query<&GlobalTransform, With<PrimaryUser>>,
     scene_entities: Query<
         (Entity, &SceneHash, Option<&RendererSceneContext>),
         Or<(With<SceneLoading>, With<RendererSceneContext>)>,
@@ -891,28 +1029,30 @@ pub fn process_scene_lifecycle(
     mut spawn: EventWriter<LoadSceneEvent>,
     pointers: Res<ScenePointers>,
     config: Res<AppConfig>,
+    imposter_scene: Res<CurrentImposterScene>,
 ) {
     let mut required_scene_ids: HashSet<(String, Option<String>)> = HashSet::default();
 
     // add nearby scenes to requirements
-    let Ok((focus, oow)) = focus.get_single() else {
+    let Ok(focus) = focus.get_single() else {
         return;
     };
 
-    let current_scene = if oow.is_some() {
-        pointers
-            .0
-            .get(&parcels_in_range(focus, 0.0)[0].0)
-            .and_then(PointerResult::hash_and_urn)
-    } else {
-        None
-    };
+    let current_scene = parcels_in_range(focus, 0.0, pointers.min(), pointers.max())
+        .first()
+        .and_then(|(p, _)| pointers.get(p))
+        .and_then(PointerResult::hash_and_urn);
 
-    let pir = parcels_in_range(focus, range.load + range.unload);
+    let pir = parcels_in_range(
+        focus,
+        range.load + range.unload,
+        pointers.min(),
+        pointers.max(),
+    );
 
     required_scene_ids.extend(pir.iter().flat_map(|(parcel, dist)| {
         if *dist < range.load {
-            pointers.0.get(parcel).and_then(PointerResult::hash_and_urn)
+            pointers.get(parcel).and_then(PointerResult::hash_and_urn)
         } else {
             None
         }
@@ -926,16 +1066,23 @@ pub fn process_scene_lifecycle(
             .map(|(hash, source)| (hash.clone(), Some(source.pid.clone()))),
     );
 
+    // add imposter scene
+    required_scene_ids.extend(
+        imposter_scene
+            .0
+            .as_ref()
+            .and_then(|(scene, _)| scene.hash_and_urn()),
+    );
+
     // record additional optional scenes
     let mut keep_scene_ids = required_scene_ids.clone();
     keep_scene_ids.extend(pir.iter().flat_map(|(parcel, dist)| {
-        if *dist >= range.load {
+        if *dist >= range.load && *dist <= range.unload {
             pointers
-                .0
                 .get(parcel)
                 // immediately unload scenes from other realms, even if they might match
                 // we don't check them until they are in range, so better to just nuke them
-                .filter(|pr| pr.realm() == current_realm.address)
+                .filter(|pr| pr.realm() == Some(&current_realm.address))
                 .and_then(PointerResult::hash_and_urn)
         } else {
             None
@@ -973,7 +1120,9 @@ pub fn process_scene_lifecycle(
 
         // check if the current scene is still loading
         if let Some((current_hash, _)) = current_scene.as_ref() {
-            if &scene_hash.0 == current_hash && maybe_ctx.map_or(true, |ctx| ctx.tick_number <= 6) {
+            if &scene_hash.0 == current_hash
+                && maybe_ctx.map_or(true, |ctx| ctx.tick_number <= 6 && !ctx.broken)
+            {
                 current_scene_loading = true;
             }
         }
@@ -1043,6 +1192,7 @@ fn animate_ready_scene(
     preview: Res<PreviewMode>,
     mut handles: Local<Option<(Handle<Mesh>, Handle<StandardMaterial>)>>,
     asset_server: Res<AssetServer>,
+    current_imposter_scene: Res<CurrentImposterScene>,
 ) {
     if handles.is_none() {
         *handles = Some((
@@ -1060,6 +1210,16 @@ fn animate_ready_scene(
     }
 
     for (root, mut transform, ctx, children) in q.iter_mut() {
+        // skip animating imposters
+        if current_imposter_scene
+            .0
+            .as_ref()
+            .and_then(|(scene, _)| scene.hash_and_urn())
+            .map_or(false, |(hash, _)| hash == ctx.hash)
+        {
+            continue;
+        }
+
         if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken) {
             if transform.translation.y == -1000.0 {
                 for child in children.map(|c| c.iter()).unwrap_or_default() {
@@ -1069,10 +1229,10 @@ fn animate_ready_scene(
                 }
             }
 
-            transform.translation.y *= 0.75;
-            if transform.translation.y > -0.01 {
-                transform.translation.y = 0.0;
-            }
+            // transform.translation.y *= 0.75;
+            // if transform.translation.y > -0.01 {
+            transform.translation.y = 0.0;
+            // }
         }
 
         if ctx.is_added() {

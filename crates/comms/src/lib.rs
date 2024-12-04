@@ -154,7 +154,7 @@ pub struct AdapterManager<'w, 's> {
     _p: PhantomData<&'s ()>,
 }
 
-impl<'w, 's> AdapterManager<'w, 's> {
+impl AdapterManager<'_, '_> {
     pub fn connect(&mut self, adapter: &str) -> Option<Entity> {
         let Some((protocol, address)) = adapter.split_once(':') else {
             warn!("unrecognised adapter string: {adapter}");

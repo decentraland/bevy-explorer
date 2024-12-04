@@ -5,6 +5,7 @@ use std::{fs::File, io::Write, sync::OnceLock};
 
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use build_time::build_time_utc;
+use imposters::DclImposterPlugin;
 use mimalloc::MiMalloc;
 
 #[global_allocator]
@@ -36,7 +37,8 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AttachPoints, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes,
-        PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, Version, PRIMARY_AVATAR_LIGHT_LAYER,
+        PrimaryPlayerRes, PrimaryUser, SceneImposterBake, SceneLoadDistance, Version,
+        GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER,
     },
     util::{config_file, project_directories, UtilsPlugin},
 };
@@ -44,7 +46,7 @@ use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
     automatic_testing::AutomaticTestingPlugin,
-    initialize_scene::TestingData,
+    initialize_scene::{TestingData, PARCEL_SIZE},
     update_world::{mesh_collider::GroundCollider, NoGltf},
     OutOfWorld, SceneRunnerPlugin,
 };
@@ -169,6 +171,41 @@ fn main() {
             .value_from_str("--unload")
             .ok()
             .unwrap_or(base_config.scene_unload_extra_distance),
+        scene_imposter_bake: args
+            .value_from_str("--bake")
+            .ok()
+            .map(|bake: String| match bake.to_lowercase().chars().next() {
+                None | Some('f') => SceneImposterBake::FullSpeed,
+                Some('h') => SceneImposterBake::HalfSpeed,
+                Some('q') => SceneImposterBake::QuarterSpeed,
+                Some('o') => SceneImposterBake::Off,
+                _ => panic!(),
+            })
+            .unwrap_or(SceneImposterBake::Off),
+        scene_imposter_distances: args
+            .value_from_str("--impost")
+            .ok()
+            .map(|distances: String| {
+                distances
+                    .split(",")
+                    .map(str::parse::<f32>)
+                    .collect::<Result<Vec<f32>, _>>()
+                    .unwrap()
+            })
+            .unwrap_or(base_config.scene_imposter_distances)
+            .into_iter()
+            .enumerate()
+            .map(|(ix, d)| {
+                let edge_distance = (1 << ix) as f32 * PARCEL_SIZE;
+                let diagonal_distance = (edge_distance * edge_distance * 2.0).sqrt();
+                println!("[{ix}] -> {}", d.max(diagonal_distance));
+                d.max(diagonal_distance)
+            })
+            .collect(),
+        scene_imposter_multisample: args
+            .value_from_str("--impost_multi")
+            .ok()
+            .unwrap_or(base_config.scene_imposter_multisample),
         sysinfo_visible: false,
         scene_log_to_console: args.contains("--scene_log_to_console"),
         ..base_config
@@ -217,7 +254,17 @@ fn main() {
                 .set(TaskPoolPlugin {
                     task_pool_options: TaskPoolOptions {
                         async_compute: TaskPoolThreadAssignmentPolicy {
-                            min_threads: 1,
+                            min_threads: 2,
+                            max_threads: 8,
+                            percent: 0.25,
+                        },
+                        io: TaskPoolThreadAssignmentPolicy {
+                            min_threads: 8,
+                            max_threads: 8,
+                            percent: 0.25,
+                        },
+                        compute: TaskPoolThreadAssignmentPolicy {
+                            min_threads: 2,
                             max_threads: 8,
                             percent: 0.25,
                         },
@@ -285,6 +332,21 @@ fn main() {
     app.insert_resource(SceneLoadDistance {
         load: final_config.scene_load_distance,
         unload: final_config.scene_unload_extra_distance,
+        load_imposter: final_config
+            .scene_imposter_distances
+            .last()
+            .map(|last| {
+                // actual distance we need is last + diagonal of the largest mip size
+                let mip_size =
+                    (1 << (final_config.scene_imposter_distances.len() - 1)) as f32 * 16.0;
+                let req = last + (2.0 * mip_size * mip_size).sqrt();
+                println!(
+                    "imposter mips: {:?} -> distance {}",
+                    final_config.scene_imposter_distances, req
+                );
+                req
+            })
+            .unwrap_or(0.0),
     });
 
     app.insert_resource(final_config);
@@ -296,6 +358,7 @@ fn main() {
 
     app.add_plugins(UtilsPlugin)
         .add_plugins(InputManagerPlugin)
+        .add_plugins(SceneBoundPlugin)
         .add_plugins(SceneRunnerPlugin)
         .add_plugins(UserInputPlugin)
         .add_plugins(UiCorePlugin)
@@ -307,9 +370,9 @@ fn main() {
         .add_plugins(SocialPlugin)
         .add_plugins(NftShapePlugin)
         .add_plugins(TweenPlugin)
-        .add_plugins(SceneBoundPlugin)
         .add_plugins(CollectiblesPlugin)
-        .add_plugins(WorldUiPlugin);
+        .add_plugins(WorldUiPlugin)
+        .add_plugins(DclImposterPlugin);
 
     if let Some(crashed) = crash_file {
         app.add_plugins(CrashReportPlugin {
@@ -425,6 +488,12 @@ fn setup(
                         ..Default::default()
                     },
                 },
+                projection: PerspectiveProjection {
+                    // projection: OrthographicProjection {
+                    far: 100000.0,
+                    ..Default::default()
+                }
+                .into(),
                 ..Default::default()
             },
             BloomSettings {
@@ -439,7 +508,7 @@ fn setup(
                 image: skybox.clone(),
                 brightness: 1000.0,
             },
-            RenderLayers::layer(0),
+            GROUND_RENDERLAYER.with(0),
         ))
         .id();
 

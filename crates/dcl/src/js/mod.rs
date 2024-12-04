@@ -173,6 +173,9 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
     }
 }
 
+// marker to notify that the scene/renderer interface functions were used
+pub struct CommunicatedWithRenderer;
+
 // main scene processing thread - constructs an isolate and runs the scene
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn scene_thread(
@@ -339,16 +342,29 @@ pub(crate) fn scene_thread(
                     error!("[{scene_id:?} not logging any further uncaught errors.")
                 }
             }
-            // we no longer exit on uncaught `onUpdate` errors
-            // let _ = state
-            //     .borrow_mut()
-            //     .take::<SyncSender<SceneResponse>>()
-            //     .send(SceneResponse::Error(scene_id, format!("{e:?}")));
-            // rt.block_on(async move {
-            //     drop(runtime);
-            // });
-            // return;
+
+            // we no longer exit on uncaught `onUpdate` errors unless the scene failed to reach the renderer interface functions
+            if reported_errors == 10
+                && state
+                    .borrow()
+                    .try_borrow::<CommunicatedWithRenderer>()
+                    .is_none()
+            {
+                error!(
+                    "[{scene_id:?}] too many errors without renderer interaction: shutting down"
+                );
+                let _ = state
+                    .borrow_mut()
+                    .take::<SyncSender<SceneResponse>>()
+                    .send(SceneResponse::Error(scene_id, format!("{e:?}")));
+                rt.block_on(async move {
+                    drop(runtime);
+                });
+                return;
+            }
         }
+
+        state.borrow_mut().try_take::<CommunicatedWithRenderer>();
     }
 }
 

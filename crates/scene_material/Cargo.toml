@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 bevy = { workspace = true }
 comms = { workspace = true }
+boimp = { workspace = true }
+

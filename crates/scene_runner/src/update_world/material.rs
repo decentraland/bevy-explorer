@@ -237,7 +237,7 @@ pub struct ResolvedTexture {
     pub camera_target: Option<ResolveCursor>,
 }
 
-impl<'w, 's> TextureResolver<'w, 's> {
+impl TextureResolver<'_, '_> {
     pub fn resolve_texture(
         &mut self,
         scene: &RendererSceneContext,

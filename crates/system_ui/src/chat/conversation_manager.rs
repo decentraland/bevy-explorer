@@ -34,7 +34,7 @@ pub struct ConversationManager<'w, 's> {
     >,
 }
 
-impl<'w, 's> ConversationManager<'w, 's> {
+impl ConversationManager<'_, '_> {
     fn existing_bubble(
         &self,
         container: Entity,

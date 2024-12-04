@@ -1,10 +1,15 @@
 #import bevy_pbr::{
     mesh_functions,
-    forward_io::{Vertex, VertexOutput},
     view_transformations::position_world_to_clip,
     pbr_bindings::base_color_texture,
 }
 #import bevy_render::instance_index::get_instance_index
+
+#ifdef PREPASS_PIPELINE
+    #import bevy_pbr::prepass_io::{Vertex, VertexOutput};
+#else
+    #import bevy_pbr::forward_io::{Vertex, VertexOutput};
+#endif
 
 struct TextQuadData {
     uvs: vec4<f32>,

@@ -346,7 +346,7 @@ pub trait ModifyComponentExt {
     ) -> &mut Self;
 }
 
-impl<'a> ModifyComponentExt for EntityCommands<'a> {
+impl ModifyComponentExt for EntityCommands<'_> {
     fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
         &mut self,
         func: F,
@@ -396,7 +396,7 @@ pub trait ModifyDefaultComponentExt {
     ) -> &mut Self;
 }
 
-impl<'a> ModifyDefaultComponentExt for EntityCommands<'a> {
+impl ModifyDefaultComponentExt for EntityCommands<'_> {
     fn default_and_modify_component<
         C: Component + Default,
         F: FnOnce(&mut C) + Send + Sync + 'static,
@@ -423,7 +423,7 @@ pub struct VolumePanning<'w, 's> {
     receiver: Query<'w, 's, &'static GlobalTransform, With<AudioReceiver>>,
 }
 
-impl<'w, 's> VolumePanning<'w, 's> {
+impl VolumePanning<'_, '_> {
     pub fn volume_and_panning(&self, translation: Vec3) -> (f32, f32) {
         let Ok(receiver) = self.receiver.get_single() else {
             return (1.0, 0.5);

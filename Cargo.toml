@@ -51,6 +51,7 @@ tween = { path="crates/tween" }
 world_ui = { path="crates/world_ui" }
 collectibles = { path="crates/collectibles" }
 social = { path="crates/social" }
+imposters = { path="crates/imposters" }
 
 bevy = { version = "0.14", default-features = false, features=[
     "animation",
@@ -115,6 +116,8 @@ fastrand = "2"
 rand = "0.8.5"
 futures-util = "0.3.28"
 async-tls = "0.13.0"
+boimp = { git = "https://github.com/robtfm/boimp", branch = "master" }
+crc = "3"
 
 [dependencies]
 analytics = { workspace = true }
@@ -139,6 +142,7 @@ scene_material = { workspace = true }
 world_ui = { workspace = true }
 collectibles = { workspace = true }
 social = { workspace = true }
+imposters = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }
@@ -165,9 +169,9 @@ bevy_simple_text_input = { workspace = true }
 prost-build = "0.11.8"
 
 [patch.crates-io]
-dcl-rpc = { git = "https://github.com/decentraland/rpc-rust", branch = "chore/bump-tokio-tungstenite" }
 bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.14-dcl-cosmic-noimage" }
 # bevy = { path="../bevy" }
+dcl-rpc = { git = "https://github.com/decentraland/rpc-rust", branch = "chore/bump-tokio-tungstenite" }
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
 # parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "try_convex" }
 # rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }
@@ -187,3 +191,6 @@ deno_websocket = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix
 
 # [patch."https://github.com/robtfm/bevy_simple_text_input"]
 # bevy_simple_text_input = { path = "../bevy_simple_text_input" }
+
+# [patch."https://github.com/robtfm/boimp"]
+# boimp = { path = "../boimp" }

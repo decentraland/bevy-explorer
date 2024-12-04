@@ -65,7 +65,7 @@ pub struct BoothInstance {
 #[derive(Resource, Default)]
 pub struct LiveBooths(Vec<Arc<Entity>>);
 
-impl<'w, 's> PhotoBooth<'w, 's> {
+impl PhotoBooth<'_, '_> {
     pub fn spawn_booth(
         &mut self,
         render_layers: RenderLayers,

@@ -152,6 +152,9 @@ pub(crate) fn setup(
             .spawn((
                 NodeBundle {
                     style: Style {
+                        position_type: PositionType::Absolute,
+                        right: Val::Px(40.0),
+                        top: Val::Px(0.0),
                         display: if config.sysinfo_visible {
                             Display::Flex
                         } else {
@@ -205,7 +208,7 @@ pub(crate) fn setup(
                                     });
                                     commands.spawn(TextBundle {
                                         style: Style {
-                                            width: Val::Px(150.0),
+                                            width: Val::Px(250.0),
                                             ..Default::default()
                                         },
                                         text: Text::from_section(

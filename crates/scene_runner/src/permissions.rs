@@ -72,7 +72,7 @@ pub struct Permission<'w, 's, T: Send + Sync + 'static> {
     pub toaster: Toaster<'w, 's>,
 }
 
-impl<'w, 's, T: Send + Sync + 'static> Permission<'w, 's, T> {
+impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
     // in scene, hash, title, is_portable
     fn get_scene_info(&self, scene: Entity) -> Option<(bool, &str, &str, bool)> {
         let in_scene = self

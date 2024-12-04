@@ -133,7 +133,7 @@ pub struct Toaster<'w, 's> {
     _p: PhantomData<&'s ()>,
 }
 
-impl<'w, 's> Toaster<'w, 's> {
+impl Toaster<'_, '_> {
     pub fn do_add_toast(
         &mut self,
         key: impl Into<String>,
@@ -467,12 +467,12 @@ pub fn vec3_to_parcel(position: Vec3) -> IVec2 {
         .as_ivec2()
 }
 
-impl<'w, 's> ContainingScene<'w, 's> {
+impl ContainingScene<'_, '_> {
     // just the parcel at the position
     pub fn get_parcel_position(&self, position: Vec3) -> Option<Entity> {
         let parcel = vec3_to_parcel(position);
 
-        if let Some(PointerResult::Exists { hash, .. }) = self.pointers.0.get(&parcel) {
+        if let Some(PointerResult::Exists { hash, .. }) = self.pointers.get(parcel) {
             self.live_scenes.0.get(hash).copied()
         } else {
             None
@@ -506,7 +506,7 @@ impl<'w, 's> ContainingScene<'w, 's> {
 
         let mut results = HashSet::default();
 
-        if let Some(PointerResult::Exists { hash, .. }) = self.pointers.0.get(&parcel) {
+        if let Some(PointerResult::Exists { hash, .. }) = self.pointers.get(parcel) {
             if let Some(scene) = self.live_scenes.0.get(hash) {
                 results.insert(*scene);
             }
@@ -562,7 +562,7 @@ impl<'w, 's> ContainingScene<'w, 's> {
         for parcel_x in min_parcel.x..=max_parcel.x {
             for parcel_y in min_parcel.y..=max_parcel.y {
                 if let Some(PointerResult::Exists { hash, .. }) =
-                    self.pointers.0.get(&IVec2::new(parcel_x, parcel_y))
+                    self.pointers.get(IVec2::new(parcel_x, parcel_y))
                 {
                     if let Some(scene) = self.live_scenes.0.get(hash).copied() {
                         results.insert(scene);
@@ -666,8 +666,20 @@ fn send_scene_updates(
 
     let mut buf = Vec::default();
     for (mut affine, id) in [
-        (player.single().compute_affine(), SceneEntityId::PLAYER),
-        (camera.single().compute_affine(), SceneEntityId::CAMERA),
+        (
+            player
+                .get_single()
+                .map(Transform::compute_affine)
+                .unwrap_or_default(),
+            SceneEntityId::PLAYER,
+        ),
+        (
+            camera
+                .get_single()
+                .map(Transform::compute_affine)
+                .unwrap_or_default(),
+            SceneEntityId::CAMERA,
+        ),
     ] {
         buf.clear();
         affine.translation -= scene_transform.affine().translation * Vec3A::new(1.0, 0.0, 1.0);
@@ -702,10 +714,10 @@ fn send_scene_updates(
     }
 
     // add canvas info
-    if let Ok(window) = window.get_single() {
+    let canvas_info = if let Ok(window) = window.get_single() {
         let vmin = window.resolution.width().min(window.resolution.height());
 
-        let canvas_info = if config.constrain_scene_ui {
+        if config.constrain_scene_ui {
             // we optionally misreport window size and constrain scene ui directly as nobody uses this info properly
             PbUiCanvasInformation {
                 device_pixel_ratio: window.resolution.scale_factor(),
@@ -730,17 +742,24 @@ fn send_scene_updates(
                     bottom: 0.05 * vmin,
                 }),
             }
-        };
+        }
+    } else {
+        PbUiCanvasInformation {
+            device_pixel_ratio: 1.0,
+            width: 1280,
+            height: 720,
+            interactable_area: Some(BorderRect::default()),
+        }
+    };
 
-        buf.clear();
-        DclWriter::new(&mut buf).write(&canvas_info);
-        crdt_store.force_update(
-            SceneComponentId::CANVAS_INFO,
-            CrdtType::LWW_ROOT,
-            SceneEntityId::ROOT,
-            Some(&mut DclReader::new(&buf)),
-        );
-    }
+    buf.clear();
+    DclWriter::new(&mut buf).write(&canvas_info);
+    crdt_store.force_update(
+        SceneComponentId::CANVAS_INFO,
+        CrdtType::LWW_ROOT,
+        SceneEntityId::ROOT,
+        Some(&mut DclReader::new(&buf)),
+    );
 
     if let Err(e) = handle
         .sender

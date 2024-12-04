@@ -27,7 +27,6 @@ use ui_core::scrollable::UsedScrollWheel;
 use crate::TRANSITION_TIME;
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-
 pub struct CinematicInitialData {
     base_yaw: f32,
     base_pitch: f32,
@@ -54,7 +53,7 @@ pub enum ClickState {
     Released,
 }
 
-impl<'w, 's> MouseInteractionState<'w, 's> {
+impl MouseInteractionState<'_, '_> {
     pub fn update(&mut self, button: MouseButton) -> ClickState {
         let state = self.states.entry(button).or_default();
 
@@ -249,7 +248,7 @@ pub fn update_camera(
                 if (event.y > 0.0) == zoom_range.is_none() {
                     options.distance = 0f32.max((options.distance - 0.05) * 0.9);
                 } else {
-                    options.distance = 50f32.min((options.distance / 0.9) + 0.05);
+                    options.distance = 7000f32.min((options.distance / 0.9) + 0.05);
                 }
             }
         }
@@ -319,13 +318,12 @@ pub fn update_camera_position(
         }
     } else {
         let target_fov = (dynamic_state.velocity.length() / 4.0).clamp(1.25, 1.25) * FRAC_PI_4;
-        let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
-        else {
-            panic!();
+        if let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
+        {
+            if *fov != target_fov {
+                *fov = target_fov;
+            }
         };
-        if *fov != target_fov {
-            *fov = target_fov;
-        }
 
         let distance = match options.scene_override {
             Some(CameraOverride::Distance(d)) => d,

@@ -1153,7 +1153,7 @@ fn process_avatar(
                     e = parent.get();
                 }
 
-                commands.entity(*ent).insert(AnimationTarget {
+                commands.entity(*ent).try_insert(AnimationTarget {
                     id: AnimationTargetId::from_names(path.into_iter()),
                     player: root_player_entity.get(),
                 });

@@ -364,9 +364,9 @@ fn update_text_shapes(
             })
             .id();
 
-        commands
-            .entity(world_ui.ui_root)
-            .try_push_children(&[ui_node]);
+        if let Some(mut commands) = commands.get_entity(world_ui.ui_root) {
+            commands.try_push_children(&[ui_node]);
+        }
 
         commands.entity(ent).try_insert((
             PriorTextShapeUi(ui_node, text_shape.0.clone()),

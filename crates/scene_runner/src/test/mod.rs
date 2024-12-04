@@ -57,7 +57,7 @@ use super::{initialize_scene::SceneLoading, PrimaryUser};
 
 pub struct TestPlugins;
 
-pub static LOG_ADDED: Lazy<Mutex<bool>> = Lazy::new(|| Default::default());
+pub static LOG_ADDED: Lazy<Mutex<bool>> = Lazy::new(Default::default);
 
 impl PluginGroup for TestPlugins {
     fn build(self) -> PluginGroupBuilder {
@@ -78,13 +78,13 @@ impl PluginGroup for TestPlugins {
 
         builder
             .add(TaskPoolPlugin::default())
-            .add(TypeRegistrationPlugin::default())
-            .add(FrameCountPlugin::default())
-            .add(TimePlugin::default())
+            .add(TypeRegistrationPlugin)
+            .add(FrameCountPlugin)
+            .add(TimePlugin)
             .add(ScheduleRunnerPlugin::default())
-            .add(TransformPlugin::default())
-            .add(HierarchyPlugin::default())
-            .add(DiagnosticsPlugin::default())
+            .add(TransformPlugin)
+            .add(HierarchyPlugin)
+            .add(DiagnosticsPlugin)
             .add(IpfsIoPlugin {
                 preview: false,
                 assets_root: test_path.to_str().map(ToOwned::to_owned),
@@ -135,6 +135,7 @@ fn init_test_app(entity_json: &str) -> App {
     app.insert_resource(SceneLoadDistance {
         load: 1.0,
         unload: 0.0,
+        load_imposter: 0.0,
     });
     app.init_resource::<PreviewMode>();
     app.finish();
@@ -155,7 +156,7 @@ fn init_test_app(entity_json: &str) -> App {
         ..Default::default()
     });
 
-    app.world_mut().resource_mut::<ScenePointers>().0.insert(
+    app.world_mut().resource_mut::<ScenePointers>().insert(
         IVec2::ZERO,
         PointerResult::Exists {
             realm: "manual value".to_owned(),
@@ -450,8 +451,7 @@ fn cyclic_recovery() {
 
         let mut crdt_store = CrdtStore::default();
 
-        for ix in 0..4 {
-            let (dcl_entity, timestamp, data) = &messages[ix];
+        for (dcl_entity, timestamp, data) in messages.iter().take(4) {
             let (mut scene_context, mut crdt_state) = app
                 .world_mut()
                 .query::<(
@@ -466,7 +466,7 @@ fn cyclic_recovery() {
             }
 
             // add next message
-            let reader = &mut DclReader::new(&data);
+            let reader = &mut DclReader::new(data);
             crdt_store.try_update(
                 SceneComponentId::TRANSFORM,
                 CrdtType::LWW_ENT,

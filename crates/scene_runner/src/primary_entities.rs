@@ -10,7 +10,7 @@ pub struct PrimaryEntities<'w, 's> {
     camera: Query<'w, 's, Entity, With<PrimaryCamera>>,
 }
 
-impl<'w, 's> PrimaryEntities<'w, 's> {
+impl PrimaryEntities<'_, '_> {
     pub fn player(&self) -> Entity {
         self.player.single()
     }

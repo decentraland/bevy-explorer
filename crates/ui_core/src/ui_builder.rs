@@ -5,7 +5,7 @@ pub trait SpawnSpacer {
     fn spacer(&mut self) -> EntityCommands<'_>;
 }
 
-impl<'a> SpawnSpacer for ChildBuilder<'a> {
+impl SpawnSpacer for ChildBuilder<'_> {
     fn spacer(&mut self) -> EntityCommands<'_> {
         self.spawn(NodeBundle {
             style: Style {
@@ -17,7 +17,7 @@ impl<'a> SpawnSpacer for ChildBuilder<'a> {
     }
 }
 
-impl<'a> SpawnSpacer for TryChildBuilder<'a> {
+impl SpawnSpacer for TryChildBuilder<'_> {
     fn spacer(&mut self) -> EntityCommands<'_> {
         self.spawn(NodeBundle {
             style: Style {

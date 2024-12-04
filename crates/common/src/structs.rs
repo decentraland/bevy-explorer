@@ -183,6 +183,9 @@ pub struct AppConfig {
     pub scene_threads: usize,
     pub scene_load_distance: f32,
     pub scene_unload_extra_distance: f32,
+    pub scene_imposter_distances: Vec<f32>,
+    pub scene_imposter_multisample: bool,
+    pub scene_imposter_bake: SceneImposterBake,
     pub sysinfo_visible: bool,
     pub scene_log_to_console: bool,
     pub max_avatars: usize,
@@ -209,6 +212,9 @@ impl Default for AppConfig {
             scene_threads: 4,
             scene_load_distance: 50.0,
             scene_unload_extra_distance: 15.0,
+            scene_imposter_distances: vec![150.0, 300.0, 600.0, 1200.0, 2400.0, 4800.0],
+            scene_imposter_multisample: true,
+            scene_imposter_bake: SceneImposterBake::Off,
             sysinfo_visible: true,
             scene_log_to_console: false,
             max_avatars: 100,
@@ -400,6 +406,7 @@ pub enum AudioDecoderError {
 pub struct SceneLoadDistance {
     pub load: f32,
     pub unload: f32, // additional
+    pub load_imposter: f32,
 }
 
 #[derive(Debug)]
@@ -620,3 +627,24 @@ pub struct PermissionTarget {
 pub const PRIMARY_AVATAR_LIGHT_LAYER: RenderLayers = RenderLayers::layer(1);
 // layer for profile content
 pub const PROFILE_UI_RENDERLAYER: RenderLayers = RenderLayers::layer(3);
+// layer for ground
+pub const GROUND_RENDERLAYER: RenderLayers = RenderLayers::layer(4);
+
+#[derive(PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+pub enum SceneImposterBake {
+    Off,
+    FullSpeed,
+    HalfSpeed,
+    QuarterSpeed,
+}
+
+impl SceneImposterBake {
+    pub fn as_mult(&self) -> f32 {
+        match self {
+            SceneImposterBake::Off => panic!(),
+            SceneImposterBake::FullSpeed => 1.0,
+            SceneImposterBake::HalfSpeed => 0.5,
+            SceneImposterBake::QuarterSpeed => 0.25,
+        }
+    }
+}
