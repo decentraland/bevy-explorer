@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
 use common::structs::AppConfig;
 use console::DoAddConsoleCommand;
-use render::{DclImposterRenderPlugin, SceneImposter};
+use render::{DclImposterRenderPlugin, ImposterEntities, SceneImposter};
 
 pub struct DclImposterPlugin;
 
@@ -53,6 +53,7 @@ fn set_impost_multi(
     mut config: ResMut<AppConfig>,
     mut commands: Commands,
     q: Query<Entity, With<SceneImposter>>,
+    mut lookup: ResMut<ImposterEntities>,
 ) {
     if let Some(Ok(command)) = input.take() {
         let multisample = command.on.unwrap_or(!config.scene_imposter_multisample);
@@ -61,5 +62,9 @@ fn set_impost_multi(
         for e in q.iter() {
             commands.entity(e).despawn_recursive();
         }
+
+        lookup.0.retain(|(_, _, ingredient), _| {
+            *ingredient
+        });
     }
 }

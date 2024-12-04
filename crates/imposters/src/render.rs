@@ -20,7 +20,8 @@ use crc::CRC_32_CKSUM;
 use ipfs::{ChangeRealmEvent, CurrentRealm, IpfsAssetServer};
 
 use scene_runner::{
-    initialize_scene::{LiveScenes, PointerResult, ScenePointers, PARCEL_SIZE},
+    initialize_scene::{LiveScenes, PointerResult, SceneLoading, ScenePointers, PARCEL_SIZE},
+    renderer_context::RendererSceneContext,
     DebugInfo,
 };
 
@@ -39,7 +40,6 @@ impl Plugin for DclImposterRenderPlugin {
             ImposterBakeMaterialPlugin::<FloorImposter>::default(),
         ))
         .init_resource::<ImposterEntities>()
-        .init_resource::<ImposterEntitiesTransitioningOut>()
         .init_resource::<BakingIngredients>()
         .init_asset_loader::<FloorImposterLoader>()
         .add_systems(Startup, setup)
@@ -106,7 +106,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
 pub struct ImposterTransitionIn;
 
 #[derive(Component)]
-pub struct ImposterTransitionOut(bool);
+pub struct ImposterTransitionOut;
 
 pub const TRANSITION_TIME: f32 = 0.25;
 
@@ -218,9 +218,6 @@ impl ImposterLookup<'_, '_> {
 #[derive(Resource, Default)]
 pub struct ImposterEntities(pub HashMap<(IVec2, usize, bool), Entity>);
 
-#[derive(Resource, Default)]
-pub struct ImposterEntitiesTransitioningOut(pub HashMap<(IVec2, usize), Entity>);
-
 #[derive(Component, Debug)]
 pub struct SceneImposter {
     pub parcel: IVec2,
@@ -265,20 +262,14 @@ pub struct BakingIngredients(pub Vec<(IVec2, usize)>);
 pub fn spawn_imposters(
     mut commands: Commands,
     mut lookup: ResMut<ImposterEntities>,
-    mut transitioning_out: ResMut<ImposterEntitiesTransitioningOut>,
     config: Res<AppConfig>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
     mut required: Local<HashSet<(IVec2, usize, bool)>>,
     realm_changed: EventReader<ChangeRealmEvent>,
     ingredients: Res<BakingIngredients>,
     pointers: Res<ScenePointers>,
-    imposters: Query<(
-        Option<&ImposterMissing>,
-        Option<&Children>,
-        Option<&ImposterReady>,
-    )>,
-    handles: Query<(Option<&Handle<Imposter>>, Option<&Handle<FloorImposter>>)>,
-    asset_server: Res<AssetServer>,
+    live_scenes: Res<LiveScenes>,
+    scenes: Query<&RendererSceneContext, Without<SceneLoading>>,
 ) {
     if !realm_changed.is_empty() {
         for (_, entity) in lookup.0.drain() {
@@ -295,6 +286,7 @@ pub fn spawn_imposters(
         return;
     }
 
+    // add baking requirements
     required.extend(ingredients.0.iter().map(|(p, l)| (*p, *l, true)));
 
     let Some(origin) = focus.get_single().ok().map(|gt| gt.translation().xz()) else {
@@ -302,64 +294,97 @@ pub fn spawn_imposters(
     };
     let origin = origin * Vec2::new(1.0, -1.0);
 
-    // gather required
-    let mut prev_distance = 0.0;
-    for (level, &next_distance) in config.scene_imposter_distances.iter().enumerate() {
+    // record live parcels
+    let live_parcels = live_scenes
+        .0
+        .values()
+        .flat_map(|e| scenes.get(*e).ok().map(|ctx| &ctx.parcels))
+        .flatten()
+        .copied()
+        .collect::<HashSet<_>>();
+    let live_min = live_parcels.iter().fold(IVec2::MAX, |x, y| x.min(*y));
+    let live_max = live_parcels.iter().fold(IVec2::MIN, |x, y| x.max(*y));
+
+    let max_distance = config
+        .scene_imposter_distances
+        .last()
+        .copied()
+        .unwrap_or(0.0);
+    let mut level = config.scene_imposter_distances.len() - 1;
+
+    let tile_size = 1 << level;
+
+    let min_tile = ((origin - max_distance) / 16.0 / tile_size as f32)
+        .floor()
+        .as_ivec2();
+    let max_tile = ((origin + max_distance) / 16.0 / tile_size as f32)
+        .ceil()
+        .as_ivec2();
+
+    let min_tile = min_tile.max(pointers.min() >> level as u32);
+    let max_tile = max_tile.min(pointers.max() >> level as u32);
+
+    let mut required_tiles = (min_tile.x..=max_tile.x)
+        .map(|x| (min_tile.y..=max_tile.y).map(move |y| IVec2::new(x, y)))
+        .flatten()
+        .collect::<HashSet<_>>();
+
+    // take the largest permitted tile to fill the area
+    while level > 0 {
         let tile_size = 1 << level;
-        let next_tile_size = tile_size / 2;
         let tile_size_world = (tile_size * 16) as f32;
 
-        let min_tile = ((origin - next_distance) / 16.0 / tile_size as f32)
-            .floor()
-            .as_ivec2();
-        let max_tile = ((origin + next_distance) / 16.0 / tile_size as f32)
-            .ceil()
-            .as_ivec2();
+        for tile in std::mem::take(&mut required_tiles).into_iter() {
+            let tile_origin_parcel = tile * tile_size;
+            let tile_origin_world = tile_origin_parcel.as_vec2() * 16.0;
 
-        let min_tile = min_tile.max(pointers.min() >> level as u32);
-        let max_tile = max_tile.min(pointers.max() >> level as u32);
+            let closest_point =
+                origin.clamp(tile_origin_world, tile_origin_world + tile_size_world);
+            let closest_distance = (closest_point - origin).length();
 
-        for x in min_tile.x..=max_tile.x {
-            for y in min_tile.y..=max_tile.y {
-                let tile_origin_parcel = IVec2::new(x, y) * tile_size;
-                let tile_origin_world = tile_origin_parcel.as_vec2() * 16.0;
+            // check it's not too far
+            if closest_distance > max_distance {
+                continue;
+            }
 
-                let closest_point =
-                    origin.clamp(tile_origin_world, tile_origin_world + tile_size_world);
-                let closest_distance = (closest_point - origin).length();
-                let furthest_distance = (origin - tile_origin_world)
-                    .abs()
-                    .max((origin - (tile_origin_world + tile_size_world)).abs())
-                    .length();
+            let mut render_tile = true;
+            // check it's not too close
+            render_tile &= closest_distance > config.scene_imposter_distances[level - 1];
+            // ensure no live scenes intersect the tile
+            render_tile &= {
+                live_max.cmplt(tile_origin_parcel).any()
+                    || live_min.cmpge(tile_origin_parcel + tile_size).any()
+                    || live_parcels.iter().all(|p| {
+                        p.cmplt(tile_origin_parcel).any()
+                            || p.cmpge(tile_origin_parcel + tile_size).any()
+                    })
+            };
 
-                // println!("tile {tile_origin_parcel}:{level}, tile world: {tile_origin_world}, origin: {origin}, distance [{closest_distance}, {furthest_distance}], prev_distance {prev_distance}, next_distance {next_distance}");
-
-                if closest_distance >= prev_distance && closest_distance < next_distance {
-                    // println!("adding");
-                    required.insert((tile_origin_parcel, level, false));
-                } else if closest_distance < prev_distance && furthest_distance > prev_distance {
-                    // println!("adding children");
-                    // this tile crosses the boundary, make sure the next level down includes all tiles we are not including here
-                    // next level will need these tiles since we don't
-                    for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
-                        let smaller_tile_origin = tile_origin_parcel + offset * next_tile_size;
-                        if smaller_tile_origin.clamp(pointers.min(), pointers.max())
-                            == smaller_tile_origin
-                        {
-                            required.insert((smaller_tile_origin, level - 1, false));
-                        }
-                    }
-                };
+            if render_tile {
+                debug!("adding {}:{} == {}", tile, level, tile_origin_parcel);
+                required.insert((tile_origin_parcel, level, false));
+            } else {
+                // add to next level requirements
+                debug!("cant' add {}:{} == {}", tile, level, tile_origin_parcel);
+                for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
+                    debug!("maybe the child {}:{}", tile * 2 + offset, level - 1);
+                    required_tiles.insert(tile * 2 + offset);
+                }
             }
         }
 
-        prev_distance = next_distance;
+        level -= 1;
+    }
+
+    for remaining_parcel in required_tiles {
+        if !live_parcels.contains(&remaining_parcel) {
+            required.insert((remaining_parcel, 0, false));
+        }
     }
 
     // remove old
-    let prev_entities = lookup.0.clone();
     lookup.0.retain(|&(pos, level, ingredient), ent| {
-        let mut required = required.remove(&(pos, level, ingredient));
+        let required = required.remove(&(pos, level, ingredient));
 
         if !required {
             debug!("remove {}: {} [{}]", level, pos, ingredient);
@@ -369,60 +394,7 @@ pub fn spawn_imposters(
                     return false;
                 }
 
-                commands.try_insert(ImposterTransitionOut(false));
-                transitioning_out.0.insert((pos, level), *ent);
-
-                let tile_size = 1 << level;
-
-                let world_min = pos.as_vec2() * PARCEL_SIZE;
-                let world_max = world_min + IVec2::splat(tile_size).as_vec2() * PARCEL_SIZE;
-                let distance = (origin.clamp(world_min, world_max) - origin).length();
-
-                // check smaller
-                if level > 0 && distance < *config.scene_imposter_distances.get(level - 1).unwrap_or(&0.0) {
-                    if level > 2 && distance < *config.scene_imposter_distances.get(level - 2).unwrap_or(&0.0) {
-                        // skip checks for 2 levels
-                    } else {
-                        for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
-                            let smaller = pos + (offset << (level - 1) as u32);
-                            if smaller.clamp(pointers.min(), pointers.max()) == smaller {
-                                match ImposterLookup::imposter_state(&prev_entities, &imposters, &handles, &asset_server, smaller, level - 1, false) {
-                                    ImposterState::NotSpawned |
-                                    ImposterState::Pending => {
-                                        debug!("not despawning {}:{} because smaller {}:{} is {:?}", pos, level, smaller, level-1, ImposterLookup::imposter_state(&prev_entities, &imposters, &handles, &asset_server, smaller, level - 1, false));
-                                        required = true
-                                    }
-                                    ImposterState::Ready(_) |
-                                    ImposterState::Missing |
-                                    ImposterState::NoScene  => (),
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // check larger
-                if distance > *config.scene_imposter_distances.get(level).unwrap_or(&0.0) && level < config.scene_imposter_distances.len() - 1 {
-                    if level < config.scene_imposter_distances.len() - 2 && distance > *config.scene_imposter_distances.get(level + 1).unwrap_or(&0.0) {
-                        // skip checks for 2 levels
-                    } else {
-                        let larger = (pos >> (level + 1) as u32) << (level + 1) as u32;
-                        match ImposterLookup::imposter_state(&prev_entities, &imposters, &handles, &asset_server, larger, level + 1, false) {
-                            ImposterState::NotSpawned |
-                            ImposterState::Pending => {
-                                debug!("(dist {} vs range {:?}) not despawning {}:{} because larger {}:{} is {:?}", distance, config.scene_imposter_distances.get(level), pos, level, larger, level+1, ImposterLookup::imposter_state(&prev_entities, &imposters, &handles, &asset_server, larger, level + 1, false));
-                                required = true
-                            }
-                            ImposterState::Ready(_) |
-                            ImposterState::Missing |
-                            ImposterState::NoScene => (),
-                        }
-                    }
-                }
-
-                if !required {
-                    commands.try_insert(ImposterTransitionOut(true));
-                }
+                commands.try_insert(ImposterTransitionOut);
             }
         }
         required
@@ -444,14 +416,6 @@ pub fn spawn_imposters(
 
         debug!("require {}: {} [{}]", level, parcel, as_ingredient);
         lookup.0.insert((parcel, level, as_ingredient), cmds.id());
-
-        if !as_ingredient {
-            if let Some(ent) = transitioning_out.0.remove(&(parcel, level)) {
-                if let Some(commands) = commands.get_entity(ent) {
-                    commands.despawn_recursive();
-                }
-            }
-        }
     }
 }
 
@@ -713,125 +677,60 @@ fn update_imposter_visibility(
 
 fn transition_imposters(
     mut commands: Commands,
-    q_in: Query<
-        (
-            Entity,
-            &SceneImposter,
-            &Children,
-            Has<ImposterTransitionOut>,
-        ),
-        With<ImposterTransitionIn>,
-    >,
-    q_out: Query<(Entity, &SceneImposter, &Children, &ImposterTransitionOut)>,
+    q_in: Query<(Entity, &Children, Has<ImposterTransitionOut>), With<ImposterTransitionIn>>,
+    q_out: Query<(Entity, &Children), With<ImposterTransitionOut>>,
     handles: Query<&Handle<Imposter>>,
-    mut lookup: ResMut<ImposterEntitiesTransitioningOut>,
     mut assets: ResMut<Assets<Imposter>>,
     time: Res<Time>,
-    mut debug: ResMut<DebugInfo>,
 ) {
-    let mut dont_transition_out = Vec::default();
+    const TPOW: f32 = 2.0;
 
-    for (ent, imp, children, transitioning_out) in q_in.iter() {
+    for (ent, children, transitioning_out) in q_in.iter() {
         if transitioning_out {
             commands.entity(ent).remove::<ImposterTransitionIn>();
             continue;
         }
-        let mut ready = true;
 
-        let parent_tile = (imp.parcel >> (imp.level + 1) as u32) << (imp.level + 1) as u32;
-        if let Some(parent) = lookup.0.get(&(parent_tile, imp.level + 1)) {
-            dont_transition_out.push(*parent);
-            if !q_out.get(*parent).map_or(true, |(_, _, _, t)| t.0) {
-                // skip while parent isn't ready to despawn
-                ready = false;
-            }
-        }
+        let mut still_transitioning = false;
+        for child in children {
+            if let Ok(h_in) = handles.get(*child) {
+                let Some(asset) = assets.get_mut(h_in.id()) else {
+                    still_transitioning = true;
+                    continue;
+                };
 
-        if imp.level > 0 {
-            for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
-                let child_tile = imp.parcel + (offset << (imp.level - 1) as u32);
-                if let Some(child) = lookup.0.get(&(child_tile, imp.level - 1)) {
-                    dont_transition_out.push(*child);
-                    if !q_out.get(*child).map_or(true, |(_, _, _, t)| t.0) {
-                        // skip while child isn't ready to despawn
-                        ready = false;
-                    }
+                asset.data.alpha =
+                    1f32.min(asset.data.alpha.powf(TPOW) + time.delta_seconds() / TRANSITION_TIME).powf(TPOW.recip());
+                if asset.data.alpha < 1.0 {
+                    still_transitioning = true;
                 }
             }
         }
 
-        if ready {
-            let mut still_transitioning = false;
-            for child in children {
-                if let Ok(h_in) = handles.get(*child) {
-                    let Some(asset) = assets.get_mut(h_in.id()) else {
-                        still_transitioning = true;
-                        continue;
-                    };
+        if !still_transitioning {
+            commands.entity(ent).remove::<ImposterTransitionIn>();
+        }
+    }
 
-                    asset.data.alpha =
-                        1f32.min(asset.data.alpha + time.delta_seconds() / TRANSITION_TIME);
-                    if asset.data.alpha < 1.0 {
-                        still_transitioning = true;
-                    }
+    for (ent, children) in q_out.iter() {
+        let mut still_transitioning = false;
+        for child in children {
+            if let Ok(h_out) = handles.get(*child) {
+                let Some(asset) = assets.get_mut(h_out.id()) else {
+                    continue;
+                };
+
+                asset.data.alpha =
+                    0f32.max(asset.data.alpha.powf(TPOW) - time.delta_seconds() / TRANSITION_TIME).powf(TPOW.recip());
+                if asset.data.alpha > 0.0 {
+                    still_transitioning = true;
                 }
             }
-
-            if !still_transitioning {
-                commands.entity(ent).remove::<ImposterTransitionIn>();
-            }
-        }
-    }
-
-    let mut t_out_false = 0;
-    let mut t_out_blocked = 0;
-    let mut t_out_true = 0;
-    for (ent, imposter, children, t) in q_out.iter() {
-        if t.0 && dont_transition_out.contains(&ent) {
-            t_out_blocked += 1;
-        } else if t.0 {
-            t_out_true += 1;
-        } else {
-            t_out_false += 1;
         }
 
-        if t.0 && !dont_transition_out.contains(&ent) {
-            let mut still_transitioning = false;
-            for child in children {
-                if let Ok(h_out) = handles.get(*child) {
-                    let Some(asset) = assets.get_mut(h_out.id()) else {
-                        continue;
-                    };
-
-                    asset.data.alpha =
-                        0f32.max(asset.data.alpha - time.delta_seconds() / TRANSITION_TIME);
-                    if asset.data.alpha > 0.0 {
-                        still_transitioning = true;
-                    }
-                }
-            }
-
-            if !still_transitioning {
-                commands.entity(ent).despawn_recursive();
-                lookup.0.remove(&(imposter.parcel, imposter.level));
-            }
+        if !still_transitioning {
+            commands.entity(ent).despawn_recursive();
         }
-    }
-
-    let in_count = q_in.iter().count();
-    if in_count > 0 {
-        debug.info.insert("Trans In", format!("{in_count}"));
-    } else {
-        debug.info.remove("Trans In");
-    }
-    let out_count = q_out.iter().count();
-    if out_count > 0 {
-        debug.info.insert(
-            "Trans Out",
-            format!("t: {t_out_true}, b: {t_out_blocked}, f: {t_out_false}"),
-        );
-    } else {
-        debug.info.remove("Trans Out");
     }
 }
 

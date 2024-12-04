@@ -46,7 +46,7 @@ use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
     automatic_testing::AutomaticTestingPlugin,
-    initialize_scene::TestingData,
+    initialize_scene::{TestingData, PARCEL_SIZE},
     update_world::{mesh_collider::GroundCollider, NoGltf},
     OutOfWorld, SceneRunnerPlugin,
 };
@@ -192,7 +192,16 @@ fn main() {
                     .collect::<Result<Vec<f32>, _>>()
                     .unwrap()
             })
-            .unwrap_or(base_config.scene_imposter_distances),
+            .unwrap_or(base_config.scene_imposter_distances)
+            .into_iter()
+            .enumerate()
+            .map(|(ix, d)| {
+                let edge_distance = (1 << ix) as f32 * PARCEL_SIZE;
+                let diagonal_distance = (edge_distance * edge_distance * 2.0).sqrt();
+                println!("[{ix}] -> {}", d.max(diagonal_distance));
+                d.max(diagonal_distance)
+            })
+            .collect(),
         scene_imposter_multisample: args
             .value_from_str("--impost_multi")
             .ok()
