@@ -3,7 +3,9 @@ use console::ConsolePlugin;
 use imposters::{render::ImposterMissing, DclImposterPlugin};
 
 use avatar::AvatarDynamicState;
-use bevy::{core::TaskPoolThreadAssignmentPolicy, prelude::*, window::ExitCondition, winit::WinitSettings};
+use bevy::{
+    core::TaskPoolThreadAssignmentPolicy, prelude::*, window::ExitCondition, winit::WinitSettings,
+};
 
 use common::{
     rpc::RpcCall,
