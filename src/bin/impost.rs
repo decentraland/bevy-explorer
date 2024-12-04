@@ -3,7 +3,7 @@ use console::ConsolePlugin;
 use imposters::{render::ImposterMissing, DclImposterPlugin};
 
 use avatar::AvatarDynamicState;
-use bevy::{core::TaskPoolThreadAssignmentPolicy, prelude::*, window::ExitCondition};
+use bevy::{core::TaskPoolThreadAssignmentPolicy, prelude::*, window::ExitCondition, winit::WinitSettings};
 
 use common::{
     rpc::RpcCall,
@@ -88,6 +88,10 @@ fn main() {
     }
 
     let mut app = App::new();
+    app.insert_resource(WinitSettings {
+        focused_mode: bevy::winit::UpdateMode::Continuous,
+        unfocused_mode: bevy::winit::UpdateMode::Continuous,
+    });
     app.add_plugins(
         DefaultPlugins
             .set(TaskPoolPlugin {
