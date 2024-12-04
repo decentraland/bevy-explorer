@@ -52,17 +52,28 @@ impl MaskMaterial {
         bounds: Vec<BoundRegion>,
         distance: f32,
     ) -> Self {
-        if bounds.len() > 8 {
-            warn!("super janky scene shape not supported");
-        }
         let num_bounds = bounds.len() as u32;
-        let bounds: [BoundRegion; 8] = bounds
-            .into_iter()
-            .chain(std::iter::repeat(Default::default()))
-            .take(8)
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
+        let bounds: [BoundRegion; 8] = if bounds.len() > 8 {
+            warn!("super janky scene shape not supported");
+            let overall_min = bounds.iter().fold(IVec2::MAX, |t, b| t.min(b.parcel_min()));
+            let overall_max = bounds.iter().fold(IVec2::MIN, |t, b| t.max(b.parcel_max()));
+            let overall_region = BoundRegion::new(overall_min, overall_max, bounds[0].parcel_count);
+            [overall_region]
+                .into_iter()
+                .chain(std::iter::repeat(Default::default()))
+                .take(8)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap()
+        } else {
+            bounds
+                .into_iter()
+                .chain(std::iter::repeat(Default::default()))
+                .take(8)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap()
+        };
         Self {
             mask_data: MaskData {
                 num_bounds,
