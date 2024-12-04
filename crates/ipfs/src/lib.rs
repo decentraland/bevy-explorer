@@ -1081,13 +1081,20 @@ impl AssetReader for IpfsIo {
             if let Some(hash) = hash {
                 if ipfs_path.should_cache(&hash) {
                     let mut cache_path = PathBuf::from(self.cache_path());
-                    cache_path.push(hash);
+                    cache_path.push(format!("{}.part", hash));
                     let cache_path_str = cache_path.to_string_lossy().into_owned();
                     // ignore errors trying to cache
-                    if let Err(e) = std::fs::write(cache_path, &data) {
+                    if let Err(e) = std::fs::write(&cache_path, &data) {
                         warn!("failed to cache `{cache_path_str}`: {e}");
                     } else {
-                        debug!("cached ok `{cache_path_str}`");
+                        let mut final_path = cache_path.clone();
+                        final_path.pop();
+                        final_path.push(hash);
+                        if let Err(e) = std::fs::rename(cache_path, &final_path) {
+                            warn!("failed to rename cache item `{cache_path_str}`: {e}");
+                        } else {
+                            debug!("cached ok `{}`", final_path.to_string_lossy());
+                        }
                     }
                 }
             }
