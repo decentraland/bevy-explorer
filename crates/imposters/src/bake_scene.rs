@@ -72,6 +72,8 @@ pub struct ImposterOven {
     baked_scene: BakedScene,
 }
 
+const SCENE_BAKE_TICK: u32 = 100;
+
 fn make_scene_oven(
     current_imposter: Res<CurrentImposterScene>,
     mut commands: Commands,
@@ -127,7 +129,7 @@ fn make_scene_oven(
 
         let spawning_forever = tick.0 > start_tick.as_ref().unwrap().1 + 1000;
 
-        if context.tick_number < 10 && !context.broken && !spawning_forever {
+        if context.tick_number < SCENE_BAKE_TICK && !context.broken && !spawning_forever {
             return;
         }
 

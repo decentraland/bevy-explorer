@@ -70,7 +70,7 @@ fn main() {
             .take(levels)
             .chain(std::iter::once(range))
             .collect(),
-        scene_log_to_console: false,
+        scene_log_to_console: args.contains("--scene_log_to_console"),
         ..base_config
     };
 
