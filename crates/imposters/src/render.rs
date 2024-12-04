@@ -604,7 +604,7 @@ fn render_imposters(
                         transform: Transform::from_translation(
                             (spec.region_min + spec.region_max) * 0.5,
                         )
-                        .with_scale(scale * (1.0 + req.level as f32 / 1000.0)),
+                        .with_scale(scale.max(Vec3::splat(0.001)) * (1.0 + req.level as f32 / 1000.0)),
                         ..Default::default()
                     },
                     NoFrustumCulling,
