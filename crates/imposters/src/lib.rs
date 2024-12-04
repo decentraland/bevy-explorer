@@ -63,8 +63,6 @@ fn set_impost_multi(
             commands.entity(e).despawn_recursive();
         }
 
-        lookup.0.retain(|(_, _, ingredient), _| {
-            *ingredient
-        });
+        lookup.0.retain(|(_, _, ingredient), _| *ingredient);
     }
 }

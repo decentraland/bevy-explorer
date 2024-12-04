@@ -325,8 +325,7 @@ pub fn spawn_imposters(
     let max_tile = max_tile.min(pointers.max() >> level as u32);
 
     let mut required_tiles = (min_tile.x..=max_tile.x)
-        .map(|x| (min_tile.y..=max_tile.y).map(move |y| IVec2::new(x, y)))
-        .flatten()
+        .flat_map(|x| (min_tile.y..=max_tile.y).map(move |y| IVec2::new(x, y)))
         .collect::<HashSet<_>>();
 
     // take the largest permitted tile to fill the area
@@ -604,7 +603,9 @@ fn render_imposters(
                         transform: Transform::from_translation(
                             (spec.region_min + spec.region_max) * 0.5,
                         )
-                        .with_scale(scale.max(Vec3::splat(0.001)) * (1.0 + req.level as f32 / 1000.0)),
+                        .with_scale(
+                            scale.max(Vec3::splat(0.001)) * (1.0 + req.level as f32 / 1000.0),
+                        ),
                         ..Default::default()
                     },
                     NoFrustumCulling,
@@ -699,8 +700,9 @@ fn transition_imposters(
                     continue;
                 };
 
-                asset.data.alpha =
-                    1f32.min(asset.data.alpha.powf(TPOW) + time.delta_seconds() / TRANSITION_TIME).powf(TPOW.recip());
+                asset.data.alpha = 1f32
+                    .min(asset.data.alpha.powf(TPOW) + time.delta_seconds() / TRANSITION_TIME)
+                    .powf(TPOW.recip());
                 if asset.data.alpha < 1.0 {
                     still_transitioning = true;
                 }
@@ -720,8 +722,9 @@ fn transition_imposters(
                     continue;
                 };
 
-                asset.data.alpha =
-                    0f32.max(asset.data.alpha.powf(TPOW) - time.delta_seconds() / TRANSITION_TIME).powf(TPOW.recip());
+                asset.data.alpha = 0f32
+                    .max(asset.data.alpha.powf(TPOW) - time.delta_seconds() / TRANSITION_TIME)
+                    .powf(TPOW.recip());
                 if asset.data.alpha > 0.0 {
                     still_transitioning = true;
                 }
