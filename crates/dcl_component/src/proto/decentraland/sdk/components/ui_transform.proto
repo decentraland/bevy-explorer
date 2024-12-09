@@ -166,4 +166,6 @@ message PBUiTransform {
 
   optional ScrollPositionValue scroll_position = 55; // default position=(0,0)
   optional ShowScrollBar scroll_visible = 56; // default ShowScrollBar.SSB_BOTH
+
+  optional int32 z_index = 57;
 }

@@ -74,7 +74,7 @@ fn update_color_picker_components(
                         ..Default::default()
                     },
                     focus_policy: bevy::ui::FocusPolicy::Block,
-                    z_index: ZIndex::Global(100),
+                    z_index: ZIndex::Global(i16::MAX as i32 + 4),
                     ..Default::default()
                 },
                 Blocker,

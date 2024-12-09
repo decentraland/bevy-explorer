@@ -157,6 +157,7 @@ pub struct UiTransform {
     margin: UiRect,
     padding: UiRect,
     opacity: f32,
+    zindex: Option<i16>,
 }
 
 impl From<PbUiTransform> for UiTransform {
@@ -297,6 +298,7 @@ impl From<PbUiTransform> for UiTransform {
                 Val::Px(0.0)
             ),
             opacity: value.opacity.unwrap_or(1.0),
+            zindex: value.z_index.map(|z| z as i16),
         }
     }
 }
@@ -539,7 +541,7 @@ fn create_ui_roots(
                                 height: Val::Percent(100.0),
                                 ..Default::default()
                             },
-                            z_index: ZIndex::Global(-2), // behind the ZIndex(-1) MouseInteractionComponent
+                            z_index: ZIndex::Global(i16::MIN as i32 - 2), // behind the ZIndex(i16::MIN as i32 -1) MouseInteractionComponent
                             ..Default::default()
                         },
                     ));
@@ -865,6 +867,12 @@ fn layout_scene_ui(
                         }
 
                         commands.entity(link.ui_entity).try_insert(style);
+
+                        if let Some(zindex) = ui_transform.zindex {
+                            commands
+                                .entity(link.ui_entity)
+                                .try_insert(ZIndex::Global(zindex as i32));
+                        }
                     }
 
                     // gather scroll events

@@ -111,7 +111,7 @@ pub(crate) fn setup(
                     justify_content: JustifyContent::Center,
                     ..Default::default()
                 },
-                z_index: ZIndex::Global(-1),
+                z_index: ZIndex::Global(i16::MIN as i32 - 1),
                 ..Default::default()
             })
             .with_children(|c| {
@@ -167,7 +167,7 @@ pub(crate) fn setup(
                     },
                     background_color: Color::srgba(0.8, 0.8, 1.0, 0.8).into(),
                     focus_policy: FocusPolicy::Block,
-                    z_index: ZIndex::Global(100),
+                    z_index: ZIndex::Global(i16::MAX as i32 + 3),
                     ..default()
                 },
                 SysInfoContainer,
