@@ -727,7 +727,7 @@ fn check_bake_state(
     mut current_imposter_imposter: ResMut<CurrentImposterImposter>,
     mut ingredients: ResMut<BakingIngredients>,
     lookup: ImposterLookup,
-    scene_pointers: Res<ScenePointers>,
+    mut scene_pointers: ResMut<ScenePointers>,
     mut debug_info: ResMut<DebugInfo>,
 ) {
     if !baking.0.is_empty() {
@@ -786,21 +786,22 @@ fn check_bake_state(
                 }
 
                 let next_size = 1 << (level - 1);
+                let min = (scene_pointers.min() >> (level - 1) as u32) << (level - 1) as u32;
+                let max = (scene_pointers.max() >> (level - 1) as u32) << (level - 1) as u32;
 
                 if ingredients.0.last() != Some(&(*parcel, *level)) {
                     for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
                         let key = (*parcel + offset * next_size, level - 1);
+                        if key.0.clamp(min, max) != key.0 {
+                            continue;
+                        }
                         ingredients.0.push(key);
                     }
                     ingredients.0.push((*parcel, *level));
                 }
 
                 let mut any_pending = false;
-                let mut crc = 0u32;
-                for (ix, offset) in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE]
-                    .into_iter()
-                    .enumerate()
-                {
+                for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
                     let key = (*parcel + offset * next_size, level - 1);
                     let mut pointer = None;
                     if *level == 1 {
@@ -814,21 +815,12 @@ fn check_bake_state(
                                 return;
                             }
                         }
-                    } else {
-                        let min =
-                            (scene_pointers.min() >> (level - 1) as u32) << (level - 1) as u32;
-                        let max =
-                            (scene_pointers.max() >> (level - 1) as u32) << (level - 1) as u32;
-                        if key.0.clamp(min, max) != key.0 {
-                            continue;
-                        }
+                    } else if key.0.clamp(min, max) != key.0 {
+                        continue;
                     }
 
                     match lookup.state(key.0, key.1, true) {
-                        ImposterState::Ready(sub_crc) => {
-                            crc ^= sub_crc.rotate_right(ix as u32);
-                        }
-                        ImposterState::NoScene => (),
+                        ImposterState::Ready | ImposterState::NoScene => (),
                         ImposterState::Missing => {
                             if *level == 1 {
                                 baking
@@ -849,6 +841,8 @@ fn check_bake_state(
                 if any_pending {
                     return;
                 }
+
+                let crc = scene_pointers.crc(parcel, *level).unwrap();
 
                 // run the bake
                 current_imposter_imposter.0 = Some(CurrentImposterImposterDetail {

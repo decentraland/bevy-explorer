@@ -114,7 +114,11 @@ pub async fn load_imposter(
                 if required_crc.map_or(true, |crc| crc == baked_scene.crc) {
                     return Some(baked_scene);
                 } else {
-                    warn!("mismatched hash for {path:?}");
+                    warn!(
+                        "mismatched hash for {path:?} (expected {}, found {}",
+                        required_crc.unwrap(),
+                        baked_scene.crc
+                    );
                 }
             } else {
                 warn!("failed to deserialize {path:?}");

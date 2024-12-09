@@ -114,7 +114,7 @@ pub const TRANSITION_TIME: f32 = 0.25;
 pub enum ImposterState {
     NotSpawned,
     Pending,
-    Ready(u32),
+    Ready,
     Missing,
     NoScene,
 }
@@ -173,7 +173,7 @@ impl ImposterLookup<'_, '_> {
         }
 
         if maybe_ready.map_or(false, |r| r.crc == 0) {
-            return ImposterState::Ready(maybe_ready.map(|r| r.crc).unwrap_or(0));
+            return ImposterState::Ready;
         }
 
         let Some(children) = maybe_children else {
@@ -199,7 +199,7 @@ impl ImposterLookup<'_, '_> {
             }
         }
 
-        ImposterState::Ready(maybe_ready.map(|r| r.crc).unwrap_or(0))
+        ImposterState::Ready
     }
 
     pub fn state(&self, parcel: IVec2, size: usize, ingredient: bool) -> ImposterState {
