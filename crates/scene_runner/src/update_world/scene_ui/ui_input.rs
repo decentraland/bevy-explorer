@@ -107,7 +107,7 @@ pub fn set_ui_input(
                 hint_text_color: input.0.placeholder_color.map(Into::into),
                 enabled: !input.0.disabled,
                 content: input.0.value.clone().unwrap_or_default(),
-                accept_line: false,
+                accept_line: true,
                 text_style: Some(TextStyle {
                     font: user_font(font_name, ui_core::WeightName::Regular),
                     font_size,
