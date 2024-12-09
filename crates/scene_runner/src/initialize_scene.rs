@@ -894,9 +894,10 @@ fn load_active_entities(
                 *pointer_request = Some((
                     required_parcels,
                     HashMap::default(),
-                    ipfas
-                        .ipfs()
-                        .active_entities(ipfs::ActiveEntitiesRequest::Pointers(pointers), None),
+                    ipfas.ipfs().active_entities(
+                        ipfs::ActiveEntitiesRequest::Pointers(pointers),
+                        current_realm.config.city_loader_content_server.as_deref(),
+                    ),
                 ));
             }
         } else {
@@ -950,9 +951,10 @@ fn load_active_entities(
                 *pointer_request = Some((
                     required_parcels,
                     lookup,
-                    ipfas
-                        .ipfs()
-                        .active_entities(ipfs::ActiveEntitiesRequest::Urns(required_paths), None),
+                    ipfas.ipfs().active_entities(
+                        ipfs::ActiveEntitiesRequest::Urns(required_paths),
+                        current_realm.config.city_loader_content_server.as_deref(),
+                    ),
                 ));
             }
         }
@@ -982,7 +984,18 @@ fn load_active_entities(
                 continue;
             };
 
-            let urn = urn_lookup.remove(&active_entity.id);
+            let mut urn = urn_lookup.remove(&active_entity.id);
+
+            if urn.is_none() {
+                if let Some(scene_server) = current_realm.config.city_loader_content_server.as_ref()
+                {
+                    // city loader requires we source the scene entity from the city server as well (unless otherwise specified)
+                    urn = Some(format!(
+                        "urn:decentraland:entity:{}?=&baseUrl={}/contents/",
+                        active_entity.id, scene_server
+                    ));
+                }
+            }
 
             for pointer in meta.scene.parcels {
                 let (x, y) = pointer.split_once(',').unwrap();

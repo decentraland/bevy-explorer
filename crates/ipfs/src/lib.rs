@@ -369,6 +369,7 @@ pub struct ServerConfiguration {
     pub scenes_urn: Option<Vec<String>>,
     pub realm_name: Option<String>,
     pub network_id: Option<u32>,
+    pub city_loader_content_server: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
