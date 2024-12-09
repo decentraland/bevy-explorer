@@ -1,5 +1,5 @@
 <define-template id="fullscreen-block">
-    <div focus="block" z-index="5" style="
+    <div focus="block" z-index="65546" style="
         position-type: absolute;
         width: 100%;
         height: 100%;
