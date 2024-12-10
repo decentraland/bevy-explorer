@@ -662,7 +662,7 @@ impl ScenePointers {
 
         let level_bounds_min = self.realm_bounds.0 >> level as u32;
         let level_bounds_max = self.realm_bounds.1 >> level as u32;
-        let level_bounds = level_bounds_max - level_bounds_min;
+        let level_bounds = level_bounds_max - level_bounds_min + 1;
         let level_parcel = parcel >> level as u32;
         if level_parcel.cmplt(level_bounds_min).any() || level_parcel.cmpgt(level_bounds_max).any()
         {
