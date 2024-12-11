@@ -869,9 +869,11 @@ fn layout_scene_ui(
                         commands.entity(link.ui_entity).try_insert(style);
 
                         if let Some(zindex) = ui_transform.zindex {
-                            commands
-                                .entity(link.ui_entity)
-                                .try_insert(ZIndex::Global(zindex as i32));
+                            if zindex != 0 {
+                                commands
+                                    .entity(link.ui_entity)
+                                    .try_insert(ZIndex::Global(zindex as i32));
+                            }
                         }
                     }
 
