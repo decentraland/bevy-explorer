@@ -423,7 +423,7 @@ pub fn show_settings(
 
     commands
         .entity(components.root)
-        .insert(ZIndex::Global(i16::MAX as i32 + 2));
+        .insert(ZIndex::Global(i16::MAX as i32 + 4));
     commands
         .entity(components.named("change-realm-button"))
         .insert(UpdateRealmText);

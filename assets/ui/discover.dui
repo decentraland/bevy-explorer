@@ -1,7 +1,7 @@
 <define-template id="discover">
     <div style="width: 100%; flex-grow: 1; flex-direction: row;">
         <div style="position-type: absolute; width: 100%; height: 100%; flex-grow: 1; flex-direction: column;">
-            <div style="width: 100%; align-items: center;" focus="block" interact="true" z-index="65542">
+            <div style="width: 100%; align-items: center;" focus="block" interact="true" z-index="1">
                 <!-- categories -->
                 <div style="width: 80%">
                     <button-set style="width: 100%; flex-wrap: wrap; align-content: center; align-items: center; justify-content: center;" buttons="@category-buttons" />

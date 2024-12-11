@@ -10,7 +10,7 @@
         "
         focus="block"
     >
-        <div id="title-bar" style="width: 100%; height: auto;" z-index="65636">
+        <div id="title-bar" style="width: 100%; height: auto;" z-index="100">
             <button label-name="change-realm-button" label="@realm" onclick="@change-realm" />
             <space />
             <tab-group id="title-pages" tabs="@title-tabs" onchanged="@title-onchanged" initial="@title-initial" edge-scale="1px 1px -0px 1px" />
