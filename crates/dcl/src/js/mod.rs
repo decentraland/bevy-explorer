@@ -12,6 +12,7 @@ use deno_core::{
     include_js_files, op2, v8, Extension, JsRuntime, OpDecl, OpState, PollEventLoopOptions,
     RuntimeOptions,
 };
+use system_bridge::SystemApi;
 use tokio::sync::{mpsc::Receiver, Mutex};
 
 use ipfs::{IpfsResource, SceneJsFile};
@@ -51,6 +52,7 @@ pub mod events;
 #[cfg(feature = "inspect")]
 pub mod inspector;
 pub mod player;
+pub mod system_api;
 pub mod testing;
 pub mod websocket;
 
@@ -59,7 +61,11 @@ pub struct ShuttingDown;
 
 pub struct RendererStore(pub CrdtStore);
 
-pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<InspectorServer>) {
+pub fn create_runtime(
+    init: bool,
+    inspect: bool,
+    super_user: bool,
+) -> (JsRuntime, Option<InspectorServer>) {
     // add fetch stack
     let net = deno_net::deno_net::init_ops_and_esm::<NP>(None, None);
     let web = deno_web::deno_web::init_ops_and_esm::<TP>(
@@ -78,7 +84,7 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
 
     let mut ops = vec![op_require(), op_log(), op_error()];
 
-    let op_sets: [Vec<deno_core::OpDecl>; 12] = [
+    let op_sets: [Vec<deno_core::OpDecl>; 13] = [
         engine::ops(),
         restricted_actions::ops(),
         runtime::ops(),
@@ -91,6 +97,7 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
         testing::ops(),
         ethereum_controller::ops(),
         adaption_layer_helper::ops(),
+        system_api::ops(super_user),
     ];
 
     // add plugin registrations
@@ -176,6 +183,15 @@ pub fn create_runtime(init: bool, inspect: bool) -> (JsRuntime, Option<Inspector
 // marker to notify that the scene/renderer interface functions were used
 pub struct CommunicatedWithRenderer;
 
+pub struct SuperUserScene(pub tokio::sync::mpsc::UnboundedSender<SystemApi>);
+impl std::ops::Deref for SuperUserScene {
+    type Target = tokio::sync::mpsc::UnboundedSender<SystemApi>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 // main scene processing thread - constructs an isolate and runs the scene
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn scene_thread(
@@ -191,9 +207,10 @@ pub(crate) fn scene_thread(
     inspect: bool,
     testing: bool,
     preview: bool,
+    super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
 ) {
     let scene_context = CrdtContext::new(scene_id, scene_hash, testing, preview);
-    let (mut runtime, inspector) = create_runtime(false, inspect);
+    let (mut runtime, inspector) = create_runtime(false, inspect, super_user.is_some());
 
     // store handle
     let vm_handle = runtime.v8_isolate().thread_safe_handle();
@@ -234,6 +251,10 @@ pub(crate) fn scene_thread(
 
     let span = info_span!("js startup").entered();
     state.borrow_mut().put(span);
+
+    if let Some(super_user) = super_user {
+        state.borrow_mut().put(SuperUserScene(super_user));
+    }
 
     // store kill handle
     state
@@ -429,6 +450,16 @@ fn op_require(
     match module_spec.as_str() {
         // user module load
         "~scene.js" => Ok(state.borrow().borrow::<SceneJsFile>().0.as_ref().clone()),
+        // system api (only allowed for su scene)
+        "~system/BevyExplorerApi" => {
+            if state.borrow().try_borrow::<SuperUserScene>().is_some() {
+                Ok(include_str!("modules/SystemApi.js").to_owned())
+            } else {
+                Err(generic_error(format!(
+                    "invalid module request `{module_spec}`"
+                )))
+            }
+        }
         // core module load
         "~system/CommunicationsController" => {
             Ok(include_str!("modules/CommunicationsController.js").to_owned())

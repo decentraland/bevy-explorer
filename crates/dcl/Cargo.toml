@@ -14,6 +14,7 @@ common = { workspace = true }
 dcl_component = { workspace = true }
 ipfs = { workspace = true }
 wallet = { workspace = true }
+system_bridge = { workspace = true }
 
 bevy = { workspace = true }
 tokio = { workspace = true }

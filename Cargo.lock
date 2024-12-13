@@ -3180,6 +3180,7 @@ dependencies = [
  "once_cell",
  "serde",
  "serde_json",
+ "system_bridge",
  "tokio",
  "uuid 1.10.0",
  "wallet",
@@ -3302,6 +3303,7 @@ dependencies = [
  "serde",
  "serde_json",
  "social",
+ "system_bridge",
  "system_ui",
  "tokio",
  "tracing-appender",
@@ -9439,6 +9441,7 @@ dependencies = [
  "serde",
  "serde_json",
  "spin_sleep",
+ "system_bridge",
  "tokio",
  "ui_core",
  "urlencoding",
@@ -10376,6 +10379,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "system_bridge"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "common",
+ "tokio",
+]
+
+[[package]]
 name = "system_ui"
 version = "0.1.0"
 dependencies = [
@@ -10399,6 +10411,7 @@ dependencies = [
  "dcl_component",
  "ethers-core",
  "ethers-signers",
+ "futures-lite 1.13.0",
  "input_manager",
  "ipfs",
  "isahc",
@@ -10409,6 +10422,7 @@ dependencies = [
  "serde_json",
  "shlex",
  "social",
+ "system_bridge",
  "tokio",
  "tween",
  "ui_core",

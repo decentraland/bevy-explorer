@@ -11,6 +11,7 @@ use bevy::{
 use common::rpc::{CompareSnapshot, RpcCall};
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
+use system_bridge::SystemApi;
 use tokio::sync::mpsc::Sender;
 
 use dcl_component::SceneEntityId;
@@ -99,6 +100,7 @@ pub fn spawn_scene(
     inspect: bool,
     testing: bool,
     preview: bool,
+    super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
 ) -> Sender<RendererResponse> {
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
 
@@ -120,6 +122,7 @@ pub fn spawn_scene(
                     inspect,
                     testing,
                     preview,
+                    super_user,
                 )
             }));
 

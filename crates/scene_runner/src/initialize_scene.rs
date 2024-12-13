@@ -30,6 +30,7 @@ use ipfs::{
     IpfsResource, SceneIpfsLocation, SceneJsFile,
 };
 use scene_material::BoundRegion;
+use system_bridge::SystemBridge;
 use wallet::Wallet;
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
@@ -149,6 +150,10 @@ pub(crate) fn load_scene_entity(
             },
             h_scene,
         ));
+
+        if event.super_user {
+            commands.try_insert(SuperUserScene);
+        }
     }
 }
 
@@ -496,6 +501,9 @@ pub struct TestingData {
     pub test_scenes: Option<TestScenes>,
 }
 
+#[derive(Component)]
+pub struct SuperUserScene;
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub(crate) fn initialize_scene(
     mut commands: Commands,
@@ -506,6 +514,7 @@ pub(crate) fn initialize_scene(
         &mut SceneLoading,
         &Handle<SceneJsFile>,
         &mut RendererSceneContext,
+        Option<&SuperUserScene>,
     )>,
     scene_js_files: Res<Assets<SceneJsFile>>,
     asset_server: Res<AssetServer>,
@@ -513,8 +522,9 @@ pub(crate) fn initialize_scene(
     wallet: Res<Wallet>,
     testing_data: Res<TestingData>,
     preview_mode: Res<PreviewMode>,
+    su_bridge: Res<SystemBridge>,
 ) {
-    for (root, mut state, h_code, mut context) in loading_scenes.iter_mut() {
+    for (root, mut state, h_code, mut context, super_user) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
             continue;
         }
@@ -575,6 +585,7 @@ pub(crate) fn initialize_scene(
             inspected,
             testing_data.test_mode,
             preview_mode.is_preview,
+            super_user.map(|_| su_bridge.sender.clone()),
         );
 
         // mark context as in flight so we wait for initial RPC requests
@@ -595,6 +606,7 @@ pub struct PortableSource {
     pub pid: String,
     pub parent_scene: Option<String>,
     pub ens: Option<String>,
+    pub super_user: bool,
 }
 
 #[derive(Resource, Default)]
@@ -1044,7 +1056,7 @@ pub fn process_scene_lifecycle(
     config: Res<AppConfig>,
     imposter_scene: Res<CurrentImposterScene>,
 ) {
-    let mut required_scene_ids: HashSet<(String, Option<String>)> = HashSet::default();
+    let mut required_scene_ids: HashMap<(String, Option<String>), bool> = HashMap::default();
 
     // add nearby scenes to requirements
     let Ok(focus) = focus.get_single() else {
@@ -1063,20 +1075,24 @@ pub fn process_scene_lifecycle(
         pointers.max(),
     );
 
-    required_scene_ids.extend(pir.iter().flat_map(|(parcel, dist)| {
-        if *dist < range.load {
-            pointers.get(parcel).and_then(PointerResult::hash_and_urn)
-        } else {
-            None
-        }
-    }));
+    required_scene_ids.extend(
+        pir.iter()
+            .flat_map(|(parcel, dist)| {
+                if *dist < range.load {
+                    pointers.get(parcel).and_then(PointerResult::hash_and_urn)
+                } else {
+                    None
+                }
+            })
+            .map(|(h, u)| ((h, u), false)),
+    );
 
     // add any portables to requirements
     required_scene_ids.extend(
         portables
             .0
             .iter()
-            .map(|(hash, source)| (hash.clone(), Some(source.pid.clone()))),
+            .map(|(hash, source)| ((hash.clone(), Some(source.pid.clone())), source.super_user)),
     );
 
     // add imposter scene
@@ -1084,11 +1100,12 @@ pub fn process_scene_lifecycle(
         imposter_scene
             .0
             .as_ref()
-            .and_then(|(scene, _)| scene.hash_and_urn()),
+            .and_then(|(scene, _)| scene.hash_and_urn())
+            .map(|(h, u)| ((h, u), false)),
     );
 
     // record additional optional scenes
-    let mut keep_scene_ids = required_scene_ids.clone();
+    let mut keep_scene_ids = required_scene_ids.keys().cloned().collect::<HashSet<_>>();
     keep_scene_ids.extend(pir.iter().flat_map(|(parcel, dist)| {
         if *dist >= range.load && *dist <= range.unload {
             pointers
@@ -1152,17 +1169,20 @@ pub fn process_scene_lifecycle(
     }
 
     if let Some(current_scene) = current_scene {
-        if required_scene_ids.contains(&current_scene) && !existing_ids.contains(&current_scene.0) {
+        if required_scene_ids.contains_key(&current_scene)
+            && !existing_ids.contains(&current_scene.0)
+        {
             // if the current scene is not even spawned, spawn only that scene
+            let su = *required_scene_ids.get(&current_scene).unwrap();
             required_scene_ids.clear();
-            required_scene_ids.extend([current_scene]);
+            required_scene_ids.extend([(current_scene, su)]);
         }
     }
 
     // spawn any newly required scenes
-    for (required_scene_hash, maybe_urn) in required_scene_ids
+    for ((required_scene_hash, maybe_urn), super_user) in required_scene_ids
         .iter()
-        .filter(|(hash, _)| !existing_ids.contains(hash))
+        .filter(|((hash, _), _)| !existing_ids.contains(hash))
     {
         let entity = commands
             .spawn((
@@ -1179,6 +1199,7 @@ pub fn process_scene_lifecycle(
                 Some(urn) => SceneIpfsLocation::Urn(urn.to_owned()),
                 None => SceneIpfsLocation::Hash(required_scene_hash.to_owned()),
             },
+            super_user: *super_user,
         });
     }
 }

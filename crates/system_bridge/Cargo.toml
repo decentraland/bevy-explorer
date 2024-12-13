@@ -1,0 +1,15 @@
+[package]
+name = "system_bridge"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[lints]
+workspace = true
+
+[dependencies]
+common = { workspace = true }
+
+bevy = { workspace = true }
+tokio = { workspace = true }

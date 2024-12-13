@@ -21,8 +21,8 @@ use ui_pointer::set_ui_pointer_events;
 use ui_text::{set_ui_text, UiText};
 
 use crate::{
-    renderer_context::RendererSceneContext, ContainerEntity, ContainingScene, SceneEntity,
-    SceneSets,
+    initialize_scene::SuperUserScene, renderer_context::RendererSceneContext, ContainerEntity,
+    ContainingScene, SceneEntity, SceneSets,
 };
 use common::{
     structs::{AppConfig, PrimaryUser},
@@ -365,6 +365,7 @@ impl Plugin for SceneUiPlugin {
 pub struct SceneUiData {
     nodes: BTreeSet<Entity>,
     relayout: bool,
+    super_user: bool,
 }
 
 #[derive(Component)]
@@ -376,12 +377,16 @@ pub struct UiTextureOutput {
 
 fn init_scene_ui_root(
     mut commands: Commands,
-    scenes: Query<Entity, (With<RendererSceneContext>, Without<SceneUiData>)>,
+    scenes: Query<
+        (Entity, Has<SuperUserScene>),
+        (With<RendererSceneContext>, Without<SceneUiData>),
+    >,
 ) {
-    for scene_ent in scenes.iter() {
-        commands
-            .entity(scene_ent)
-            .try_insert(SceneUiData::default());
+    for (scene_ent, super_user) in scenes.iter() {
+        commands.entity(scene_ent).try_insert(SceneUiData {
+            super_user,
+            ..Default::default()
+        });
     }
 }
 
@@ -438,7 +443,7 @@ pub struct SceneUiRoot {
 
 fn create_ui_roots(
     mut commands: Commands,
-    mut scene_uis: Query<(Entity, Option<&UiLink>), With<SceneUiData>>,
+    mut scene_uis: Query<(Entity, Option<&UiLink>, &SceneUiData)>,
     player: Query<Entity, With<PrimaryUser>>,
     containing_scene: ContainingScene,
     current_uis: Query<(Entity, &SceneUiRoot)>,
@@ -471,7 +476,7 @@ fn create_ui_roots(
     }
 
     // spawn window root ui nodes
-    for (ent, maybe_link) in scene_uis.iter_mut() {
+    for (ent, maybe_link, ui_data) in scene_uis.iter_mut() {
         if current_scenes.contains(&ent) && (maybe_link.is_none() || config.is_changed()) {
             let root_style = if config.constrain_scene_ui {
                 Style {
@@ -492,10 +497,13 @@ fn create_ui_roots(
                 }
             };
 
+            let z_index = ZIndex::Global(if ui_data.super_user { 1 << 17 } else { 0 });
+
             let window_root = commands
                 .spawn((
                     NodeBundle {
                         style: root_style,
+                        z_index,
                         ..Default::default()
                     },
                     SceneUiRoot {
@@ -870,9 +878,9 @@ fn layout_scene_ui(
 
                         if let Some(zindex) = ui_transform.zindex {
                             if zindex != 0 {
-                                commands
-                                    .entity(link.ui_entity)
-                                    .try_insert(ZIndex::Global(zindex as i32));
+                                commands.entity(link.ui_entity).try_insert(ZIndex::Global(
+                                    zindex as i32 + if ui_data.super_user { 1 << 17 } else { 0 },
+                                ));
                             }
                         }
                     }

@@ -1,6 +1,9 @@
 pub mod teleport;
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use avatar::AvatarDynamicState;
 use bevy::{
@@ -30,7 +33,9 @@ use comms::{
 use console::DoAddConsoleCommand;
 use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
-use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, IpfsAssetServer, ServerAbout};
+use ipfs::{
+    ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, IpfsAssetServer, IpfsIo, ServerAbout,
+};
 use isahc::{http::StatusCode, AsyncReadResponseExt};
 use nft::asset_source::Nft;
 use scene_runner::{
@@ -257,11 +262,33 @@ async fn lookup_ens(
     parent_scene: Option<String>,
     ens: String,
 ) -> Result<(String, PortableSource), String> {
-    let mut about = isahc::get_async(format!(
-        "https://worlds-content-server.decentraland.org/world/{ens}/about"
-    ))
+    lookup_portable(
+        parent_scene,
+        format!("https://worlds-content-server.decentraland.org/world/{ens}"),
+        false,
+        None,
+    )
     .await
-    .map_err(|e| e.to_string())?;
+    .map(|(hash, source)| {
+        (
+            hash,
+            PortableSource {
+                ens: Some(ens),
+                ..source
+            },
+        )
+    })
+}
+
+pub async fn lookup_portable(
+    parent_scene: Option<String>,
+    url: String,
+    super_user: bool,
+    ipfs: Option<Arc<IpfsIo>>,
+) -> Result<(String, PortableSource), String> {
+    let mut about = isahc::get_async(format!("{url}/about"))
+        .await
+        .map_err(|e| e.to_string())?;
     if about.status() != StatusCode::OK {
         return Err(format!("status: {}", about.status()));
     }
@@ -273,13 +300,37 @@ async fn lookup_ens(
     let Some(config) = about.configurations else {
         return Err("No configurations on server/about".to_owned());
     };
-    let Some(scenes) = config.scenes_urn else {
-        return Err("No scenesUrn on server/about/configurations".to_owned());
-    };
-    let Some(urn) = scenes.first() else {
+
+    let mut first_scene = config.scenes_urn.and_then(|scenes| scenes.first().cloned());
+
+    if first_scene.is_none() && super_user {
+        // try from active entities
+        let ipfs = ipfs.unwrap();
+        let content_url = about
+            .content
+            .map(|epc| epc.public_url.clone())
+            .unwrap_or_else(|| format!("{url}/content"));
+        if let Ok(res) = ipfs
+            .active_entities(
+                ipfs::ActiveEntitiesRequest::Pointers(vec!["0,0".to_string()]),
+                Some(&content_url),
+            )
+            .await
+        {
+            if let Some(entity) = res.first() {
+                warn!("using active entity 0,0: {}", entity.id);
+                first_scene = Some(format!(
+                    "urn:decentraland:entity:{}?=&baseUrl={content_url}/contents/",
+                    entity.id
+                ));
+            }
+        }
+    }
+
+    let Some(urn) = first_scene else {
         return Err("Empty scenesUrn on server/about/configurations".to_owned());
     };
-    let hacked_urn = urn.replace('?', "?=&");
+    let hacked_urn = urn.replace('?', "?=&").replace("?=&=&", "?=&");
 
     let Ok(path) = IpfsPath::new_from_urn::<EntityDefinition>(&hacked_urn) else {
         return Err("failed to parse urn".to_owned());
@@ -294,7 +345,8 @@ async fn lookup_ens(
         PortableSource {
             pid: hacked_urn,
             parent_scene,
-            ens: Some(ens),
+            ens: None,
+            super_user,
         },
     ))
 }
@@ -369,6 +421,7 @@ fn spawn_portable(
                         pid: hacked_urn,
                         parent_scene: Some(parent_hash),
                         ens: None,
+                        super_user: false,
                     },
                 );
                 pending_responses.insert(hash, Some(response.take()));

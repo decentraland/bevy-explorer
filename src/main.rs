@@ -28,6 +28,7 @@ use bevy::{
         render_resource::{TextureViewDescriptor, TextureViewDimension},
         view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
     },
+    tasks::{IoTaskPool, Task},
     window::WindowResolution,
 };
 use bevy_console::ConsoleCommand;
@@ -40,13 +41,13 @@ use common::{
         PrimaryPlayerRes, PrimaryUser, SceneImposterBake, SceneLoadDistance, Version,
         GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER,
     },
-    util::{config_file, project_directories, UtilsPlugin},
+    util::{config_file, project_directories, TaskExt, UtilsPlugin},
 };
-use restricted_actions::RestrictedActionsPlugin;
+use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
     automatic_testing::AutomaticTestingPlugin,
-    initialize_scene::{TestingData, PARCEL_SIZE},
+    initialize_scene::{PortableScenes, PortableSource, TestingData, PARCEL_SIZE},
     update_world::{mesh_collider::GroundCollider, NoGltf},
     OutOfWorld, SceneRunnerPlugin,
 };
@@ -56,9 +57,10 @@ use avatar::AvatarPlugin;
 use comms::{preview::PreviewMode, CommsPlugin};
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
-use ipfs::IpfsIoPlugin;
+use ipfs::{IpfsAssetServer, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use social::SocialPlugin;
+use system_bridge::{NativeUi, SystemBridgePlugin};
 use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
@@ -206,7 +208,7 @@ fn main() {
             .value_from_str("--impost_multi")
             .ok()
             .unwrap_or(base_config.scene_imposter_multisample),
-        sysinfo_visible: false,
+        sysinfo_visible: args.contains("--sysinfo"),
         scene_log_to_console: args.contains("--scene_log_to_console"),
         ..base_config
     };
@@ -225,6 +227,17 @@ fn main() {
     let no_fog = args.contains("--no_fog");
 
     let is_preview = args.contains("--preview");
+
+    let ui_scene: Option<String> = args.value_from_str("--ui").ok();
+    if let Some(source) = ui_scene {
+        app.add_systems(Update, spawn_system_ui_scene);
+        app.insert_resource(NativeUi { login: false });
+        app.insert_resource(SystemScene {
+            source: Some(source),
+        });
+    } else {
+        app.insert_resource(NativeUi { login: true });
+    }
 
     let remaining = args.finish();
     if !remaining.is_empty() {
@@ -372,7 +385,8 @@ fn main() {
         .add_plugins(TweenPlugin)
         .add_plugins(CollectiblesPlugin)
         .add_plugins(WorldUiPlugin)
-        .add_plugins(DclImposterPlugin);
+        .add_plugins(DclImposterPlugin)
+        .add_plugins(SystemBridgePlugin);
 
     if let Some(crashed) = crash_file {
         app.add_plugins(CrashReportPlugin {
@@ -648,5 +662,46 @@ fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>)
         let fps = command.fps;
         config.graphics.fps_target = fps;
         input.reply_ok("target frame rate set to {fps}");
+    }
+}
+
+#[derive(Resource)]
+pub struct SystemScene {
+    pub source: Option<String>,
+}
+
+#[allow(clippy::type_complexity)]
+pub fn spawn_system_ui_scene(
+    system_scene: Res<SystemScene>,
+    mut task: Local<Option<Task<Result<(String, PortableSource), String>>>>,
+    mut done: Local<bool>,
+    mut portables: ResMut<PortableScenes>,
+    ipfas: IpfsAssetServer,
+) {
+    if *done || system_scene.source.is_none() {
+        return;
+    }
+
+    if task.is_none() {
+        *task = Some(IoTaskPool::get().spawn(lookup_portable(
+            None,
+            system_scene.source.clone().unwrap(),
+            true,
+            Some(ipfas.ipfs().clone()),
+        )));
+    }
+
+    let mut t = task.take().unwrap();
+    match t.complete() {
+        Some(Ok((hash, source))) => {
+            info!("added ui scene from {}", source.pid);
+            portables.0.extend([(hash, source)]);
+            *done = true;
+        }
+        Some(Err(e)) => {
+            error!("failed to load ui scene: {e}");
+            *done = true;
+        }
+        None => *task = Some(t),
     }
 }

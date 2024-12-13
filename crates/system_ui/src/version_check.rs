@@ -1,4 +1,5 @@
-use isahc::ReadResponseExt;
+use futures_lite::future;
+use isahc::AsyncReadResponseExt;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -12,11 +13,17 @@ pub fn build_date() -> chrono::NaiveDate {
     chrono::NaiveDate::parse_from_str(build_time::build_time_utc!("%Y-%m-%d"), "%Y-%m-%d").unwrap()
 }
 
-pub fn check_update() -> Option<(String, String)> {
+pub fn check_update_sync() -> Option<(String, String)> {
+    future::block_on(check_update())
+}
+
+pub async fn check_update() -> Option<(String, String)> {
     let latest: GitData =
-        isahc::get("https://api.github.com/repos/decentraland/bevy-explorer/releases/latest")
+        isahc::get_async("https://api.github.com/repos/decentraland/bevy-explorer/releases/latest")
+            .await
             .ok()?
             .json()
+            .await
             .ok()?;
     let latest_date = latest
         .tag_name
