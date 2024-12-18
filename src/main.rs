@@ -386,7 +386,7 @@ fn main() {
         .add_plugins(CollectiblesPlugin)
         .add_plugins(WorldUiPlugin)
         .add_plugins(DclImposterPlugin)
-        .add_plugins(SystemBridgePlugin{ bare: false });
+        .add_plugins(SystemBridgePlugin { bare: false });
 
     if let Some(crashed) = crash_file {
         app.add_plugins(CrashReportPlugin {

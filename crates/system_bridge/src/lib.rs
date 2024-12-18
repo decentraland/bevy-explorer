@@ -19,7 +19,7 @@ impl Plugin for SystemBridgePlugin {
         app.add_systems(Update, post_events);
 
         if self.bare {
-            return; 
+            return;
         }
 
         app.add_plugins(SettingBridgePlugin);
