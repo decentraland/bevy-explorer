@@ -23,11 +23,11 @@ use common::{
     },
     sets::SceneSets,
     structs::{PermissionType, PrimaryCamera, PrimaryUser},
-    util::{FireEventEx, TaskExt},
+    util::{AsH160, FireEventEx, TaskExt},
 };
 use comms::{
     global_crdt::ForeignPlayer,
-    profile::{CurrentUserProfile, UserProfile},
+    profile::{get_remote_profile, CurrentUserProfile, UserProfile},
     NetworkMessage, Transport,
 };
 use console::DoAddConsoleCommand;
@@ -621,7 +621,7 @@ fn list_portables(
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn get_user_data(
     profile: Res<CurrentUserProfile>,
     others: Query<(&ForeignPlayer, &UserProfile)>,
@@ -630,7 +630,14 @@ fn get_user_data(
     mut pending_primary_requests: Local<
         Vec<(Entity, RpcResultSender<Result<SerializedProfile, ()>>)>,
     >,
+    mut pending_remote_requests: Local<
+        Vec<(
+            Task<Result<UserProfile, anyhow::Error>>,
+            RpcResultSender<Result<SerializedProfile, ()>>,
+        )>,
+    >,
     mut scenes: Query<&mut RendererSceneContext>,
+    ipfs: IpfsAssetServer,
 ) {
     for (user, scene, response) in events.read().filter_map(|ev| match ev {
         RpcCall::GetUserData {
@@ -671,7 +678,15 @@ fn get_user_data(
                     }
                 }
 
-                response.send(Err(()));
+                let Some(h160) = address.as_h160() else {
+                    response.send(Err(()));
+                    continue;
+                };
+
+                pending_remote_requests.push((
+                    IoTaskPool::get().spawn(get_remote_profile(h160, ipfs.ipfs().clone())),
+                    response.clone(),
+                ));
             }
         }
     }
@@ -686,6 +701,17 @@ fn get_user_data(
             }
         }
     }
+
+    pending_remote_requests.retain_mut(|(task, sender)| match task.complete() {
+        None => true,
+        Some(resp) => {
+            match resp {
+                Err(_) => sender.send(Err(())),
+                Ok(profile) => sender.send(Ok(profile.content)),
+            }
+            false
+        }
+    });
 }
 
 fn get_connected_players(
