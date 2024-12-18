@@ -8,7 +8,7 @@ const {
 
 // (description: option<string>, url: option<string>)
 module.exports.checkForUpdate = async function() {
-    let (description, url) = await op_check_for_update();
+    const [description, url] = await op_check_for_update();
     return {
         description,
         url
