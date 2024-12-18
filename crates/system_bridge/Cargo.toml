@@ -13,3 +13,8 @@ common = { workspace = true }
 
 bevy = { workspace = true }
 tokio = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+bevy_dui = { workspace = true }
+ipfs = { workspace = true }
+serde_json = { workspace = true }

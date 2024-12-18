@@ -1,7 +1,10 @@
 use bevy::log::debug;
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
-use system_bridge::SystemApi;
+use system_bridge::{
+    settings::{SettingInfo, Settings},
+    SystemApi,
+};
 use wallet::Wallet;
 
 use super::SuperUserScene;
@@ -20,6 +23,8 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_login_cancel(),
             op_login_guest(),
             op_logout(),
+            op_settings(),
+            op_set_setting(),
         ]
     } else {
         Vec::default()
@@ -187,4 +192,44 @@ fn op_logout(state: &mut OpState) {
         .borrow_mut::<SuperUserScene>()
         .send(SystemApi::Logout)
         .unwrap();
+}
+
+async fn load_settings(state: Rc<RefCell<OpState>>) -> Result<(), AnyError> {
+    if !state.borrow().has::<Settings>() {
+        let (sx, rx) = tokio::sync::oneshot::channel();
+
+        state
+            .borrow_mut()
+            .borrow_mut::<SuperUserScene>()
+            .send(SystemApi::GetSettings(sx.into()))
+            .unwrap();
+
+        let settings = rx.await.map_err(|e| anyhow::anyhow!(e))?;
+        state.borrow_mut().put(settings);
+    }
+
+    Ok(())
+}
+
+#[op2(async)]
+#[serde]
+async fn op_settings(state: Rc<RefCell<OpState>>) -> Result<Vec<SettingInfo>, AnyError> {
+    debug!("op_settings");
+    load_settings(state.clone()).await?;
+    Ok(state.borrow().borrow::<Settings>().get())
+}
+
+#[op2(async)]
+#[serde]
+async fn op_set_setting(
+    state: Rc<RefCell<OpState>>,
+    #[string] name: String,
+    val: f32,
+) -> Result<(), AnyError> {
+    debug!("op_set_setting");
+    load_settings(state.clone()).await?;
+    state
+        .borrow_mut()
+        .borrow_mut::<Settings>()
+        .set_value(&name, val)
 }

@@ -1,10 +1,9 @@
 use bevy::ecs::system::lifetimeless::{SQuery, Write};
 use bevy::math::FloatOrd;
 use bevy::prelude::*;
-use bevy_dui::DuiRegistry;
 use common::structs::{AppConfig, PrimaryUser};
 
-use super::{spawn_int_setting_template, AppSetting, IntAppSetting};
+use super::{AppSetting, IntAppSetting};
 
 macro_rules! player_setting {
     ($struct:ident, $name:expr, $description:expr, $set:expr, $get:expr, $min:expr, $max:expr, $scale: expr) => {
@@ -28,6 +27,10 @@ macro_rules! player_setting {
                 ($max / $scale) as i32
             }
 
+            fn scale() -> f32 {
+                $scale
+            }
+
             fn display(&self) -> String {
                 format!("{:.2}", self.0.0)
             }
@@ -45,14 +48,6 @@ macro_rules! player_setting {
                 format!("{}\n\n{}\n\nFor all player settings, the plan is to make them available to scene authors, to specify for the whole scene or for a trigger area.", $name, $description)
             }
 
-            fn spawn_template(
-                commands: &mut Commands,
-                dui: &DuiRegistry,
-                config: &AppConfig,
-            ) -> Entity {
-                spawn_int_setting_template::<Self>(commands, dui, config)
-            }
-
             fn apply(&self, mut q: Query<&mut PrimaryUser>, _: Commands) {
                 let Ok(mut settings) = q.get_single_mut() else {
                     warn!("no primary user");
@@ -67,6 +62,10 @@ macro_rules! player_setting {
 
             fn load(config: &AppConfig) -> Self {
                 Self(FloatOrd($get(&config.player_settings)))
+            }
+
+            fn category() -> super::SettingCategory {
+                super::SettingCategory::Gameplay
             }
         }
     };

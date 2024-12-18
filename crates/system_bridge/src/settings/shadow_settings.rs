@@ -6,17 +6,12 @@ use bevy::{
     pbr::{CascadeShadowConfig, CascadeShadowConfigBuilder, ShadowFilteringMethod},
     prelude::*,
 };
-use bevy_dui::DuiRegistry;
 use common::structs::{AppConfig, PrimaryCameraRes, ShadowSetting};
 
-use super::{
-    spawn_enum_setting_template, spawn_int_setting_template, AppSetting, EnumAppSetting,
-    IntAppSetting,
-};
+use super::{AppSetting, EnumAppSetting, IntAppSetting};
 
 impl EnumAppSetting for ShadowSetting {
-    type VParam = ();
-    fn variants(_: ()) -> Vec<Self> {
+    fn variants() -> Vec<Self> {
         vec![Self::Off, Self::Low, Self::High]
     }
 
@@ -59,8 +54,8 @@ impl AppSetting for ShadowSetting {
         config.graphics.shadow_settings
     }
 
-    fn spawn_template(commands: &mut Commands, dui: &DuiRegistry, config: &AppConfig) -> Entity {
-        spawn_enum_setting_template::<Self>(commands, dui, config)
+    fn category() -> super::SettingCategory {
+        super::SettingCategory::Graphics
     }
 
     fn apply(
@@ -162,8 +157,8 @@ impl AppSetting for ShadowDistanceSetting {
         // applied via ShadowSetting
     }
 
-    fn spawn_template(commands: &mut Commands, dui: &DuiRegistry, config: &AppConfig) -> Entity {
-        spawn_int_setting_template::<Self>(commands, dui, config)
+    fn category() -> super::SettingCategory {
+        super::SettingCategory::Graphics
     }
 }
 
@@ -211,7 +206,7 @@ impl AppSetting for ShadowCasterCountSetting {
         // applied via lights system
     }
 
-    fn spawn_template(commands: &mut Commands, dui: &DuiRegistry, config: &AppConfig) -> Entity {
-        spawn_int_setting_template::<Self>(commands, dui, config)
+    fn category() -> super::SettingCategory {
+        super::SettingCategory::Graphics
     }
 }

@@ -1,9 +1,8 @@
 use bevy::prelude::*;
-use bevy_dui::DuiRegistry;
 use common::structs::AppConfig;
 use ipfs::IpfsAssetServer;
 
-use super::{spawn_int_setting_template, AppSetting, IntAppSetting};
+use super::{AppSetting, IntAppSetting};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct MaxDownloadsSetting(i32);
@@ -45,8 +44,8 @@ impl AppSetting for MaxDownloadsSetting {
         Self(config.max_concurrent_remotes as i32)
     }
 
-    fn spawn_template(commands: &mut Commands, dui: &DuiRegistry, config: &AppConfig) -> Entity {
-        spawn_int_setting_template::<Self>(commands, dui, config)
+    fn category() -> super::SettingCategory {
+        super::SettingCategory::Performance
     }
 
     fn apply(&self, ipfas: IpfsAssetServer, _: Commands) {

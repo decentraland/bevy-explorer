@@ -1,8 +1,11 @@
+pub mod settings;
+
 use bevy::{
     app::{Plugin, Update},
     prelude::{Event, EventWriter, ResMut, Resource},
 };
 use common::rpc::RpcResultSender;
+use settings::{SettingBridgePlugin, Settings};
 
 pub struct SystemBridgePlugin;
 
@@ -12,6 +15,7 @@ impl Plugin for SystemBridgePlugin {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(SystemBridge { sender, receiver });
         app.add_systems(Update, post_events);
+        app.add_plugins(SettingBridgePlugin);
     }
 }
 
@@ -28,6 +32,7 @@ pub enum SystemApi {
     LoginGuest,
     LoginCancel,
     Logout,
+    GetSettings(RpcResultSender<Settings>),
 }
 
 #[derive(Resource)]

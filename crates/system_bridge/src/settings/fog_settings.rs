@@ -1,12 +1,10 @@
 use bevy::prelude::*;
-use bevy_dui::DuiRegistry;
 use common::structs::{AppConfig, FogSetting};
 
-use super::{spawn_enum_setting_template, AppSetting, EnumAppSetting};
+use super::{AppSetting, EnumAppSetting};
 
 impl EnumAppSetting for FogSetting {
-    type VParam = ();
-    fn variants(_: ()) -> Vec<Self> {
+    fn variants() -> Vec<Self> {
         vec![Self::Off, Self::Basic, Self::Atmospheric]
     }
 
@@ -44,11 +42,11 @@ impl AppSetting for FogSetting {
         config.graphics.fog
     }
 
-    fn spawn_template(commands: &mut Commands, dui: &DuiRegistry, config: &AppConfig) -> Entity {
-        spawn_enum_setting_template::<Self>(commands, dui, config)
-    }
-
     fn apply(&self, _: (), _: Commands) {
         // apply is handled by [`visuals::daylight_cycle``]
+    }
+
+    fn category() -> super::SettingCategory {
+        super::SettingCategory::Graphics
     }
 }

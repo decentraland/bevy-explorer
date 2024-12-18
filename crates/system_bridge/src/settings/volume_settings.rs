@@ -1,8 +1,7 @@
 use bevy::{ecs::system::lifetimeless::SResMut, prelude::*};
-use bevy_dui::DuiRegistry;
 use common::structs::{AppConfig, AudioSettings};
 
-use super::{spawn_int_setting_template, AppSetting, IntAppSetting};
+use super::{AppSetting, IntAppSetting};
 
 macro_rules! volume_setting {
     ($struct:ident, $name:expr, $description:expr, $set:expr, $get:expr) => {
@@ -39,14 +38,6 @@ macro_rules! volume_setting {
                 format!("{} Volume\n\n{}", $name, $description)
             }
 
-            fn spawn_template(
-                commands: &mut Commands,
-                dui: &DuiRegistry,
-                config: &AppConfig,
-            ) -> Entity {
-                spawn_int_setting_template::<Self>(commands, dui, config)
-            }
-
             fn apply(&self, mut settings: ResMut<AudioSettings>, _: Commands) {
                 $set(&mut *settings, self.0)
             }
@@ -57,6 +48,10 @@ macro_rules! volume_setting {
 
             fn load(config: &AppConfig) -> Self {
                 Self($get(&config.audio))
+            }
+
+            fn category() -> super::SettingCategory {
+                super::SettingCategory::Audio
             }
         }
     };

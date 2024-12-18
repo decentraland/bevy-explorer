@@ -10382,8 +10382,13 @@ dependencies = [
 name = "system_bridge"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bevy",
+ "bevy_dui",
  "common",
+ "ipfs",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 

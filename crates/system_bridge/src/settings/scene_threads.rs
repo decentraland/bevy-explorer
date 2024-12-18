@@ -1,8 +1,7 @@
 use bevy::prelude::*;
-use bevy_dui::DuiRegistry;
 use common::structs::AppConfig;
 
-use super::{spawn_int_setting_template, AppSetting, IntAppSetting};
+use super::{AppSetting, IntAppSetting};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct SceneThreadsSetting(i32);
@@ -44,8 +43,8 @@ impl AppSetting for SceneThreadsSetting {
         Self(config.scene_threads as i32)
     }
 
-    fn spawn_template(commands: &mut Commands, dui: &DuiRegistry, config: &AppConfig) -> Entity {
-        spawn_int_setting_template::<Self>(commands, dui, config)
+    fn category() -> super::SettingCategory {
+        super::SettingCategory::Performance
     }
 
     fn apply(&self, (): (), _: Commands) {

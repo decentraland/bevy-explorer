@@ -490,6 +490,7 @@ fn process_system_bridge(
                 wallet.disconnect();
                 current_profile.profile = None;
             }
+            _ => (),
         }
     }
 
