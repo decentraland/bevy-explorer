@@ -274,8 +274,8 @@ impl Settings {
             .iter()
             .enumerate()
             .find(|(_, s)| **s == value)
-            .unwrap()
-            .0;
+            .map(|(ix, _)| ix)
+            .unwrap_or(0);
         self.inner.write().unwrap().settings.push(Setting {
             info: SettingInfo {
                 name: S::title(),

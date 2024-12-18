@@ -102,7 +102,7 @@ impl PluginGroup for TestPlugins {
             .add(WalletPlugin)
             .add(CommsPlugin)
             .add(DuiPlugin)
-            .add(SystemBridgePlugin)
+            .add(SystemBridgePlugin{ bare: true })
     }
 }
 

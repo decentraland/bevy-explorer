@@ -7,7 +7,9 @@ use bevy::{
 use common::rpc::RpcResultSender;
 use settings::{SettingBridgePlugin, Settings};
 
-pub struct SystemBridgePlugin;
+pub struct SystemBridgePlugin {
+    pub bare: bool,
+}
 
 impl Plugin for SystemBridgePlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
@@ -15,6 +17,11 @@ impl Plugin for SystemBridgePlugin {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(SystemBridge { sender, receiver });
         app.add_systems(Update, post_events);
+
+        if self.bare {
+            return; 
+        }
+
         app.add_plugins(SettingBridgePlugin);
     }
 }
