@@ -82,7 +82,7 @@ impl Plugin for SettingBridgePlugin {
                 updated: false,
             })),
         };
-        app.add_systems(Update, (Settings::update, send_settings));
+        app.add_systems(Update, (Settings::sync_settings_object, send_settings));
 
         let mut schedule = Schedule::new(ApplyAppSettingsLabel);
 
@@ -304,11 +304,14 @@ impl Settings {
         });
     }
 
-    pub fn update(settings: Res<Self>, mut config: ResMut<AppConfig>) {
+    pub fn sync_settings_object(settings: Res<Self>, mut config: ResMut<AppConfig>) {
         if settings.inner.read().unwrap().updated {
             let mut write = settings.inner.write().unwrap();
             *config = write.config_copy.clone();
             write.updated = false;
+        } else if config.is_changed() {
+            let mut write = settings.inner.write().unwrap();
+            write.config_copy = config.clone();
         }
     }
 }
