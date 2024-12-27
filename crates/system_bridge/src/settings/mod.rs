@@ -194,6 +194,7 @@ pub struct SettingInfo {
     pub min_value: f32,
     pub max_value: f32,
     pub named_variants: Vec<NamedVariant>,
+    pub step_size: f32,
     pub value: f32,
 }
 
@@ -254,10 +255,11 @@ impl Settings {
                 name: S::title(),
                 category: S::category().to_string(),
                 description: S::description(&value),
-                min_value: S::min() as f32 * S::scale(),
-                max_value: S::max() as f32 * S::scale(),
+                min_value: (S::min() as f32 * S::scale()).min(S::max() as f32 * S::scale()),
+                max_value: (S::min() as f32 * S::scale()).max(S::max() as f32 * S::scale()),
                 named_variants: Default::default(),
                 value: value.value() as f32 * S::scale(),
+                step_size: S::scale().abs(),
             },
             apply: Some(Box::new(
                 |config: &mut AppConfig, value: f32| -> Result<(), anyhow::Error> {
@@ -291,6 +293,7 @@ impl Settings {
                     })
                     .collect(),
                 value: index as f32,
+                step_size: 1.0,
             },
             apply: Some(Box::new(
                 |config: &mut AppConfig, value: f32| -> Result<(), anyhow::Error> {
