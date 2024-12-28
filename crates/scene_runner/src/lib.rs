@@ -578,6 +578,7 @@ impl ContainingScene<'_, '_> {
             }
         }
 
+        results.extend(self.get_portables(false));
         results
     }
 
