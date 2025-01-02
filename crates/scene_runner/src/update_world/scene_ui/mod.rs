@@ -347,11 +347,11 @@ impl Plugin for SceneUiPlugin {
                 create_ui_roots,
                 layout_scene_ui,
                 (
-                    set_ui_background,
+                    set_ui_text,       // text runs before background as both insert to position 0.
+                    set_ui_background, // so text is actually in front of background, but "behind"/before children
                     set_ui_input,
                     set_ui_dropdown,
                     set_ui_pointer_events,
-                    set_ui_text,
                 ),
                 fully_update_target_camera_system,
             )
