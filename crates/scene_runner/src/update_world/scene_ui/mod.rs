@@ -615,7 +615,6 @@ fn layout_scene_ui(
     config: Res<AppConfig>,
     mut removed_transforms: RemovedComponents<UiTransform>,
     ui_links: Query<&UiLink>,
-    parents: Query<&Parent>,
     dui: Res<DuiRegistry>,
 ) {
     let current_scenes = player
@@ -674,7 +673,6 @@ fn layout_scene_ui(
         let mut unprocessed_uis: VecDeque<_> = unprocessed_uis.into();
 
         let mut valid_nodes = HashMap::new();
-        let mut child_count = HashMap::<Entity, i32>::new();
         let mut invalid_ui_entities = HashSet::new();
         let mut named_nodes = HashMap::new();
         let mut pending_scroll_events = HashMap::new();
@@ -740,17 +738,12 @@ fn layout_scene_ui(
                 None
             };
 
-            // we use local zindex to order children in the creation order
-            let index = child_count.entry(parent_link.ui_entity).or_default();
-            *index += 1;
-
             let existing = if let Some(link) = existing_link {
-                // update parent if required
-                if parents.get(link.ui_entity).map(Parent::get) != Ok(parent_link.content_entity) {
-                    commands
-                        .entity(link.ui_entity)
-                        .set_parent(parent_link.content_entity);
-                }
+                // update parent (always, so the child order is correct)
+                commands
+                    .entity(link.ui_entity)
+                    .remove_parent()
+                    .set_parent(parent_link.content_entity);
                 let updated = UiLink {
                     opacity: FloatOrd(parent_link.opacity.0 * ui_transform.opacity),
                     is_window_ui: bevy_ui_root.is_window_ui,
@@ -762,20 +755,11 @@ fn layout_scene_ui(
                         .entity(bevy_entity)
                         .modify_component(move |link: &mut UiLink| *link = updated);
                 }
-                // always update zindex in case other children have moved
-                commands
-                    .entity(link.ui_entity)
-                    .insert(ZIndex::Local(*index));
                 valid_nodes.insert(scene_id, updated);
                 true
             } else {
-                let mut ent_cmds = commands.spawn((
-                    NodeBundle {
-                        z_index: ZIndex::Local(*index),
-                        ..Default::default()
-                    },
-                    DespawnWith(bevy_entity),
-                ));
+                let mut ent_cmds =
+                    commands.spawn((NodeBundle::default(), DespawnWith(bevy_entity)));
                 ent_cmds.set_parent(parent_link.content_entity);
                 let ui_entity = ent_cmds.id();
                 debug!("{scene_id} create linked {:?}", ui_entity);
