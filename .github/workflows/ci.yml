@@ -30,7 +30,7 @@ jobs:
 
   hardcore-test:
     name: Test Scenes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions-rs/toolchain@v1
         with:
