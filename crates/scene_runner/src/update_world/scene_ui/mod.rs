@@ -4,7 +4,7 @@ pub mod ui_input;
 pub mod ui_pointer;
 pub mod ui_text;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeSet, VecDeque};
 
 use bevy::{
     math::FloatOrd,
@@ -21,8 +21,8 @@ use ui_pointer::set_ui_pointer_events;
 use ui_text::{set_ui_text, UiText};
 
 use crate::{
-    renderer_context::RendererSceneContext, ContainerEntity, ContainingScene, SceneEntity,
-    SceneSets,
+    initialize_scene::SuperUserScene, renderer_context::RendererSceneContext, ContainerEntity,
+    ContainingScene, SceneEntity, SceneSets,
 };
 use common::{
     structs::{AppConfig, PrimaryUser},
@@ -157,6 +157,7 @@ pub struct UiTransform {
     margin: UiRect,
     padding: UiRect,
     opacity: f32,
+    zindex: Option<i16>,
 }
 
 impl From<PbUiTransform> for UiTransform {
@@ -297,6 +298,7 @@ impl From<PbUiTransform> for UiTransform {
                 Val::Px(0.0)
             ),
             opacity: value.opacity.unwrap_or(1.0),
+            zindex: value.z_index.map(|z| z as i16),
         }
     }
 }
@@ -345,11 +347,11 @@ impl Plugin for SceneUiPlugin {
                 create_ui_roots,
                 layout_scene_ui,
                 (
-                    set_ui_background,
+                    set_ui_text,       // text runs before background as both insert to position 0.
+                    set_ui_background, // so text is actually in front of background, but "behind"/before children
                     set_ui_input,
                     set_ui_dropdown,
                     set_ui_pointer_events,
-                    set_ui_text,
                 ),
                 fully_update_target_camera_system,
             )
@@ -363,6 +365,7 @@ impl Plugin for SceneUiPlugin {
 pub struct SceneUiData {
     nodes: BTreeSet<Entity>,
     relayout: bool,
+    super_user: bool,
 }
 
 #[derive(Component)]
@@ -374,12 +377,16 @@ pub struct UiTextureOutput {
 
 fn init_scene_ui_root(
     mut commands: Commands,
-    scenes: Query<Entity, (With<RendererSceneContext>, Without<SceneUiData>)>,
+    scenes: Query<
+        (Entity, Has<SuperUserScene>),
+        (With<RendererSceneContext>, Without<SceneUiData>),
+    >,
 ) {
-    for scene_ent in scenes.iter() {
-        commands
-            .entity(scene_ent)
-            .try_insert(SceneUiData::default());
+    for (scene_ent, super_user) in scenes.iter() {
+        commands.entity(scene_ent).try_insert(SceneUiData {
+            super_user,
+            ..Default::default()
+        });
     }
 }
 
@@ -436,7 +443,7 @@ pub struct SceneUiRoot {
 
 fn create_ui_roots(
     mut commands: Commands,
-    mut scene_uis: Query<(Entity, Option<&UiLink>), With<SceneUiData>>,
+    mut scene_uis: Query<(Entity, Option<&UiLink>, &SceneUiData)>,
     player: Query<Entity, With<PrimaryUser>>,
     containing_scene: ContainingScene,
     current_uis: Query<(Entity, &SceneUiRoot)>,
@@ -469,7 +476,7 @@ fn create_ui_roots(
     }
 
     // spawn window root ui nodes
-    for (ent, maybe_link) in scene_uis.iter_mut() {
+    for (ent, maybe_link, ui_data) in scene_uis.iter_mut() {
         if current_scenes.contains(&ent) && (maybe_link.is_none() || config.is_changed()) {
             let root_style = if config.constrain_scene_ui {
                 Style {
@@ -490,10 +497,13 @@ fn create_ui_roots(
                 }
             };
 
+            let z_index = ZIndex::Global(if ui_data.super_user { 1 << 17 } else { 0 });
+
             let window_root = commands
                 .spawn((
                     NodeBundle {
                         style: root_style,
+                        z_index,
                         ..Default::default()
                     },
                     SceneUiRoot {
@@ -539,7 +549,7 @@ fn create_ui_roots(
                                 height: Val::Percent(100.0),
                                 ..Default::default()
                             },
-                            z_index: ZIndex::Global(-2), // behind the ZIndex(-1) MouseInteractionComponent
+                            z_index: ZIndex::Global(0), // behind the ZIndex(i16::MAX as i32 + 1) MouseInteractionComponent
                             ..Default::default()
                         },
                     ));
@@ -605,7 +615,6 @@ fn layout_scene_ui(
     config: Res<AppConfig>,
     mut removed_transforms: RemovedComponents<UiTransform>,
     ui_links: Query<&UiLink>,
-    parents: Query<&Parent>,
     dui: Res<DuiRegistry>,
 ) {
     let current_scenes = player
@@ -638,283 +647,308 @@ fn layout_scene_ui(
 
         // collect ui data
         let mut deleted_nodes = HashSet::default();
-        let mut unprocessed_uis = BTreeMap::from_iter(ui_data.nodes.iter().flat_map(|node| {
-            match ui_nodes.get(*node) {
-                Ok((scene_entity, transform, bevy_parent)) => Some((
-                    scene_entity.id,
-                    (
-                        *node,
-                        transform.clone(),
-                        transform.is_changed(),
-                        bevy_parent.get(),
-                    ),
-                )),
-                Err(_) => {
-                    // remove this node
-                    deleted_nodes.insert(*node);
-                    None
+        let mut unprocessed_uis = ui_data
+            .nodes
+            .iter()
+            .flat_map(|node| {
+                match ui_nodes.get(*node) {
+                    Ok((scene_entity, transform, bevy_parent)) => Some((
+                        scene_entity.id,
+                        (
+                            *node,
+                            transform.clone(),
+                            transform.is_changed(),
+                            bevy_parent.get(),
+                        ),
+                    )),
+                    Err(_) => {
+                        // remove this node
+                        deleted_nodes.insert(*node);
+                        None
+                    }
                 }
-            }
-        }));
+            })
+            .collect::<Vec<_>>();
+        unprocessed_uis.sort_by_key(|(scene_id, _)| *scene_id);
+        let mut unprocessed_uis: VecDeque<_> = unprocessed_uis.into();
 
         let mut valid_nodes = HashMap::new();
         let mut invalid_ui_entities = HashSet::new();
         let mut named_nodes = HashMap::new();
         let mut pending_scroll_events = HashMap::new();
 
-        let mut modified = true;
-        while modified && !unprocessed_uis.is_empty() {
-            modified = false;
-            unprocessed_uis.retain(
-                |scene_id, (bevy_entity, ui_transform, transform_is_changed, root_node)| {
-                    let Ok(bevy_ui_root) = ui_links.get(*root_node).cloned() else {
-                        warn!("no root for {:?}", root_node);
-                        return false;
-                    };
+        let mut blocked_elements: HashMap<
+            SceneEntityId,
+            Vec<(SceneEntityId, (Entity, UiTransform, bool, Entity))>,
+        > = HashMap::default();
 
-                    // if our rightof is not added, we can't process this node
-                    if ui_transform.right_of != SceneEntityId::ROOT
-                        && !valid_nodes.contains_key(&ui_transform.right_of)
-                    {
-                        return true;
-                    }
+        while let Some((scene_id, (bevy_entity, ui_transform, transform_is_changed, root_node))) =
+            unprocessed_uis.pop_front()
+        {
+            let Ok(bevy_ui_root) = ui_links.get(root_node).cloned() else {
+                warn!("no root for {:?}", root_node);
+                continue;
+            };
 
-                    // if our parent is not added, we can't process this node
-                    let parent = if ui_transform.parent == SceneEntityId::ROOT {
-                        Some(&bevy_ui_root)
-                    } else {
-                        valid_nodes.get(&ui_transform.parent)
-                    };
+            // if our rightof is not added, we can't process this node
+            if ui_transform.right_of != SceneEntityId::ROOT
+                && !valid_nodes.contains_key(&ui_transform.right_of)
+            {
+                blocked_elements
+                    .entry(ui_transform.right_of)
+                    .or_default()
+                    .push((
+                        scene_id,
+                        (bevy_entity, ui_transform, transform_is_changed, root_node),
+                    ));
+                continue;
+            }
 
-                    let Some(parent_link) = parent else {
-                        return true;
-                    };
+            // if our parent is not added, we can't process this node
+            let parent = if ui_transform.parent == SceneEntityId::ROOT {
+                Some(&bevy_ui_root)
+            } else {
+                valid_nodes.get(&ui_transform.parent)
+            };
 
-                    // get or create the counterpart ui entity
-                    let existing_link = if let Ok(link) = ui_links.get(*bevy_entity) {
-                        if commands.get_entity(link.ui_entity).is_none() {
-                            None
-                        } else if link.scroll_entity.is_some() == ui_transform.scroll {
-                            debug!("{scene_id} reuse linked {:?}", link.ui_entity);
-                            Some(link)
-                        } else {
-                            // queue to despawn
-                            invalid_ui_entities.insert(link.ui_entity);
-                            None
-                        }
-                    } else {
-                        None
-                    };
+            let Some(parent_link) = parent else {
+                blocked_elements
+                    .entry(ui_transform.parent)
+                    .or_default()
+                    .push((
+                        scene_id,
+                        (bevy_entity, ui_transform, transform_is_changed, root_node),
+                    ));
+                continue;
+            };
 
-                    let existing = if let Some(link) = existing_link {
-                        // update parent if required
-                        if parents.get(link.ui_entity).map(Parent::get)
-                            != Ok(parent_link.content_entity)
-                        {
-                            commands
-                                .entity(link.ui_entity)
-                                .set_parent(parent_link.content_entity);
-                        }
-                        let updated = UiLink {
-                            opacity: FloatOrd(parent_link.opacity.0 * ui_transform.opacity),
-                            is_window_ui: bevy_ui_root.is_window_ui,
-                            ..link.clone()
-                        };
-                        if &updated != link {
-                            let updated = updated.clone();
-                            commands
-                                .entity(*bevy_entity)
-                                .modify_component(move |link: &mut UiLink| *link = updated);
-                        }
-                        valid_nodes.insert(*scene_id, updated);
-                        true
-                    } else {
-                        // we use entity id as zindex. this is rubbish but mimics the foundation behaviour for multiple overlapping root nodes.
-                        let mut ent_cmds = commands.spawn((
-                            NodeBundle {
-                                z_index: ZIndex::Local(scene_id.id as i32),
-                                ..Default::default()
-                            },
-                            DespawnWith(*bevy_entity),
-                        ));
-                        ent_cmds.set_parent(parent_link.content_entity);
-                        let ui_entity = ent_cmds.id();
-                        debug!("{scene_id} create linked {:?}", ui_entity);
+            // get or create the counterpart ui entity
+            let existing_link = if let Ok(link) = ui_links.get(bevy_entity) {
+                if commands.get_entity(link.ui_entity).is_none() {
+                    None
+                } else if link.scroll_entity.is_some() == ui_transform.scroll {
+                    debug!("{scene_id} reuse linked {:?}", link.ui_entity);
+                    Some(link)
+                } else {
+                    // queue to despawn
+                    invalid_ui_entities.insert(link.ui_entity);
+                    None
+                }
+            } else {
+                None
+            };
 
-                        let (scroll_entity, content_entity) = if ui_transform.scroll {
-                            ent_cmds.try_insert(FocusPolicy::Block);
-                            let content = ent_cmds.commands().spawn(NodeBundle::default()).id();
-                            let scrollable = ent_cmds
-                                .spawn_template(
-                                    &dui,
-                                    "scrollable-base",
-                                    DuiProps::new()
-                                        .with_prop(
-                                            "scroll-settings",
-                                            Scrollable::new()
-                                                .with_direction(ScrollDirection::Both(
-                                                    StartPosition::Explicit(0.0),
-                                                    StartPosition::Explicit(0.0),
-                                                ))
-                                                .with_drag(true)
-                                                .with_wheel(true)
-                                                .with_bars_visible(
-                                                    ui_transform.scroll_h_visible,
-                                                    ui_transform.scroll_v_visible,
-                                                ),
-                                        )
-                                        .with_prop("content", content),
+            let existing = if let Some(link) = existing_link {
+                // update parent (always, so the child order is correct)
+                commands
+                    .entity(link.ui_entity)
+                    .remove_parent()
+                    .set_parent(parent_link.content_entity);
+                let updated = UiLink {
+                    opacity: FloatOrd(parent_link.opacity.0 * ui_transform.opacity),
+                    is_window_ui: bevy_ui_root.is_window_ui,
+                    ..link.clone()
+                };
+                if &updated != link {
+                    let updated = updated.clone();
+                    commands
+                        .entity(bevy_entity)
+                        .modify_component(move |link: &mut UiLink| *link = updated);
+                }
+                valid_nodes.insert(scene_id, updated);
+                true
+            } else {
+                let mut ent_cmds =
+                    commands.spawn((NodeBundle::default(), DespawnWith(bevy_entity)));
+                ent_cmds.set_parent(parent_link.content_entity);
+                let ui_entity = ent_cmds.id();
+                debug!("{scene_id} create linked {:?}", ui_entity);
+
+                let (scroll_entity, content_entity) = if ui_transform.scroll {
+                    ent_cmds.try_insert(FocusPolicy::Block);
+                    let content = ent_cmds.commands().spawn(NodeBundle::default()).id();
+                    let scrollable = ent_cmds
+                        .spawn_template(
+                            &dui,
+                            "scrollable-base",
+                            DuiProps::new()
+                                .with_prop(
+                                    "scroll-settings",
+                                    Scrollable::new()
+                                        .with_direction(ScrollDirection::Both(
+                                            StartPosition::Explicit(0.0),
+                                            StartPosition::Explicit(0.0),
+                                        ))
+                                        .with_drag(true)
+                                        .with_wheel(true)
+                                        .with_bars_visible(
+                                            ui_transform.scroll_h_visible,
+                                            ui_transform.scroll_v_visible,
+                                        ),
                                 )
-                                .unwrap()
-                                .root;
+                                .with_prop("content", content),
+                        )
+                        .unwrap()
+                        .root;
 
-                            let scene_id = *scene_id;
-                            ent_cmds
-                            .commands()
-                            .entity(scrollable)
-                            .set_parent(ui_entity)
-                            .try_insert(On::<DataChanged>::new(
-                                move |caller: Res<UiCaller>,
-                                    position: Query<&ScrollPosition>,
-                                    mut context: Query<&mut RendererSceneContext>| {
-                                    let Ok(pos) = position.get(caller.0) else {
-                                        warn!("failed to get scroll pos on scrollable update");
-                                        return;
-                                    };
-                                    let Ok(mut context) = context.get_mut(scene_root) else {
-                                        warn!("failed to get context on scrollable update");
-                                        return;
-                                    };
+                    ent_cmds
+                    .commands()
+                    .entity(scrollable)
+                    .set_parent(ui_entity)
+                    .try_insert(On::<DataChanged>::new(
+                        move |caller: Res<UiCaller>,
+                            position: Query<&ScrollPosition>,
+                            mut context: Query<&mut RendererSceneContext>| {
+                            let Ok(pos) = position.get(caller.0) else {
+                                warn!("failed to get scroll pos on scrollable update");
+                                return;
+                            };
+                            let Ok(mut context) = context.get_mut(scene_root) else {
+                                warn!("failed to get context on scrollable update");
+                                return;
+                            };
 
-                                    context.update_crdt(
-                                        SceneComponentId::UI_SCROLL_RESULT,
-                                        CrdtType::LWW_ENT,
-                                        scene_id,
-                                        &PbUiScrollResult {
-                                            value: Some(Vec2::new(pos.h, pos.v).into()),
-                                        },
-                                    );
-                                },
-                            ));
-
-                            (Some(scrollable), content)
-                        } else {
-                            (None, ui_entity)
-                        };
-
-                        let new_link = UiLink {
-                            ui_entity,
-                            is_window_ui: bevy_ui_root.is_window_ui,
-                            content_entity,
-                            scroll_entity,
-                            opacity: FloatOrd(parent_link.opacity.0 * ui_transform.opacity),
-                            scroll_position: None,
-                        };
-                        commands.entity(*bevy_entity).try_insert(new_link.clone());
-                        valid_nodes.insert(*scene_id, new_link);
-                        false
-                    };
-
-                    let link = valid_nodes.get(scene_id).unwrap();
-
-                    // update style
-                    if !existing || *transform_is_changed {
-                        let style = Style {
-                            align_content: ui_transform.align_content,
-                            align_items: ui_transform.align_items,
-                            flex_wrap: ui_transform.wrap,
-                            position_type: ui_transform.position_type,
-                            flex_shrink: ui_transform.shrink,
-                            align_self: ui_transform.align_self,
-                            flex_direction: ui_transform.flex_direction,
-                            justify_content: ui_transform.justify_content,
-                            overflow: ui_transform.overflow,
-                            display: ui_transform.display,
-                            flex_basis: ui_transform.basis,
-                            flex_grow: ui_transform.grow,
-                            width: ui_transform.size.width.unwrap_or_default(),
-                            height: ui_transform.size.height.unwrap_or_default(),
-                            min_width: ui_transform.min_size.width,
-                            min_height: ui_transform.min_size.height,
-                            max_width: ui_transform.max_size.width,
-                            max_height: ui_transform.max_size.height,
-                            left: ui_transform.position.left,
-                            right: ui_transform.position.right,
-                            top: ui_transform.position.top,
-                            bottom: ui_transform.position.bottom,
-                            margin: ui_transform.margin,
-                            padding: ui_transform.padding,
-                            ..Default::default()
-                        };
-
-                        debug!("{scene_id} set style {ui_transform:?} -> {style:?}");
-
-                        // update inner style
-                        if link.content_entity != link.ui_entity {
-                            let new_style = style.clone();
-                            commands.entity(link.content_entity).modify_component(
-                                move |style: &mut Style| {
-                                    style.align_content = new_style.align_content;
-                                    style.align_items = new_style.align_items;
-                                    style.flex_wrap = new_style.flex_wrap;
-                                    style.flex_direction = new_style.flex_direction;
-                                    style.justify_content = new_style.justify_content;
-                                    style.overflow = new_style.overflow;
+                            context.update_crdt(
+                                SceneComponentId::UI_SCROLL_RESULT,
+                                CrdtType::LWW_ENT,
+                                scene_id,
+                                &PbUiScrollResult {
+                                    value: Some(Vec2::new(pos.h, pos.v).into()),
                                 },
                             );
-                        }
+                        },
+                    ));
 
-                        commands.entity(link.ui_entity).try_insert(style);
+                    (Some(scrollable), content)
+                } else {
+                    (None, ui_entity)
+                };
+
+                let new_link = UiLink {
+                    ui_entity,
+                    is_window_ui: bevy_ui_root.is_window_ui,
+                    content_entity,
+                    scroll_entity,
+                    opacity: FloatOrd(parent_link.opacity.0 * ui_transform.opacity),
+                    scroll_position: None,
+                };
+                commands.entity(bevy_entity).try_insert(new_link.clone());
+                valid_nodes.insert(scene_id, new_link);
+                false
+            };
+
+            let link = valid_nodes.get(&scene_id).unwrap();
+
+            // update style
+            if !existing || transform_is_changed {
+                let style = Style {
+                    align_content: ui_transform.align_content,
+                    align_items: ui_transform.align_items,
+                    flex_wrap: ui_transform.wrap,
+                    position_type: ui_transform.position_type,
+                    flex_shrink: ui_transform.shrink,
+                    align_self: ui_transform.align_self,
+                    flex_direction: ui_transform.flex_direction,
+                    justify_content: ui_transform.justify_content,
+                    overflow: ui_transform.overflow,
+                    display: ui_transform.display,
+                    flex_basis: ui_transform.basis,
+                    flex_grow: ui_transform.grow,
+                    width: ui_transform.size.width.unwrap_or_default(),
+                    height: ui_transform.size.height.unwrap_or_default(),
+                    min_width: ui_transform.min_size.width,
+                    min_height: ui_transform.min_size.height,
+                    max_width: ui_transform.max_size.width,
+                    max_height: ui_transform.max_size.height,
+                    left: ui_transform.position.left,
+                    right: ui_transform.position.right,
+                    top: ui_transform.position.top,
+                    bottom: ui_transform.position.bottom,
+                    margin: ui_transform.margin,
+                    padding: ui_transform.padding,
+                    ..Default::default()
+                };
+
+                debug!("{scene_id} set style {ui_transform:?} -> {style:?}");
+
+                // update inner style
+                if link.content_entity != link.ui_entity {
+                    let new_style = style.clone();
+                    commands.entity(link.content_entity).modify_component(
+                        move |style: &mut Style| {
+                            style.align_content = new_style.align_content;
+                            style.align_items = new_style.align_items;
+                            style.flex_wrap = new_style.flex_wrap;
+                            style.flex_direction = new_style.flex_direction;
+                            style.justify_content = new_style.justify_content;
+                            style.overflow = new_style.overflow;
+                        },
+                    );
+                }
+
+                commands.entity(link.ui_entity).try_insert(style);
+
+                if let Some(zindex) = ui_transform.zindex {
+                    if zindex != 0 {
+                        commands.entity(link.ui_entity).try_insert(ZIndex::Global(
+                            zindex as i32 + if ui_data.super_user { 1 << 17 } else { 0 },
+                        ));
                     }
+                }
+            }
 
-                    // gather scroll events
-                    if let Some(scroll_entity) = link.scroll_entity {
-                        if ui_transform.scroll_position != link.scroll_position {
-                            // deferred update
-                            let pos = ui_transform.scroll_position.clone();
-                            commands.entity(*bevy_entity).modify_component(
-                                move |link: &mut UiLink| {
-                                    link.scroll_position = pos;
-                                },
-                            );
+            // gather scroll events
+            if let Some(scroll_entity) = link.scroll_entity {
+                if ui_transform.scroll_position != link.scroll_position {
+                    // deferred update
+                    let pos = ui_transform.scroll_position.clone();
+                    commands
+                        .entity(bevy_entity)
+                        .modify_component(move |link: &mut UiLink| {
+                            link.scroll_position = pos;
+                        });
 
-                            if let Some(ScrollPositionValue {
-                                value: Some(ref target),
-                            }) = ui_transform.scroll_position
-                            {
-                                match target {
-                                    scroll_position_value::Value::Position(vec) => {
-                                        debug!("scroll literal {vec:?}");
-                                        commands.fire_event(ScrollTargetEvent {
-                                            scrollable: scroll_entity,
-                                            position: ScrollTarget::Literal(Vec2::from(vec)),
-                                        });
-                                    }
-                                    scroll_position_value::Value::Reference(target) => {
-                                        debug!("scroll target {target}");
-                                        pending_scroll_events.insert(scroll_entity, target.clone());
-                                    }
-                                }
+                    if let Some(ScrollPositionValue {
+                        value: Some(ref target),
+                    }) = ui_transform.scroll_position
+                    {
+                        match target {
+                            scroll_position_value::Value::Position(vec) => {
+                                debug!("scroll literal {vec:?}");
+                                commands.fire_event(ScrollTargetEvent {
+                                    scrollable: scroll_entity,
+                                    position: ScrollTarget::Literal(Vec2::from(vec)),
+                                });
+                            }
+                            scroll_position_value::Value::Reference(target) => {
+                                debug!("scroll target {target}");
+                                pending_scroll_events.insert(scroll_entity, target.clone());
                             }
                         }
                     }
+                }
+            }
 
-                    if let Some(name) = ui_transform.element_id.clone() {
-                        named_nodes.insert(name, link.ui_entity);
-                    }
+            if let Some(name) = ui_transform.element_id.clone() {
+                named_nodes.insert(name, link.ui_entity);
+            }
 
-                    // mark to continue and remove from unprocessed
-                    modified = true;
-                    false
-                },
-            );
+            // add any blocked elts
+            for unblocked_elt in blocked_elements
+                .remove(&scene_id)
+                .unwrap_or_default()
+                .into_iter()
+                .rev()
+            {
+                unprocessed_uis.push_front(unblocked_elt);
+            }
         }
 
         debug!(
             "made ui; placed: {}, unplaced: {} ({:?})",
             valid_nodes.len(),
-            unprocessed_uis.len(),
-            unprocessed_uis
+            blocked_elements.len(),
+            blocked_elements
         );
         ui_data.relayout = false;
 

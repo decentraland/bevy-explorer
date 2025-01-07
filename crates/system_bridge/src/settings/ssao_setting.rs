@@ -3,14 +3,12 @@ use bevy::{
     pbr::{ScreenSpaceAmbientOcclusionBundle, ScreenSpaceAmbientOcclusionSettings},
     prelude::*,
 };
-use bevy_dui::DuiRegistry;
 use common::structs::{AppConfig, PrimaryCameraRes, SsaoSetting};
 
-use super::{spawn_enum_setting_template, AppSetting, EnumAppSetting};
+use super::{AppSetting, EnumAppSetting};
 
 impl EnumAppSetting for SsaoSetting {
-    type VParam = ();
-    fn variants(_: ()) -> Vec<Self> {
+    fn variants() -> Vec<Self> {
         vec![Self::Off, Self::Low, Self::High]
     }
 
@@ -48,8 +46,8 @@ impl AppSetting for SsaoSetting {
         config.graphics.ssao
     }
 
-    fn spawn_template(commands: &mut Commands, dui: &DuiRegistry, config: &AppConfig) -> Entity {
-        spawn_enum_setting_template::<Self>(commands, dui, config)
+    fn category() -> super::SettingCategory {
+        super::SettingCategory::Graphics
     }
 
     fn apply(&self, (cam_res, msaa_res): SystemParamItem<Self::Param>, mut commands: Commands) {

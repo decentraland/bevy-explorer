@@ -1,5 +1,5 @@
 <define-template id="toaster">
-    <div style="position-type: absolute; left: 20%; right: 20%; top: 10%; max-width: 60%" z-index="1">
+    <div style="position-type: absolute; left: 20%; right: 20%; top: 10%; max-width: 60%" z-index="66668">
         <space />
         <div id="inner" style="flex-direction: column; justify-content: center;" />
         <space />

@@ -1,25 +1,15 @@
-use bevy::{
-    ecs::{
-        schedule::ScheduleLabel,
-        system::{StaticSystemParam, SystemParam, SystemParamItem},
-    },
-    prelude::*,
-    ui::RelativeCursorPosition,
-};
+use bevy::{ecs::system::StaticSystemParam, prelude::*, ui::RelativeCursorPosition};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use common::{
-    structs::{
-        AaSetting, AppConfig, BloomSetting, FogSetting, SettingsTab, ShadowSetting, SsaoSetting,
-        WindowSetting,
-    },
-    util::config_file,
+use common::structs::{
+    AaSetting, AppConfig, BloomSetting, FogSetting, SettingsTab, ShadowSetting, SsaoSetting,
+    WindowSetting,
 };
-use shadow_settings::ShadowCasterCountSetting;
+use system_bridge::settings::{EnumAppSetting, IntAppSetting};
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
 use crate::profile::SettingsDialog;
 
-use self::{
+use system_bridge::settings::{
     ambient_brightness_setting::AmbientSetting,
     constrain_ui::ConstrainUiSetting,
     despawn_workaround::DespawnWorkaroundSetting,
@@ -33,6 +23,7 @@ use self::{
         WalkSpeedSetting,
     },
     scene_threads::SceneThreadsSetting,
+    shadow_settings::ShadowCasterCountSetting,
     shadow_settings::ShadowDistanceSetting,
     video_threads::VideoThreadsSetting,
     volume_settings::{
@@ -45,74 +36,9 @@ use self::{
 
 pub struct AppSettingsPlugin;
 
-mod aa_settings;
-pub mod ambient_brightness_setting;
-mod bloom_settings;
-pub mod constrain_ui;
-pub mod despawn_workaround;
-pub mod fog_settings;
-pub mod frame_rate;
-pub mod load_distance;
-pub mod max_avatars;
-pub mod max_downloads;
-mod oob_setting;
-pub mod player_settings;
-pub mod scene_threads;
-mod shadow_settings;
-pub mod ssao_setting;
-pub mod video_threads;
-pub mod volume_settings;
-pub mod window_settings;
-
 impl Plugin for AppSettingsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, set_app_settings_content);
-
-        let mut apply_schedule = Schedule::new(ApplyAppSettingsLabel);
-
-        apply_schedule.add_systems((
-            apply_setting::<ShadowDistanceSetting>,
-            apply_setting::<ShadowCasterCountSetting>,
-            apply_setting::<ShadowSetting>.after(apply_setting::<ShadowDistanceSetting>),
-            apply_setting::<FogSetting>,
-            apply_setting::<BloomSetting>,
-            apply_setting::<SsaoSetting>,
-            apply_setting::<OobSetting>,
-            apply_setting::<AaSetting>,
-            apply_setting::<AmbientSetting>,
-            apply_setting::<WindowSetting>,
-            apply_setting::<LoadDistanceSetting>,
-            apply_setting::<UnloadDistanceSetting>,
-            apply_setting::<FpsTargetSetting>,
-            apply_setting::<SceneThreadsSetting>,
-            apply_setting::<MaxAvatarsSetting>,
-            apply_setting::<MasterVolumeSetting>,
-            apply_setting::<SceneVolumeSetting>,
-            apply_setting::<VoiceVolumeSetting>,
-            apply_setting::<SystemVolumeSetting>,
-            apply_setting::<AvatarVolumeSetting>,
-        ));
-        apply_schedule.add_systems((
-            apply_setting::<ConstrainUiSetting>,
-            apply_setting::<RunSpeedSetting>,
-            apply_setting::<WalkSpeedSetting>,
-            apply_setting::<FrictionSetting>,
-            apply_setting::<JumpSetting>,
-            apply_setting::<GravitySetting>,
-            apply_setting::<FallSpeedSetting>,
-            apply_setting::<VideoThreadsSetting>,
-            apply_setting::<MaxDownloadsSetting>,
-            apply_setting::<DespawnWorkaroundSetting>,
-        ));
-
-        app.insert_resource(ApplyAppSettingsSchedule(apply_schedule));
-        app.add_systems(
-            Update,
-            (
-                apply_settings.run_if(|config: Res<AppConfig>| config.is_changed()),
-                // set_resolutions,
-            ),
-        );
     }
 }
 
@@ -171,18 +97,18 @@ fn set_app_settings_content(
                 )
                 .unwrap()
                 .root,
-            WindowSetting::spawn_template(&mut commands, &dui, &config),
-            // FullscreenResSetting::spawn_template(&mut commands, &dui, &config),
-            AaSetting::spawn_template(&mut commands, &dui, &config),
-            AmbientSetting::spawn_template(&mut commands, &dui, &config),
-            ShadowSetting::spawn_template(&mut commands, &dui, &config),
-            ShadowDistanceSetting::spawn_template(&mut commands, &dui, &config),
-            ShadowCasterCountSetting::spawn_template(&mut commands, &dui, &config),
-            FogSetting::spawn_template(&mut commands, &dui, &config),
-            BloomSetting::spawn_template(&mut commands, &dui, &config),
-            SsaoSetting::spawn_template(&mut commands, &dui, &config),
-            OobSetting::spawn_template(&mut commands, &dui, &config),
-            ConstrainUiSetting::spawn_template(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<WindowSetting>(&mut commands, &dui, &config),
+            // spawn_enum_setting_template::<FullscreenResSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<AaSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<AmbientSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<ShadowSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<ShadowDistanceSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<ShadowCasterCountSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<FogSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<BloomSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<SsaoSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<OobSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<ConstrainUiSetting>(&mut commands, &dui, &config),
             commands
                 .spawn_template(
                     &dui,
@@ -191,14 +117,14 @@ fn set_app_settings_content(
                 )
                 .unwrap()
                 .root,
-            LoadDistanceSetting::spawn_template(&mut commands, &dui, &config),
-            UnloadDistanceSetting::spawn_template(&mut commands, &dui, &config),
-            FpsTargetSetting::spawn_template(&mut commands, &dui, &config),
-            SceneThreadsSetting::spawn_template(&mut commands, &dui, &config),
-            VideoThreadsSetting::spawn_template(&mut commands, &dui, &config),
-            MaxAvatarsSetting::spawn_template(&mut commands, &dui, &config),
-            MaxDownloadsSetting::spawn_template(&mut commands, &dui, &config),
-            DespawnWorkaroundSetting::spawn_template(&mut commands, &dui, &config),
+            spawn_int_setting_template::<LoadDistanceSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<UnloadDistanceSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<FpsTargetSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<SceneThreadsSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<VideoThreadsSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<MaxAvatarsSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<MaxDownloadsSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<DespawnWorkaroundSetting>(&mut commands, &dui, &config),
             commands
                 .spawn_template(
                     &dui,
@@ -207,11 +133,11 @@ fn set_app_settings_content(
                 )
                 .unwrap()
                 .root,
-            MasterVolumeSetting::spawn_template(&mut commands, &dui, &config),
-            SceneVolumeSetting::spawn_template(&mut commands, &dui, &config),
-            VoiceVolumeSetting::spawn_template(&mut commands, &dui, &config),
-            SystemVolumeSetting::spawn_template(&mut commands, &dui, &config),
-            AvatarVolumeSetting::spawn_template(&mut commands, &dui, &config),
+            spawn_int_setting_template::<MasterVolumeSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<SceneVolumeSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<VoiceVolumeSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<SystemVolumeSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<AvatarVolumeSetting>(&mut commands, &dui, &config),
             commands
                 .spawn_template(
                     &dui,
@@ -220,12 +146,12 @@ fn set_app_settings_content(
                 )
                 .unwrap()
                 .root,
-            RunSpeedSetting::spawn_template(&mut commands, &dui, &config),
-            WalkSpeedSetting::spawn_template(&mut commands, &dui, &config),
-            FrictionSetting::spawn_template(&mut commands, &dui, &config),
-            JumpSetting::spawn_template(&mut commands, &dui, &config),
-            GravitySetting::spawn_template(&mut commands, &dui, &config),
-            FallSpeedSetting::spawn_template(&mut commands, &dui, &config),
+            spawn_int_setting_template::<RunSpeedSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<WalkSpeedSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<FrictionSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<JumpSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<GravitySetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<FallSpeedSetting>(&mut commands, &dui, &config),
         ];
 
         commands
@@ -238,32 +164,6 @@ fn set_app_settings_content(
     }
 }
 
-pub trait AppSetting: Eq + 'static {
-    type Param: SystemParam + 'static;
-    fn title() -> String;
-    fn description(&self) -> String;
-    fn load(config: &AppConfig) -> Self;
-    fn save(&self, config: &mut AppConfig);
-    fn apply(&self, param: SystemParamItem<Self::Param>, commands: Commands);
-    fn spawn_template(commands: &mut Commands, dui: &DuiRegistry, config: &AppConfig) -> Entity;
-}
-
-pub trait EnumAppSetting: AppSetting + Sized + std::fmt::Debug {
-    type VParam: SystemParam + 'static;
-    fn variants(param: SystemParamItem<Self::VParam>) -> Vec<Self>;
-    fn name(&self) -> String;
-}
-
-pub trait IntAppSetting: AppSetting + Sized + std::fmt::Debug {
-    fn from_int(value: i32) -> Self;
-    fn value(&self) -> i32;
-    fn min() -> i32;
-    fn max() -> i32;
-    fn display(&self) -> String {
-        format!("{}", self.value())
-    }
-}
-
 #[derive(Component)]
 struct AppSettingDescription;
 
@@ -271,14 +171,13 @@ struct AppSettingDescription;
 fn bump_enum<S: EnumAppSetting, const I: isize>(
     mut q: Query<(&mut SettingsDialog, &mut AppSettingsDetail)>,
     params: StaticSystemParam<S::Param>,
-    v_params: StaticSystemParam<S::VParam>,
     commands: Commands,
     caller: Res<UiCaller>,
     parents: Query<(&Parent, Option<&DuiEntities>)>,
     mut text: Query<&mut Text, Without<AppSettingDescription>>,
     mut description: Query<&mut Text, With<AppSettingDescription>>,
 ) {
-    let mut variants = S::variants(v_params.into_inner());
+    let mut variants = S::variants();
     let (mut dialog, mut config) = q.single_mut();
     let config = &mut config.0;
     let current = S::load(config);
@@ -450,36 +349,4 @@ fn spawn_int_setting_template<S: IntAppSetting>(
     ));
 
     components.root
-}
-
-#[derive(Resource)]
-pub struct ApplyAppSettingsSchedule(Schedule);
-
-#[derive(ScheduleLabel, Hash, PartialEq, Eq, Clone, Copy, Debug)]
-pub struct ApplyAppSettingsLabel;
-
-fn apply_settings(world: &mut World) {
-    world.resource_scope(
-        |world: &mut World, mut schedule: Mut<ApplyAppSettingsSchedule>| {
-            schedule.0.run(world);
-        },
-    );
-
-    let config_file = config_file();
-    if let Some(folder) = config_file.parent() {
-        std::fs::create_dir_all(folder).unwrap();
-    }
-    std::fs::write(
-        config_file,
-        serde_json::to_string(world.resource::<AppConfig>()).unwrap(),
-    )
-    .unwrap();
-}
-
-fn apply_setting<S: AppSetting>(
-    params: StaticSystemParam<S::Param>,
-    config: Res<AppConfig>,
-    commands: Commands,
-) {
-    S::load(&config).apply(params.into_inner(), commands);
 }

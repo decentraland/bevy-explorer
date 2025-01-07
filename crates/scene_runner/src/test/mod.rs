@@ -20,6 +20,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use scene_material::SceneBoundPlugin;
 use spin_sleep::SpinSleeper;
+use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, stretch_uvs_image::StretchUvMaterial};
 use visuals::SceneGlobalLight;
 
@@ -101,6 +102,7 @@ impl PluginGroup for TestPlugins {
             .add(WalletPlugin)
             .add(CommsPlugin)
             .add(DuiPlugin)
+            .add(SystemBridgePlugin { bare: true })
     }
 }
 

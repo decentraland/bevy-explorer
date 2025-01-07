@@ -95,6 +95,7 @@ pub struct LoadSceneEvent {
     pub realm: String,
     pub entity: Option<Entity>,
     pub location: SceneIpfsLocation,
+    pub super_user: bool,
 }
 
 // this component is present on the bevy entity which maps to a scene entity explicitly
@@ -512,15 +513,21 @@ impl ContainingScene<'_, '_> {
             }
         }
 
-        results.extend(self.get_portables());
+        results.extend(self.get_portables(false));
         results
     }
 
-    pub fn get_portables(&self) -> HashSet<Entity> {
+    pub fn get_portables(&self, only_super: bool) -> HashSet<Entity> {
         self.portable_scenes
             .0
             .iter()
-            .flat_map(|(hash, _)| self.live_scenes.0.get(hash))
+            .flat_map(|(hash, source)| {
+                if !source.super_user && only_super {
+                    None
+                } else {
+                    self.live_scenes.0.get(hash)
+                }
+            })
             .copied()
             .collect()
     }
@@ -531,7 +538,7 @@ impl ContainingScene<'_, '_> {
             .get(ent)
             .map(|(gt, oow)| {
                 if oow {
-                    HashSet::default()
+                    self.get_portables(true)
                 } else {
                     self.get_position(gt.translation())
                 }
@@ -571,6 +578,7 @@ impl ContainingScene<'_, '_> {
             }
         }
 
+        results.extend(self.get_portables(false));
         results
     }
 

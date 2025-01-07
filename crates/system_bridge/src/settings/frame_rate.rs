@@ -1,15 +1,13 @@
 use bevy::prelude::*;
-use bevy_dui::DuiRegistry;
 use common::structs::AppConfig;
 
-use super::{spawn_enum_setting_template, AppSetting, EnumAppSetting};
+use super::{AppSetting, EnumAppSetting};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct FpsTargetSetting(usize);
 
 impl EnumAppSetting for FpsTargetSetting {
-    type VParam = ();
-    fn variants(_: ()) -> Vec<Self> {
+    fn variants() -> Vec<Self> {
         vec![
             Self(10),
             Self(15),
@@ -49,8 +47,8 @@ impl AppSetting for FpsTargetSetting {
         Self(config.graphics.fps_target)
     }
 
-    fn spawn_template(commands: &mut Commands, dui: &DuiRegistry, config: &AppConfig) -> Entity {
-        spawn_enum_setting_template::<Self>(commands, dui, config)
+    fn category() -> super::SettingCategory {
+        super::SettingCategory::Performance
     }
 
     fn apply(&self, _: (), _: Commands) {

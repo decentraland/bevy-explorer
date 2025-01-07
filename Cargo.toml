@@ -52,6 +52,7 @@ world_ui = { path="crates/world_ui" }
 collectibles = { path="crates/collectibles" }
 social = { path="crates/social" }
 imposters = { path="crates/imposters" }
+system_bridge = { path="crates/system_bridge" }
 
 bevy = { version = "0.14", default-features = false, features=[
     "animation",
@@ -143,6 +144,7 @@ world_ui = { workspace = true }
 collectibles = { workspace = true }
 social = { workspace = true }
 imposters = { workspace = true }
+system_bridge = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }

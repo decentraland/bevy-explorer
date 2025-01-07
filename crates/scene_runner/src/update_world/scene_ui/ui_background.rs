@@ -175,122 +175,119 @@ pub fn set_ui_background(
             if let Some(image) = image {
                 let image_color = background.color.unwrap_or(Color::WHITE);
                 let image_color = image_color.with_alpha(image_color.alpha() * link.opacity.0);
-                match texture_mode {
-                    BackgroundTextureMode::NineSlices(rect) => {
-                        commands.try_with_children(|c| {
-                            c.spawn((
-                                NodeBundle {
-                                    style: Style {
-                                        position_type: PositionType::Absolute,
-                                        top: Val::Px(0.0),
-                                        right: Val::Px(0.0),
-                                        left: Val::Px(0.0),
-                                        bottom: Val::Px(0.0),
-                                        overflow: Overflow::clip(),
-                                        ..Default::default()
-                                    },
+                let background_entity = match texture_mode {
+                    BackgroundTextureMode::NineSlices(rect) => commands
+                        .commands()
+                        .spawn((
+                            NodeBundle {
+                                style: Style {
+                                    position_type: PositionType::Absolute,
+                                    top: Val::Px(0.0),
+                                    right: Val::Px(0.0),
+                                    left: Val::Px(0.0),
+                                    bottom: Val::Px(0.0),
+                                    overflow: Overflow::clip(),
                                     ..Default::default()
                                 },
-                                Ui9Slice {
-                                    image: image.image,
-                                    center_region: rect.into(),
-                                    tint: Some(image_color),
-                                },
-                                UiBackgroundMarker,
-                            ));
-                        });
-                    }
-                    BackgroundTextureMode::Stretch(ref uvs) => {
-                        commands.try_with_children(|c| {
-                            c.spawn((
-                                NodeBundle {
-                                    style: Style {
-                                        position_type: PositionType::Absolute,
-                                        top: Val::Px(0.0),
-                                        right: Val::Px(0.0),
-                                        left: Val::Px(0.0),
-                                        bottom: Val::Px(0.0),
-                                        overflow: Overflow::clip(),
-                                        ..Default::default()
-                                    },
+                                ..Default::default()
+                            },
+                            Ui9Slice {
+                                image: image.image,
+                                center_region: rect.into(),
+                                tint: Some(image_color),
+                            },
+                            UiBackgroundMarker,
+                        ))
+                        .id(),
+                    BackgroundTextureMode::Stretch(ref uvs) => commands
+                        .commands()
+                        .spawn((
+                            NodeBundle {
+                                style: Style {
+                                    position_type: PositionType::Absolute,
+                                    top: Val::Px(0.0),
+                                    right: Val::Px(0.0),
+                                    left: Val::Px(0.0),
+                                    bottom: Val::Px(0.0),
+                                    overflow: Overflow::clip(),
                                     ..Default::default()
                                 },
-                                UiBackgroundMarker,
-                            ))
-                            .try_with_children(|c| {
-                                c.spawn((MaterialNodeBundle {
-                                    style: Style {
-                                        position_type: PositionType::Absolute,
-                                        top: Val::Px(0.0),
-                                        right: Val::Px(0.0),
-                                        left: Val::Px(0.0),
-                                        bottom: Val::Px(0.0),
-                                        ..Default::default()
-                                    },
-                                    material: stretch_uvs.add(StretchUvMaterial {
-                                        image: image.image.clone(),
-                                        uvs: *uvs,
-                                        color: image_color.to_linear().to_vec4(),
-                                    }),
-                                    ..Default::default()
-                                },));
-                            });
-                        });
-                    }
-                    BackgroundTextureMode::Center => {
-                        commands.try_with_children(|c| {
-                            // make a stretchy grid
-                            c.spawn((
-                                NodeBundle {
-                                    style: Style {
-                                        position_type: PositionType::Absolute,
-                                        left: Val::Px(0.0),
-                                        right: Val::Px(0.0),
-                                        top: Val::Px(0.0),
-                                        bottom: Val::Px(0.0),
-                                        justify_content: JustifyContent::Center,
-                                        overflow: Overflow::clip(),
-                                        width: Val::Percent(100.0),
-                                        ..Default::default()
-                                    },
+                                ..Default::default()
+                            },
+                            UiBackgroundMarker,
+                        ))
+                        .try_with_children(|c| {
+                            c.spawn((MaterialNodeBundle {
+                                style: Style {
+                                    position_type: PositionType::Absolute,
+                                    top: Val::Px(0.0),
+                                    right: Val::Px(0.0),
+                                    left: Val::Px(0.0),
+                                    bottom: Val::Px(0.0),
                                     ..Default::default()
                                 },
-                                UiBackgroundMarker,
-                            ))
+                                material: stretch_uvs.add(StretchUvMaterial {
+                                    image: image.image.clone(),
+                                    uvs: *uvs,
+                                    color: image_color.to_linear().to_vec4(),
+                                }),
+                                ..Default::default()
+                            },));
+                        })
+                        .id(),
+                    BackgroundTextureMode::Center => commands
+                        .commands()
+                        .spawn((
+                            NodeBundle {
+                                style: Style {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(0.0),
+                                    right: Val::Px(0.0),
+                                    top: Val::Px(0.0),
+                                    bottom: Val::Px(0.0),
+                                    justify_content: JustifyContent::Center,
+                                    overflow: Overflow::clip(),
+                                    width: Val::Percent(100.0),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            },
+                            UiBackgroundMarker,
+                        ))
+                        .try_with_children(|c| {
+                            c.spacer();
+                            c.spawn(NodeBundle {
+                                style: Style {
+                                    flex_direction: FlexDirection::Column,
+                                    justify_content: JustifyContent::Center,
+                                    overflow: Overflow::clip(),
+                                    height: Val::Percent(100.0),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            })
                             .try_with_children(|c| {
                                 c.spacer();
-                                c.spawn(NodeBundle {
+                                c.spawn(ImageBundle {
                                     style: Style {
-                                        flex_direction: FlexDirection::Column,
-                                        justify_content: JustifyContent::Center,
                                         overflow: Overflow::clip(),
-                                        height: Val::Percent(100.0),
                                         ..Default::default()
                                     },
+                                    image: UiImage {
+                                        color: image_color,
+                                        texture: image.image,
+                                        flip_x: false,
+                                        flip_y: false,
+                                    },
                                     ..Default::default()
-                                })
-                                .try_with_children(|c| {
-                                    c.spacer();
-                                    c.spawn(ImageBundle {
-                                        style: Style {
-                                            overflow: Overflow::clip(),
-                                            ..Default::default()
-                                        },
-                                        image: UiImage {
-                                            color: image_color,
-                                            texture: image.image,
-                                            flip_x: false,
-                                            flip_y: false,
-                                        },
-                                        ..Default::default()
-                                    });
-                                    c.spacer();
                                 });
                                 c.spacer();
                             });
-                        });
-                    }
-                }
+                            c.spacer();
+                        })
+                        .id(),
+                };
+                commands.insert_children(0, &[background_entity]);
             } else {
                 warn!("failed to load ui image from content map: {:?}", texture);
             }

@@ -180,8 +180,9 @@ pub fn set_ui_text(
             _ => Val::Auto,
         };
 
-        ent_cmds.try_with_children(|c| {
-            c.spawn((
+        let text_element = ent_cmds
+            .commands()
+            .spawn((
                 NodeBundle {
                     style: Style {
                         flex_direction: FlexDirection::Row,
@@ -223,7 +224,9 @@ pub fn set_ui_text(
                         cmds.insert(extras);
                     }
                 });
-            });
-        });
+            })
+            .id();
+
+        ent_cmds.insert_children(0, &[text_element]);
     }
 }

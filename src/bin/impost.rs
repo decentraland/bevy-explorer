@@ -201,6 +201,7 @@ fn check_done(
     pointers: Res<ScenePointers>,
     mut counter: Local<usize>,
     config: Res<AppConfig>,
+    mut exit: EventWriter<AppExit>,
 ) {
     // wait for realm
     if realm.address.is_empty() {
@@ -219,7 +220,7 @@ fn check_done(
         *counter += 1;
         if *counter == 10 {
             println!("all done!");
-            std::process::exit(0);
+            exit.send_default();
         }
     } else {
         *counter = 0;

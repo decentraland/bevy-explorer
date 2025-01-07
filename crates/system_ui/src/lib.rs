@@ -86,7 +86,7 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
                     height: Val::Percent(100.0),
                     ..Default::default()
                 },
-                z_index: ZIndex::Global(1),
+                z_index: ZIndex::Global(i16::MAX as i32 + 2),
                 ..Default::default()
             },
             UiRoot,
@@ -105,7 +105,7 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
                 bottom: Val::Px(0.0),
                 ..Default::default()
             },
-            z_index: ZIndex::Global(-1),
+            z_index: ZIndex::Global(i16::MAX as i32 + 1),
             ..Default::default()
         },
         Interaction::default(),

@@ -1,8 +1,7 @@
 use bevy::prelude::*;
-use bevy_dui::DuiRegistry;
 use common::structs::AppConfig;
 
-use super::{spawn_enum_setting_template, AppSetting, EnumAppSetting};
+use super::{AppSetting, EnumAppSetting};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum OobSetting {
@@ -11,8 +10,7 @@ pub enum OobSetting {
 }
 
 impl EnumAppSetting for OobSetting {
-    type VParam = ();
-    fn variants(_: ()) -> Vec<Self> {
+    fn variants() -> Vec<Self> {
         vec![Self::Off, Self::On]
     }
 
@@ -56,8 +54,8 @@ impl AppSetting for OobSetting {
         }
     }
 
-    fn spawn_template(commands: &mut Commands, dui: &DuiRegistry, config: &AppConfig) -> Entity {
-        spawn_enum_setting_template::<Self>(commands, dui, config)
+    fn category() -> super::SettingCategory {
+        super::SettingCategory::Graphics
     }
 
     fn apply(&self, _: (), _: Commands) {

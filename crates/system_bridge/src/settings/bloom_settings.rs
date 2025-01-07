@@ -1,16 +1,15 @@
+use super::SettingCategory;
 use bevy::{
     core_pipeline::bloom::BloomSettings,
     ecs::system::{lifetimeless::SRes, SystemParamItem},
     prelude::*,
 };
-use bevy_dui::DuiRegistry;
 use common::structs::{AppConfig, BloomSetting, PrimaryCameraRes};
 
-use super::{spawn_enum_setting_template, AppSetting, EnumAppSetting};
+use super::{AppSetting, EnumAppSetting};
 
 impl EnumAppSetting for BloomSetting {
-    type VParam = ();
-    fn variants(_: ()) -> Vec<Self> {
+    fn variants() -> Vec<Self> {
         vec![Self::Off, Self::Low, Self::High]
     }
 
@@ -31,6 +30,10 @@ impl AppSetting for BloomSetting {
         "Bloom".to_owned()
     }
 
+    fn category() -> SettingCategory {
+        SettingCategory::Graphics
+    }
+
     fn description(&self) -> String {
         format!("Bloom is a post-processing effect used to reproduce an imaging artifact of real-world cameras. The effect produces fringes (or feathers) of light extending from the borders of bright areas in an image, contributing to the illusion of an extremely bright light overwhelming the camera capturing the scene.\n\n{}", 
         match self {
@@ -46,10 +49,6 @@ impl AppSetting for BloomSetting {
 
     fn load(config: &AppConfig) -> Self {
         config.graphics.bloom
-    }
-
-    fn spawn_template(commands: &mut Commands, dui: &DuiRegistry, config: &AppConfig) -> Entity {
-        spawn_enum_setting_template::<Self>(commands, dui, config)
     }
 
     fn apply(&self, cam_res: SystemParamItem<Self::Param>, mut commands: Commands) {

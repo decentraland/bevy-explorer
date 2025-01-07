@@ -27,6 +27,7 @@ scene_material = { workspace = true }
 world_ui = { workspace = true }
 analytics = { workspace = true }
 social = { workspace = true }
+system_bridge = { workspace = true }
 
 bevy = { workspace = true }
 bevy_egui = { workspace = true }
@@ -45,6 +46,7 @@ clap = { workspace = true }
 opener = { workspace = true }
 urlencoding = { workspace = true }
 build-time = { workspace = true }
+futures-lite = { workspace = true }
 
 copypasta = "0.10"
 shlex = "1"

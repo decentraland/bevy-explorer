@@ -1,0 +1,20 @@
+[package]
+name = "system_bridge"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[lints]
+workspace = true
+
+[dependencies]
+common = { workspace = true }
+
+bevy = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+bevy_dui = { workspace = true }
+ipfs = { workspace = true }
+serde_json = { workspace = true }
