@@ -331,11 +331,9 @@ fn manage_shadow_casters(
         if !enabled {
             let (_, _, _, maybe_p, maybe_s) = q.get_mut(light).unwrap();
             if let Some(mut p) = maybe_p {
-                println!("enabled point");
                 p.shadows_enabled = true;
             }
             if let Some(mut s) = maybe_s {
-                println!("enabled spot");
                 s.shadows_enabled = true;
             }
         }
@@ -345,11 +343,9 @@ fn manage_shadow_casters(
         if enabled {
             let (_, _, _, maybe_p, maybe_s) = q.get_mut(light).unwrap();
             if let Some(mut p) = maybe_p {
-                println!("disabled point");
                 p.shadows_enabled = false;
             }
             if let Some(mut s) = maybe_s {
-                println!("disabled spot");
                 s.shadows_enabled = false;
             }
         }

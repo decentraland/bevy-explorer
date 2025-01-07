@@ -161,13 +161,6 @@ fn login(
         return;
     }
 
-    println!(
-        "{}, {}, {}",
-        dialog.is_some(),
-        req_code.is_some(),
-        req_done.is_some()
-    );
-
     // handle task results
     if let Some(mut t) = req_code.take() {
         match t.try_recv() {
@@ -196,7 +189,6 @@ fn login(
                     .unwrap();
 
                 *dialog = Some(components.root);
-                println!("set {:?}", components.root);
             }
             Ok(Err(e)) => {
                 toaster.add_toast("login profile", format!("Login failed: {}", e));

@@ -127,7 +127,6 @@ pub fn show_conversation(
     let Some(&friend) = pending_event.as_ref() else {
         return;
     };
-    println!("got ev");
 
     let name = match profile_cache.get_name(friend) {
         Ok(Some(name)) => name.to_owned(),
@@ -137,7 +136,6 @@ pub fn show_conversation(
 
     // we're going ahead after these checks, so clear the pending
     pending_event.take();
-    println!("going ahead");
 
     if let Ok(mut style) = container.get_single_mut() {
         if style.display == Display::None {
