@@ -47,6 +47,8 @@ fn gen_sdk_components() -> Result<()> {
         "light",
         "global_light",
         "spotlight",
+        "texture_camera",
+        "camera_layers",
     ];
 
     let mut sources = components

@@ -110,6 +110,8 @@ impl DclProtoComponent for sdk::components::PbTweenState {}
 impl DclProtoComponent for sdk::components::PbLight {}
 impl DclProtoComponent for sdk::components::PbSpotlight {}
 impl DclProtoComponent for sdk::components::PbGlobalLight {}
+impl DclProtoComponent for sdk::components::PbTextureCamera {}
+impl DclProtoComponent for sdk::components::PbCameraLayers {}
 
 // VECTOR2 conversions
 impl Copy for common::Vector2 {}

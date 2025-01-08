@@ -53,6 +53,7 @@ collectibles = { path="crates/collectibles" }
 social = { path="crates/social" }
 imposters = { path="crates/imposters" }
 system_bridge = { path="crates/system_bridge" }
+texture_camera = { path="crates/texture_camera" }
 
 bevy = { version = "0.14", default-features = false, features=[
     "animation",
@@ -145,6 +146,7 @@ collectibles = { workspace = true }
 social = { workspace = true }
 imposters = { workspace = true }
 system_bridge = { workspace = true }
+texture_camera = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }

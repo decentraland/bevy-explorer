@@ -1558,7 +1558,7 @@ dependencies = [
 [[package]]
 name = "bevy_simple_text_input"
 version = "0.8.0"
-source = "git+https://github.com/robtfm/bevy_simple_text_input?branch=multiline#8633d525e3ebfcb8725b92e805b9ace42f4169a7"
+source = "git+https://github.com/robtfm/bevy_simple_text_input?branch=multiline#8fa2f9bfdd8061e9fbff1c998d8d96287d0fd02c"
 dependencies = [
  "bevy",
  "copypasta",
@@ -1815,7 +1815,7 @@ dependencies = [
  "bitflags 2.6.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "lazy_static",
  "lazycell",
  "log",
@@ -1838,7 +1838,7 @@ dependencies = [
  "bitflags 2.6.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "regex",
@@ -3305,6 +3305,7 @@ dependencies = [
  "social",
  "system_bridge",
  "system_ui",
+ "texture_camera",
  "tokio",
  "tracing-appender",
  "tween",
@@ -7255,7 +7256,7 @@ version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af1844ef2428cc3e1cb900be36181049ef3d3193c63e43026cfe202983b27a56"
 dependencies = [
- "proc-macro-crate 1.3.1",
+ "proc-macro-crate 3.2.0",
  "proc-macro2",
  "quote",
  "syn 2.0.79",
@@ -8322,8 +8323,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
- "heck 0.4.1",
- "itertools 0.10.5",
+ "heck 0.5.0",
+ "itertools 0.12.1",
  "log",
  "multimap 0.10.0",
  "once_cell",
@@ -8356,7 +8357,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.79",
@@ -8369,7 +8370,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9552f850d5f0964a4e4d0bf306459ac29323ddfbae05e35a7c0d35cb0803cc5"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.79",
@@ -10482,6 +10483,49 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "texture_camera"
+version = "0.1.0"
+dependencies = [
+ "analytics",
+ "anyhow",
+ "av",
+ "avatar",
+ "bevy",
+ "bevy_console",
+ "bevy_dui",
+ "bevy_egui",
+ "build-time",
+ "chrono",
+ "clap",
+ "collectibles",
+ "common",
+ "comms",
+ "console",
+ "dcl",
+ "dcl_component",
+ "ethers-core",
+ "ethers-signers",
+ "futures-lite 1.13.0",
+ "input_manager",
+ "ipfs",
+ "isahc",
+ "opener",
+ "scene_material",
+ "scene_runner",
+ "serde",
+ "serde_json",
+ "social",
+ "system_bridge",
+ "tokio",
+ "tween",
+ "ui_core",
+ "urlencoding",
+ "urn",
+ "wallet",
+ "world_ui",
 ]
 
 [[package]]
