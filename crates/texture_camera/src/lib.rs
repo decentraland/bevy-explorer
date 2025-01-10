@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use bevy::{
     core_pipeline::{
         bloom::BloomSettings,
@@ -11,13 +13,13 @@ use bevy::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureFormat, TextureUsages},
         texture::BevyDefault,
-        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
-    },
+        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, Layer, RenderLayers},
+    }, utils::hashbrown::HashMap,
 };
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::SceneSets,
-    structs::{Cubemap, PrimaryUser, GROUND_RENDERLAYER},
+    structs::{Cubemap, PrimaryUser, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER},
 };
 use dcl_component::{
     proto_components::sdk::components::{PbCameraLayers, PbTextureCamera},
@@ -113,6 +115,13 @@ pub fn update_texture_cameras(
             image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
             let image = images.add(image);
 
+            let render_layers = match texture_cam.0.layer {
+                None | Some(0) => {
+                    RenderLayers::default().union(&GROUND_RENDERLAYER).union(&PRIMARY_AVATAR_LIGHT_LAYER)
+                }
+                Some(nonzero) => RenderLayers::layer(camera_to_render_layer(nonzero))
+            };
+
             let camera_id = commands
                 .spawn((
                     Camera3dBundle {
@@ -162,7 +171,7 @@ pub fn update_texture_cameras(
                     ShadowFilteringMethod::Gaussian,
                     DepthPrepass,
                     NormalPrepass,
-                    GROUND_RENDERLAYER.with(0),
+                    render_layers,
                     Skybox {
                         image: cubemap.image_handle.clone(),
                         brightness: 1000.0,
@@ -201,9 +210,78 @@ impl From<PbCameraLayers> for CameraLayers {
     }
 }
 
+fn camera_to_render_layer(camera_layer: u32) -> Layer {
+    (match camera_layer {
+        0 => 0,
+        nonzero => nonzero + 5
+    }) as Layer
+}
+
+fn camera_to_render_layers<'a>(camera_layers: impl Iterator<Item=&'a u32>) -> RenderLayers {
+    camera_layers.fold(RenderLayers::none(), |result, camera_layer| {
+        result.with(camera_to_render_layer(*camera_layer))
+    })
+}
+
+
 pub fn update_camera_layers(
     mut commands: Commands,
-    layers: Query<&CameraLayers>,
-    removed: RemovedComponents<CameraLayers>,
+    mut removed: RemovedComponents<CameraLayers>,
+    maybe_changed: Query<(Entity, Option<&CameraLayers>, &Parent), Or<(Changed<CameraLayers>, Changed<Parent>)>>,
+    removed_data: Query<(Option<&CameraLayers>, &Parent)>,
+    children: Query<&Children>,
+    render_layers: Query<&RenderLayers>,
 ) {
+    let mut to_check = VecDeque::default();
+
+    // gather items that have changed
+    for (entity, maybe_layers, parent) in &maybe_changed {
+        let target_render_layers = if let Some(camera_layers) = maybe_layers {
+            camera_to_render_layers(camera_layers.0.iter())
+        } else {
+            render_layers.get(parent.get()).cloned().unwrap_or_else(|_| RenderLayers::default())
+        };
+
+        to_check.push_back((entity, target_render_layers));
+    }
+
+    // or had explicit layers removed
+    for removed_entity in removed.read() {
+        // (and still exist)
+        let Ok((maybe_layers, parent)) = removed_data.get(removed_entity) else {
+            continue;
+        };
+
+        let target_render_layers = if let Some(camera_layers) = maybe_layers {
+            camera_to_render_layers(camera_layers.0.iter())
+        } else {
+            render_layers.get(parent.get()).cloned().unwrap_or_else(|_| RenderLayers::default())
+        };
+
+        to_check.push_back((removed_entity, target_render_layers));
+    }
+
+    let mut updated = HashMap::<Entity, RenderLayers>::default();
+
+    // for entities that may need updating
+    while let Some((entity, target_layers)) = to_check.pop_front() {
+        // if we already updated to this value stop here
+        if let Some(update) = updated.get(&entity) {
+            if update == &target_layers {
+                continue;
+            }
+        } 
+        // if we didn't already update and the existing data matches the requirement then stop here
+        else if render_layers.get(entity).unwrap_or(&RenderLayers::default()) == &target_layers {
+            continue;
+        }
+
+        // update
+        commands.entity(entity).insert(target_layers.clone());
+        // check children
+        for child in children.get(entity).map(IntoIterator::into_iter).unwrap_or_default() {
+            to_check.push_back((*child, target_layers.clone()));
+        }
+        updated.insert(entity, target_layers);
+    }
 }
