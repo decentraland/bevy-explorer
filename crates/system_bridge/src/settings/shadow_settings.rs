@@ -29,7 +29,6 @@ impl AppSetting for ShadowSetting {
     type Param = (
         SRes<AppConfig>,
         SRes<PrimaryCameraRes>,
-        SQuery<Write<ShadowFilteringMethod>>,
         SQuery<(Write<DirectionalLight>, Write<CascadeShadowConfig>)>,
     );
 
@@ -60,20 +59,9 @@ impl AppSetting for ShadowSetting {
 
     fn apply(
         &self,
-        (config, cam_res, mut filter_method, mut lights): SystemParamItem<Self::Param>,
-        _: Commands,
+        (config, cam_res, mut lights): SystemParamItem<Self::Param>,
+        commands: Commands,
     ) {
-        let mut filter_method = filter_method.get_mut(cam_res.0).unwrap();
-
-        match self {
-            ShadowSetting::Off => (),
-            ShadowSetting::Low => {
-                *filter_method = ShadowFilteringMethod::Hardware2x2;
-            }
-            ShadowSetting::High => {
-                *filter_method = ShadowFilteringMethod::Gaussian;
-            }
-        }
 
         let value = if config.graphics.shadow_distance == 0.0 {
             ShadowSetting::Off
@@ -108,6 +96,24 @@ impl AppSetting for ShadowSetting {
                     }
                     .build()
                 }
+            }
+        }
+
+        let primary_cam = cam_res.0;
+        self.apply_to_camera(&(config, cam_res, lights), commands, primary_cam);
+    }
+    
+    fn apply_to_camera(&self, _: &SystemParamItem<Self::Param>, mut commands: Commands, camera_entity: Entity) {
+        let Some(mut cmds) = commands.get_entity(camera_entity) else { 
+            return;
+        };
+        match self {
+            ShadowSetting::Off => (),
+            ShadowSetting::Low => {
+                cmds.insert(ShadowFilteringMethod::Hardware2x2);
+            }
+            ShadowSetting::High => {
+                cmds.insert(ShadowFilteringMethod::Gaussian);
             }
         }
     }

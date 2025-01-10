@@ -29,6 +29,7 @@ use scene_runner::{
     update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
     ContainerEntity, ContainingScene,
 };
+use system_bridge::settings::NewCameraEvent;
 
 pub struct TextureCameraPlugin;
 
@@ -73,10 +74,11 @@ pub fn update_texture_cameras(
     )>,
     removed: Query<(Entity, &TextureCamEntity), Without<TextureCamera>>,
     mut images: ResMut<Assets<Image>>,
-    mut cameras: Query<&mut Camera>,
+    mut cameras: Query<(&mut Camera, &RenderLayers)>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
     cubemap: Res<Cubemap>,
+    mut new_cam_events: EventWriter<NewCameraEvent>,
 ) {
     let active_scenes = player
         .get_single()
@@ -121,6 +123,7 @@ pub fn update_texture_cameras(
                 }
                 Some(nonzero) => RenderLayers::layer(camera_to_render_layer(nonzero))
             };
+            println!("create with layers {render_layers:?}");
 
             let camera_id = commands
                 .spawn((
@@ -183,6 +186,8 @@ pub fn update_texture_cameras(
                 .entity(ent)
                 .push_children(&[camera_id])
                 .insert((TextureCamEntity(camera_id), VideoTextureOutput(image)));
+
+            new_cam_events.send(NewCameraEvent(ent));
         } else {
             // set active for current scenes only
             // TODO: limit / cycle
@@ -191,12 +196,13 @@ pub fn update_texture_cameras(
                 continue;
             };
 
-            let Ok(mut camera) = cameras.get_mut(existing.0) else {
+            let Ok((mut camera, layers)) = cameras.get_mut(existing.0) else {
                 warn!("missing camera entity for TextureCamera");
                 continue;
             };
 
             camera.is_active = active_scenes.contains(&container.root);
+            println!("texcam layers: {layers:?}");
         }
     }
 }
@@ -227,9 +233,9 @@ fn camera_to_render_layers<'a>(camera_layers: impl Iterator<Item=&'a u32>) -> Re
 pub fn update_camera_layers(
     mut commands: Commands,
     mut removed: RemovedComponents<CameraLayers>,
-    maybe_changed: Query<(Entity, Option<&CameraLayers>, &Parent), Or<(Changed<CameraLayers>, Changed<Parent>)>>,
+    maybe_changed: Query<(Entity, Option<&CameraLayers>, &Parent), (Without<Camera>, Or<(Changed<CameraLayers>, Changed<Parent>)>)>,
     removed_data: Query<(Option<&CameraLayers>, &Parent)>,
-    children: Query<&Children>,
+    children: Query<&Children, Without<Camera>>,
     render_layers: Query<&RenderLayers>,
 ) {
     let mut to_check = VecDeque::default();

@@ -90,13 +90,12 @@ static TRANSITION_TIME: f32 = 1.0;
 
 #[allow(clippy::too_many_arguments)]
 fn apply_global_light(
-    mut fog: Query<&mut FogSettings>,
     setting: Res<AppConfig>,
     mut atmosphere: AtmosphereMut<Nishita>,
     mut sun: Query<(&mut Transform, &mut DirectionalLight)>,
     mut ambient: ResMut<AmbientLight>,
     time: Res<Time>,
-    mut camera: Query<(&PrimaryCamera, &mut Skybox)>,
+    mut cameras: Query<(Option<&PrimaryCamera>, Option<&mut Skybox>, Option<&mut FogSettings>), With<Camera3d>>,
     scene_distance: Res<SceneLoadDistance>,
     scene_global_light: Res<SceneGlobalLight>,
     mut prev: Local<(f32, SceneGlobalLight)>,
@@ -134,53 +133,54 @@ fn apply_global_light(
     let rotation = Quat::from_rotation_arc(Vec3::NEG_Z, next_light.dir_direction);
     atmosphere.sun_position = -next_light.dir_direction;
 
-    let Ok((camera, mut skybox)) = camera.get_single_mut() else {
-        return;
-    };
-    let dir_light_lightness = Lcha::from(next_light.dir_color).lightness;
-    skybox.brightness =
-        (next_light.dir_illuminance.sqrt() * 40.0 * dir_light_lightness).min(2000.0);
-    atmosphere.rayleigh_coefficient =
-        Vec3::new(5.5e-6, 13.0e-6, 22.4e-6) * next_light.dir_color.to_srgba().to_vec3();
-
-    if let Ok((mut light_trans, mut directional)) = sun.get_single_mut() {
-        light_trans.rotation = rotation;
-        directional.illuminance = next_light.dir_illuminance;
-        directional.color = next_light.dir_color;
-
-        if let Ok(mut fog) = fog.get_single_mut() {
-            let distance = (scene_distance.load + scene_distance.unload)
-                .max(scene_distance.load_imposter * 0.333)
-                + camera.distance * 5.0;
-
-            let base_color = next_light.ambient_color.to_srgba()
-                * next_light.ambient_brightness
-                * 0.5
-                * skybox.brightness
-                / 2000.0;
-            let base_color = Color::from(base_color).with_alpha(1.0);
-
-            fog.color = base_color;
-            match setting.graphics.fog {
-                FogSetting::Off => {
-                    fog.falloff = FogFalloff::from_visibility_squared(distance * 200.0);
-                    fog.directional_light_color = base_color;
+    for (maybe_primary, maybe_skybox, maybe_fog) in cameras.iter_mut() {
+        let dir_light_lightness = Lcha::from(next_light.dir_color).lightness;
+        let skybox_brightness = (next_light.dir_illuminance.sqrt() * 40.0 * dir_light_lightness).min(2000.0);
+        if let Some(mut skybox) = maybe_skybox {
+            skybox.brightness = skybox_brightness;
+            atmosphere.rayleigh_coefficient =
+                Vec3::new(5.5e-6, 13.0e-6, 22.4e-6) * next_light.dir_color.to_srgba().to_vec3();
+        }
+    
+        if let Ok((mut light_trans, mut directional)) = sun.get_single_mut() {
+            light_trans.rotation = rotation;
+            directional.illuminance = next_light.dir_illuminance;
+            directional.color = next_light.dir_color;
+    
+            if let Some(mut fog) = maybe_fog {
+                let distance = (scene_distance.load + scene_distance.unload)
+                    .max(scene_distance.load_imposter * 0.333)
+                    + maybe_primary.map_or(0.0, |camera| camera.distance * 5.0);
+    
+                let base_color = next_light.ambient_color.to_srgba()
+                    * next_light.ambient_brightness
+                    * 0.5
+                    * skybox_brightness
+                    / 2000.0;
+                let base_color = Color::from(base_color).with_alpha(1.0);
+    
+                fog.color = base_color;
+                match setting.graphics.fog {
+                    FogSetting::Off => {
+                        fog.falloff = FogFalloff::from_visibility_squared(distance * 200.0);
+                        fog.directional_light_color = base_color;
+                    }
+                    FogSetting::Basic => {
+                        fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
+                        fog.directional_light_color = base_color;
+                    }
+                    FogSetting::Atmospheric => {
+                        fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
+                        fog.directional_light_color = next_light.dir_color;
+                    }
                 }
-                FogSetting::Basic => {
-                    fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
-                    fog.directional_light_color = base_color;
-                }
-                FogSetting::Atmospheric => {
-                    fog.falloff = FogFalloff::from_visibility_squared(distance * 2.0);
-                    fog.directional_light_color = next_light.dir_color;
-                }
+    
+                // let sun_up = atmosphere.sun_position.dot(Vec3::Y);
+                // let rgb = Vec3::new(0.4, 0.4, 0.2) * sun_up.clamp(0.0, 1.0)
+                //     + Vec3::new(0.0, 0.0, 0.0) * (8.0 * (0.125 - sun_up.clamp(0.0, 0.125)));
+                // let rgb = rgb.powf(1.0 / 2.2);
+                // fog.color = Color::srgb(rgb.x, rgb.y, rgb.z);
             }
-
-            // let sun_up = atmosphere.sun_position.dot(Vec3::Y);
-            // let rgb = Vec3::new(0.4, 0.4, 0.2) * sun_up.clamp(0.0, 1.0)
-            //     + Vec3::new(0.0, 0.0, 0.0) * (8.0 * (0.125 - sun_up.clamp(0.0, 0.125)));
-            // let rgb = rgb.powf(1.0 / 2.2);
-            // fog.color = Color::srgb(rgb.x, rgb.y, rgb.z);
         }
     }
 
