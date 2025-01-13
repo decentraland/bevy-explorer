@@ -54,8 +54,13 @@ impl AppSetting for BloomSetting {
     fn apply(&self, cam_res: SystemParamItem<Self::Param>, commands: Commands) {
         self.apply_to_camera(&cam_res, commands, cam_res.0);
     }
-    
-    fn apply_to_camera(&self, _: &SystemParamItem<Self::Param>, mut commands: Commands, camera_entity: Entity) {
+
+    fn apply_to_camera(
+        &self,
+        _: &SystemParamItem<Self::Param>,
+        mut commands: Commands,
+        camera_entity: Entity,
+    ) {
         let Some(mut cmds) = commands.get_entity(camera_entity) else {
             return;
         };
@@ -71,5 +76,5 @@ impl AppSetting for BloomSetting {
                 ..BloomSettings::OLD_SCHOOL
             }),
         };
-    }    
+    }
 }

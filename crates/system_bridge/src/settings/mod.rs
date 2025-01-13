@@ -67,7 +67,12 @@ pub struct NewCameraEvent(pub Entity);
 
 impl Plugin for SettingBridgePlugin {
     fn build(&self, app: &mut App) {
-        fn apply_to_camera<S: AppSetting>(mut commands: Commands, config: Res<AppConfig>, mut new_camera_events: EventReader<NewCameraEvent>, param: StaticSystemParam<S::Param>) {
+        fn apply_to_camera<S: AppSetting>(
+            mut commands: Commands,
+            config: Res<AppConfig>,
+            mut new_camera_events: EventReader<NewCameraEvent>,
+            param: StaticSystemParam<S::Param>,
+        ) {
             let param = param.into_inner();
             for ev in new_camera_events.read() {
                 let setting = S::load(&config);
@@ -75,13 +80,21 @@ impl Plugin for SettingBridgePlugin {
             }
         }
 
-        fn add_int_setting<T: IntAppSetting>(app: &mut App, settings: &mut Settings, schedule: &mut Schedule) {
+        fn add_int_setting<T: IntAppSetting>(
+            app: &mut App,
+            settings: &mut Settings,
+            schedule: &mut Schedule,
+        ) {
             settings.add_int_setting::<T>();
             schedule.add_systems(apply_setting::<T>);
             app.add_systems(Update, apply_to_camera::<T>);
         }
 
-        fn add_enum_setting<T: EnumAppSetting>(app: &mut App, settings: &mut Settings, schedule: &mut Schedule) {
+        fn add_enum_setting<T: EnumAppSetting>(
+            app: &mut App,
+            settings: &mut Settings,
+            schedule: &mut Schedule,
+        ) {
             settings.add_enum_setting::<T>();
             schedule.add_systems(apply_setting::<T>);
             app.add_systems(Update, apply_to_camera::<T>);
@@ -172,7 +185,13 @@ pub trait AppSetting: Eq + 'static {
     fn load(config: &AppConfig) -> Self;
     fn save(&self, config: &mut AppConfig);
     fn apply(&self, param: SystemParamItem<Self::Param>, commands: Commands);
-    fn apply_to_camera(&self, _param: &SystemParamItem<Self::Param>, _commands: Commands, _camera_entity: Entity) {}
+    fn apply_to_camera(
+        &self,
+        _param: &SystemParamItem<Self::Param>,
+        _commands: Commands,
+        _camera_entity: Entity,
+    ) {
+    }
 }
 
 pub trait EnumAppSetting: AppSetting + Sized + std::fmt::Debug {

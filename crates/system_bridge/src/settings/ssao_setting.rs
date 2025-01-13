@@ -54,8 +54,13 @@ impl AppSetting for SsaoSetting {
         let primary_cam = cam_res.0;
         self.apply_to_camera(&(cam_res, msaa_res), commands, primary_cam);
     }
-    
-    fn apply_to_camera(&self, (_, msaa_res): &SystemParamItem<Self::Param>, mut commands: Commands, camera_entity: Entity) {
+
+    fn apply_to_camera(
+        &self,
+        (_, msaa_res): &SystemParamItem<Self::Param>,
+        mut commands: Commands,
+        camera_entity: Entity,
+    ) {
         let Some(mut cmds) = commands.get_entity(camera_entity) else {
             return;
         };

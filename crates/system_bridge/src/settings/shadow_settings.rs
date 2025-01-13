@@ -62,7 +62,6 @@ impl AppSetting for ShadowSetting {
         (config, cam_res, mut lights): SystemParamItem<Self::Param>,
         commands: Commands,
     ) {
-
         let value = if config.graphics.shadow_distance == 0.0 {
             ShadowSetting::Off
         } else {
@@ -102,9 +101,14 @@ impl AppSetting for ShadowSetting {
         let primary_cam = cam_res.0;
         self.apply_to_camera(&(config, cam_res, lights), commands, primary_cam);
     }
-    
-    fn apply_to_camera(&self, _: &SystemParamItem<Self::Param>, mut commands: Commands, camera_entity: Entity) {
-        let Some(mut cmds) = commands.get_entity(camera_entity) else { 
+
+    fn apply_to_camera(
+        &self,
+        _: &SystemParamItem<Self::Param>,
+        mut commands: Commands,
+        camera_entity: Entity,
+    ) {
+        let Some(mut cmds) = commands.get_entity(camera_entity) else {
             return;
         };
         match self {

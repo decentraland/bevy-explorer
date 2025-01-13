@@ -25,6 +25,10 @@ message PBTextureCamera {
     // default infinity
     optional float far_plane = 7;
 
+    // ambient light overrides for this camera
+    optional decentraland.common.Color3 ambient_color_override = 11;
+    optional float ambient_brightness_override = 12;
+        
     oneof mode {
         Perspective perspective = 8;
         Orthographic orthographic = 9;

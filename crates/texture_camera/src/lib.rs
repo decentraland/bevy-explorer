@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, f32::consts::FRAC_PI_4};
 
 use bevy::{
     core_pipeline::{
@@ -13,13 +13,15 @@ use bevy::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureFormat, TextureUsages},
         texture::BevyDefault,
-        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, Layer, RenderLayers},
-    }, utils::hashbrown::HashMap,
+        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
+    },
+    utils::hashbrown::HashMap,
 };
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::SceneSets,
-    structs::{Cubemap, PrimaryUser, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER},
+    structs::{AppConfig, Cubemap, PrimaryUser, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER},
+    util::{camera_to_render_layer, camera_to_render_layers},
 };
 use dcl_component::{
     proto_components::sdk::components::{PbCameraLayers, PbTextureCamera},
@@ -30,6 +32,7 @@ use scene_runner::{
     ContainerEntity, ContainingScene,
 };
 use system_bridge::settings::NewCameraEvent;
+use visuals::SceneGlobalLight;
 
 pub struct TextureCameraPlugin;
 
@@ -79,6 +82,8 @@ pub fn update_texture_cameras(
     player: Query<Entity, With<PrimaryUser>>,
     cubemap: Res<Cubemap>,
     mut new_cam_events: EventWriter<NewCameraEvent>,
+    global_light: Res<SceneGlobalLight>,
+    config: Res<AppConfig>,
 ) {
     let active_scenes = player
         .get_single()
@@ -118,76 +123,128 @@ pub fn update_texture_cameras(
             let image = images.add(image);
 
             let render_layers = match texture_cam.0.layer {
-                None | Some(0) => {
-                    RenderLayers::default().union(&GROUND_RENDERLAYER).union(&PRIMARY_AVATAR_LIGHT_LAYER)
-                }
-                Some(nonzero) => RenderLayers::layer(camera_to_render_layer(nonzero))
+                None | Some(0) => RenderLayers::default()
+                    .union(&GROUND_RENDERLAYER)
+                    .union(&PRIMARY_AVATAR_LIGHT_LAYER),
+                Some(nonzero) => RenderLayers::layer(camera_to_render_layer(nonzero)),
             };
             println!("create with layers {render_layers:?}");
 
-            let camera_id = commands
-                .spawn((
-                    Camera3dBundle {
-                        camera: Camera {
-                            hdr: true,
-                            order: isize::MIN + container.container_id.id as isize,
-                            target: bevy::render::camera::RenderTarget::Image(image.clone()),
-                            is_active: true,
-                            ..Default::default()
-                        },
-                        tonemapping: Tonemapping::TonyMcMapface,
-                        deband_dither: DebandDither::Enabled,
-                        color_grading: ColorGrading {
-                            // exposure: -0.5,
-                            // gamma: 1.5,
-                            // pre_saturation: 1.0,
-                            // post_saturation: 1.0,
-                            global: ColorGradingGlobal {
-                                exposure: -0.5,
-                                ..default()
-                            },
-                            shadows: ColorGradingSection {
-                                gamma: 0.75,
-                                ..Default::default()
-                            },
-                            midtones: ColorGradingSection {
-                                gamma: 0.75,
-                                ..Default::default()
-                            },
-                            highlights: ColorGradingSection {
-                                gamma: 0.75,
-                                ..Default::default()
-                            },
-                        },
-                        projection: PerspectiveProjection {
-                            // projection: OrthographicProjection {
-                            far: 100000.0,
-                            ..Default::default()
-                        }
-                        .into(),
+            let far = texture_cam.0.far_plane.unwrap_or(100_000.0);
+            let projection: Projection = match &texture_cam.0.mode {
+                None => {
+                    PerspectiveProjection {
+                        far,
+                        ..Default::default()
+                    }
+                    .into()
+                }
+                Some(dcl_component::proto_components::sdk::components::pb_texture_camera::Mode::Perspective(p)) => {
+                    PerspectiveProjection {
+                        fov: p.field_of_view.unwrap_or(FRAC_PI_4),
+                        far,
+                        ..Default::default()
+                    }.into()
+                }
+                Some(dcl_component::proto_components::sdk::components::pb_texture_camera::Mode::Orthographic(o)) => {
+                    OrthographicProjection {
+                        far,
+                        scaling_mode: bevy::render::camera::ScalingMode::FixedVertical(o.vertical_range.unwrap_or(4.0)),
+                        ..Default::default()
+                    }.into()
+                }
+            };
+
+            let mut camera = commands.spawn((
+                Camera3dBundle {
+                    camera: Camera {
+                        hdr: true,
+                        order: isize::MIN + container.container_id.id as isize,
+                        target: bevy::render::camera::RenderTarget::Image(image.clone()),
+                        clear_color: ClearColorConfig::Custom(
+                            texture_cam
+                                .0
+                                .clear_color
+                                .map(Color::from)
+                                .unwrap_or(Color::BLACK),
+                        ),
+                        is_active: true,
                         ..Default::default()
                     },
-                    BloomSettings {
-                        intensity: 0.15,
-                        ..BloomSettings::OLD_SCHOOL
+                    tonemapping: Tonemapping::TonyMcMapface,
+                    deband_dither: DebandDither::Enabled,
+                    color_grading: ColorGrading {
+                        // exposure: -0.5,
+                        // gamma: 1.5,
+                        // pre_saturation: 1.0,
+                        // post_saturation: 1.0,
+                        global: ColorGradingGlobal {
+                            exposure: -0.5,
+                            ..default()
+                        },
+                        shadows: ColorGradingSection {
+                            gamma: 0.75,
+                            ..Default::default()
+                        },
+                        midtones: ColorGradingSection {
+                            gamma: 0.75,
+                            ..Default::default()
+                        },
+                        highlights: ColorGradingSection {
+                            gamma: 0.75,
+                            ..Default::default()
+                        },
                     },
-                    ShadowFilteringMethod::Gaussian,
-                    DepthPrepass,
-                    NormalPrepass,
-                    render_layers,
-                    Skybox {
-                        image: cubemap.image_handle.clone(),
-                        brightness: 1000.0,
-                    },
-                ))
-                .id();
+                    projection,
+                    ..Default::default()
+                },
+                BloomSettings {
+                    intensity: 0.15,
+                    ..BloomSettings::OLD_SCHOOL
+                },
+                ShadowFilteringMethod::Gaussian,
+                DepthPrepass,
+                NormalPrepass,
+                render_layers,
+            ));
+
+            if !texture_cam.0.disable_fog() {
+                camera.insert(FogSettings::default());
+            }
+
+            if !texture_cam.0.disable_skybox() {
+                camera.insert(Skybox {
+                    image: cubemap.image_handle.clone(),
+                    brightness: 1000.0,
+                });
+            }
+
+            if texture_cam.0.ambient_brightness_override.is_some()
+                || texture_cam.0.ambient_color_override.is_some()
+            {
+                camera.insert(AmbientLight {
+                    color: texture_cam
+                        .0
+                        .ambient_color_override
+                        .map(Color::from)
+                        .unwrap_or(global_light.ambient_color),
+                    brightness: texture_cam
+                        .0
+                        .ambient_brightness_override
+                        .unwrap_or(global_light.ambient_brightness)
+                        * config.graphics.ambient_brightness as f32
+                        * 20.0,
+                });
+            }
+
+            let camera_id = camera.id();
 
             commands
                 .entity(ent)
                 .push_children(&[camera_id])
                 .insert((TextureCamEntity(camera_id), VideoTextureOutput(image)));
 
-            new_cam_events.send(NewCameraEvent(ent));
+            new_cam_events.send(NewCameraEvent(camera_id));
         } else {
             // set active for current scenes only
             // TODO: limit / cycle
@@ -216,24 +273,17 @@ impl From<PbCameraLayers> for CameraLayers {
     }
 }
 
-fn camera_to_render_layer(camera_layer: u32) -> Layer {
-    (match camera_layer {
-        0 => 0,
-        nonzero => nonzero + 5
-    }) as Layer
-}
-
-fn camera_to_render_layers<'a>(camera_layers: impl Iterator<Item=&'a u32>) -> RenderLayers {
-    camera_layers.fold(RenderLayers::none(), |result, camera_layer| {
-        result.with(camera_to_render_layer(*camera_layer))
-    })
-}
-
-
+#[allow(clippy::type_complexity)]
 pub fn update_camera_layers(
     mut commands: Commands,
     mut removed: RemovedComponents<CameraLayers>,
-    maybe_changed: Query<(Entity, Option<&CameraLayers>, &Parent), (Without<Camera>, Or<(Changed<CameraLayers>, Changed<Parent>)>)>,
+    maybe_changed: Query<
+        (Entity, Option<&CameraLayers>, &Parent),
+        (
+            Without<Camera>,
+            Or<(Changed<CameraLayers>, Changed<Parent>)>,
+        ),
+    >,
     removed_data: Query<(Option<&CameraLayers>, &Parent)>,
     children: Query<&Children, Without<Camera>>,
     render_layers: Query<&RenderLayers>,
@@ -245,7 +295,10 @@ pub fn update_camera_layers(
         let target_render_layers = if let Some(camera_layers) = maybe_layers {
             camera_to_render_layers(camera_layers.0.iter())
         } else {
-            render_layers.get(parent.get()).cloned().unwrap_or_else(|_| RenderLayers::default())
+            render_layers
+                .get(parent.get())
+                .cloned()
+                .unwrap_or_else(|_| RenderLayers::default())
         };
 
         to_check.push_back((entity, target_render_layers));
@@ -261,7 +314,10 @@ pub fn update_camera_layers(
         let target_render_layers = if let Some(camera_layers) = maybe_layers {
             camera_to_render_layers(camera_layers.0.iter())
         } else {
-            render_layers.get(parent.get()).cloned().unwrap_or_else(|_| RenderLayers::default())
+            render_layers
+                .get(parent.get())
+                .cloned()
+                .unwrap_or_else(|_| RenderLayers::default())
         };
 
         to_check.push_back((removed_entity, target_render_layers));
@@ -276,16 +332,24 @@ pub fn update_camera_layers(
             if update == &target_layers {
                 continue;
             }
-        } 
+        }
         // if we didn't already update and the existing data matches the requirement then stop here
-        else if render_layers.get(entity).unwrap_or(&RenderLayers::default()) == &target_layers {
+        else if render_layers
+            .get(entity)
+            .unwrap_or(&RenderLayers::default())
+            == &target_layers
+        {
             continue;
         }
 
         // update
         commands.entity(entity).insert(target_layers.clone());
         // check children
-        for child in children.get(entity).map(IntoIterator::into_iter).unwrap_or_default() {
+        for child in children
+            .get(entity)
+            .map(IntoIterator::into_iter)
+            .unwrap_or_default()
+        {
             to_check.push_back((*child, target_layers.clone()));
         }
         updated.insert(entity, target_layers);

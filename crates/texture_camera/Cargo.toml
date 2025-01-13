@@ -25,6 +25,7 @@ world_ui = { workspace = true }
 analytics = { workspace = true }
 social = { workspace = true }
 system_bridge = { workspace = true }
+visuals = { workspace = true }
 
 bevy = { workspace = true }
 bevy_egui = { workspace = true }

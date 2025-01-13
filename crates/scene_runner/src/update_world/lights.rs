@@ -5,7 +5,7 @@ use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::SceneSets,
     structs::{AppConfig, PrimaryUser, PRIMARY_AVATAR_LIGHT_LAYER},
-    util::TryPushChildrenEx,
+    util::{camera_to_render_layers, TryPushChildrenEx},
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{
@@ -88,14 +88,25 @@ pub struct GlobalLight {
     pub direction: Option<Vec3>,
     pub ambient_color: Option<Color>,
     pub ambient_brightness: Option<f32>,
+    pub layers: RenderLayers,
 }
 
 impl From<PbGlobalLight> for GlobalLight {
     fn from(value: PbGlobalLight) -> Self {
+        let mut layers = if value.layers.is_empty() {
+            RenderLayers::default()
+        } else {
+            camera_to_render_layers(value.layers.iter())
+        };
+        if layers.intersects(&RenderLayers::default()) {
+            layers = layers.with(1);
+        }
+
         Self {
             direction: value.direction.as_ref().map(Vector3::world_vec_to_vec3),
             ambient_color: value.ambient_color.map(Into::into),
             ambient_brightness: value.ambient_brightness,
+            layers,
         }
     }
 }
@@ -117,6 +128,7 @@ fn update_directional_light(
         dir_direction: Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0) * Vec3::NEG_Z,
         ambient_color: Color::srgb(0.85, 0.85, 1.0),
         ambient_brightness: 1.0,
+        layers: RenderLayers::default().with(1),
     };
 
     let Ok(player) = player.get_single() else {
@@ -149,6 +161,7 @@ fn update_directional_light(
                 if let Some(brightness) = global.ambient_brightness {
                     global_light.ambient_brightness = brightness;
                 };
+                global_light.layers = global.layers.clone();
             }
         };
 
