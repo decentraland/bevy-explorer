@@ -59,8 +59,7 @@ impl Plugin for EmoteSettingsPlugin {
                     )
                         .chain()
                         .run_if(|q: Query<&SettingsTab>| {
-                            q.get_single()
-                                .is_ok_and(|tab| tab == &SettingsTab::Emotes)
+                            q.get_single().is_ok_and(|tab| tab == &SettingsTab::Emotes)
                         }),
                 )
                     .chain(),

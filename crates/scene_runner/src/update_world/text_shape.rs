@@ -194,8 +194,7 @@ fn update_text_shapes(
             }
         }
 
-        if text_shape.0.text.is_empty() || text_shape.0.font_size.is_some_and(|size| size <= 0.0)
-        {
+        if text_shape.0.text.is_empty() || text_shape.0.font_size.is_some_and(|size| size <= 0.0) {
             continue;
         }
 

@@ -213,8 +213,8 @@ pub fn update_texture_cameras(
                 camera.insert(FogSettings::default());
             }
 
-            if !texture_cam.0.disable_skybox() 
-                && !matches!(texture_cam.0.mode, Some(dcl_component::proto_components::sdk::components::pb_texture_camera::Mode::Orthographic(_))) 
+            if !texture_cam.0.disable_skybox()
+                && !matches!(texture_cam.0.mode, Some(dcl_component::proto_components::sdk::components::pb_texture_camera::Mode::Orthographic(_)))
             {
                 camera.insert((
                     Skybox {
