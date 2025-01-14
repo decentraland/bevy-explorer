@@ -17,6 +17,7 @@ use bevy::{
     },
     utils::hashbrown::HashMap,
 };
+use bevy_atmosphere::plugin::AtmosphereCamera;
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::SceneSets,
@@ -213,10 +214,15 @@ pub fn update_texture_cameras(
             }
 
             if !texture_cam.0.disable_skybox() {
-                camera.insert(Skybox {
-                    image: cubemap.image_handle.clone(),
-                    brightness: 1000.0,
-                });
+                if !matches!(texture_cam.0.mode, Some(dcl_component::proto_components::sdk::components::pb_texture_camera::Mode::Orthographic(_))) {
+                    camera.insert((
+                        Skybox {
+                            image: cubemap.image_handle.clone(),
+                            brightness: 1000.0,
+                        },
+                        AtmosphereCamera::default()
+                    ));
+                }
             }
 
             if texture_cam.0.ambient_brightness_override.is_some()

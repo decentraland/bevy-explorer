@@ -10494,6 +10494,7 @@ dependencies = [
  "av",
  "avatar",
  "bevy",
+ "bevy_atmosphere",
  "bevy_console",
  "bevy_dui",
  "bevy_egui",

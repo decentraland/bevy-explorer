@@ -108,6 +108,7 @@ impl Plugin for SettingBridgePlugin {
                 updated: false,
             })),
         };
+        app.add_event::<NewCameraEvent>();
         app.add_systems(Update, (Settings::sync_settings_object, send_settings));
 
         let mut schedule = Schedule::new(ApplyAppSettingsLabel);

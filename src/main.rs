@@ -22,11 +22,11 @@ use bevy::{
         Skybox,
     },
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    pbr::{CascadeShadowConfigBuilder, ShadowFilteringMethod},
+    pbr::ShadowFilteringMethod,
     prelude::*,
     render::{
         render_resource::{TextureViewDescriptor, TextureViewDimension},
-        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
+        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
     },
     tasks::{IoTaskPool, Task},
     window::WindowResolution,
@@ -39,7 +39,7 @@ use common::{
     structs::{
         AppConfig, AttachPoints, Cubemap, GraphicsSettings, IVec2Arg, PrimaryCamera,
         PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake, SceneLoadDistance,
-        Version, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER,
+        Version, GROUND_RENDERLAYER,
     },
     util::{config_file, project_directories, TaskExt, UtilsPlugin},
 };
@@ -535,25 +535,6 @@ fn setup(
 
     player_resource.0 = player_id;
     cam_resource.0 = camera_id;
-
-    // add a directional light so it looks nicer
-    commands.spawn((
-        DirectionalLightBundle {
-            directional_light: DirectionalLight {
-                color: Color::srgb(1.0, 1.0, 0.7),
-                shadows_enabled: true,
-                ..Default::default()
-            },
-            transform: Transform::default().looking_at(Vec3::new(0.2, -0.5, -1.0), Vec3::Y),
-            cascade_shadow_config: CascadeShadowConfigBuilder {
-                maximum_distance: 100.0,
-                ..Default::default()
-            }
-            .into(),
-            ..Default::default()
-        },
-        RenderLayers::default().union(&PRIMARY_AVATAR_LIGHT_LAYER),
-    ));
 }
 
 fn asset_loaded(
