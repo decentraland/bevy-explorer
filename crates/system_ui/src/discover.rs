@@ -36,7 +36,7 @@ impl Plugin for DiscoverSettingsPlugin {
                 set_discover_content,
                 (update_results, update_page).run_if(|q: Query<&SettingsTab>| {
                     q.get_single()
-                        .map_or(false, |tab| tab == &SettingsTab::Discover)
+                        .is_ok_and(|tab| tab == &SettingsTab::Discover)
                 }),
             ),
         );

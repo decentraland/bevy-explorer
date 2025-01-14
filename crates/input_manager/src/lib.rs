@@ -85,7 +85,7 @@ impl InputManager<'_> {
         self.map
             .inputs
             .get_by_left(&action)
-            .map_or(false, |item| match item {
+            .is_some_and(|item| match item {
                 InputItem::Key(k) => self.should_accept.key && self.key_input.just_pressed(*k),
                 InputItem::Mouse(mb) => {
                     self.should_accept.mouse && self.mouse_input.just_pressed(*mb)
@@ -98,7 +98,7 @@ impl InputManager<'_> {
         self.map
             .inputs
             .get_by_left(&action)
-            .map_or(false, |item| match item {
+            .is_some_and(|item| match item {
                 InputItem::Key(k) => self.key_input.just_released(*k),
                 InputItem::Mouse(mb) => self.mouse_input.just_released(*mb),
                 InputItem::Any => self.iter_just_up().next().is_some(),
@@ -109,7 +109,7 @@ impl InputManager<'_> {
         self.map
             .inputs
             .get_by_left(&action)
-            .map_or(false, |item| match item {
+            .is_some_and(|item| match item {
                 InputItem::Key(k) => self.should_accept.key && self.key_input.pressed(*k),
                 InputItem::Mouse(mb) => self.should_accept.mouse && self.mouse_input.pressed(*mb),
                 InputItem::Any => self.iter_down().next().is_some(),

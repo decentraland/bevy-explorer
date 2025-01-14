@@ -894,7 +894,7 @@ fn process_avatar(
                 .iter()
                 .any(|maybe_instance| {
                     maybe_instance
-                        .map_or(false, |instance| !scene_spawner.instance_is_ready(instance))
+                        .is_some_and(|instance| !scene_spawner.instance_is_ready(instance))
                 });
 
         if not_loaded {

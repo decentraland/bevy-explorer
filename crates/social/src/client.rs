@@ -699,7 +699,7 @@ async fn social_socket_handler_inner(
                 )
                 .await
                 .unwrap_or(None);
-            if read_receipt_event_id.map_or(false, |receipt| receipt.0 == event.event_id) {
+            if read_receipt_event_id.is_some_and(|receipt| receipt.0 == event.event_id) {
                 debug!("skip on read");
                 return;
             }

@@ -225,7 +225,7 @@ impl ActionMarker for Dragged {
     type Component = Option<&'static DragData>;
 
     fn activate(param: Option<&DragData>) -> bool {
-        param.map_or(false, |p| p.trigger)
+        param.is_some_and(|p| p.trigger)
     }
 
     fn repeat_activate() -> bool {
@@ -247,7 +247,7 @@ impl ActionMarker for ClickNoDrag {
     type Component = Option<&'static ClickNoDragData>;
 
     fn activate(param: Option<&ClickNoDragData>) -> bool {
-        param.map_or(false, |p| p.trigger)
+        param.is_some_and(|p| p.trigger)
     }
 }
 
@@ -264,7 +264,7 @@ impl ActionMarker for MouseWheeled {
     type Component = Option<&'static MouseWheelData>;
 
     fn activate(param: Option<&MouseWheelData>) -> bool {
-        param.map_or(false, |p| p.wheel != 0.0)
+        param.is_some_and(|p| p.wheel != 0.0)
     }
 
     fn repeat_activate() -> bool {

@@ -172,7 +172,7 @@ impl ImposterLookup<'_, '_> {
             }
         }
 
-        if maybe_ready.map_or(false, |r| r.crc == 0) {
+        if maybe_ready.is_some_and(|r| r.crc == 0) {
             return ImposterState::Ready;
         }
 
@@ -664,8 +664,8 @@ fn update_imposter_visibility(
             .as_ref()
             // either a non-scene mip, or not a live scene, or live and translation != 0 (i.e. tick < 10)
             .map_or(true, |hash| {
-                !live_scenes.0.get(hash).map_or(false, |e| {
-                    transform.get(*e).map_or(false, |t| t.translation.y == 0.0)
+                !live_scenes.0.get(hash).is_some_and(|e| {
+                    transform.get(*e).is_ok_and(|t| t.translation.y == 0.0)
                 })
             });
         *layers = if show {

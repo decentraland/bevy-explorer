@@ -78,7 +78,7 @@ pub fn set_interaction_style(
     {
         let style = if !maybe_enabled.map_or(true, |enabled| enabled.0) {
             &styles.disabled
-        } else if maybe_active.map_or(false, |active| active.0) {
+        } else if maybe_active.is_some_and(|active| active.0) {
             &styles.active
         } else if maybe_interaction == Some(&Interaction::Pressed) {
             &styles.press

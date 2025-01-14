@@ -174,7 +174,7 @@ fn run_raycasts(
                     .into_iter()
                     .peekable();
                 let mut best_result: Option<(Entity, RaycastResult)> = None;
-                while scenes.peek().map_or(false, |(_, closest)| {
+                while scenes.peek().is_some_and(|(_, closest)| {
                     best_result
                         .as_ref()
                         .map_or(true, |(_, br)| br.toi > *closest)

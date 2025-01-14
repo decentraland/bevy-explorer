@@ -213,16 +213,16 @@ pub fn update_texture_cameras(
                 camera.insert(FogSettings::default());
             }
 
-            if !texture_cam.0.disable_skybox() {
-                if !matches!(texture_cam.0.mode, Some(dcl_component::proto_components::sdk::components::pb_texture_camera::Mode::Orthographic(_))) {
-                    camera.insert((
-                        Skybox {
-                            image: cubemap.image_handle.clone(),
-                            brightness: 1000.0,
-                        },
-                        AtmosphereCamera::default()
-                    ));
-                }
+            if !texture_cam.0.disable_skybox() 
+                && !matches!(texture_cam.0.mode, Some(dcl_component::proto_components::sdk::components::pb_texture_camera::Mode::Orthographic(_))) 
+            {
+                camera.insert((
+                    Skybox {
+                        image: cubemap.image_handle.clone(),
+                        brightness: 1000.0,
+                    },
+                    AtmosphereCamera::default()
+                ));
             }
 
             if texture_cam.0.ambient_brightness_override.is_some()

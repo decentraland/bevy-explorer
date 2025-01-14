@@ -579,7 +579,7 @@ impl SceneColliderData {
 
         // rapier's api demands a fat pointer for whatever reason
         let predicate: &dyn Fn(ColliderHandle, &Collider) -> bool =
-            &|h: ColliderHandle, _: &Collider| self.get_id(h).map_or(false, &filter);
+            &|h: ColliderHandle, _: &Collider| self.get_id(h).is_some_and(&filter);
         let q = QueryFilter::new().predicate(&predicate);
 
         self.query_state

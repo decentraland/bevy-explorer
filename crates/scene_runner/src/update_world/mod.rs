@@ -155,7 +155,7 @@ impl Plugin for SceneOutputPlugin {
         if !app
             .world()
             .get_resource::<NoGltf>()
-            .map_or(false, |no_gltf| no_gltf.0)
+            .is_some_and(|no_gltf| no_gltf.0)
         {
             app.add_plugins(GltfDefinitionPlugin);
         }

@@ -349,7 +349,7 @@ fn update_materials(
     for (ent, mat, container, scene_ent, base) in new_materials.iter_mut() {
         let new_base;
         let base = if let Some(gltf_def) = mat.0.gltf.as_ref() {
-            if base.map_or(false, |b| {
+            if base.is_some_and(|b| {
                 b.gltf == gltf_def.gltf_src && b.name == gltf_def.name
             }) {
                 base
