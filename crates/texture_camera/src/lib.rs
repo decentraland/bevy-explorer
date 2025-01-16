@@ -78,7 +78,7 @@ pub fn update_texture_cameras(
     )>,
     removed: Query<(Entity, &TextureCamEntity), Without<TextureCamera>>,
     mut images: ResMut<Assets<Image>>,
-    mut cameras: Query<(&mut Camera, &RenderLayers)>,
+    mut cameras: Query<&mut Camera>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
     cubemap: Res<Cubemap>,
@@ -259,13 +259,12 @@ pub fn update_texture_cameras(
                 continue;
             };
 
-            let Ok((mut camera, layers)) = cameras.get_mut(existing.0) else {
+            let Ok(mut camera) = cameras.get_mut(existing.0) else {
                 warn!("missing camera entity for TextureCamera");
                 continue;
             };
 
             camera.is_active = active_scenes.contains(&container.root);
-            println!("texcam layers: {layers:?}");
         }
     }
 }
