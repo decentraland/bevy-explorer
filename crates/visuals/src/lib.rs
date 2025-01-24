@@ -54,9 +54,9 @@ fn setup(
 ) {
     info!("visuals::setup");
 
-    commands
-        .entity(camera.0)
-        .try_insert(AtmosphereCamera::default());
+    commands.entity(camera.0).try_insert(AtmosphereCamera {
+        render_layers: Some(RenderLayers::default()),
+    });
 
     commands.entity(camera.0).try_insert(FogSettings {
         color: Color::srgb(0.3, 0.2, 0.1),

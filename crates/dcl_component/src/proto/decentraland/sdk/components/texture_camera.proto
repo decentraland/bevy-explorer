@@ -16,19 +16,11 @@ message PBTextureCamera {
     // defaults to 0
     optional uint32 layer = 3;
 
-    // default false
-    optional bool disable_fog = 4;
-    // default false
-    optional bool disable_skybox = 5;
     // default black
     optional decentraland.common.Color4 clear_color = 6;
     // default infinity
     optional float far_plane = 7;
 
-    // ambient light overrides for this camera
-    optional decentraland.common.Color3 ambient_color_override = 11;
-    optional float ambient_brightness_override = 12;
-        
     oneof mode {
         Perspective perspective = 8;
         Orthographic orthographic = 9;

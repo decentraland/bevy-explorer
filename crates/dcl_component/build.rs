@@ -48,6 +48,7 @@ fn gen_sdk_components() -> Result<()> {
         "global_light",
         "spotlight",
         "texture_camera",
+        "camera_layer",
         "camera_layers",
     ];
 

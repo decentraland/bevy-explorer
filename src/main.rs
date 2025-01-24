@@ -26,7 +26,7 @@ use bevy::{
     prelude::*,
     render::{
         render_resource::{TextureViewDescriptor, TextureViewDimension},
-        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
+        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
     },
     tasks::{IoTaskPool, Task},
     window::WindowResolution,
@@ -465,6 +465,7 @@ fn setup(
             OutOfWorld,
             AvatarDynamicState::default(),
             GroundCollider::default(),
+            propagate::Propagate(RenderLayers::default()),
         ))
         .push_children(&attach_points.entities())
         .insert(attach_points)

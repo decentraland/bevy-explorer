@@ -730,6 +730,7 @@ dependencies = [
  "isahc",
  "itertools 0.12.1",
  "once_cell",
+ "propagate",
  "rapier3d-f64",
  "scene_material",
  "scene_runner",
@@ -2577,6 +2578,7 @@ dependencies = [
  "livekit",
  "multihash-codetable",
  "multipart",
+ "propagate",
  "prost 0.11.9",
  "rand",
  "serde",
@@ -3296,6 +3298,7 @@ dependencies = [
  "mimalloc",
  "nft",
  "pico-args",
+ "propagate",
  "prost-build 0.11.9",
  "restricted_actions",
  "scene_material",
@@ -8249,6 +8252,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "propagate"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
 name = "proptest"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9436,6 +9446,7 @@ dependencies = [
  "nalgebra",
  "once_cell",
  "petgraph",
+ "propagate",
  "rand",
  "rapier3d-f64",
  "scene_material",
@@ -10514,6 +10525,7 @@ dependencies = [
  "ipfs",
  "isahc",
  "opener",
+ "propagate",
  "scene_material",
  "scene_runner",
  "serde",
@@ -11452,6 +11464,7 @@ dependencies = [
  "console",
  "dcl_component",
  "input_manager",
+ "propagate",
  "rapier3d-f64",
  "restricted_actions",
  "scene_runner",

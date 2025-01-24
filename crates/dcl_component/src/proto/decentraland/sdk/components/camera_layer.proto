@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+import "decentraland/common/colors.proto";
+
+option (common.ecs_component_id) = 1210;
+
+message PBCameraLayer {
+    // layer to which these settings apply. must be > 0
+    // Layer 0 is the default "real world" layer viewed by the player and cannot be modified.
+    uint32 layer = 1;
+
+    // should the sun light affect this layer? default false
+    optional bool directional_light = 2;
+
+    // should this layer show player avatars? default false
+    optional bool show_avatars = 3;
+
+    // should this layer show the sky? default false
+    optional bool show_skybox = 4;
+
+    // should this layer show distance fog? default false
+    optional bool show_fog = 5;
+
+    // ambient light overrides for this layer. default -> use same as main camera
+    optional decentraland.common.Color3 ambient_color_override = 6;
+    optional float ambient_brightness_override = 7;
+}

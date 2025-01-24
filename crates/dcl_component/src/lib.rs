@@ -122,6 +122,7 @@ impl SceneComponentId {
     pub const GLOBAL_LIGHT: SceneComponentId = SceneComponentId(1206);
     pub const TEXTURE_CAMERA: SceneComponentId = SceneComponentId(1207);
     pub const CAMERA_LAYERS: SceneComponentId = SceneComponentId(1208);
+    pub const CAMERA_LAYER: SceneComponentId = SceneComponentId(1210);
 }
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy, Default)]

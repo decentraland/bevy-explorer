@@ -112,6 +112,7 @@ impl DclProtoComponent for sdk::components::PbSpotlight {}
 impl DclProtoComponent for sdk::components::PbGlobalLight {}
 impl DclProtoComponent for sdk::components::PbTextureCamera {}
 impl DclProtoComponent for sdk::components::PbCameraLayers {}
+impl DclProtoComponent for sdk::components::PbCameraLayer {}
 
 // VECTOR2 conversions
 impl Copy for common::Vector2 {}

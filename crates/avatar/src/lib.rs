@@ -37,7 +37,7 @@ pub mod npc_dynamics;
 
 use common::{
     sets::SetupSets,
-    structs::{AppConfig, AttachPoints, PrimaryUser, PRIMARY_AVATAR_LIGHT_LAYER},
+    structs::{AppConfig, AttachPoints, PrimaryUser},
     util::{DespawnWith, TryPushChildrenEx},
 };
 use comms::{
@@ -308,7 +308,6 @@ fn update_base_avatar_shape(
 pub struct AvatarSelection {
     scene: Option<Entity>,
     shape: AvatarShape,
-    render_layers: Option<RenderLayers>,
     automatic_delete: bool,
 }
 
@@ -385,7 +384,6 @@ fn select_avatar(
                         },
                         force_render: scene_avatar_shape.force_render.clone(),
                     },
-                    render_layers: None,
                     automatic_delete: true,
                 });
 
@@ -450,11 +448,6 @@ fn select_avatar(
                 commands.entity(entity).try_insert(AvatarSelection {
                     scene: update.current_source,
                     shape,
-                    render_layers: if maybe_player.is_none() {
-                        Some(RenderLayers::default().union(&PRIMARY_AVATAR_LIGHT_LAYER))
-                    } else {
-                        None
-                    },
                     automatic_delete: true,
                 });
             }
@@ -481,7 +474,6 @@ pub struct AvatarDefinition {
     eyes_color: Color,
     wearables: Vec<Wearable>,
     hides: HashSet<WearableCategory>,
-    render_layer: Option<RenderLayers>,
     bounds: Vec<BoundRegion>,
 }
 
@@ -713,7 +705,6 @@ fn update_render_avatar(
                             b: 0.356,
                         })
                         .into(),
-                    render_layer: selection.render_layers.clone(),
                     bounds: maybe_scene_ent
                         .and_then(|se| scenes.get(se.root).ok())
                         .map(|ctx| ctx.bounds.clone())
@@ -934,11 +925,6 @@ fn process_avatar(
 
         // hide and colour the base model
         for scene_ent in scene_spawner.iter_instance_entities(loaded_avatar.body_instance) {
-            if let Some(layer) = def.render_layer.clone() {
-                // set render layer for primary avatar
-                commands.entity(scene_ent).try_insert(layer);
-            }
-
             let Ok((mut vis, parent, maybe_h_mat, maybe_h_mesh, maybe_player)) =
                 instance_ents.get_mut(scene_ent)
             else {
@@ -1170,11 +1156,6 @@ fn process_avatar(
             let mut armature_map = HashMap::default();
 
             for scene_ent in scene_spawner.iter_instance_entities(*instance) {
-                if let Some(layer) = def.render_layer.clone() {
-                    // set render layer for primary avatar
-                    commands.entity(scene_ent).try_insert(layer);
-                }
-
                 let Ok((_, parent, maybe_h_mat, maybe_h_mesh, maybe_player)) =
                     instance_ents.get_mut(scene_ent)
                 else {
@@ -1296,43 +1277,41 @@ fn process_avatar(
                 instance_scene_materials.values().map(|h| h.id()).collect(),
             ));
 
-        if def.render_layer.is_none() {
-            // add nametag
-            if let Some(label) = def.label.as_ref() {
-                debug!("spawn avatar label for {label}");
-                let label_ui = commands
-                    .entity(ui_view.ui_root)
-                    .spawn_template(
-                        &dui,
-                        "avatar-nametag",
-                        DuiProps::new().with_prop("name", label.to_string()),
-                    )
-                    .unwrap()
-                    .root;
+        // add nametag
+        if let Some(label) = def.label.as_ref() {
+            debug!("spawn avatar label for {label}");
+            let label_ui = commands
+                .entity(ui_view.ui_root)
+                .spawn_template(
+                    &dui,
+                    "avatar-nametag",
+                    DuiProps::new().with_prop("name", label.to_string()),
+                )
+                .unwrap()
+                .root;
 
-                debug!("{:?} as child of {:?}", label_ui, ui_view.view);
-                commands.entity(label_ui).insert(DespawnWith(avatar_ent));
+            debug!("{:?} as child of {:?}", label_ui, ui_view.view);
+            commands.entity(label_ui).insert(DespawnWith(avatar_ent));
 
-                commands.entity(avatar_ent).with_children(|commands| {
-                    commands.spawn((
-                        SpatialBundle {
-                            transform: Transform::from_translation(Vec3::Y * 2.2),
-                            ..Default::default()
-                        },
-                        WorldUi {
-                            dbg: label.clone(),
-                            pix_per_m: 200.0,
-                            valign: 0.0,
-                            halign: 0.0,
-                            add_y_pix: 0.0,
-                            bounds: def.bounds.clone(),
-                            view: ui_view.view,
-                            ui_node: label_ui,
-                        },
-                        Billboard::Y,
-                    ));
-                });
-            }
+            commands.entity(avatar_ent).with_children(|commands| {
+                commands.spawn((
+                    SpatialBundle {
+                        transform: Transform::from_translation(Vec3::Y * 2.2),
+                        ..Default::default()
+                    },
+                    WorldUi {
+                        dbg: label.clone(),
+                        pix_per_m: 200.0,
+                        valign: 0.0,
+                        halign: 0.0,
+                        add_y_pix: 0.0,
+                        bounds: def.bounds.clone(),
+                        view: ui_view.view,
+                        ui_node: label_ui,
+                    },
+                    Billboard::Y,
+                ));
+            });
         }
     }
 }

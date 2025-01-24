@@ -624,7 +624,9 @@ pub struct PermissionTarget {
 // - normally 0 and 1 is used for the player, when in first person only 1 is used for the player
 // - world lights target both 0 and 1, the main camera uses 0
 // - this allows shadows to be cast by the player without the player being visible
-pub const PRIMARY_AVATAR_LIGHT_LAYER: RenderLayers = RenderLayers::layer(1);
+pub const PRIMARY_AVATAR_LIGHT_LAYER_INDEX: usize = 1;
+pub const PRIMARY_AVATAR_LIGHT_LAYER: RenderLayers =
+    RenderLayers::layer(PRIMARY_AVATAR_LIGHT_LAYER_INDEX);
 // layer for profile content
 pub const PROFILE_UI_RENDERLAYER: RenderLayers = RenderLayers::layer(3);
 // layer for ground

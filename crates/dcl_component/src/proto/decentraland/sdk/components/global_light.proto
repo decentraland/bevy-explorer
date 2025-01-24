@@ -18,7 +18,4 @@ message PBGlobalLight {
   // ambient light intensity. the explorer default ambient brightness is multiplied by this non-physical quantity.
   // default 1
   optional float ambient_brightness = 3;
-
-  // camera layers to apply global light to. defaults to 0 only
-  repeated uint32 layers = 4;
 }

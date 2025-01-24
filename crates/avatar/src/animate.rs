@@ -695,10 +695,6 @@ fn play_current_emote(
                                 }
                             }
                         }
-
-                        if let Some(layers) = definition.render_layer.clone() {
-                            commands.entity(spawned_ent).insert(layers);
-                        }
                     }
                     extras.scene_rotated = true;
                 }

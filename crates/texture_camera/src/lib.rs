@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, f32::consts::FRAC_PI_4};
+use std::f32::consts::FRAC_PI_4;
 
 use bevy::{
     core_pipeline::{
@@ -15,21 +15,26 @@ use bevy::{
         texture::BevyDefault,
         view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
     },
-    utils::hashbrown::HashMap,
+    utils::{hashbrown::HashMap, HashSet},
 };
 use bevy_atmosphere::plugin::AtmosphereCamera;
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::SceneSets,
     structs::{AppConfig, Cubemap, PrimaryUser, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER},
-    util::{camera_to_render_layer, camera_to_render_layers},
+    util::camera_to_render_layers,
 };
+use comms::global_crdt::ForeignPlayer;
 use dcl_component::{
-    proto_components::sdk::components::{PbCameraLayers, PbTextureCamera},
+    proto_components::sdk::components::{PbCameraLayer, PbCameraLayers, PbTextureCamera},
     SceneComponentId,
 };
+use propagate::{HierarchyPropagatePlugin, Propagate, PropagateStop};
 use scene_runner::{
-    update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
+    renderer_context::RendererSceneContext,
+    update_world::{
+        lights::update_directional_light, material::VideoTextureOutput, AddCrdtInterfaceExt,
+    },
     ContainerEntity, ContainingScene,
 };
 use system_bridge::settings::NewCameraEvent;
@@ -39,18 +44,35 @@ pub struct TextureCameraPlugin;
 
 impl Plugin for TextureCameraPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<TextureLayersCache>()
+            .init_resource::<SceneLayerProperties>();
+        app.add_systems(PostUpdate, TextureLayersCache::cleanup);
+
+        app.add_plugins(HierarchyPropagatePlugin::<RenderLayers, ()>::default());
+
         app.add_crdt_lww_component::<PbTextureCamera, TextureCamera>(
             SceneComponentId::TEXTURE_CAMERA,
             dcl::interface::ComponentPosition::EntityOnly,
         );
         app.add_crdt_lww_component::<PbCameraLayers, CameraLayers>(
             SceneComponentId::CAMERA_LAYERS,
-            dcl::interface::ComponentPosition::EntityOnly,
+            dcl::interface::ComponentPosition::Any,
+        );
+        app.add_crdt_lww_component::<PbCameraLayer, CameraLayer>(
+            SceneComponentId::CAMERA_LAYER,
+            dcl::interface::ComponentPosition::Any,
         );
 
         app.add_systems(
             Update,
-            (update_camera_layers, update_texture_cameras).in_set(SceneSets::PostLoop),
+            (
+                update_layer_properties,
+                update_camera_layers,
+                update_texture_cameras,
+                update_avatar_layers,
+                update_directional_light_layers.after(update_directional_light),
+            )
+                .in_set(SceneSets::PostLoop),
         );
     }
 }
@@ -65,10 +87,119 @@ impl From<PbTextureCamera> for TextureCamera {
 }
 
 #[derive(Component)]
+pub struct CameraLayer(pub PbCameraLayer);
+
+impl From<PbCameraLayer> for CameraLayer {
+    fn from(value: PbCameraLayer) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Resource, Default)]
+pub struct SceneLayerProperties {
+    layers: HashMap<u32, (Entity, PbCameraLayer)>,
+    ent_to_layer: HashMap<Entity, u32>,
+}
+
+fn update_layer_properties(
+    q: Query<(Entity, &CameraLayer, &ContainerEntity), Changed<CameraLayer>>,
+    mut removed: RemovedComponents<CameraLayer>,
+    mut props: ResMut<SceneLayerProperties>,
+    mut cache: ResMut<TextureLayersCache>,
+) {
+    let mut changed = HashSet::default();
+
+    for removed in removed.read() {
+        if let Some(layer) = props.ent_to_layer.remove(&removed) {
+            if props.layers.get(&layer).is_some_and(|(e, _)| e == &removed) {
+                props.layers.remove(&layer);
+                cache.changed_layers.insert(layer);
+            }
+        }
+    }
+
+    for (ent, layer, container) in q.iter() {
+        if let Some(layer) = props.ent_to_layer.remove(&ent) {
+            if props.layers.get(&layer).is_some_and(|(e, _)| e == &ent) {
+                props.layers.remove(&layer);
+                changed.insert(layer);
+            }
+        }
+
+        if layer.0.layer == 0 {
+            warn!("can't update layer 0");
+            continue;
+        }
+
+        let render_layer = cache.get_layer(container.root, layer.0.layer);
+        props.layers.insert(render_layer, (ent, layer.0.clone()));
+        cache.changed_layers.insert(render_layer);
+        debug!("changed layer {:?} -> {:?}", render_layer, &layer.0);
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn update_avatar_layers(
+    mut qs: ParamSet<(
+        Query<&mut Propagate<RenderLayers>, Or<(Added<ForeignPlayer>, Added<PrimaryUser>)>>,
+        Query<&mut Propagate<RenderLayers>, Or<(With<ForeignPlayer>, With<PrimaryUser>)>>,
+    )>,
+    cache: Res<TextureLayersCache>,
+    props: Res<SceneLayerProperties>,
+) {
+    let mut new = qs.p0();
+
+    if !new.is_empty() {
+        let all_layers = props
+            .layers
+            .iter()
+            .filter(|(_, (_, layer))| layer.show_avatars())
+            .map(|(layer_ix, _)| *layer_ix)
+            .collect::<Vec<_>>();
+
+        for mut render_layer in new.iter_mut() {
+            for layer in &all_layers {
+                render_layer.0 = render_layer.0.clone().with(*layer as usize);
+            }
+        }
+    }
+
+    let mut all = qs.p1();
+    for changed_layer in cache.changed_layers.iter() {
+        let show = props
+            .layers
+            .get(changed_layer)
+            .map(|(_, l)| l.show_avatars())
+            .unwrap_or(false);
+        for mut render_layer in all.iter_mut() {
+            if show {
+                render_layer.0 = render_layer.0.clone().with(*changed_layer as usize);
+            } else {
+                render_layer.0 = render_layer.0.clone().without(*changed_layer as usize);
+            }
+            debug!("avatar layer -> {:?}", render_layer.0);
+        }
+    }
+}
+
+fn update_directional_light_layers(
+    props: Res<SceneLayerProperties>,
+    mut global_light: ResMut<SceneGlobalLight>,
+) {
+    for (layer, _) in props
+        .layers
+        .iter()
+        .filter(|(_, (_, props))| props.directional_light())
+    {
+        global_light.layers = global_light.layers.clone().with(*layer as usize);
+    }
+}
+
+#[derive(Component)]
 pub struct TextureCamEntity(Entity);
 
 #[allow(clippy::too_many_arguments)]
-pub fn update_texture_cameras(
+fn update_texture_cameras(
     mut commands: Commands,
     q: Query<(
         Entity,
@@ -85,6 +216,8 @@ pub fn update_texture_cameras(
     mut new_cam_events: EventWriter<NewCameraEvent>,
     global_light: Res<SceneGlobalLight>,
     config: Res<AppConfig>,
+    layers: Res<SceneLayerProperties>,
+    mut layer_cache: ResMut<TextureLayersCache>,
 ) {
     let active_scenes = player
         .get_single()
@@ -99,14 +232,18 @@ pub fn update_texture_cameras(
         commands.entity(ent).remove::<TextureCamEntity>();
     }
 
+    // (re)create new/modified cams
     for (ent, texture_cam, container, existing) in q.iter() {
-        if texture_cam.is_changed() {
+        let layer_ix = layer_cache.get_layer(container.root, texture_cam.0.layer.unwrap_or(0));
+        if texture_cam.is_changed() || layer_cache.changed_layers.contains(&layer_ix) {
             // remove previous camera if modified
             if let Some(prev) = existing {
                 if let Some(commands) = commands.get_entity(prev.0) {
                     commands.despawn_recursive();
                 }
             }
+
+            let maybe_layer = layers.layers.get(&layer_ix).map(|(_, layer)| layer);
 
             let mut image = Image::new_fill(
                 Extent3d {
@@ -123,11 +260,11 @@ pub fn update_texture_cameras(
             image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
             let image = images.add(image);
 
-            let render_layers = match texture_cam.0.layer {
-                None | Some(0) => RenderLayers::default()
+            let render_layers = match layer_ix {
+                0 => RenderLayers::default()
                     .union(&GROUND_RENDERLAYER)
                     .union(&PRIMARY_AVATAR_LIGHT_LAYER),
-                Some(nonzero) => RenderLayers::layer(camera_to_render_layer(nonzero)),
+                _ => RenderLayers::layer(layer_ix as usize),
             };
             println!("create with layers {render_layers:?}");
 
@@ -197,6 +334,8 @@ pub fn update_texture_cameras(
                         },
                     },
                     projection,
+                    // not sure why but seems like we need to invert the look direction
+                    // transform: Transform::from_rotation(Quat::inverse(Quat::IDENTITY)),
                     ..Default::default()
                 },
                 BloomSettings {
@@ -206,37 +345,39 @@ pub fn update_texture_cameras(
                 ShadowFilteringMethod::Gaussian,
                 DepthPrepass,
                 NormalPrepass,
-                render_layers,
+                render_layers.clone(),
+                PropagateStop::<RenderLayers>::default(),
             ));
 
-            if !texture_cam.0.disable_fog() {
+            if maybe_layer.is_some_and(|l| l.show_fog()) {
                 camera.insert(FogSettings::default());
             }
 
-            if !texture_cam.0.disable_skybox()
+            if maybe_layer.is_some_and(|l| l.show_skybox())
                 && !matches!(texture_cam.0.mode, Some(dcl_component::proto_components::sdk::components::pb_texture_camera::Mode::Orthographic(_)))
             {
+                println!("add skybox");
                 camera.insert((
                     Skybox {
                         image: cubemap.image_handle.clone(),
                         brightness: 1000.0,
                     },
-                    AtmosphereCamera::default()
+                    AtmosphereCamera {
+                        render_layers: Some(render_layers.clone()),
+                    }
                 ));
             }
 
-            if texture_cam.0.ambient_brightness_override.is_some()
-                || texture_cam.0.ambient_color_override.is_some()
-            {
+            if maybe_layer.is_some_and(|l| {
+                l.ambient_brightness_override.is_some() || l.ambient_color_override.is_some()
+            }) {
                 camera.insert(AmbientLight {
-                    color: texture_cam
-                        .0
-                        .ambient_color_override
+                    color: maybe_layer
+                        .and_then(|l| l.ambient_color_override)
                         .map(Color::from)
                         .unwrap_or(global_light.ambient_color),
-                    brightness: texture_cam
-                        .0
-                        .ambient_brightness_override
+                    brightness: maybe_layer
+                        .and_then(|l| l.ambient_brightness_override)
                         .unwrap_or(global_light.ambient_brightness)
                         * config.graphics.ambient_brightness as f32
                         * 20.0,
@@ -264,7 +405,9 @@ pub fn update_texture_cameras(
                 continue;
             };
 
-            camera.is_active = active_scenes.contains(&container.root);
+            let is_active = active_scenes.contains(&container.root);
+            // debug!("[{}] active: {}", container.container_id, is_active);
+            camera.is_active = is_active;
         }
     }
 }
@@ -274,89 +417,96 @@ pub struct CameraLayers(pub Vec<u32>);
 
 impl From<PbCameraLayers> for CameraLayers {
     fn from(value: PbCameraLayers) -> Self {
-        Self(value.layers)
+        if value.layers.is_empty() {
+            Self(vec![0])
+        } else {
+            Self(value.layers)
+        }
     }
 }
 
 #[allow(clippy::type_complexity)]
-pub fn update_camera_layers(
+fn update_camera_layers(
     mut commands: Commands,
-    mut removed: RemovedComponents<CameraLayers>,
-    maybe_changed: Query<
-        (Entity, Option<&CameraLayers>, &Parent),
-        (
-            Without<Camera>,
-            Or<(Changed<CameraLayers>, Changed<Parent>)>,
-        ),
+    changed: Query<(Entity, &CameraLayers, &ContainerEntity), Changed<CameraLayers>>,
+    changed_root: Query<
+        (Entity, &CameraLayers),
+        (Changed<CameraLayers>, With<RendererSceneContext>),
     >,
-    removed_data: Query<(Option<&CameraLayers>, &Parent)>,
-    children: Query<&Children, Without<Camera>>,
-    render_layers: Query<&RenderLayers>,
+    mut removed: RemovedComponents<CameraLayers>,
+    mut store: ResMut<TextureLayersCache>,
 ) {
-    let mut to_check = VecDeque::default();
-
-    // gather items that have changed
-    for (entity, maybe_layers, parent) in &maybe_changed {
-        let target_render_layers = if let Some(camera_layers) = maybe_layers {
-            camera_to_render_layers(camera_layers.0.iter())
-        } else {
-            render_layers
-                .get(parent.get())
-                .cloned()
-                .unwrap_or_else(|_| RenderLayers::default())
-        };
-
-        to_check.push_back((entity, target_render_layers));
+    for (entity, layers, container) in changed.iter() {
+        let base = store.get_base(container.root);
+        let layers = camera_to_render_layers(base, layers.0.iter());
+        commands.entity(entity).try_insert(Propagate(layers));
+    }
+    for (root, layers) in changed_root.iter() {
+        let base = store.get_base(root);
+        let layers = camera_to_render_layers(base, layers.0.iter());
+        println!("root: {:?}", layers);
+        commands.entity(root).try_insert(Propagate(layers));
     }
 
-    // or had explicit layers removed
-    for removed_entity in removed.read() {
-        // (and still exist)
-        let Ok((maybe_layers, parent)) = removed_data.get(removed_entity) else {
-            continue;
-        };
-
-        let target_render_layers = if let Some(camera_layers) = maybe_layers {
-            camera_to_render_layers(camera_layers.0.iter())
-        } else {
-            render_layers
-                .get(parent.get())
-                .cloned()
-                .unwrap_or_else(|_| RenderLayers::default())
-        };
-
-        to_check.push_back((removed_entity, target_render_layers));
+    for entity in removed.read() {
+        if let Some(mut commands) = commands.get_entity(entity) {
+            commands.remove::<Propagate<RenderLayers>>();
+        }
     }
+}
 
-    let mut updated = HashMap::<Entity, RenderLayers>::default();
+#[derive(Resource, Default)]
+pub struct TextureLayersCache {
+    pub free: HashSet<u32>,
+    pub lookup: HashMap<Entity, u32>,
+    pub max: u32,
+    pub changed_layers: HashSet<u32>,
+}
 
-    // for entities that may need updating
-    while let Some((entity, target_layers)) = to_check.pop_front() {
-        // if we already updated to this value stop here
-        if let Some(update) = updated.get(&entity) {
-            if update == &target_layers {
-                continue;
+const LAYERS_PER_SCENE: u32 = 15;
+
+impl TextureLayersCache {
+    pub fn get_base(&mut self, scene: Entity) -> u32 {
+        match self.lookup.get(&scene) {
+            Some(existing) => existing * LAYERS_PER_SCENE,
+            None => {
+                let base = self
+                    .free
+                    .iter()
+                    .next()
+                    .copied()
+                    .inspect(|base| {
+                        self.free.remove(base);
+                    })
+                    .unwrap_or_else(|| {
+                        self.max += 1;
+                        self.max
+                    });
+                self.lookup.insert(scene, base);
+                base * LAYERS_PER_SCENE
             }
         }
-        // if we didn't already update and the existing data matches the requirement then stop here
-        else if render_layers
-            .get(entity)
-            .unwrap_or(&RenderLayers::default())
-            == &target_layers
-        {
-            continue;
-        }
+    }
 
-        // update
-        commands.entity(entity).insert(target_layers.clone());
-        // check children
-        for child in children
-            .get(entity)
-            .map(IntoIterator::into_iter)
-            .unwrap_or_default()
-        {
-            to_check.push_back((*child, target_layers.clone()));
+    pub fn get_layer(&mut self, scene: Entity, layer: u32) -> u32 {
+        if layer == 0 {
+            return 0;
+        } else if layer > LAYERS_PER_SCENE {
+            warn!("layer too high");
         }
-        updated.insert(entity, target_layers);
+        self.get_base(scene) + (layer - 1).min(LAYERS_PER_SCENE)
+    }
+
+    pub fn cleanup(mut slf: ResMut<Self>, scenes: Query<Entity, With<RendererSceneContext>>) {
+        let mut free = std::mem::take(&mut slf.free);
+        slf.lookup.retain(|scene, base| {
+            let live = scenes.get(*scene).is_ok();
+            if !live {
+                free.insert(*base);
+            }
+            live
+        });
+        slf.changed_layers.clear();
+        slf.free = free;
     }
 }
