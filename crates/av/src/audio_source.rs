@@ -113,7 +113,7 @@ fn update_audio(
                     continue;
                 };
 
-                error!("clip {:?}", audio_source.0);
+                debug!("clip {:?}", audio_source.0);
                 new_state = Some(AudioSourceState {
                     handle,
                     clip_url: audio_source.0.audio_clip_url.clone(),

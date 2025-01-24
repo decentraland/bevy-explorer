@@ -201,7 +201,7 @@ fn main() {
             .map(|(ix, d)| {
                 let edge_distance = (1 << ix) as f32 * PARCEL_SIZE;
                 let diagonal_distance = (edge_distance * edge_distance * 2.0).sqrt();
-                println!("[{ix}] -> {}", d.max(diagonal_distance));
+                // println!("[{ix}] -> {}", d.max(diagonal_distance));
                 d.max(diagonal_distance)
             })
             .collect(),
@@ -353,12 +353,13 @@ fn main() {
                 // actual distance we need is last + diagonal of the largest mip size
                 let mip_size =
                     (1 << (final_config.scene_imposter_distances.len() - 1)) as f32 * 16.0;
-                let req = last + (2.0 * mip_size * mip_size).sqrt();
-                println!(
-                    "imposter mips: {:?} -> distance {}",
-                    final_config.scene_imposter_distances, req
-                );
-                req
+                // let req = last + (2.0 * mip_size * mip_size).sqrt();
+                // println!(
+                //     "imposter mips: {:?} -> distance {}",
+                //     final_config.scene_imposter_distances, req
+                // );
+                // req
+                last + (2.0 * mip_size * mip_size).sqrt()
             })
             .unwrap_or(0.0),
     });

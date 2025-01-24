@@ -266,7 +266,7 @@ fn update_texture_cameras(
                     .union(&PRIMARY_AVATAR_LIGHT_LAYER),
                 _ => RenderLayers::layer(layer_ix as usize),
             };
-            println!("create with layers {render_layers:?}");
+            debug!("create with layers {render_layers:?}");
 
             let far = texture_cam.0.far_plane.unwrap_or(100_000.0);
             let projection: Projection = match &texture_cam.0.mode {
@@ -356,7 +356,6 @@ fn update_texture_cameras(
             if maybe_layer.is_some_and(|l| l.show_skybox())
                 && !matches!(texture_cam.0.mode, Some(dcl_component::proto_components::sdk::components::pb_texture_camera::Mode::Orthographic(_)))
             {
-                println!("add skybox");
                 camera.insert((
                     Skybox {
                         image: cubemap.image_handle.clone(),
@@ -444,7 +443,6 @@ fn update_camera_layers(
     for (root, layers) in changed_root.iter() {
         let base = store.get_base(root);
         let layers = camera_to_render_layers(base, layers.0.iter());
-        println!("root: {:?}", layers);
         commands.entity(root).try_insert(Propagate(layers));
     }
 
