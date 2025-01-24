@@ -9,10 +9,11 @@ use bevy::{
     transform::TransformSystem,
 };
 
+use camera::update_cursor_lock;
 use common::{
     anim_last_system,
     sets::SceneSets,
-    structs::{PrimaryCamera, PrimaryUser, PRIMARY_AVATAR_LIGHT_LAYER_INDEX},
+    structs::{CursorLocks, PrimaryCamera, PrimaryUser, PRIMARY_AVATAR_LIGHT_LAYER_INDEX},
 };
 use console::DoAddConsoleCommand;
 use dynamics::{
@@ -68,9 +69,11 @@ impl Plugin for UserInputPlugin {
                     .before(parent_position_sync::<SceneProxyStage>)
                     .before(TransformSystem::TransformPropagate)
                     .before(CameraUpdateSystem),
+                update_cursor_lock.after(update_camera_position),
             ),
         );
-        app.insert_resource(UserClipping(true));
+        app.insert_resource(UserClipping(true))
+            .init_resource::<CursorLocks>();
         app.add_console_command::<NoClipCommand, _>(no_clip);
         app.add_console_command::<SpeedCommand, _>(speed_cmd);
         app.add_console_command::<JumpCommand, _>(jump_cmd);

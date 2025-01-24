@@ -9,11 +9,13 @@ use bevy::{
     input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
     utils::HashMap,
-    window::CursorGrabMode,
+    window::{CursorGrabMode, PrimaryWindow},
 };
 
 use common::{
-    structs::{ActiveDialog, CameraOverride, PrimaryCamera, PrimaryUser},
+    structs::{
+        ActiveDialog, CameraOverride, CursorLocked, CursorLocks, PrimaryCamera, PrimaryUser,
+    },
     util::ModifyComponentExt,
 };
 use input_manager::AcceptInput;
@@ -84,16 +86,15 @@ impl MouseInteractionState<'_, '_> {
 #[allow(clippy::too_many_arguments)]
 pub fn update_camera(
     time: Res<Time>,
-    mut windows: Query<&mut Window>,
     mut mouse_events: EventReader<MouseMotion>,
     mut wheel_events: EventReader<MouseWheel>,
     key_input: Res<ButtonInput<KeyCode>>,
     mut move_toggled: Local<bool>,
     mut camera: Query<(&Transform, &mut PrimaryCamera)>,
-    mut locked_cursor_position: Local<Option<Vec2>>,
     accept_input: Res<AcceptInput>,
     used_wheel: Res<UsedScrollWheel>,
-    mut cursor_locked: ResMut<system_ui::sysinfo::CursorLocked>,
+    mut cursor_locked: ResMut<CursorLocked>,
+    mut locks: ResMut<CursorLocks>,
     active_dialog: Res<ActiveDialog>,
     mut cinematic_data: Local<Option<CinematicInitialData>>,
     mut mb_state: MouseInteractionState,
@@ -185,38 +186,18 @@ pub fn update_camera(
     let lock = !in_dialog && (accept_input.mouse && state == ClickState::Held || *move_toggled);
 
     if lock {
-        for mut window in &mut windows {
-            if !window.focused {
-                continue;
-            }
-
-            window.cursor.grab_mode = CursorGrabMode::Locked;
-            window.cursor.visible = false;
-            if !in_dialog {
-                cursor_locked.0 = true;
-            }
-
-            #[cfg(target_os = "windows")]
-            {
-                let cursor_position = locked_cursor_position
-                    .get_or_insert_with(|| window.cursor_position().unwrap_or_default());
-                window.set_cursor_position(Some(*cursor_position));
-            }
+        locks.0.insert("camera");
+        if !in_dialog {
+            cursor_locked.0 = true;
         }
 
         for mouse_event in mouse_events.read() {
             mouse_delta += mouse_event.delta;
         }
-    }
-
-    if state == ClickState::Released || in_dialog {
-        for mut window in &mut windows {
-            window.cursor.grab_mode = CursorGrabMode::None;
-            window.cursor.visible = true;
-            if !in_dialog {
-                cursor_locked.0 = false;
-            }
-            *locked_cursor_position = None;
+    } else {
+        locks.0.remove("camera");
+        if !in_dialog {
+            cursor_locked.0 = false;
         }
     }
 
@@ -394,5 +375,50 @@ pub fn update_camera_position(
             .entity(camera_ent)
             .modify_component(move |t: &mut Transform| *t = target_transform);
         // *camera_transform = target_transform;
+    }
+}
+
+pub fn update_cursor_lock(
+    locks: Res<CursorLocks>,
+    mut windows: Query<&mut Window, With<PrimaryWindow>>,
+    mut locked_cursor_position: Local<Option<Vec2>>,
+    mut stupid_set_counter: Local<usize>,
+) {
+    let lock = !locks.0.is_empty();
+
+    if lock {
+        for mut window in &mut windows {
+            if !window.focused {
+                continue;
+            }
+
+            window.cursor.grab_mode = CursorGrabMode::Locked;
+            window.cursor.visible = false;
+
+            #[cfg(target_os = "windows")]
+            {
+                let current_position = locked_cursor_position
+                    .get_or_insert_with(|| window.cursor_position().unwrap_or_default());
+                // set to something slightly different so that the update on unlock is processed
+                window.set_cursor_position(Some(Vec2::ONE + *current_position));
+            }
+        }
+    } else {
+        for mut window in &mut windows {
+            if window.cursor.grab_mode != CursorGrabMode::None {
+                window.cursor.grab_mode = CursorGrabMode::None;
+                *stupid_set_counter = 1;
+            } else if *stupid_set_counter > 0 {
+                if let Some(cursor_position) = &*locked_cursor_position {
+                    // doesn't work if we set position the same frame as we disable grab
+                    window.set_cursor_position(Some(*cursor_position));
+                }
+                window.cursor.visible = true;
+                *stupid_set_counter -= 1;
+                if *stupid_set_counter == 0 {
+                    *locked_cursor_position = None;
+                }
+            }
+        }
     }
 }

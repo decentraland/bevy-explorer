@@ -25,4 +25,7 @@ enum PointerEventType {
   PET_DOWN = 1;
   PET_HOVER_ENTER = 2;
   PET_HOVER_LEAVE = 3;
+  PET_DRAG_LOCKED = 4;
+  PET_DRAG = 5;
+  PET_DRAG_END = 6;
 }

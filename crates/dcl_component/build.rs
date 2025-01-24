@@ -50,6 +50,7 @@ fn gen_sdk_components() -> Result<()> {
         "texture_camera",
         "camera_layer",
         "camera_layers",
+        "primary_pointer_info",
     ];
 
     let mut sources = components

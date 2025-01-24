@@ -1,6 +1,10 @@
 use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr, sync::Arc};
 
-use bevy::{prelude::*, render::view::RenderLayers, utils::HashMap};
+use bevy::{
+    prelude::*,
+    render::view::RenderLayers,
+    utils::{HashMap, HashSet},
+};
 use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -656,3 +660,9 @@ pub struct Cubemap {
     pub is_loaded: bool,
     pub image_handle: Handle<Image>,
 }
+
+#[derive(Resource, Default)]
+pub struct CursorLocked(pub bool);
+
+#[derive(Resource, Default)]
+pub struct CursorLocks(pub HashSet<&'static str>);

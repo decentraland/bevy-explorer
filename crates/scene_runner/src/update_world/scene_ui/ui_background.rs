@@ -92,6 +92,9 @@ pub struct UiBackgroundMarker;
 #[derive(Component)]
 pub struct RetryBackground;
 
+#[derive(Component)]
+pub struct UiMaterialSource(Entity);
+
 pub fn set_ui_background(
     mut commands: Commands,
     backgrounds: Query<
@@ -109,6 +112,13 @@ pub fn set_ui_background(
     contexts: Query<&RendererSceneContext>,
     mut resolver: TextureResolver,
     mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    sourced: Query<(
+        Entity,
+        Option<&Handle<StretchUvMaterial>>,
+        Option<&Handle<Image>>,
+        &UiMaterialSource,
+    )>,
 ) {
     for ent in removed.read() {
         let Ok(link) = links.get(ent) else {
@@ -175,6 +185,7 @@ pub fn set_ui_background(
             if let Some(image) = image {
                 let image_color = background.color.unwrap_or(Color::WHITE);
                 let image_color = image_color.with_alpha(image_color.alpha() * link.opacity.0);
+
                 let background_entity = match texture_mode {
                     BackgroundTextureMode::NineSlices(rect) => commands
                         .commands()
@@ -217,7 +228,7 @@ pub fn set_ui_background(
                             UiBackgroundMarker,
                         ))
                         .try_with_children(|c| {
-                            c.spawn((MaterialNodeBundle {
+                            let mut inner = c.spawn((MaterialNodeBundle {
                                 style: Style {
                                     position_type: PositionType::Absolute,
                                     top: Val::Px(0.0),
@@ -233,6 +244,9 @@ pub fn set_ui_background(
                                 }),
                                 ..Default::default()
                             },));
+                            if let Some(source) = image.source_entity {
+                                inner.insert(UiMaterialSource(source));
+                            }
                         })
                         .id(),
                     BackgroundTextureMode::Center => commands
@@ -268,7 +282,7 @@ pub fn set_ui_background(
                             })
                             .try_with_children(|c| {
                                 c.spacer();
-                                c.spawn(ImageBundle {
+                                let mut inner = c.spawn(ImageBundle {
                                     style: Style {
                                         overflow: Overflow::clip(),
                                         ..Default::default()
@@ -281,18 +295,35 @@ pub fn set_ui_background(
                                     },
                                     ..Default::default()
                                 });
+                                if let Some(source) = image.source_entity {
+                                    inner.insert(UiMaterialSource(source));
+                                }
                                 c.spacer();
                             });
                             c.spacer();
                         })
                         .id(),
                 };
+
                 commands.insert_children(0, &[background_entity]);
             } else {
                 warn!("failed to load ui image from content map: {:?}", texture);
             }
         } else if let Some(color) = background.color {
             commands.insert(BackgroundColor(color));
+        }
+    }
+
+    for (ent, maybe_stretch, maybe_image, source) in sourced.iter() {
+        if commands.get_entity(source.0).is_none() {
+            commands.entity(ent).insert(RetryBackground);
+        } else {
+            if let Some(h_stretch) = maybe_stretch {
+                stretch_uvs.get_mut(h_stretch);
+            }
+            if let Some(h_image) = maybe_image {
+                images.get_mut(h_image);
+            }
         }
     }
 }
