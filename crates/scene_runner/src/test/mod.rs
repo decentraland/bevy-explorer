@@ -37,7 +37,8 @@ use crate::{
 use common::{
     rpc::RpcCall,
     structs::{
-        AppConfig, CursorLocks, GraphicsSettings, PrimaryCamera, PrimaryPlayerRes, SceneLoadDistance, ToolTips
+        AppConfig, CursorLocks, GraphicsSettings, PrimaryCamera, PrimaryPlayerRes,
+        SceneLoadDistance, ToolTips,
     },
 };
 use comms::{preview::PreviewMode, CommsPlugin};
