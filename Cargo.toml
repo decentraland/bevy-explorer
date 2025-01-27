@@ -53,6 +53,8 @@ collectibles = { path="crates/collectibles" }
 social = { path="crates/social" }
 imposters = { path="crates/imposters" }
 system_bridge = { path="crates/system_bridge" }
+texture_camera = { path="crates/texture_camera" }
+propagate = { path="crates/propagate" }
 
 bevy = { version = "0.14", default-features = false, features=[
     "animation",
@@ -145,6 +147,8 @@ collectibles = { workspace = true }
 social = { workspace = true }
 imposters = { workspace = true }
 system_bridge = { workspace = true }
+texture_camera = { workspace = true }
+propagate = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }
@@ -196,3 +200,6 @@ deno_websocket = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix
 
 # [patch."https://github.com/robtfm/boimp"]
 # boimp = { path = "../boimp" }
+
+# [patch."https://github.com/robtfm/bevy_atmosphere"]
+# bevy_atmosphere = { path = "../bevy_atmosphere" }

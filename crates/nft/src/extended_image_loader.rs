@@ -87,7 +87,7 @@ impl AssetLoader for ExtendedImageLoader {
                     if load_context
                         .path()
                         .to_str()
-                        .map_or(false, |p| p.to_ascii_lowercase().contains("svg"))
+                        .is_some_and(|p| p.to_ascii_lowercase().contains("svg"))
                     {
                         // try svg
                         reader.seek(std::io::SeekFrom::Start(0)).await?;

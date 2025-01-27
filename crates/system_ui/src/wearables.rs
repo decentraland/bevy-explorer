@@ -62,7 +62,7 @@ impl Plugin for WearableSettingsPlugin {
                         .chain()
                         .run_if(|q: Query<&SettingsTab>| {
                             q.get_single()
-                                .map_or(false, |tab| tab == &SettingsTab::Wearables)
+                                .is_ok_and(|tab| tab == &SettingsTab::Wearables)
                         }),
                 )
                     .chain(),
@@ -766,8 +766,7 @@ fn update_wearables_list(
         }
     }
 
-    if wearables == settings.current_list && !dialog.get_single().map_or(false, |d| d.is_changed())
-    {
+    if wearables == settings.current_list && !dialog.get_single().is_ok_and(|d| d.is_changed()) {
         // wearables list matches and dialog has not changed (so current wearables have not changed)
         return;
     }

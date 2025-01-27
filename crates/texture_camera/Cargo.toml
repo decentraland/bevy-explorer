@@ -1,0 +1,50 @@
+[package]
+name = "texture_camera"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { workspace = true }
+comms = { workspace = true }
+dcl = { workspace = true }
+dcl_component = { workspace = true }
+scene_runner = { workspace = true }
+ipfs = { workspace = true }
+ui_core = { workspace = true }
+avatar = { workspace = true }
+input_manager = { workspace = true }
+av = { workspace = true }
+wallet = { workspace = true }
+collectibles = { workspace = true }
+tween = { workspace = true }
+console = { workspace = true }
+scene_material = { workspace = true }
+world_ui = { workspace = true }
+analytics = { workspace = true }
+social = { workspace = true }
+system_bridge = { workspace = true }
+visuals = { workspace = true }
+propagate = { workspace = true }
+
+bevy = { workspace = true }
+bevy_egui = { workspace = true }
+bevy_dui = { workspace = true }
+bevy_console = { workspace = true }
+urn = { workspace = true }
+ethers-core = { workspace = true }
+ethers-signers = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+isahc = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+opener = { workspace = true }
+urlencoding = { workspace = true }
+build-time = { workspace = true }
+futures-lite = { workspace = true }
+
+bevy_atmosphere = { git = "https://github.com/robtfm/bevy_atmosphere", branch = "0.14-dcl" }

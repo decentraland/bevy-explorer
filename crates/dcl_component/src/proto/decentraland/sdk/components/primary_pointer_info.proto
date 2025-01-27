@@ -1,0 +1,26 @@
+syntax = "proto3";
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+option (common.ecs_component_id) = 1209;
+
+import "decentraland/common/vectors.proto";
+
+message PBPrimaryPointerInfo {
+  optional PointerType pointer_type = 1;
+  // in pixels
+  optional decentraland.common.Vector2 screen_coordinates = 2;
+  // in pixels
+  optional decentraland.common.Vector2 screen_delta = 3;
+  // ray direction that can be used with the primary camera origin for
+  // raycasting from the cursor into the world
+  optional decentraland.common.Vector3 world_ray_direction = 4;
+}
+
+enum PointerType {
+  POT_NONE = 0;
+  POT_MOUSE = 1;
+  POT_PAD = 2;
+  POT_TOUCH = 3;
+  POT_WAND = 4;
+}

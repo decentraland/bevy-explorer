@@ -12,12 +12,12 @@
             </div>
             <hr />
             <div style="flex-direction: column;">
-                <med-text text="Latest Updates (2024-09-18)" />
+                <med-text text="Latest Updates (2025-01-27)" />
                 <hr-thin />
-                <med-text text="• Scene-defined Lights" />
-                <med-text text="• In-world / diegetic UI" />
-                <med-text text="• GltfNode, GltfMaterial and GltfMesh support" />
-                <med-text text="• scrollable ui areas" />
+                <med-text text="• TextureCameras that can render to texture for display in-world or in ui" />
+                <med-text text="• Imposters for distant scenes" />
+                <med-text text="• mouse Drag events and additional pointer information" />
+                <med-text text="• Friends and social service features" />
             </div>
         </div>
     </dialog>

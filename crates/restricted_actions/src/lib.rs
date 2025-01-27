@@ -170,7 +170,7 @@ pub fn move_camera(
         if !player
             .get_single()
             .ok()
-            .map_or(false, |(_, e)| containing_scene.get(e).contains(root))
+            .is_some_and(|(_, e)| containing_scene.get(e).contains(root))
         {
             warn!("invalid camera move request from non-containing scene");
             warn!("request from {root:?}");

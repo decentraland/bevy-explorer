@@ -62,16 +62,42 @@ pub mod window_settings;
 
 pub struct SettingBridgePlugin;
 
+#[derive(Event)]
+pub struct NewCameraEvent(pub Entity);
+
 impl Plugin for SettingBridgePlugin {
     fn build(&self, app: &mut App) {
-        fn add_int_setting<T: IntAppSetting>(settings: &mut Settings, schedule: &mut Schedule) {
-            settings.add_int_setting::<T>();
-            schedule.add_systems(apply_setting::<T>);
+        fn apply_to_camera<S: AppSetting>(
+            mut commands: Commands,
+            config: Res<AppConfig>,
+            mut new_camera_events: EventReader<NewCameraEvent>,
+            param: StaticSystemParam<S::Param>,
+        ) {
+            let param = param.into_inner();
+            for ev in new_camera_events.read() {
+                let setting = S::load(&config);
+                setting.apply_to_camera(&param, commands.reborrow(), ev.0);
+            }
         }
 
-        fn add_enum_setting<T: EnumAppSetting>(settings: &mut Settings, schedule: &mut Schedule) {
+        fn add_int_setting<T: IntAppSetting>(
+            app: &mut App,
+            settings: &mut Settings,
+            schedule: &mut Schedule,
+        ) {
+            settings.add_int_setting::<T>();
+            schedule.add_systems(apply_setting::<T>);
+            app.add_systems(Update, apply_to_camera::<T>);
+        }
+
+        fn add_enum_setting<T: EnumAppSetting>(
+            app: &mut App,
+            settings: &mut Settings,
+            schedule: &mut Schedule,
+        ) {
             settings.add_enum_setting::<T>();
             schedule.add_systems(apply_setting::<T>);
+            app.add_systems(Update, apply_to_camera::<T>);
         }
 
         let config_copy = app.world().resource::<AppConfig>().clone();
@@ -82,12 +108,13 @@ impl Plugin for SettingBridgePlugin {
                 updated: false,
             })),
         };
+        app.add_event::<NewCameraEvent>();
         app.add_systems(Update, (Settings::sync_settings_object, send_settings));
 
         let mut schedule = Schedule::new(ApplyAppSettingsLabel);
 
-        add_int_setting::<ShadowDistanceSetting>(&mut settings, &mut schedule);
-        add_int_setting::<ShadowCasterCountSetting>(&mut settings, &mut schedule);
+        add_int_setting::<ShadowDistanceSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<ShadowCasterCountSetting>(app, &mut settings, &mut schedule);
 
         // special case for ordering
         settings.add_enum_setting::<ShadowSetting>();
@@ -95,34 +122,34 @@ impl Plugin for SettingBridgePlugin {
             apply_setting::<ShadowSetting>.after(apply_setting::<ShadowDistanceSetting>),
         );
 
-        add_enum_setting::<FogSetting>(&mut settings, &mut schedule);
-        add_enum_setting::<BloomSetting>(&mut settings, &mut schedule);
-        add_enum_setting::<SsaoSetting>(&mut settings, &mut schedule);
-        add_enum_setting::<OobSetting>(&mut settings, &mut schedule);
-        add_enum_setting::<AaSetting>(&mut settings, &mut schedule);
-        add_int_setting::<AmbientSetting>(&mut settings, &mut schedule);
-        add_enum_setting::<WindowSetting>(&mut settings, &mut schedule);
-        add_int_setting::<LoadDistanceSetting>(&mut settings, &mut schedule);
-        add_int_setting::<UnloadDistanceSetting>(&mut settings, &mut schedule);
-        add_enum_setting::<FpsTargetSetting>(&mut settings, &mut schedule);
-        add_int_setting::<SceneThreadsSetting>(&mut settings, &mut schedule);
-        add_int_setting::<MaxAvatarsSetting>(&mut settings, &mut schedule);
-        add_int_setting::<MasterVolumeSetting>(&mut settings, &mut schedule);
-        add_int_setting::<SceneVolumeSetting>(&mut settings, &mut schedule);
-        add_int_setting::<VoiceVolumeSetting>(&mut settings, &mut schedule);
-        add_int_setting::<SystemVolumeSetting>(&mut settings, &mut schedule);
-        add_int_setting::<AvatarVolumeSetting>(&mut settings, &mut schedule);
+        add_enum_setting::<FogSetting>(app, &mut settings, &mut schedule);
+        add_enum_setting::<BloomSetting>(app, &mut settings, &mut schedule);
+        add_enum_setting::<SsaoSetting>(app, &mut settings, &mut schedule);
+        add_enum_setting::<OobSetting>(app, &mut settings, &mut schedule);
+        add_enum_setting::<AaSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<AmbientSetting>(app, &mut settings, &mut schedule);
+        add_enum_setting::<WindowSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<LoadDistanceSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<UnloadDistanceSetting>(app, &mut settings, &mut schedule);
+        add_enum_setting::<FpsTargetSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<SceneThreadsSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<MaxAvatarsSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<MasterVolumeSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<SceneVolumeSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<VoiceVolumeSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<SystemVolumeSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<AvatarVolumeSetting>(app, &mut settings, &mut schedule);
 
-        add_enum_setting::<ConstrainUiSetting>(&mut settings, &mut schedule);
-        add_int_setting::<RunSpeedSetting>(&mut settings, &mut schedule);
-        add_int_setting::<WalkSpeedSetting>(&mut settings, &mut schedule);
-        add_int_setting::<FrictionSetting>(&mut settings, &mut schedule);
-        add_int_setting::<JumpSetting>(&mut settings, &mut schedule);
-        add_int_setting::<GravitySetting>(&mut settings, &mut schedule);
-        add_int_setting::<FallSpeedSetting>(&mut settings, &mut schedule);
-        add_int_setting::<VideoThreadsSetting>(&mut settings, &mut schedule);
-        add_int_setting::<MaxDownloadsSetting>(&mut settings, &mut schedule);
-        add_enum_setting::<DespawnWorkaroundSetting>(&mut settings, &mut schedule);
+        add_enum_setting::<ConstrainUiSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<RunSpeedSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<WalkSpeedSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<FrictionSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<JumpSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<GravitySetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<FallSpeedSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<VideoThreadsSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<MaxDownloadsSetting>(app, &mut settings, &mut schedule);
+        add_enum_setting::<DespawnWorkaroundSetting>(app, &mut settings, &mut schedule);
 
         app.insert_resource(settings);
         app.insert_resource(ApplyAppSettingsSchedule(schedule));
@@ -159,6 +186,13 @@ pub trait AppSetting: Eq + 'static {
     fn load(config: &AppConfig) -> Self;
     fn save(&self, config: &mut AppConfig);
     fn apply(&self, param: SystemParamItem<Self::Param>, commands: Commands);
+    fn apply_to_camera(
+        &self,
+        _param: &SystemParamItem<Self::Param>,
+        _commands: Commands,
+        _camera_entity: Entity,
+    ) {
+    }
 }
 
 pub trait EnumAppSetting: AppSetting + Sized + std::fmt::Debug {

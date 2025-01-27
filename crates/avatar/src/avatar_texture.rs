@@ -80,7 +80,6 @@ impl PhotoBooth<'_, '_> {
                 AvatarSelection {
                     scene: None,
                     shape,
-                    render_layers: Some(render_layers.clone()),
                     automatic_delete: false,
                 },
                 AvatarDynamicState::default(),
@@ -340,7 +339,7 @@ fn snapshot(
     }
 
     // take any pending shots
-    for (ent, mut timer, selection) in avatars.iter_mut() {
+    for (ent, mut timer, _selection) in avatars.iter_mut() {
         if frame.0 >= timer.0 {
             if timer.1.is_none() {
                 // Spawn secondary windows
@@ -377,18 +376,15 @@ fn snapshot(
 
             let mut cam = |window: Entity, transform: Transform| {
                 commands
-                    .spawn((
-                        Camera3dBundle {
-                            transform,
-                            camera: Camera {
-                                clear_color: ClearColorConfig::Custom(Color::NONE),
-                                target: RenderTarget::Window(WindowRef::Entity(window)),
-                                ..default()
-                            },
-                            ..Default::default()
+                    .spawn((Camera3dBundle {
+                        transform,
+                        camera: Camera {
+                            clear_color: ClearColorConfig::Custom(Color::NONE),
+                            target: RenderTarget::Window(WindowRef::Entity(window)),
+                            ..default()
                         },
-                        selection.render_layers.clone().unwrap_or_default(),
-                    ))
+                        ..Default::default()
+                    },))
                     .id()
             };
 

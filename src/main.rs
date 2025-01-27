@@ -22,7 +22,7 @@ use bevy::{
         Skybox,
     },
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    pbr::{CascadeShadowConfigBuilder, ShadowFilteringMethod},
+    pbr::ShadowFilteringMethod,
     prelude::*,
     render::{
         render_resource::{TextureViewDescriptor, TextureViewDimension},
@@ -37,9 +37,9 @@ use collectibles::CollectiblesPlugin;
 use common::{
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes,
-        PrimaryPlayerRes, PrimaryUser, SceneImposterBake, SceneLoadDistance, Version,
-        GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER,
+        AppConfig, AttachPoints, Cubemap, GraphicsSettings, IVec2Arg, PrimaryCamera,
+        PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake, SceneLoadDistance,
+        Version, GROUND_RENDERLAYER,
     },
     util::{config_file, project_directories, TaskExt, UtilsPlugin},
 };
@@ -62,6 +62,7 @@ use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use social::SocialPlugin;
 use system_bridge::{NativeUi, SystemBridgePlugin};
 use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
+use texture_camera::TextureCameraPlugin;
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
 use user_input::UserInputPlugin;
@@ -200,7 +201,7 @@ fn main() {
             .map(|(ix, d)| {
                 let edge_distance = (1 << ix) as f32 * PARCEL_SIZE;
                 let diagonal_distance = (edge_distance * edge_distance * 2.0).sqrt();
-                println!("[{ix}] -> {}", d.max(diagonal_distance));
+                // println!("[{ix}] -> {}", d.max(diagonal_distance));
                 d.max(diagonal_distance)
             })
             .collect(),
@@ -352,12 +353,13 @@ fn main() {
                 // actual distance we need is last + diagonal of the largest mip size
                 let mip_size =
                     (1 << (final_config.scene_imposter_distances.len() - 1)) as f32 * 16.0;
-                let req = last + (2.0 * mip_size * mip_size).sqrt();
-                println!(
-                    "imposter mips: {:?} -> distance {}",
-                    final_config.scene_imposter_distances, req
-                );
-                req
+                // let req = last + (2.0 * mip_size * mip_size).sqrt();
+                // println!(
+                //     "imposter mips: {:?} -> distance {}",
+                //     final_config.scene_imposter_distances, req
+                // );
+                // req
+                last + (2.0 * mip_size * mip_size).sqrt()
             })
             .unwrap_or(0.0),
     });
@@ -386,6 +388,7 @@ fn main() {
         .add_plugins(CollectiblesPlugin)
         .add_plugins(WorldUiPlugin)
         .add_plugins(DclImposterPlugin)
+        .add_plugins(TextureCameraPlugin)
         .add_plugins(SystemBridgePlugin { bare: false });
 
     if let Some(crashed) = crash_file {
@@ -463,6 +466,7 @@ fn setup(
             OutOfWorld,
             AvatarDynamicState::default(),
             GroundCollider::default(),
+            propagate::Propagate(RenderLayers::default()),
         ))
         .push_children(&attach_points.entities())
         .insert(attach_points)
@@ -533,31 +537,6 @@ fn setup(
 
     player_resource.0 = player_id;
     cam_resource.0 = camera_id;
-
-    // add a directional light so it looks nicer
-    commands.spawn((
-        DirectionalLightBundle {
-            directional_light: DirectionalLight {
-                color: Color::srgb(1.0, 1.0, 0.7),
-                shadows_enabled: true,
-                ..Default::default()
-            },
-            transform: Transform::default().looking_at(Vec3::new(0.2, -0.5, -1.0), Vec3::Y),
-            cascade_shadow_config: CascadeShadowConfigBuilder {
-                maximum_distance: 100.0,
-                ..Default::default()
-            }
-            .into(),
-            ..Default::default()
-        },
-        RenderLayers::default().union(&PRIMARY_AVATAR_LIGHT_LAYER),
-    ));
-}
-
-#[derive(Resource)]
-struct Cubemap {
-    is_loaded: bool,
-    image_handle: Handle<Image>,
 }
 
 fn asset_loaded(

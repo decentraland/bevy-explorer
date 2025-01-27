@@ -100,7 +100,7 @@ impl From<PbGlobalLight> for GlobalLight {
     }
 }
 
-fn update_directional_light(
+pub fn update_directional_light(
     lights: Query<(&RendererSceneContext, Option<&Light>, Option<&GlobalLight>)>,
     mut global_light: ResMut<SceneGlobalLight>,
     containing_scene: ContainingScene,
@@ -117,6 +117,7 @@ fn update_directional_light(
         dir_direction: Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0) * Vec3::NEG_Z,
         ambient_color: Color::srgb(0.85, 0.85, 1.0),
         ambient_brightness: 1.0,
+        layers: RenderLayers::default(),
     };
 
     let Ok(player) = player.get_single() else {

@@ -14,7 +14,7 @@ use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     sets::{SceneSets, SetupSets},
-    structs::{AppConfig, PrimaryUser, SettingsTab, ShowSettingsEvent, Version},
+    structs::{AppConfig, CursorLocked, PrimaryUser, SettingsTab, ShowSettingsEvent, Version},
     util::ModifyComponentExt,
 };
 use comms::{
@@ -78,9 +78,6 @@ impl Plugin for SysInfoPanelPlugin {
         app.add_console_command::<TrackComponentCommand, _>(set_track_components);
     }
 }
-
-#[derive(Resource, Default)]
-pub struct CursorLocked(pub bool);
 
 #[derive(Component)]
 struct SysInfoMarker;

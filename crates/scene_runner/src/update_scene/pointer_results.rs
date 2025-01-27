@@ -1,11 +1,11 @@
 use bevy::{
     core::FrameCount,
-    input::InputSystem,
+    input::{mouse::MouseMotion, InputSystem},
     math::FloatOrd,
     prelude::*,
     render::mesh::{Indices, VertexAttributeValues},
     ui::{ManualCursorPosition, UiSystem},
-    utils::HashSet,
+    utils::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
 use console::DoAddConsoleCommand;
@@ -19,13 +19,17 @@ use crate::{
     ContainerEntity, ContainingScene, DebugInfo, PrimaryUser, RendererSceneContext, SceneEntity,
     SceneSets,
 };
-use common::{dynamics::PLAYER_COLLIDER_RADIUS, structs::PrimaryCamera};
+use common::{
+    dynamics::PLAYER_COLLIDER_RADIUS,
+    structs::{CursorLocks, PrimaryCamera},
+};
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::{
         common::Vector3,
         sdk::components::{
             common::{InputAction, PointerEventType, RaycastHit},
+            pb_pointer_events::Entry,
             ColliderLayer, PbPointerEventsResult,
         },
     },
@@ -38,6 +42,7 @@ pub struct PointerResultPlugin;
 impl Plugin for PointerResultPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PointerTarget>()
+            .init_resource::<PointerDragTarget>()
             .init_resource::<UiPointerTarget>()
             .init_resource::<WorldPointerTarget>()
             .init_resource::<DebugPointers>();
@@ -75,6 +80,11 @@ pub struct PointerTargetInfo {
 
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
 pub struct PointerTarget(pub Option<PointerTargetInfo>);
+
+#[derive(Default, Debug, Resource, Clone, PartialEq)]
+pub struct PointerDragTarget {
+    entities: HashMap<InputAction, (PointerTargetInfo, bool)>,
+}
 
 #[derive(Default, Debug, Resource, Clone, PartialEq, Eq)]
 pub enum UiPointerTarget {
@@ -578,91 +588,163 @@ fn send_action_events(
     input_mgr: InputManager,
     frame: Res<FrameCount>,
     time: Res<Time>,
+    mut drag_target: ResMut<PointerDragTarget>,
+    mut mouse_events: EventReader<MouseMotion>,
+    mut locks: ResMut<CursorLocks>,
 ) {
+    fn filtered_events<'a>(
+        pointer_requests: &'a Query<(&SceneEntity, Option<&PointerEvents>)>,
+        info: &PointerTargetInfo,
+        ev_type: PointerEventType,
+        action: InputAction,
+    ) -> impl Iterator<Item = &'a Entry> {
+        let pe = pointer_requests
+            .get(info.container)
+            .ok()
+            .and_then(|(_, pes)| pes)
+            .map(|pes| pes.msg.pointer_events.iter())
+            .unwrap_or_default();
+
+        pe.filter(move |f| {
+            let event_button = f
+                .event_info
+                .as_ref()
+                .and_then(|info| info.button)
+                .unwrap_or(InputAction::IaAny as i32);
+            f.event_type == ev_type as i32
+                && (event_button == InputAction::IaAny as i32 || event_button == action as i32)
+        })
+    }
+
     let mut send_event = |info: &PointerTargetInfo,
                           ev_type: PointerEventType,
-                          action: InputAction| {
-        if let Ok((scene_entity, maybe_pe)) = pointer_requests.get(info.container) {
-            if let Some(pe) = maybe_pe {
-                let mut potential_entries = pe
-                    .msg
-                    .pointer_events
-                    .iter()
-                    .filter(|f| {
-                        let event_button = f
-                            .event_info
-                            .as_ref()
-                            .and_then(|info| info.button)
-                            .unwrap_or(InputAction::IaAny as i32);
-                        f.event_type == ev_type as i32
-                            && (event_button == InputAction::IaAny as i32
-                                || event_button == action as i32)
-                    })
-                    .peekable();
-                // check there's at least one potential request before doing any work
-                if potential_entries.peek().is_some() {
-                    let Ok((_, mut context, scene_transform)) = scenes.get_mut(scene_entity.root)
-                    else {
-                        return;
-                    };
-                    for ev in potential_entries {
-                        let max_distance = ev
-                            .event_info
-                            .as_ref()
-                            .and_then(|info| info.max_distance)
-                            .unwrap_or(10.0);
-                        if info.distance.0 <= max_distance {
-                            let tick_number = context.tick_number;
-                            let hit = RaycastHit {
-                                position: info.position.as_ref().map(|p| {
-                                    Vector3::world_vec_from_vec3(
-                                        &(*p - scene_transform.translation()),
-                                    )
-                                }),
-                                global_origin: None,
-                                direction: None,
-                                normal_hit: info.normal.as_ref().map(Vector3::world_vec_from_vec3),
-                                length: info.distance.0,
-                                mesh_name: info.mesh_name.clone(),
-                                entity_id: scene_entity.id.as_proto_u32(),
-                            };
-                            debug!("pointer hit: {hit:?}");
-                            // send to target entity
-                            context.update_crdt(
-                                SceneComponentId::POINTER_RESULT,
-                                CrdtType::GO_ENT,
-                                scene_entity.id,
-                                &PbPointerEventsResult {
-                                    button: action as i32,
-                                    hit: Some(hit),
-                                    state: ev_type as i32,
-                                    timestamp: frame.0,
-                                    analog: None,
-                                    tick_number,
-                                },
-                            );
-                            context.last_action_event = Some(time.elapsed_seconds());
-                        }
+                          action: InputAction,
+                          direction: Option<Vec2>|
+     -> bool {
+        if let Ok((scene_entity, _)) = pointer_requests.get(info.container) {
+            let mut potential_entries =
+                filtered_events(&pointer_requests, info, ev_type, action).peekable();
+            // check there's at least one potential request before doing any work
+            if potential_entries.peek().is_some() {
+                let Ok((_, mut context, scene_transform)) = scenes.get_mut(scene_entity.root)
+                else {
+                    return false;
+                };
+                for ev in potential_entries {
+                    let max_distance = ev
+                        .event_info
+                        .as_ref()
+                        .and_then(|info| info.max_distance)
+                        .unwrap_or(10.0);
+                    if info.distance.0 <= max_distance {
+                        let tick_number = context.tick_number;
+                        let hit = RaycastHit {
+                            position: info.position.as_ref().map(|p| {
+                                Vector3::world_vec_from_vec3(&(*p - scene_transform.translation()))
+                            }),
+                            global_origin: None,
+                            direction: direction
+                                .map(|d| Vector3::abs_vec_from_vec3(&d.extend(0.0))),
+                            normal_hit: info.normal.as_ref().map(Vector3::world_vec_from_vec3),
+                            length: info.distance.0,
+                            mesh_name: info.mesh_name.clone(),
+                            entity_id: scene_entity.id.as_proto_u32(),
+                        };
+                        debug!("({:?}) pointer hit: {hit:?}", ev_type);
+                        // send to target entity
+                        context.update_crdt(
+                            SceneComponentId::POINTER_RESULT,
+                            CrdtType::GO_ENT,
+                            scene_entity.id,
+                            &PbPointerEventsResult {
+                                button: action as i32,
+                                hit: Some(hit),
+                                state: ev_type as i32,
+                                timestamp: frame.0,
+                                analog: None,
+                                tick_number,
+                            },
+                        );
+                        context.last_action_event = Some(time.elapsed_seconds());
                     }
                 }
+                true
+            } else {
+                false
             }
         } else {
             warn!(
                 "failed to query entity for button event [{action:?} {ev_type:?}]: {:?}",
                 info.container
             );
+            false
         }
     };
 
     // send event to hover target
     if let Some(info) = target.0.as_ref() {
         for down in input_mgr.iter_just_down() {
-            send_event(info, PointerEventType::PetDown, *down);
+            send_event(info, PointerEventType::PetDown, *down, None);
+            if filtered_events(&pointer_requests, info, PointerEventType::PetDrag, *down)
+                .next()
+                .is_some()
+            {
+                debug!("added drag");
+                drag_target.entities.insert(*down, (info.clone(), false));
+            }
+            if filtered_events(
+                &pointer_requests,
+                info,
+                PointerEventType::PetDragLocked,
+                *down,
+            )
+            .next()
+            .is_some()
+            {
+                debug!("added drag lock");
+                drag_target.entities.insert(*down, (info.clone(), true));
+            }
         }
 
         for up in input_mgr.iter_just_up() {
-            send_event(info, PointerEventType::PetUp, *up);
+            send_event(info, PointerEventType::PetUp, *up, None);
         }
+    }
+
+    // send any drags
+    let mut frame_delta = Vec2::ZERO;
+    for mouse_event in mouse_events.read() {
+        frame_delta += mouse_event.delta;
+    }
+
+    let mut any_drag_lock = false;
+    for (input, (info, lock)) in drag_target.entities.iter() {
+        if frame_delta != Vec2::ZERO {
+            send_event(
+                info,
+                if *lock {
+                    PointerEventType::PetDragLocked
+                } else {
+                    PointerEventType::PetDrag
+                },
+                *input,
+                Some(frame_delta),
+            );
+        }
+        any_drag_lock |= lock;
+    }
+
+    // send drag ends
+    for up in input_mgr.iter_just_up() {
+        if let Some((info, _)) = drag_target.entities.remove(up) {
+            send_event(&info, PointerEventType::PetDragEnd, *up, None);
+        }
+    }
+
+    if any_drag_lock {
+        locks.0.insert("pointer");
+    } else {
+        locks.0.remove("pointer");
     }
 
     // send events to scene roots

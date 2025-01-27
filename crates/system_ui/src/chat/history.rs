@@ -115,7 +115,7 @@ fn update_chat_history(
         if history
             .current
             .get(1)
-            .map_or(false, |(next_bubble, ..)| next_bubble == bubble)
+            .is_some_and(|(next_bubble, ..)| next_bubble == bubble)
         {
             alpha = 0.3;
         }
@@ -132,10 +132,10 @@ fn update_chat_history(
         }
 
         // and the bubble if this was last
-        if !history
+        if history
             .current
             .get(1)
-            .map_or(false, |(next_bubble, ..)| next_bubble == bubble)
+            .is_none_or(|(next_bubble, ..)| next_bubble != bubble)
         {
             if let Some(commands) = commands.get_entity(*bubble) {
                 commands.despawn_recursive();

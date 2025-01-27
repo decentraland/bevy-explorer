@@ -756,7 +756,7 @@ fn check_bake_state(
                 if current_imposter_scene
                     .0
                     .as_ref()
-                    .map_or(false, |(_, done)| *done)
+                    .is_some_and(|(_, done)| *done)
                 {
                     // done
                     info!("scene done!");
@@ -775,7 +775,7 @@ fn check_bake_state(
                 if current_imposter_imposter
                     .0
                     .as_ref()
-                    .map_or(false, |detail| detail.complete)
+                    .is_some_and(|detail| detail.complete)
                 {
                     info!("mip done!");
                     current_imposter_imposter.0 = None;

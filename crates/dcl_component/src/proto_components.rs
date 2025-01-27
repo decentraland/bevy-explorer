@@ -110,6 +110,10 @@ impl DclProtoComponent for sdk::components::PbTweenState {}
 impl DclProtoComponent for sdk::components::PbLight {}
 impl DclProtoComponent for sdk::components::PbSpotlight {}
 impl DclProtoComponent for sdk::components::PbGlobalLight {}
+impl DclProtoComponent for sdk::components::PbTextureCamera {}
+impl DclProtoComponent for sdk::components::PbCameraLayers {}
+impl DclProtoComponent for sdk::components::PbPrimaryPointerInfo {}
+impl DclProtoComponent for sdk::components::PbCameraLayer {}
 
 // VECTOR2 conversions
 impl Copy for common::Vector2 {}
@@ -168,8 +172,17 @@ impl common::Vector3 {
             z: -vec3.z,
         }
     }
+
     pub fn abs_vec_to_vec3(&self) -> bevy::prelude::Vec3 {
         bevy::prelude::Vec3::new(self.x, self.y, self.z)
+    }
+
+    pub fn abs_vec_from_vec3(vec3: &bevy::prelude::Vec3) -> Self {
+        Self {
+            x: vec3.x,
+            y: vec3.y,
+            z: vec3.z,
+        }
     }
 }
 

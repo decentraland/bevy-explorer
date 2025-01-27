@@ -571,7 +571,7 @@ pub(crate) fn initialize_scene(
         let inspected = testing_data
             .inspect_hash
             .as_ref()
-            .map_or(false, |inspect_hash| inspect_hash == &context.hash);
+            .is_some_and(|inspect_hash| inspect_hash == &context.hash);
 
         let main_sx = spawn_scene(
             context.hash.clone(),
@@ -1249,7 +1249,7 @@ fn animate_ready_scene(
             .0
             .as_ref()
             .and_then(|(scene, _)| scene.hash_and_urn())
-            .map_or(false, |(hash, _)| hash == ctx.hash)
+            .is_some_and(|(hash, _)| hash == ctx.hash)
         {
             continue;
         }

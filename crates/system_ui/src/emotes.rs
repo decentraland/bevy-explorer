@@ -59,8 +59,7 @@ impl Plugin for EmoteSettingsPlugin {
                     )
                         .chain()
                         .run_if(|q: Query<&SettingsTab>| {
-                            q.get_single()
-                                .map_or(false, |tab| tab == &SettingsTab::Emotes)
+                            q.get_single().is_ok_and(|tab| tab == &SettingsTab::Emotes)
                         }),
                 )
                     .chain(),
@@ -694,7 +693,7 @@ fn update_emotes_list(
         }
     }
 
-    if emotes == settings.current_list && !dialog.get_single().map_or(false, |d| d.is_changed()) {
+    if emotes == settings.current_list && !dialog.get_single().is_ok_and(|d| d.is_changed()) {
         // emotes list matches and dialog has not changed (so current emotes have not changed)
         return;
     }
@@ -1000,7 +999,7 @@ fn update_selected_item(
         let is_remove = settings
             .current_emotes
             .get(&selected_slot)
-            .map_or(false, |(instance, _)| instance == &sel.instance);
+            .is_some_and(|(instance, _)| instance == &sel.instance);
 
         let label = if is_remove { "REMOVE" } else { "EQUIP" };
 

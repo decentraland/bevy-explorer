@@ -37,7 +37,8 @@ use crate::{
 use common::{
     rpc::RpcCall,
     structs::{
-        AppConfig, GraphicsSettings, PrimaryCamera, PrimaryPlayerRes, SceneLoadDistance, ToolTips,
+        AppConfig, CursorLocks, GraphicsSettings, PrimaryCamera, PrimaryPlayerRes,
+        SceneLoadDistance, ToolTips,
     },
 };
 use comms::{preview::PreviewMode, CommsPlugin};
@@ -140,6 +141,7 @@ fn init_test_app(entity_json: &str) -> App {
         load_imposter: 0.0,
     });
     app.init_resource::<PreviewMode>();
+    app.init_resource::<CursorLocks>();
     app.finish();
 
     let mut test_path = std::env::current_dir().unwrap();

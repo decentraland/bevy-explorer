@@ -14,6 +14,7 @@ use bevy::{
         despawn_with_children_recursive, BuildWorldChildren, Bundle, Entity, GlobalTransform,
         IntoSystemConfigs, Plugin, With, World,
     },
+    render::view::{Layer, RenderLayers},
     tasks::Task,
 };
 use ethers_core::types::H160;
@@ -439,4 +440,17 @@ impl VolumePanning<'_, '_> {
 
         (volume, panning)
     }
+}
+
+pub fn camera_to_render_layers<'a>(
+    base: u32,
+    camera_layers: impl Iterator<Item = &'a u32>,
+) -> RenderLayers {
+    camera_layers.fold(RenderLayers::none(), |result, camera_layer| {
+        if *camera_layer == 0 {
+            result.with(0 as Layer)
+        } else {
+            result.with((camera_layer - 1 + base) as Layer)
+        }
+    })
 }

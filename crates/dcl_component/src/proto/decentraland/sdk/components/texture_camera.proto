@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+import "decentraland/common/colors.proto";
+
+option (common.ecs_component_id) = 1207;
+
+message PBTextureCamera {
+    // rendered texture width
+    optional uint32 width = 1;
+    // rendered texture height
+    optional uint32 height = 2;
+    // which layer of entities to render. entity layers can be specified by adding PBCameraLayers to target entities.
+    // defaults to 0
+    optional uint32 layer = 3;
+
+    // default black
+    optional decentraland.common.Color4 clear_color = 6;
+    // default infinity
+    optional float far_plane = 7;
+
+    oneof mode {
+        Perspective perspective = 8;
+        Orthographic orthographic = 9;
+        /* Portal portal = 10; */ 
+    };
+}
+
+message Perspective {
+    // vertical field of view in radians
+    // defaults to pi/4 = 45 degrees
+    optional float field_of_view = 1;
+}
+
+message Orthographic {
+    // vertical extent of the visible range in meters
+    // defaults to 4m
+    optional float vertical_range = 1;
+}

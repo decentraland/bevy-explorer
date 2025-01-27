@@ -301,7 +301,7 @@ fn animate(
         };
 
         // take a copy of the last entry, remove others
-        let emotes_changed = emotes.as_ref().map_or(false, Mut::is_changed);
+        let emotes_changed = emotes.as_ref().is_some_and(Mut::is_changed);
         let emote = emotes
             .as_mut()
             .map(|e| {
@@ -694,10 +694,6 @@ fn play_current_emote(
                                     commands.entity(spawned_ent).try_insert(rotated);
                                 }
                             }
-                        }
-
-                        if let Some(layers) = definition.render_layer.clone() {
-                            commands.entity(spawned_ent).insert(layers);
                         }
                     }
                     extras.scene_rotated = true;

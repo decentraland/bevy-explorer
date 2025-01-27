@@ -297,7 +297,7 @@ fn update(
                                     next.message
                                 ));
                                 read += 1;
-                                if count.map_or(false, |c| read == c) {
+                                if count.is_some_and(|c| read == c) {
                                     reply("[truncated]".to_owned());
                                     break;
                                 }

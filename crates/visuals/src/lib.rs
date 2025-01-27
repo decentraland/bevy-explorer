@@ -1,8 +1,11 @@
 use bevy::{
     core_pipeline::Skybox,
-    pbr::{wireframe::WireframePlugin, DirectionalLightShadowMap},
+    pbr::{wireframe::WireframePlugin, CascadeShadowConfigBuilder, DirectionalLightShadowMap},
     prelude::*,
-    render::render_asset::RenderAssetBytesPerFrame,
+    render::{
+        render_asset::RenderAssetBytesPerFrame,
+        view::{Layer, RenderLayers},
+    },
 };
 use bevy_atmosphere::{
     prelude::{AtmosphereCamera, AtmosphereModel, AtmospherePlugin, Nishita},
@@ -14,7 +17,7 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser, SceneLoadDistance,
-        GROUND_RENDERLAYER,
+        ShadowSetting, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER,
     },
 };
 use console::DoAddConsoleCommand;
@@ -40,6 +43,9 @@ impl Plugin for VisualsPlugin {
     }
 }
 
+#[derive(Component)]
+struct DirectionalLightLayer(Layer);
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -48,9 +54,9 @@ fn setup(
 ) {
     info!("visuals::setup");
 
-    commands
-        .entity(camera.0)
-        .try_insert(AtmosphereCamera::default());
+    commands.entity(camera.0).try_insert(AtmosphereCamera {
+        render_layers: Some(RenderLayers::default()),
+    });
 
     commands.entity(camera.0).try_insert(FogSettings {
         color: Color::srgb(0.3, 0.2, 0.1),
@@ -84,19 +90,32 @@ pub struct SceneGlobalLight {
     pub dir_direction: Vec3,
     pub ambient_color: Color,
     pub ambient_brightness: f32,
+    pub layers: RenderLayers,
 }
 
 static TRANSITION_TIME: f32 = 1.0;
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn apply_global_light(
-    mut fog: Query<&mut FogSettings>,
+    mut commands: Commands,
     setting: Res<AppConfig>,
     mut atmosphere: AtmosphereMut<Nishita>,
-    mut sun: Query<(&mut Transform, &mut DirectionalLight)>,
+    mut sun: Query<(
+        Entity,
+        &DirectionalLightLayer,
+        &mut Transform,
+        &mut DirectionalLight,
+    )>,
     mut ambient: ResMut<AmbientLight>,
     time: Res<Time>,
-    mut camera: Query<(&PrimaryCamera, &mut Skybox)>,
+    mut cameras: Query<
+        (
+            Option<&PrimaryCamera>,
+            Option<&mut Skybox>,
+            Option<&mut FogSettings>,
+        ),
+        With<Camera3d>,
+    >,
     scene_distance: Res<SceneLoadDistance>,
     scene_global_light: Res<SceneGlobalLight>,
     mut prev: Local<(f32, SceneGlobalLight)>,
@@ -128,35 +147,98 @@ fn apply_global_light(
                 .into(),
             ambient_brightness: scene_global_light.ambient_brightness * new_amount
                 + prev.1.ambient_brightness * old_amount,
+            layers: scene_global_light.layers.clone(),
         }
     };
 
     let rotation = Quat::from_rotation_arc(Vec3::NEG_Z, next_light.dir_direction);
     atmosphere.sun_position = -next_light.dir_direction;
 
-    let Ok((camera, mut skybox)) = camera.get_single_mut() else {
-        return;
-    };
-    let dir_light_lightness = Lcha::from(next_light.dir_color).lightness;
-    skybox.brightness =
-        (next_light.dir_illuminance.sqrt() * 40.0 * dir_light_lightness).min(2000.0);
-    atmosphere.rayleigh_coefficient =
-        Vec3::new(5.5e-6, 13.0e-6, 22.4e-6) * next_light.dir_color.to_srgba().to_vec3();
+    let mut directional_layers = RenderLayers::none();
+    for (entity, layer, mut light_trans, mut directional) in sun.iter_mut() {
+        if !next_light.layers.intersects(&RenderLayers::layer(layer.0)) {
+            commands.entity(entity).despawn_recursive();
+            continue;
+        }
 
-    if let Ok((mut light_trans, mut directional)) = sun.get_single_mut() {
+        directional_layers = directional_layers.with(layer.0);
         light_trans.rotation = rotation;
         directional.illuminance = next_light.dir_illuminance;
         directional.color = next_light.dir_color;
+    }
 
-        if let Ok(mut fog) = fog.get_single_mut() {
+    for new_layer in next_light
+        .layers
+        .symmetric_difference(&directional_layers)
+        .iter()
+    {
+        let mut layer = RenderLayers::layer(new_layer);
+        if new_layer == 0 {
+            layer = layer.union(&PRIMARY_AVATAR_LIGHT_LAYER);
+        }
+
+        let (shadows_enabled, cascade_shadow_config) = match config.graphics.shadow_settings {
+            ShadowSetting::Off => (false, Default::default()),
+            ShadowSetting::Low => (
+                true,
+                CascadeShadowConfigBuilder {
+                    num_cascades: 1,
+                    minimum_distance: 0.1,
+                    maximum_distance: config.graphics.shadow_distance,
+                    first_cascade_far_bound: config.graphics.shadow_distance,
+                    overlap_proportion: 0.2,
+                }
+                .build(),
+            ),
+            ShadowSetting::High => (
+                true,
+                CascadeShadowConfigBuilder {
+                    num_cascades: 4,
+                    minimum_distance: 0.1,
+                    maximum_distance: config.graphics.shadow_distance,
+                    first_cascade_far_bound: config.graphics.shadow_distance / 15.0,
+                    overlap_proportion: 0.2,
+                }
+                .build(),
+            ),
+        };
+
+        commands.spawn((
+            DirectionalLightBundle {
+                directional_light: DirectionalLight {
+                    color: next_light.dir_color,
+                    illuminance: next_light.dir_illuminance,
+                    shadows_enabled,
+                    ..Default::default()
+                },
+                transform: Transform::default().with_rotation(rotation),
+                cascade_shadow_config,
+                ..Default::default()
+            },
+            layer,
+            DirectionalLightLayer(new_layer),
+        ));
+    }
+
+    for (maybe_primary, maybe_skybox, maybe_fog) in cameras.iter_mut() {
+        let dir_light_lightness = Lcha::from(next_light.dir_color).lightness;
+        let skybox_brightness =
+            (next_light.dir_illuminance.sqrt() * 40.0 * dir_light_lightness).min(2000.0);
+        if let Some(mut skybox) = maybe_skybox {
+            skybox.brightness = skybox_brightness;
+            atmosphere.rayleigh_coefficient =
+                Vec3::new(5.5e-6, 13.0e-6, 22.4e-6) * next_light.dir_color.to_srgba().to_vec3();
+        }
+
+        if let Some(mut fog) = maybe_fog {
             let distance = (scene_distance.load + scene_distance.unload)
                 .max(scene_distance.load_imposter * 0.333)
-                + camera.distance * 5.0;
+                + maybe_primary.map_or(0.0, |camera| camera.distance * 5.0);
 
             let base_color = next_light.ambient_color.to_srgba()
                 * next_light.ambient_brightness
                 * 0.5
-                * skybox.brightness
+                * skybox_brightness
                 / 2000.0;
             let base_color = Color::from(base_color).with_alpha(1.0);
 

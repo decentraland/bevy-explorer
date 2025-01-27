@@ -113,7 +113,7 @@ fn update_audio(
                     continue;
                 };
 
-                error!("clip {:?}", audio_source.0);
+                debug!("clip {:?}", audio_source.0);
                 new_state = Some(AudioSourceState {
                     handle,
                     clip_url: audio_source.0.audio_clip_url.clone(),
@@ -237,7 +237,7 @@ fn play_system_audio(
     playing.retain(|h_instance| {
         let retain = audio_instances
             .get(h_instance)
-            .map_or(false, |instance| instance.state().position().is_some());
+            .is_some_and(|instance| instance.state().position().is_some());
         if !retain {
             debug!("drop system audio");
         }
@@ -272,7 +272,7 @@ fn update_source_volume(
 
     for (ent, maybe_scene, maybe_source, mut emitter, transform) in query.iter_mut() {
         if maybe_scene.map_or(true, |scene| current_scenes.contains(&scene.root)) {
-            let (volume, panning) = if maybe_source.map_or(false, |source| source.0.global()) {
+            let (volume, panning) = if maybe_source.is_some_and(|source| source.0.global()) {
                 (
                     maybe_source
                         .and_then(|source| source.0.volume)
@@ -300,7 +300,7 @@ fn update_source_volume(
                     false
                 }
             });
-        } else if maybe_scene.map_or(false, |scene| prev_scenes.contains(&scene.root)) {
+        } else if maybe_scene.is_some_and(|scene| prev_scenes.contains(&scene.root)) {
             debug!("stop [{:?}]", ent);
             for h_instance in &emitter.instances {
                 if let Some(instance) = audio_instances.get_mut(h_instance) {

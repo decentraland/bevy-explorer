@@ -9,10 +9,11 @@ use bevy::{
     transform::TransformSystem,
 };
 
+use camera::update_cursor_lock;
 use common::{
     anim_last_system,
     sets::SceneSets,
-    structs::{PrimaryCamera, PrimaryUser, PRIMARY_AVATAR_LIGHT_LAYER},
+    structs::{CursorLocks, PrimaryCamera, PrimaryUser, PRIMARY_AVATAR_LIGHT_LAYER_INDEX},
 };
 use console::DoAddConsoleCommand;
 use dynamics::{
@@ -68,9 +69,11 @@ impl Plugin for UserInputPlugin {
                     .before(parent_position_sync::<SceneProxyStage>)
                     .before(TransformSystem::TransformPropagate)
                     .before(CameraUpdateSystem),
+                update_cursor_lock.after(update_camera_position),
             ),
         );
-        app.insert_resource(UserClipping(true));
+        app.insert_resource(UserClipping(true))
+            .init_resource::<CursorLocks>();
         app.add_console_command::<NoClipCommand, _>(no_clip);
         app.add_console_command::<SpeedCommand, _>(speed_cmd);
         app.add_console_command::<JumpCommand, _>(jump_cmd);
@@ -79,22 +82,19 @@ impl Plugin for UserInputPlugin {
 
 #[allow(clippy::type_complexity)]
 fn manage_player_visibility(
-    mut commands: Commands,
     camera: Query<&GlobalTransform, With<PrimaryCamera>>,
     mut player: Query<
         (
-            Entity,
             &GlobalTransform,
             &mut Visibility,
+            &mut propagate::Propagate<RenderLayers>,
             Has<OutOfWorld>,
             &PlayerModifiers,
         ),
         With<PrimaryUser>,
     >,
-    children: Query<&Children>,
-    spotlights: Query<(), With<SpotLight>>,
 ) {
-    if let (Ok(cam_transform), Ok((player, player_transform, mut vis, is_oow, modifiers))) =
+    if let (Ok(cam_transform), Ok((player_transform, mut vis, mut layers, is_oow, modifiers))) =
         (camera.get_single(), player.get_single_mut())
     {
         #[allow(clippy::collapsible_else_if)]
@@ -115,24 +115,17 @@ fn manage_player_visibility(
 
         #[allow(clippy::collapsible_else_if)]
         if distance < 0.5 {
-            for child in children.iter_descendants(player) {
-                // don't retarget the profile texture spotlight which we've attached to the avatar directly
-                if spotlights.get(child).is_ok() {
-                    continue;
-                }
-                if let Some(mut commands) = commands.get_entity(child) {
-                    commands.insert(PRIMARY_AVATAR_LIGHT_LAYER);
-                }
-            }
+            layers.0 = layers
+                .0
+                .clone()
+                .with(PRIMARY_AVATAR_LIGHT_LAYER_INDEX)
+                .without(0);
         } else {
-            for child in children.iter_descendants(player) {
-                if spotlights.get(child).is_ok() {
-                    continue;
-                }
-                if let Some(mut commands) = commands.get_entity(child) {
-                    commands.insert(RenderLayers::default());
-                }
-            }
+            layers.0 = layers
+                .0
+                .clone()
+                .with(0)
+                .without(PRIMARY_AVATAR_LIGHT_LAYER_INDEX);
         }
     }
 }
