@@ -650,7 +650,7 @@ fn send_action_events(
                             mesh_name: info.mesh_name.clone(),
                             entity_id: scene_entity.id.as_proto_u32(),
                         };
-                        warn!("({:?}) pointer hit: {hit:?}", ev_type);
+                        debug!("({:?}) pointer hit: {hit:?}", ev_type);
                         // send to target entity
                         context.update_crdt(
                             SceneComponentId::POINTER_RESULT,
