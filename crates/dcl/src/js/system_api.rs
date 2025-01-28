@@ -1,11 +1,12 @@
 use bevy::log::debug;
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
+use http::Uri;
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
     settings::{SettingInfo, Settings},
     SystemApi,
 };
-use wallet::Wallet;
+use wallet::{sign_request, Wallet};
 
 use super::SuperUserScene;
 
@@ -25,6 +26,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_logout(),
             op_settings(),
             op_set_setting(),
+            op_kernel_fetch_headers(),
         ]
     } else {
         Vec::default()
@@ -232,4 +234,23 @@ async fn op_set_setting(
         .borrow_mut()
         .borrow_mut::<Settings>()
         .set_value(&name, val)
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_kernel_fetch_headers(
+    state: Rc<RefCell<OpState>>,
+    #[string] uri: String,
+    #[string] method: Option<String>,
+) -> Result<Vec<(String, String)>, AnyError> {
+    debug!("op_kernel_fetch_headers");
+
+    let wallet = state.borrow().borrow::<Wallet>().clone();
+    sign_request(
+        method.as_deref().unwrap_or("get"),
+        &Uri::try_from(uri)?,
+        &wallet,
+        (),
+    )
+    .await
 }
