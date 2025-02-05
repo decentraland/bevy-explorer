@@ -3,7 +3,6 @@ use std::{
     marker::PhantomData,
 };
 
-use avatar::AvatarDynamicState;
 use bevy::{
     ecs::system::SystemParam,
     input::mouse::{MouseMotion, MouseWheel},
@@ -14,7 +13,8 @@ use bevy::{
 
 use common::{
     structs::{
-        ActiveDialog, CameraOverride, CursorLocked, CursorLocks, PrimaryCamera, PrimaryUser,
+        ActiveDialog, AvatarDynamicState, CameraOverride, CursorLocked, CursorLocks, PrimaryCamera,
+        PrimaryUser,
     },
     util::ModifyComponentExt,
 };

@@ -1,9 +1,15 @@
 use bevy::prelude::*;
 
-use common::structs::PrimaryUser;
+use common::structs::{AvatarDynamicState, PrimaryUser};
 use dcl_component::{
     proto_components::kernel::comms::rfc4,
     transform_and_parent::{DclQuat, DclTranslation},
+};
+
+use crate::{
+    global_crdt::GlobalCrdtState,
+    movement_compressed::{Movement, Temporal},
+    TransportType,
 };
 
 use super::{NetworkMessage, Transport};
@@ -17,17 +23,18 @@ impl Plugin for BroadcastPositionPlugin {
 }
 
 const STATIC_FREQ: f64 = 1.0;
-const DYNAMIC_FREQ: f64 = 0.1;
+const DYNAMIC_FREQ: f64 = 0.0;
 
 fn broadcast_position(
-    player: Query<&GlobalTransform, With<PrimaryUser>>,
+    player: Query<(&GlobalTransform, &AvatarDynamicState), With<PrimaryUser>>,
     transports: Query<&Transport>,
     mut last_position: Local<(Vec3, Quat)>,
     mut last_sent: Local<f64>,
     mut last_index: Local<u32>,
     time: Res<Time>,
+    global_crdt: Res<GlobalCrdtState>,
 ) {
-    let Ok(player) = player.get_single() else {
+    let Ok((player, dynamics)) = player.get_single() else {
         return;
     };
     let time = time.elapsed_seconds_f64();
@@ -57,7 +64,49 @@ fn broadcast_position(
     debug!("sending position: {position_packet:?}");
     let packet = rfc4::Packet {
         message: Some(rfc4::packet::Message::Position(position_packet)),
-        protocol_version: 999,
+        protocol_version: 100,
+    };
+
+    for transport in transports
+        .iter()
+        .filter(|t| t.transport_type == TransportType::Archipelago)
+    {
+        if let Err(e) = transport
+            .sender
+            .try_send(NetworkMessage::unreliable(&packet))
+        {
+            warn!("failed to update to transport: {e}");
+        }
+    }
+
+    let movement = Movement::new(
+        translation,
+        dynamics.velocity,
+        global_crdt.realm_bounds.0,
+        global_crdt.realm_bounds.1,
+    );
+    let temporal = Temporal::from_parts(
+        time,
+        false,
+        rotation.to_euler(bevy::math::EulerRot::YXZ).0,
+        movement.velocity_tier(),
+        dynamics.move_kind,
+        dynamics.ground_height < 0.2,
+    );
+
+    let movement_compressed = crate::movement_compressed::MovementCompressed { temporal, movement };
+
+    let movement_packet = rfc4::MovementCompressed {
+        temporal_data: i32::from_le_bytes(movement_compressed.temporal.into_bytes()),
+        movement_data: i64::from_le_bytes(movement_compressed.movement.into_bytes()),
+    };
+
+    debug!("sending compressed: {movement_packet:?}");
+    crate::movement_compressed::MovementCompressed::from_proto(movement_packet.clone());
+    debug!("---");
+    let packet = rfc4::Packet {
+        message: Some(rfc4::packet::Message::MovementCompressed(movement_packet)),
+        protocol_version: 100,
     };
 
     for transport in transports.iter() {

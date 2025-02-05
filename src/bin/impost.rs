@@ -2,7 +2,6 @@ use comms::{preview::PreviewMode, profile::ProfileCache, CommsPlugin};
 use console::ConsolePlugin;
 use imposters::{render::ImposterMissing, DclImposterPlugin};
 
-use avatar::AvatarDynamicState;
 use bevy::{
     core::TaskPoolThreadAssignmentPolicy, prelude::*, window::ExitCondition, winit::WinitSettings,
 };
@@ -11,8 +10,8 @@ use common::{
     rpc::RpcCall,
     sets::SetupSets,
     structs::{
-        AppConfig, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes,
-        SceneImposterBake, SceneLoadDistance, SystemAudio, ToolTips,
+        AppConfig, AvatarDynamicState, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes,
+        PrimaryPlayerRes, SceneImposterBake, SceneLoadDistance, SystemAudio, ToolTips,
     },
     util::{config_file, UtilsPlugin},
 };

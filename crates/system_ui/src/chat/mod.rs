@@ -548,7 +548,7 @@ fn emit_user_chat(
                                 message: message.clone(),
                                 timestamp: time.elapsed_seconds_f64(),
                             })),
-                            protocol_version: 999,
+                            protocol_version: 100,
                         }));
                 }
             }

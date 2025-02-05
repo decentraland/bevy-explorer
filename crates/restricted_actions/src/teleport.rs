@@ -1,8 +1,7 @@
-use avatar::AvatarDynamicState;
 use bevy::{math::Vec3Swizzles, prelude::*};
 use common::{
     rpc::{RpcCall, RpcResultSender},
-    structs::{PermissionType, PrimaryUser},
+    structs::{AvatarDynamicState, PermissionType, PrimaryUser},
 };
 use comms::global_crdt::ForeignPlayer;
 use ethers_core::rand::{seq::SliceRandom, thread_rng, Rng};

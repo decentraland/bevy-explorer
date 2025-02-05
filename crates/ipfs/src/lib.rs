@@ -365,11 +365,28 @@ pub struct CommsConfig {
 
 #[derive(Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
+pub struct Region {
+    pub left: i32,
+    pub right: i32,
+    pub top: i32,
+    pub bottom: i32,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MapData {
+    pub minimap_enabled: Option<bool>,
+    pub sizes: Vec<Region>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerConfiguration {
     pub scenes_urn: Option<Vec<String>>,
     pub realm_name: Option<String>,
     pub network_id: Option<u32>,
     pub city_loader_content_server: Option<String>,
+    pub map: Option<MapData>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

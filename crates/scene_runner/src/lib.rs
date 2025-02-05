@@ -22,6 +22,7 @@ use common::{
     structs::{AppConfig, PrimaryCamera, PrimaryUser},
     util::{dcl_assert, TryPushChildrenEx},
 };
+use comms::SetCurrentScene;
 use dcl::{
     interface::CrdtType, RendererResponse, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse,
 };
@@ -31,7 +32,7 @@ use dcl_component::{
     DclReader, DclWriter, FromDclReader, SceneComponentId, SceneEntityId,
 };
 use initialize_scene::{PortableScenes, TestingData};
-use ipfs::SceneIpfsLocation;
+use ipfs::{CurrentRealm, SceneIpfsLocation};
 use primary_entities::PrimaryEntities;
 use spin_sleep::SpinSleeper;
 use ui_core::ui_actions::{Click, On};
@@ -315,6 +316,8 @@ impl Plugin for SceneRunnerPlugin {
         app.add_plugins(SceneOutputPlugin);
         app.add_plugins(SceneUtilPlugin);
         app.add_plugins(LightsPlugin);
+
+        app.add_systems(Update, update_scene_room.in_set(SceneSets::PostLoop));
     }
 }
 
@@ -942,4 +945,45 @@ fn process_scene_entity_lifecycle(
             context.set_dead(*deleted_scene_entity);
         }
     }
+}
+
+fn update_scene_room(
+    mut writer: EventWriter<SetCurrentScene>,
+    mut last: Local<Option<SetCurrentScene>>,
+    realm: Res<CurrentRealm>,
+    containing_scene: ContainingScene,
+    player: Query<Entity, With<PrimaryUser>>,
+    scenes: Query<&RendererSceneContext>,
+) {
+    let (Some(realm), Some(scene)) = (
+        realm.config.realm_name.as_ref(),
+        player
+            .get_single()
+            .ok()
+            .and_then(|p| containing_scene.get_parcel(p))
+            .and_then(|scene| scenes.get(scene).ok()),
+    ) else {
+        if last.take().is_some() {
+            writer.send(SetCurrentScene {
+                realm_name: default(),
+                scene_id: default(),
+            });
+        }
+        return;
+    };
+
+    if last
+        .as_ref()
+        .is_some_and(|ev| &ev.realm_name == realm && ev.scene_id == scene.hash)
+    {
+        return;
+    }
+
+    let ev = SetCurrentScene {
+        realm_name: realm.to_owned(),
+        scene_id: scene.hash.clone(),
+    };
+
+    *last = Some(ev.clone());
+    writer.send(ev);
 }

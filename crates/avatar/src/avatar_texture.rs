@@ -21,13 +21,13 @@ use bevy::{
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};
 use collectibles::{urn::CollectibleUrn, Emote};
-use common::sets::SetupSets;
+use common::{sets::SetupSets, structs::AvatarDynamicState};
 use dcl_component::proto_components::sdk::components::PbAvatarEmoteCommand;
 use ui_core::ui_actions::{DragData, Dragged, On};
 
 use crate::{
     animate::{EmoteBroadcast, EmoteCommand, EmoteList},
-    AvatarDynamicState, AvatarSelection, AvatarShape,
+    AvatarSelection, AvatarShape,
 };
 
 pub struct AvatarTexturePlugin;

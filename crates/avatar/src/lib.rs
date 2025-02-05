@@ -138,16 +138,6 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>, mut view: ResMut
         .id();
 }
 
-#[derive(Component, Default)]
-pub struct AvatarDynamicState {
-    pub force: Vec2,
-    pub velocity: Vec3,
-    pub ground_height: f32,
-    pub tank: bool,
-    pub rotate: f32,
-    pub jump_time: f32,
-}
-
 // send received avatar info into scenes
 fn update_avatar_info(
     updated_players: Query<(Option<&ForeignPlayer>, &UserProfile), Changed<UserProfile>>,

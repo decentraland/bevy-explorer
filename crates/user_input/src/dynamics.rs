@@ -56,10 +56,9 @@ use common::{
         MAX_CLIMBABLE_INCLINE, MAX_STEP_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS,
         PLAYER_GROUND_THRESHOLD,
     },
-    structs::PrimaryUser,
+    structs::{AvatarDynamicState, PrimaryUser},
 };
 
-use avatar::AvatarDynamicState;
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{

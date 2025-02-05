@@ -11,7 +11,6 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-use avatar::AvatarDynamicState;
 use bevy::{
     asset::LoadState,
     core::TaskPoolThreadAssignmentPolicy,
@@ -37,9 +36,9 @@ use collectibles::CollectiblesPlugin;
 use common::{
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, Cubemap, GraphicsSettings, IVec2Arg, PrimaryCamera,
-        PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake, SceneLoadDistance,
-        Version, GROUND_RENDERLAYER,
+        AppConfig, AttachPoints, AvatarDynamicState, Cubemap, GraphicsSettings, IVec2Arg,
+        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake,
+        SceneLoadDistance, Version, GROUND_RENDERLAYER,
     },
     util::{config_file, project_directories, TaskExt, UtilsPlugin},
 };

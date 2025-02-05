@@ -73,7 +73,7 @@ pub fn start_ws_room(
                     profile_version: current_profile.version,
                 },
             )),
-            protocol_version: 999,
+            protocol_version: 100,
         };
         let _ = sender.try_send(NetworkMessage::reliable(&response));
 

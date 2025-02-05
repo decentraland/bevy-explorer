@@ -17,6 +17,7 @@ message Packet {
     Movement movement = 8;
     PlayerEmote player_emote = 9;
     SceneEmote scene_emote = 10;
+    MovementCompressed movement_compressed = 12;
   }
   uint32 protocol_version = 11;
 }
@@ -56,6 +57,13 @@ message Movement {
   bool is_falling = 14;
 
   bool is_stunned = 15;
+  
+  float rotation_y = 16;
+}
+
+message MovementCompressed {
+  int32 temporal_data = 1; // bit-compressed: timestamp + animations 
+  int64 movement_data = 2; // bit-compressed: position + velocity 
 }
 
 message PlayerEmote {

@@ -121,6 +121,7 @@ futures-util = "0.3.28"
 async-tls = "0.13.0"
 boimp = { git = "https://github.com/robtfm/boimp", branch = "master" }
 crc = "3"
+num-traits = "0.2"
 
 [dependencies]
 analytics = { workspace = true }

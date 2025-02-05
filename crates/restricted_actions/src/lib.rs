@@ -5,7 +5,6 @@ use std::{
     sync::Arc,
 };
 
-use avatar::AvatarDynamicState;
 use bevy::{
     asset::LoadState,
     math::Vec3Swizzles,
@@ -22,7 +21,7 @@ use common::{
         SpawnResponse,
     },
     sets::SceneSets,
-    structs::{PermissionType, PrimaryCamera, PrimaryUser},
+    structs::{AvatarDynamicState, PermissionType, PrimaryCamera, PrimaryUser},
     util::{AsH160, FireEventEx, TaskExt},
 };
 use comms::{
@@ -961,7 +960,7 @@ fn send_scene_messages(
                 scene_id: hash.0.clone(),
                 data: data.clone(),
             })),
-            protocol_version: 999,
+            protocol_version: 100,
         };
 
         for transport in transports.iter() {

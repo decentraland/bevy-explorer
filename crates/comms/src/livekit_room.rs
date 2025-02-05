@@ -80,7 +80,7 @@ pub fn start_livekit(
                     profile_version: current_profile.version,
                 },
             )),
-            protocol_version: 999,
+            protocol_version: 100,
         };
         let _ = sender.try_send(NetworkMessage::reliable(&response));
 
@@ -237,26 +237,30 @@ fn livekit_handler_inner(
 
                     match incoming {
                         livekit::RoomEvent::DataReceived { payload, participant, .. } => {
-                            if let Some(address) = participant.and_then(|p| p.identity().0.as_str().as_h160()) {
-                                let packet = match rfc4::Packet::decode(payload.as_slice()) {
-                                    Ok(packet) => packet,
-                                    Err(e) => {
-                                        warn!("unable to parse packet body: {e}");
+                            if let Some(participant) = participant {
+                                if let Some(address) = participant.identity().0.as_str().as_h160() {
+                                    let packet = match rfc4::Packet::decode(payload.as_slice()) {
+                                        Ok(packet) => packet,
+                                        Err(e) => {
+                                            warn!("unable to parse packet body: {e}");
+                                            continue;
+                                        }
+                                    };
+                                    let Some(message) = packet.message else {
+                                        warn!("received empty packet body");
                                         continue;
+                                    };
+                                    debug!("[{}] received [{}] packet {message:?} from {address}", transport_id, packet.protocol_version);
+                                    if let Err(e) = sender.send(PlayerUpdate {
+                                        transport_id,
+                                        message: PlayerMessage::PlayerData(message),
+                                        address,
+                                    }).await {
+                                        warn!("app pipe broken ({e}), existing loop");
+                                        break 'stream;
                                     }
-                                };
-                                let Some(message) = packet.message else {
-                                    warn!("received empty packet body");
-                                    continue;
-                                };
-                                debug!("received packet {message:?} from {address}");
-                                if let Err(e) = sender.send(PlayerUpdate {
-                                    transport_id,
-                                    message: PlayerMessage::PlayerData(message),
-                                    address,
-                                }).await {
-                                    warn!("app pipe broken ({e}), existing loop");
-                                    break 'stream;
+                                    let meta = participant.metadata();
+                                    println!("meta b {} -> {}", address, meta);
                                 }
                             }
                         },
@@ -313,6 +317,10 @@ fn livekit_handler_inner(
                                     _ => warn!("not processing video tracks"),
                                 }
                             }
+                        }
+                        livekit::RoomEvent::ParticipantConnected(participant) => {
+                            let meta = participant.metadata();
+                            println!("meta a {} -> {}", participant.identity(), meta);
                         }
                         _ => { debug!("Event: {:?}", incoming); }
                     };
