@@ -48,7 +48,8 @@ impl Plugin for UserProfilePlugin {
         );
 
         app.insert_resource(CurrentUserProfile::default());
-        app.init_resource::<ProfileCache>();
+        app.init_resource::<ProfileCache>()
+            .init_resource::<ProfileMetaCache>();
     }
 }
 
@@ -60,10 +61,13 @@ enum ProfileDisplayState {
 
 #[derive(Resource, Default)]
 pub struct ProfileCache(HashMap<Address, ProfileDisplayState>);
+#[derive(Resource, Default)]
+pub struct ProfileMetaCache(pub HashMap<Address, String>);
 
 #[derive(SystemParam)]
 pub struct ProfileManager<'w, 's> {
     cache: ResMut<'w, ProfileCache>,
+    meta_cache: ResMut<'w, ProfileMetaCache>,
     ipfs: IpfsAssetServer<'w, 's>,
 }
 
@@ -75,9 +79,11 @@ impl ProfileManager<'_, '_> {
         address: Address,
     ) -> Result<Option<&UserProfile>, ProfileMissingError> {
         let state = self.cache.0.entry(address).or_insert_with(|| {
-            ProfileDisplayState::Loading(
-                IoTaskPool::get().spawn(get_remote_profile(address, self.ipfs.ipfs().clone())),
-            )
+            ProfileDisplayState::Loading(IoTaskPool::get().spawn(get_remote_profile(
+                address,
+                self.ipfs.ipfs().clone(),
+                self.meta_cache.0.get(&address).cloned(),
+            )))
         });
 
         if let ProfileDisplayState::Loading(task) = state {
@@ -295,8 +301,7 @@ pub struct CurrentUserProfile {
 #[allow(clippy::too_many_arguments)]
 fn request_missing_profiles(
     mut commands: Commands,
-    missing_profiles: Query<(Entity, &mut ForeignPlayer), Without<UserProfile>>,
-    stale_profiles: Query<(Entity, &mut ForeignPlayer, &UserProfile)>,
+    profiles: Query<(Entity, &mut ForeignPlayer, Option<&UserProfile>)>,
     mut manager: ProfileManager,
     mut global_crdt: ResMut<GlobalCrdtState>,
     mut requested: Local<HashMap<Address, f32>>,
@@ -305,12 +310,9 @@ fn request_missing_profiles(
 ) {
     let mut last_requested = std::mem::take(&mut *requested);
 
-    for (ent, player) in missing_profiles.iter().chain(
-        stale_profiles
-            .iter()
-            .filter(|(_, player, profile)| player.profile_version > profile.version)
-            .map(|(ent, player, _)| (ent, player)),
-    ) {
+    for (ent, player, _) in profiles.iter().filter(|(_, player, maybe_profile)| {
+        maybe_profile.is_none_or(|profile| player.profile_version > profile.version)
+    }) {
         if let Some((address, req_time)) = last_requested.remove_entry(&player.address) {
             if time.elapsed_seconds() - req_time < 10.0 {
                 requested.insert(address, req_time);
@@ -321,7 +323,7 @@ fn request_missing_profiles(
         match manager.get_data(player.address) {
             Ok(Some(profile)) => {
                 // catalyst fetch complete
-                if profile.version == player.profile_version && player.profile_version != 0 {
+                if profile.version >= player.profile_version {
                     global_crdt.update_crdt(
                         SceneComponentId::PLAYER_IDENTITY_DATA,
                         CrdtType::LWW_ANY,
@@ -655,8 +657,12 @@ async fn deploy_profile(
 pub async fn get_remote_profile(
     address: Address,
     ipfs: std::sync::Arc<IpfsIo>,
+    endpoint: Option<String>,
 ) -> Result<UserProfile, anyhow::Error> {
-    let endpoint = ipfs.lambda_endpoint().ok_or(anyhow!("not connected"))?;
+    let endpoint = match endpoint {
+        Some(endpoint) => endpoint,
+        None => ipfs.lambda_endpoint().ok_or(anyhow!("not connected"))?,
+    };
     debug!("requesting profile from {}", endpoint);
 
     let mut response = isahc::get(format!("{endpoint}/profiles/{address:#x}"))?;

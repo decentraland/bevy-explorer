@@ -12,6 +12,7 @@ use common::{
 };
 use ethers_core::types::Address;
 use kira::sound::streaming::StreamingSoundData;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::{broadcast, mpsc};
 
@@ -30,7 +31,7 @@ use dcl_component::{
     DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter,
 };
 
-use crate::movement_compressed::MovementCompressed;
+use crate::{movement_compressed::MovementCompressed, profile::ProfileMetaCache};
 
 const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 6..=406;
 
@@ -66,16 +67,19 @@ impl Plugin for GlobalCrdtPlugin {
 }
 
 pub enum PlayerMessage {
+    MetaData(String),
     PlayerData(rfc4::packet::Message),
     AudioStream(Box<StreamingSoundData<AudioDecoderError>>),
 }
 
 impl std::fmt::Debug for PlayerMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
+        let var_name = match self {
+            Self::MetaData(arg0) => f.debug_tuple("MetaData").field(arg0).finish(),
             Self::PlayerData(arg0) => f.debug_tuple("PlayerData").field(arg0).finish(),
             Self::AudioStream(_) => f.debug_tuple("AudioStream").finish(),
-        }
+        };
+        var_name
     }
 }
 
@@ -179,6 +183,11 @@ impl LocalAudioSource {
     }
 }
 
+#[derive(Serialize, Deserialize, Component, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignMetaData {
+    pub lambdas_endpoint: String,
+}
 #[derive(Event)]
 pub struct PlayerPositionEvent {
     pub index: Option<u32>,
@@ -226,6 +235,7 @@ pub fn process_transport_updates(
         HashMap<String, tokio::sync::mpsc::UnboundedSender<(String, Vec<u8>)>>,
     >,
     mut subscribers: EventReader<RpcCall>,
+    mut profile_meta_cache: ResMut<ProfileMetaCache>,
 ) {
     // gather any event receivers
     for ev in subscribers.read() {
@@ -318,6 +328,14 @@ pub fn process_transport_updates(
 
         // process update
         match update.message {
+            PlayerMessage::MetaData(str) => {
+                if let Ok(meta) = serde_json::from_str::<ForeignMetaData>(&str) {
+                    debug!("foreign player metadata: {scene_id:?}: {meta:?}");
+                    profile_meta_cache
+                        .0
+                        .insert(update.address, meta.lambdas_endpoint);
+                }
+            }
             PlayerMessage::AudioStream(audio) => {
                 // pass through
                 let _ = audio_channel.blocking_send(*audio);

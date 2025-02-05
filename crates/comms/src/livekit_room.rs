@@ -259,8 +259,6 @@ fn livekit_handler_inner(
                                         warn!("app pipe broken ({e}), existing loop");
                                         break 'stream;
                                     }
-                                    let meta = participant.metadata();
-                                    println!("meta b {} -> {}", address, meta);
                                 }
                             }
                         },
@@ -320,7 +318,18 @@ fn livekit_handler_inner(
                         }
                         livekit::RoomEvent::ParticipantConnected(participant) => {
                             let meta = participant.metadata();
-                            println!("meta a {} -> {}", participant.identity(), meta);
+                            if !meta.is_empty() {
+                                if let Some(address) = participant.identity().0.as_str().as_h160() {
+                                    if let Err(e) = sender.send(PlayerUpdate {
+                                        transport_id,
+                                        message: PlayerMessage::MetaData(meta),
+                                        address,
+                                    }).await {
+                                        warn!("app pipe broken ({e}), existing loop");
+                                        break 'stream;
+                                    }
+                                }
+                            }
                         }
                         _ => { debug!("Event: {:?}", incoming); }
                     };
