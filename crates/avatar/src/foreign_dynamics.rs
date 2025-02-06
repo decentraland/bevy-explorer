@@ -136,6 +136,11 @@ fn update_foreign_user_actual_position(
             target.translation, actual.translation
         );
 
+        if (actual.translation - target.translation).length() > 125.0 {
+            actual.translation = target.translation;
+            dynamic_state.velocity = target.velocity.unwrap_or_default();
+        }
+
         let turn_time;
         if let Some(velocity) = target.velocity {
             let t0 = time.elapsed_seconds() - time.delta_seconds();
@@ -164,7 +169,7 @@ fn update_foreign_user_actual_position(
             // arrive at target position by time + 0.5
             let walk_time_left = target.time + 0.5 - time.elapsed_seconds();
             let target_velocity = target.velocity.unwrap_or_default();
-            if walk_time_left <= 0.0 || (actual.translation - target.translation).length() > 125.0 {
+            if walk_time_left <= 0.0 {
                 actual.translation = target.translation;
                 dynamic_state.velocity = target_velocity;
             } else {
