@@ -236,6 +236,7 @@ pub fn process_transport_updates(
     >,
     mut subscribers: EventReader<RpcCall>,
     mut profile_meta_cache: ResMut<ProfileMetaCache>,
+    mut duplicate_chat_filter: Local<HashMap<Entity, f64>>,
 ) {
     // gather any event receivers
     for ev in subscribers.read() {
@@ -402,12 +403,17 @@ pub fn process_transport_updates(
                 });
             }
             PlayerMessage::PlayerData(Message::Chat(chat)) => {
-                chat_events.send(ChatEvent {
-                    sender: entity,
-                    timestamp: chat.timestamp,
-                    channel: "Nearby".to_owned(),
-                    message: chat.message,
-                });
+                let last = duplicate_chat_filter.entry(entity).or_default();
+
+                if *last < chat.timestamp {
+                    chat_events.send(ChatEvent {
+                        sender: entity,
+                        timestamp: chat.timestamp,
+                        channel: "Nearby".to_owned(),
+                        message: chat.message,
+                    });
+                    *last = chat.timestamp;
+                }
             }
             PlayerMessage::PlayerData(Message::Scene(mut scene)) => {
                 if scene.data.is_empty() {
