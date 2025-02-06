@@ -695,14 +695,36 @@ impl IpfsIo {
         write.about = None;
         drop(write);
 
-        let mut about = isahc::get_async(format!("{new_realm}/about"))
-            .await
-            .map_err(|e| anyhow!(e))?;
-        if about.status() != StatusCode::OK {
-            return Err(anyhow!("status: {}", about.status()));
-        }
+        let mut retries = 0;
+        let mut about;
+        loop {
+            let mut about_raw = isahc::get_async(format!("{new_realm}/about"))
+                .await
+                .map_err(|e| anyhow!(e))?;
+            if about_raw.status() != StatusCode::OK {
+                return Err(anyhow!("status: {}", about_raw.status()));
+            }
 
-        let about = about.json::<ServerAbout>().await.map_err(|e| anyhow!(e))?;
+            about = about_raw
+                .json::<ServerAbout>()
+                .await
+                .map_err(|e| anyhow!(e))?;
+            if about.configurations.as_ref().is_some_and(|config| {
+                config
+                    .scenes_urn
+                    .as_ref()
+                    .is_some_and(|scenes| !scenes.is_empty())
+                    || config.map.is_some()
+            }) {
+                break;
+            }
+            // with no scenes and no map data, we will not have much of value
+            // sometimes this occurs for misdeployed load balancers, so let's retry a couple of times
+            retries += 1;
+            if retries == 3 {
+                break;
+            }
+        }
 
         let mut write = self.context.write().await;
         write.base_url.clone_from(&new_realm);
