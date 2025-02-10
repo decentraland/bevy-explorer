@@ -23,7 +23,7 @@ impl Plugin for BroadcastPositionPlugin {
 }
 
 const STATIC_FREQ: f64 = 1.0;
-const DYNAMIC_FREQ: f64 = 0.0;
+const DYNAMIC_FREQ: f64 = 0.1;
 
 fn broadcast_position(
     player: Query<(&GlobalTransform, &AvatarDynamicState), With<PrimaryUser>>,
@@ -44,7 +44,10 @@ fn broadcast_position(
     }
 
     let (_, rotation, translation) = player.to_scale_rotation_translation();
-    if elapsed < STATIC_FREQ && (translation, rotation) == *last_position {
+    if elapsed < STATIC_FREQ
+        && (translation - last_position.0).length_squared() < 0.01
+        && rotation == last_position.1
+    {
         return;
     }
 
@@ -69,7 +72,7 @@ fn broadcast_position(
 
     for transport in transports
         .iter()
-        .filter(|t| t.transport_type == TransportType::Archipelago)
+        .filter(|t| t.transport_type != TransportType::SceneRoom)
     {
         if let Err(e) = transport
             .sender
