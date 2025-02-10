@@ -870,7 +870,8 @@ fn load_active_entities(
         // drop current request
         *pointer_request = None;
         // set current realm and clear
-        let (bounds_min, bounds_max) = current_realm
+        // take map bounds
+        let (mut bounds_min, mut bounds_max) = current_realm
             .config
             .map
             .as_ref()
@@ -882,6 +883,19 @@ fn load_active_entities(
                     max.max(IVec2::new(region.right, region.top)),
                 )
             });
+        // take local parcel bounds
+        for parcel in current_realm
+            .config
+            .local_scene_parcels
+            .as_ref()
+            .map(|p| p.iter())
+            .unwrap_or_default()
+        {
+            if let Ok(IVec2Arg(parcel)) = IVec2Arg::from_str(parcel) {
+                bounds_min = bounds_min.min(parcel);
+                bounds_max = bounds_max.max(parcel);
+            }
+        }
         pointers.set_realm(bounds_min, bounds_max);
         global_crdt.set_bounds(bounds_min, bounds_max);
     }

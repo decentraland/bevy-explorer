@@ -387,6 +387,7 @@ pub struct ServerConfiguration {
     pub network_id: Option<u32>,
     pub city_loader_content_server: Option<String>,
     pub map: Option<MapData>,
+    pub local_scene_parcels: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -727,10 +728,13 @@ impl IpfsIo {
         }
 
         let mut write = self.context.write().await;
-        write.base_url.clone_from(&new_realm);
+        let base_url = about
+            .content_url()
+            .map(|c| c.strip_suffix("/content/").unwrap_or(c));
+        write.base_url = base_url.unwrap_or(&new_realm).to_owned();
         write.about = Some(about.clone());
         self.realm_config_sender
-            .send(Some((new_realm, about)))
+            .send(Some((write.base_url.clone(), about)))
             .expect("channel closed");
         Ok(())
     }
