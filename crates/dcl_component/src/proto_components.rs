@@ -114,6 +114,7 @@ impl DclProtoComponent for sdk::components::PbTextureCamera {}
 impl DclProtoComponent for sdk::components::PbCameraLayers {}
 impl DclProtoComponent for sdk::components::PbPrimaryPointerInfo {}
 impl DclProtoComponent for sdk::components::PbCameraLayer {}
+impl DclProtoComponent for sdk::components::PbRealmInfo {}
 
 // VECTOR2 conversions
 impl Copy for common::Vector2 {}

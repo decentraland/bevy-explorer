@@ -11,4 +11,5 @@ message PBRealmInfo {
   string comms_adapter = 4;
   bool is_preview = 5;
   optional string room = 6;
+  optional bool is_connected_scene_room = 7;
 }

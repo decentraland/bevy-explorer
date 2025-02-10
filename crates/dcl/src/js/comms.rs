@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use bevy::log::debug;
-use common::rpc::RpcCall;
+use common::{rpc::RpcCall, util::AsH160};
 use deno_core::{anyhow, op2, JsBuffer, OpDecl, OpState};
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +24,6 @@ pub struct MessageBusMessage {
 pub fn ops() -> Vec<OpDecl> {
     vec![
         op_comms_send_string(),
-        op_comms_send_binary(),
         op_comms_send_binary_single(),
         op_comms_recv_binary(),
     ]
@@ -41,10 +40,14 @@ async fn op_comms_send_string(state: Rc<RefCell<OpState>>, #[string] message: St
     data.extend(message.into_bytes());
     state
         .borrow_mut::<RpcCalls>()
-        .push(RpcCall::SendMessageBus { scene, data });
+        .push(RpcCall::SendMessageBus {
+            scene,
+            data,
+            recipient: None,
+        });
 }
 
-#[op2(async)]
+/*#[op2(async)]
 #[serde]
 async fn op_comms_send_binary(
     state: Rc<RefCell<OpState>>,
@@ -85,12 +88,13 @@ async fn op_comms_send_binary(
     }
 
     Ok(results)
-}
+}*/
 
 #[op2(async)]
 async fn op_comms_send_binary_single(
     state: Rc<RefCell<OpState>>,
     #[buffer(detach)] message: JsBuffer,
+    #[string] recipient: String,
 ) {
     debug!("op_comms_send_binary_single");
     let mut state = state.borrow_mut();
@@ -99,9 +103,16 @@ async fn op_comms_send_binary_single(
     let scene = context.scene_id.0;
     let mut data = vec![CommsMessageType::Binary as u8];
     data.extend(message.as_ref());
+
+    let recipient = recipient.as_h160();
+
     state
         .borrow_mut::<RpcCalls>()
-        .push(RpcCall::SendMessageBus { scene, data });
+        .push(RpcCall::SendMessageBus {
+            scene,
+            data,
+            recipient,
+        });
 }
 
 #[op2(async)]

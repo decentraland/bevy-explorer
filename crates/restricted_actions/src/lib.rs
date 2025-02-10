@@ -27,7 +27,7 @@ use common::{
 use comms::{
     global_crdt::ForeignPlayer,
     profile::{CurrentUserProfile, ProfileManager, UserProfile},
-    NetworkMessage, Transport,
+    NetworkMessage, SceneRoom, Transport,
 };
 use console::DoAddConsoleCommand;
 use dcl_component::proto_components::kernel::comms::rfc4;
@@ -940,11 +940,15 @@ fn event_scene_ready(
 
 fn send_scene_messages(
     mut events: EventReader<RpcCall>,
-    transports: Query<&Transport>,
+    transports: Query<(&Transport, Option<&SceneRoom>)>,
     scenes: Query<&SceneHash>,
 ) {
-    for (scene, data) in events.read().filter_map(|c| match c {
-        RpcCall::SendMessageBus { scene, data } => Some((scene, data)),
+    for (scene, data, recipient) in events.read().filter_map(|c| match c {
+        RpcCall::SendMessageBus {
+            scene,
+            data,
+            recipient,
+        } => Some((scene, data, recipient)),
         _ => None,
     }) {
         let Ok(hash) = scenes.get(*scene) else {
@@ -960,10 +964,12 @@ fn send_scene_messages(
             protocol_version: 100,
         };
 
-        for transport in transports.iter() {
-            let _ = transport
-                .sender
-                .try_send(NetworkMessage::reliable(&message));
+        for (transport, scene_room) in transports.iter() {
+            if scene_room.is_some() {
+                let _ = transport
+                    .sender
+                    .try_send(NetworkMessage::targetted_reliable(&message, *recipient));
+            }
         }
     }
 }

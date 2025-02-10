@@ -22,7 +22,7 @@ use bevy::{
 };
 use bimap::BiMap;
 use common::util::TaskExt;
-use ethers_core::types::Address;
+use ethers_core::types::{Address, H160};
 use isahc::{
     http::{StatusCode, Uri},
     AsyncReadResponseExt, RequestExt,
@@ -59,7 +59,8 @@ pub struct CommsPlugin;
 
 impl Plugin for CommsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<SetCurrentScene>();
+        app.add_event::<SetCurrentScene>()
+            .init_resource::<SceneRoomConnection>();
 
         app.add_plugins((
             WebsocketRoomPlugin,
@@ -89,6 +90,7 @@ pub enum TransportType {
 pub struct NetworkMessage {
     pub data: Vec<u8>,
     pub unreliable: bool,
+    pub recipient: Option<H160>,
 }
 
 impl NetworkMessage {
@@ -99,12 +101,21 @@ impl NetworkMessage {
         Self {
             data,
             unreliable: true,
+            recipient: None,
         }
     }
 
     pub fn reliable<D: ToDclWriter>(message: &D) -> Self {
         Self {
             unreliable: false,
+            ..Self::unreliable(message)
+        }
+    }
+
+    pub fn targetted_reliable<D: ToDclWriter>(message: &D, recipient: Option<H160>) -> Self {
+        Self {
+            unreliable: false,
+            recipient,
             ..Self::unreliable(message)
         }
     }
@@ -165,19 +176,22 @@ pub struct GatekeeperResponse {
 #[derive(Component)]
 pub struct SceneRoom;
 
+#[derive(Resource, Default)]
+pub struct SceneRoomConnection(pub Option<(SetCurrentScene, String, Entity)>);
+
 #[allow(clippy::type_complexity)]
 fn connect_scene_room(
     mut commands: Commands,
     mut manager: AdapterManager,
     mut gatekeeper_task: Local<Option<Task<Result<(String, SetCurrentScene), anyhow::Error>>>>,
-    mut current: Local<Option<(SetCurrentScene, Entity)>>,
+    mut current: ResMut<SceneRoomConnection>,
     mut scene: EventReader<SetCurrentScene>,
     wallet: Res<Wallet>,
 ) {
     if let Some(ev) = scene.read().last().cloned() {
-        if let Some((existing, entity)) = current.take() {
+        if let Some((existing, room, entity)) = current.0.take() {
             if existing == ev {
-                *current = Some((existing, entity));
+                current.0 = Some((existing, room, entity));
                 return;
             }
             if let Some(commands) = commands.get_entity(entity) {
@@ -216,7 +230,7 @@ fn connect_scene_room(
             Some(Ok((adapter, ev))) => {
                 if let Some(ent) = manager.connect(&adapter) {
                     warn!("added scene channel {ev:?}");
-                    *current = Some((ev, ent));
+                    current.0 = Some((ev, adapter, ent));
                     commands.entity(ent).insert(SceneRoom);
                 }
             }

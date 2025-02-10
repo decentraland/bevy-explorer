@@ -6,7 +6,7 @@ use async_tungstenite::tungstenite::http::Uri;
 use bevy::{prelude::*, utils::HashMap};
 use futures_lite::StreamExt;
 use livekit::{
-    id::TrackSid,
+    id::{ParticipantIdentity, TrackSid},
     options::TrackPublishOptions,
     track::{LocalAudioTrack, LocalTrack, TrackSource},
     webrtc::{
@@ -340,7 +340,13 @@ fn livekit_handler_inner(
                         break 'stream;
                     };
 
-                    let packet = livekit::DataPacket { payload: outgoing.data, topic: None, reliable: !outgoing.unreliable, destination_identities: Default::default() };
+                    let destination_identities = if let Some(address) = outgoing.recipient {
+                        vec![ParticipantIdentity(format!("{address:#x}"))]
+                    } else {
+                        default()
+                    };
+
+                    let packet = livekit::DataPacket { payload: outgoing.data, topic: None, reliable: !outgoing.unreliable, destination_identities };
                     if let Err(_e) = room.local_participant().publish_data(packet).await {
                         // debug!("outgoing failed: {_e}; not exiting loop though since it often fails at least once or twice at the start...");
                         break 'stream;
