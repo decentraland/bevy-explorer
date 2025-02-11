@@ -155,6 +155,7 @@ fn init_test_app(entity_json: &str) -> App {
         content: None,
         configurations: Some(ServerConfiguration {
             scenes_urn: Some(vec![urn.clone()]),
+            local_scene_parcels: Some(vec!["0,0".to_owned()]),
             ..Default::default()
         }),
         ..Default::default()
