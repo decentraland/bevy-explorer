@@ -14,7 +14,9 @@ use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     sets::{SceneSets, SetupSets},
-    structs::{AppConfig, CursorLocked, PrimaryUser, SettingsTab, ShowSettingsEvent, Version},
+    structs::{
+        AppConfig, CursorLocked, PrimaryUser, SettingsTab, ShowSettingsEvent, SystemScene, Version,
+    },
     util::ModifyComponentExt,
 };
 use comms::{
@@ -401,19 +403,29 @@ fn setup_minimap(
                         containing_scene: ContainingScene,
                         scenes: Query<&RendererSceneContext>,
                         player: Query<Entity, With<PrimaryUser>>,
+                        system_scene: Res<SystemScene>,
                         mut toaster: Toaster,
                     | {
-                        let Ok(player) = player.get_single() else {
-                            return;
+                        let hash = if system_scene.hot_reload {
+                            if let Some(hash) = system_scene.hash.clone() {
+                                hash
+                            } else {
+                                return;
+                            }
+                        } else {
+                            let Ok(player) = player.get_single() else {
+                                return;
+                            };
+                            let Some(scene) = containing_scene.get_parcel_oow(player) else {
+                                return;
+                            };
+                            let Ok(scene) = scenes.get(scene) else {
+                                return;
+                            };
+                            scene.hash.clone()
                         };
-                        let Some(scene) = containing_scene.get_parcel_oow(player) else {
-                            return;
-                        };
-                        let Ok(scene) = scenes.get(scene) else {
-                            return;
-                        };
-                        test_data.inspect_hash = Some(scene.hash.clone());
-                        reload.send(PreviewCommand::ReloadScene { hash: scene.hash.clone() });
+                        test_data.inspect_hash = Some(hash.clone());
+                        reload.send(PreviewCommand::ReloadScene { hash });
                         toaster.add_toast("inspector", "Please open chrome and navigate to \"chrome://inspect\" to attach a debugger");
                     })
                 )

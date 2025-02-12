@@ -38,7 +38,7 @@ use common::{
     structs::{
         AppConfig, AttachPoints, AvatarDynamicState, Cubemap, GraphicsSettings, IVec2Arg,
         PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake,
-        SceneLoadDistance, Version, GROUND_RENDERLAYER,
+        SceneLoadDistance, SystemScene, Version, GROUND_RENDERLAYER,
     },
     util::{config_file, project_directories, TaskExt, UtilsPlugin},
 };
@@ -238,6 +238,7 @@ fn main() {
         app.insert_resource(SystemScene {
             source: Some(source),
             hot_reload: args.contains("--ui-preview"),
+            hash: None,
         });
     } else {
         app.insert_resource(NativeUi { login: true });
@@ -647,15 +648,9 @@ fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>)
     }
 }
 
-#[derive(Resource)]
-pub struct SystemScene {
-    pub source: Option<String>,
-    pub hot_reload: bool,
-}
-
 #[allow(clippy::type_complexity)]
 pub fn process_system_ui_scene(
-    system_scene: Res<SystemScene>,
+    mut system_scene: ResMut<SystemScene>,
     mut task: Local<Option<Task<Result<(String, PortableSource), String>>>>,
     mut done: Local<bool>,
     mut portables: ResMut<PortableScenes>,
@@ -666,6 +661,7 @@ pub fn process_system_ui_scene(
     if let Some(command) = channel.as_mut().and_then(|rx| rx.try_recv().ok()) {
         writer.send(command);
         *done = false;
+        system_scene.hash = None;
         return;
     }
 
@@ -686,6 +682,7 @@ pub fn process_system_ui_scene(
     match t.complete() {
         Some(Ok((hash, source))) => {
             info!("added ui scene from {}", source.pid);
+            system_scene.hash = Some(hash.clone());
             portables.0.extend([(hash, source)]);
             *done = true;
 

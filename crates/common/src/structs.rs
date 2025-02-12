@@ -691,3 +691,10 @@ pub struct AvatarDynamicState {
     pub jump_time: f32,
     pub move_kind: MoveKind,
 }
+
+#[derive(Resource)]
+pub struct SystemScene {
+    pub source: Option<String>,
+    pub hot_reload: bool,
+    pub hash: Option<String>,
+}
