@@ -15,15 +15,12 @@ use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     sets::{SceneSets, SetupSets},
     structs::{
-        AppConfig, CursorLocked, PrimaryUser, SettingsTab, ShowSettingsEvent, SystemScene, Version,
+        AppConfig, CursorLocked, PreviewCommand, PrimaryUser, SettingsTab, ShowSettingsEvent,
+        SystemScene, Version,
     },
     util::ModifyComponentExt,
 };
-use comms::{
-    global_crdt::ForeignPlayer,
-    preview::{PreviewCommand, PreviewMode},
-    Transport,
-};
+use comms::{global_crdt::ForeignPlayer, preview::PreviewMode, Transport};
 use console::DoAddConsoleCommand;
 use ipfs::CurrentRealm;
 use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE};
@@ -363,6 +360,7 @@ fn setup_minimap(
     root: Res<SystemUiRoot>,
     dui: Res<DuiRegistry>,
     preview: Res<PreviewMode>,
+    system_scene: Option<Res<SystemScene>>,
 ) {
     let components = commands
         .spawn_template(&dui, "minimap", Default::default())
@@ -382,7 +380,7 @@ fn setup_minimap(
         ShowSettingsEvent(SettingsTab::Map).send_value_on::<Click>(),
     ));
 
-    if preview.server.is_some() {
+    if preview.server.is_some() || system_scene.as_ref().is_some_and(|ss| ss.preview) {
         let tracker = commands
             .entity(components.root)
             .spawn_template(
@@ -403,29 +401,29 @@ fn setup_minimap(
                         containing_scene: ContainingScene,
                         scenes: Query<&RendererSceneContext>,
                         player: Query<Entity, With<PrimaryUser>>,
-                        system_scene: Res<SystemScene>,
+                        system_scene: Option<Res<SystemScene>>,
                         mut toaster: Toaster,
                     | {
-                        let hash = if system_scene.hot_reload {
-                            if let Some(hash) = system_scene.hash.clone() {
-                                hash
-                            } else {
-                                return;
+                        if system_scene.as_ref().is_some_and(|ss| ss.hot_reload.is_some()) {
+                            let ss = system_scene.unwrap();
+                            if let Some(hash) = ss.hash.clone() {
+                                test_data.inspect_hash = Some(hash.clone());
+                                let _ = ss.hot_reload.as_ref().unwrap().send(PreviewCommand::ReloadScene { hash });
+                                toaster.add_toast("inspector", "Please open chrome and navigate to \"chrome://inspect\" to attach a debugger to the UI scene");
                             }
-                        } else {
-                            let Ok(player) = player.get_single() else {
-                                return;
-                            };
-                            let Some(scene) = containing_scene.get_parcel_oow(player) else {
-                                return;
-                            };
-                            let Ok(scene) = scenes.get(scene) else {
-                                return;
-                            };
-                            scene.hash.clone()
+                            return;
+                        }
+                        let Ok(player) = player.get_single() else {
+                            return;
                         };
-                        test_data.inspect_hash = Some(hash.clone());
-                        reload.send(PreviewCommand::ReloadScene { hash });
+                        let Some(scene) = containing_scene.get_parcel_oow(player) else {
+                            return;
+                        };
+                        let Ok(scene) = scenes.get(scene) else {
+                            return;
+                        };
+                        test_data.inspect_hash = Some(scene.hash.clone());
+                        reload.send(PreviewCommand::ReloadScene { hash: scene.hash.clone() });
                         toaster.add_toast("inspector", "Please open chrome and navigate to \"chrome://inspect\" to attach a debugger");
                     })
                 )

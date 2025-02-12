@@ -186,7 +186,7 @@ impl Movement {
                     .saturating_sub(map_min.y.saturating_sub(2))
                     .saturating_mul(width),
             );
-        let parcel_index = parcel_index.clamp(0, 1 << 17 - 1);
+        let parcel_index = parcel_index.clamp(0, (1 << 17) - 1);
 
         let relative_position =
             position * Vec3::new(1.0, 1.0, -1.0) - (parcel * 16).as_vec2().extend(0.0).xzy();

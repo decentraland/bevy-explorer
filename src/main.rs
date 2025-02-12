@@ -37,8 +37,8 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AttachPoints, AvatarDynamicState, Cubemap, GraphicsSettings, IVec2Arg,
-        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake,
-        SceneLoadDistance, SystemScene, Version, GROUND_RENDERLAYER,
+        PreviewCommand, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser,
+        SceneImposterBake, SceneLoadDistance, SystemScene, Version, GROUND_RENDERLAYER,
     },
     util::{config_file, project_directories, TaskExt, UtilsPlugin},
 };
@@ -54,7 +54,7 @@ use scene_runner::{
 use av::AudioPlugin;
 use avatar::AvatarPlugin;
 use comms::{
-    preview::{handle_preview_socket, PreviewCommand, PreviewMode},
+    preview::{handle_preview_socket, PreviewMode},
     CommsPlugin,
 };
 use console::{ConsolePlugin, DoAddConsoleCommand};
@@ -237,7 +237,8 @@ fn main() {
         app.insert_resource(NativeUi { login: false });
         app.insert_resource(SystemScene {
             source: Some(source),
-            hot_reload: args.contains("--ui-preview"),
+            preview: args.contains("--ui-preview"),
+            hot_reload: None,
             hash: None,
         });
     } else {
@@ -686,15 +687,16 @@ pub fn process_system_ui_scene(
             portables.0.extend([(hash, source)]);
             *done = true;
 
-            if system_scene.hot_reload {
+            if system_scene.preview {
                 let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
                 IoTaskPool::get()
                     .spawn(handle_preview_socket(
                         system_scene.source.clone().unwrap(),
-                        sx,
+                        sx.clone(),
                     ))
                     .detach();
                 *channel = Some(rx);
+                system_scene.hot_reload = Some(sx);
             }
         }
         Some(Err(e)) => {

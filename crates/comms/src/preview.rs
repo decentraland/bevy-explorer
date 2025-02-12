@@ -6,7 +6,7 @@ use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
-use common::util::TaskExt;
+use common::{structs::PreviewCommand, util::TaskExt};
 use futures_util::StreamExt;
 use ipfs::CurrentRealm;
 
@@ -67,11 +67,6 @@ fn connect_preview_server(
     }
 
     preview.is_preview = true;
-}
-
-#[derive(Event)]
-pub enum PreviewCommand {
-    ReloadScene { hash: String },
 }
 
 pub async fn handle_preview_socket(

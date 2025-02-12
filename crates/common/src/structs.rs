@@ -692,9 +692,15 @@ pub struct AvatarDynamicState {
     pub move_kind: MoveKind,
 }
 
+#[derive(Event)]
+pub enum PreviewCommand {
+    ReloadScene { hash: String },
+}
+
 #[derive(Resource)]
 pub struct SystemScene {
     pub source: Option<String>,
-    pub hot_reload: bool,
+    pub preview: bool,
+    pub hot_reload: Option<tokio::sync::mpsc::UnboundedSender<PreviewCommand>>,
     pub hash: Option<String>,
 }
