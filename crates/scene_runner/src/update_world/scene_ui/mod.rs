@@ -30,10 +30,13 @@ use common::{
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
-    proto_components::sdk::components::{
-        self, scroll_position_value, PbUiBackground, PbUiCanvas, PbUiDropdown, PbUiInput,
-        PbUiScrollResult, PbUiText, PbUiTransform, ScrollPositionValue, YgAlign, YgDisplay,
-        YgFlexDirection, YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap,
+    proto_components::{
+        sdk::components::{
+            self, scroll_position_value, PbUiBackground, PbUiCanvas, PbUiDropdown, PbUiInput,
+            PbUiScrollResult, PbUiText, PbUiTransform, ScrollPositionValue, YgAlign, YgDisplay,
+            YgFlexDirection, YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap,
+        },
+        Color4DclToBevy,
     },
     SceneComponentId, SceneEntityId,
 };
@@ -595,7 +598,10 @@ fn create_ui_roots(
             }
 
             // and background
-            let color = canvas_info.color.map(Into::into).unwrap_or(Color::NONE);
+            let color = canvas_info
+                .color
+                .map(Color4DclToBevy::convert_srgba)
+                .unwrap_or(Color::NONE);
             commands
                 .entity(ui_entity)
                 .modify_component(move |c: &mut Camera| {

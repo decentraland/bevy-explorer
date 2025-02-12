@@ -36,10 +36,13 @@ use crate::{
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
-    proto_components::sdk::components::{
-        common::LoadingState, pb_material, pb_mesh_collider, pb_mesh_renderer, ColliderLayer,
-        GltfNodeStateValue, PbGltfContainer, PbGltfContainerLoadingState, PbGltfNode,
-        PbGltfNodeState, PbLight, PbMaterial, PbMeshCollider, PbMeshRenderer, PbSpotlight,
+    proto_components::{
+        sdk::components::{
+            common::LoadingState, pb_material, pb_mesh_collider, pb_mesh_renderer, ColliderLayer,
+            GltfNodeStateValue, PbGltfContainer, PbGltfContainerLoadingState, PbGltfNode,
+            PbGltfNodeState, PbLight, PbMaterial, PbMeshCollider, PbMeshRenderer, PbSpotlight,
+        },
+        Color3BevyToDcl,
     },
     transform_and_parent::DclTransformAndParent,
     SceneComponentId, SceneEntityId,
@@ -1377,7 +1380,7 @@ fn expose_gltfs(
                             enabled: None,
                             illuminance: Some(point.intensity / (4.0 * PI)),
                             shadows: Some(true),
-                            color: Some(point.color.into()),
+                            color: Some(point.color.convert_linear_rgb()),
                         },
                     );
                 }
@@ -1411,7 +1414,7 @@ fn expose_gltfs(
                             enabled: None,
                             illuminance: Some(spot.intensity / (4.0 * PI)),
                             shadows: Some(true),
-                            color: Some(spot.color.into()),
+                            color: Some(spot.color.convert_linear_rgb()),
                         },
                     );
                     scene.update_crdt(

@@ -198,21 +198,38 @@ impl From<common::Quaternion> for bevy::math::Quat {
 // COLOR conversions
 impl Copy for common::Color3 {}
 impl Copy for common::Color4 {}
-impl From<common::Color4> for bevy::prelude::Color {
-    fn from(value: common::Color4) -> Self {
-        bevy::prelude::Color::linear_rgba(value.r, value.g, value.b, value.a)
+
+pub trait Color4DclToBevy {
+    fn convert_linear_rgba(self) -> bevy::prelude::Color;
+    fn convert_srgba(self) -> bevy::prelude::Color;
+}
+
+impl Color4DclToBevy for common::Color4 {
+    fn convert_linear_rgba(self) -> bevy::prelude::Color {
+        bevy::prelude::Color::linear_rgba(self.r, self.g, self.b, self.a)
+    }
+    fn convert_srgba(self) -> bevy::prelude::Color {
+        bevy::prelude::Color::srgba(self.r, self.g, self.b, self.a)
     }
 }
 
-impl From<common::Color3> for bevy::prelude::Color {
-    fn from(value: common::Color3) -> Self {
-        bevy::prelude::Color::linear_rgb(value.r, value.g, value.b)
-    }
+pub trait Color4BevyToDcl {
+    fn convert_linear_rgba(self) -> common::Color4;
+    fn convert_srgba(self) -> common::Color4;
 }
 
-impl From<bevy::prelude::Color> for common::Color4 {
-    fn from(value: bevy::prelude::Color) -> Self {
-        let rgba = value.to_linear();
+impl Color4BevyToDcl for bevy::prelude::Color {
+    fn convert_linear_rgba(self) -> common::Color4 {
+        let rgba = self.to_linear();
+        common::Color4 {
+            r: rgba.red,
+            g: rgba.green,
+            b: rgba.blue,
+            a: rgba.alpha,
+        }
+    }
+    fn convert_srgba(self) -> common::Color4 {
+        let rgba = self.to_srgba();
         common::Color4 {
             r: rgba.red,
             g: rgba.green,
@@ -222,18 +239,40 @@ impl From<bevy::prelude::Color> for common::Color4 {
     }
 }
 
-impl From<bevy::prelude::Color> for common::Color3 {
-    fn from(value: bevy::prelude::Color) -> Self {
-        value.to_linear().into()
+pub trait Color3DclToBevy {
+    fn convert_linear_rgb(self) -> bevy::prelude::Color;
+    fn convert_srgb(self) -> bevy::prelude::Color;
+}
+
+impl Color3DclToBevy for common::Color3 {
+    fn convert_linear_rgb(self) -> bevy::prelude::Color {
+        bevy::prelude::Color::linear_rgb(self.r, self.g, self.b)
+    }
+    fn convert_srgb(self) -> bevy::prelude::Color {
+        bevy::prelude::Color::srgb(self.r, self.g, self.b)
     }
 }
 
-impl From<bevy::prelude::LinearRgba> for common::Color3 {
-    fn from(value: bevy::prelude::LinearRgba) -> Self {
+pub trait Color3BevyToDcl {
+    fn convert_linear_rgb(self) -> common::Color3;
+    fn convert_srgb(self) -> common::Color3;
+}
+
+impl Color3BevyToDcl for bevy::prelude::Color {
+    fn convert_linear_rgb(self) -> common::Color3 {
+        let rgba = self.to_linear();
         common::Color3 {
-            r: value.red,
-            g: value.green,
-            b: value.blue,
+            r: rgba.red,
+            g: rgba.green,
+            b: rgba.blue,
+        }
+    }
+    fn convert_srgb(self) -> common::Color3 {
+        let rgba = self.to_srgba();
+        common::Color3 {
+            r: rgba.red,
+            g: rgba.green,
+            b: rgba.blue,
         }
     }
 }

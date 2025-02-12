@@ -22,6 +22,7 @@ use dcl_component::{
     proto_components::{
         common::{texture_union, TextureUnion},
         sdk::components::{pb_material, MaterialTransparencyMode, PbMaterial},
+        Color3BevyToDcl, Color3DclToBevy, Color4BevyToDcl, Color4DclToBevy,
     },
     SceneComponentId, SceneEntityId,
 };
@@ -77,7 +78,7 @@ impl MaterialDefinition {
             Some(pb_material::Material::Unlit(unlit)) => {
                 let base_color = unlit
                     .diffuse_color
-                    .map(Color::from)
+                    .map(Color4DclToBevy::convert_linear_rgba)
                     .unwrap_or(base.base_color);
 
                 let alpha_mode = if base_color.alpha() < 1.0 {
@@ -108,7 +109,10 @@ impl MaterialDefinition {
                     warn!("separate alpha texture not supported");
                 }
 
-                let base_color = pbr.albedo_color.map(Color::from).unwrap_or(base.base_color);
+                let base_color = pbr
+                    .albedo_color
+                    .map(Color4DclToBevy::convert_linear_rgba)
+                    .unwrap_or(base.base_color);
 
                 let alpha_mode = match pbr
                     .transparency_mode
@@ -140,7 +144,7 @@ impl MaterialDefinition {
 
                 let emissive_intensity = pbr.emissive_intensity.unwrap_or(2.0);
                 let emissive = if let Some(color) = pbr.emissive_color {
-                    Color::from(color).to_linear() * emissive_intensity
+                    color.convert_linear_rgb().to_linear() * emissive_intensity
                 } else if pbr.emissive_texture.is_some() {
                     Color::WHITE.to_linear() * emissive_intensity
                 } else {
@@ -553,7 +557,7 @@ pub fn dcl_material_from_standard_material(
             texture: base.base_color_texture.as_ref().map(dcl_texture),
             alpha_test,
             cast_shadows: Some(true),
-            diffuse_color: Some(base.base_color.into()),
+            diffuse_color: Some(base.base_color.convert_linear_rgba()),
         })
     } else {
         pb_material::Material::Pbr(pb_material::PbrMaterial {
@@ -563,8 +567,8 @@ pub fn dcl_material_from_standard_material(
             alpha_texture: base.base_color_texture.as_ref().map(dcl_texture),
             emissive_texture: base.emissive_texture.as_ref().map(dcl_texture),
             bump_texture: base.normal_map_texture.as_ref().map(dcl_texture),
-            albedo_color: Some(base.base_color.into()),
-            emissive_color: Some((base.emissive * 0.5).into()),
+            albedo_color: Some(base.base_color.convert_linear_rgba()),
+            emissive_color: Some(Color::LinearRgba(base.emissive * 0.5).convert_linear_rgb()),
             reflectivity_color: None,
             transparency_mode: Some(match base.alpha_mode() {
                 AlphaMode::Opaque => MaterialTransparencyMode::MtmOpaque,

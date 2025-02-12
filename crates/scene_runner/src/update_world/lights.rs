@@ -12,6 +12,7 @@ use dcl_component::{
     proto_components::{
         common::Vector3,
         sdk::components::{PbGlobalLight, PbLight, PbSpotlight},
+        Color3DclToBevy,
     },
     SceneComponentId,
 };
@@ -63,7 +64,7 @@ impl From<PbLight> for Light {
             enabled: value.enabled.unwrap_or(true),
             illuminance: value.illuminance,
             shadows: value.shadows,
-            color: value.color.map(Into::into),
+            color: value.color.map(Color3DclToBevy::convert_linear_rgb),
         }
     }
 }
@@ -94,7 +95,7 @@ impl From<PbGlobalLight> for GlobalLight {
     fn from(value: PbGlobalLight) -> Self {
         Self {
             direction: value.direction.as_ref().map(Vector3::world_vec_to_vec3),
-            ambient_color: value.ambient_color.map(Into::into),
+            ambient_color: value.ambient_color.map(Color3DclToBevy::convert_linear_rgb),
             ambient_brightness: value.ambient_brightness,
         }
     }

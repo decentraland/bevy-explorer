@@ -1,5 +1,8 @@
 use bevy::prelude::*;
-use dcl_component::proto_components::sdk::components::{self, PbUiText};
+use dcl_component::proto_components::{
+    sdk::components::{self, PbUiText},
+    Color4DclToBevy,
+};
 
 use crate::{update_world::text_shape::make_text_section, SceneEntity};
 use common::util::TryPushChildrenEx;
@@ -33,7 +36,10 @@ impl From<PbUiText> for UiText {
 
         Self {
             text: value.value.clone(),
-            color: value.color.map(Into::into).unwrap_or(Color::WHITE),
+            color: value
+                .color
+                .map(Color4DclToBevy::convert_srgba)
+                .unwrap_or(Color::WHITE),
             h_align: match text_align {
                 components::common::TextAlignMode::TamTopLeft
                 | components::common::TextAlignMode::TamMiddleLeft

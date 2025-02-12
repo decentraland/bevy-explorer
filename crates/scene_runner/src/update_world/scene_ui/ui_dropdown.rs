@@ -2,7 +2,10 @@ use bevy::prelude::*;
 use common::util::ModifyComponentExt;
 use dcl::interface::CrdtType;
 use dcl_component::{
-    proto_components::sdk::components::{self, PbUiDropdown, PbUiDropdownResult},
+    proto_components::{
+        sdk::components::{self, PbUiDropdown, PbUiDropdownResult},
+        Color4DclToBevy,
+    },
     SceneComponentId,
 };
 use ui_core::{
@@ -83,7 +86,11 @@ pub fn set_ui_dropdown(
                 Some(TextStyle {
                     font: user_font(font_name, ui_core::WeightName::Regular),
                     font_size,
-                    color: dropdown.0.color.map(Into::into).unwrap_or(Color::BLACK),
+                    color: dropdown
+                        .0
+                        .color
+                        .map(Color4DclToBevy::convert_srgba)
+                        .unwrap_or(Color::BLACK),
                 }),
             ),
             On::<DataChanged>::new(
