@@ -74,7 +74,7 @@ pub enum PreviewCommand {
     ReloadScene { hash: String },
 }
 
-async fn handle_preview_socket(
+pub async fn handle_preview_socket(
     server: String,
     sender: tokio::sync::mpsc::UnboundedSender<PreviewCommand>,
 ) -> Result<(), anyhow::Error> {

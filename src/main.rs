@@ -53,7 +53,10 @@ use scene_runner::{
 
 use av::AudioPlugin;
 use avatar::AvatarPlugin;
-use comms::{preview::PreviewMode, CommsPlugin};
+use comms::{
+    preview::{handle_preview_socket, PreviewCommand, PreviewMode},
+    CommsPlugin,
+};
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
 use ipfs::{IpfsAssetServer, IpfsIoPlugin};
@@ -230,10 +233,11 @@ fn main() {
 
     let ui_scene: Option<String> = args.value_from_str("--ui").ok();
     if let Some(source) = ui_scene {
-        app.add_systems(Update, spawn_system_ui_scene);
+        app.add_systems(Update, process_system_ui_scene);
         app.insert_resource(NativeUi { login: false });
         app.insert_resource(SystemScene {
             source: Some(source),
+            hot_reload: args.contains("--ui-preview"),
         });
     } else {
         app.insert_resource(NativeUi { login: true });
@@ -646,16 +650,25 @@ fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>)
 #[derive(Resource)]
 pub struct SystemScene {
     pub source: Option<String>,
+    pub hot_reload: bool,
 }
 
 #[allow(clippy::type_complexity)]
-pub fn spawn_system_ui_scene(
+pub fn process_system_ui_scene(
     system_scene: Res<SystemScene>,
     mut task: Local<Option<Task<Result<(String, PortableSource), String>>>>,
     mut done: Local<bool>,
     mut portables: ResMut<PortableScenes>,
     ipfas: IpfsAssetServer,
+    mut channel: Local<Option<tokio::sync::mpsc::UnboundedReceiver<PreviewCommand>>>,
+    mut writer: EventWriter<PreviewCommand>,
 ) {
+    if let Some(command) = channel.as_mut().and_then(|rx| rx.try_recv().ok()) {
+        writer.send(command);
+        *done = false;
+        return;
+    }
+
     if *done || system_scene.source.is_none() {
         return;
     }
@@ -675,6 +688,17 @@ pub fn spawn_system_ui_scene(
             info!("added ui scene from {}", source.pid);
             portables.0.extend([(hash, source)]);
             *done = true;
+
+            if system_scene.hot_reload {
+                let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
+                IoTaskPool::get()
+                    .spawn(handle_preview_socket(
+                        system_scene.source.clone().unwrap(),
+                        sx,
+                    ))
+                    .detach();
+                *channel = Some(rx);
+            }
         }
         Some(Err(e)) => {
             error!("failed to load ui scene: {e}");
