@@ -8,6 +8,7 @@ use bevy_console::{ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, 
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     dcl_assert,
+    sets::SetupSets,
     structs::{PrimaryUser, SystemAudio, ToolTips, TooltipSource},
     util::{
         AsH160, FireEventEx, ModifyComponentExt, RingBuffer, RingBufferReceiver, TryPushChildrenEx,
@@ -45,7 +46,7 @@ impl Plugin for ChatPanelPlugin {
         app.add_systems(Update, display_chat);
         app.add_systems(Update, append_chat_messages);
         app.add_systems(Update, emit_user_chat);
-        app.add_systems(Startup, setup);
+        app.add_systems(Startup, setup.in_set(SetupSets::Main));
         app.add_systems(
             OnEnter::<ui_core::State>(ui_core::State::Ready),
             setup_chat_popup,
@@ -80,46 +81,52 @@ pub struct ChatBox {
 
 pub const BUTTON_SCALE: f32 = 6.0;
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<SystemUiRoot>) {
     // profile button
-    commands.spawn((
-        ImageBundle {
-            image: asset_server.load("images/chat_button.png").into(),
-            style: Style {
-                position_type: PositionType::Absolute,
-                top: Val::VMin(BUTTON_SCALE * 3.5),
-                right: Val::VMin(BUTTON_SCALE * 0.5),
-                width: Val::VMin(BUTTON_SCALE),
-                height: Val::VMin(BUTTON_SCALE),
+    let button = commands
+        .spawn((
+            ImageBundle {
+                image: asset_server.load("images/chat_button.png").into(),
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    top: Val::VMin(BUTTON_SCALE * 3.5),
+                    right: Val::VMin(BUTTON_SCALE * 0.5),
+                    width: Val::VMin(BUTTON_SCALE),
+                    height: Val::VMin(BUTTON_SCALE),
+                    ..Default::default()
+                },
+                focus_policy: bevy::ui::FocusPolicy::Block,
                 ..Default::default()
             },
-            focus_policy: bevy::ui::FocusPolicy::Block,
-            ..Default::default()
-        },
-        Interaction::default(),
-        On::<Click>::new(
-            |mut commands: Commands, mut q: Query<&mut Style, With<ChatboxContainer>>| {
-                if let Ok(mut style) = q.get_single_mut() {
-                    style.display = if style.display == Display::Flex {
-                        commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
-                        Display::None
-                    } else {
-                        commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
-                        Display::Flex
-                    };
-                }
-            },
-        ),
-        On::<HoverEnter>::new(|mut tooltip: ResMut<ToolTips>| {
-            tooltip.0.insert(
-                TooltipSource::Label("chat-button"),
-                vec![("Toggle Chat: Click or press Enter".to_owned(), true)],
-            );
-        }),
-        On::<HoverExit>::new(|mut tooltip: ResMut<ToolTips>| {
-            tooltip.0.remove(&TooltipSource::Label("chat-button"));
-        }),
-    ));
+            Interaction::default(),
+            On::<Click>::new(
+                |mut commands: Commands, mut q: Query<&mut Style, With<ChatboxContainer>>| {
+                    if let Ok(mut style) = q.get_single_mut() {
+                        style.display = if style.display == Display::Flex {
+                            commands
+                                .fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+                            Display::None
+                        } else {
+                            commands
+                                .fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                            Display::Flex
+                        };
+                    }
+                },
+            ),
+            On::<HoverEnter>::new(|mut tooltip: ResMut<ToolTips>| {
+                tooltip.0.insert(
+                    TooltipSource::Label("chat-button"),
+                    vec![("Toggle Chat: Click or press Enter".to_owned(), true)],
+                );
+            }),
+            On::<HoverExit>::new(|mut tooltip: ResMut<ToolTips>| {
+                tooltip.0.remove(&TooltipSource::Label("chat-button"));
+            }),
+        ))
+        .id();
+
+    commands.entity(ui_root.0).push_children(&[button]);
 }
 
 fn keyboard_popup(
@@ -548,7 +555,7 @@ fn emit_user_chat(
                                 message: message.clone(),
                                 timestamp: time.elapsed_seconds_f64(),
                             })),
-                            protocol_version: 999,
+                            protocol_version: 100,
                         }));
                 }
             }

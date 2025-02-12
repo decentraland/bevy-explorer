@@ -6,7 +6,7 @@ use async_tungstenite::tungstenite::http::Uri;
 use bevy::{prelude::*, utils::HashMap};
 use futures_lite::StreamExt;
 use livekit::{
-    id::TrackSid,
+    id::{ParticipantIdentity, TrackSid},
     options::TrackPublishOptions,
     track::{LocalAudioTrack, LocalTrack, TrackSource},
     webrtc::{
@@ -80,7 +80,7 @@ pub fn start_livekit(
                     profile_version: current_profile.version,
                 },
             )),
-            protocol_version: 999,
+            protocol_version: 100,
         };
         let _ = sender.try_send(NetworkMessage::reliable(&response));
 
@@ -237,26 +237,28 @@ fn livekit_handler_inner(
 
                     match incoming {
                         livekit::RoomEvent::DataReceived { payload, participant, .. } => {
-                            if let Some(address) = participant.and_then(|p| p.identity().0.as_str().as_h160()) {
-                                let packet = match rfc4::Packet::decode(payload.as_slice()) {
-                                    Ok(packet) => packet,
-                                    Err(e) => {
-                                        warn!("unable to parse packet body: {e}");
+                            if let Some(participant) = participant {
+                                if let Some(address) = participant.identity().0.as_str().as_h160() {
+                                    let packet = match rfc4::Packet::decode(payload.as_slice()) {
+                                        Ok(packet) => packet,
+                                        Err(e) => {
+                                            warn!("unable to parse packet body: {e}");
+                                            continue;
+                                        }
+                                    };
+                                    let Some(message) = packet.message else {
+                                        warn!("received empty packet body");
                                         continue;
+                                    };
+                                    debug!("[{}] received [{}] packet {message:?} from {address}", transport_id, packet.protocol_version);
+                                    if let Err(e) = sender.send(PlayerUpdate {
+                                        transport_id,
+                                        message: PlayerMessage::PlayerData(message),
+                                        address,
+                                    }).await {
+                                        warn!("app pipe broken ({e}), existing loop");
+                                        break 'stream;
                                     }
-                                };
-                                let Some(message) = packet.message else {
-                                    warn!("received empty packet body");
-                                    continue;
-                                };
-                                debug!("received packet {message:?} from {address}");
-                                if let Err(e) = sender.send(PlayerUpdate {
-                                    transport_id,
-                                    message: PlayerMessage::PlayerData(message),
-                                    address,
-                                }).await {
-                                    warn!("app pipe broken ({e}), existing loop");
-                                    break 'stream;
                                 }
                             }
                         },
@@ -314,6 +316,21 @@ fn livekit_handler_inner(
                                 }
                             }
                         }
+                        livekit::RoomEvent::ParticipantConnected(participant) => {
+                            let meta = participant.metadata();
+                            if !meta.is_empty() {
+                                if let Some(address) = participant.identity().0.as_str().as_h160() {
+                                    if let Err(e) = sender.send(PlayerUpdate {
+                                        transport_id,
+                                        message: PlayerMessage::MetaData(meta),
+                                        address,
+                                    }).await {
+                                        warn!("app pipe broken ({e}), existing loop");
+                                        break 'stream;
+                                    }
+                                }
+                            }
+                        }
                         _ => { debug!("Event: {:?}", incoming); }
                     };
                 }
@@ -323,7 +340,13 @@ fn livekit_handler_inner(
                         break 'stream;
                     };
 
-                    let packet = livekit::DataPacket { payload: outgoing.data, topic: None, reliable: !outgoing.unreliable, destination_identities: Default::default() };
+                    let destination_identities = if let Some(address) = outgoing.recipient {
+                        vec![ParticipantIdentity(format!("{address:#x}"))]
+                    } else {
+                        default()
+                    };
+
+                    let packet = livekit::DataPacket { payload: outgoing.data, topic: None, reliable: !outgoing.unreliable, destination_identities };
                     if let Err(_e) = room.local_participant().publish_data(packet).await {
                         // debug!("outgoing failed: {_e}; not exiting loop though since it often fails at least once or twice at the start...");
                         break 'stream;

@@ -12,6 +12,7 @@ use common::{
 };
 use ethers_core::types::Address;
 use kira::sound::streaming::StreamingSoundData;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::{broadcast, mpsc};
 
@@ -30,6 +31,8 @@ use dcl_component::{
     DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter,
 };
 
+use crate::{movement_compressed::MovementCompressed, profile::ProfileMetaCache};
+
 const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 6..=406;
 
 pub struct GlobalCrdtPlugin;
@@ -47,6 +50,7 @@ impl Plugin for GlobalCrdtPlugin {
             context: CrdtContext::new(SceneId::DUMMY, "Global Crdt".into(), false, false),
             store: Default::default(),
             lookup: Default::default(),
+            realm_bounds: (IVec2::MAX, IVec2::MIN),
         });
 
         let (sender, receiver) = tokio::sync::broadcast::channel(1_000);
@@ -63,16 +67,19 @@ impl Plugin for GlobalCrdtPlugin {
 }
 
 pub enum PlayerMessage {
+    MetaData(String),
     PlayerData(rfc4::packet::Message),
     AudioStream(Box<StreamingSoundData<AudioDecoderError>>),
 }
 
 impl std::fmt::Debug for PlayerMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
+        let var_name = match self {
+            Self::MetaData(arg0) => f.debug_tuple("MetaData").field(arg0).finish(),
             Self::PlayerData(arg0) => f.debug_tuple("PlayerData").field(arg0).finish(),
             Self::AudioStream(_) => f.debug_tuple("AudioStream").finish(),
-        }
+        };
+        var_name
     }
 }
 
@@ -95,6 +102,7 @@ pub struct GlobalCrdtState {
     context: CrdtContext,
     store: CrdtStore,
     lookup: BiMap<Address, Entity>,
+    pub(crate) realm_bounds: (IVec2, IVec2),
 }
 
 impl GlobalCrdtState {
@@ -108,6 +116,10 @@ impl GlobalCrdtState {
         (self.store.clone(), self.int_sender.subscribe())
     }
 
+    pub fn set_bounds(&mut self, min: IVec2, max: IVec2) {
+        println!("bounds: {min}-{max}");
+        self.realm_bounds = (min, max);
+    }
     pub fn update_crdt(
         &mut self,
         component_id: SceneComponentId,
@@ -171,13 +183,22 @@ impl LocalAudioSource {
     }
 }
 
+#[derive(Serialize, Deserialize, Component, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignMetaData {
+    pub lambdas_endpoint: String,
+}
 #[derive(Event)]
 pub struct PlayerPositionEvent {
-    pub index: u32,
+    pub index: Option<u32>,
     pub player: Entity,
     pub time: f32,
+    pub timestamp: Option<f32>,
     pub translation: DclTranslation,
     pub rotation: DclQuat,
+    pub velocity: Option<Vec3>,
+    pub grounded: Option<bool>,
+    pub jumping: Option<bool>,
 }
 
 pub enum ProfileEventType {
@@ -214,6 +235,8 @@ pub fn process_transport_updates(
         HashMap<String, tokio::sync::mpsc::UnboundedSender<(String, Vec<u8>)>>,
     >,
     mut subscribers: EventReader<RpcCall>,
+    mut profile_meta_cache: ResMut<ProfileMetaCache>,
+    mut duplicate_chat_filter: Local<HashMap<Entity, f64>>,
 ) {
     // gather any event receivers
     for ev in subscribers.read() {
@@ -306,6 +329,14 @@ pub fn process_transport_updates(
 
         // process update
         match update.message {
+            PlayerMessage::MetaData(str) => {
+                if let Ok(meta) = serde_json::from_str::<ForeignMetaData>(&str) {
+                    debug!("foreign player metadata: {scene_id:?}: {meta:?}");
+                    profile_meta_cache
+                        .0
+                        .insert(update.address, meta.lambdas_endpoint);
+                }
+            }
             PlayerMessage::AudioStream(audio) => {
                 // pass through
                 let _ = audio_channel.blocking_send(*audio);
@@ -337,8 +368,9 @@ pub fn process_transport_updates(
                     &dcl_transform,
                 );
                 position_events.send(PlayerPositionEvent {
-                    index: pos.index,
+                    index: Some(pos.index),
                     time: time.elapsed_seconds(),
+                    timestamp: None,
                     player: entity,
                     translation: DclTranslation([pos.position_x, pos.position_y, pos.position_z]),
                     rotation: DclQuat([
@@ -347,6 +379,9 @@ pub fn process_transport_updates(
                         pos.rotation_z,
                         pos.rotation_w,
                     ]),
+                    velocity: None,
+                    grounded: None,
+                    jumping: None,
                 });
             }
             PlayerMessage::PlayerData(Message::ProfileVersion(version)) => {
@@ -368,12 +403,17 @@ pub fn process_transport_updates(
                 });
             }
             PlayerMessage::PlayerData(Message::Chat(chat)) => {
-                chat_events.send(ChatEvent {
-                    sender: entity,
-                    timestamp: chat.timestamp,
-                    channel: "Nearby".to_owned(),
-                    message: chat.message,
-                });
+                let last = duplicate_chat_filter.entry(entity).or_default();
+
+                if *last < chat.timestamp {
+                    chat_events.send(ChatEvent {
+                        sender: entity,
+                        timestamp: chat.timestamp,
+                        channel: "Nearby".to_owned(),
+                        message: chat.message,
+                    });
+                    *last = chat.timestamp;
+                }
             }
             PlayerMessage::PlayerData(Message::Scene(mut scene)) => {
                 if scene.data.is_empty() {
@@ -418,7 +458,47 @@ pub fn process_transport_updates(
                 }
             }
             PlayerMessage::PlayerData(Message::Voice(_)) => (),
-            PlayerMessage::PlayerData(Message::Movement(_)) => (),
+            PlayerMessage::PlayerData(Message::Movement(m)) => {
+                debug!("movement data: {m:?}");
+            }
+            PlayerMessage::PlayerData(Message::MovementCompressed(m)) => {
+                debug!("movement compressed data: {m:?}");
+                let movement = MovementCompressed::from_proto(m);
+                let pos = movement.position(state.realm_bounds.0, state.realm_bounds.1);
+                let vel = movement.velocity();
+                let rot = Quat::from_rotation_y(movement.temporal.rotation_f32());
+                let dcl_transform = DclTransformAndParent {
+                    translation: DclTranslation::from_bevy_translation(pos),
+                    rotation: DclQuat::from_bevy_quat(rot),
+                    scale: Vec3::ONE,
+                    parent: SceneEntityId::WORLD_ORIGIN,
+                };
+
+                debug!("player: {:#x} -> {} -> {}", update.address, pos, vel);
+
+                state.update_crdt(
+                    SceneComponentId::TRANSFORM,
+                    CrdtType::LWW_ANY,
+                    scene_id,
+                    &dcl_transform,
+                );
+                position_events.send(PlayerPositionEvent {
+                    index: None,
+                    time: time.elapsed_seconds(),
+                    timestamp: Some(movement.temporal.timestamp_f32()),
+                    player: entity,
+                    translation: dcl_transform.translation,
+                    rotation: dcl_transform.rotation,
+                    velocity: Some(vel),
+                    grounded: movement.temporal.grounded_or_err().ok(),
+                    // Some(true) if either is Some(true), else Some(false) if either is Some(false), else None
+                    jumping: movement
+                        .temporal
+                        .jump_or_err()
+                        .ok()
+                        .max(movement.temporal.long_jump_or_err().ok()),
+                });
+            }
             PlayerMessage::PlayerData(Message::PlayerEmote(_)) => (),
             PlayerMessage::PlayerData(Message::SceneEmote(_)) => (),
         }

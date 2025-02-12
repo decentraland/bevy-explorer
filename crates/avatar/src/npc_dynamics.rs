@@ -1,6 +1,6 @@
 use bevy::{prelude::*, utils::HashMap};
 
-use common::structs::PrimaryUser;
+use common::structs::{AvatarDynamicState, PrimaryUser};
 
 use comms::global_crdt::ForeignPlayer;
 use scene_runner::{
@@ -9,8 +9,6 @@ use scene_runner::{
 };
 
 use crate::AvatarShape;
-
-use super::AvatarDynamicState;
 
 pub struct NpcMovementPlugin;
 

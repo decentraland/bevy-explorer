@@ -48,7 +48,8 @@ impl Plugin for UserProfilePlugin {
         );
 
         app.insert_resource(CurrentUserProfile::default());
-        app.init_resource::<ProfileCache>();
+        app.init_resource::<ProfileCache>()
+            .init_resource::<ProfileMetaCache>();
     }
 }
 
@@ -60,10 +61,13 @@ enum ProfileDisplayState {
 
 #[derive(Resource, Default)]
 pub struct ProfileCache(HashMap<Address, ProfileDisplayState>);
+#[derive(Resource, Default)]
+pub struct ProfileMetaCache(pub HashMap<Address, String>);
 
 #[derive(SystemParam)]
 pub struct ProfileManager<'w, 's> {
     cache: ResMut<'w, ProfileCache>,
+    meta_cache: ResMut<'w, ProfileMetaCache>,
     ipfs: IpfsAssetServer<'w, 's>,
 }
 
@@ -75,9 +79,11 @@ impl ProfileManager<'_, '_> {
         address: Address,
     ) -> Result<Option<&UserProfile>, ProfileMissingError> {
         let state = self.cache.0.entry(address).or_insert_with(|| {
-            ProfileDisplayState::Loading(
-                IoTaskPool::get().spawn(get_remote_profile(address, self.ipfs.ipfs().clone())),
-            )
+            ProfileDisplayState::Loading(IoTaskPool::get().spawn(get_remote_profile(
+                address,
+                self.ipfs.ipfs().clone(),
+                self.meta_cache.0.get(&address).cloned(),
+            )))
         });
 
         if let ProfileDisplayState::Loading(task) = state {
@@ -134,6 +140,10 @@ impl ProfileManager<'_, '_> {
                 .insert(address, ProfileDisplayState::Loaded(Box::new(profile)));
         }
     }
+
+    pub fn remove(&mut self, address: Address) {
+        self.cache.0.remove(&address);
+    }
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -150,6 +160,8 @@ pub fn setup_primary_profile(
     images: Res<Assets<Image>>,
     mut global_crdt: ResMut<GlobalCrdtState>,
     mut cache: ProfileManager,
+    mut last_announce: Local<f32>,
+    time: Res<Time>,
 ) {
     // gather any event receivers
     for sender in subscribe_events.read().filter_map(|ev| match ev {
@@ -192,7 +204,7 @@ pub fn setup_primary_profile(
                         base_url: profile.base_url.clone(),
                     },
                 )),
-                protocol_version: 999,
+                protocol_version: 100,
             };
             for transport in &transports {
                 let _ = transport
@@ -233,6 +245,23 @@ pub fn setup_primary_profile(
                 )));
                 current_profile.is_deployed = true;
             }
+        } else if let Some(current_profile) = current_profile.profile.as_ref() {
+            let now = time.elapsed_seconds();
+            if now > *last_announce + 5.0 {
+                debug!("announcing profile v {}", current_profile.version);
+                let packet = rfc4::Packet {
+                    message: Some(rfc4::packet::Message::ProfileVersion(
+                        rfc4::AnnounceProfileVersion {
+                            profile_version: current_profile.version,
+                        },
+                    )),
+                    protocol_version: 100,
+                };
+                for transport in transports.iter() {
+                    let _ = transport.sender.try_send(NetworkMessage::reliable(&packet));
+                }
+                *last_announce = now;
+            }
         }
     }
 
@@ -269,25 +298,58 @@ pub struct CurrentUserProfile {
     pub is_deployed: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn request_missing_profiles(
-    missing_profiles: Query<&mut ForeignPlayer, Without<UserProfile>>,
-    stale_profiles: Query<(&mut ForeignPlayer, &UserProfile)>,
+    mut commands: Commands,
+    profiles: Query<(Entity, &mut ForeignPlayer, Option<&UserProfile>)>,
+    mut manager: ProfileManager,
+    mut global_crdt: ResMut<GlobalCrdtState>,
     mut requested: Local<HashMap<Address, f32>>,
     transports: Query<&Transport>,
     time: Res<Time>,
 ) {
     let mut last_requested = std::mem::take(&mut *requested);
 
-    for player in missing_profiles.iter().chain(
-        stale_profiles
-            .iter()
-            .filter(|(player, profile)| player.profile_version > profile.version)
-            .map(|(player, _)| player),
-    ) {
+    for (ent, player, _) in profiles.iter().filter(|(_, player, maybe_profile)| {
+        maybe_profile.is_none_or(|profile| player.profile_version > profile.version)
+    }) {
         if let Some((address, req_time)) = last_requested.remove_entry(&player.address) {
             if time.elapsed_seconds() - req_time < 10.0 {
                 requested.insert(address, req_time);
                 continue;
+            }
+        }
+
+        match manager.get_data(player.address) {
+            Ok(Some(profile)) => {
+                // catalyst fetch complete
+                if profile.version >= player.profile_version {
+                    global_crdt.update_crdt(
+                        SceneComponentId::PLAYER_IDENTITY_DATA,
+                        CrdtType::LWW_ANY,
+                        player.scene_id,
+                        &PbPlayerIdentityData {
+                            address: format!("{:#x}", player.address),
+                            is_guest: !(profile.content.has_connected_web3.unwrap_or(false)),
+                        },
+                    );
+
+                    commands.entity(ent).try_insert(profile.clone());
+                } else {
+                    warn!(
+                        "removing stale profile {} != {}",
+                        profile.version, player.profile_version
+                    );
+                    manager.remove(player.address);
+                }
+                continue;
+            }
+            Ok(None) => {
+                // catalyst fetch in progress
+                continue;
+            }
+            Err(_) => {
+                // catalyst doesn't have the data, fallback to comms profile request
             }
         }
 
@@ -299,7 +361,7 @@ fn request_missing_profiles(
                         profile_version: player.profile_version,
                     },
                 )),
-                protocol_version: 999,
+                protocol_version: 100,
             };
             match transport
                 .sender
@@ -363,7 +425,7 @@ pub fn process_profile_events(
                                     base_url: current_profile.base_url.clone(),
                                 },
                             )),
-                            protocol_version: 999,
+                            protocol_version: 100,
                         };
                         let _ = transport
                             .sender
@@ -595,8 +657,12 @@ async fn deploy_profile(
 pub async fn get_remote_profile(
     address: Address,
     ipfs: std::sync::Arc<IpfsIo>,
+    endpoint: Option<String>,
 ) -> Result<UserProfile, anyhow::Error> {
-    let endpoint = ipfs.lambda_endpoint().ok_or(anyhow!("not connected"))?;
+    let endpoint = match endpoint {
+        Some(endpoint) => endpoint,
+        None => ipfs.lambda_endpoint().ok_or(anyhow!("not connected"))?,
+    };
     debug!("requesting profile from {}", endpoint);
 
     let mut response = isahc::get(format!("{endpoint}/profiles/{address:#x}"))?;

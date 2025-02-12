@@ -365,11 +365,29 @@ pub struct CommsConfig {
 
 #[derive(Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
+pub struct Region {
+    pub left: i32,
+    pub right: i32,
+    pub top: i32,
+    pub bottom: i32,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MapData {
+    pub minimap_enabled: Option<bool>,
+    pub sizes: Vec<Region>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerConfiguration {
     pub scenes_urn: Option<Vec<String>>,
     pub realm_name: Option<String>,
     pub network_id: Option<u32>,
     pub city_loader_content_server: Option<String>,
+    pub map: Option<MapData>,
+    pub local_scene_parcels: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -678,20 +696,45 @@ impl IpfsIo {
         write.about = None;
         drop(write);
 
-        let mut about = isahc::get_async(format!("{new_realm}/about"))
-            .await
-            .map_err(|e| anyhow!(e))?;
-        if about.status() != StatusCode::OK {
-            return Err(anyhow!("status: {}", about.status()));
+        let mut retries = 0;
+        let mut about;
+        loop {
+            let mut about_raw = isahc::get_async(format!("{new_realm}/about"))
+                .await
+                .map_err(|e| anyhow!(e))?;
+            if about_raw.status() != StatusCode::OK {
+                return Err(anyhow!("status: {}", about_raw.status()));
+            }
+
+            about = about_raw
+                .json::<ServerAbout>()
+                .await
+                .map_err(|e| anyhow!(e))?;
+            if about.configurations.as_ref().is_some_and(|config| {
+                config
+                    .scenes_urn
+                    .as_ref()
+                    .is_some_and(|scenes| !scenes.is_empty())
+                    || config.map.is_some()
+            }) {
+                break;
+            }
+            // with no scenes and no map data, we will not have much of value
+            // sometimes this occurs for misdeployed load balancers, so let's retry a couple of times
+            retries += 1;
+            if retries == 3 {
+                break;
+            }
         }
 
-        let about = about.json::<ServerAbout>().await.map_err(|e| anyhow!(e))?;
-
         let mut write = self.context.write().await;
-        write.base_url.clone_from(&new_realm);
+        let base_url = about
+            .content_url()
+            .map(|c| c.strip_suffix("/content/").unwrap_or(c));
+        write.base_url = base_url.unwrap_or(&new_realm).to_owned();
         write.about = Some(about.clone());
         self.realm_config_sender
-            .send(Some((new_realm, about)))
+            .send(Some((write.base_url.clone(), about)))
             .expect("channel closed");
         Ok(())
     }

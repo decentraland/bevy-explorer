@@ -647,8 +647,20 @@ impl ScenePointers {
         // exists will be rechecked / replaced when active entities returns
         self.crcs.clear();
     }
-    pub fn insert(&mut self, parcel: IVec2, result: PointerResult) {
+    pub fn insert(&mut self, parcel: IVec2, result: PointerResult) -> Option<(IVec2, IVec2)> {
+        let mut res = None;
+        if !matches!(result, PointerResult::Nothing) {
+            let new_min = self.realm_bounds.0.min(parcel);
+            let new_max = self.realm_bounds.1.max(parcel);
+
+            if (new_min, new_max) != self.realm_bounds {
+                res = Some((new_min, new_max));
+                self.realm_bounds.0 = new_min;
+                self.realm_bounds.1 = new_max;
+            }
+        }
         self.pointers.insert(parcel, result);
+        res
     }
 
     pub fn min(&self) -> IVec2 {
@@ -852,15 +864,40 @@ fn load_active_entities(
     mut pointers: ResMut<ScenePointers>,
     mut pointer_request: Local<Option<(HashSet<IVec2>, HashMap<String, String>, ActiveEntityTask)>>,
     ipfas: IpfsAssetServer,
+    mut global_crdt: ResMut<GlobalCrdtState>,
 ) {
     if current_realm.is_changed() {
         // drop current request
         *pointer_request = None;
         // set current realm and clear
-        // TODO base this on the actual bounds
-        // pointers.set_realm(IVec2::new(-15, -33), IVec2::new(-1,-12));
-        // pointers.set_realm(IVec2::new(100, -94), IVec2::new(123,-85));
-        pointers.set_realm(IVec2::new(-152, -152), IVec2::new(152, 152));
+        // take map bounds
+        let (mut bounds_min, mut bounds_max) = current_realm
+            .config
+            .map
+            .as_ref()
+            .map(|data| data.sizes.iter())
+            .unwrap_or_default()
+            .fold((IVec2::MAX, IVec2::MIN), |(min, max), region| {
+                (
+                    min.min(IVec2::new(region.left, region.bottom)),
+                    max.max(IVec2::new(region.right, region.top)),
+                )
+            });
+        // take local parcel bounds
+        for parcel in current_realm
+            .config
+            .local_scene_parcels
+            .as_ref()
+            .map(|p| p.iter())
+            .unwrap_or_default()
+        {
+            if let Ok(IVec2Arg(parcel)) = IVec2Arg::from_str(parcel) {
+                bounds_min = bounds_min.min(parcel);
+                bounds_max = bounds_max.max(parcel);
+            }
+        }
+        pointers.set_realm(bounds_min, bounds_max);
+        global_crdt.set_bounds(bounds_min, bounds_max);
     }
 
     if pointer_request.is_none()
@@ -1016,14 +1053,16 @@ fn load_active_entities(
                 let parcel = IVec2::new(x, y);
 
                 requested_parcels.remove(&parcel);
-                pointers.pointers.insert(
+                if let Some(new_bounds) = pointers.insert(
                     parcel,
                     PointerResult::Exists {
                         realm: current_realm.address.clone(),
                         hash: active_entity.id.clone(),
                         urn: urn.clone(),
                     },
-                );
+                ) {
+                    global_crdt.set_bounds(new_bounds.0, new_bounds.1);
+                }
             }
         }
 

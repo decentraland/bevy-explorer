@@ -100,7 +100,10 @@ use common::{
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{
-    proto_components::sdk::components::{common::TextAlignMode, PbTextShape},
+    proto_components::{
+        sdk::components::{common::TextAlignMode, PbTextShape},
+        Color4DclToBevy,
+    },
     SceneComponentId,
 };
 use ui_core::{ui_builder::SpawnSpacer, user_font, FontName, WeightName};
@@ -286,7 +289,7 @@ fn update_text_shapes(
             text_shape
                 .0
                 .text_color
-                .map(Into::into)
+                .map(Color4DclToBevy::convert_srgba)
                 .unwrap_or(Color::WHITE),
             text_shape.0.font(),
             halign,

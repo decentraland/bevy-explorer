@@ -82,7 +82,7 @@ module.exports.setSetting = async function(name, value) {
 }
 
 module.exports.kernelFetch = async function (body) { 
-    const headers = await Deno.core.ops.op_kernel_fetch_headers(body.url, body.init?.method);
+    const headers = await Deno.core.ops.op_kernel_fetch_headers(body.url, body.init?.method, body.meta);
 
     if (!body.init) {
         body.init = { headers: {} };

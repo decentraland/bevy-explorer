@@ -6,6 +6,7 @@ use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::{AvatarColor, AvatarEmote, SerializedProfile},
     rpc::RpcCall,
+    sets::SetupSets,
     structs::{
         ActiveDialog, AppConfig, PermissionTarget, SettingsTab, ShowSettingsEvent, SystemAudio,
     },
@@ -27,6 +28,7 @@ use crate::{
     permissions::{PermissionSettingsDetail, PermissionSettingsPlugin},
     profile_detail::ProfileDetail,
     wearables::WearableSettingsPlugin,
+    SystemUiRoot,
 };
 
 pub struct ProfileEditPlugin;
@@ -34,7 +36,7 @@ pub struct ProfileEditPlugin;
 impl Plugin for ProfileEditPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<ShowSettingsEvent>();
-        app.add_systems(Startup, setup);
+        app.add_systems(Startup, setup.in_set(SetupSets::Main));
         app.add_systems(Update, show_settings);
         app.add_plugins((
             DiscoverSettingsPlugin,
@@ -46,32 +48,36 @@ impl Plugin for ProfileEditPlugin {
     }
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<SystemUiRoot>) {
     // profile button
-    commands.spawn((
-        ImageBundle {
-            image: asset_server.load("images/profile_button.png").into(),
-            style: Style {
-                position_type: PositionType::Absolute,
-                top: Val::VMin(BUTTON_SCALE * 0.5),
-                right: Val::VMin(BUTTON_SCALE * 0.5),
-                width: Val::VMin(BUTTON_SCALE),
-                height: Val::VMin(BUTTON_SCALE),
+    let button = commands
+        .spawn((
+            ImageBundle {
+                image: asset_server.load("images/profile_button.png").into(),
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    top: Val::VMin(BUTTON_SCALE * 0.5),
+                    right: Val::VMin(BUTTON_SCALE * 0.5),
+                    width: Val::VMin(BUTTON_SCALE),
+                    height: Val::VMin(BUTTON_SCALE),
+                    ..Default::default()
+                },
+                focus_policy: bevy::ui::FocusPolicy::Block,
                 ..Default::default()
             },
-            focus_policy: bevy::ui::FocusPolicy::Block,
-            ..Default::default()
-        },
-        Interaction::default(),
-        On::<Click>::new(
-            (move |mut target: ResMut<PermissionTarget>| {
-                target.scene = None;
-                target.ty = None;
-            })
-            .pipe(ShowSettingsEvent(SettingsTab::Discover).send_value())
-            .pipe(SystemAudio("sounds/ui/mainmenu_widget_open.wav".to_owned()).send_value()),
-        ),
-    ));
+            Interaction::default(),
+            On::<Click>::new(
+                (move |mut target: ResMut<PermissionTarget>| {
+                    target.scene = None;
+                    target.ty = None;
+                })
+                .pipe(ShowSettingsEvent(SettingsTab::Discover).send_value())
+                .pipe(SystemAudio("sounds/ui/mainmenu_widget_open.wav".to_owned()).send_value()),
+            ),
+        ))
+        .id();
+
+    commands.entity(ui_root.0).push_children(&[button]);
 }
 
 pub struct InfoDialog;

@@ -26,7 +26,10 @@ use common::{
 };
 use comms::global_crdt::ForeignPlayer;
 use dcl_component::{
-    proto_components::sdk::components::{PbCameraLayer, PbCameraLayers, PbTextureCamera},
+    proto_components::{
+        sdk::components::{PbCameraLayer, PbCameraLayers, PbTextureCamera},
+        Color3DclToBevy, Color4DclToBevy,
+    },
     SceneComponentId,
 };
 use propagate::{HierarchyPropagatePlugin, Propagate, PropagateStop};
@@ -303,7 +306,7 @@ fn update_texture_cameras(
                             texture_cam
                                 .0
                                 .clear_color
-                                .map(Color::from)
+                                .map(Color4DclToBevy::convert_srgba)
                                 .unwrap_or(Color::BLACK),
                         ),
                         is_active: true,
@@ -373,7 +376,7 @@ fn update_texture_cameras(
                 camera.insert(AmbientLight {
                     color: maybe_layer
                         .and_then(|l| l.ambient_color_override)
-                        .map(Color::from)
+                        .map(Color3DclToBevy::convert_srgb)
                         .unwrap_or(global_light.ambient_color),
                     brightness: maybe_layer
                         .and_then(|l| l.ambient_brightness_override)

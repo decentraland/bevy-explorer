@@ -2,10 +2,9 @@ use bevy::{math::Vec3Swizzles, prelude::*};
 
 use common::{
     dynamics::PLAYER_GROUND_THRESHOLD,
-    structs::{AvatarControl, PrimaryCamera, PrimaryUser},
+    structs::{AvatarControl, AvatarDynamicState, PrimaryCamera, PrimaryUser},
 };
 
-use avatar::AvatarDynamicState;
 use dcl_component::proto_components::sdk::components::common::InputAction;
 use input_manager::InputManager;
 use scene_runner::update_world::avatar_modifier_area::PlayerModifiers;

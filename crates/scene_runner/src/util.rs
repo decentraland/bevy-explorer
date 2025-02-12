@@ -10,8 +10,7 @@ use bevy::{
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use clap::builder::StyledStr;
-use common::structs::PrimaryUser;
-use comms::preview::PreviewCommand;
+use common::structs::{PreviewCommand, PrimaryUser};
 use console::DoAddConsoleCommand;
 use futures_lite::AsyncReadExt;
 use ipfs::{

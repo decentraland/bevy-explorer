@@ -242,15 +242,29 @@ pub async fn op_kernel_fetch_headers(
     state: Rc<RefCell<OpState>>,
     #[string] uri: String,
     #[string] method: Option<String>,
+    #[string] meta: Option<String>,
 ) -> Result<Vec<(String, String)>, AnyError> {
     debug!("op_kernel_fetch_headers");
 
     let wallet = state.borrow().borrow::<Wallet>().clone();
-    sign_request(
-        method.as_deref().unwrap_or("get"),
-        &Uri::try_from(uri)?,
-        &wallet,
-        (),
-    )
-    .await
+
+    if let Some(meta) = meta {
+        let meta: serde_json::Value = serde_json::from_str(&meta)?;
+
+        sign_request(
+            method.as_deref().unwrap_or("get"),
+            &Uri::try_from(uri)?,
+            &wallet,
+            meta,
+        )
+        .await
+    } else {
+        sign_request(
+            method.as_deref().unwrap_or("get"),
+            &Uri::try_from(uri)?,
+            &wallet,
+            (),
+        )
+        .await
+    }
 }

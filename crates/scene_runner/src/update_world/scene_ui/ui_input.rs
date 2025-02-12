@@ -2,7 +2,10 @@ use bevy::{prelude::*, ui::FocusPolicy};
 use common::util::ModifyComponentExt;
 use dcl::interface::CrdtType;
 use dcl_component::{
-    proto_components::sdk::components::{self, PbUiInput, PbUiInputResult},
+    proto_components::{
+        sdk::components::{self, PbUiInput, PbUiInputResult},
+        Color4DclToBevy,
+    },
     SceneComponentId,
 };
 use ui_core::{
@@ -104,14 +107,21 @@ pub fn set_ui_input(
             Interaction::default(),
             TextEntry {
                 hint_text: input.0.placeholder.to_owned(),
-                hint_text_color: input.0.placeholder_color.map(Into::into),
+                hint_text_color: input
+                    .0
+                    .placeholder_color
+                    .map(Color4DclToBevy::convert_srgba),
                 enabled: !input.0.disabled,
                 content: input.0.value.clone().unwrap_or_default(),
                 accept_line: true,
                 text_style: Some(TextStyle {
                     font: user_font(font_name, ui_core::WeightName::Regular),
                     font_size,
-                    color: input.0.color.map(Into::into).unwrap_or(Color::BLACK),
+                    color: input
+                        .0
+                        .color
+                        .map(Color4DclToBevy::convert_srgba)
+                        .unwrap_or(Color::BLACK),
                 }),
                 ..Default::default()
             },

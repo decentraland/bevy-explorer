@@ -22,16 +22,20 @@ use common::{
     structs::{AppConfig, PrimaryCamera, PrimaryUser},
     util::{dcl_assert, TryPushChildrenEx},
 };
+use comms::{SceneRoomConnection, SetCurrentScene};
 use dcl::{
     interface::CrdtType, RendererResponse, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse,
 };
 use dcl_component::{
-    proto_components::{common::BorderRect, sdk::components::PbUiCanvasInformation},
+    proto_components::{
+        common::BorderRect,
+        sdk::components::{PbRealmInfo, PbUiCanvasInformation},
+    },
     transform_and_parent::DclTransformAndParent,
     DclReader, DclWriter, FromDclReader, SceneComponentId, SceneEntityId,
 };
 use initialize_scene::{PortableScenes, TestingData};
-use ipfs::SceneIpfsLocation;
+use ipfs::{CurrentRealm, SceneIpfsLocation};
 use primary_entities::PrimaryEntities;
 use spin_sleep::SpinSleeper;
 use ui_core::ui_actions::{Click, On};
@@ -315,6 +319,8 @@ impl Plugin for SceneRunnerPlugin {
         app.add_plugins(SceneOutputPlugin);
         app.add_plugins(SceneUtilPlugin);
         app.add_plugins(LightsPlugin);
+
+        app.add_systems(Update, update_scene_room.in_set(SceneSets::PostLoop));
     }
 }
 
@@ -654,6 +660,8 @@ fn send_scene_updates(
     camera: Query<&Transform, With<PrimaryCamera>>,
     config: Res<AppConfig>,
     window: Query<&Window, With<PrimaryWindow>>,
+    realm: Res<CurrentRealm>,
+    data_channel: Res<SceneRoomConnection>,
 ) {
     let updates = &mut *updates;
 
@@ -670,8 +678,6 @@ fn send_scene_updates(
     // collect components
 
     // generate updates for camera and player
-    let crdt_store = &mut context.crdt_store;
-
     let mut buf = Vec::default();
     for (mut affine, id) in [
         (
@@ -698,7 +704,8 @@ fn send_scene_updates(
             SceneEntityId::ROOT,
         ));
 
-        let update = crdt_store
+        let update = context
+            .crdt_store
             .get(SceneComponentId::TRANSFORM, CrdtType::LWW_ENT, id)
             .map(|prev| {
                 DclTransformAndParent::from_reader(&mut DclReader::new(prev))
@@ -712,7 +719,7 @@ fn send_scene_updates(
             .unwrap_or(true);
 
         if update {
-            crdt_store.update_if_different(
+            context.crdt_store.update_if_different(
                 SceneComponentId::TRANSFORM,
                 CrdtType::LWW_ENT,
                 id,
@@ -720,6 +727,38 @@ fn send_scene_updates(
             );
         }
     }
+
+    // add realm info
+    let room = data_channel
+        .0
+        .as_ref()
+        .and_then(|(scene, addr, _)| (scene.scene_id == context.hash).then_some(addr));
+    let base_url = realm
+        .public_url
+        .strip_suffix("/")
+        .unwrap_or(&realm.public_url);
+    let base_url = base_url.strip_suffix("/content").unwrap_or(base_url);
+    let realm_info = PbRealmInfo {
+        base_url: base_url.to_owned(),
+        realm_name: realm.config.realm_name.clone().unwrap_or_default(),
+        network_id: realm.config.network_id.unwrap_or_default() as i32,
+        comms_adapter: realm
+            .comms
+            .as_ref()
+            .and_then(|comms| comms.adapter.clone())
+            .unwrap_or("offline".to_owned()),
+        is_preview: false,
+        room: room.cloned(),
+        is_connected_scene_room: Some(room.is_some()),
+    };
+    buf.clear();
+    DclWriter::new(&mut buf).write(&realm_info);
+    context.crdt_store.update_if_different(
+        SceneComponentId::REALM_INFO,
+        CrdtType::LWW_ANY,
+        SceneEntityId::ROOT,
+        Some(&mut DclReader::new(&buf)),
+    );
 
     // add canvas info
     let canvas_info = if let Ok(window) = window.get_single() {
@@ -762,7 +801,7 @@ fn send_scene_updates(
 
     buf.clear();
     DclWriter::new(&mut buf).write(&canvas_info);
-    crdt_store.force_update(
+    context.crdt_store.force_update(
         SceneComponentId::CANVAS_INFO,
         CrdtType::LWW_ROOT,
         SceneEntityId::ROOT,
@@ -771,7 +810,7 @@ fn send_scene_updates(
 
     if let Err(e) = handle
         .sender
-        .blocking_send(RendererResponse::Ok(crdt_store.take_updates()))
+        .blocking_send(RendererResponse::Ok(context.crdt_store.take_updates()))
     {
         error!(
             "failed to send updates to scene {ent:?} [{:?}]: {e:?}",
@@ -942,4 +981,47 @@ fn process_scene_entity_lifecycle(
             context.set_dead(*deleted_scene_entity);
         }
     }
+}
+
+fn update_scene_room(
+    mut writer: EventWriter<SetCurrentScene>,
+    mut last: Local<Option<SetCurrentScene>>,
+    realm: Res<CurrentRealm>,
+    containing_scene: ContainingScene,
+    player: Query<Entity, With<PrimaryUser>>,
+    scenes: Query<&RendererSceneContext>,
+) {
+    let (Some(realm), Some(scene)) = (
+        realm.config.realm_name.as_ref(),
+        player
+            .get_single()
+            .ok()
+            .and_then(|p| containing_scene.get_parcel(p))
+            .and_then(|scene| scenes.get(scene).ok()),
+    ) else {
+        if last.take().is_some() {
+            debug!("clear scene room");
+            writer.send(SetCurrentScene {
+                realm_name: default(),
+                scene_id: default(),
+            });
+        }
+        return;
+    };
+
+    if last
+        .as_ref()
+        .is_some_and(|ev| &ev.realm_name == realm && ev.scene_id == scene.hash)
+    {
+        return;
+    }
+
+    let ev = SetCurrentScene {
+        realm_name: realm.to_owned(),
+        scene_id: scene.hash.clone(),
+    };
+
+    *last = Some(ev.clone());
+    debug!("set scene room {ev:?}");
+    writer.send(ev);
 }

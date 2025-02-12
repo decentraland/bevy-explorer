@@ -49,6 +49,7 @@ use dcl_component::{
     proto_components::{
         common::Color3,
         sdk::components::{PbAvatarBase, PbAvatarEquippedData, PbAvatarShape},
+        Color3DclToBevy,
     },
     SceneComponentId, SceneEntityId,
 };
@@ -136,16 +137,6 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>, mut view: ResMut
             TargetCamera(view.view),
         ))
         .id();
-}
-
-#[derive(Component, Default)]
-pub struct AvatarDynamicState {
-    pub force: Vec2,
-    pub velocity: Vec3,
-    pub ground_height: f32,
-    pub tank: bool,
-    pub rotate: f32,
-    pub jump_time: f32,
 }
 
 // send received avatar info into scenes
@@ -684,7 +675,7 @@ fn update_render_avatar(
                             g: 0.462,
                             b: 0.356,
                         })
-                        .into(),
+                        .convert_linear_rgb(),
                     hair_color: selection
                         .shape
                         .shape
@@ -694,7 +685,7 @@ fn update_render_avatar(
                             g: 0.142,
                             b: 0.0,
                         })
-                        .into(),
+                        .convert_linear_rgb(),
                     eyes_color: selection
                         .shape
                         .shape
@@ -704,7 +695,7 @@ fn update_render_avatar(
                             g: 0.462,
                             b: 0.356,
                         })
-                        .into(),
+                        .convert_linear_rgb(),
                     bounds: maybe_scene_ent
                         .and_then(|se| scenes.get(se.root).ok())
                         .map(|ctx| ctx.bounds.clone())

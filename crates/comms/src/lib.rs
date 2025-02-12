@@ -5,6 +5,7 @@ pub mod global_crdt;
 #[cfg(feature = "livekit")]
 pub mod livekit_room;
 
+pub mod movement_compressed;
 pub mod preview;
 pub mod profile;
 pub mod signed_login;
@@ -14,16 +15,26 @@ pub mod websocket_room;
 
 use std::marker::PhantomData;
 
-use bevy::{ecs::system::SystemParam, prelude::*};
+use bevy::{
+    ecs::system::SystemParam,
+    prelude::*,
+    tasks::{IoTaskPool, Task},
+};
 use bimap::BiMap;
-use ethers_core::types::Address;
+use common::util::TaskExt;
+use ethers_core::types::{Address, H160};
+use isahc::{
+    http::{StatusCode, Uri},
+    AsyncReadResponseExt, RequestExt,
+};
 use preview::PreviewPlugin;
+use serde::{Deserialize, Serialize};
 use signed_login::{SignedLoginPlugin, StartSignedLogin};
 use tokio::sync::mpsc::Sender;
 
 use dcl_component::{DclWriter, ToDclWriter};
 use ipfs::CurrentRealm;
-use wallet::Wallet;
+use wallet::{sign_request, Wallet};
 
 use self::{
     archipelago::{ArchipelagoPlugin, StartArchipelago},
@@ -36,6 +47,8 @@ use self::{
 #[cfg(feature = "livekit")]
 use self::livekit_room::{LivekitPlugin, StartLivekit};
 
+const GATEKEEPER_URL: &str = "https://comms-gatekeeper.decentraland.org/get-scene-adapter";
+
 pub mod chat_marker_things {
     pub const EMOTE: char = '␐';
 
@@ -46,6 +59,9 @@ pub struct CommsPlugin;
 
 impl Plugin for CommsPlugin {
     fn build(&self, app: &mut App) {
+        app.add_event::<SetCurrentScene>()
+            .init_resource::<SceneRoomConnection>();
+
         app.add_plugins((
             WebsocketRoomPlugin,
             SignedLoginPlugin,
@@ -59,13 +75,8 @@ impl Plugin for CommsPlugin {
         #[cfg(feature = "livekit")]
         app.add_plugins(LivekitPlugin);
 
-        app.add_systems(Update, process_realm_change);
+        app.add_systems(Update, (process_realm_change, connect_scene_room));
     }
-}
-
-pub struct TransportAlias {
-    pub adapter: Entity,
-    pub alias: u32,
 }
 
 #[derive(PartialEq, Eq)]
@@ -73,12 +84,13 @@ pub enum TransportType {
     WebsocketRoom,
     Livekit,
     Archipelago,
-    Island(String),
+    SceneRoom,
 }
 
 pub struct NetworkMessage {
     pub data: Vec<u8>,
     pub unreliable: bool,
+    pub recipient: Option<H160>,
 }
 
 impl NetworkMessage {
@@ -89,12 +101,21 @@ impl NetworkMessage {
         Self {
             data,
             unreliable: true,
+            recipient: None,
         }
     }
 
     pub fn reliable<D: ToDclWriter>(message: &D) -> Self {
         Self {
             unreliable: false,
+            ..Self::unreliable(message)
+        }
+    }
+
+    pub fn targetted_reliable<D: ToDclWriter>(message: &D, recipient: Option<H160>) -> Self {
+        Self {
+            unreliable: false,
+            recipient,
             ..Self::unreliable(message)
         }
     }
@@ -136,6 +157,83 @@ fn process_realm_change(
             }
         } else {
             debug!("missing comms!");
+        }
+    }
+}
+
+#[derive(Serialize, Event, Clone, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SetCurrentScene {
+    pub realm_name: String,
+    pub scene_id: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GatekeeperResponse {
+    adapter: String,
+}
+
+#[derive(Component)]
+pub struct SceneRoom;
+
+#[derive(Resource, Default)]
+pub struct SceneRoomConnection(pub Option<(SetCurrentScene, String, Entity)>);
+
+#[allow(clippy::type_complexity)]
+fn connect_scene_room(
+    mut commands: Commands,
+    mut manager: AdapterManager,
+    mut gatekeeper_task: Local<Option<Task<Result<(String, SetCurrentScene), anyhow::Error>>>>,
+    mut current: ResMut<SceneRoomConnection>,
+    mut scene: EventReader<SetCurrentScene>,
+    wallet: Res<Wallet>,
+) {
+    if let Some(ev) = scene.read().last().cloned() {
+        if let Some((existing, room, entity)) = current.0.take() {
+            if existing == ev {
+                current.0 = Some((existing, room, entity));
+                return;
+            }
+            if let Some(commands) = commands.get_entity(entity) {
+                commands.despawn_recursive();
+            }
+            warn!("disconnected scene channel {ev:?}");
+        }
+        if ev.scene_id.is_empty() {
+            *gatekeeper_task = None;
+        } else {
+            let wallet = wallet.clone();
+            let uri = Uri::try_from(GATEKEEPER_URL).unwrap();
+            *gatekeeper_task = Some(IoTaskPool::get().spawn(async move {
+                let headers = sign_request("POST", &uri, &wallet, &ev).await?;
+
+                let mut request =
+                    isahc::Request::post(uri).header("Content-Type", "application/json");
+                for (k, v) in headers {
+                    request = request.header(k, v);
+                }
+                let mut response = request.body(())?.send_async().await?;
+
+                if response.status() != StatusCode::OK {
+                    return Err(anyhow::anyhow!("status: {}", response.status()));
+                }
+
+                Ok((response.json::<GatekeeperResponse>().await?.adapter, ev))
+            }));
+        }
+    }
+
+    if let Some(mut task) = gatekeeper_task.take() {
+        match task.complete() {
+            None => *gatekeeper_task = Some(task),
+            Some(Err(e)) => warn!("failed to get scene room from gatekeeper: {e}"),
+            Some(Ok((adapter, ev))) => {
+                if let Some(ent) = manager.connect(&adapter) {
+                    warn!("added scene channel {ev:?}");
+                    current.0 = Some((ev, adapter, ent));
+                    commands.entity(ent).insert(SceneRoom);
+                }
+            }
         }
     }
 }

@@ -36,6 +36,7 @@ use mic::MicUiPlugin;
 use oow::OowUiPlugin;
 use permission_manager::PermissionPlugin;
 use profile_detail::ProfileDetailPlugin;
+use scene_runner::Toaster;
 use toasts::ToastsPlugin;
 use tooltip::ToolTipPlugin;
 
@@ -51,6 +52,7 @@ impl Plugin for SystemUiPlugin {
             Startup,
             setup.in_set(SetupSets::Init).before(SetupSets::Main),
         );
+        app.add_systems(Update, toggle_system_ui);
 
         app.add_plugins((
             SysInfoPanelPlugin,
@@ -111,4 +113,24 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
         Interaction::default(),
         MouseInteractionComponent,
     ));
+}
+
+fn toggle_system_ui(
+    mut toast: Toaster,
+    key_input: Res<ButtonInput<KeyCode>>,
+    mut root: Query<&mut Style, With<UiRoot>>,
+) {
+    if key_input.just_pressed(KeyCode::PageUp) {
+        let Ok(mut root) = root.get_single_mut() else {
+            warn!("no root");
+            return;
+        };
+
+        if root.display == Display::Flex {
+            toast.add_toast("hide ui", "System ui hidden (press PageUp to toggle)");
+            root.display = Display::None;
+        } else {
+            root.display = Display::Flex;
+        }
+    }
 }

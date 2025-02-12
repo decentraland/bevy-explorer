@@ -11,7 +11,6 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-use avatar::AvatarDynamicState;
 use bevy::{
     asset::LoadState,
     core::TaskPoolThreadAssignmentPolicy,
@@ -37,9 +36,9 @@ use collectibles::CollectiblesPlugin;
 use common::{
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, Cubemap, GraphicsSettings, IVec2Arg, PrimaryCamera,
-        PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake, SceneLoadDistance,
-        Version, GROUND_RENDERLAYER,
+        AppConfig, AttachPoints, AvatarDynamicState, Cubemap, GraphicsSettings, IVec2Arg,
+        PreviewCommand, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser,
+        SceneImposterBake, SceneLoadDistance, SystemScene, Version, GROUND_RENDERLAYER,
     },
     util::{config_file, project_directories, TaskExt, UtilsPlugin},
 };
@@ -54,7 +53,10 @@ use scene_runner::{
 
 use av::AudioPlugin;
 use avatar::AvatarPlugin;
-use comms::{preview::PreviewMode, CommsPlugin};
+use comms::{
+    preview::{handle_preview_socket, PreviewMode},
+    CommsPlugin,
+};
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
 use ipfs::{IpfsAssetServer, IpfsIoPlugin};
@@ -231,10 +233,13 @@ fn main() {
 
     let ui_scene: Option<String> = args.value_from_str("--ui").ok();
     if let Some(source) = ui_scene {
-        app.add_systems(Update, spawn_system_ui_scene);
+        app.add_systems(Update, process_system_ui_scene);
         app.insert_resource(NativeUi { login: false });
         app.insert_resource(SystemScene {
             source: Some(source),
+            preview: args.contains("--ui-preview"),
+            hot_reload: None,
+            hash: None,
         });
     } else {
         app.insert_resource(NativeUi { login: true });
@@ -644,19 +649,23 @@ fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>)
     }
 }
 
-#[derive(Resource)]
-pub struct SystemScene {
-    pub source: Option<String>,
-}
-
 #[allow(clippy::type_complexity)]
-pub fn spawn_system_ui_scene(
-    system_scene: Res<SystemScene>,
+pub fn process_system_ui_scene(
+    mut system_scene: ResMut<SystemScene>,
     mut task: Local<Option<Task<Result<(String, PortableSource), String>>>>,
     mut done: Local<bool>,
     mut portables: ResMut<PortableScenes>,
     ipfas: IpfsAssetServer,
+    mut channel: Local<Option<tokio::sync::mpsc::UnboundedReceiver<PreviewCommand>>>,
+    mut writer: EventWriter<PreviewCommand>,
 ) {
+    if let Some(command) = channel.as_mut().and_then(|rx| rx.try_recv().ok()) {
+        writer.send(command);
+        *done = false;
+        system_scene.hash = None;
+        return;
+    }
+
     if *done || system_scene.source.is_none() {
         return;
     }
@@ -674,8 +683,21 @@ pub fn spawn_system_ui_scene(
     match t.complete() {
         Some(Ok((hash, source))) => {
             info!("added ui scene from {}", source.pid);
+            system_scene.hash = Some(hash.clone());
             portables.0.extend([(hash, source)]);
             *done = true;
+
+            if system_scene.preview {
+                let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
+                IoTaskPool::get()
+                    .spawn(handle_preview_socket(
+                        system_scene.source.clone().unwrap(),
+                        sx.clone(),
+                    ))
+                    .detach();
+                *channel = Some(rx);
+                system_scene.hot_reload = Some(sx);
+            }
         }
         Some(Err(e)) => {
             error!("failed to load ui scene: {e}");

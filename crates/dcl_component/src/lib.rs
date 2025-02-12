@@ -124,6 +124,8 @@ impl SceneComponentId {
     pub const CAMERA_LAYERS: SceneComponentId = SceneComponentId(1208);
     pub const PRIMARY_POINTER_INFO: SceneComponentId = SceneComponentId(1209);
     pub const CAMERA_LAYER: SceneComponentId = SceneComponentId(1210);
+
+    pub const REALM_INFO: SceneComponentId = SceneComponentId(1106);
 }
 
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy, Default)]

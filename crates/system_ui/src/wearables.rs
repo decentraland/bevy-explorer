@@ -25,6 +25,7 @@ use common::{
     util::{TaskExt, TryPushChildrenEx},
 };
 use comms::profile::CurrentUserProfile;
+use dcl_component::proto_components::{Color3BevyToDcl, Color3DclToBevy};
 use ipfs::IpfsAssetServer;
 use isahc::ReadResponseExt;
 use serde::Deserialize;
@@ -1170,16 +1171,28 @@ fn update_selected_item(
             WearableCategory::EYEBROWS | WearableCategory::FACIAL_HAIR | WearableCategory::HAIR => {
                 (
                     "flex".to_owned(),
-                    Color::from(avatar.shape.hair_color.unwrap_or_default()),
+                    avatar
+                        .shape
+                        .hair_color
+                        .unwrap_or_default()
+                        .convert_linear_rgb(),
                 )
             }
             WearableCategory::EYES => (
                 "flex".to_owned(),
-                Color::from(avatar.shape.eye_color.unwrap_or_default()),
+                avatar
+                    .shape
+                    .eye_color
+                    .unwrap_or_default()
+                    .convert_linear_rgb(),
             ),
             WearableCategory::BODY_SHAPE => (
                 "flex".to_owned(),
-                Color::from(avatar.shape.skin_color.unwrap_or_default()),
+                avatar
+                    .shape
+                    .skin_color
+                    .unwrap_or_default()
+                    .convert_linear_rgb(),
             ),
             _ => ("none".to_owned(), default()),
         };
@@ -1212,7 +1225,7 @@ fn update_selected_item(
                     WearableCategory::BODY_SHAPE => &mut avatar.shape.skin_color,
                     _ => panic!(),
                 };
-                *target = Some(picker.get_linear().into());
+                *target = Some(picker.get_linear().convert_linear_rgb());
 
                 // and photobooth
                 booth.update_shape(instance, avatar.clone());

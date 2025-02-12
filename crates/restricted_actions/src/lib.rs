@@ -5,7 +5,6 @@ use std::{
     sync::Arc,
 };
 
-use avatar::AvatarDynamicState;
 use bevy::{
     asset::LoadState,
     math::Vec3Swizzles,
@@ -22,13 +21,13 @@ use common::{
         SpawnResponse,
     },
     sets::SceneSets,
-    structs::{PermissionType, PrimaryCamera, PrimaryUser},
+    structs::{AvatarDynamicState, PermissionType, PrimaryCamera, PrimaryUser},
     util::{AsH160, FireEventEx, TaskExt},
 };
 use comms::{
     global_crdt::ForeignPlayer,
-    profile::{get_remote_profile, CurrentUserProfile, UserProfile},
-    NetworkMessage, Transport,
+    profile::{CurrentUserProfile, ProfileManager, UserProfile},
+    NetworkMessage, SceneRoom, Transport,
 };
 use console::DoAddConsoleCommand;
 use dcl_component::proto_components::kernel::comms::rfc4;
@@ -631,13 +630,10 @@ fn get_user_data(
         Vec<(Entity, RpcResultSender<Result<SerializedProfile, ()>>)>,
     >,
     mut pending_remote_requests: Local<
-        Vec<(
-            Task<Result<UserProfile, anyhow::Error>>,
-            RpcResultSender<Result<SerializedProfile, ()>>,
-        )>,
+        Vec<(Address, RpcResultSender<Result<SerializedProfile, ()>>)>,
     >,
     mut scenes: Query<&mut RendererSceneContext>,
-    ipfs: IpfsAssetServer,
+    mut profile_manager: ProfileManager,
 ) {
     for (user, scene, response) in events.read().filter_map(|ev| match ev {
         RpcCall::GetUserData {
@@ -683,10 +679,7 @@ fn get_user_data(
                     continue;
                 };
 
-                pending_remote_requests.push((
-                    IoTaskPool::get().spawn(get_remote_profile(h160, ipfs.ipfs().clone())),
-                    response.clone(),
-                ));
+                pending_remote_requests.push((h160, response.clone()));
             }
         }
     }
@@ -702,14 +695,17 @@ fn get_user_data(
         }
     }
 
-    pending_remote_requests.retain_mut(|(task, sender)| match task.complete() {
-        None => true,
-        Some(resp) => {
-            match resp {
-                Err(_) => sender.send(Err(())),
-                Ok(profile) => sender.send(Ok(profile.content)),
+    pending_remote_requests.retain_mut(|(address, sender)| {
+        match profile_manager.get_data(*address) {
+            Ok(None) => true,
+            Ok(Some(profile)) => {
+                sender.send(Ok(profile.content.clone()));
+                false
             }
-            false
+            Err(_) => {
+                sender.send(Err(()));
+                false
+            }
         }
     });
 }
@@ -944,11 +940,15 @@ fn event_scene_ready(
 
 fn send_scene_messages(
     mut events: EventReader<RpcCall>,
-    transports: Query<&Transport>,
+    transports: Query<(&Transport, Option<&SceneRoom>)>,
     scenes: Query<&SceneHash>,
 ) {
-    for (scene, data) in events.read().filter_map(|c| match c {
-        RpcCall::SendMessageBus { scene, data } => Some((scene, data)),
+    for (scene, data, recipient) in events.read().filter_map(|c| match c {
+        RpcCall::SendMessageBus {
+            scene,
+            data,
+            recipient,
+        } => Some((scene, data, recipient)),
         _ => None,
     }) {
         let Ok(hash) = scenes.get(*scene) else {
@@ -961,13 +961,15 @@ fn send_scene_messages(
                 scene_id: hash.0.clone(),
                 data: data.clone(),
             })),
-            protocol_version: 999,
+            protocol_version: 100,
         };
 
-        for transport in transports.iter() {
-            let _ = transport
-                .sender
-                .try_send(NetworkMessage::reliable(&message));
+        for (transport, scene_room) in transports.iter() {
+            if scene_room.is_some() {
+                let _ = transport
+                    .sender
+                    .try_send(NetworkMessage::targetted_reliable(&message, *recipient));
+            }
         }
     }
 }

@@ -1,4 +1,8 @@
 use bevy::{asset::io::AssetReader, log::debug};
+use dcl_component::{
+    proto_components::sdk::components::PbRealmInfo, DclReader, FromDclReader, SceneComponentId,
+    SceneEntityId,
+};
 use deno_core::{anyhow::anyhow, error::AnyError, futures::AsyncReadExt, op2, OpDecl, OpState};
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},
@@ -7,7 +11,10 @@ use ipfs::{
 use serde::Serialize;
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
-use crate::interface::crdt_context::CrdtContext;
+use crate::{
+    interface::{crdt_context::CrdtContext, CrdtType},
+    js::RendererStore,
+};
 
 // list of op declarations
 pub fn ops() -> Vec<OpDecl> {
@@ -94,28 +101,24 @@ pub async fn scene_information(
         .ok_or_else(|| anyhow!("Scene hash not found?!"))
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RealmInfoResponse {
-    pub base_url: String,
-    pub realm_name: String,
-    pub network_id: u32,
-    pub comms_adapter: String,
-    pub is_preview: bool,
-}
-
 #[op2(async)]
 #[serde]
-async fn op_realm_information(
-    op_state: Rc<RefCell<OpState>>,
-) -> Result<RealmInfoResponse, AnyError> {
+async fn op_realm_information(op_state: Rc<RefCell<OpState>>) -> Result<PbRealmInfo, AnyError> {
     debug!("op_realm_information");
     realm_information(op_state).await
 }
 
-pub async fn realm_information(
-    op_state: Rc<RefCell<OpState>>,
-) -> Result<RealmInfoResponse, AnyError> {
+pub async fn realm_information(op_state: Rc<RefCell<OpState>>) -> Result<PbRealmInfo, AnyError> {
+    if let Some(raw_component) = op_state.borrow().borrow::<RendererStore>().0.get(
+        SceneComponentId::REALM_INFO,
+        CrdtType::LWW_ANY,
+        SceneEntityId::ROOT,
+    ) {
+        return PbRealmInfo::from_reader(&mut DclReader::new(raw_component))
+            .map_err(|_| anyhow!("failed to read component"));
+    }
+
+    // component not added, fall back to ipfs-based discovery
     let ipfs = op_state.borrow().borrow::<IpfsResource>().clone();
     let (base_url, info) = ipfs.get_realm_info().await;
 
@@ -126,14 +129,16 @@ pub async fn realm_information(
 
     let is_preview = op_state.borrow().borrow::<CrdtContext>().preview;
 
-    Ok(RealmInfoResponse {
+    Ok(PbRealmInfo {
         base_url: base_url.to_owned(),
         realm_name: config.realm_name.unwrap_or_default(),
-        network_id: config.network_id.unwrap_or_default(),
+        network_id: config.network_id.unwrap_or_default() as i32,
         comms_adapter: info
             .comms
             .and_then(|c| c.adapter.or(c.fixed_adapter))
             .unwrap_or_default(),
         is_preview,
+        room: None,
+        is_connected_scene_room: Some(false),
     })
 }

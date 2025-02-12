@@ -216,7 +216,8 @@ impl Default for AppConfig {
             scene_threads: 4,
             scene_load_distance: 50.0,
             scene_unload_extra_distance: 15.0,
-            scene_imposter_distances: vec![150.0, 300.0, 600.0, 1200.0, 2400.0, 4800.0],
+            scene_imposter_distances: vec![0.0],
+            // scene_imposter_distances: vec![150.0, 300.0, 600.0, 1200.0, 2400.0, 4800.0],
             scene_imposter_multisample: true,
             scene_imposter_bake: SceneImposterBake::Off,
             sysinfo_visible: true,
@@ -666,3 +667,40 @@ pub struct CursorLocked(pub bool);
 
 #[derive(Resource, Default)]
 pub struct CursorLocks(pub HashSet<&'static str>);
+
+#[derive(Default, Clone, Copy)]
+pub enum MoveKind {
+    #[default]
+    Idle,
+    Walk,
+    Jog,
+    Run,
+    Jump,
+    Falling,
+    LongFalling,
+    Emote,
+}
+
+#[derive(Component, Default)]
+pub struct AvatarDynamicState {
+    pub force: Vec2,
+    pub velocity: Vec3,
+    pub ground_height: f32,
+    pub tank: bool,
+    pub rotate: f32,
+    pub jump_time: f32,
+    pub move_kind: MoveKind,
+}
+
+#[derive(Event)]
+pub enum PreviewCommand {
+    ReloadScene { hash: String },
+}
+
+#[derive(Resource)]
+pub struct SystemScene {
+    pub source: Option<String>,
+    pub preview: bool,
+    pub hot_reload: Option<tokio::sync::mpsc::UnboundedSender<PreviewCommand>>,
+    pub hash: Option<String>,
+}

@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use ethers_core::types::H160;
 use serde::{Deserialize, Serialize};
 use std::{
     any::Any,
@@ -179,6 +180,7 @@ pub enum RpcCall {
     SendMessageBus {
         scene: Entity,
         data: Vec<u8>,
+        recipient: Option<H160>,
     },
     SubscribeMessageBus {
         hash: String,

@@ -51,6 +51,7 @@ fn gen_sdk_components() -> Result<()> {
         "camera_layer",
         "camera_layers",
         "primary_pointer_info",
+        "realm_info",
     ];
 
     let mut sources = components
@@ -63,7 +64,7 @@ fn gen_sdk_components() -> Result<()> {
     sources.push("src/proto/decentraland/kernel/comms/v3/archipelago.proto".into());
     sources.push("src/proto/decentraland/social/friendships/friendships.proto".into());
 
-    let serde_components = ["Color3"];
+    let serde_components = ["Color3", "PBRealmInfo"];
 
     let mut config = prost_build::Config::new();
     for component in serde_components {

@@ -18,7 +18,7 @@ use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
-    structs::{AppConfig, PrimaryUser},
+    structs::{AppConfig, AvatarDynamicState, MoveKind, PrimaryUser},
     util::{TryPushChildrenEx, VolumePanning},
 };
 use comms::{
@@ -50,8 +50,6 @@ use scene_runner::{
 };
 
 use crate::{process_avatar, AvatarDefinition};
-
-use super::AvatarDynamicState;
 
 #[derive(Component)]
 pub struct AvatarAnimPlayer(pub Entity);
@@ -193,7 +191,7 @@ fn broadcast_emote(
                         message: format!("{}{} {}", chat_marker_things::EMOTE, emote_urn, *count),
                         timestamp: time.elapsed_seconds_f64(),
                     })),
-                    protocol_version: 999,
+                    protocol_version: 100,
                 };
 
                 for transport in transports.iter() {
@@ -268,7 +266,7 @@ fn animate(
     mut commands: Commands,
     mut avatars: Query<(
         Entity,
-        &AvatarDynamicState,
+        &mut AvatarDynamicState,
         Option<&mut EmoteList>,
         &GlobalTransform,
         Option<&mut ActiveEmote>,
@@ -292,7 +290,7 @@ fn animate(
     let prior_velocities = std::mem::take(&mut *velocities);
     let prior_min_velocities = std::mem::take(&mut *current_emote_min_velocities);
 
-    for (avatar_ent, dynamic_state, mut emotes, gt, active_emote, maybe_foreign) in
+    for (avatar_ent, mut dynamic_state, mut emotes, gt, active_emote, maybe_foreign) in
         avatars.iter_mut()
     {
         let Some(mut active_emote) = active_emote else {
@@ -379,6 +377,8 @@ fn animate(
         // play requested emote
         *active_emote = if let Some(requested_emote) = requested_emote {
             if emotes_changed && origin != EmoteBroadcast::None {
+                dynamic_state.move_kind = MoveKind::Emote;
+
                 // send to scenes
                 let broadcast_urn = given_urn.unwrap();
                 debug!("broadcasting emote to scenes: {:?}", broadcast_urn);
@@ -424,6 +424,11 @@ fn animate(
                 dynamic_state.jump_time > (time.elapsed_seconds() - time_to_peak / 2.0).max(0.0);
             if dynamic_state.ground_height > 0.2 || (dynamic_state.velocity.y > 0.0 && just_jumped)
             {
+                if just_jumped {
+                    dynamic_state.move_kind = MoveKind::Jump;
+                } else {
+                    dynamic_state.move_kind = MoveKind::Falling;
+                }
                 ActiveEmote {
                     urn: EmoteUrn::new("jump").unwrap(),
                     speed: time_to_peak.recip() * 0.75,
@@ -451,6 +456,7 @@ fn animate(
 
                 if damped_velocity_len.abs() > 0.1 {
                     if damped_velocity_len.abs() <= 2.6 {
+                        dynamic_state.move_kind = MoveKind::Walk;
                         ActiveEmote {
                             urn: EmoteUrn::new("walk").unwrap(),
                             speed: directional_velocity_len / 1.5,
@@ -459,6 +465,7 @@ fn animate(
                             ..Default::default()
                         }
                     } else {
+                        dynamic_state.move_kind = MoveKind::Jog;
                         ActiveEmote {
                             urn: EmoteUrn::new("run").unwrap(),
                             speed: directional_velocity_len / 4.5,
@@ -468,6 +475,7 @@ fn animate(
                         }
                     }
                 } else {
+                    dynamic_state.move_kind = MoveKind::Idle;
                     ActiveEmote {
                         urn: EmoteUrn::new("idle_male").unwrap(),
                         speed: 1.0,

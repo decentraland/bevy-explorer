@@ -302,8 +302,11 @@ fn update_profile_for_realm(
 ) {
     if realm.is_changed() && !wallet.is_guest() {
         if let Some(address) = wallet.address() {
-            *task =
-                Some(IoTaskPool::get().spawn(get_remote_profile(address, ipfas.ipfs().clone())));
+            *task = Some(IoTaskPool::get().spawn(get_remote_profile(
+                address,
+                ipfas.ipfs().clone(),
+                None,
+            )));
         }
     }
 
@@ -416,7 +419,7 @@ fn process_system_bridge(
                         auth,
                     } = previous_login;
 
-                    let profile = get_remote_profile(root_address, ipfs).await.ok();
+                    let profile = get_remote_profile(root_address, ipfs, None).await.ok();
 
                     let local_wallet = LocalWallet::from_bytes(&ephemeral_key).unwrap();
 
@@ -454,7 +457,7 @@ fn process_system_bridge(
                             }
                         };
 
-                    let profile = get_remote_profile(root_address, ipfs).await.ok();
+                    let profile = get_remote_profile(root_address, ipfs, None).await.ok();
 
                     Ok((root_address, local_wallet, auth, profile, result_sender))
                 }));

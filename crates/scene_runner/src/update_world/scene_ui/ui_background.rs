@@ -3,6 +3,7 @@ use common::util::TryPushChildrenEx;
 use dcl_component::proto_components::{
     common::{texture_union, BorderRect, TextureUnion},
     sdk::components::{self, PbUiBackground},
+    Color4DclToBevy,
 };
 use ui_core::{
     nine_slice::Ui9Slice, stretch_uvs_image::StretchUvMaterial, ui_builder::SpawnSpacer,
@@ -45,7 +46,7 @@ impl From<PbUiBackground> for UiBackground {
     fn from(value: PbUiBackground) -> Self {
         let texture_mode = value.texture_mode();
         Self {
-            color: value.color.map(Into::into),
+            color: value.color.map(Color4DclToBevy::convert_srgba),
             texture: value.texture.map(|tex| {
                 let mode = match texture_mode {
                     components::BackgroundTextureMode::NineSlices => {
