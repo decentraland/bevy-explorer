@@ -10,6 +10,7 @@ use bevy::{
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};
 use common::{
+    sets::SetupSets,
     structs::{ActiveDialog, PrimaryUser, SystemAudio},
     util::{FireEventEx, ModifyComponentExt},
 };
@@ -19,14 +20,14 @@ use ui_core::{
     ui_actions::{Click, Defocus, HoverEnter, HoverExit, On},
 };
 
-use crate::chat::BUTTON_SCALE;
+use crate::{chat::BUTTON_SCALE, SystemUiRoot};
 
 pub struct EmoteUiPlugin;
 
 impl Plugin for EmoteUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<EmoteUiEvent>()
-            .add_systems(Startup, setup)
+            .add_systems(Startup, setup.in_set(SetupSets::Main))
             .add_systems(
                 Update,
                 (
@@ -40,38 +41,47 @@ impl Plugin for EmoteUiPlugin {
     }
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut dui: ResMut<DuiRegistry>) {
+fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut dui: ResMut<DuiRegistry>,
+    ui_root: Res<SystemUiRoot>,
+) {
     // emote button
-    commands.spawn((
-        ImageBundle {
-            image: asset_server.load("images/emote_button.png").into(),
-            style: Style {
-                position_type: PositionType::Absolute,
-                top: Val::VMin(BUTTON_SCALE * 2.5),
-                right: Val::VMin(BUTTON_SCALE * 0.5),
-                width: Val::VMin(BUTTON_SCALE),
-                height: Val::VMin(BUTTON_SCALE),
+    let button = commands
+        .spawn((
+            ImageBundle {
+                image: asset_server.load("images/emote_button.png").into(),
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    top: Val::VMin(BUTTON_SCALE * 2.5),
+                    right: Val::VMin(BUTTON_SCALE * 0.5),
+                    width: Val::VMin(BUTTON_SCALE),
+                    height: Val::VMin(BUTTON_SCALE),
+                    ..Default::default()
+                },
+                focus_policy: bevy::ui::FocusPolicy::Block,
                 ..Default::default()
             },
-            focus_policy: bevy::ui::FocusPolicy::Block,
-            ..Default::default()
-        },
-        Interaction::default(),
-        On::<Click>::new(
-            |mut w: EventWriter<EmoteUiEvent>, existing: Query<&EmoteDialog>| {
-                if existing.is_empty() {
-                    w.send(EmoteUiEvent::Show { coords: None });
-                } else {
-                    w.send(EmoteUiEvent::Hide);
-                }
-            },
-        ),
-    ));
+            Interaction::default(),
+            On::<Click>::new(
+                |mut w: EventWriter<EmoteUiEvent>, existing: Query<&EmoteDialog>| {
+                    if existing.is_empty() {
+                        w.send(EmoteUiEvent::Show { coords: None });
+                    } else {
+                        w.send(EmoteUiEvent::Hide);
+                    }
+                },
+            ),
+        ))
+        .id();
 
     dui.register_template(
         "popup-layout",
         DuiComponentFromClone::<DuiLayout>::new("layout"),
     );
+
+    commands.entity(ui_root.0).push_children(&[button]);
 }
 
 #[allow(clippy::too_many_arguments)]

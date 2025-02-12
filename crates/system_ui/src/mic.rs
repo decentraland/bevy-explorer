@@ -1,13 +1,14 @@
 use av::microphone::MicState;
 use bevy::prelude::*;
 use common::{
+    sets::SetupSets,
     structs::{SystemAudio, ToolTips, TooltipSource},
     util::FireEventEx,
 };
 use comms::{Transport, TransportType};
 use ui_core::ui_actions::{Click, HoverEnter, HoverExit, On};
 
-use crate::chat::BUTTON_SCALE;
+use crate::{chat::BUTTON_SCALE, SystemUiRoot};
 
 pub struct MicUiPlugin;
 
@@ -23,7 +24,7 @@ pub struct MicImages {
 
 impl Plugin for MicUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup);
+        app.add_systems(Startup, setup.in_set(SetupSets::Main));
         app.add_systems(Update, update_mic_ui);
 
         let asset_server = app.world().resource::<AssetServer>();
@@ -35,50 +36,56 @@ impl Plugin for MicUiPlugin {
     }
 }
 
-fn setup(mut commands: Commands, images: Res<MicImages>) {
+fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRoot>) {
     // profile button
-    commands.spawn((
-        ImageBundle {
-            image: images.inactive.clone_weak().into(),
-            style: Style {
-                position_type: PositionType::Absolute,
-                top: Val::VMin(BUTTON_SCALE * 1.5),
-                right: Val::VMin(BUTTON_SCALE * 0.5),
-                width: Val::VMin(BUTTON_SCALE),
-                height: Val::VMin(BUTTON_SCALE),
+    let mic_button = commands
+        .spawn((
+            ImageBundle {
+                image: images.inactive.clone_weak().into(),
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    top: Val::VMin(BUTTON_SCALE * 1.5),
+                    right: Val::VMin(BUTTON_SCALE * 0.5),
+                    width: Val::VMin(BUTTON_SCALE),
+                    height: Val::VMin(BUTTON_SCALE),
+                    ..Default::default()
+                },
+                focus_policy: bevy::ui::FocusPolicy::Block,
                 ..Default::default()
             },
-            focus_policy: bevy::ui::FocusPolicy::Block,
-            ..Default::default()
-        },
-        Interaction::default(),
-        On::<Click>::new(|mut commands: Commands, mut mic_state: ResMut<MicState>| {
-            mic_state.enabled = !mic_state.enabled;
-            if mic_state.enabled {
-                commands.fire_event(SystemAudio("sounds/ui/voice_chat_mic_on.wav".to_owned()));
-            } else {
-                commands.fire_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
-            }
-        }),
-        On::<HoverEnter>::new(
-            |mut tooltip: ResMut<ToolTips>, transport: Query<&Transport>, state: Res<MicState>| {
-                let transport_available = transport
-                    .iter()
-                    .any(|t| t.transport_type == TransportType::Livekit);
-                tooltip.0.insert(
-                    TooltipSource::Label("mic"),
-                    vec![(
-                        "LCtrl : Push to talk".to_owned(),
-                        transport_available && state.available,
-                    )],
-                );
-            },
-        ),
-        On::<HoverExit>::new(|mut tooltip: ResMut<ToolTips>| {
-            tooltip.0.remove(&TooltipSource::Label("mic"));
-        }),
-        MicUiMarker,
-    ));
+            Interaction::default(),
+            On::<Click>::new(|mut commands: Commands, mut mic_state: ResMut<MicState>| {
+                mic_state.enabled = !mic_state.enabled;
+                if mic_state.enabled {
+                    commands.fire_event(SystemAudio("sounds/ui/voice_chat_mic_on.wav".to_owned()));
+                } else {
+                    commands.fire_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
+                }
+            }),
+            On::<HoverEnter>::new(
+                |mut tooltip: ResMut<ToolTips>,
+                 transport: Query<&Transport>,
+                 state: Res<MicState>| {
+                    let transport_available = transport
+                        .iter()
+                        .any(|t| t.transport_type == TransportType::Livekit);
+                    tooltip.0.insert(
+                        TooltipSource::Label("mic"),
+                        vec![(
+                            "LCtrl : Push to talk".to_owned(),
+                            transport_available && state.available,
+                        )],
+                    );
+                },
+            ),
+            On::<HoverExit>::new(|mut tooltip: ResMut<ToolTips>| {
+                tooltip.0.remove(&TooltipSource::Label("mic"));
+            }),
+            MicUiMarker,
+        ))
+        .id();
+
+    commands.entity(ui_root.0).push_children(&[mic_button]);
 }
 
 #[allow(clippy::too_many_arguments)]
