@@ -33,7 +33,7 @@ This project's goals are to:
       - set `LIBCLANG_PATH` = `path to LLVM\x64\bin` (this is packaged with visual studio, or can be downloaded separately)
       - set `FFMPEG_DIR` = `root folder where ffmpeg has been unzipped`
       - add `ffmpeg\bin` to your `PATH`
-4. Install [protoc](https://github.com/protocolbuffers/protobuf/releases)
+4. Install [protoc](https://github.com/protocolbuffers/protobuf/releases) (Mac Homebrew users can do `brew install protobuf`)
 5. `cargo run --release --bin decentra-bevy`
 
 We try to keep these instructions up to date, but the [github ci](.github/workflows/ci.yml) is the most accurate source of build information.
