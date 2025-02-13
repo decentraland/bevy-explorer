@@ -624,9 +624,9 @@ pub fn make_text_section(
 
     let font_name = match font {
         dcl_component::proto_components::sdk::components::common::Font::FSansSerif => {
-            FontName::Serif
+            FontName::Sans
         }
-        dcl_component::proto_components::sdk::components::common::Font::FSerif => FontName::Sans,
+        dcl_component::proto_components::sdk::components::common::Font::FSerif => FontName::Serif,
         dcl_component::proto_components::sdk::components::common::Font::FMonospace => {
             FontName::Mono
         }

@@ -67,8 +67,8 @@ pub fn set_ui_dropdown(
         });
 
         let font_name = match dropdown.0.font() {
-            components::common::Font::FSansSerif => FontName::Serif,
-            components::common::Font::FSerif => FontName::Sans,
+            components::common::Font::FSansSerif => FontName::Sans,
+            components::common::Font::FSerif => FontName::Serif,
             components::common::Font::FMonospace => FontName::Mono,
         };
         let font_size = dropdown.0.font_size.unwrap_or(10) as f32;
