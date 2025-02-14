@@ -354,9 +354,16 @@ pub(crate) fn load_scene_javascript(
             .display
             .and_then(|display| display.title)
             .unwrap_or("???".to_owned());
+        let owner = meta.owner.clone().unwrap_or_default();
+        let owner = if owner.is_empty() {
+            definition.id.clone()
+        } else {
+            owner
+        };
         let mut renderer_context = RendererSceneContext::new(
             scene_id,
             definition.id.clone(),
+            owner,
             is_portable,
             title,
             base,
@@ -582,6 +589,7 @@ pub(crate) fn initialize_scene(
             ipfs.clone(),
             wallet.clone(),
             scene_id,
+            context.owner.clone(),
             inspected,
             testing_data.test_mode,
             preview_mode.is_preview,

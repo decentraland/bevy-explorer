@@ -139,6 +139,9 @@ import * as _7 from "ext:deno_web/14_compression.js"
 import * as _8 from "ext:deno_fetch/27_eventsource.js"
 import * as _9 from "ext:deno_web/16_image_data.js"
 
+import * as webstorage from "ext:deno_webstorage/01_webstorage.js"
+globalThis.localStorage = webstorage.localStorage;
+
 import * as performance from "ext:deno_web/15_performance.js"
 globalThis.performance = performance.performance;
 

@@ -97,6 +97,7 @@ pub fn spawn_scene(
     ipfs: IpfsResource,
     wallet: Wallet,
     id: SceneId,
+    owner: String,
     inspect: bool,
     testing: bool,
     preview: bool,
@@ -112,6 +113,7 @@ pub fn spawn_scene(
                 scene_thread(
                     scene_hash,
                     id,
+                    owner,
                     scene_js,
                     crdt_component_interfaces,
                     renderer_sender,
