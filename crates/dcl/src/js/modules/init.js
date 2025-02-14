@@ -90,6 +90,9 @@ function logValue(value, seen) {
 }
 
 const console = {
+    trace: function (...args) {
+        Deno.core.ops.op_log("TRACE " + customLog(...args))
+    },
     log: function (...args) {
         Deno.core.ops.op_log("LOG " + customLog(...args))
     },
