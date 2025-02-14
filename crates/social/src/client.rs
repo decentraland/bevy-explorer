@@ -27,7 +27,7 @@ use matrix_sdk::{
         events::{
             receipt::ReceiptThread,
             room::message::{MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent},
-            AnyMessageLikeEventContent, AnyTimelineEvent, MessageLikeEventType,
+            AnyMessageLikeEventContent, AnySyncTimelineEvent, MessageLikeEventType,
         },
         RoomOrAliasId, UserId,
     },
@@ -554,7 +554,7 @@ async fn social_socket_handler_inner(
             let history = room.messages(options).await?;
             debug!("got -> {:?}", (&history.start, &history.end));
             for event in history.chunk {
-                if let Ok(AnyTimelineEvent::MessageLike(m)) = event.event.deserialize() {
+                if let Ok(AnySyncTimelineEvent::MessageLike(m)) = event.raw().deserialize() {
                     if m.event_type() == MessageLikeEventType::RoomMessage {
                         let Some(sender) = matrix_to_h160(m.sender()) else {
                             warn!("no h160 from {:?}", m.sender());
