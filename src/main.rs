@@ -675,7 +675,7 @@ pub fn process_system_ui_scene(
             None,
             system_scene.source.clone().unwrap(),
             true,
-            Some(ipfas.ipfs().clone()),
+            ipfas.ipfs().clone(),
         )));
     }
 

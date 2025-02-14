@@ -9,8 +9,9 @@ use bevy::{
     prelude::*,
     utils::ConditionalSendFuture,
 };
-use isahc::{config::Configurable, http::StatusCode, AsyncReadResponseExt, RequestExt};
+use common::util::reqwest_client;
 use num::{BigInt, ToPrimitive};
+use reqwest::StatusCode;
 use serde::Deserialize;
 
 pub struct NftReaderPlugin;
@@ -35,7 +36,7 @@ impl AssetReader for NftReader {
         Output = Result<Box<bevy::asset::io::Reader<'a>>, bevy::asset::io::AssetReaderError>,
     > {
         let path = path.to_owned();
-        Box::pin(async move {
+        Box::pin(async_compat::Compat::new(async move {
             debug!("getting nft raw data");
 
             let path = path.to_string_lossy();
@@ -90,22 +91,15 @@ impl AssetReader for NftReader {
             let data = loop {
                 attempt += 1;
 
-                let request = isahc::Request::get(&remote)
-                    .connect_timeout(Duration::from_secs(5 * attempt))
+                let response = reqwest_client()
+                    .get(&remote)
                     .timeout(Duration::from_secs(30 * attempt))
-                    .body(())
-                    .map_err(|e| {
-                        AssetReaderError::Io(Arc::new(std::io::Error::new(
-                            ErrorKind::Other,
-                            format!("[{token:?}]: {e}"),
-                        )))
-                    })?;
-
-                let response = request.send_async().await;
+                    .send()
+                    .await;
 
                 debug!("[{token:?}]: attempt {attempt}: request: {remote}, response: {response:?}");
 
-                let mut response = match response {
+                let response = match response {
                     Err(e) if e.is_timeout() && attempt <= 3 => continue,
                     Err(e) => {
                         return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
@@ -131,7 +125,7 @@ impl AssetReader for NftReader {
                 match data {
                     Ok(data) => break data,
                     Err(e) => {
-                        if matches!(e.kind(), std::io::ErrorKind::TimedOut) && attempt <= 3 {
+                        if e.is_timeout() && attempt <= 3 {
                             continue;
                         }
                         return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
@@ -146,7 +140,7 @@ impl AssetReader for NftReader {
 
             let reader: Box<Reader> = Box::new(Cursor::new(data));
             Ok(reader)
-        })
+        }))
     }
 
     fn read_meta<'a>(

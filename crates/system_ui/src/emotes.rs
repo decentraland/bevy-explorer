@@ -21,11 +21,10 @@ use collectibles::{
 };
 use common::{
     structs::{PrimaryUser, SettingsTab, PROFILE_UI_RENDERLAYER},
-    util::TaskExt,
+    util::{TaskCompat, TaskExt},
 };
 use comms::profile::CurrentUserProfile;
 use ipfs::IpfsAssetServer;
-use isahc::ReadResponseExt;
 use serde::Deserialize;
 use tween::SystemTween;
 use ui_core::{
@@ -489,11 +488,16 @@ fn get_owned_emotes(
             return;
         };
 
-        *task = Some(IoTaskPool::get().spawn(async move {
-            let mut response =
-                isahc::get(format!("{endpoint}/users/{address}/emotes")).map_err(|e| anyhow!(e))?;
+        let client = ipfas.ipfs().client();
+        *task = Some(IoTaskPool::get().spawn_compat(async move {
+            let response = client
+                .get(format!("{endpoint}/users/{address}/emotes"))
+                .send()
+                .await
+                .map_err(|e| anyhow!(e))?;
             response
                 .json::<OwnedEmoteServerResponse>()
+                .await
                 .map_err(|e| anyhow!(e))
         }));
     }

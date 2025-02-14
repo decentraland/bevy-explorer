@@ -21,6 +21,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 urn = { workspace = true }
 itertools = { workspace = true }
-isahc = { workspace = true }
+reqwest = { workspace = true }
 once_cell = { workspace = true }
 fastrand = { workspace = true }

@@ -17,13 +17,13 @@ use wallet::{signed_login::signed_login, SignedLoginMeta, Wallet};
 
 #[test]
 fn test_tls() {
-    let _ = isahc::get("https://www.google.com/").unwrap();
+    let _ = reqwest::blocking::get("https://www.google.com/").unwrap();
 }
 
 #[cfg(feature = "livekit")]
 #[test]
 fn test_livekit() {
-    use isahc::http::Uri;
+    use http::Uri;
 
     let mut wallet = Wallet::default();
     wallet.finalize_as_guest();

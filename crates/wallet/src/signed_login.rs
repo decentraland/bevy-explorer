@@ -2,10 +2,8 @@
 
 use super::{sign_request, SignedLoginMeta, Wallet};
 use bevy::utils::tracing::warn;
-use isahc::{
-    http::{Method, StatusCode, Uri},
-    AsyncReadResponseExt, RequestExt,
-};
+use common::util::reqwest_client;
+use http::{StatusCode, Uri};
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,14 +19,13 @@ pub async fn signed_login(
 ) -> Result<SignedLoginResponse, anyhow::Error> {
     let auth_chain = sign_request("post", &uri, &wallet, meta).await?;
 
-    let mut builder = isahc::Request::builder().method(Method::POST).uri(uri);
+    let mut request = reqwest_client().post(uri.to_string());
 
     for (key, value) in auth_chain {
-        builder = builder.header(key, value)
+        request = request.header(key, value)
     }
 
-    let req = builder.body(())?;
-    let mut res = req.send_async().await?;
+    let res = request.send().await?;
 
     if res.status() != StatusCode::OK {
         warn!("signed fetch failed: {res:#?}");

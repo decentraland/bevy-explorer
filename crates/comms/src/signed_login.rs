@@ -4,8 +4,8 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use common::util::TaskExt;
+use http::Uri;
 use ipfs::CurrentRealm;
-use isahc::http::Uri;
 use wallet::{
     signed_login::{signed_login, SignedLoginResponse},
     SignedLoginMeta, Wallet,

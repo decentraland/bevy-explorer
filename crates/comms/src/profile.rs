@@ -10,8 +10,8 @@ use bevy::{
 use dcl::interface::CrdtType;
 use ethers_core::types::Address;
 use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer, IpfsIo, TypedIpfsRef};
-use isahc::{http::StatusCode, AsyncReadResponseExt, ReadResponseExt, RequestExt};
 use multihash_codetable::MultihashDigest;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use crate::global_crdt::GlobalCrdtState;
@@ -634,22 +634,23 @@ async fn deploy_profile(
             .ok_or_else(|| anyhow!("no entities endpoint"))?;
         debug!("deploying to {url}");
 
-        isahc::Request::post(url)
+        ipfs.client()
+            .post(url)
             .header(
                 "Content-Type",
                 format!("multipart/form-data; boundary={}", prepared.boundary()),
             )
-            .body(prepared_data)?
+            .body(prepared_data)
     };
 
-    let mut response = post.send_async().await?;
+    let response = async_compat::Compat::new(async { post.send().await }).await?;
 
     match response.status() {
         StatusCode::OK => Ok(snap_details.map(|(_, face_cid, _, body_cid)| (face_cid, body_cid))),
         _ => Err(anyhow!(
             "bad response: {}: {}",
             response.status(),
-            String::from_utf8_lossy(response.bytes().await?.as_slice())
+            String::from_utf8_lossy(&response.bytes().await?)
         )),
     }
 }
@@ -665,9 +666,16 @@ pub async fn get_remote_profile(
     };
     debug!("requesting profile from {}", endpoint);
 
-    let mut response = isahc::get(format!("{endpoint}/profiles/{address:#x}"))?;
+    let response = async_compat::Compat::new(async {
+        ipfs.client()
+            .get(format!("{endpoint}/profiles/{address:#x}"))
+            .send()
+            .await
+    })
+    .await?;
     let mut content = response
-        .json::<LambdaProfiles>()?
+        .json::<LambdaProfiles>()
+        .await?
         .avatars
         .into_iter()
         .next()

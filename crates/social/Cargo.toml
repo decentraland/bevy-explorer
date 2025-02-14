@@ -22,7 +22,7 @@ ethers-core = { workspace = true }
 ethers-signers = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-isahc = { workspace = true }
+reqwest = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
@@ -39,4 +39,4 @@ prost = { workspace = true }
 dcl-rpc = { workspace = true }
 futures-util = { workspace = true }
 
-matrix-sdk = { version = "0.7.1", default-features = false, features = ["e2e-encryption", "rustls-tls"] }
+matrix-sdk = { version = "0.7.1", default-features = false, features = ["e2e-encryption", "native-tls"] }

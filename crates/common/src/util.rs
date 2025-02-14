@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, marker::PhantomData, path::PathBuf};
+use std::{collections::VecDeque, marker::PhantomData, path::PathBuf, time::Duration};
 
 use bevy::{
     app::Update,
@@ -15,7 +15,7 @@ use bevy::{
         IntoSystemConfigs, Plugin, With, World,
     },
     render::view::{Layer, RenderLayers},
-    tasks::Task,
+    tasks::{IoTaskPool, Task},
 };
 use ethers_core::types::H160;
 use futures_lite::future;
@@ -453,4 +453,34 @@ pub fn camera_to_render_layers<'a>(
             result.with((camera_layer - 1 + base) as Layer)
         }
     })
+}
+
+// convenient non-pooled client use for infrequent requests
+pub fn reqwest_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .user_agent("DCLExplorer/0.1")
+        .build()
+        .unwrap()
+}
+
+pub trait TaskCompat {
+    fn spawn_compat<T>(
+        &self,
+        future: impl core::future::Future<Output = T> + Send + 'static,
+    ) -> Task<T>
+    where
+        T: Send + 'static;
+}
+
+impl TaskCompat for IoTaskPool {
+    fn spawn_compat<T>(
+        &self,
+        future: impl core::future::Future<Output = T> + Send + 'static,
+    ) -> Task<T>
+    where
+        T: Send + 'static,
+    {
+        self.spawn(async_compat::Compat::new(future))
+    }
 }

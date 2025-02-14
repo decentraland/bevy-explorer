@@ -6,10 +6,9 @@ use bevy::{
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     structs::SystemAudio,
-    util::{FireEventEx, TaskExt},
+    util::{FireEventEx, TaskCompat, TaskExt},
 };
-use ipfs::{ChangeRealmEvent, CurrentRealm};
-use isahc::AsyncReadResponseExt;
+use ipfs::{ChangeRealmEvent, CurrentRealm, IpfsAssetServer};
 use serde::Deserialize;
 use ui_core::{
     button::DuiButton,
@@ -50,7 +49,7 @@ fn change_realm_dialog(
     mut events: EventReader<ChangeRealmDialog>,
     dui: ResMut<DuiRegistry>,
     realm: Res<CurrentRealm>,
-    // _ipfas: IpfsAssetServer,
+    ipfas: IpfsAssetServer,
     mut q: Query<&mut Text, With<UpdateRealmText>>,
 ) {
     if realm.is_changed() {
@@ -79,13 +78,19 @@ fn change_realm_dialog(
     // hard coded since the other doesn't list main
     let target_url = "https://realm-provider.decentraland.org/realms";
 
-    let task: Task<Result<Vec<ServerDesc>, anyhow::Error>> = IoTaskPool::get().spawn(async move {
-        let mut response = isahc::get_async(target_url).await.map_err(|e| anyhow!(e))?;
-        response
-            .json::<Vec<ServerDesc>>()
-            .await
-            .map_err(|e| anyhow!(e))
-    });
+    let client = ipfas.ipfs().client();
+    let task: Task<Result<Vec<ServerDesc>, anyhow::Error>> =
+        IoTaskPool::get().spawn_compat(async move {
+            let response = client
+                .get(target_url)
+                .send()
+                .await
+                .map_err(|e| anyhow!(e))?;
+            response
+                .json::<Vec<ServerDesc>>()
+                .await
+                .map_err(|e| anyhow!(e))
+        });
 
     let mut root = commands.spawn_empty();
     let root_id = root.id();

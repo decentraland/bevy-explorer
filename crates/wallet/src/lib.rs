@@ -7,7 +7,7 @@ use common::structs::ChainLink;
 // use ethers_core::types::transaction::eip2718::TypedTransaction;
 use ethers_core::types::{Address, Signature};
 use ethers_signers::{LocalWallet, Signer, WalletError};
-use isahc::http::Uri;
+use http::Uri;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;

@@ -2,8 +2,7 @@ use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
-use common::util::TaskExt;
-use isahc::RequestExt;
+use common::util::{reqwest_client, TaskExt};
 use std::time::Duration;
 
 use crate::data_definition::{
@@ -145,11 +144,15 @@ async fn send_segment_batch(write_key: &str, events: &[String]) -> Result<(), an
         events.join(",")
     );
 
-    let response = isahc::Request::post("https://api.segment.io/v1/batch")
-        .header("Content-Type", "application/json")
-        .body(json_body.clone())?
-        .send_async()
-        .await?;
+    let response = async_compat::Compat::new(async {
+        reqwest_client()
+            .post("https://api.segment.io/v1/batch")
+            .header("Content-Type", "application/json")
+            .body(json_body.clone())
+            .send()
+            .await
+    })
+    .await?;
 
     if response.status().is_success() {
         info!(

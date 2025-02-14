@@ -21,19 +21,16 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bimap::BiMap;
-use common::util::TaskExt;
+use common::util::{TaskCompat, TaskExt};
 use ethers_core::types::{Address, H160};
-use isahc::{
-    http::{StatusCode, Uri},
-    AsyncReadResponseExt, RequestExt,
-};
+use http::{StatusCode, Uri};
 use preview::PreviewPlugin;
 use serde::{Deserialize, Serialize};
 use signed_login::{SignedLoginPlugin, StartSignedLogin};
 use tokio::sync::mpsc::Sender;
 
 use dcl_component::{DclWriter, ToDclWriter};
-use ipfs::CurrentRealm;
+use ipfs::{CurrentRealm, IpfsAssetServer};
 use wallet::{sign_request, Wallet};
 
 use self::{
@@ -187,6 +184,7 @@ fn connect_scene_room(
     mut current: ResMut<SceneRoomConnection>,
     mut scene: EventReader<SetCurrentScene>,
     wallet: Res<Wallet>,
+    ipfs: IpfsAssetServer,
 ) {
     if let Some(ev) = scene.read().last().cloned() {
         if let Some((existing, room, entity)) = current.0.take() {
@@ -204,15 +202,17 @@ fn connect_scene_room(
         } else {
             let wallet = wallet.clone();
             let uri = Uri::try_from(GATEKEEPER_URL).unwrap();
-            *gatekeeper_task = Some(IoTaskPool::get().spawn(async move {
+            let client = ipfs.ipfs().client();
+            *gatekeeper_task = Some(IoTaskPool::get().spawn_compat(async move {
                 let headers = sign_request("POST", &uri, &wallet, &ev).await?;
 
-                let mut request =
-                    isahc::Request::post(uri).header("Content-Type", "application/json");
+                let mut request = client
+                    .post(uri.to_string())
+                    .header("Content-Type", "application/json");
                 for (k, v) in headers {
                     request = request.header(k, v);
                 }
-                let mut response = request.body(())?.send_async().await?;
+                let response = request.send().await?;
 
                 if response.status() != StatusCode::OK {
                     return Err(anyhow::anyhow!("status: {}", response.status()));

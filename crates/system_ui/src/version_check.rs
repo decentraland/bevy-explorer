@@ -1,5 +1,4 @@
 use futures_lite::future;
-use isahc::AsyncReadResponseExt;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -18,13 +17,15 @@ pub fn check_update_sync() -> Option<(String, String)> {
 }
 
 pub async fn check_update() -> Option<(String, String)> {
-    let latest: GitData =
-        isahc::get_async("https://api.github.com/repos/decentraland/bevy-explorer/releases/latest")
+    let latest: GitData = async_compat::Compat::new(async {
+        reqwest::get("https://api.github.com/repos/decentraland/bevy-explorer/releases/latest")
             .await
             .ok()?
             .json()
             .await
-            .ok()?;
+            .ok()
+    })
+    .await?;
     let latest_date = latest
         .tag_name
         .split('-')

@@ -29,9 +29,9 @@ use bevy::{
     utils::{ConditionalSendFuture, HashMap},
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
-use common::util::project_directories;
+use common::util::{project_directories, TaskCompat};
 use ipfs_path::IpfsAsset;
-use isahc::{http::StatusCode, prelude::Configurable, AsyncReadResponseExt, RequestExt};
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
@@ -490,7 +490,7 @@ impl Plugin for IpfsIoPlugin {
             let ipfs = app.world().resource::<IpfsResource>().clone();
             let realm = realm.clone();
             IoTaskPool::get()
-                .spawn(async move {
+                .spawn_compat(async move {
                     ipfs.set_realm(realm).await;
                 })
                 .detach();
@@ -576,7 +576,7 @@ pub fn change_realm(
             .new_realm
             .to_owned();
         IoTaskPool::get()
-            .spawn(async move {
+            .spawn_compat(async move {
                 ipfs.set_realm(new_realm).await;
             })
             .detach();
@@ -613,6 +613,7 @@ pub struct IpfsIo {
     request_slots: tokio::sync::Semaphore,
     reqno: AtomicU16,
     static_files: HashMap<&'static str, &'static str>,
+    client: reqwest::Client,
 }
 
 impl IpfsIo {
@@ -638,6 +639,12 @@ impl IpfsIo {
             request_slots: tokio::sync::Semaphore::new(num_slots),
             reqno: default(),
             static_files: static_paths,
+            client: reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(5))
+                .use_native_tls()
+                .user_agent("DCLExplorer/0.1")
+                .build()
+                .unwrap(),
         }
     }
 
@@ -699,7 +706,10 @@ impl IpfsIo {
         let mut retries = 0;
         let mut about;
         loop {
-            let mut about_raw = isahc::get_async(format!("{new_realm}/about"))
+            let about_raw = self
+                .client
+                .get(format!("{new_realm}/about"))
+                .send()
                 .await
                 .map_err(|e| anyhow!(e))?;
             if about_raw.status() != StatusCode::OK {
@@ -801,13 +811,15 @@ impl IpfsIo {
 
         match request {
             ActiveEntitiesRequest::Pointers(pointers) => {
-                IoTaskPool::get().spawn(async move {
+                let client = self.client.clone();
+                IoTaskPool::get().spawn_compat(async move {
                     let active_url = active_url.ok_or(anyhow!("not connected"))?;
                     let body = serde_json::to_string(&ActiveEntitiesPointersRequest { pointers })?;
-                    let mut response = isahc::Request::post(active_url)
+                    let response = client
+                        .post(active_url)
                         .header("content-type", "application/json")
-                        .body(body)?
-                        .send_async()
+                        .body(body)
+                        .send()
                         .await?;
 
                     if response.status() != StatusCode::OK {
@@ -870,19 +882,19 @@ impl IpfsIo {
         }
     }
 
-    pub async fn async_request<T: Into<isahc::AsyncBody>>(
+    pub fn client(&self) -> reqwest::Client {
+        self.client.clone()
+    }
+
+    pub async fn async_request(
         &self,
-        request: isahc::Request<T>,
-        client: Option<isahc::HttpClient>,
-    ) -> Result<isahc::Response<isahc::AsyncBody>, anyhow::Error> {
+        request: reqwest::Request,
+        client: reqwest::Client,
+    ) -> Result<reqwest::Response, anyhow::Error> {
         // get semaphore to limit concurrent requests
         let _permit = self.request_slots.acquire().await.map_err(|e| anyhow!(e))?;
 
-        match client {
-            Some(client) => client.send_async(request).await,
-            None => request.send_async().await,
-        }
-        .map_err(|e| anyhow!(e))
+        client.execute(request).await.map_err(|e| anyhow!(e))
     }
 
     pub async fn ipfs_hash(&self, ipfs_path: &IpfsPath) -> Option<String> {
@@ -967,7 +979,7 @@ impl AssetReader for IpfsIo {
         path: &'a std::path::Path,
     ) -> impl ConditionalSendFuture<Output = Result<Box<Reader<'a>>, bevy::asset::io::AssetReaderError>>
     {
-        Box::pin(async move {
+        Box::pin(async_compat::Compat::new(async move {
             let wrap_err = |e| {
                 bevy::asset::io::AssetReaderError::Io(Arc::new(std::io::Error::new(
                     ErrorKind::Other,
@@ -1051,10 +1063,11 @@ impl AssetReader for IpfsIo {
             let data = loop {
                 attempt += 1;
 
-                let request = isahc::Request::get(&remote)
-                    .connect_timeout(Duration::from_secs(5 * attempt))
+                let request = self
+                    .client
+                    .get(&remote)
                     .timeout(Duration::from_secs(5 + 30 * attempt))
-                    .body(())
+                    .build()
                     .map_err(|e| {
                         AssetReaderError::Io(Arc::new(std::io::Error::new(
                             ErrorKind::Other,
@@ -1062,11 +1075,11 @@ impl AssetReader for IpfsIo {
                         )))
                     })?;
 
-                let response = request.send_async().await;
+                let response = self.client.execute(request).await;
 
                 debug!("[{token:?}]: attempt {attempt}: request: {remote}, response: {response:?}");
 
-                let mut response = match response {
+                let response = match response {
                     Err(e) if e.is_timeout() && attempt <= 3 => {
                         warn!("[{token:?}] timeout requesting `{remote}`, retrying");
                         continue;
@@ -1105,7 +1118,7 @@ impl AssetReader for IpfsIo {
                 match data {
                     Ok(data) => break data,
                     Err(e) => {
-                        if matches!(e.kind(), std::io::ErrorKind::TimedOut) && attempt <= 3 {
+                        if e.is_timeout() && attempt <= 3 {
                             warn!("[{token:?}] timeout retrieving `{remote}`, retrying");
                             continue;
                         }
@@ -1146,7 +1159,7 @@ impl AssetReader for IpfsIo {
             debug!("[{token:?}]: completed remote url: `{remote}`");
             let reader: Box<Reader> = Box::new(Cursor::new(data));
             Ok(reader)
-        })
+        }))
     }
 
     fn read_meta<'a>(
