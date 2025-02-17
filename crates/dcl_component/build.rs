@@ -68,7 +68,7 @@ fn gen_sdk_components() -> Result<()> {
 
     let mut config = prost_build::Config::new();
     for component in serde_components {
-        config.type_attribute(component, "#[derive(serde::Serialize, serde::Deserialize)]");
+        config.type_attribute(component, "#[derive(serde::Serialize, serde::Deserialize)]\n#[serde(rename_all = \"camelCase\")]");
     }
 
     config.compile_protos(&sources, &["src/proto/"])?;
