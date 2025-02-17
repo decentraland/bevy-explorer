@@ -23,6 +23,7 @@ use bevy_dui::{DuiRegistry, DuiTemplate};
 use collectibles::{urn::CollectibleUrn, Emote};
 use common::{sets::SetupSets, structs::AvatarDynamicState};
 use dcl_component::proto_components::sdk::components::PbAvatarEmoteCommand;
+use propagate::Propagate;
 use ui_core::ui_actions::{DragData, Dragged, On};
 
 use crate::{
@@ -82,6 +83,7 @@ impl PhotoBooth<'_, '_> {
                     shape,
                     automatic_delete: false,
                 },
+                Propagate(render_layers.clone()),
                 AvatarDynamicState::default(),
                 BoothAvatar,
             ))
