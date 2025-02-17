@@ -434,7 +434,7 @@ fn process_system_bridge(
             }
             SystemApi::LoginNew(code_sender, result_sender) => {
                 let ipfs = ipfas.ipfs().clone();
-                *login_task = Some(IoTaskPool::get().spawn(async move {
+                *login_task = Some(IoTaskPool::get().spawn_compat(async move {
                     let req = init_remote_ephemeral_request().await;
                     let req = match req {
                         Err(e) => {

@@ -320,6 +320,7 @@ fn request_missing_profiles(
             }
         }
 
+        let dbb = manager.meta_cache.0.get(&address).cloned();
         match manager.get_data(player.address) {
             Ok(Some(profile)) => {
                 // catalyst fetch complete
@@ -337,8 +338,8 @@ fn request_missing_profiles(
                     commands.entity(ent).try_insert(profile.clone());
                 } else {
                     warn!(
-                        "removing stale profile {} != {}",
-                        profile.version, player.profile_version
+                        "removing stale profile {} != {} (meta = {:?})",
+                        profile.version, player.profile_version, dbb,
                     );
                     manager.remove(player.address);
                 }
