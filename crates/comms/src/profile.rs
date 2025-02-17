@@ -24,7 +24,7 @@ use common::{
     profile::{AvatarSnapshots, LambdaProfiles, SerializedProfile},
     rpc::RpcEventSender,
     structs::PrimaryUser,
-    util::TaskExt,
+    util::{TaskCompat, TaskExt},
 };
 use common::{rpc::RpcCall, util::AsH160};
 use dcl_component::{
@@ -79,7 +79,7 @@ impl ProfileManager<'_, '_> {
         address: Address,
     ) -> Result<Option<&UserProfile>, ProfileMissingError> {
         let state = self.cache.0.entry(address).or_insert_with(|| {
-            ProfileDisplayState::Loading(IoTaskPool::get().spawn(get_remote_profile(
+            ProfileDisplayState::Loading(IoTaskPool::get().spawn_compat(get_remote_profile(
                 address,
                 self.ipfs.ipfs().clone(),
                 self.meta_cache.0.get(&address).cloned(),
@@ -228,7 +228,7 @@ pub fn setup_primary_profile(
                 let ipfs = ipfas.ipfs().clone();
                 let profile = profile.clone();
                 let wallet = wallet.clone();
-                *deploy_task = Some(IoTaskPool::get().spawn(deploy_profile(
+                *deploy_task = Some(IoTaskPool::get().spawn_compat(deploy_profile(
                     ipfs,
                     wallet,
                     profile,
@@ -644,7 +644,7 @@ async fn deploy_profile(
             .body(prepared_data)
     };
 
-    let response = async_compat::Compat::new(async { post.send().await }).await?;
+    let response = post.send().await?;
 
     match response.status() {
         StatusCode::OK => Ok(snap_details.map(|(_, face_cid, _, body_cid)| (face_cid, body_cid))),
@@ -667,13 +667,10 @@ pub async fn get_remote_profile(
     };
     debug!("requesting profile from {}", endpoint);
 
-    let response = async_compat::Compat::new(async {
-        ipfs.client()
-            .get(format!("{endpoint}/profiles/{address:#x}"))
-            .send()
-            .await
-    })
-    .await?;
+    let response = ipfs.client()
+        .get(format!("{endpoint}/profiles/{address:#x}"))
+        .send()
+        .await?;
     let mut content = response
         .json::<LambdaProfiles>()
         .await?

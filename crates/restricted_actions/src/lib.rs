@@ -22,7 +22,7 @@ use common::{
     },
     sets::SceneSets,
     structs::{AvatarDynamicState, PermissionType, PrimaryCamera, PrimaryUser},
-    util::{AsH160, FireEventEx, TaskExt},
+    util::{AsH160, FireEventEx, TaskCompat, TaskExt},
 };
 use comms::{
     global_crdt::ForeignPlayer,
@@ -286,10 +286,12 @@ pub async fn lookup_portable(
     super_user: bool,
     ipfs: Arc<IpfsIo>,
 ) -> Result<(String, PortableSource), String> {
-    let about =
-        async_compat::Compat::new(async { ipfs.client().get(format!("{url}/about")).send().await })
-            .await
-            .map_err(|e| e.to_string())?;
+    let about = ipfs
+        .client()
+        .get(format!("{url}/about"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
     if about.status() != StatusCode::OK {
         return Err(format!("status: {}", about.status()));
     }
@@ -430,7 +432,7 @@ fn spawn_portable(
             PortableLocation::Ens(ens) => {
                 let ens = ens.clone();
                 pending_lookups.push((
-                    IoTaskPool::get().spawn(lookup_ens(
+                    IoTaskPool::get().spawn_compat(lookup_ens(
                         Some(parent_hash),
                         ens,
                         ipfas.ipfs().clone(),
@@ -1143,7 +1145,8 @@ pub fn handle_eth_async(
 
         tasks.push((
             response.clone(),
-            IoTaskPool::get().spawn(remote_send_async(body.clone(), wallet.auth_chain().ok())),
+            IoTaskPool::get()
+                .spawn_compat(remote_send_async(body.clone(), wallet.auth_chain().ok())),
         ));
     }
 
@@ -1267,7 +1270,7 @@ fn spawn_portable_command(
 ) {
     if let Some(Ok(command)) = input.take() {
         pending.0.push((
-            IoTaskPool::get().spawn(lookup_ens(None, command.ens, ipfas.ipfs().clone())),
+            IoTaskPool::get().spawn_compat(lookup_ens(None, command.ens, ipfas.ipfs().clone())),
             PortableAction::Spawn,
         ));
     }
@@ -1287,7 +1290,7 @@ fn kill_portable_command(
 ) {
     if let Some(Ok(command)) = input.take() {
         pending.0.push((
-            IoTaskPool::get().spawn(lookup_ens(None, command.ens, ipfas.ipfs().clone())),
+            IoTaskPool::get().spawn_compat(lookup_ens(None, command.ens, ipfas.ipfs().clone())),
             PortableAction::Kill,
         ));
     }

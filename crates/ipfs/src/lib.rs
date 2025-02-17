@@ -860,7 +860,7 @@ impl IpfsIo {
             ActiveEntitiesRequest::Urns(paths) => {
                 // we simulate the active entities functionality we want here (load all scenes from a set of urns)
                 let ipfs = self.clone();
-                IoTaskPool::get().spawn(async move {
+                IoTaskPool::get().spawn_compat(async move {
                     let mut results = Vec::default();
                     let loader = EntityDefinitionLoader;
 

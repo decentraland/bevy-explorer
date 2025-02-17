@@ -302,7 +302,7 @@ fn update_profile_for_realm(
 ) {
     if realm.is_changed() && !wallet.is_guest() {
         if let Some(address) = wallet.address() {
-            *task = Some(IoTaskPool::get().spawn(get_remote_profile(
+            *task = Some(IoTaskPool::get().spawn_compat(get_remote_profile(
                 address,
                 ipfas.ipfs().clone(),
                 None,
@@ -407,7 +407,7 @@ fn process_system_bridge(
             }
             SystemApi::LoginPrevious(rpc_result_sender) => {
                 let ipfs = ipfas.ipfs().clone();
-                *login_task = Some(IoTaskPool::get().spawn(async move {
+                *login_task = Some(IoTaskPool::get().spawn_compat(async move {
                     let Some(previous_login) = get_previous_login() else {
                         rpc_result_sender.send(Err("No Previous Login Available".to_string()));
                         return Err(());

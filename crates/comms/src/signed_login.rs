@@ -3,7 +3,7 @@ use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
-use common::util::TaskExt;
+use common::util::{TaskCompat, TaskExt};
 use http::Uri;
 use ipfs::CurrentRealm;
 use wallet::{
@@ -51,7 +51,7 @@ pub fn start_signed_login(
         };
 
         let meta = SignedLoginMeta::new(wallet.is_guest(), origin);
-        *task = Some(IoTaskPool::get().spawn(signed_login(uri, wallet, meta)));
+        *task = Some(IoTaskPool::get().spawn_compat(signed_login(uri, wallet, meta)));
     }
 
     if let Some(mut current_task) = task.take() {
