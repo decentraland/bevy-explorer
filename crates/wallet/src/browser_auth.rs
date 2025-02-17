@@ -60,6 +60,7 @@ async fn fetch_server(req_id: String) -> Result<(H160, serde_json::Value), anyho
 
         let url = format!("{AUTH_SERVER_ENDPOINT_URL}/{req_id}");
         let response = reqwest::Client::builder()
+            .use_native_tls()
             .timeout(AUTH_SERVER_TIMEOUT)
             .build()
             .unwrap()
@@ -118,6 +119,7 @@ async fn init_request(request: CreateRequest) -> Result<InitializedRequest, anyh
     let body = serde_json::to_string(&request).expect("valid json");
 
     let response = reqwest::Client::builder()
+        .use_native_tls()
         .timeout(AUTH_SERVER_TIMEOUT)
         .build()
         .unwrap()

@@ -329,7 +329,7 @@ pub fn op_fetch_custom_client(
     #[serde] args: CreateHttpClientOptions,
 ) -> Result<ResourceId, AnyError> {
     debug!("op_fetch_custom_client");
-    let mut builder = reqwest::Client::builder();
+    let mut builder = reqwest::Client::builder().use_native_tls();
     if let Some(proxy_def) = args.proxy {
         let mut proxy = reqwest::Proxy::http(proxy_def.url)?;
         if let Some(creds) = proxy_def.basic_auth {

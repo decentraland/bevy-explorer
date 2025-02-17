@@ -459,6 +459,7 @@ pub fn camera_to_render_layers<'a>(
 pub fn reqwest_client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
+        .use_native_tls()
         .user_agent("DCLExplorer/0.1")
         .build()
         .unwrap()
