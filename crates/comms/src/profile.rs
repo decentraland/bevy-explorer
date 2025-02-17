@@ -667,7 +667,8 @@ pub async fn get_remote_profile(
     };
     debug!("requesting profile from {}", endpoint);
 
-    let response = ipfs.client()
+    let response = ipfs
+        .client()
         .get(format!("{endpoint}/profiles/{address:#x}"))
         .send()
         .await?;
