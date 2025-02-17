@@ -320,7 +320,7 @@ fn request_missing_profiles(
             }
         }
 
-        let dbb = manager.meta_cache.0.get(&address).cloned();
+        let dbb = manager.meta_cache.0.get(&player.address).cloned();
         match manager.get_data(player.address) {
             Ok(Some(profile)) => {
                 // catalyst fetch complete

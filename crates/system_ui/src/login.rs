@@ -12,7 +12,7 @@ use common::{
     profile::SerializedProfile,
     rpc::RpcResultSender,
     structs::{ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin, SystemAudio},
-    util::{config_file, FireEventEx, TaskExt},
+    util::{config_file, FireEventEx, TaskCompat, TaskExt},
 };
 use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
 use ethers_core::types::Address;
