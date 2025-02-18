@@ -70,7 +70,7 @@ pub struct Permission<'w, 's, T: Send + Sync + 'static> {
     scenes: Query<'w, 's, &'static RendererSceneContext>,
     manager: ResMut<'w, PermissionManager>,
     pub toaster: Toaster<'w, 's>,
-    system_scene: Res<'w, SystemScene>,
+    system_scene: Option<Res<'w, SystemScene>>,
 }
 
 impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
@@ -107,7 +107,11 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
         };
 
         // allow system scene to do anything
-        if self.system_scene.hash.as_deref() == Some(hash) {
+        if self
+            .system_scene
+            .as_ref()
+            .is_some_and(|ss| ss.hash.as_deref() == Some(hash))
+        {
             self.success.push((value, ty, scene));
             return;
         };
