@@ -25,7 +25,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 futures-lite = { workspace = true }
-isahc = { workspace = true }
+reqwest = { workspace = true }
 prost = { workspace = true }
 async-std = { workspace = true }
 bevy_kira_audio = { workspace = true }
@@ -33,12 +33,14 @@ kira = { workspace = true }
 async-trait = { workspace = true }
 async-tungstenite = { workspace = true }
 futures-util = { workspace = true }
-async-tls = { workspace = true }
 rand = { workspace = true }
 num-traits = { workspace = true }
+http = { workspace = true }
+async-compat = { workspace = true }
+
 modular-bitfield = "0.11"
 
-livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch="0.6-h264-false-2", features=["rustls-tls-webpki-roots"], optional = true }
+livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch="0.6-h264-false-2", features=["native-tls"], optional = true }
 multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
 cid = "0.11.0"
 multipart = { version = "0.18.0", default-features = false, features = ["client", "lazy_static"] }

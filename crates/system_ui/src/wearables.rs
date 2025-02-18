@@ -22,12 +22,11 @@ use collectibles::{
 };
 use common::{
     structs::{PrimaryUser, SettingsTab, PROFILE_UI_RENDERLAYER},
-    util::{TaskExt, TryPushChildrenEx},
+    util::{TaskCompat, TaskExt, TryPushChildrenEx},
 };
 use comms::profile::CurrentUserProfile;
 use dcl_component::proto_components::{Color3BevyToDcl, Color3DclToBevy};
 use ipfs::IpfsAssetServer;
-use isahc::ReadResponseExt;
 use serde::Deserialize;
 use tween::SystemTween;
 use ui_core::{
@@ -546,11 +545,15 @@ fn get_owned_wearables(
             return;
         };
 
-        *task = Some(IoTaskPool::get().spawn(async move {
-            let mut response = isahc::get(format!("{endpoint}/users/{address}/wearables"))
-                .map_err(|e| anyhow!(e))?;
+        let client = ipfas.ipfs().client();
+        *task = Some(IoTaskPool::get().spawn_compat(async move {
+            let response = client
+                .get(format!("{endpoint}/users/{address}/wearables"))
+                .send()
+                .await?;
             response
                 .json::<OwnedWearableServerResponse>()
+                .await
                 .map_err(|e| anyhow!(e))
         }));
     }

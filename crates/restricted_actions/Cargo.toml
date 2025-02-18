@@ -22,10 +22,11 @@ bevy = { workspace = true }
 bevy_dui = { workspace = true }
 bevy_console = { workspace = true }
 tokio = { workspace = true }
-isahc = { workspace = true }
+reqwest = { workspace = true }
 serde_json = { workspace = true }
 ethers-core = { workspace = true }
 urlencoding = { workspace = true }
 opener = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
+async-compat = { workspace = true }

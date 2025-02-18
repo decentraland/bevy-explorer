@@ -10,10 +10,9 @@ use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiR
 use common::{
     rpc::RpcCall,
     structs::{IVec2Arg, SettingsTab},
-    util::{ModifyComponentExt, TaskExt},
+    util::{ModifyComponentExt, TaskCompat, TaskExt},
 };
 use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, IpfsAssetServer};
-use isahc::AsyncReadResponseExt;
 use serde::Deserialize;
 use ui_core::{
     button::DuiButton,
@@ -170,7 +169,7 @@ impl SortBy {
     }
 }
 
-#[derive(Component, Default)]
+#[derive(Component)]
 pub struct DiscoverSettings {
     category_filter: HashSet<DiscoverCategory>,
     search_filter: Option<String>,
@@ -180,9 +179,23 @@ pub struct DiscoverSettings {
     order_by: SortBy,
     worlds: bool,
     search_timer: f32,
+    client: reqwest::Client,
 }
 
 impl DiscoverSettings {
+    fn new(client: reqwest::Client) -> Self {
+        Self {
+            category_filter: default(),
+            search_filter: default(),
+            data: default(),
+            has_more: default(),
+            task: default(),
+            order_by: default(),
+            worlds: default(),
+            search_timer: default(),
+            client,
+        }
+    }
     fn clear_and_request(&mut self) {
         self.data.clear();
         self.has_more = false;
@@ -207,8 +220,9 @@ impl DiscoverSettings {
 
         debug!("request: {url}");
 
-        self.task = Some(IoTaskPool::get().spawn(async move {
-            let mut response = isahc::get_async(url).await?;
+        let client = self.client.clone();
+        self.task = Some(IoTaskPool::get().spawn_compat(async move {
+            let response = client.get(url).send().await?;
 
             response
                 .json::<DiscoverPages>()
@@ -224,6 +238,7 @@ fn set_discover_content(
     mut q: Query<(Entity, &SettingsTab, Option<&mut DiscoverSettings>), Changed<SettingsTab>>,
     mut prev_tab: Local<Option<SettingsTab>>,
     dui: Res<DuiRegistry>,
+    ipfas: IpfsAssetServer,
 ) {
     if dialog.is_empty() {
         *prev_tab = None;
@@ -239,7 +254,7 @@ fn set_discover_content(
             return;
         }
 
-        let mut new_settings = DiscoverSettings::default();
+        let mut new_settings = DiscoverSettings::new(ipfas.ipfs().client());
         let is_new = maybe_discover_settings.is_none();
         let discover_settings = match maybe_discover_settings {
             Some(s) => s.into_inner(),

@@ -19,7 +19,7 @@ comms = { workspace = true }
 bevy = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
-isahc = { workspace = true }
+reqwest = { workspace = true }
 urlencoding = { workspace = true }
 futures-lite = { workspace = true }
 bevy_kira_audio = { workspace = true }

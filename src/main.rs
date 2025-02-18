@@ -40,7 +40,7 @@ use common::{
         PreviewCommand, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser,
         SceneImposterBake, SceneLoadDistance, SystemScene, Version, GROUND_RENDERLAYER,
     },
-    util::{config_file, project_directories, TaskExt, UtilsPlugin},
+    util::{config_file, project_directories, TaskCompat, TaskExt, UtilsPlugin},
 };
 use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
@@ -671,11 +671,11 @@ pub fn process_system_ui_scene(
     }
 
     if task.is_none() {
-        *task = Some(IoTaskPool::get().spawn(lookup_portable(
+        *task = Some(IoTaskPool::get().spawn_compat(lookup_portable(
             None,
             system_scene.source.clone().unwrap(),
             true,
-            Some(ipfas.ipfs().clone()),
+            ipfas.ipfs().clone(),
         )));
     }
 

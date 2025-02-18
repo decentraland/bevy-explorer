@@ -22,8 +22,9 @@ tokio = { workspace = true }
 clap = { workspace = true }
 urn = { workspace = true }
 async-std = { workspace = true }
-isahc = { workspace = true }
+reqwest = { workspace = true }
 urlencoding = { workspace = true }
+async-compat = { workspace = true }
 
 url = "2.4.0"
 downcast-rs = "1.2"

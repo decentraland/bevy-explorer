@@ -38,7 +38,7 @@ ethers-core = { workspace = true }
 ethers-signers = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-isahc = { workspace = true }
+reqwest = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
@@ -47,6 +47,7 @@ opener = { workspace = true }
 urlencoding = { workspace = true }
 build-time = { workspace = true }
 futures-lite = { workspace = true }
+async-compat = { workspace = true }
 
 copypasta = "0.10"
 shlex = "1"

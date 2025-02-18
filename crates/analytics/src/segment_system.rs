@@ -2,8 +2,7 @@ use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
-use common::util::TaskExt;
-use isahc::RequestExt;
+use common::util::{reqwest_client, TaskCompat, TaskExt};
 use std::time::Duration;
 
 use crate::data_definition::{
@@ -114,7 +113,7 @@ fn send_segment_metric_event(
                 if accumulated_length + json_body.len() > SEGMENT_BATCH_SIZE_LIMIT_BYTES {
                     let write_key = config.write_key.clone();
                     let serialized_events = std::mem::take(&mut metrics.serialized_events);
-                    *send_task = Some(IoTaskPool::get().spawn(async move {
+                    *send_task = Some(IoTaskPool::get().spawn_compat(async move {
                         send_segment_batch(&write_key, &serialized_events).await
                     }));
 
@@ -130,7 +129,7 @@ fn send_segment_metric_event(
             if !metrics.serialized_events.is_empty() {
                 let write_key = config.write_key.clone();
                 let serialized_events = std::mem::take(&mut metrics.serialized_events);
-                *send_task = Some(IoTaskPool::get().spawn(async move {
+                *send_task = Some(IoTaskPool::get().spawn_compat(async move {
                     send_segment_batch(&write_key, &serialized_events).await
                 }));
             }
@@ -145,10 +144,11 @@ async fn send_segment_batch(write_key: &str, events: &[String]) -> Result<(), an
         events.join(",")
     );
 
-    let response = isahc::Request::post("https://api.segment.io/v1/batch")
+    let response = reqwest_client()
+        .post("https://api.segment.io/v1/batch")
         .header("Content-Type", "application/json")
-        .body(json_body.clone())?
-        .send_async()
+        .body(json_body.clone())
+        .send()
         .await?;
 
     if response.status().is_success() {

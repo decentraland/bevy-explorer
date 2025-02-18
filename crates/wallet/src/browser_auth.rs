@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use common::{rpc::RPCSendableMessage, structs::ChainLink, util::AsH160};
 use ethers_core::types::{Signature, H160};
 use ethers_signers::{LocalWallet, Signer};
-use isahc::{config::Configurable, http::StatusCode, AsyncReadResponseExt, RequestExt};
+use http::StatusCode;
 use std::{str::FromStr, time::Duration};
 
 use rand::thread_rng;
@@ -59,14 +59,17 @@ async fn fetch_server(req_id: String) -> Result<(H160, serde_json::Value), anyho
         attempt += 1;
 
         let url = format!("{AUTH_SERVER_ENDPOINT_URL}/{req_id}");
-        let response = isahc::Request::get(&url)
+        let response = reqwest::Client::builder()
+            .use_native_tls()
             .timeout(AUTH_SERVER_TIMEOUT)
-            .body(())?
-            .send_async()
+            .build()
+            .unwrap()
+            .get(&url)
+            .send()
             .await;
 
         match response {
-            Ok(mut response) => {
+            Ok(response) => {
                 if response.status().is_success() {
                     let text = response.text().await?;
                     if text.is_empty() {
@@ -115,11 +118,15 @@ async fn fetch_server(req_id: String) -> Result<(H160, serde_json::Value), anyho
 async fn init_request(request: CreateRequest) -> Result<InitializedRequest, anyhow::Error> {
     let body = serde_json::to_string(&request).expect("valid json");
 
-    let mut response = isahc::Request::post(AUTH_SERVER_ENDPOINT_URL)
+    let response = reqwest::Client::builder()
+        .use_native_tls()
         .timeout(AUTH_SERVER_TIMEOUT)
+        .build()
+        .unwrap()
+        .post(AUTH_SERVER_ENDPOINT_URL)
         .header("Content-Type", "application/json")
-        .body(body)?
-        .send_async()
+        .body(body)
+        .send()
         .await?;
 
     if response.status().is_success() {

@@ -14,11 +14,10 @@ use bevy::{
     tasks::{IoTaskPool, Task},
     utils::{ConditionalSendFuture, HashMap, HashSet},
 };
-use isahc::AsyncReadResponseExt;
 use serde::Deserialize;
 
-use common::util::TaskExt;
-use ipfs::EntityDefinitionLoader;
+use common::util::{TaskCompat, TaskExt};
+use ipfs::{EntityDefinitionLoader, IpfsAssetServer};
 
 pub struct WearablePlugin;
 
@@ -82,6 +81,7 @@ fn load_collections(
     mut once: Local<bool>,
     mut collections: ResMut<WearableCollections>,
     mut task: Local<Option<Task<Result<Collections, anyhow::Error>>>>,
+    ipfs: IpfsAssetServer,
 ) {
     if *once {
         return;
@@ -89,13 +89,16 @@ fn load_collections(
 
     match *task {
         None => {
-            let t: Task<Result<Collections, anyhow::Error>> = IoTaskPool::get().spawn(async move {
-                let mut response =
-                    isahc::get_async("https://realm-provider.decentraland.org/lambdas/collections")
+            let client = ipfs.ipfs().client();
+            let t: Task<Result<Collections, anyhow::Error>> =
+                IoTaskPool::get().spawn_compat(async move {
+                    let response = client
+                        .get("https://realm-provider.decentraland.org/lambdas/collections")
+                        .send()
                         .await
                         .map_err(|e| anyhow!(e))?;
-                response.json::<Collections>().await.map_err(|e| anyhow!(e))
-            });
+                    response.json::<Collections>().await.map_err(|e| anyhow!(e))
+                });
             *task = Some(t)
         }
         Some(ref mut active_task) => match active_task.complete() {

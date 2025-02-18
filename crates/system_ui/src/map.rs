@@ -10,10 +10,9 @@ use bevy::{
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     structs::{PrimaryUser, SettingsTab},
-    util::{ModifyComponentExt, TaskExt, TryPushChildrenEx},
+    util::{ModifyComponentExt, TaskCompat, TaskExt, TryPushChildrenEx},
 };
-use ipfs::ipfs_path::IpfsPath;
-use isahc::AsyncReadResponseExt;
+use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 use scene_runner::{initialize_scene::PARCEL_SIZE, vec3_to_parcel};
 use ui_core::{
     bound_node::{BoundedNode, BoundedNodeBundle},
@@ -171,7 +170,8 @@ fn set_map_content(
                 |caller: Res<UiCaller>,
                  mut q: Query<&mut MapSettings>,
                  window: Query<&Window, With<PrimaryWindow>>,
-                 map: Query<(&GlobalTransform, &MapTexture, &MapData)>| {
+                 map: Query<(&GlobalTransform, &MapTexture, &MapData)>,
+                 ipfas: IpfsAssetServer| {
                     let Ok(mut settings) = q.get_single_mut() else {
                         warn!("no settings");
                         return;
@@ -197,11 +197,12 @@ fn set_map_content(
                         parcel.x, parcel.y
                     );
 
+                    let client = ipfas.ipfs().client();
                     settings.task = Some((
                         parcel,
-                        IoTaskPool::get().spawn(async move {
+                        IoTaskPool::get().spawn_compat(async move {
                             debug!("url: {url}");
-                            let mut response = isahc::get_async(url).await?;
+                            let response = client.get(url).send().await?;
                             response
                                 .json::<DiscoverPages>()
                                 .await

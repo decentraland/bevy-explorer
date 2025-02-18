@@ -18,7 +18,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 futures-lite = { workspace = true }
-isahc = { workspace = true }
+reqwest = { workspace = true }
 prost = { workspace = true }
 async-std = { workspace = true }
 bevy_kira_audio = { workspace = true }
@@ -30,5 +30,6 @@ chrono = { workspace = true }
 async-trait = { workspace = true }
 async-tungstenite = { workspace = true }
 futures-util = { workspace = true }
-async-tls = { workspace = true }
+async-native-tls = { workspace = true }
 rand = { workspace = true }
+http = { workspace = true }

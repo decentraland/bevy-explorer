@@ -12,7 +12,7 @@ use common::{
     profile::SerializedProfile,
     rpc::RpcResultSender,
     structs::{ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin, SystemAudio},
-    util::{config_file, FireEventEx, TaskExt},
+    util::{config_file, FireEventEx, TaskCompat, TaskExt},
 };
 use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
 use ethers_core::types::Address;
@@ -40,7 +40,7 @@ impl Plugin for LoginPlugin {
             Update,
             (
                 (login, update_profile_for_realm).run_if(in_state(ui_core::State::Ready)),
-                process_system_bridge,
+                process_login_bridge,
             ),
         );
     }
@@ -302,7 +302,7 @@ fn update_profile_for_realm(
 ) {
     if realm.is_changed() && !wallet.is_guest() {
         if let Some(address) = wallet.address() {
-            *task = Some(IoTaskPool::get().spawn(get_remote_profile(
+            *task = Some(IoTaskPool::get().spawn_compat(get_remote_profile(
                 address,
                 ipfas.ipfs().clone(),
                 None,
@@ -367,7 +367,7 @@ fn get_previous_login() -> Option<PreviousLogin> {
 }
 
 #[allow(clippy::type_complexity)]
-fn process_system_bridge(
+fn process_login_bridge(
     mut e: EventReader<SystemApi>,
     ipfas: IpfsAssetServer,
     mut login_task: Local<
@@ -407,7 +407,7 @@ fn process_system_bridge(
             }
             SystemApi::LoginPrevious(rpc_result_sender) => {
                 let ipfs = ipfas.ipfs().clone();
-                *login_task = Some(IoTaskPool::get().spawn(async move {
+                *login_task = Some(IoTaskPool::get().spawn_compat(async move {
                     let Some(previous_login) = get_previous_login() else {
                         rpc_result_sender.send(Err("No Previous Login Available".to_string()));
                         return Err(());
@@ -434,7 +434,7 @@ fn process_system_bridge(
             }
             SystemApi::LoginNew(code_sender, result_sender) => {
                 let ipfs = ipfas.ipfs().clone();
-                *login_task = Some(IoTaskPool::get().spawn(async move {
+                *login_task = Some(IoTaskPool::get().spawn_compat(async move {
                     let req = init_remote_ephemeral_request().await;
                     let req = match req {
                         Err(e) => {

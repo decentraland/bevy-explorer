@@ -23,6 +23,7 @@ use deno_core::JsRuntime;
 use fastwebsockets::Frame;
 use fastwebsockets::OpCode;
 use fastwebsockets::WebSocket;
+use hyper::http;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::Infallible;

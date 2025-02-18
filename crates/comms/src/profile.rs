@@ -10,8 +10,8 @@ use bevy::{
 use dcl::interface::CrdtType;
 use ethers_core::types::Address;
 use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer, IpfsIo, TypedIpfsRef};
-use isahc::{http::StatusCode, AsyncReadResponseExt, ReadResponseExt, RequestExt};
 use multihash_codetable::MultihashDigest;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use crate::global_crdt::GlobalCrdtState;
@@ -24,7 +24,7 @@ use common::{
     profile::{AvatarSnapshots, LambdaProfiles, SerializedProfile},
     rpc::RpcEventSender,
     structs::PrimaryUser,
-    util::TaskExt,
+    util::{FireEventEx, TaskCompat, TaskExt},
 };
 use common::{rpc::RpcCall, util::AsH160};
 use dcl_component::{
@@ -49,7 +49,8 @@ impl Plugin for UserProfilePlugin {
 
         app.insert_resource(CurrentUserProfile::default());
         app.init_resource::<ProfileCache>()
-            .init_resource::<ProfileMetaCache>();
+            .init_resource::<ProfileMetaCache>()
+            .add_event::<ProfileDeployedEvent>();
     }
 }
 
@@ -79,7 +80,7 @@ impl ProfileManager<'_, '_> {
         address: Address,
     ) -> Result<Option<&UserProfile>, ProfileMissingError> {
         let state = self.cache.0.entry(address).or_insert_with(|| {
-            ProfileDisplayState::Loading(IoTaskPool::get().spawn(get_remote_profile(
+            ProfileDisplayState::Loading(IoTaskPool::get().spawn_compat(get_remote_profile(
                 address,
                 self.ipfs.ipfs().clone(),
                 self.meta_cache.0.get(&address).cloned(),
@@ -154,7 +155,7 @@ pub fn setup_primary_profile(
     transports: Query<&Transport>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
-    mut deploy_task: Local<Option<Task<Result<Option<(String, String)>, anyhow::Error>>>>,
+    mut deploy_task: Local<Option<(u32, Task<Result<Option<(String, String)>, anyhow::Error>>)>>,
     wallet: Res<Wallet>,
     ipfas: IpfsAssetServer,
     images: Res<Assets<Image>>,
@@ -228,21 +229,24 @@ pub fn setup_primary_profile(
                 let ipfs = ipfas.ipfs().clone();
                 let profile = profile.clone();
                 let wallet = wallet.clone();
-                *deploy_task = Some(IoTaskPool::get().spawn(deploy_profile(
-                    ipfs,
-                    wallet,
-                    profile,
-                    current_profile.snapshots.as_ref().and_then(|sn| {
-                        if let (Some(face), Some(body)) = (
-                            images.get(sn.0.id()).cloned(),
-                            images.get(sn.1.id()).cloned(),
-                        ) {
-                            Some((face, body))
-                        } else {
-                            None
-                        }
-                    }),
-                )));
+                *deploy_task = Some((
+                    profile.version,
+                    IoTaskPool::get().spawn_compat(deploy_profile(
+                        ipfs,
+                        wallet,
+                        profile,
+                        current_profile.snapshots.as_ref().and_then(|sn| {
+                            if let (Some(face), Some(body)) = (
+                                images.get(sn.0.id()).cloned(),
+                                images.get(sn.1.id()).cloned(),
+                            ) {
+                                Some((face, body))
+                            } else {
+                                None
+                            }
+                        }),
+                    )),
+                ));
                 current_profile.is_deployed = true;
             }
         } else if let Some(current_profile) = current_profile.profile.as_ref() {
@@ -265,10 +269,14 @@ pub fn setup_primary_profile(
         }
     }
 
-    if let Some(mut task) = deploy_task.take() {
+    if let Some((version, mut task)) = deploy_task.take() {
         match task.complete() {
             Some(Ok(None)) => {
                 info!("deployed profile ok");
+                commands.fire_event(ProfileDeployedEvent {
+                    version,
+                    success: true,
+                });
             }
             Some(Ok(Some((face256, body)))) => {
                 info!("deployed profile ok (with snapshots)");
@@ -281,12 +289,20 @@ pub fn setup_primary_profile(
                     .snapshots = Some(AvatarSnapshots { face256, body });
                 current_profile.snapshots = None;
                 cache.update(current_profile.profile.clone().unwrap());
+                commands.fire_event(ProfileDeployedEvent {
+                    version,
+                    success: true,
+                });
             }
             Some(Err(e)) => {
                 error!("failed to deploy profile: {e}");
+                commands.fire_event(ProfileDeployedEvent {
+                    version,
+                    success: false,
+                });
                 // todo toast
             }
-            None => *deploy_task = Some(task),
+            None => *deploy_task = Some((version, task)),
         }
     }
 }
@@ -320,6 +336,7 @@ fn request_missing_profiles(
             }
         }
 
+        let dbb = manager.meta_cache.0.get(&player.address).cloned();
         match manager.get_data(player.address) {
             Ok(Some(profile)) => {
                 // catalyst fetch complete
@@ -337,8 +354,8 @@ fn request_missing_profiles(
                     commands.entity(ent).try_insert(profile.clone());
                 } else {
                     warn!(
-                        "removing stale profile {} != {}",
-                        profile.version, player.profile_version
+                        "removing stale profile {} != {} (meta = {:?})",
+                        profile.version, player.profile_version, dbb,
                     );
                     manager.remove(player.address);
                 }
@@ -527,6 +544,12 @@ pub struct Deployment<'a> {
     metadata: serde_json::Value,
 }
 
+#[derive(Event)]
+pub struct ProfileDeployedEvent {
+    pub version: u32,
+    pub success: bool,
+}
+
 async fn deploy_profile(
     ipfs: Arc<IpfsIo>,
     wallet: Wallet,
@@ -634,22 +657,23 @@ async fn deploy_profile(
             .ok_or_else(|| anyhow!("no entities endpoint"))?;
         debug!("deploying to {url}");
 
-        isahc::Request::post(url)
+        ipfs.client()
+            .post(url)
             .header(
                 "Content-Type",
                 format!("multipart/form-data; boundary={}", prepared.boundary()),
             )
-            .body(prepared_data)?
+            .body(prepared_data)
     };
 
-    let mut response = post.send_async().await?;
+    let response = post.send().await?;
 
     match response.status() {
         StatusCode::OK => Ok(snap_details.map(|(_, face_cid, _, body_cid)| (face_cid, body_cid))),
         _ => Err(anyhow!(
             "bad response: {}: {}",
             response.status(),
-            String::from_utf8_lossy(response.bytes().await?.as_slice())
+            String::from_utf8_lossy(&response.bytes().await?)
         )),
     }
 }
@@ -665,9 +689,14 @@ pub async fn get_remote_profile(
     };
     debug!("requesting profile from {}", endpoint);
 
-    let mut response = isahc::get(format!("{endpoint}/profiles/{address:#x}"))?;
+    let response = ipfs
+        .client()
+        .get(format!("{endpoint}/profiles/{address:#x}"))
+        .send()
+        .await?;
     let mut content = response
-        .json::<LambdaProfiles>()?
+        .json::<LambdaProfiles>()
+        .await?
         .avatars
         .into_iter()
         .next()

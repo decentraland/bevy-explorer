@@ -19,10 +19,11 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 urn = { workspace = true }
-isahc = { workspace = true }
+reqwest = { workspace = true }
 once_cell = { workspace = true }
 async-std = { workspace = true }
 urlencoding = { workspace = true }
+async-compat = { workspace = true }
 
 num = "0.4.1"
 resvg = "0.43"

@@ -22,7 +22,7 @@ use common::{
     },
     sets::SceneSets,
     structs::{AvatarDynamicState, PermissionType, PrimaryCamera, PrimaryUser},
-    util::{AsH160, FireEventEx, TaskExt},
+    util::{AsH160, FireEventEx, TaskCompat, TaskExt},
 };
 use comms::{
     global_crdt::ForeignPlayer,
@@ -35,8 +35,8 @@ use ethers_core::types::Address;
 use ipfs::{
     ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, IpfsAssetServer, IpfsIo, ServerAbout,
 };
-use isahc::{http::StatusCode, AsyncReadResponseExt};
 use nft::asset_source::Nft;
+use reqwest::StatusCode;
 use scene_runner::{
     initialize_scene::{
         LiveScenes, PortableScenes, PortableSource, SceneHash, SceneLoading, PARCEL_SIZE,
@@ -260,12 +260,13 @@ fn external_url(
 async fn lookup_ens(
     parent_scene: Option<String>,
     ens: String,
+    ipfs: Arc<IpfsIo>,
 ) -> Result<(String, PortableSource), String> {
     lookup_portable(
         parent_scene,
         format!("https://worlds-content-server.decentraland.org/world/{ens}"),
         false,
-        None,
+        ipfs,
     )
     .await
     .map(|(hash, source)| {
@@ -283,9 +284,12 @@ pub async fn lookup_portable(
     parent_scene: Option<String>,
     url: String,
     super_user: bool,
-    ipfs: Option<Arc<IpfsIo>>,
+    ipfs: Arc<IpfsIo>,
 ) -> Result<(String, PortableSource), String> {
-    let mut about = isahc::get_async(format!("{url}/about"))
+    let about = ipfs
+        .client()
+        .get(format!("{url}/about"))
+        .send()
         .await
         .map_err(|e| e.to_string())?;
     if about.status() != StatusCode::OK {
@@ -304,7 +308,6 @@ pub async fn lookup_portable(
 
     if first_scene.is_none() && super_user {
         // try from active entities
-        let ipfs = ipfs.unwrap();
         let content_url = about
             .content
             .map(|epc| epc.public_url.clone())
@@ -371,6 +374,7 @@ fn spawn_portable(
         PortableLocation,
         RpcResultSender<Result<SpawnResponse, String>>,
     )>,
+    ipfas: IpfsAssetServer,
 ) {
     let mut new_portables = HashMap::default();
     let mut failed_portables = HashSet::default();
@@ -428,7 +432,11 @@ fn spawn_portable(
             PortableLocation::Ens(ens) => {
                 let ens = ens.clone();
                 pending_lookups.push((
-                    IoTaskPool::get().spawn(lookup_ens(Some(parent_hash), ens)),
+                    IoTaskPool::get().spawn_compat(lookup_ens(
+                        Some(parent_hash),
+                        ens,
+                        ipfas.ipfs().clone(),
+                    )),
                     Some(response.take()),
                 ));
             }
@@ -1137,7 +1145,8 @@ pub fn handle_eth_async(
 
         tasks.push((
             response.clone(),
-            IoTaskPool::get().spawn(remote_send_async(body.clone(), wallet.auth_chain().ok())),
+            IoTaskPool::get()
+                .spawn_compat(remote_send_async(body.clone(), wallet.auth_chain().ok())),
         ));
     }
 
@@ -1257,10 +1266,11 @@ struct SpawnPortableCommand {
 fn spawn_portable_command(
     mut input: ConsoleCommand<SpawnPortableCommand>,
     mut pending: ResMut<PendingPortableCommands>,
+    ipfas: IpfsAssetServer,
 ) {
     if let Some(Ok(command)) = input.take() {
         pending.0.push((
-            IoTaskPool::get().spawn(lookup_ens(None, command.ens)),
+            IoTaskPool::get().spawn_compat(lookup_ens(None, command.ens, ipfas.ipfs().clone())),
             PortableAction::Spawn,
         ));
     }
@@ -1276,10 +1286,11 @@ struct KillPortableCommand {
 fn kill_portable_command(
     mut input: ConsoleCommand<KillPortableCommand>,
     mut pending: ResMut<PendingPortableCommands>,
+    ipfas: IpfsAssetServer,
 ) {
     if let Some(Ok(command)) = input.take() {
         pending.0.push((
-            IoTaskPool::get().spawn(lookup_ens(None, command.ens)),
+            IoTaskPool::get().spawn_compat(lookup_ens(None, command.ens, ipfas.ipfs().clone())),
             PortableAction::Kill,
         ));
     }

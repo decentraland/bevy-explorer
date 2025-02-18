@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 mod fetch_response_body_resource;
 
-use bevy::prelude::debug;
+use bevy::{asset::AsyncReadExt, prelude::debug};
 use common::{rpc::RpcCall, structs::SceneMeta};
 use deno_core::{
     anyhow::{self, anyhow},
@@ -19,11 +19,6 @@ use http::{
     HeaderName, HeaderValue, Method, Uri,
 };
 use ipfs::IpfsResource;
-use isahc::{
-    config::{CaCertificate, ClientCertificate, PrivateKey},
-    prelude::Configurable,
-    AsyncBody, AsyncReadResponseExt,
-};
 use serde::{Deserialize, Serialize};
 
 use fetch_response_body_resource::FetchResponseBodyResource;
@@ -82,14 +77,14 @@ pub fn ops() -> Vec<OpDecl> {
     vec![op_signed_fetch_headers()]
 }
 
-struct IsahcFetchRequestResource {
-    client: Option<isahc::HttpClient>,
-    request: http::request::Builder,
+struct FetchRequestResource {
+    client: reqwest::Client,
+    request: reqwest::RequestBuilder,
     request_body_rid: Option<ResourceId>,
     body_bytes: Option<Vec<u8>>,
     url: String,
 }
-impl deno_core::Resource for IsahcFetchRequestResource {}
+impl deno_core::Resource for FetchRequestResource {}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -118,10 +113,10 @@ where
     // TODO scene permissions
 
     let client = if let Some(rid) = client_rid {
-        let r = state.resource_table.get::<IsahcClientResource>(rid)?;
-        Some(r.0.clone())
+        let r = state.resource_table.get::<ClientResource>(rid)?;
+        r.0.clone()
     } else {
-        None
+        state.borrow::<IpfsResource>().client()
     };
 
     if method.len() > 50 {
@@ -129,8 +124,8 @@ where
         anyhow::bail!("nope");
     }
 
-    let mut request = isahc::Request::builder().uri(url.clone());
     let method = Method::from_bytes(method.as_bytes())?;
+    let mut request = client.request(method.clone(), &url);
 
     let (request_body_rid, body_bytes) = if has_body {
         match (data, resource) {
@@ -157,8 +152,6 @@ where
         (None, None)
     };
 
-    request = request.method(method);
-
     for (key, value) in headers {
         let name =
             HeaderName::from_bytes(key.as_bytes()).map_err(|err| type_error(err.to_string()))?;
@@ -178,7 +171,7 @@ where
     request = request.header("User-Agent", "DCLExplorer/0.1");
 
     debug!("request {url}");
-    let request_rid = state.resource_table.add(IsahcFetchRequestResource {
+    let request_rid = state.resource_table.add(FetchRequestResource {
         body_bytes,
         client,
         request_body_rid,
@@ -217,9 +210,9 @@ pub async fn op_fetch_send(
     let request = state
         .borrow_mut()
         .resource_table
-        .take::<IsahcFetchRequestResource>(rid)?;
+        .take::<FetchRequestResource>(rid)?;
 
-    let IsahcFetchRequestResource {
+    let FetchRequestResource {
         client,
         request,
         body_bytes,
@@ -249,19 +242,22 @@ pub async fn op_fetch_send(
 
     let async_req = if let Some(body_id) = request_body_rid {
         let body = state.borrow_mut().resource_table.take_any(body_id)?;
-        let request = request.body(AsyncBody::from_reader(
-            ResourceToBodyAdapter::new(body).into_async_read(),
-        ))?;
+        let mut buf = Vec::new();
+        ResourceToBodyAdapter::new(body)
+            .into_async_read()
+            .read_to_end(&mut buf)
+            .await?;
+        let request = request.body(buf).build()?;
         ipfs.async_request(request, client).await
     } else if let Some(body) = body_bytes {
-        let request = request.body(body)?;
+        let request = request.body(body).build()?;
         ipfs.async_request(request, client).await
     } else {
-        let request = request.body(())?;
+        let request = request.build()?;
         ipfs.async_request(request, client).await
     };
 
-    let mut res = match async_req {
+    let res = match async_req {
         Ok(res) => res,
         Err(err) => return Err(type_error(err.to_string())),
     };
@@ -272,8 +268,8 @@ pub async fn op_fetch_send(
         headers.push((key.as_str().into(), val.as_bytes().into()));
     }
 
-    let content_length = res.body().len();
-    let chunk = bytes::Bytes::from(res.bytes().await?);
+    let content_length = res.content_length();
+    let chunk = res.bytes().await?;
 
     let response_rid = state
         .borrow_mut()
@@ -323,8 +319,8 @@ pub struct BasicAuth {
     pub password: String,
 }
 
-pub struct IsahcClientResource(isahc::HttpClient);
-impl deno_core::Resource for IsahcClientResource {}
+pub struct ClientResource(reqwest::Client);
+impl deno_core::Resource for ClientResource {}
 
 #[op2]
 #[serde]
@@ -333,28 +329,25 @@ pub fn op_fetch_custom_client(
     #[serde] args: CreateHttpClientOptions,
 ) -> Result<ResourceId, AnyError> {
     debug!("op_fetch_custom_client");
-    let mut builder = isahc::HttpClient::builder();
-    if let Some(proxy) = args.proxy {
-        builder = builder.proxy(Uri::try_from(proxy.url).ok());
-        if let Some(creds) = proxy.basic_auth {
-            builder = builder.proxy_credentials(isahc::auth::Credentials::new(
-                creds.username,
-                creds.password,
-            ));
+    let mut builder = reqwest::Client::builder().use_native_tls();
+    if let Some(proxy_def) = args.proxy {
+        let mut proxy = reqwest::Proxy::http(proxy_def.url)?;
+        if let Some(creds) = proxy_def.basic_auth {
+            proxy = proxy.basic_auth(&creds.username, &creds.password);
         }
+        builder = builder.proxy(proxy);
     }
     if !args.ca_certs.is_empty() {
-        let bytes = args.ca_certs.join("");
-        builder = builder.ssl_ca_certificate(CaCertificate::pem(bytes));
+        for ca_cert in &args.ca_certs {
+            builder =
+                builder.add_root_certificate(reqwest::Certificate::from_pem(ca_cert.as_bytes())?);
+        }
     }
     if let (Some(chain), Some(key)) = (args.cert_chain, args.private_key) {
-        builder = builder
-            .ssl_client_certificate(ClientCertificate::pem(chain, PrivateKey::pem(key, None)));
+        builder = builder.identity(reqwest::Identity::from_pkcs12_der(chain.as_bytes(), &key)?);
     }
 
-    Ok(state
-        .resource_table
-        .add(IsahcClientResource(builder.build()?)))
+    Ok(state.resource_table.add(ClientResource(builder.build()?)))
 }
 
 #[derive(Serialize, Default, Debug)]

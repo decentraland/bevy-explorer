@@ -5,7 +5,6 @@ use common::structs::AudioDecoderError;
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::format::input;
 use ipfs::{IpfsIo, IpfsResource};
-use isahc::ReadResponseExt;
 use kira::sound::streaming::StreamingSoundData;
 
 use crate::{
@@ -119,7 +118,7 @@ pub fn av_thread_inner(
         let local_path = local_folder.join(Path::new(urlencoding::encode(url).as_ref()));
 
         if std::fs::File::open(&local_path).is_err() {
-            let mut resp = isahc::get(url)?;
+            let resp = reqwest::blocking::get(url)?;
             let data = resp.bytes()?;
             std::fs::create_dir_all(&local_folder)?;
             std::fs::write(&local_path, data)?;
