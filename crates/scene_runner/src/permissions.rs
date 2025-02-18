@@ -7,7 +7,7 @@ use common::{
     rpc::RpcResultSender,
     structs::{
         AppConfig, PermissionTarget, PermissionType, PrimaryPlayerRes, SettingsTab,
-        ShowSettingsEvent,
+        ShowSettingsEvent, SystemScene,
     },
 };
 use ipfs::CurrentRealm;
@@ -70,6 +70,7 @@ pub struct Permission<'w, 's, T: Send + Sync + 'static> {
     scenes: Query<'w, 's, &'static RendererSceneContext>,
     manager: ResMut<'w, PermissionManager>,
     pub toaster: Toaster<'w, 's>,
+    system_scene: Res<'w, SystemScene>,
 }
 
 impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
@@ -101,6 +102,13 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
         allow_out_of_scene: bool,
     ) {
         let Some((in_scene, hash, _, is_portable)) = self.get_scene_info(scene) else {
+            self.fail.push((value, ty, scene));
+            return;
+        };
+
+        // allow system scene to do anything
+        if self.system_scene.hash.as_deref() == Some(hash) {
+            self.success.push((value, ty, scene));
             return;
         };
 
