@@ -24,7 +24,7 @@ use common::{
     profile::{AvatarSnapshots, LambdaProfiles, SerializedProfile},
     rpc::RpcEventSender,
     structs::PrimaryUser,
-    util::{TaskCompat, TaskExt},
+    util::{FireEventEx, TaskCompat, TaskExt},
 };
 use common::{rpc::RpcCall, util::AsH160};
 use dcl_component::{
@@ -49,7 +49,8 @@ impl Plugin for UserProfilePlugin {
 
         app.insert_resource(CurrentUserProfile::default());
         app.init_resource::<ProfileCache>()
-            .init_resource::<ProfileMetaCache>();
+            .init_resource::<ProfileMetaCache>()
+            .add_event::<ProfileDeployedEvent>();
     }
 }
 
@@ -154,7 +155,7 @@ pub fn setup_primary_profile(
     transports: Query<&Transport>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
-    mut deploy_task: Local<Option<Task<Result<Option<(String, String)>, anyhow::Error>>>>,
+    mut deploy_task: Local<Option<(u32, Task<Result<Option<(String, String)>, anyhow::Error>>)>>,
     wallet: Res<Wallet>,
     ipfas: IpfsAssetServer,
     images: Res<Assets<Image>>,
@@ -228,21 +229,24 @@ pub fn setup_primary_profile(
                 let ipfs = ipfas.ipfs().clone();
                 let profile = profile.clone();
                 let wallet = wallet.clone();
-                *deploy_task = Some(IoTaskPool::get().spawn_compat(deploy_profile(
-                    ipfs,
-                    wallet,
-                    profile,
-                    current_profile.snapshots.as_ref().and_then(|sn| {
-                        if let (Some(face), Some(body)) = (
-                            images.get(sn.0.id()).cloned(),
-                            images.get(sn.1.id()).cloned(),
-                        ) {
-                            Some((face, body))
-                        } else {
-                            None
-                        }
-                    }),
-                )));
+                *deploy_task = Some((
+                    profile.version,
+                    IoTaskPool::get().spawn_compat(deploy_profile(
+                        ipfs,
+                        wallet,
+                        profile,
+                        current_profile.snapshots.as_ref().and_then(|sn| {
+                            if let (Some(face), Some(body)) = (
+                                images.get(sn.0.id()).cloned(),
+                                images.get(sn.1.id()).cloned(),
+                            ) {
+                                Some((face, body))
+                            } else {
+                                None
+                            }
+                        }),
+                    )),
+                ));
                 current_profile.is_deployed = true;
             }
         } else if let Some(current_profile) = current_profile.profile.as_ref() {
@@ -265,10 +269,14 @@ pub fn setup_primary_profile(
         }
     }
 
-    if let Some(mut task) = deploy_task.take() {
+    if let Some((version, mut task)) = deploy_task.take() {
         match task.complete() {
             Some(Ok(None)) => {
                 info!("deployed profile ok");
+                commands.fire_event(ProfileDeployedEvent {
+                    version,
+                    success: true,
+                });
             }
             Some(Ok(Some((face256, body)))) => {
                 info!("deployed profile ok (with snapshots)");
@@ -281,12 +289,20 @@ pub fn setup_primary_profile(
                     .snapshots = Some(AvatarSnapshots { face256, body });
                 current_profile.snapshots = None;
                 cache.update(current_profile.profile.clone().unwrap());
+                commands.fire_event(ProfileDeployedEvent {
+                    version,
+                    success: true,
+                });
             }
             Some(Err(e)) => {
                 error!("failed to deploy profile: {e}");
+                commands.fire_event(ProfileDeployedEvent {
+                    version,
+                    success: false,
+                });
                 // todo toast
             }
-            None => *deploy_task = Some(task),
+            None => *deploy_task = Some((version, task)),
         }
     }
 }
@@ -526,6 +542,12 @@ pub struct Deployment<'a> {
     timestamp: u128,
     content: Vec<TypedIpfsRef>,
     metadata: serde_json::Value,
+}
+
+#[derive(Event)]
+pub struct ProfileDeployedEvent {
+    pub version: u32,
+    pub success: bool,
 }
 
 async fn deploy_profile(

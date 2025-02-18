@@ -1,10 +1,11 @@
 use bevy::log::debug;
+use dcl_component::proto_components::sdk::components::{PbAvatarBase, PbAvatarEquippedData};
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use http::Uri;
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
     settings::{SettingInfo, Settings},
-    SystemApi,
+    SetAvatarData, SystemApi,
 };
 use wallet::{sign_request, Wallet};
 
@@ -27,6 +28,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_settings(),
             op_set_setting(),
             op_kernel_fetch_headers(),
+            op_set_avatar(),
         ]
     } else {
         Vec::default()
@@ -267,4 +269,24 @@ pub async fn op_kernel_fetch_headers(
         )
         .await
     }
+}
+
+#[op2(async)]
+pub async fn op_set_avatar(
+    state: Rc<RefCell<OpState>>,
+    #[serde] base: Option<PbAvatarBase>,
+    #[serde] equip: Option<PbAvatarEquippedData>,
+) -> Result<u32, anyhow::Error> {
+    let (sx, rx) = tokio::sync::oneshot::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SetAvatar(
+            SetAvatarData { base, equip },
+            sx.into(),
+        ))
+        .unwrap();
+
+    rx.await?.map_err(|e| anyhow::anyhow!(e))
 }

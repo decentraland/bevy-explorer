@@ -60,7 +60,8 @@ pub struct BoothInstance {
     pub avatar: Arc<Entity>,
     pub avatar_texture: Handle<Image>,
     pub camera: Entity,
-    pub snapshot_target: Option<(Handle<Image>, Handle<Image>)>,
+    pub snapshot_target: (Option<Handle<Image>>, Option<Handle<Image>>),
+    pending_target: Option<(Handle<Image>, Handle<Image>)>,
 }
 
 #[derive(Resource, Default)]
@@ -89,7 +90,7 @@ impl PhotoBooth<'_, '_> {
             ))
             .id();
 
-        let snapshot_target = if snapshot {
+        let pending_target = if snapshot {
             self.commands.entity(avatar).try_insert(SnapshotTimer(
                 self.frame.0 + SNAPSHOT_FRAMES,
                 None,
@@ -118,14 +119,15 @@ impl PhotoBooth<'_, '_> {
             avatar,
             avatar_texture,
             camera,
-            snapshot_target,
+            snapshot_target: (None, None),
+            pending_target,
         }
     }
 
     pub fn update_shape(&mut self, instance: &BoothInstance, new_shape: AvatarShape) {
         if let Ok(mut selection) = self.selections.get_mut(*instance.avatar) {
             selection.shape = new_shape;
-            if instance.snapshot_target.is_some() {
+            if instance.pending_target.is_some() {
                 self.commands
                     .entity(*instance.avatar)
                     .try_insert(SnapshotTimer(self.frame.0 + SNAPSHOT_FRAMES, None, None));
@@ -321,12 +323,14 @@ struct SnapshotResult {
     window: Entity,
     camera: Entity,
     target: Handle<Image>,
+    source: Entity,
+    index: usize,
 }
 
 #[allow(clippy::too_many_arguments)]
 fn snapshot(
     mut commands: Commands,
-    booths: Query<&BoothInstance>,
+    mut booths: Query<&mut BoothInstance>,
     mut avatars: Query<(Entity, &mut SnapshotTimer, &AvatarSelection)>,
     frame: Res<FrameCount>,
     mut screenshotter: ResMut<ScreenshotManager>,
@@ -409,25 +413,29 @@ fn snapshot(
             if let Some(instance) = booths.iter().find(|b| *b.avatar == ent) {
                 // snap face
                 let sender = local_sender.as_ref().unwrap().clone();
-                let target = instance.snapshot_target.as_ref().unwrap().0.clone();
+                let target = instance.pending_target.as_ref().unwrap().0.clone();
                 let _ = screenshotter.take_screenshot(face_window, move |image| {
                     let _ = sender.blocking_send(SnapshotResult {
                         image,
                         window: face_window,
                         camera: face_cam,
                         target,
+                        source: ent,
+                        index: 0,
                     });
                 });
 
                 // snap body
                 let sender = local_sender.as_ref().unwrap().clone();
-                let target = instance.snapshot_target.as_ref().unwrap().1.clone();
+                let target = instance.pending_target.as_ref().unwrap().1.clone();
                 let _ = screenshotter.take_screenshot(body_window, move |image| {
                     let _ = sender.blocking_send(SnapshotResult {
                         image,
                         window: body_window,
                         camera: body_cam,
                         target,
+                        source: ent,
+                        index: 1,
                     });
                 });
             } else {
@@ -444,18 +452,28 @@ fn snapshot(
         window,
         camera,
         target,
+        source,
+        index,
     }) = local_receiver.as_mut().unwrap().try_recv()
     {
         commands.entity(window).despawn_recursive();
         commands.entity(camera).despawn_recursive();
 
-        let Some(target) = images.get_mut(&target) else {
+        let Some(target_img) = images.get_mut(&target) else {
             error!("target {:?} not found", target);
             continue;
         };
 
-        *target = image;
-        target.asset_usage = RenderAssetUsages::default();
+        *target_img = image;
+        target_img.asset_usage = RenderAssetUsages::default();
+
+        if let Some(mut instance) = booths.iter_mut().find(|b| *b.avatar == source) {
+            if index == 0 {
+                instance.snapshot_target.0 = Some(target.clone());
+            } else {
+                instance.snapshot_target.1 = Some(target.clone());
+            }
+        }
     }
 }
 

@@ -107,3 +107,12 @@ module.exports.kernelFetch = async function (body) {
         body: text,
     };
 }
+
+// avatar { 
+//   base: PBAvatarBase, 
+//   equip: PBAvatarEquippedData,
+// }
+// => deployed version
+module.exports.setAvatar = async function(avatar) {
+    return await Deno.core.ops.op_set_avatar(avatar.base, avatar.equip)
+}

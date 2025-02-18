@@ -1,19 +1,24 @@
 // kuruk 0x481bed8645804714Efd1dE3f25467f78E7Ba07d6
 
-use avatar::{avatar_texture::BoothInstance, AvatarShape};
+use avatar::{
+    avatar_texture::{BoothInstance, PhotoBooth},
+    AvatarShape,
+};
 use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::{AvatarColor, AvatarEmote, SerializedProfile},
-    rpc::RpcCall,
+    rpc::{RpcCall, RpcResultSender},
     sets::SetupSets,
     structs::{
         ActiveDialog, AppConfig, PermissionTarget, SettingsTab, ShowSettingsEvent, SystemAudio,
+        PROFILE_UI_RENDERLAYER,
     },
     util::FireEventEx,
 };
-use comms::profile::CurrentUserProfile;
+use comms::profile::{CurrentUserProfile, ProfileDeployedEvent};
 use ipfs::{ChangeRealmEvent, CurrentRealm};
+use system_bridge::SystemApi;
 use ui_core::{
     button::{DuiButton, TabSelection},
     ui_actions::{Click, DataChanged, EventCloneExt, EventDefaultExt, On, UiCaller},
@@ -37,7 +42,7 @@ impl Plugin for ProfileEditPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<ShowSettingsEvent>();
         app.add_systems(Startup, setup.in_set(SetupSets::Main));
-        app.add_systems(Update, show_settings);
+        app.add_systems(Update, (show_settings, process_profile));
         app.add_plugins((
             DiscoverSettingsPlugin,
             WearableSettingsPlugin,
@@ -196,7 +201,12 @@ fn save_settings(
         profile.content.version = profile.version as i64;
 
         if let Some(booth) = maybe_booth {
-            current_profile.snapshots.clone_from(&booth.snapshot_target);
+            if let (Some(face), Some(body)) = (
+                booth.snapshot_target.0.clone(),
+                booth.snapshot_target.1.clone(),
+            ) {
+                current_profile.snapshots = Some((face, body));
+            }
         }
 
         current_profile.is_deployed = false;
@@ -438,4 +448,132 @@ pub fn show_settings(
         .insert(tab);
 
     //start on the wearables tab
+}
+
+enum ProcessProfileState {
+    Snapping(Entity, u32, RpcResultSender<Result<u32, String>>),
+    Deploying(u32, RpcResultSender<Result<u32, String>>),
+}
+
+fn process_profile(
+    mut commands: Commands,
+    mut e: EventReader<SystemApi>,
+    mut current_profile: ResMut<CurrentUserProfile>,
+    mut processing: Local<Option<ProcessProfileState>>,
+    mut photo_booth: PhotoBooth,
+    booths: Query<&BoothInstance>,
+    mut deployed: EventReader<ProfileDeployedEvent>,
+) {
+    if let Some(SystemApi::SetAvatar(set_avatar, sender)) = e
+        .read()
+        .filter(|ev| matches!(ev, SystemApi::SetAvatar(..)))
+        .last()
+    {
+        let Some(profile) = current_profile.profile.as_mut() else {
+            error!("can't amend missing profile");
+            return;
+        };
+
+        if let Some(base) = &set_avatar.base {
+            profile.content.avatar.body_shape = Some(base.body_shape_urn.clone());
+
+            profile.content.avatar.hair = base.hair_color.map(AvatarColor::new);
+            profile.content.avatar.eyes = base.eyes_color.map(AvatarColor::new);
+            profile.content.avatar.skin = base.skin_color.map(AvatarColor::new);
+
+            profile.content.name = base.name.clone();
+            profile.content.avatar.name = Some(base.name.clone());
+        }
+
+        if let Some(equip) = &set_avatar.equip {
+            profile.content.avatar.wearables = equip.wearable_urns.to_vec();
+            profile.content.avatar.emotes = Some(
+                equip
+                    .emote_urns
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(ix, e)| {
+                        (!e.is_empty()).then_some(AvatarEmote {
+                            slot: ix as u32,
+                            urn: if e.starts_with("urn:decentraland:off-chain:base-emotes") {
+                                e.rsplit_once(':').unwrap().1.to_string()
+                            } else {
+                                e.clone()
+                            },
+                        })
+                    })
+                    .collect(),
+            );
+        }
+
+        profile.version += 1;
+        profile.content.version = profile.version as i64;
+
+        if let Some(existing) = processing.take() {
+            match existing {
+                ProcessProfileState::Snapping(entity, _, sender) => {
+                    commands.entity(entity).despawn_recursive();
+                    sender.send(Err("cancelled".to_owned()));
+                }
+                ProcessProfileState::Deploying(_, sender) => {
+                    sender.send(Err("cancelled".to_owned()));
+                }
+            }
+        }
+
+        *processing = Some(ProcessProfileState::Snapping(
+            commands
+                .spawn(photo_booth.spawn_booth(
+                    PROFILE_UI_RENDERLAYER,
+                    (&*profile).into(),
+                    Default::default(),
+                    true,
+                ))
+                .id(),
+            profile.version,
+            sender.clone(),
+        ));
+        return;
+    }
+
+    if let Some(ProcessProfileState::Snapping(booth_ent, version, sender)) = &*processing {
+        let Ok(booth) = booths.get(*booth_ent) else {
+            error!("no booth?");
+            sender.send(Err("no snapshot booth?!".to_owned()));
+            *processing = None;
+            return;
+        };
+
+        debug!("processing ...");
+        let (Some(face), Some(body)) = booth.snapshot_target.clone() else {
+            return;
+        };
+        debug!("updating ...");
+
+        current_profile.snapshots = Some((face, body));
+        current_profile.is_deployed = false;
+
+        *processing = Some(ProcessProfileState::Deploying(*version, sender.clone()));
+    }
+
+    if let Some(ProcessProfileState::Deploying(version, sender)) = processing.take() {
+        debug!("checking for response: {}", version);
+        if let Some(ev) = deployed.read().next() {
+            debug!("got response: {} vs {}", version, ev.version);
+            let res = if version == ev.version {
+                if ev.success {
+                    Ok(version)
+                } else {
+                    Err("failed to deploy to server.".to_owned())
+                }
+            } else {
+                Err("cancelled".to_owned())
+            };
+            sender.send(res);
+            return;
+        }
+        *processing = Some(ProcessProfileState::Deploying(version, sender));
+    } else {
+        deployed.clear();
+    }
 }

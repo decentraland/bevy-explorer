@@ -40,7 +40,7 @@ impl Plugin for LoginPlugin {
             Update,
             (
                 (login, update_profile_for_realm).run_if(in_state(ui_core::State::Ready)),
-                process_system_bridge,
+                process_login_bridge,
             ),
         );
     }
@@ -367,7 +367,7 @@ fn get_previous_login() -> Option<PreviousLogin> {
 }
 
 #[allow(clippy::type_complexity)]
-fn process_system_bridge(
+fn process_login_bridge(
     mut e: EventReader<SystemApi>,
     ipfas: IpfsAssetServer,
     mut login_task: Local<

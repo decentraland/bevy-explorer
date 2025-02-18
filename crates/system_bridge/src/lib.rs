@@ -5,6 +5,8 @@ use bevy::{
     prelude::{Event, EventWriter, ResMut, Resource},
 };
 use common::rpc::RpcResultSender;
+use dcl_component::proto_components::sdk::components::{PbAvatarBase, PbAvatarEquippedData};
+use serde::{Deserialize, Serialize};
 use settings::{SettingBridgePlugin, Settings};
 
 pub struct SystemBridgePlugin {
@@ -26,6 +28,12 @@ impl Plugin for SystemBridgePlugin {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SetAvatarData {
+    pub base: Option<PbAvatarBase>,
+    pub equip: Option<PbAvatarEquippedData>,
+}
+
 #[derive(Event, Clone)]
 pub enum SystemApi {
     CheckForUpdate(RpcResultSender<Option<(String, String)>>),
@@ -40,6 +48,7 @@ pub enum SystemApi {
     LoginCancel,
     Logout,
     GetSettings(RpcResultSender<Settings>),
+    SetAvatar(SetAvatarData, RpcResultSender<Result<u32, String>>),
 }
 
 #[derive(Resource)]

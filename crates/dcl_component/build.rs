@@ -64,7 +64,12 @@ fn gen_sdk_components() -> Result<()> {
     sources.push("src/proto/decentraland/kernel/comms/v3/archipelago.proto".into());
     sources.push("src/proto/decentraland/social/friendships/friendships.proto".into());
 
-    let serde_components = ["Color3", "PBRealmInfo"];
+    let serde_components = [
+        "Color3",
+        "PBRealmInfo",
+        "PBAvatarBase",
+        "PBAvatarEquippedData",
+    ];
 
     let mut config = prost_build::Config::new();
     for component in serde_components {
