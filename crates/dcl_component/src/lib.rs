@@ -34,7 +34,7 @@ impl SceneEntityId {
     pub const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 6..=405;
 
     pub fn as_proto_u32(&self) -> Option<u32> {
-        Some(self.id as u32 | (self.generation as u32) << 16)
+        Some(self.id as u32 | ((self.generation as u32) << 16))
     }
 
     pub fn from_proto_u32(id: u32) -> Self {
