@@ -3,13 +3,12 @@ pub mod ipfs_path;
 use std::{
     io::ErrorKind,
     marker::PhantomData,
-    os::windows::fs::MetadataExt,
     path::{Path, PathBuf},
     sync::{
         atomic::{self, AtomicU16},
         Arc,
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use anyhow::anyhow;
@@ -672,7 +671,8 @@ impl IpfsIo {
                 };
 
                 if metadata.is_file() {
-                    Some((metadata.last_access_time(), (metadata.len(), f.path())))
+                    let accessed = metadata.accessed().unwrap_or(SystemTime::UNIX_EPOCH);
+                    Some((accessed, (metadata.len(), f.path())))
                 } else {
                     None
                 }
