@@ -192,7 +192,7 @@ fn livekit_handler_inner(
         rt2.spawn(async move {
             while let Ok(frame) = mic.recv().await {
                 let data = frame.data.iter().map(|f| (f * i16::MAX as f32) as i16).collect();
-                if native_source.as_ref().map_or(true, |ns| ns.sample_rate() != frame.sample_rate || ns.num_channels() != frame.num_channels) {
+                if native_source.as_ref().is_none_or(|ns| ns.sample_rate() != frame.sample_rate || ns.num_channels() != frame.num_channels) {
                     // update track
                     if let Some(sid) = mic_sid.take() {
                         if let Err(e) = local_participant.unpublish_track(&sid).await {

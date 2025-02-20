@@ -659,16 +659,12 @@ fn update_imposter_visibility(
     transform: Query<&Transform>,
 ) {
     for (mut layers, ready) in q.iter_mut() {
-        let show = ready
-            .scene
-            .as_ref()
-            // either a non-scene mip, or not a live scene, or live and translation != 0 (i.e. tick < 10)
-            .map_or(true, |hash| {
-                !live_scenes
-                    .0
-                    .get(hash)
-                    .is_some_and(|e| transform.get(*e).is_ok_and(|t| t.translation.y == 0.0))
-            });
+        let show = ready.scene.as_ref().is_none_or(|hash| {
+            !live_scenes
+                .0
+                .get(hash)
+                .is_some_and(|e| transform.get(*e).is_ok_and(|t| t.translation.y == 0.0))
+        });
         *layers = if show {
             layers.clone().with(0)
         } else {

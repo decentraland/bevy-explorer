@@ -35,12 +35,7 @@ impl<T: 'static> RpcResultSender<T> {
     }
 
     pub fn take(&self) -> tokio::sync::oneshot::Sender<T> {
-        self.0
-            .write()
-            .ok()
-            .and_then(|mut guard| guard.take())
-            .take()
-            .unwrap()
+        self.0.write().unwrap().take().unwrap()
     }
 }
 

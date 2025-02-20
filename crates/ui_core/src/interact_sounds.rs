@@ -57,13 +57,11 @@ impl DuiFromStr for InteractSounds {
             hover: rule
                 .properties
                 .get("hover")
-                .and_then(PropertyValues::string)
-                .map(Into::into),
+                .and_then(PropertyValues::string),
             press: rule
                 .properties
                 .get("press")
-                .and_then(PropertyValues::string)
-                .map(Into::into),
+                .and_then(PropertyValues::string),
         })
     }
 }

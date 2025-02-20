@@ -51,7 +51,7 @@ fn connect_preview_server(
         return;
     }
 
-    if task.as_ref().map_or(true, |(t, _)| t.is_finished()) {
+    if task.as_ref().is_none_or(|(t, _)| t.is_finished()) {
         if let Some(Err(e)) = task.take().map(|(mut t, _)| t.complete().unwrap()) {
             warn!("preview socket error: {e}");
         };

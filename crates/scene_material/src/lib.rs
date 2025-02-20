@@ -127,8 +127,8 @@ pub struct BoundRegion {
 impl BoundRegion {
     pub fn new(min: IVec2, max: IVec2, parcel_count: u32) -> Self {
         Self {
-            min: (min.x as i16 as u16 as u32) << 16 | (-(max.y + 1) as i16 as u16 as u32),
-            max: ((max.x + 1) as i16 as u16 as u32) << 16 | (-min.y as i16 as u16 as u32),
+            min: ((min.x as i16 as u16 as u32) << 16) | (-(max.y + 1) as i16 as u16 as u32),
+            max: (((max.x + 1) as i16 as u16 as u32) << 16) | (-min.y as i16 as u16 as u32),
             height: f32::log2(parcel_count as f32 + 1.0) * 20.0,
             parcel_count,
         }
