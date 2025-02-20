@@ -467,7 +467,7 @@ fn render_map(
                         }
                         Entry::Vacant(v) => {
                             debug!("new");
-                            let image_path = IpfsPath::new_from_url(
+                            let image_path = IpfsPath::new_from_url_uncached(
                                 &format!(
                                     "https://genesis.city/map/latest/{}/{},{}.jpg",
                                     level + 1,

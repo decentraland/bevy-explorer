@@ -13,6 +13,7 @@ use bevy::{
     },
     prelude::*,
 };
+use cache_size::CacheSizeSetting;
 use common::{
     structs::{
         AaSetting, AppConfig, BloomSetting, FogSetting, ShadowSetting, SsaoSetting, WindowSetting,
@@ -44,6 +45,7 @@ use crate::SystemApi;
 pub mod aa_settings;
 pub mod ambient_brightness_setting;
 pub mod bloom_settings;
+pub mod cache_size;
 pub mod constrain_ui;
 pub mod despawn_workaround;
 pub mod fog_settings;
@@ -149,6 +151,7 @@ impl Plugin for SettingBridgePlugin {
         add_int_setting::<FallSpeedSetting>(app, &mut settings, &mut schedule);
         add_int_setting::<VideoThreadsSetting>(app, &mut settings, &mut schedule);
         add_int_setting::<MaxDownloadsSetting>(app, &mut settings, &mut schedule);
+        add_enum_setting::<CacheSizeSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<DespawnWorkaroundSetting>(app, &mut settings, &mut schedule);
 
         app.insert_resource(settings);

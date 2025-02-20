@@ -38,6 +38,8 @@ use std::{
     str::FromStr,
 };
 
+use multihash_codetable::MultihashDigest;
+
 use bevy::log::error;
 use urn::Urn;
 
@@ -65,7 +67,12 @@ pub enum IpfsType {
         hash: String,
         ext: String,
     },
-    Url {
+    UrlCached {
+        url: String,
+        ext: String,
+        hash: String,
+    },
+    UrlUncached {
         url: String,
         ext: String,
     },
@@ -82,7 +89,8 @@ impl IpfsType {
     fn base_url_extension(&self) -> &str {
         match self {
             IpfsType::ContentFile { .. } | IpfsType::Entity { .. } => "/contents/",
-            IpfsType::Url { .. } => "",
+            IpfsType::UrlCached { .. } => "",
+            IpfsType::UrlUncached { .. } => "",
         }
     }
 
@@ -110,7 +118,9 @@ impl IpfsType {
                     anyhow::anyhow!("file not found in content map: {file_path:?} in {scene_hash}")
                 }),
             IpfsType::Entity { hash, .. } => Ok(format!("{base_url}{}", hash)),
-            IpfsType::Url { url, .. } => Ok(format!("{}", urlencoding::decode(url)?)),
+            IpfsType::UrlCached { url, .. } | IpfsType::UrlUncached { url, .. } => {
+                Ok(format!("{}", urlencoding::decode(url)?))
+            }
         }
     }
 
@@ -121,7 +131,8 @@ impl IpfsType {
                 file_path,
                 ..
             } => context.entities.get(scene_hash)?.collection.hash(file_path),
-            IpfsType::Url { .. } => None,
+            IpfsType::UrlCached { hash, .. } => Some(hash),
+            IpfsType::UrlUncached { .. } => None,
             IpfsType::Entity { hash, .. } => Some(hash),
         }
     }
@@ -130,7 +141,7 @@ impl IpfsType {
     fn context_hash(&self) -> Option<&str> {
         match self {
             IpfsType::ContentFile { content_hash, .. } => Some(content_hash),
-            IpfsType::Url { .. } => None,
+            IpfsType::UrlCached { .. } | IpfsType::UrlUncached { .. } => None,
             IpfsType::Entity { hash, .. } => Some(hash),
         }
     }
@@ -140,7 +151,7 @@ impl IpfsType {
             IpfsType::ContentFile { .. } => {
                 anyhow::bail!("Can't get hash for content files without context")
             }
-            IpfsType::Url { .. } => Ok(None),
+            IpfsType::UrlCached { .. } | IpfsType::UrlUncached { .. } => Ok(None),
             IpfsType::Entity { hash, .. } => Ok(Some(hash)),
         }
     }
@@ -172,7 +183,12 @@ impl From<&IpfsType> for PathBuf {
             IpfsType::Entity { hash, ext } => {
                 PathBuf::from("$entity").join(format!("{hash}.{ext}"))
             }
-            IpfsType::Url { url, ext } => PathBuf::from("$url").join(format!(
+            IpfsType::UrlCached { url, ext, .. } => PathBuf::from("$urlc").join(format!(
+                "{}.{}",
+                urlencoding::encode(url).into_owned(),
+                ext
+            )),
+            IpfsType::UrlUncached { url, ext } => PathBuf::from("$urlu").join(format!(
                 "{}.{}",
                 urlencoding::encode(url).into_owned(),
                 ext
@@ -233,14 +249,32 @@ where
                     ext: ext.to_owned(),
                 })
             }
-            "$url" => {
+            "$urlc" => {
                 let url_ext: &str = components
                     .next()
                     .ok_or(anyhow::anyhow!("url specifier missing"))?;
                 let (url, ext) = url_ext
                     .rsplit_once('.')
                     .ok_or(anyhow::anyhow!("url specified malformed (no '.')"))?;
-                Ok(IpfsType::Url {
+
+                let digest = multihash_codetable::Code::Sha2_256.digest(url.as_bytes());
+                let hash = urlencoding::encode_binary(digest.digest());
+
+                Ok(IpfsType::UrlCached {
+                    url: url.to_owned(),
+                    ext: ext.to_owned(),
+                    hash: hash.into_owned(),
+                })
+            }
+            "$urlu" => {
+                let url_ext: &str = components
+                    .next()
+                    .ok_or(anyhow::anyhow!("url specifier missing"))?;
+                let (url, ext) = url_ext
+                    .rsplit_once('.')
+                    .ok_or(anyhow::anyhow!("url specified malformed (no '.')"))?;
+
+                Ok(IpfsType::UrlUncached {
                     url: url.to_owned(),
                     ext: ext.to_owned(),
                 })
@@ -363,10 +397,25 @@ impl IpfsPath {
     }
 
     pub fn new_from_url(url: &str, ext: &str) -> Self {
+        let digest = multihash_codetable::Code::Sha2_256.digest(url.as_bytes());
+        let hash = urlencoding::encode_binary(digest.digest());
         Self {
             key_values: Default::default(),
             ipfs_type: {
-                IpfsType::Url {
+                IpfsType::UrlCached {
+                    url: url.to_owned(),
+                    ext: ext.to_owned(),
+                    hash: hash.into_owned(),
+                }
+            },
+        }
+    }
+
+    pub fn new_from_url_uncached(url: &str, ext: &str) -> Self {
+        Self {
+            key_values: Default::default(),
+            ipfs_type: {
+                IpfsType::UrlUncached {
                     url: url.to_owned(),
                     ext: ext.to_owned(),
                 }

@@ -4,7 +4,7 @@ use common::structs::{
     AaSetting, AppConfig, BloomSetting, FogSetting, SettingsTab, ShadowSetting, SsaoSetting,
     WindowSetting,
 };
-use system_bridge::settings::{EnumAppSetting, IntAppSetting};
+use system_bridge::settings::{cache_size::CacheSizeSetting, EnumAppSetting, IntAppSetting};
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
 use crate::profile::SettingsDialog;
@@ -124,6 +124,7 @@ fn set_app_settings_content(
             spawn_int_setting_template::<VideoThreadsSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<MaxAvatarsSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<MaxDownloadsSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<CacheSizeSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<DespawnWorkaroundSetting>(&mut commands, &dui, &config),
             commands
                 .spawn_template(
