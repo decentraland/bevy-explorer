@@ -10,8 +10,9 @@ use common::{
     rpc::RpcCall,
     sets::SetupSets,
     structs::{
-        AppConfig, AvatarDynamicState, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes,
-        PrimaryPlayerRes, SceneImposterBake, SceneLoadDistance, SystemAudio, ToolTips,
+        AppConfig, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg, PrimaryCamera,
+        PrimaryCameraRes, PrimaryPlayerRes, SceneImposterBake, SceneLoadDistance, SystemAudio,
+        ToolTips,
     },
     util::{config_file, UtilsPlugin},
 };
@@ -25,6 +26,7 @@ use scene_runner::{
 };
 
 use ipfs::{CurrentRealm, IpfsIoPlugin};
+use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, UiCorePlugin};
 use visuals::SceneGlobalLight;
 use wallet::Wallet;
@@ -161,7 +163,8 @@ fn main() {
         .add_plugins(SceneRunnerPlugin)
         .add_plugins(CommsPlugin)
         .add_plugins(RestrictedActionsPlugin)
-        .add_plugins(DclImposterPlugin);
+        .add_plugins(DclImposterPlugin)
+        .add_plugins(SystemBridgePlugin { bare: true });
 
     app.insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
@@ -181,7 +184,8 @@ fn main() {
         .add_event::<RpcCall>()
         .add_event::<ScrollTargetEvent>()
         .init_resource::<PreviewMode>()
-        .init_asset::<Nft>();
+        .init_asset::<Nft>()
+        .init_resource::<CursorLocks>();
 
     // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
     // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
