@@ -98,7 +98,7 @@ fn make_scene_oven(
 
     if start_tick
         .as_ref()
-        .map_or(true, |(start_tick_hash, _)| hash != start_tick_hash)
+        .is_none_or(|(start_tick_hash, _)| hash != start_tick_hash)
     {
         *start_tick = Some((hash.clone(), tick.0));
     }

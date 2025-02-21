@@ -145,7 +145,7 @@ impl ActionMarker for Click {
     fn activate(
         (interact, enabled): <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>,
     ) -> bool {
-        matches!(interact, Interaction::Pressed) && enabled.map_or(true, |a| a.0)
+        matches!(interact, Interaction::Pressed) && enabled.is_none_or(|a| a.0)
     }
 }
 
@@ -167,7 +167,7 @@ impl ActionMarker for HoverEnter {
     fn activate(
         (interact, enabled): <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>,
     ) -> bool {
-        !matches!(interact, Interaction::None) && enabled.map_or(true, |a| a.0)
+        !matches!(interact, Interaction::None) && enabled.is_none_or(|a| a.0)
     }
 }
 pub struct HoverExit;
@@ -176,7 +176,7 @@ impl ActionMarker for HoverExit {
     fn activate(
         (interact, enabled): <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>,
     ) -> bool {
-        matches!(interact, Interaction::None) && enabled.map_or(true, |a| a.0)
+        matches!(interact, Interaction::None) && enabled.is_none_or(|a| a.0)
     }
 }
 impl ActionMarker for Focus {

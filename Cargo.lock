@@ -5711,6 +5711,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-compat",
+ "async-fs",
  "async-std",
  "bevy",
  "bevy_console",
@@ -5719,6 +5720,7 @@ dependencies = [
  "common",
  "console",
  "downcast-rs",
+ "multihash-codetable",
  "reqwest 0.12.9",
  "serde",
  "serde_json",

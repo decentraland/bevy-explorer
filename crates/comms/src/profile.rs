@@ -529,7 +529,7 @@ impl UserProfile {
             .body_shape
             .as_ref()
             .and_then(|s| s.rsplit(':').next())
-            .map_or(true, |shape| shape.to_lowercase() == "basefemale")
+            .is_none_or(|shape| shape.to_lowercase() == "basefemale")
     }
 }
 

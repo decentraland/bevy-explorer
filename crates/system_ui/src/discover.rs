@@ -496,9 +496,10 @@ fn update_page(
     }
 
     for item in settings.data.iter() {
-        let visible = settings.search_filter.as_ref().map_or(true, |filter| {
-            item.title.to_lowercase().contains(&filter.to_lowercase())
-        });
+        let visible = settings
+            .search_filter
+            .as_ref()
+            .is_none_or(|filter| item.title.to_lowercase().contains(&filter.to_lowercase()));
 
         if !visible {
             continue;

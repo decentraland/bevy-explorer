@@ -333,7 +333,7 @@ pub(crate) fn load_scene_javascript(
                 }
             }
         } else {
-            ipfas.load_url(
+            ipfas.load_url_uncached(
                 "https://renderer-artifacts.decentraland.org/sdk6-adaption-layer/main/index.min.js",
             )
         };
@@ -908,7 +908,7 @@ fn load_active_entities(
             .config
             .scenes_urn
             .as_ref()
-            .map_or(true, Vec::is_empty);
+            .is_none_or(Vec::is_empty);
 
         let Ok(focus) = focus.get_single() else {
             return;
@@ -1190,7 +1190,7 @@ pub fn process_scene_lifecycle(
         // check if the current scene is still loading
         if let Some((current_hash, _)) = current_scene.as_ref() {
             if &scene_hash.0 == current_hash
-                && maybe_ctx.map_or(true, |ctx| ctx.tick_number <= 6 && !ctx.broken)
+                && maybe_ctx.is_none_or(|ctx| ctx.tick_number <= 6 && !ctx.broken)
             {
                 current_scene_loading = true;
             }

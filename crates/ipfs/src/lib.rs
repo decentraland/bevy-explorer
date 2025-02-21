@@ -8,11 +8,11 @@ use std::{
         atomic::{self, AtomicU16},
         Arc,
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use anyhow::anyhow;
-use async_std::io::{Cursor, ReadExt};
+use async_std::io::{Cursor, ReadExt, WriteExt};
 use bevy::{
     asset::{
         io::{
@@ -29,7 +29,10 @@ use bevy::{
     utils::{ConditionalSendFuture, HashMap},
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
-use common::util::{project_directories, TaskCompat};
+use common::{
+    structs::AppConfig,
+    util::{project_directories, TaskCompat},
+};
 use ipfs_path::IpfsAsset;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -305,9 +308,9 @@ impl IpfsAssetServer<'_, '_> {
         Ok(self.server.load(path))
     }
 
-    pub fn load_url<T: IpfsAsset>(&self, url: &str) -> Handle<T> {
+    pub fn load_url_uncached<T: IpfsAsset>(&self, url: &str) -> Handle<T> {
         let ext = T::ext();
-        let ipfs_path = IpfsPath::new_from_url(url, ext);
+        let ipfs_path = IpfsPath::new_from_url_uncached(url, ext);
         self.server.load(PathBuf::from(&ipfs_path))
     }
 
@@ -475,7 +478,7 @@ impl Plugin for IpfsIoPlugin {
 
         app.add_event::<ChangeRealmEvent>();
         app.init_resource::<CurrentRealm>();
-        app.add_systems(PostUpdate, change_realm);
+        app.add_systems(PostUpdate, (change_realm, clean_cache));
 
         app.add_console_command::<ChangeRealmCommand, _>(change_realm_command);
     }
@@ -603,6 +606,12 @@ pub struct IpfsContext {
     num_slots: usize,
 }
 
+fn clean_cache(mut exit: EventReader<AppExit>, config: Res<AppConfig>, ipfas: IpfsAssetServer) {
+    if exit.read().last().is_some() {
+        ipfas.ipfs().trim_cache(config.cache_bytes);
+    }
+}
+
 pub struct IpfsIo {
     is_preview: bool, // determines whether we always retry failed assets immediately
     default_io: Box<dyn ErasedAssetReader>,
@@ -645,6 +654,42 @@ impl IpfsIo {
                 .user_agent("DCLExplorer/0.1")
                 .build()
                 .unwrap(),
+        }
+    }
+
+    pub fn trim_cache(&self, max_size: u64) {
+        let Ok(folder) = std::fs::read_dir(self.cache_path()) else {
+            return;
+        };
+
+        let mut files = folder
+            .filter_map(|f| {
+                let Ok(f) = f else { return None };
+
+                let Ok(metadata) = f.metadata() else {
+                    return None;
+                };
+
+                if metadata.is_file() {
+                    let accessed = metadata.accessed().unwrap_or(SystemTime::UNIX_EPOCH);
+                    Some((accessed, (metadata.len(), f.path())))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        files.sort_by_key(|(time, _)| *time);
+
+        let mut total_size = 0;
+        for (_, (_, to_delete)) in files.iter().rev().skip_while(|(_, (size, path))| {
+            total_size += *size;
+            debug!("keeping {path:?}, total now {total_size}/{max_size}");
+            total_size < max_size
+        }) {
+            if let Err(e) = std::fs::remove_file(to_delete) {
+                warn!("failed to remove cache file {to_delete:?}: {e}");
+            }
         }
     }
 
@@ -837,8 +882,13 @@ impl IpfsIo {
                         let cache_path = cache_path.join(id);
 
                         if id.starts_with("b64-") || !cache_path.exists() {
-                            let file = std::fs::File::create(&cache_path)?;
-                            serde_json::to_writer(file, &entity)?;
+                            let mut file = async_fs::File::create(&cache_path).await?;
+                            let mut buf = Vec::default();
+                            serde_json::to_writer(&mut buf, &entity)?;
+                            file.write(&buf).await?;
+                            file.sync_all().await?;
+                            // let file = std::fs::File::create(&cache_path)?;
+                            // serde_json::to_writer(file, &entity)?;
                         }
 
                         // return active entity struct
@@ -1141,16 +1191,25 @@ impl AssetReader for IpfsIo {
                     cache_path.push(format!("{}.part", hash));
                     let cache_path_str = cache_path.to_string_lossy().into_owned();
                     // ignore errors trying to cache
-                    if let Err(e) = std::fs::write(&cache_path, &data) {
-                        warn!("failed to cache `{cache_path_str}`: {e}");
-                    } else {
-                        let mut final_path = cache_path.clone();
-                        final_path.pop();
-                        final_path.push(hash);
-                        if let Err(e) = std::fs::rename(cache_path, &final_path) {
-                            warn!("failed to rename cache item `{cache_path_str}`: {e}");
-                        } else {
-                            debug!("cached ok `{}`", final_path.to_string_lossy());
+                    match async_fs::File::create(&cache_path).await {
+                        Err(e) => {
+                            warn!("failed to create cache `{cache_path_str}`: {e}");
+                        }
+                        Ok(mut f) => {
+                            if let Err(e) = f.write(&data).await {
+                                warn!("failed to write cache `{cache_path_str}`: {e}");
+                            } else if let Err(e) = f.sync_all().await {
+                                warn!("failed to sync cache `{cache_path_str}`: {e}");
+                            } else {
+                                let mut final_path = cache_path.clone();
+                                final_path.pop();
+                                final_path.push(hash);
+                                if let Err(e) = async_fs::rename(cache_path, &final_path).await {
+                                    warn!("failed to rename cache item `{cache_path_str}`: {e}");
+                                } else {
+                                    debug!("cached ok `{}`", final_path.to_string_lossy());
+                                }
+                            }
                         }
                     }
                 }

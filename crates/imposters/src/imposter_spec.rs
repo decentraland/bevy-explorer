@@ -111,7 +111,7 @@ pub async fn load_imposter(
         let mut buf = Vec::default();
         if file.read_to_end(&mut buf).await.is_ok() {
             if let Ok(baked_scene) = serde_json::from_slice::<BakedScene>(&buf) {
-                if required_crc.map_or(true, |crc| crc == baked_scene.crc) {
+                if required_crc.is_none_or(|crc| crc == baked_scene.crc) {
                     return Some(baked_scene);
                 } else {
                     warn!(

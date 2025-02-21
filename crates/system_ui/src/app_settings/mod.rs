@@ -4,7 +4,7 @@ use common::structs::{
     AaSetting, AppConfig, BloomSetting, FogSetting, SettingsTab, ShadowSetting, SsaoSetting,
     WindowSetting,
 };
-use system_bridge::settings::{EnumAppSetting, IntAppSetting};
+use system_bridge::settings::{cache_size::CacheSizeSetting, EnumAppSetting, IntAppSetting};
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
 use crate::profile::SettingsDialog;
@@ -124,6 +124,7 @@ fn set_app_settings_content(
             spawn_int_setting_template::<VideoThreadsSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<MaxAvatarsSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<MaxDownloadsSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<CacheSizeSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<DespawnWorkaroundSetting>(&mut commands, &dui, &config),
             commands
                 .spawn_template(
@@ -188,7 +189,7 @@ fn bump_enum<S: EnumAppSetting, const I: isize>(
     S::apply(&next, params.into_inner(), commands);
 
     let (mut parent, mut entities) = parents.get(caller.0).unwrap();
-    while entities.map_or(true, |e| e.get_named("setting-label").is_none()) {
+    while entities.is_none_or(|e| e.get_named("setting-label").is_none()) {
         (parent, entities) = parents.get(parent.get()).unwrap()
     }
     text.get_mut(entities.unwrap().named("setting-label"))
@@ -216,7 +217,7 @@ fn bump_int<S: IntAppSetting, const I: i32>(
     S::apply(&next, params.into_inner(), commands);
 
     let (mut parent, mut entities) = parents.get(caller.0).unwrap();
-    while entities.map_or(true, |e| e.get_named("marker").is_none()) {
+    while entities.is_none_or(|e| e.get_named("marker").is_none()) {
         (parent, entities) = parents.get(parent.get()).unwrap()
     }
     style
@@ -226,7 +227,7 @@ fn bump_int<S: IntAppSetting, const I: i32>(
         Val::Percent((next.value() - S::min()) as f32 / (S::max() - S::min()) as f32 * 100.0);
 
     let (mut parent, mut entities) = parents.get(caller.0).unwrap();
-    while entities.map_or(true, |e| e.get_named("setting-label").is_none()) {
+    while entities.is_none_or(|e| e.get_named("setting-label").is_none()) {
         (parent, entities) = parents.get(parent.get()).unwrap()
     }
     text.get_mut(entities.unwrap().named("setting-label"))
@@ -324,7 +325,7 @@ fn spawn_int_setting_template<S: IntAppSetting>(
                 S::apply(&next, params.into_inner(), commands);
 
                 let (mut parent, mut entities) = parents.get(caller.0).unwrap();
-                while entities.map_or(true, |e| e.get_named("marker").is_none()) {
+                while entities.is_none_or(|e| e.get_named("marker").is_none()) {
                     (parent, entities) = parents.get(parent.get()).unwrap()
                 }
                 style
@@ -335,7 +336,7 @@ fn spawn_int_setting_template<S: IntAppSetting>(
                 );
 
                 let (mut parent, mut entities) = parents.get(caller.0).unwrap();
-                while entities.map_or(true, |e| e.get_named("setting-label").is_none()) {
+                while entities.is_none_or(|e| e.get_named("setting-label").is_none()) {
                     (parent, entities) = parents.get(parent.get()).unwrap()
                 }
                 text.get_mut(entities.unwrap().named("setting-label"))

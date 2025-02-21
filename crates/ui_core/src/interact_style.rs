@@ -76,7 +76,7 @@ pub fn set_interaction_style(
         maybe_enabled,
     ) in q.iter_mut()
     {
-        let style = if !maybe_enabled.map_or(true, |enabled| enabled.0) {
+        let style = if !maybe_enabled.is_none_or(|enabled| enabled.0) {
             &styles.disabled
         } else if maybe_active.is_some_and(|active| active.0) {
             &styles.active

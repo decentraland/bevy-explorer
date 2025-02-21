@@ -175,9 +175,7 @@ fn run_raycasts(
                     .peekable();
                 let mut best_result: Option<(Entity, RaycastResult)> = None;
                 while scenes.peek().is_some_and(|(_, closest)| {
-                    best_result
-                        .as_ref()
-                        .map_or(true, |(_, br)| br.toi > *closest)
+                    best_result.as_ref().is_none_or(|(_, br)| br.toi > *closest)
                 }) {
                     let scene = scenes.next().unwrap().0;
                     let Ok((scene, context, mut colliders, _)) = scene_context.get_mut(scene)
@@ -192,10 +190,7 @@ fn run_raycasts(
                         mask,
                         true,
                     ) {
-                        if best_result
-                            .as_ref()
-                            .map_or(true, |(_, b)| b.toi > result.toi)
-                        {
+                        if best_result.as_ref().is_none_or(|(_, b)| b.toi > result.toi) {
                             best_result = Some((scene, result));
                         }
                     }

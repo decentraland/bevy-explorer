@@ -184,6 +184,7 @@ pub struct AppConfig {
     pub previous_login: Option<PreviousLogin>,
     pub graphics: GraphicsSettings,
     pub audio: AudioSettings,
+    pub cache_bytes: u64,
     pub scene_threads: usize,
     pub scene_load_distance: f32,
     pub scene_unload_extra_distance: f32,
@@ -213,6 +214,7 @@ impl Default for AppConfig {
             previous_login: None,
             graphics: Default::default(),
             audio: Default::default(),
+            cache_bytes: 1024 * 1024 * 1024 * 10, // 10gb
             scene_threads: 4,
             scene_load_distance: 50.0,
             scene_unload_extra_distance: 15.0,

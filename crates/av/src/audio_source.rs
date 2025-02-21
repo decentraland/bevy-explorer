@@ -271,7 +271,7 @@ fn update_source_volume(
     let mut prev_instances = std::mem::take(&mut *all_instances);
 
     for (ent, maybe_scene, maybe_source, mut emitter, transform) in query.iter_mut() {
-        if maybe_scene.map_or(true, |scene| current_scenes.contains(&scene.root)) {
+        if maybe_scene.is_none_or(|scene| current_scenes.contains(&scene.root)) {
             let (volume, panning) = if maybe_source.is_some_and(|source| source.0.global()) {
                 (
                     maybe_source

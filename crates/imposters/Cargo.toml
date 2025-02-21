@@ -20,7 +20,7 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 urlencoding = { workspace = true }
 bevy_console = { workspace = true }
-async-fs = "2.0"
+async-fs = { workspace = true }
 clap = { workspace = true }
 crc = { workspace = true }
 
