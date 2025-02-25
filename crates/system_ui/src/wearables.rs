@@ -548,7 +548,9 @@ fn get_owned_wearables(
         let client = ipfas.ipfs().client();
         *task = Some(IoTaskPool::get().spawn_compat(async move {
             let response = client
-                .get(format!("{endpoint}/users/{address}/wearables"))
+                .get(format!(
+                    "{endpoint}/users/{address}/wearables?pageSize=10000"
+                ))
                 .send()
                 .await?;
             response
@@ -619,6 +621,7 @@ pub enum Rarity {
     Rare,
     Epic,
     Legendary,
+    Exotic,
     Mythic,
     Unique,
 }
@@ -632,6 +635,7 @@ impl From<&str> for Rarity {
             "rare" => Rarity::Rare,
             "epic" => Rarity::Epic,
             "legendary" => Rarity::Legendary,
+            "exotic" => Rarity::Exotic,
             "mythic" => Rarity::Mythic,
             "unique" => Rarity::Unique,
             _ => {
@@ -665,6 +669,7 @@ impl Rarity {
             Rarity::Rare => Color::srgb(0.6, 1.0, 0.6),
             Rarity::Epic => Color::srgb(0.6, 0.6, 1.0),
             Rarity::Legendary => Color::srgb(0.8, 0.4, 0.8),
+            Rarity::Exotic => Color::srgb(0.4, 0.8, 0.8),
             Rarity::Mythic => Color::srgb(1.0, 0.6, 1.0),
             Rarity::Unique => Color::srgb(1.0, 1.0, 0.4),
         }
