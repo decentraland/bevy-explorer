@@ -950,6 +950,10 @@ fn process_avatar(
                     commands.entity(scene_ent).try_insert(Visibility::Hidden);
                 }
 
+                if name.contains("hands") && def.hides.contains(&WearableCategory::HANDS) {
+                    commands.entity(scene_ent).try_insert(Visibility::Hidden);
+                }
+
                 if let Some(mesh_data) = meshes.get(h_mesh) {
                     let is_skinned = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
                     if is_skinned {

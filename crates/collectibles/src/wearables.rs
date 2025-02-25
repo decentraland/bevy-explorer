@@ -40,8 +40,8 @@ pub type WearableInstance = CollectibleInstance<Wearable>;
 #[derive(Deserialize, Debug, Component, Clone)]
 pub struct WearableMeta {
     pub id: String,
-    pub name: String,
-    pub description: String,
+    pub name: Option<String>,
+    pub description: Option<String>,
     pub thumbnail: String,
     pub rarity: Option<String>,
     pub data: WearableData,
@@ -54,6 +54,7 @@ pub struct WearableData {
     pub representations: Vec<WearableRepresentation>,
     pub hides: Vec<WearableCategory>,
     pub replaces: Vec<WearableCategory>,
+    pub removes_default_hiding: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -163,6 +164,7 @@ impl WearableCategory {
 
     // only used for hiding
     pub const HEAD: WearableCategory = WearableCategory::model("head");
+    pub const HANDS: WearableCategory = WearableCategory::model("hands");
 
     const fn model(slot: &'static str) -> Self {
         Self {
@@ -194,7 +196,6 @@ impl FromStr for WearableCategory {
 
             "upper_body" => Ok(Self::UPPER_BODY),
             "hands_wear" => Ok(Self::HAND_WEAR),
-            "hands" => Ok(Self::HAND_WEAR), // legacy support
             "lower_body" => Ok(Self::LOWER_BODY),
             "feet" => Ok(Self::FEET),
 
@@ -203,10 +204,12 @@ impl FromStr for WearableCategory {
             "earring" => Ok(Self::EARRING),
             "mask" => Ok(Self::MASK),
             "top_head" => Ok(Self::TOP_HEAD),
-            "head" => Ok(Self::HEAD),
             "tiara" => Ok(Self::TIARA),
             "helmet" => Ok(Self::HELMET),
             "skin" => Ok(Self::SKIN),
+
+            "head" => Ok(Self::HEAD),
+            "hands" => Ok(Self::HANDS), // legacy support
 
             _ => {
                 warn!("unrecognised wearable category: {slot}");
@@ -413,7 +416,17 @@ impl AssetLoader for WearableLoader {
                     if category == WearableCategory::UPPER_BODY
                         || hides.contains(&WearableCategory::UPPER_BODY)
                     {
-                        hides.insert(WearableCategory::HAND_WEAR);
+                        // unless it explicitly removes it
+                        if !meta
+                            .data
+                            .removes_default_hiding
+                            .as_ref()
+                            .map(|removes| removes.iter())
+                            .unwrap_or_default()
+                            .any(|r| r == "hands")
+                        {
+                            hides.insert(WearableCategory::HANDS);
+                        }
                     }
 
                     // hide "head" pseudo-category -> hide a bunch of other stuff
@@ -449,8 +462,8 @@ impl AssetLoader for WearableLoader {
                     thumbnail,
                     hash: entity.id,
                     urn: entity.pointers.pop().unwrap_or_default(),
-                    name: meta.name,
-                    description: meta.description,
+                    name: meta.name.unwrap_or_default(),
+                    description: meta.description.unwrap_or_default(),
                     available_representations: representations.keys().cloned().collect(),
                     extra_data: WearableExtraData { category },
                 },
@@ -520,8 +533,8 @@ impl AssetLoader for WearableMetaLoader {
                 thumbnail,
                 hash: entity.id,
                 urn: entity.pointers.pop().unwrap_or_default(),
-                name: meta.name,
-                description: meta.description,
+                name: meta.name.unwrap_or_default(),
+                description: meta.description.unwrap_or_default(),
                 available_representations,
                 extra_data: WearableExtraData { category },
             })
