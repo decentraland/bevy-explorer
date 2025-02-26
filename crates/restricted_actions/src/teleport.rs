@@ -117,7 +117,7 @@ pub fn handle_out_of_world(
         }
     };
 
-    let Some(scene) = live_scenes.0.get(hash) else {
+    let Some(scene) = live_scenes.scenes.get(hash) else {
         debug!("scene resolved but not spawned");
         return;
     };

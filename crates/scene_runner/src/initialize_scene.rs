@@ -612,7 +612,10 @@ pub(crate) fn initialize_scene(
 }
 
 #[derive(Resource, Default)]
-pub struct LiveScenes(pub HashMap<String, Entity>);
+pub struct LiveScenes{
+    pub scenes: HashMap<String, Entity>,
+    pub block_new_scenes: bool,
+}
 
 pub struct PortableSource {
     pub pid: String,
@@ -858,7 +861,7 @@ pub fn process_realm_change(
         if !realm_scene_ids.is_empty() {
             // purge pointers and scenes that are not in the realm list
             live_scenes
-                .0
+                .scenes
                 .retain(|hash, _| realm_scene_ids.contains_key(hash));
         }
 
@@ -1173,7 +1176,7 @@ pub fn process_scene_lifecycle(
     // record which scene entities we should keep
     let keep_entities: HashMap<_, _> = keep_scene_ids
         .iter()
-        .flat_map(|(hash, maybe_urn)| live_scenes.0.get(hash).map(|ent| (ent, (hash, maybe_urn))))
+        .flat_map(|(hash, maybe_urn)| live_scenes.scenes.get(hash).map(|ent| (ent, (hash, maybe_urn))))
         .collect();
 
     let mut existing_ids = HashSet::default();
@@ -1211,7 +1214,7 @@ pub fn process_scene_lifecycle(
     drop(keep_entities);
 
     for removed_hash in removed_hashes {
-        live_scenes.0.remove(removed_hash);
+        live_scenes.scenes.remove(removed_hash);
     }
 
     // if the current scene is still loading, we don't try to spawn any new scenes
@@ -1230,6 +1233,10 @@ pub fn process_scene_lifecycle(
         }
     }
 
+    if live_scenes.block_new_scenes {
+        return;
+    }
+
     // spawn any newly required scenes
     for ((required_scene_hash, maybe_urn), super_user) in required_scene_ids
         .iter()
@@ -1242,7 +1249,7 @@ pub fn process_scene_lifecycle(
             ))
             .id();
         info!("spawning scene {:?} @ ??: {entity:?}", required_scene_hash);
-        live_scenes.0.insert(required_scene_hash.clone(), entity);
+        live_scenes.scenes.insert(required_scene_hash.clone(), entity);
         spawn.send(LoadSceneEvent {
             realm: current_realm.address.clone(),
             entity: Some(entity),

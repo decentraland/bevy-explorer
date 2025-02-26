@@ -125,6 +125,7 @@ num-traits = "0.2"
 async-compat = "0.2"
 async-fs = "2.0"
 base64 = "0.22"
+multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
 
 [dependencies]
 analytics = { workspace = true }

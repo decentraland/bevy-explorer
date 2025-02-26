@@ -296,7 +296,7 @@ pub fn spawn_imposters(
 
     // record live parcels
     let live_parcels = live_scenes
-        .0
+        .scenes
         .values()
         .flat_map(|e| scenes.get(*e).ok().map(|ctx| &ctx.parcels))
         .flatten()
@@ -661,7 +661,7 @@ fn update_imposter_visibility(
     for (mut layers, ready) in q.iter_mut() {
         let show = ready.scene.as_ref().is_none_or(|hash| {
             !live_scenes
-                .0
+                .scenes
                 .get(hash)
                 .is_some_and(|e| transform.get(*e).is_ok_and(|t| t.translation.y == 0.0))
         });

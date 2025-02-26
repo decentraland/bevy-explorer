@@ -27,6 +27,7 @@ num-traits = { workspace = true }
 http = { workspace = true }
 urlencoding = { workspace = true }
 base64 = { workspace = true }
+multihash-codetable = { workspace = true }
 
 deno_core = "0.307"
 deno_console = "0.168"
@@ -42,7 +43,6 @@ num-derive = "0.4.2"
 num = "0.4"
 bytes = "1.4.0"
 ethers-providers = { version = "2", features = ["ws","openssl"] }
-multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
 
 # inspector requirements
 fastwebsockets = { version = "0.4.4", optional = true, features = ["upgrade"] }

@@ -475,7 +475,7 @@ fn spawn_portable(
             false
         };
 
-        let Some(ent) = live_scenes.0.get(hash) else {
+        let Some(ent) = live_scenes.scenes.get(hash) else {
             debug!("no scene yet");
             return true;
         };
@@ -612,7 +612,7 @@ fn list_portables(
             .iter()
             .map(|(hash, source)| {
                 let context = live_scenes
-                    .0
+                    .scenes
                     .get(hash)
                     .and_then(|ent| contexts.get(*ent).ok());
 

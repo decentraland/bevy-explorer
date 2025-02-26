@@ -9618,6 +9618,8 @@ version = "0.1.0"
 dependencies = [
  "analytics",
  "anyhow",
+ "async-std",
+ "base64 0.22.1",
  "bevy",
  "bevy_console",
  "bevy_dui",
@@ -9635,6 +9637,7 @@ dependencies = [
  "input_manager",
  "ipfs",
  "itertools 0.12.1",
+ "multihash-codetable",
  "nalgebra",
  "once_cell",
  "petgraph",

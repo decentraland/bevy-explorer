@@ -1,8 +1,10 @@
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
+use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bevy::{
     asset::io::AssetReader,
     prelude::*,
@@ -10,13 +12,17 @@ use bevy::{
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use clap::builder::StyledStr;
-use common::structs::{PreviewCommand, PrimaryUser};
+use common::{
+    structs::{PreviewCommand, PrimaryUser},
+    util::{project_directories, TaskExt},
+};
 use console::DoAddConsoleCommand;
 use futures_lite::AsyncReadExt;
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},
     EntityDefinition, IpfsAssetServer,
 };
+use multihash_codetable::MultihashDigest;
 
 use crate::{
     initialize_scene::{LiveScenes, PortableScenes},
@@ -32,6 +38,7 @@ impl Plugin for SceneUtilPlugin {
         app.insert_resource(ConsoleRelay { send, recv });
         app.add_console_command::<DebugDumpScene, _>(debug_dump_scene);
         app.add_console_command::<ReloadCommand, _>(reload_command);
+        app.add_console_command::<ClearStoreCommand, _>(clear_store_command);
         app.add_systems(Update, (console_relay, handle_preview_command));
     }
 }
@@ -187,13 +194,91 @@ fn reload_command(
     if let Some(Ok(ReloadCommand { hash })) = input.take() {
         match hash {
             Some(hash) => {
-                live_scenes.0.remove(&hash);
+                live_scenes.scenes.remove(&hash);
                 portables.0.remove(&hash);
             }
             None => {
-                live_scenes.0.clear();
+                live_scenes.scenes.clear();
                 portables.0.clear();
             }
+        }
+    }
+}
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/clear_store")]
+struct ClearStoreCommand {
+    hash: Option<String>,
+}
+
+fn clear_store_command(
+    mut input: ConsoleCommand<ClearStoreCommand>,
+    mut live_scenes: ResMut<LiveScenes>,
+    mut portables: ResMut<PortableScenes>,
+    contexts: Query<&RendererSceneContext>,
+    mut clear_task: Local<Option<Task<()>>>,
+) {
+    if let Some(mut task) = clear_task.take() {
+        if task.complete().is_some() {
+            live_scenes.block_new_scenes = false;
+        } else {
+            *clear_task = Some(task);
+            return;
+        }
+    }
+
+    let mut remove = |parent: &Path, file: &str| {
+        let storage_folder = parent.join(&file);
+
+        if std::fs::exists(&storage_folder).unwrap_or_default() {
+            let temp = parent.join(format!("{file}_delete"));
+            *clear_task = Some(IoTaskPool::get().spawn(async move {
+                loop {
+                    if let Err(e) = std::fs::rename(&storage_folder, &temp) {
+                        warn!("can't rename {temp:?}: {e}");
+                        async_std::task::sleep(Duration::from_millis(500)).await;
+                    } else {
+                        break;
+                    }
+                }
+                error!("renamed!");
+
+                loop {
+                    if let Err(e) = std::fs::remove_dir_all(&temp) {
+                        warn!("can't delete {temp:?}: {e}");
+                        async_std::task::sleep(Duration::from_millis(500)).await;
+                    } else {
+                        break;
+                    }
+                }
+                error!("deleted!");
+            }));
+        }
+    };
+
+    if let Some(Ok(ClearStoreCommand { hash })) = input.take() {
+        if let Some(hash) = hash {
+            if let Some(ctx) = live_scenes
+                .scenes
+                .remove(&hash)
+                .and_then(|e| contexts.get(e).ok())
+            {
+                let storage_digest =
+                    multihash_codetable::Code::Sha2_256.digest(ctx.storage_root.as_bytes());
+                let storage_hash = BASE64_URL_SAFE_NO_PAD.encode(storage_digest.digest());
+                remove(
+                    &project_directories().data_local_dir().join("LocalStorage"),
+                    &storage_hash,
+                );
+            }
+            live_scenes.block_new_scenes = clear_task.is_some();
+            portables.0.remove(&hash);
+        } else {
+            // all
+            live_scenes.scenes.clear();
+            remove(project_directories().data_local_dir(), "LocalStorage");
+            live_scenes.block_new_scenes = clear_task.is_some();
+            portables.0.clear();
         }
     }
 }
@@ -208,13 +293,13 @@ fn handle_preview_command(
     for command in events.read() {
         match command {
             PreviewCommand::ReloadScene { hash } => {
-                if let Some(ctx) = live_scenes.0.get(hash).and_then(|e| scenes.get(*e).ok()) {
+                if let Some(ctx) = live_scenes.scenes.get(hash).and_then(|e| scenes.get(*e).ok()) {
                     if ctx.inspected {
                         toaster.add_toast("reload-inspected", "Scene has updated but an inspector is attached. To force the reload type \"/reload\" in the chat window");
                         continue;
                     }
                 };
-                live_scenes.0.remove(hash);
+                live_scenes.scenes.remove(hash);
                 portables.0.remove(hash);
             }
         }

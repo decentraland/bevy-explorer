@@ -26,7 +26,7 @@ reqwest = { workspace = true }
 urlencoding = { workspace = true }
 async-compat = { workspace = true }
 async-fs = { workspace = true }
-multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
+multihash-codetable = { workspace = true }
 base64 = { workspace = true }
 
 url = "2.4.0"
