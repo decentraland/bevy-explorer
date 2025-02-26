@@ -48,6 +48,7 @@ pub struct WearableMeta {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct WearableData {
     pub tags: Vec<String>,
     pub category: WearableCategory,
