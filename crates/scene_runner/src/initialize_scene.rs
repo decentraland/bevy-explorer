@@ -361,7 +361,7 @@ pub(crate) fn load_scene_javascript(
             None => {
                 let about_url = ipfas.ipfs().about_url().unwrap();
                 format!("{about_url}:{}:{}", base.x, base.y)
-            },
+            }
         };
 
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?}), storage root: {storage_root}");

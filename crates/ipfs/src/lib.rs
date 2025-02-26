@@ -538,7 +538,9 @@ pub struct CurrentRealm {
 pub fn change_realm(
     mut change_realm_requests: EventReader<ChangeRealmEvent>,
     ipfs: Res<IpfsResource>,
-    mut realm_change: Local<Option<tokio::sync::watch::Receiver<Option<(String, String, ServerAbout)>>>>,
+    mut realm_change: Local<
+        Option<tokio::sync::watch::Receiver<Option<(String, String, ServerAbout)>>>,
+    >,
     mut current_realm: ResMut<CurrentRealm>,
     mut print: EventWriter<PrintConsoleLine>,
 ) {
@@ -732,7 +734,11 @@ impl IpfsIo {
         write.base_url = String::default();
         write.about = Some(about.clone());
         self.realm_config_sender
-            .send(Some(("manual value".to_owned(), "manual value".to_owned(), about)))
+            .send(Some((
+                "manual value".to_owned(),
+                "manual value".to_owned(),
+                about,
+            )))
             .expect("channel closed");
     }
 

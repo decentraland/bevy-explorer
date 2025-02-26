@@ -7,7 +7,6 @@ use std::{
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bevy::utils::tracing::{debug, error, info_span};
-use multihash_codetable::MultihashDigest;
 use common::util::project_directories;
 use deno_core::{
     ascii_str,
@@ -15,6 +14,7 @@ use deno_core::{
     include_js_files, op2, v8, Extension, JsRuntime, OpDecl, OpState, PollEventLoopOptions,
     RuntimeOptions,
 };
+use multihash_codetable::MultihashDigest;
 use system_bridge::SystemApi;
 use tokio::sync::{mpsc::Receiver, Mutex};
 
@@ -88,11 +88,14 @@ pub fn create_runtime(
 
     let storage_digest = multihash_codetable::Code::Sha2_256.digest(storage_root.as_bytes());
     let storage_hash = BASE64_URL_SAFE_NO_PAD.encode(storage_digest.digest());
-    let storage_folder = project_directories().data_local_dir().join("LocalStorage").join(storage_hash);
+    let storage_folder = project_directories()
+        .data_local_dir()
+        .join("LocalStorage")
+        .join(storage_hash);
     if let Err(e) = std::fs::create_dir_all(&storage_folder) {
         error!("failed to create localstorage folder: {e}");
     }
-    let webstorage = deno_webstorage::deno_webstorage::init_ops_and_esm(Some(storage_folder.into()));
+    let webstorage = deno_webstorage::deno_webstorage::init_ops_and_esm(Some(storage_folder));
 
     let mut ops = vec![op_require(), op_log(), op_error()];
 
@@ -163,7 +166,9 @@ pub fn create_runtime(
         } else {
             None
         },
-        extensions: vec![webidl, url, console, web, net, fetch, websocket, webstorage, ext],
+        extensions: vec![
+            webidl, url, console, web, net, fetch, websocket, webstorage, ext,
+        ],
         inspector: inspect,
         ..Default::default()
     });
@@ -225,7 +230,8 @@ pub(crate) fn scene_thread(
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
 ) {
     let scene_context = CrdtContext::new(scene_id, scene_hash, testing, preview);
-    let (mut runtime, inspector) = create_runtime(false, inspect, super_user.is_some(), &storage_root);
+    let (mut runtime, inspector) =
+        create_runtime(false, inspect, super_user.is_some(), &storage_root);
 
     // store handle
     let vm_handle = runtime.v8_isolate().thread_safe_handle();
