@@ -228,30 +228,20 @@ fn clear_store_command(
     }
 
     let mut remove = |parent: &Path, file: &str| {
-        let storage_folder = parent.join(&file);
+        let storage_folder = parent.join(file);
 
         if std::fs::exists(&storage_folder).unwrap_or_default() {
             let temp = parent.join(format!("{file}_delete"));
             *clear_task = Some(IoTaskPool::get().spawn(async move {
-                loop {
-                    if let Err(e) = std::fs::rename(&storage_folder, &temp) {
-                        warn!("can't rename {temp:?}: {e}");
-                        async_std::task::sleep(Duration::from_millis(500)).await;
-                    } else {
-                        break;
-                    }
+                while let Err(e) = std::fs::rename(&storage_folder, &temp) {
+                    warn!("can't rename {temp:?}: {e}");
+                    async_std::task::sleep(Duration::from_millis(500)).await;
                 }
-                error!("renamed!");
 
-                loop {
-                    if let Err(e) = std::fs::remove_dir_all(&temp) {
-                        warn!("can't delete {temp:?}: {e}");
-                        async_std::task::sleep(Duration::from_millis(500)).await;
-                    } else {
-                        break;
-                    }
+                while let Err(e) = std::fs::remove_dir_all(&temp) {
+                    warn!("can't delete {temp:?}: {e}");
+                    async_std::task::sleep(Duration::from_millis(500)).await;
                 }
-                error!("deleted!");
             }));
         }
     };
@@ -293,7 +283,11 @@ fn handle_preview_command(
     for command in events.read() {
         match command {
             PreviewCommand::ReloadScene { hash } => {
-                if let Some(ctx) = live_scenes.scenes.get(hash).and_then(|e| scenes.get(*e).ok()) {
+                if let Some(ctx) = live_scenes
+                    .scenes
+                    .get(hash)
+                    .and_then(|e| scenes.get(*e).ok())
+                {
                     if ctx.inspected {
                         toaster.add_toast("reload-inspected", "Scene has updated but an inspector is attached. To force the reload type \"/reload\" in the chat window");
                         continue;

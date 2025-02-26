@@ -612,7 +612,7 @@ pub(crate) fn initialize_scene(
 }
 
 #[derive(Resource, Default)]
-pub struct LiveScenes{
+pub struct LiveScenes {
     pub scenes: HashMap<String, Entity>,
     pub block_new_scenes: bool,
 }
@@ -1176,7 +1176,12 @@ pub fn process_scene_lifecycle(
     // record which scene entities we should keep
     let keep_entities: HashMap<_, _> = keep_scene_ids
         .iter()
-        .flat_map(|(hash, maybe_urn)| live_scenes.scenes.get(hash).map(|ent| (ent, (hash, maybe_urn))))
+        .flat_map(|(hash, maybe_urn)| {
+            live_scenes
+                .scenes
+                .get(hash)
+                .map(|ent| (ent, (hash, maybe_urn)))
+        })
         .collect();
 
     let mut existing_ids = HashSet::default();
@@ -1249,7 +1254,9 @@ pub fn process_scene_lifecycle(
             ))
             .id();
         info!("spawning scene {:?} @ ??: {entity:?}", required_scene_hash);
-        live_scenes.scenes.insert(required_scene_hash.clone(), entity);
+        live_scenes
+            .scenes
+            .insert(required_scene_hash.clone(), entity);
         spawn.send(LoadSceneEvent {
             realm: current_realm.address.clone(),
             entity: Some(entity),
