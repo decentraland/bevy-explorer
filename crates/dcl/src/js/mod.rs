@@ -92,9 +92,6 @@ pub fn create_runtime(
         .data_local_dir()
         .join("LocalStorage")
         .join(storage_hash);
-    if let Err(e) = std::fs::create_dir_all(&storage_folder) {
-        error!("failed to create localstorage folder: {e}");
-    }
     let webstorage = deno_webstorage::deno_webstorage::init_ops_and_esm(Some(storage_folder));
 
     let mut ops = vec![op_require(), op_log(), op_error()];
