@@ -27,6 +27,7 @@ urlencoding = { workspace = true }
 async-compat = { workspace = true }
 async-fs = { workspace = true }
 multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
+base64 = { workspace = true }
 
 url = "2.4.0"
 downcast-rs = "1.2"

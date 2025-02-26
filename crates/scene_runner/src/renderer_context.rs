@@ -36,6 +36,7 @@ type LiveEntityTable = Vec<(u16, Option<Entity>)>;
 pub struct RendererSceneContext {
     pub scene_id: SceneId,
     pub hash: String,
+    pub storage_root: String,
     pub is_portable: bool,
     pub title: String,
     pub base: IVec2,
@@ -99,6 +100,7 @@ impl RendererSceneContext {
     pub fn new(
         scene_id: SceneId,
         hash: String,
+        storage_root: String,
         is_portable: bool,
         title: String,
         base: IVec2,
@@ -115,6 +117,7 @@ impl RendererSceneContext {
         let mut new_context = Self {
             scene_id,
             hash,
+            storage_root,
             is_portable,
             title,
             base,

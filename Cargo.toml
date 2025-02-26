@@ -124,6 +124,7 @@ crc = "3"
 num-traits = "0.2"
 async-compat = "0.2"
 async-fs = "2.0"
+base64 = "0.22"
 
 [dependencies]
 analytics = { workspace = true }
@@ -187,6 +188,7 @@ ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-l
 deno_core = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
 serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
 deno_ops = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
+
 deno_console = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_fetch = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_net = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
@@ -194,6 +196,7 @@ deno_url = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_webidl = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_web = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_websocket = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
+deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 
 # [patch."https://github.com/robtfm/bevy_dui"]
 # bevy_dui = { path = "../bevy_dui" }

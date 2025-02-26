@@ -260,7 +260,7 @@ pub(crate) fn load_scene_javascript(
             continue;
         };
 
-        let is_portable = portable_scenes.0.contains_key(&definition.id);
+        let portable = portable_scenes.0.get(&definition.id);
 
         let (base_x, base_y) = meta.scene.base.split_once(',').unwrap();
         let base_x = base_x.parse::<i32>().unwrap();
@@ -354,10 +354,22 @@ pub(crate) fn load_scene_javascript(
             .display
             .and_then(|display| display.title)
             .unwrap_or("???".to_owned());
+
+        // portable PID, else realm + parcel
+        let storage_root = match &portable {
+            Some(portable) => portable.pid.clone(),
+            None => {
+                let about_url = ipfas.ipfs().about_url().unwrap();
+                format!("{about_url}:{}:{}", base.x, base.y)
+            },
+        };
+
+        info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?}), storage root: {storage_root}");
         let mut renderer_context = RendererSceneContext::new(
             scene_id,
             definition.id.clone(),
-            is_portable,
+            storage_root,
+            portable.is_some(),
             title,
             base,
             parcels,
@@ -370,7 +382,6 @@ pub(crate) fn load_scene_javascript(
             if is_sdk7 { "sdk7" } else { "sdk6" },
             false,
         );
-        info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?})");
 
         scene_updates.scene_ids.insert(scene_id, root);
 
@@ -582,6 +593,7 @@ pub(crate) fn initialize_scene(
             ipfs.clone(),
             wallet.clone(),
             scene_id,
+            context.storage_root.clone(),
             inspected,
             testing_data.test_mode,
             preview_mode.is_preview,

@@ -38,6 +38,7 @@ use std::{
     str::FromStr,
 };
 
+use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use multihash_codetable::MultihashDigest;
 
 use bevy::log::error;
@@ -258,12 +259,12 @@ where
                     .ok_or(anyhow::anyhow!("url specified malformed (no '.')"))?;
 
                 let digest = multihash_codetable::Code::Sha2_256.digest(url.as_bytes());
-                let hash = urlencoding::encode_binary(digest.digest());
+                let hash = BASE64_URL_SAFE_NO_PAD.encode(digest.digest());
 
                 Ok(IpfsType::UrlCached {
                     url: url.to_owned(),
                     ext: ext.to_owned(),
-                    hash: hash.into_owned(),
+                    hash,
                 })
             }
             "$urlu" => {
@@ -398,14 +399,14 @@ impl IpfsPath {
 
     pub fn new_from_url(url: &str, ext: &str) -> Self {
         let digest = multihash_codetable::Code::Sha2_256.digest(url.as_bytes());
-        let hash = urlencoding::encode_binary(digest.digest());
+        let hash = BASE64_URL_SAFE_NO_PAD.encode(digest.digest());
         Self {
             key_values: Default::default(),
             ipfs_type: {
                 IpfsType::UrlCached {
                     url: url.to_owned(),
                     ext: ext.to_owned(),
-                    hash: hash.into_owned(),
+                    hash,
                 }
             },
         }
