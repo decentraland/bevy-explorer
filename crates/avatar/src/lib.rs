@@ -581,7 +581,7 @@ fn update_render_avatar(
         // take only the first item for each category and build a category map
         let mut wearables = HashMap::default();
         for (category, data) in specified_wearables {
-            if !wearables.contains_key(&category) {
+            if !wearables.contains_key(&category) && category != WearableCategory::BODY_SHAPE {
                 wearables.insert(category, data);
             }
         }
