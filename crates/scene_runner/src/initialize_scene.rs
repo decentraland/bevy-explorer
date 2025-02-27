@@ -287,25 +287,14 @@ pub(crate) fn load_scene_javascript(
             })
             .collect();
 
-        let size = (extent_max - extent_min).as_uvec2();
-        let regions = scene_regions(parcels.clone().into_iter());
-        let bounds = regions
-            .into_iter()
-            .map(|region| BoundRegion::new(region.min, region.max, region.count))
-            .collect::<Vec<_>>();
-
-        for bound in &bounds {
-            if bound.world_min().z > 10000.0 {
-                println!("wtf");
-                println!("parcels: {:?}", parcels);
-                for region in scene_regions(parcels.clone().into_iter()) {
-                    println!("region: {:?}", region);
-                }
-                println!("bound@: {:?}", bound);
-                println!("world_min: {:?}", bound.world_min());
-                panic!();
-            }
-        }
+        let bounds = if portable.is_some() {
+            Vec::default()
+        } else {
+            scene_regions(parcels.clone().into_iter())
+                .into_iter()
+                .map(|region| BoundRegion::new(region.min, region.max, region.count))
+                .collect::<Vec<_>>()
+        };
 
         // get main.crdt
         let maybe_serialized_crdt = match crdt {
@@ -376,7 +365,6 @@ pub(crate) fn load_scene_javascript(
             bounds,
             meta.spawn_points.clone().unwrap_or_default(),
             root,
-            size,
             1.0,
             config.scene_log_to_console,
             if is_sdk7 { "sdk7" } else { "sdk6" },

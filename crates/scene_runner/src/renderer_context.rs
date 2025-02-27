@@ -45,7 +45,6 @@ pub struct RendererSceneContext {
     pub bounds: Vec<BoundRegion>,
     pub spawn_points: Vec<SpawnPoint>,
     pub priority: f32,
-    pub size: UVec2,
 
     // entities waiting to be born in bevy
     pub nascent: HashSet<SceneEntityId>,
@@ -108,7 +107,6 @@ impl RendererSceneContext {
         bounds: Vec<BoundRegion>,
         spawn_points: Vec<SpawnPoint>,
         root: Entity,
-        size: UVec2,
         priority: f32,
         log_to_stdout: bool,
         sdk_version: &'static str,
@@ -124,7 +122,6 @@ impl RendererSceneContext {
             parcels,
             bounds,
             spawn_points,
-            size,
             nascent: Default::default(),
             death_row: Default::default(),
             live_entities: Vec::from_iter(std::iter::repeat((0, None)).take(u16::MAX as usize)),
