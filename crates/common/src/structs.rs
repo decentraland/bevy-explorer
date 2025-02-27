@@ -513,6 +513,7 @@ pub struct SceneDisplay {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SceneMeta {
+    pub owner: Option<String>,
     pub display: Option<SceneDisplay>,
     pub main: String,
     pub scene: SceneMetaScene,

@@ -36,6 +36,7 @@ type LiveEntityTable = Vec<(u16, Option<Entity>)>;
 pub struct RendererSceneContext {
     pub scene_id: SceneId,
     pub hash: String,
+    pub storage_root: String,
     pub is_portable: bool,
     pub title: String,
     pub base: IVec2,
@@ -44,7 +45,6 @@ pub struct RendererSceneContext {
     pub bounds: Vec<BoundRegion>,
     pub spawn_points: Vec<SpawnPoint>,
     pub priority: f32,
-    pub size: UVec2,
 
     // entities waiting to be born in bevy
     pub nascent: HashSet<SceneEntityId>,
@@ -99,6 +99,7 @@ impl RendererSceneContext {
     pub fn new(
         scene_id: SceneId,
         hash: String,
+        storage_root: String,
         is_portable: bool,
         title: String,
         base: IVec2,
@@ -106,7 +107,6 @@ impl RendererSceneContext {
         bounds: Vec<BoundRegion>,
         spawn_points: Vec<SpawnPoint>,
         root: Entity,
-        size: UVec2,
         priority: f32,
         log_to_stdout: bool,
         sdk_version: &'static str,
@@ -115,13 +115,13 @@ impl RendererSceneContext {
         let mut new_context = Self {
             scene_id,
             hash,
+            storage_root,
             is_portable,
             title,
             base,
             parcels,
             bounds,
             spawn_points,
-            size,
             nascent: Default::default(),
             death_row: Default::default(),
             live_entities: Vec::from_iter(std::iter::repeat((0, None)).take(u16::MAX as usize)),

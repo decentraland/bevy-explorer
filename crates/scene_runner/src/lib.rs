@@ -480,7 +480,7 @@ impl ContainingScene<'_, '_> {
         let parcel = vec3_to_parcel(position);
 
         if let Some(PointerResult::Exists { hash, .. }) = self.pointers.get(parcel) {
-            self.live_scenes.0.get(hash).copied()
+            self.live_scenes.scenes.get(hash).copied()
         } else {
             None
         }
@@ -514,7 +514,7 @@ impl ContainingScene<'_, '_> {
         let mut results = HashSet::default();
 
         if let Some(PointerResult::Exists { hash, .. }) = self.pointers.get(parcel) {
-            if let Some(scene) = self.live_scenes.0.get(hash) {
+            if let Some(scene) = self.live_scenes.scenes.get(hash) {
                 results.insert(*scene);
             }
         }
@@ -531,7 +531,7 @@ impl ContainingScene<'_, '_> {
                 if !source.super_user && only_super {
                     None
                 } else {
-                    self.live_scenes.0.get(hash)
+                    self.live_scenes.scenes.get(hash)
                 }
             })
             .copied()
@@ -577,7 +577,7 @@ impl ContainingScene<'_, '_> {
                 if let Some(PointerResult::Exists { hash, .. }) =
                     self.pointers.get(IVec2::new(parcel_x, parcel_y))
                 {
-                    if let Some(scene) = self.live_scenes.0.get(hash).copied() {
+                    if let Some(scene) = self.live_scenes.scenes.get(hash).copied() {
                         results.insert(scene);
                     }
                 }
@@ -595,7 +595,7 @@ impl ContainingScene<'_, '_> {
             .portable_scenes
             .0
             .iter()
-            .flat_map(|(hash, _)| self.live_scenes.0.get(hash))
+            .flat_map(|(hash, _)| self.live_scenes.scenes.get(hash))
             .map(|ent| (*ent, 0.0))
             .collect();
 

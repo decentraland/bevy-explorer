@@ -103,7 +103,7 @@ fn make_scene_oven(
         *start_tick = Some((hash.clone(), tick.0));
     }
 
-    if let Some(entity) = live_scenes.0.get(hash) {
+    if let Some(entity) = live_scenes.scenes.get(hash) {
         let Ok((mut context, mut transform)) = scenes.get_mut(*entity) else {
             if tick.0 > start_tick.as_ref().unwrap().1 + 1000 {
                 warn!("scene load failed, spawning dummy oven");
@@ -221,7 +221,7 @@ fn bake_scene_imposters(
 ) {
     if let Ok((baking_ent, mut oven)) = baking.get_single_mut() {
         let current_scene_ent = {
-            let Some(entity) = live_scenes.0.get(&oven.hash) else {
+            let Some(entity) = live_scenes.scenes.get(&oven.hash) else {
                 return;
             };
             *entity
@@ -239,7 +239,7 @@ fn bake_scene_imposters(
 
                 // delete the scene since we messed with it a lot to get it stable
                 commands.entity(current_scene_ent).despawn_recursive();
-                live_scenes.0.remove(&oven.hash);
+                live_scenes.scenes.remove(&oven.hash);
 
                 for parcel in std::mem::take(&mut oven.all_parcels).drain() {
                     for ingredient in [true, false] {
@@ -668,7 +668,7 @@ fn pick_imposter_to_bake(
             missing
                 .0
                 .as_ref()
-                .map_or(imposter.level > 0, |m| !live_scenes.0.contains_key(m))
+                .map_or(imposter.level > 0, |m| !live_scenes.scenes.contains_key(m))
         })
         .collect::<Vec<_>>();
 
@@ -693,7 +693,7 @@ fn pick_imposter_to_bake(
                     if let Some(PointerResult::Exists { hash, .. }) =
                         scene_pointers.get(IVec2::new(x, y))
                     {
-                        if live_scenes.0.get(hash).is_some() {
+                        if live_scenes.scenes.get(hash).is_some() {
                             // skip due to live scene
                             continue 'imposter;
                         }

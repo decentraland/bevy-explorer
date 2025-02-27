@@ -325,7 +325,7 @@ impl IpfsAssetServer<'_, '_> {
             .realm_config_receiver
             .borrow()
             .as_ref()
-            .and_then(|(_, about)| about.content.as_ref())
+            .and_then(|(_, _, about)| about.content.as_ref())
             .map(|content| format!("{}/entities/active", &content.public_url))
     }
 
@@ -527,6 +527,7 @@ pub struct ChangeRealmEvent {
 
 #[derive(Resource, Default, Debug)]
 pub struct CurrentRealm {
+    pub about_url: String,
     pub address: String,
     pub config: ServerConfiguration,
     pub comms: Option<CommsConfig>,
@@ -537,7 +538,9 @@ pub struct CurrentRealm {
 pub fn change_realm(
     mut change_realm_requests: EventReader<ChangeRealmEvent>,
     ipfs: Res<IpfsResource>,
-    mut realm_change: Local<Option<tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>>>,
+    mut realm_change: Local<
+        Option<tokio::sync::watch::Receiver<Option<(String, String, ServerAbout)>>>,
+    >,
     mut current_realm: ResMut<CurrentRealm>,
     mut print: EventWriter<PrintConsoleLine>,
 ) {
@@ -545,8 +548,9 @@ pub fn change_realm(
         None => *realm_change = Some(ipfs.realm_config_receiver.clone()),
         Some(ref mut realm_change) => {
             if realm_change.has_changed().unwrap_or_default() {
-                if let Some((realm, about)) = &*realm_change.borrow_and_update() {
+                if let Some((about_url, realm, about)) = &*realm_change.borrow_and_update() {
                     *current_realm = CurrentRealm {
+                        about_url: about_url.clone(),
                         address: realm.clone(),
                         config: about.configurations.clone().unwrap_or_default(),
                         comms: about.comms.clone(),
@@ -598,6 +602,7 @@ pub struct IpfsEntity {
 
 #[derive(Default)]
 pub struct IpfsContext {
+    about_url: String,
     base_url: String,
     entities: HashMap<String, IpfsEntity>,
     about: Option<ServerAbout>,
@@ -616,8 +621,8 @@ pub struct IpfsIo {
     is_preview: bool, // determines whether we always retry failed assets immediately
     default_io: Box<dyn ErasedAssetReader>,
     default_fs_path: PathBuf,
-    realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, ServerAbout)>>,
-    realm_config_sender: tokio::sync::watch::Sender<Option<(String, ServerAbout)>>,
+    realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, String, ServerAbout)>>,
+    realm_config_sender: tokio::sync::watch::Sender<Option<(String, String, ServerAbout)>>,
     context: RwLock<IpfsContext>,
     request_slots: tokio::sync::Semaphore,
     reqno: AtomicU16,
@@ -719,7 +724,7 @@ impl IpfsIo {
         if let Err(e) = res {
             error!("failed to set realm: {e}");
             self.realm_config_sender
-                .send(Some((new_realm, Default::default())))
+                .send(Some((new_realm.clone(), new_realm, Default::default())))
                 .expect("channel closed");
         }
     }
@@ -729,7 +734,11 @@ impl IpfsIo {
         write.base_url = String::default();
         write.about = Some(about.clone());
         self.realm_config_sender
-            .send(Some(("manual value".to_owned(), about)))
+            .send(Some((
+                "manual value".to_owned(),
+                "manual value".to_owned(),
+                about,
+            )))
             .expect("channel closed");
     }
 
@@ -787,9 +796,10 @@ impl IpfsIo {
             .content_url()
             .map(|c| c.strip_suffix("/content/").unwrap_or(c));
         write.base_url = base_url.unwrap_or(&new_realm).to_owned();
+        write.about_url = new_realm.clone();
         write.about = Some(about.clone());
         self.realm_config_sender
-            .send(Some((write.base_url.clone(), about)))
+            .send(Some((new_realm, write.base_url.clone(), about)))
             .expect("channel closed");
         Ok(())
     }
@@ -847,7 +857,7 @@ impl IpfsIo {
                 .realm_config_receiver
                 .borrow()
                 .as_ref()
-                .and_then(|(_, about)| about.content.as_ref())
+                .and_then(|(_, _, about)| about.content.as_ref())
                 .map(|content| content.public_url.to_owned()),
         }
         .map(|url| format!("{url}/entities/active"));
@@ -975,11 +985,18 @@ impl IpfsIo {
         res
     }
 
+    pub fn about_url(&self) -> Option<String> {
+        self.realm_config_receiver
+            .borrow()
+            .as_ref()
+            .map(|(about_url, _, _)| about_url.clone())
+    }
+
     pub fn lambda_endpoint(&self) -> Option<String> {
         self.realm_config_receiver
             .borrow()
             .as_ref()
-            .and_then(|(_, about)| about.lambdas.as_ref())
+            .and_then(|(_, _, about)| about.lambdas.as_ref())
             .map(|l| l.public_url.clone())
     }
 
@@ -987,7 +1004,7 @@ impl IpfsIo {
         self.realm_config_receiver
             .borrow()
             .as_ref()
-            .and_then(|(_, about)| about.content.as_ref())
+            .and_then(|(_, _, about)| about.content.as_ref())
             .map(|content| format!("{}/contents/", &content.public_url))
     }
 
@@ -995,7 +1012,7 @@ impl IpfsIo {
         self.realm_config_receiver
             .borrow()
             .as_ref()
-            .and_then(|(_, about)| about.content.as_ref())
+            .and_then(|(_, _, about)| about.content.as_ref())
             .map(|content| format!("{}/entities/", &content.public_url))
     }
 }

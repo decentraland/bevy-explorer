@@ -260,7 +260,7 @@ pub(crate) fn load_scene_javascript(
             continue;
         };
 
-        let is_portable = portable_scenes.0.contains_key(&definition.id);
+        let portable = portable_scenes.0.get(&definition.id);
 
         let (base_x, base_y) = meta.scene.base.split_once(',').unwrap();
         let base_x = base_x.parse::<i32>().unwrap();
@@ -287,25 +287,14 @@ pub(crate) fn load_scene_javascript(
             })
             .collect();
 
-        let size = (extent_max - extent_min).as_uvec2();
-        let regions = scene_regions(parcels.clone().into_iter());
-        let bounds = regions
-            .into_iter()
-            .map(|region| BoundRegion::new(region.min, region.max, region.count))
-            .collect::<Vec<_>>();
-
-        for bound in &bounds {
-            if bound.world_min().z > 10000.0 {
-                println!("wtf");
-                println!("parcels: {:?}", parcels);
-                for region in scene_regions(parcels.clone().into_iter()) {
-                    println!("region: {:?}", region);
-                }
-                println!("bound@: {:?}", bound);
-                println!("world_min: {:?}", bound.world_min());
-                panic!();
-            }
-        }
+        let bounds = if portable.is_some() {
+            Vec::default()
+        } else {
+            scene_regions(parcels.clone().into_iter())
+                .into_iter()
+                .map(|region| BoundRegion::new(region.min, region.max, region.count))
+                .collect::<Vec<_>>()
+        };
 
         // get main.crdt
         let maybe_serialized_crdt = match crdt {
@@ -354,23 +343,33 @@ pub(crate) fn load_scene_javascript(
             .display
             .and_then(|display| display.title)
             .unwrap_or("???".to_owned());
+
+        // portable PID, else realm + parcel
+        let storage_root = match &portable {
+            Some(portable) => portable.pid.clone(),
+            None => {
+                let about_url = ipfas.ipfs().about_url().unwrap();
+                format!("{about_url}:{}:{}", base.x, base.y)
+            }
+        };
+
+        info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?}), storage root: {storage_root}");
         let mut renderer_context = RendererSceneContext::new(
             scene_id,
             definition.id.clone(),
-            is_portable,
+            storage_root,
+            portable.is_some(),
             title,
             base,
             parcels,
             bounds,
             meta.spawn_points.clone().unwrap_or_default(),
             root,
-            size,
             1.0,
             config.scene_log_to_console,
             if is_sdk7 { "sdk7" } else { "sdk6" },
             false,
         );
-        info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?})");
 
         scene_updates.scene_ids.insert(scene_id, root);
 
@@ -582,6 +581,7 @@ pub(crate) fn initialize_scene(
             ipfs.clone(),
             wallet.clone(),
             scene_id,
+            context.storage_root.clone(),
             inspected,
             testing_data.test_mode,
             preview_mode.is_preview,
@@ -600,7 +600,10 @@ pub(crate) fn initialize_scene(
 }
 
 #[derive(Resource, Default)]
-pub struct LiveScenes(pub HashMap<String, Entity>);
+pub struct LiveScenes {
+    pub scenes: HashMap<String, Entity>,
+    pub block_new_scenes: bool,
+}
 
 pub struct PortableSource {
     pub pid: String,
@@ -846,7 +849,7 @@ pub fn process_realm_change(
         if !realm_scene_ids.is_empty() {
             // purge pointers and scenes that are not in the realm list
             live_scenes
-                .0
+                .scenes
                 .retain(|hash, _| realm_scene_ids.contains_key(hash));
         }
 
@@ -1161,7 +1164,12 @@ pub fn process_scene_lifecycle(
     // record which scene entities we should keep
     let keep_entities: HashMap<_, _> = keep_scene_ids
         .iter()
-        .flat_map(|(hash, maybe_urn)| live_scenes.0.get(hash).map(|ent| (ent, (hash, maybe_urn))))
+        .flat_map(|(hash, maybe_urn)| {
+            live_scenes
+                .scenes
+                .get(hash)
+                .map(|ent| (ent, (hash, maybe_urn)))
+        })
         .collect();
 
     let mut existing_ids = HashSet::default();
@@ -1199,7 +1207,7 @@ pub fn process_scene_lifecycle(
     drop(keep_entities);
 
     for removed_hash in removed_hashes {
-        live_scenes.0.remove(removed_hash);
+        live_scenes.scenes.remove(removed_hash);
     }
 
     // if the current scene is still loading, we don't try to spawn any new scenes
@@ -1218,6 +1226,10 @@ pub fn process_scene_lifecycle(
         }
     }
 
+    if live_scenes.block_new_scenes {
+        return;
+    }
+
     // spawn any newly required scenes
     for ((required_scene_hash, maybe_urn), super_user) in required_scene_ids
         .iter()
@@ -1230,7 +1242,9 @@ pub fn process_scene_lifecycle(
             ))
             .id();
         info!("spawning scene {:?} @ ??: {entity:?}", required_scene_hash);
-        live_scenes.0.insert(required_scene_hash.clone(), entity);
+        live_scenes
+            .scenes
+            .insert(required_scene_hash.clone(), entity);
         spawn.send(LoadSceneEvent {
             realm: current_realm.address.clone(),
             entity: Some(entity),
