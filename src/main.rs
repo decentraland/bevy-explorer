@@ -322,6 +322,7 @@ fn main() {
                 .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
                     preview: is_preview,
                     starting_realm: Some(final_config.server.clone()),
+                    content_server_override: None,
                     assets_root: Default::default(),
                     num_slots: final_config.max_concurrent_remotes,
                 })

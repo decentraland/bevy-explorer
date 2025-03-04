@@ -145,6 +145,7 @@ fn update_server_list(
                                         commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                                         e.send(ChangeRealmEvent {
                                             new_realm: server.url.clone(),
+                                            content_server_override: None,
                                         });
                                         commands.entity(root_id).despawn_recursive();
                                     }),

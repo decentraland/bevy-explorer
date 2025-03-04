@@ -427,6 +427,7 @@ pub struct IpfsIoPlugin {
     pub preview: bool,
     pub assets_root: Option<String>,
     pub starting_realm: Option<String>,
+    pub content_server_override: Option<String>,
     pub num_slots: usize,
 }
 
@@ -492,9 +493,10 @@ impl Plugin for IpfsIoPlugin {
         if let Some(realm) = &self.starting_realm {
             let ipfs = app.world().resource::<IpfsResource>().clone();
             let realm = realm.clone();
+            let content_server_override = self.content_server_override.clone();
             IoTaskPool::get()
                 .spawn_compat(async move {
-                    ipfs.set_realm(realm).await;
+                    ipfs.set_realm(realm, content_server_override).await;
                 })
                 .detach();
         }
@@ -506,6 +508,7 @@ impl Plugin for IpfsIoPlugin {
 #[command(name = "/changerealm")]
 struct ChangeRealmCommand {
     new_realm: String,
+    content_server_override: Option<String>,
 }
 
 fn change_realm_command(
@@ -515,6 +518,7 @@ fn change_realm_command(
     if let Some(Ok(command)) = input.take() {
         writer.send(ChangeRealmEvent {
             new_realm: command.new_realm,
+            content_server_override: command.content_server_override,
         });
         input.ok();
     }
@@ -523,6 +527,7 @@ fn change_realm_command(
 #[derive(Event, Clone)]
 pub struct ChangeRealmEvent {
     pub new_realm: String,
+    pub content_server_override: Option<String>,
 }
 
 #[derive(Resource, Default, Debug)]
@@ -576,15 +581,13 @@ pub fn change_realm(
 
     if !change_realm_requests.is_empty() {
         let ipfs = ipfs.clone();
-        let new_realm = change_realm_requests
-            .read()
-            .last()
-            .unwrap()
-            .new_realm
-            .to_owned();
+        let request = change_realm_requests.read().last().unwrap();
+
+        let new_realm = request.new_realm.to_owned();
+        let content_server_override = request.content_server_override.to_owned();
         IoTaskPool::get()
             .spawn_compat(async move {
-                ipfs.set_realm(new_realm).await;
+                ipfs.set_realm(new_realm, content_server_override).await;
             })
             .detach();
     }
@@ -719,8 +722,10 @@ impl IpfsIo {
         }
     }
 
-    pub async fn set_realm(&self, new_realm: String) {
-        let res = self.set_realm_inner(new_realm.clone()).await;
+    pub async fn set_realm(&self, new_realm: String, content_server_override: Option<String>) {
+        let res = self
+            .set_realm_inner(new_realm.clone(), content_server_override)
+            .await;
         if let Err(e) = res {
             error!("failed to set realm: {e}");
             self.realm_config_sender
@@ -747,7 +752,11 @@ impl IpfsIo {
         (context.base_url.clone(), context.about.clone())
     }
 
-    async fn set_realm_inner(&self, new_realm: String) -> Result<(), anyhow::Error> {
+    async fn set_realm_inner(
+        &self,
+        new_realm: String,
+        content_server_override: Option<String>,
+    ) -> Result<(), anyhow::Error> {
         self.realm_config_sender.send(None).expect("channel closed");
         let mut write = self.context.write().await;
         if write.about.is_some() {
@@ -792,8 +801,9 @@ impl IpfsIo {
         }
 
         let mut write = self.context.write().await;
-        let base_url = about
-            .content_url()
+        let base_url = content_server_override
+            .as_deref()
+            .or_else(|| about.content_url())
             .map(|c| c.strip_suffix("/content/").unwrap_or(c));
         write.base_url = base_url.unwrap_or(&new_realm).to_owned();
         write.about_url = new_realm.clone();

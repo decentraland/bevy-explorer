@@ -217,7 +217,10 @@ fn change_realm(
     }
 
     for (new_realm, response) in perms.drain_success(PermissionType::ChangeRealm) {
-        commands.fire_event(ChangeRealmEvent { new_realm });
+        commands.fire_event(ChangeRealmEvent {
+            new_realm,
+            content_server_override: None,
+        });
         response.send(Ok(()));
     }
 

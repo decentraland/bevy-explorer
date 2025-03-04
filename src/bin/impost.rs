@@ -77,6 +77,8 @@ fn main() {
         ..base_config
     };
 
+    let content_server_override = args.value_from_str("--content-server").ok();
+
     let remaining = args.finish();
     if !remaining.is_empty() {
         println!(
@@ -126,6 +128,7 @@ fn main() {
             .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
                 preview: false,
                 starting_realm: Some(final_config.server.clone()),
+                content_server_override,
                 assets_root: Default::default(),
                 num_slots: final_config.max_concurrent_remotes,
             }),
