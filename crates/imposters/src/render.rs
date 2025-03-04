@@ -476,7 +476,7 @@ fn load_imposters(
                 .remove::<RetryImposter>()
                 .try_insert(ImposterLoadTask::new_mip(
                     &ipfas,
-                    &current_realm.address,
+                    &current_realm.about_url,
                     imposter.parcel,
                     imposter.level,
                     crc,

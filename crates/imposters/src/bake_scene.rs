@@ -477,7 +477,7 @@ fn bake_imposter_imposter(
                 }
             }
 
-            write_imposter(&ipfas, &current_realm.address, parcel, level, &baking);
+            write_imposter(&ipfas, &current_realm.about_url, parcel, level, &baking);
             current_imposter.0.as_mut().unwrap().complete = true;
         } else if tick.0 > baking.as_ref().unwrap().0 + 100 {
             for (_, mut cam) in all_baking_cams.iter_mut() {
