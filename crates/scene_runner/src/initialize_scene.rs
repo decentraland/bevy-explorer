@@ -941,7 +941,7 @@ fn load_active_entities(
             _ => Some((distance, parcel)),
         })
         .collect();
-        // limit to 10000 per request
+        // limit to 5000 per request
         required_parcels.sort_by_key(|(distance, _)| FloatOrd(*distance));
         let required_parcels = required_parcels
             .into_iter()
