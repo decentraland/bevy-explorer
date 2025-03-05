@@ -635,6 +635,15 @@ impl Default for ScenePointers {
 }
 
 impl ScenePointers {
+    pub fn is_full(&self) -> bool {
+        if self.realm_bounds.0.cmpgt(self.realm_bounds.1).any() {
+            return true;
+        }
+
+        let expected_count = (self.realm_bounds.1 - self.realm_bounds.0 + 1).element_product();
+        self.pointers.len() >= expected_count as usize
+    }
+
     pub fn get(&self, parcel: impl Borrow<IVec2>) -> Option<&PointerResult> {
         let parcel: &IVec2 = parcel.borrow();
         if parcel.cmplt(self.realm_bounds.0).any() || parcel.cmpgt(self.realm_bounds.1).any() {
@@ -935,6 +944,8 @@ fn load_active_entities(
 
         if !has_scene_urns {
             // load required pointers
+            // limit to 1000 per request
+            let required_parcels = required_parcels.into_iter().take(10000).collect::<HashSet<_>>();
             let pointers = required_parcels
                 .iter()
                 .map(|parcel| format!("{},{}", parcel.x, parcel.y))

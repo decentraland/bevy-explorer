@@ -229,6 +229,10 @@ fn check_done(
         *counter = 0;
         return;
     }
+    if !pointers.is_full() {
+        *counter = 0;
+        return;
+    }
 
     // wait till nothing missing
     if q.is_empty() {
