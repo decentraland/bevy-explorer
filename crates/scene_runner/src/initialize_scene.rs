@@ -945,7 +945,10 @@ fn load_active_entities(
         if !has_scene_urns {
             // load required pointers
             // limit to 1000 per request
-            let required_parcels = required_parcels.into_iter().take(10000).collect::<HashSet<_>>();
+            let required_parcels = required_parcels
+                .into_iter()
+                .take(10000)
+                .collect::<HashSet<_>>();
             let pointers = required_parcels
                 .iter()
                 .map(|parcel| format!("{},{}", parcel.x, parcel.y))
