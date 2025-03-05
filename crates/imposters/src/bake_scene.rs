@@ -254,6 +254,16 @@ fn bake_scene_imposters(
                     0,
                     &oven.baked_scene,
                 );
+                if let Some(output_path) = plugin.zip_output.clone() {
+                    save_and_zip_callback::<()>(
+                        |_| {},
+                        spec_path(ipfas.ipfs_cache_path(), &oven.hash, IVec2::MAX, 0),
+                        output_path,
+                        oven.hash.clone(),
+                        IVec2::MAX,
+                        0,
+                    )(());
+                }
 
                 // delete the scene since we messed with it a lot to get it stable
                 commands.entity(current_scene_ent).despawn_recursive();
@@ -454,7 +464,7 @@ fn bake_scene_imposters(
             if oven.start_tick + 200 < tick.0 {
                 for (_, mut cam) in all_baking_cams.iter_mut() {
                     if cam.wait_for_render {
-                        warn!("forcing failed bake ...");
+                        debug!("forcing failed bake ...");
                         cam.wait_for_render = false;
                     }
                 }
@@ -508,7 +518,7 @@ fn save_and_zip_callback<T>(
         };
 
         // create new
-        let output = std::fs::File::create_new(output_path).unwrap();
+        let output = std::fs::File::create_new(&output_path).unwrap();
         let mut archive = ZipWriter::new(output);
 
         // copy contents (except current file)
@@ -535,12 +545,13 @@ fn save_and_zip_callback<T>(
         file.read_to_end(&mut data).unwrap();
         archive
             .start_file(
-                target_file,
+                &target_file,
                 SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
             )
             .unwrap();
         archive.write_all(&data).unwrap();
         archive.finish().unwrap();
+        debug!("added {target_file} to {output_path:?}");
 
         // unlock
         std::fs::remove_file(touch).unwrap();
@@ -568,7 +579,7 @@ fn bake_imposter_imposter(
 
         if all_cams_finished {
             let (_, baking) = baking.take().unwrap();
-            warn!("all cams done");
+            debug!("all cams done");
             let Some(CurrentImposterImposterDetail { parcel, level, .. }) = current_imposter.0
             else {
                 return;
@@ -621,7 +632,7 @@ fn bake_imposter_imposter(
             current_imposter.0.as_mut().unwrap().complete = true;
         } else if tick.0 > baking.as_ref().unwrap().0 + 100 {
             for (_, mut cam) in all_baking_cams.iter_mut() {
-                warn!("forcing failed imposter bake ...");
+                debug!("forcing failed imposter bake ...");
                 cam.wait_for_render = false;
             }
         }
@@ -680,7 +691,7 @@ fn bake_imposter_imposter(
                 * aabb.half_extents.xz().length().max(aabb.half_extents.y)
                 / 16.0)
                 .clamp(2.0, 256.0) as u32;
-            warn!("tile size: {tile_size}");
+            debug!("tile size: {tile_size}");
 
             let max_tiles_per_frame = ((GRID_SIZE * GRID_SIZE) as f32
                 * config.scene_imposter_bake.as_mult())
@@ -807,6 +818,7 @@ fn pick_imposter_to_bake(
     mut baking: ResMut<ImposterBakeList>,
     current_realm: Res<CurrentRealm>,
     config: Res<AppConfig>,
+    plugin: Res<DclImposterPlugin>,
 ) {
     if config.scene_imposter_bake == SceneImposterBake::Off {
         return;
@@ -879,6 +891,18 @@ fn pick_imposter_to_bake(
             baking
                 .0
                 .push(ImposterToBake::Mip(imposter.parcel, imposter.level));
+
+            // delete prev zip if exists
+            if let Some(output_path) = plugin.zip_output.clone() {
+                let path = zip_path(
+                    &output_path,
+                    &current_realm.about_url,
+                    imposter.parcel,
+                    imposter.level,
+                );
+                let _ = std::fs::remove_file(path);
+            }
+
             break;
         }
     }
@@ -903,8 +927,6 @@ fn check_bake_state(
     lookup: ImposterLookup,
     mut scene_pointers: ResMut<ScenePointers>,
     mut debug_info: ResMut<DebugInfo>,
-    plugin: Res<DclImposterPlugin>,
-    current_realm: Res<CurrentRealm>,
 ) {
     if !baking.0.is_empty() {
         debug_info.info.insert(
@@ -1019,12 +1041,6 @@ fn check_bake_state(
                 }
 
                 let crc = scene_pointers.crc(parcel, *level).unwrap();
-
-                // delete prev zip if exists
-                if let Some(output_path) = plugin.zip_output.clone() {
-                    let path = zip_path(&output_path, &current_realm.about_url, *parcel, *level);
-                    let _ = std::fs::remove_file(path);
-                }
 
                 // run the bake
                 current_imposter_imposter.0 = Some(CurrentImposterImposterDetail {

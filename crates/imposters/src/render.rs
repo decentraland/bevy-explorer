@@ -20,7 +20,9 @@ use crc::CRC_32_CKSUM;
 use ipfs::{ChangeRealmEvent, CurrentRealm, IpfsAssetServer};
 
 use scene_runner::{
-    initialize_scene::{CurrentImposterScene, LiveScenes, PointerResult, SceneLoading, ScenePointers, PARCEL_SIZE},
+    initialize_scene::{
+        CurrentImposterScene, LiveScenes, PointerResult, SceneLoading, ScenePointers, PARCEL_SIZE,
+    },
     renderer_context::RendererSceneContext,
     DebugInfo,
 };
@@ -370,7 +372,16 @@ pub fn spawn_imposters(
                 required.insert((tile_origin_parcel, level, false));
             } else {
                 // add to next level requirements
-                debug!("cant' add {}:{} == {} (distance = {} vs {}, live minmax = {},{})", tile, level, tile_origin_parcel, closest_distance, config.scene_imposter_distances[level - 1], live_min, live_max);
+                debug!(
+                    "cant' add {}:{} == {} (distance = {} vs {}, live minmax = {},{})",
+                    tile,
+                    level,
+                    tile_origin_parcel,
+                    closest_distance,
+                    config.scene_imposter_distances[level - 1],
+                    live_min,
+                    live_max
+                );
                 for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
                     debug!("maybe the child {}:{}", tile * 2 + offset, level - 1);
                     required_tiles.insert(tile * 2 + offset);

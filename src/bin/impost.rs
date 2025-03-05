@@ -1,4 +1,8 @@
-use comms::{preview::PreviewMode, profile::{CurrentUserProfile, ProfileCache, UserProfile}, CommsPlugin};
+use comms::{
+    preview::PreviewMode,
+    profile::{CurrentUserProfile, ProfileCache, UserProfile},
+    CommsPlugin,
+};
 use console::ConsolePlugin;
 use imposters::{render::ImposterMissing, DclImposterPlugin};
 
@@ -7,11 +11,15 @@ use bevy::{
 };
 
 use common::{
-    profile::SerializedProfile, rpc::RpcCall, sets::SetupSets, structs::{
+    profile::SerializedProfile,
+    rpc::RpcCall,
+    sets::SetupSets,
+    structs::{
         AppConfig, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg, PrimaryCamera,
         PrimaryCameraRes, PrimaryPlayerRes, SceneImposterBake, SceneLoadDistance, SystemAudio,
         ToolTips,
-    }, util::{config_file, UtilsPlugin}
+    },
+    util::{config_file, UtilsPlugin},
 };
 use input_manager::{AcceptInput, InputMap};
 use nft::asset_source::Nft;
