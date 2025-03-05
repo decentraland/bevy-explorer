@@ -176,7 +176,7 @@ fn make_scene_oven(
             return;
         }
 
-        warn!("baking scene {:?}", hash);
+        debug!("baking scene {:?}", hash);
 
         // disable animations and tweens
         for child in children.iter_descendants(*entity) {
@@ -246,7 +246,7 @@ fn bake_scene_imposters(
 
         if !any_baking_cams {
             let Some(region) = oven.unbaked_parcels.pop() else {
-                warn!("no regions left");
+                debug!("no regions left");
                 write_imposter(
                     ipfas.ipfs_cache_path(),
                     &oven.hash,
@@ -292,7 +292,7 @@ fn bake_scene_imposters(
                 return;
             };
 
-            warn!("baking region: {:?}", region);
+            debug!("baking region: {:?}", region);
 
             // update materials
             for h_mat in children
@@ -363,12 +363,12 @@ fn bake_scene_imposters(
                 let center = Vec3::from(aabb.center);
                 let radius = aabb.half_extents.length();
 
-                warn!("region: {rmin}-{rmax}, snap: {}-{}", aabb.min(), aabb.max());
+                debug!("region: {rmin}-{rmax}, snap: {}-{}", aabb.min(), aabb.max());
                 let tile_size = (TILE_SIZE as f32
                     * aabb.half_extents.xz().length().max(aabb.half_extents.y)
                     / 16.0)
                     .clamp(2.0, TILE_SIZE as f32 * 2.0) as u32;
-                warn!("tile size: {tile_size}");
+                debug!("tile size: {tile_size}");
 
                 let max_tiles_per_frame = ((GRID_SIZE * GRID_SIZE) as f32
                     * config.scene_imposter_bake.as_mult())
@@ -457,7 +457,7 @@ fn bake_scene_imposters(
             });
         } else {
             if tick.0 % 200 == 0 {
-                warn!("waiting for bake ...");
+                debug!("waiting for bake ...");
             }
 
             // force failed
@@ -472,7 +472,7 @@ fn bake_scene_imposters(
 
             // despawn on complete
             if all_cams_finished {
-                warn!("finished baking");
+                debug!("finished baking");
 
                 for (cam_ent, _) in all_baking_cams.iter() {
                     commands.entity(cam_ent).despawn_recursive();
@@ -647,7 +647,7 @@ fn bake_imposter_imposter(
         crc,
     }) = current_imposter.0.as_ref()
     {
-        warn!("baking mip: {:?}-{}", parcel, level);
+        debug!("baking mip: {:?}-{}", parcel, level);
         let size = 1 << level;
         let next_size = 1 << (level - 1);
         let mut baked_scene = BakedScene {
