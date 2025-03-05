@@ -1,4 +1,4 @@
-use comms::{preview::PreviewMode, profile::ProfileCache, CommsPlugin};
+use comms::{preview::PreviewMode, profile::{CurrentUserProfile, ProfileCache, UserProfile}, CommsPlugin};
 use console::ConsolePlugin;
 use imposters::{render::ImposterMissing, DclImposterPlugin};
 
@@ -7,14 +7,11 @@ use bevy::{
 };
 
 use common::{
-    rpc::RpcCall,
-    sets::SetupSets,
-    structs::{
+    profile::SerializedProfile, rpc::RpcCall, sets::SetupSets, structs::{
         AppConfig, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg, PrimaryCamera,
         PrimaryCameraRes, PrimaryPlayerRes, SceneImposterBake, SceneLoadDistance, SystemAudio,
         ToolTips,
-    },
-    util::{config_file, UtilsPlugin},
+    }, util::{config_file, UtilsPlugin}
 };
 use input_manager::{AcceptInput, InputMap};
 use nft::asset_source::Nft;
@@ -78,6 +75,7 @@ fn main() {
     };
 
     let content_server_override = args.value_from_str("--content-server").ok();
+    let zip_output = args.value_from_str("--zip-output").ok();
 
     let remaining = args.finish();
     if !remaining.is_empty() {
@@ -166,7 +164,10 @@ fn main() {
         .add_plugins(SceneRunnerPlugin)
         .add_plugins(CommsPlugin)
         .add_plugins(RestrictedActionsPlugin)
-        .add_plugins(DclImposterPlugin)
+        .add_plugins(DclImposterPlugin {
+            zip_output,
+            download: false,
+        })
         .add_plugins(SystemBridgePlugin { bare: true });
 
     app.insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
@@ -238,6 +239,8 @@ fn setup(
     mut player_resource: ResMut<PrimaryPlayerRes>,
     mut cam_resource: ResMut<PrimaryCameraRes>,
     config: Res<AppConfig>,
+    mut wallet: ResMut<Wallet>,
+    mut current_profile: ResMut<CurrentUserProfile>,
 ) {
     info!("main::setup");
     // create the main player
@@ -264,4 +267,16 @@ fn setup(
 
     player_resource.0 = player_id;
     cam_resource.0 = camera_id;
+
+    wallet.finalize_as_guest();
+    current_profile.profile = Some(UserProfile {
+        version: 0,
+        content: SerializedProfile {
+            eth_address: format!("{:#x}", wallet.address().unwrap()),
+            user_id: Some(format!("{:#x}", wallet.address().unwrap())),
+            ..Default::default()
+        },
+        base_url: Default::default(),
+    });
+    current_profile.is_deployed = true;
 }

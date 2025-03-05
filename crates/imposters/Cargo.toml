@@ -24,5 +24,7 @@ async-fs = { workspace = true }
 clap = { workspace = true }
 crc = { workspace = true }
 
+zip = { version = "2", default-features = false }
+
 [lints]
 workspace = true

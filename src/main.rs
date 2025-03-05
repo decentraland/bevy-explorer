@@ -393,7 +393,10 @@ fn main() {
         .add_plugins(TweenPlugin)
         .add_plugins(CollectiblesPlugin)
         .add_plugins(WorldUiPlugin)
-        .add_plugins(DclImposterPlugin)
+        .add_plugins(DclImposterPlugin {
+            zip_output: None,
+            download: true,
+        })
         .add_plugins(TextureCameraPlugin)
         .add_plugins(SystemBridgePlugin { bare: false });
 

@@ -3,6 +3,8 @@ pub mod floor_imposter;
 pub mod imposter_spec;
 pub mod render;
 
+use std::path::PathBuf;
+
 use bake_scene::DclImposterBakeScenePlugin;
 use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
@@ -10,13 +12,18 @@ use common::structs::AppConfig;
 use console::DoAddConsoleCommand;
 use render::{DclImposterRenderPlugin, ImposterEntities, SceneImposter};
 
-pub struct DclImposterPlugin;
+#[derive(Resource, Clone)]
+pub struct DclImposterPlugin {
+    pub zip_output: Option<PathBuf>,
+    pub download: bool,
+}
 
 impl Plugin for DclImposterPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((DclImposterBakeScenePlugin, DclImposterRenderPlugin))
             .add_console_command::<ImpostDistanceCommand, _>(set_impost_distance)
             .add_console_command::<ImpostMultisampleCommand, _>(set_impost_multi);
+        app.insert_resource(self.clone());
     }
 }
 

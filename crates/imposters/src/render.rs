@@ -20,7 +20,7 @@ use crc::CRC_32_CKSUM;
 use ipfs::{ChangeRealmEvent, CurrentRealm, IpfsAssetServer};
 
 use scene_runner::{
-    initialize_scene::{LiveScenes, PointerResult, SceneLoading, ScenePointers, PARCEL_SIZE},
+    initialize_scene::{CurrentImposterScene, LiveScenes, PointerResult, SceneLoading, ScenePointers, PARCEL_SIZE},
     renderer_context::RendererSceneContext,
     DebugInfo,
 };
@@ -270,6 +270,7 @@ pub fn spawn_imposters(
     pointers: Res<ScenePointers>,
     live_scenes: Res<LiveScenes>,
     scenes: Query<&RendererSceneContext, Without<SceneLoading>>,
+    current_imposter_scene: Res<CurrentImposterScene>,
 ) {
     if !realm_changed.is_empty() {
         for (_, entity) in lookup.0.drain() {
@@ -295,10 +296,15 @@ pub fn spawn_imposters(
     let origin = origin * Vec2::new(1.0, -1.0);
 
     // record live parcels
+    let current_imposter_scene = match &current_imposter_scene.0 {
+        Some((PointerResult::Exists { hash, .. }, _)) => Some(hash),
+        _ => None,
+    };
     let live_parcels = live_scenes
         .scenes
-        .values()
-        .flat_map(|e| scenes.get(*e).ok().map(|ctx| &ctx.parcels))
+        .iter()
+        .filter(|(hash, _)| Some(*hash) != current_imposter_scene)
+        .flat_map(|(_, e)| scenes.get(*e).ok().map(|ctx| &ctx.parcels))
         .flatten()
         .copied()
         .collect::<HashSet<_>>();
@@ -348,7 +354,7 @@ pub fn spawn_imposters(
 
             let mut render_tile = true;
             // check it's not too close
-            render_tile &= closest_distance > config.scene_imposter_distances[level - 1];
+            render_tile &= closest_distance >= config.scene_imposter_distances[level - 1];
             // ensure no live scenes intersect the tile
             render_tile &= {
                 live_max.cmplt(tile_origin_parcel).any()
@@ -364,7 +370,7 @@ pub fn spawn_imposters(
                 required.insert((tile_origin_parcel, level, false));
             } else {
                 // add to next level requirements
-                debug!("cant' add {}:{} == {}", tile, level, tile_origin_parcel);
+                debug!("cant' add {}:{} == {} (distance = {} vs {}, live minmax = {},{})", tile, level, tile_origin_parcel, closest_distance, config.scene_imposter_distances[level - 1], live_min, live_max);
                 for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
                     debug!("maybe the child {}:{}", tile * 2 + offset, level - 1);
                     required_tiles.insert(tile * 2 + offset);
@@ -578,8 +584,8 @@ fn render_imposters(
             if let Some(spec) = maybe_spec {
                 // spawn imposter
                 let path = texture_path(
-                    ipfas.ipfs(),
-                    ready.scene.as_ref().unwrap_or(&current_realm.address),
+                    ipfas.ipfs_cache_path(),
+                    ready.scene.as_ref().unwrap_or(&current_realm.about_url),
                     req.parcel,
                     req.level,
                 );
@@ -627,8 +633,8 @@ fn render_imposters(
                     + Vec2::new(size, -size) * 0.5;
 
                 let path = floor_path(
-                    ipfas.ipfs(),
-                    ready.scene.as_ref().unwrap_or(&current_realm.address),
+                    ipfas.ipfs_cache_path(),
+                    ready.scene.as_ref().unwrap_or(&current_realm.about_url),
                     req.parcel,
                     req.level,
                 );

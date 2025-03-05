@@ -5695,6 +5695,7 @@ dependencies = [
  "serde_json",
  "tween",
  "urlencoding",
+ "zip 2.2.0",
 ]
 
 [[package]]
