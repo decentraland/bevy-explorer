@@ -1,10 +1,15 @@
 pub mod ipfs_path;
 
 use std::{
-    borrow::Cow, io::ErrorKind, marker::PhantomData, path::{Path, PathBuf}, sync::{
+    borrow::Cow,
+    io::ErrorKind,
+    marker::PhantomData,
+    path::{Path, PathBuf},
+    sync::{
         atomic::{self, AtomicU16},
         Arc,
-    }, time::{Duration, Instant, SystemTime}
+    },
+    time::{Duration, Instant, SystemTime},
 };
 
 use anyhow::anyhow;
@@ -1084,7 +1089,12 @@ impl AssetReader for IpfsIo {
                 }
             };
 
-            debug!("remote ({})", hash.as_ref().map(|h| format!("hash {h} not found")).unwrap_or_else(|| "uncached".to_owned()));
+            debug!(
+                "remote ({})",
+                hash.as_ref()
+                    .map(|h| format!("hash {h} not found"))
+                    .unwrap_or_else(|| "uncached".to_owned())
+            );
 
             let token = self.reqno.fetch_add(1, atomic::Ordering::SeqCst);
 
