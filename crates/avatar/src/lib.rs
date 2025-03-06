@@ -48,7 +48,10 @@ use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
         common::Color3,
-        sdk::components::{PbAvatarBase, PbAvatarEquippedData, PbAvatarShape},
+        sdk::components::{
+            common::LoadingState, PbAvatarBase, PbAvatarEquippedData, PbAvatarShape,
+            PbGltfContainerLoadingState,
+        },
         Color3DclToBevy,
     },
     SceneComponentId, SceneEntityId,
@@ -319,6 +322,7 @@ fn select_avatar(
     scene_avatar_defs: Query<(Entity, &SceneEntity, &AvatarShape, Ref<AvatarShape>)>,
     orphaned_avatar_selections: Query<(Entity, &AvatarSelection), Without<AvatarShape>>,
     containing_scene: ContainingScene,
+    mut contexts: Query<&mut RendererSceneContext>,
 ) {
     struct AvatarUpdate {
         base_name: String,
@@ -379,6 +383,18 @@ fn select_avatar(
                 });
 
                 debug!("npc avatar {:?}", scene_ent);
+                // update gltf state
+                if let Ok(mut ctx) = contexts.get_mut(scene_ent.root) {
+                    ctx.update_crdt(
+                        SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
+                        CrdtType::LWW_ENT,
+                        scene_ent.id,
+                        &PbGltfContainerLoadingState {
+                            current_state: LoadingState::Loading as i32,
+                            ..Default::default()
+                        },
+                    );
+                }
             }
 
             continue;
@@ -873,7 +889,12 @@ fn process_avatar(
     (ui_view, dui, config): (Res<AvatarWorldUi>, Res<DuiRegistry>, Res<AppConfig>),
     mut emote_loader: CollectibleManager<Emote>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
-    (names, previous_avatar): (Query<(&Name, &Parent)>, Query<&PreviousAvatar>),
+    (names, previous_avatar, scene_ent, mut contexts): (
+        Query<(&Name, &Parent)>,
+        Query<&PreviousAvatar>,
+        Query<&SceneEntity>,
+        Query<&mut RendererSceneContext>,
+    ),
 ) {
     for (avatar_ent, def, loaded_avatar, root_player_entity) in query.iter() {
         let not_loaded = !scene_spawner.instance_is_really_ready(loaded_avatar.body_instance)
@@ -1323,6 +1344,21 @@ fn process_avatar(
             commands
                 .entity(root_player_entity.get())
                 .remove::<PreviousAvatar>();
+        }
+
+        // announce state
+        if let Ok(scene_ent) = scene_ent.get(root_player_entity.get()) {
+            if let Ok(mut ctx) = contexts.get_mut(scene_ent.root) {
+                ctx.update_crdt(
+                    SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
+                    CrdtType::LWW_ENT,
+                    scene_ent.id,
+                    &PbGltfContainerLoadingState {
+                        current_state: LoadingState::Finished as i32,
+                        ..Default::default()
+                    },
+                );
+            }
         }
     }
 }
