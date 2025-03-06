@@ -125,16 +125,25 @@ impl IpfsType {
         }
     }
 
-    fn hash<'a>(&'a self, context: &'a IpfsContext) -> Option<&'a str> {
+    fn hash<'a>(&'a self, context: &'a IpfsContext) -> Option<Cow<'a, String>> {
         match self {
             IpfsType::ContentFile {
                 content_hash: scene_hash,
                 file_path,
                 ..
-            } => context.entities.get(scene_hash)?.collection.hash(file_path),
-            IpfsType::UrlCached { hash, .. } => Some(hash),
+            } => context
+                .entities
+                .get(scene_hash)?
+                .collection
+                .hash(file_path)
+                .or_else(|| {
+                    // if it's not in the content map we assume it's a url
+                    let digest = multihash_codetable::Code::Sha2_256.digest(file_path.as_bytes());
+                    Some(Cow::Owned(BASE64_URL_SAFE_NO_PAD.encode(digest.digest())))
+                }),
+            IpfsType::UrlCached { hash, .. } => Some(Cow::Borrowed(hash)),
             IpfsType::UrlUncached { .. } => None,
-            IpfsType::Entity { hash, .. } => Some(hash),
+            IpfsType::Entity { hash, .. } => Some(Cow::Borrowed(hash)),
         }
     }
 
@@ -464,8 +473,8 @@ impl IpfsPath {
         Ok(url.to_string())
     }
 
-    pub fn hash(&self, context: &IpfsContext) -> Option<String> {
-        self.ipfs_type.hash(context).map(ToOwned::to_owned)
+    pub fn hash<'a>(&'a self, context: &'a IpfsContext) -> Option<String> {
+        self.ipfs_type.hash(context).map(|h| h.into_owned())
     }
 
     pub fn context_free_hash(&self) -> Result<Option<String>, anyhow::Error> {

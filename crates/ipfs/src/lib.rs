@@ -1,14 +1,10 @@
 pub mod ipfs_path;
 
 use std::{
-    io::ErrorKind,
-    marker::PhantomData,
-    path::{Path, PathBuf},
-    sync::{
+    borrow::Cow, io::ErrorKind, marker::PhantomData, path::{Path, PathBuf}, sync::{
         atomic::{self, AtomicU16},
         Arc,
-    },
-    time::{Duration, Instant, SystemTime},
+    }, time::{Duration, Instant, SystemTime}
 };
 
 use anyhow::anyhow;
@@ -191,8 +187,8 @@ impl AssetLoader for SceneJsLoader {
 pub struct ContentMap(HashMap<String, String>);
 
 impl ContentMap {
-    pub fn hash(&self, file: &str) -> Option<&str> {
-        self.0.get(file.to_lowercase().as_str()).map(String::as_str)
+    pub fn hash<'a>(&'a self, file: &str) -> Option<Cow<'a, String>> {
+        self.0.get(file.to_lowercase().as_str()).map(Cow::Borrowed)
     }
 
     pub fn files(&self) -> impl Iterator<Item = &String> {
@@ -1088,7 +1084,7 @@ impl AssetReader for IpfsIo {
                 }
             };
 
-            debug!("remote");
+            debug!("remote ({})", hash.as_ref().map(|h| format!("hash {h} not found")).unwrap_or_else(|| "uncached".to_owned()));
 
             let token = self.reqno.fetch_add(1, atomic::Ordering::SeqCst);
 
