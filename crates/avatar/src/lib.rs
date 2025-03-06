@@ -38,7 +38,7 @@ pub mod npc_dynamics;
 use common::{
     sets::SetupSets,
     structs::{AppConfig, AttachPoints, PrimaryUser},
-    util::{DespawnWith, TryPushChildrenEx},
+    util::{DespawnWith, SceneSpawnerPlus, TryPushChildrenEx},
 };
 use comms::{
     global_crdt::{ForeignPlayer, GlobalCrdtState},
@@ -524,7 +524,10 @@ fn update_render_avatar(
                 .iter()
                 .filter(|child| avatar_render_entities.get(**child).is_ok())
             {
-                commands.entity(*render_child).despawn_recursive();
+                commands
+                    .entity(entity)
+                    .insert(PreviousAvatar(*render_child));
+                // commands.entity(*render_child).despawn_recursive();
             }
         }
 
@@ -843,12 +846,15 @@ fn spawn_scenes(
 #[derive(Component)]
 pub struct AvatarMaterials(pub HashSet<AssetId<SceneMaterial>>);
 
+#[derive(Component)]
+pub struct PreviousAvatar(Entity);
+
 // update materials and hide base parts
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn process_avatar(
     mut commands: Commands,
     query: Query<(Entity, &AvatarDefinition, &AvatarLoaded, &Parent), Without<AvatarProcessed>>,
-    scene_spawner: Res<SceneSpawner>,
+    scene_spawner: SceneSpawnerPlus,
     mut instance_ents: Query<(
         &mut Visibility,
         &Parent,
@@ -867,16 +873,16 @@ fn process_avatar(
     (ui_view, dui, config): (Res<AvatarWorldUi>, Res<DuiRegistry>, Res<AppConfig>),
     mut emote_loader: CollectibleManager<Emote>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
-    names: Query<(&Name, &Parent)>,
+    (names, previous_avatar): (Query<(&Name, &Parent)>, Query<&PreviousAvatar>),
 ) {
     for (avatar_ent, def, loaded_avatar, root_player_entity) in query.iter() {
-        let not_loaded = !scene_spawner.instance_is_ready(loaded_avatar.body_instance)
+        let not_loaded = !scene_spawner.instance_is_really_ready(loaded_avatar.body_instance)
             || loaded_avatar
                 .wearable_instances
                 .iter()
                 .any(|maybe_instance| {
                     maybe_instance
-                        .is_some_and(|instance| !scene_spawner.instance_is_ready(instance))
+                        .is_some_and(|instance| !scene_spawner.instance_is_really_ready(instance))
                 });
 
         if not_loaded {
@@ -1307,6 +1313,16 @@ fn process_avatar(
                     Billboard::Y,
                 ));
             });
+        }
+
+        // remove previous
+        if let Ok(prev) = previous_avatar.get(root_player_entity.get()) {
+            if let Some(commands) = commands.get_entity(prev.0) {
+                commands.despawn_recursive();
+            }
+            commands
+                .entity(root_player_entity.get())
+                .remove::<PreviousAvatar>();
         }
     }
 }
