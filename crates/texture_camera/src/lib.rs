@@ -201,7 +201,7 @@ fn update_directional_light_layers(
 #[derive(Component)]
 pub struct TextureCamEntity(Entity);
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_texture_cameras(
     mut commands: Commands,
     q: Query<(
@@ -209,6 +209,7 @@ fn update_texture_cameras(
         Ref<TextureCamera>,
         &ContainerEntity,
         Option<&TextureCamEntity>,
+        Option<&VideoTextureOutput>,
     )>,
     removed: Query<(Entity, &TextureCamEntity), Without<TextureCamera>>,
     mut images: ResMut<Assets<Image>>,
@@ -236,11 +237,11 @@ fn update_texture_cameras(
     }
 
     // (re)create new/modified cams
-    for (ent, texture_cam, container, existing) in q.iter() {
+    for (ent, texture_cam, container, maybe_existing_camera, maybe_existing_image) in q.iter() {
         let layer_ix = layer_cache.get_layer(container.root, texture_cam.0.layer.unwrap_or(0));
         if texture_cam.is_changed() || layer_cache.changed_layers.contains(&layer_ix) {
             // remove previous camera if modified
-            if let Some(prev) = existing {
+            if let Some(prev) = maybe_existing_camera {
                 if let Some(commands) = commands.get_entity(prev.0) {
                     commands.despawn_recursive();
                 }
@@ -248,20 +249,33 @@ fn update_texture_cameras(
 
             let maybe_layer = layers.layers.get(&layer_ix).map(|(_, layer)| layer);
 
-            let mut image = Image::new_fill(
-                Extent3d {
-                    width: texture_cam.0.width.unwrap_or(256).clamp(16, 2048),
-                    height: texture_cam.0.height.unwrap_or(256).clamp(16, 2048),
-                    depth_or_array_layers: 1,
-                },
-                bevy::render::render_resource::TextureDimension::D2,
-                &[255, 0, 255, 255],
-                TextureFormat::bevy_default(),
-                RenderAssetUsages::all(), // RENDER_WORLD alone doesn't work..?
-            );
+            let image_size = Extent3d {
+                width: texture_cam.0.width.unwrap_or(256).clamp(16, 2048),
+                height: texture_cam.0.height.unwrap_or(256).clamp(16, 2048),
+                depth_or_array_layers: 1,
+            };
 
-            image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
-            let image = images.add(image);
+            let image = match maybe_existing_image {
+                Some(existing) => {
+                    let prev = images.get_mut(existing.0.id()).unwrap();
+                    if prev.texture_descriptor.size != image_size {
+                        prev.resize(image_size);
+                    }
+                    existing.0.clone()
+                }
+                None => {
+                    let mut image = Image::new_fill(
+                        image_size,
+                        bevy::render::render_resource::TextureDimension::D2,
+                        &[255, 0, 255, 255],
+                        TextureFormat::bevy_default(),
+                        RenderAssetUsages::all(), // RENDER_WORLD alone doesn't work..?
+                    );
+
+                    image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
+                    images.add(image)
+                }
+            };
 
             let render_layers = match layer_ix {
                 0 => RenderLayers::default()
@@ -397,19 +411,21 @@ fn update_texture_cameras(
         } else {
             // set active for current scenes only
             // TODO: limit / cycle
-            let Some(existing) = existing else {
+            let Some(existing) = maybe_existing_camera else {
                 warn!("missing TextureCameraEntity");
                 continue;
             };
 
-            let Ok(mut camera) = cameras.get_mut(existing.0) else {
+            let Ok(camera) = cameras.get_mut(existing.0) else {
                 warn!("missing camera entity for TextureCamera");
                 continue;
             };
 
             let is_active = active_scenes.contains(&container.root);
             // debug!("[{}] active: {}", container.container_id, is_active);
-            camera.is_active = is_active;
+            camera
+                .map_unchanged(|c| &mut c.is_active)
+                .set_if_neq(is_active);
         }
     }
 }
