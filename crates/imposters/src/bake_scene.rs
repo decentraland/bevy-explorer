@@ -1060,7 +1060,12 @@ fn output_progress(
     config: Res<AppConfig>,
     time: Res<Time>,
     mut last_time: Local<f32>,
+    plugin: Res<DclImposterPlugin>,
 ) {
+    if plugin.zip_output.is_none() {
+        return;
+    }
+
     if time.elapsed_seconds() < *last_time + 5.0 {
         return;
     }
