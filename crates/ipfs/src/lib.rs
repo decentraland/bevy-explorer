@@ -906,7 +906,7 @@ impl IpfsIo {
                             let mut file = async_fs::File::create(&cache_path).await?;
                             let mut buf = Vec::default();
                             serde_json::to_writer(&mut buf, &entity)?;
-                            file.write(&buf).await?;
+                            file.write_all(&buf).await?;
                             file.sync_all().await?;
                             // let file = std::fs::File::create(&cache_path)?;
                             // serde_json::to_writer(file, &entity)?;
@@ -1229,7 +1229,7 @@ impl AssetReader for IpfsIo {
                             warn!("failed to create cache `{cache_path_str}`: {e}");
                         }
                         Ok(mut f) => {
-                            if let Err(e) = f.write(&data).await {
+                            if let Err(e) = f.write_all(&data).await {
                                 warn!("failed to write cache `{cache_path_str}`: {e}");
                             } else if let Err(e) = f.sync_all().await {
                                 warn!("failed to sync cache `{cache_path_str}`: {e}");

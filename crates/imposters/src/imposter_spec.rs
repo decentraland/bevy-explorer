@@ -138,6 +138,8 @@ pub async fn load_imposter(
                 warn!("failed to deserialize {path:?}");
             }
         };
+    } else {
+        warn!("missing imposter @ {path:?}");
     }
 
     // TODO try remote
