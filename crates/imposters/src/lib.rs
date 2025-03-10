@@ -50,8 +50,7 @@ fn set_impost_distance(
             .last()
             .map(|last| {
                 // actual distance we need is last + diagonal of the largest mip size
-                let mip_size =
-                    (1 << (distances.len() - 1)) as f32 * 16.0;
+                let mip_size = (1 << (distances.len() - 1)) as f32 * 16.0;
                 last + (2.0 * mip_size * mip_size).sqrt()
             })
             .unwrap_or(0.0);
@@ -73,7 +72,17 @@ fn set_impost_multi(
     mut lookup: ResMut<ImposterEntities>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        let multisample = command.on.unwrap_or_else(|| if config.scene_imposter_multisample { 0 } else { 99 }).clamp(0,99) as f32 / 100.0;
+        let multisample = command
+            .on
+            .unwrap_or_else(|| {
+                if config.scene_imposter_multisample {
+                    0
+                } else {
+                    99
+                }
+            })
+            .clamp(0, 99) as f32
+            / 100.0;
         config.scene_imposter_multisample = multisample != 0.0;
         config.scene_imposter_multisample_amount = multisample;
         input.reply_ok("imposter multisample set to {multisample}");
