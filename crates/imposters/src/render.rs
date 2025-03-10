@@ -588,7 +588,12 @@ fn render_imposters(
         let (layer, initial_alpha, multisample_amount, multisample) = if req.as_ingredient {
             (IMPOSTERCEPTION_LAYER, 1.0, 0.0, false)
         } else {
-            (RenderLayers::default(), 0.0, config.scene_imposter_multisample_amount, config.scene_imposter_multisample)
+            (
+                RenderLayers::default(),
+                0.0,
+                config.scene_imposter_multisample_amount,
+                config.scene_imposter_multisample,
+            )
         };
         debug!("spawn imposter {:?} {:?}", req, maybe_spec);
         commands.entity(entity).with_children(|c| {
@@ -693,12 +698,21 @@ fn update_imposter_visibility(
 fn transition_imposters(
     mut commands: Commands,
     q_in: Query<(Entity, &Children, Has<ImposterTransitionOut>), With<ImposterTransitionIn>>,
-    q_out: Query<(Entity, &Children), With<ImposterTransitionOut>>,
+    q_out: Query<(Entity, &Children, &SceneImposter), With<ImposterTransitionOut>>,
     handles: Query<&Handle<Imposter>>,
     mut assets: ResMut<Assets<Imposter>>,
     time: Res<Time>,
+    pointers: Res<ScenePointers>,
+    scenes: Res<LiveScenes>,
+    contexts: Query<&RendererSceneContext>,
+    player: Query<&Transform, With<PrimaryUser>>,
+    config: Res<AppConfig>,
 ) {
     const TPOW: f32 = 2.0;
+    let player = player
+        .get_single()
+        .map(|t| t.translation)
+        .unwrap_or_default();
 
     for (ent, children, transitioning_out) in q_in.iter() {
         if transitioning_out {
@@ -728,7 +742,30 @@ fn transition_imposters(
         }
     }
 
-    for (ent, children) in q_out.iter() {
+    for (ent, children, imposter) in q_out.iter() {
+        if imposter.level == 0 {
+            // don't transition level0 out until the scene has spawned
+            let parcel_origin = imposter.parcel.as_vec2() * Vec2::new(PARCEL_SIZE, -PARCEL_SIZE);
+            if (player.xz() - parcel_origin - (PARCEL_SIZE / 2.0)).length()
+                < config
+                    .scene_imposter_distances
+                    .first()
+                    .copied()
+                    .unwrap_or(0.0)
+            {
+                if let Some(PointerResult::Exists { hash, .. }) = pointers.get(imposter.parcel) {
+                    if scenes
+                        .scenes
+                        .get(hash.as_str())
+                        .and_then(|e| contexts.get(*e).ok())
+                        .is_none_or(|ctx| ctx.tick_number < 5)
+                    {
+                        continue;
+                    }
+                }
+            }
+        }
+
         let mut still_transitioning = false;
         for child in children {
             if let Ok(h_out) = handles.get(*child) {
