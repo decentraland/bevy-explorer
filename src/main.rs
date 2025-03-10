@@ -359,12 +359,6 @@ fn main() {
                 // actual distance we need is last + diagonal of the largest mip size
                 let mip_size =
                     (1 << (final_config.scene_imposter_distances.len() - 1)) as f32 * 16.0;
-                // let req = last + (2.0 * mip_size * mip_size).sqrt();
-                // println!(
-                //     "imposter mips: {:?} -> distance {}",
-                //     final_config.scene_imposter_distances, req
-                // );
-                // req
                 last + (2.0 * mip_size * mip_size).sqrt()
             })
             .unwrap_or(0.0),

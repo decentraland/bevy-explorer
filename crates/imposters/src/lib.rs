@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use bake_scene::DclImposterBakeScenePlugin;
 use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
-use common::structs::AppConfig;
+use common::structs::{AppConfig, SceneLoadDistance};
 use console::DoAddConsoleCommand;
 use render::{DclImposterRenderPlugin, ImposterEntities, SceneImposter};
 
@@ -36,6 +36,7 @@ struct ImpostDistanceCommand {
 fn set_impost_distance(
     mut input: ConsoleCommand<ImpostDistanceCommand>,
     mut config: ResMut<AppConfig>,
+    mut scene_distance: ResMut<SceneLoadDistance>,
 ) {
     if let Some(Ok(command)) = input.take() {
         let distances = command
@@ -45,6 +46,15 @@ fn set_impost_distance(
             .flat_map(Result::ok)
             .collect::<Vec<_>>();
         input.reply_ok(format!("imposter distances set to {distances:?}"));
+        scene_distance.load_imposter = distances
+            .last()
+            .map(|last| {
+                // actual distance we need is last + diagonal of the largest mip size
+                let mip_size =
+                    (1 << (distances.len() - 1)) as f32 * 16.0;
+                last + (2.0 * mip_size * mip_size).sqrt()
+            })
+            .unwrap_or(0.0);
         config.scene_imposter_distances = distances;
     }
 }
@@ -52,7 +62,7 @@ fn set_impost_distance(
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/impost_multisample")]
 struct ImpostMultisampleCommand {
-    on: Option<bool>,
+    on: Option<u32>,
 }
 
 fn set_impost_multi(
@@ -63,8 +73,9 @@ fn set_impost_multi(
     mut lookup: ResMut<ImposterEntities>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        let multisample = command.on.unwrap_or(!config.scene_imposter_multisample);
-        config.scene_imposter_multisample = multisample;
+        let multisample = command.on.unwrap_or_else(|| if config.scene_imposter_multisample { 0 } else { 99 }).clamp(0,99) as f32 / 100.0;
+        config.scene_imposter_multisample = multisample != 0.0;
+        config.scene_imposter_multisample_amount = multisample;
         input.reply_ok("imposter multisample set to {multisample}");
         for e in q.iter() {
             commands.entity(e).despawn_recursive();

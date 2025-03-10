@@ -585,10 +585,10 @@ fn render_imposters(
 ) {
     // spawn/update required
     for (entity, req, maybe_spec, ready) in new_imposters.iter() {
-        let (layer, initial_alpha) = if req.as_ingredient {
-            (IMPOSTERCEPTION_LAYER, 1.0)
+        let (layer, initial_alpha, multisample_amount, multisample) = if req.as_ingredient {
+            (IMPOSTERCEPTION_LAYER, 1.0, 0.0, false)
         } else {
-            (RenderLayers::default(), 0.0)
+            (RenderLayers::default(), 0.0, config.scene_imposter_multisample_amount, config.scene_imposter_multisample)
         };
         debug!("spawn imposter {:?} {:?}", req, maybe_spec);
         commands.entity(entity).with_children(|c| {
@@ -602,7 +602,6 @@ fn render_imposters(
                 );
                 let mut scale = spec.region_max - spec.region_min;
                 scale.y = spec.scale * 2.0;
-                let multisample = config.scene_imposter_multisample;
                 c.spawn((
                     MaterialMeshBundle {
                         mesh: imposter_meshes.cube.clone(),
@@ -614,6 +613,7 @@ fn render_imposters(
                                         multisample,
                                         alpha: initial_alpha,
                                         alpha_blend: 0.0, // blend
+                                        multisample_amount,
                                     }
                                 },
                             ),
