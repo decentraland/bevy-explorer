@@ -769,6 +769,7 @@ impl IpfsIo {
 
         let mut retries = 0;
         let mut about;
+        let mut final_url;
         loop {
             let about_raw = self
                 .client
@@ -779,6 +780,7 @@ impl IpfsIo {
             if about_raw.status() != StatusCode::OK {
                 return Err(anyhow!("status: {}", about_raw.status()));
             }
+            final_url = about_raw.url().to_string();
 
             about = about_raw
                 .json::<ServerAbout>()
@@ -806,11 +808,11 @@ impl IpfsIo {
             .as_deref()
             .or_else(|| about.content_url())
             .map(|c| c.strip_suffix("/content/").unwrap_or(c));
-        write.base_url = base_url.unwrap_or(&new_realm).to_owned();
-        write.about_url = new_realm.clone();
+        write.base_url = base_url.unwrap_or(&final_url).to_owned();
+        write.about_url = final_url.clone();
         write.about = Some(about.clone());
         self.realm_config_sender
-            .send(Some((new_realm, write.base_url.clone(), about)))
+            .send(Some((final_url, write.base_url.clone(), about)))
             .expect("channel closed");
         Ok(())
     }
