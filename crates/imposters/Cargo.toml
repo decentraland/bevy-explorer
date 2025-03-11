@@ -23,6 +23,7 @@ bevy_console = { workspace = true }
 async-fs = { workspace = true }
 clap = { workspace = true }
 crc = { workspace = true }
+reqwest = { workspace = true }
 
 zip = { version = "2", default-features = false }
 

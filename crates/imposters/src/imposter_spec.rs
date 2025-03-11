@@ -87,12 +87,18 @@ pub(crate) fn floor_path(cache_path: &Path, id: &str, parcel: IVec2, level: usiz
     path
 }
 
-pub(crate) fn zip_path(cache_path: &Path, id: &str, parcel: IVec2, level: usize) -> PathBuf {
+pub(crate) fn zip_path(
+    cache_path: &Path,
+    id: &str,
+    parcel: IVec2,
+    level: usize,
+    crc: Option<u32>,
+) -> PathBuf {
     let mut path = file_root(cache_path, id, level);
     if level == 0 {
         path.push("scene.zip");
     } else {
-        path.push(format!("{},{}.zip", parcel.x, parcel.y));
+        path.push(format!("{},{}.{}.zip", parcel.x, parcel.y, crc.unwrap()));
     }
     path
 }
@@ -128,7 +134,7 @@ pub async fn load_imposter(
     }
 
     if download {
-        if let Err(e) = load_imposter_remote(&ipfs, &id, parcel, level).await {
+        if let Err(e) = load_imposter_remote(&ipfs, &id, parcel, level, required_crc).await {
             warn!("{e}");
             return None;
         }
@@ -143,9 +149,10 @@ pub async fn load_imposter_remote(
     id: &str,
     parcel: IVec2,
     level: usize,
+    crc: Option<u32>,
 ) -> Result<(), anyhow::Error> {
     let client = ipfs.client();
-    let zip_file = zip_path(&PathBuf::new(), id, parcel, level)
+    let zip_file = zip_path(&PathBuf::new(), id, parcel, level, crc)
         .to_string_lossy()
         .into_owned()
         .replace("\\", "/");
@@ -156,6 +163,9 @@ pub async fn load_imposter_remote(
 
     let request = client.get(&zip_url).build()?;
     let response = ipfs.async_request(request, client).await?;
+    if response.status() != reqwest::StatusCode::OK {
+        return Ok(());
+    }
     let bytes = response.bytes().await?;
     let mut zip = ZipArchive::new(Cursor::new(bytes))?;
     let root = file_root(ipfs.cache_path(), id, level);
@@ -178,7 +188,7 @@ pub async fn load_imposter_local(
                 if required_crc.is_none_or(|crc| crc == baked_scene.crc) {
                     return Some(baked_scene);
                 } else {
-                    warn!(
+                    debug!(
                         "mismatched hash for {path:?} (expected {}, found {})",
                         required_crc.unwrap(),
                         baked_scene.crc

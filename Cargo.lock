@@ -5689,6 +5689,7 @@ dependencies = [
  "console",
  "crc",
  "ipfs",
+ "reqwest 0.12.12",
  "scene_material",
  "scene_runner",
  "serde",

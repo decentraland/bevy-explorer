@@ -262,6 +262,7 @@ fn bake_scene_imposters(
                         oven.hash.clone(),
                         IVec2::MAX,
                         0,
+                        None,
                     )(());
                 }
 
@@ -396,6 +397,7 @@ fn bake_scene_imposters(
                         oven.hash.clone(),
                         region.parcel_min(),
                         0,
+                        None,
                     ));
                 } else {
                     camera.set_callback(save_asset_callback);
@@ -445,6 +447,7 @@ fn bake_scene_imposters(
                     oven.hash.clone(),
                     region.parcel_min(),
                     0,
+                    None,
                 ));
             } else {
                 top_down.set_callback(save_asset_callback);
@@ -489,11 +492,12 @@ fn save_and_zip_callback<T>(
     id: String,
     parcel: IVec2,
     level: usize,
+    crc: Option<u32>,
 ) -> impl FnOnce(T) + Send + Sync + 'static {
     move |arg: T| {
         save_asset_callback(arg);
 
-        let output_path = zip_path(&zip, &id, parcel, level);
+        let output_path = zip_path(&zip, &id, parcel, level, crc);
         let target_file = path.file_name().unwrap().to_string_lossy().into_owned();
 
         // create folder if required
@@ -627,6 +631,7 @@ fn bake_imposter_imposter(
                     current_realm.about_url.clone(),
                     parcel,
                     level,
+                    Some(baking.crc),
                 )(());
             }
             current_imposter.0.as_mut().unwrap().complete = true;
@@ -724,6 +729,7 @@ fn bake_imposter_imposter(
                     current_realm.about_url.clone(),
                     *parcel,
                     *level,
+                    Some(*crc),
                 ));
             } else {
                 camera.set_callback(save_asset_callback);
@@ -782,6 +788,7 @@ fn bake_imposter_imposter(
                     current_realm.about_url.clone(),
                     *parcel,
                     *level,
+                    Some(*crc),
                 ));
             } else {
                 top_down.set_callback(save_asset_callback);
@@ -813,7 +820,7 @@ pub struct ImposterBakeList(Vec<ImposterToBake>);
 fn pick_imposter_to_bake(
     q: Query<(&SceneImposter, &ImposterMissing), Without<ImposterTransitionOut>>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
-    scene_pointers: Res<ScenePointers>,
+    mut scene_pointers: ResMut<ScenePointers>,
     live_scenes: Res<LiveScenes>,
     mut baking: ResMut<ImposterBakeList>,
     current_realm: Res<CurrentRealm>,
@@ -899,6 +906,7 @@ fn pick_imposter_to_bake(
                     &current_realm.about_url,
                     imposter.parcel,
                     imposter.level,
+                    scene_pointers.crc(imposter.parcel, imposter.level),
                 );
                 let _ = std::fs::remove_file(path);
             }
