@@ -85,6 +85,8 @@ fn main() {
     let content_server_override = args.value_from_str("--content-server").ok();
     let zip_output = args.value_from_str("--zip-output").ok();
 
+    let no_download = args.contains("--no-download");
+
     let remaining = args.finish();
     if !remaining.is_empty() {
         println!(
@@ -174,7 +176,7 @@ fn main() {
         .add_plugins(RestrictedActionsPlugin)
         .add_plugins(DclImposterPlugin {
             zip_output,
-            download: false,
+            download: !no_download,
         })
         .add_plugins(SystemBridgePlugin { bare: true });
 
