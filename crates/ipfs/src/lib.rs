@@ -1148,6 +1148,7 @@ impl AssetReader for IpfsIo {
             debug!("[{token:?}]: remote url: `{remote}` proceeding");
 
             let mut attempt = 0;
+            let mut no_cache = false;
             let data = loop {
                 attempt += 1;
 
@@ -1201,6 +1202,16 @@ impl AssetReader for IpfsIo {
                     Ok(response) => response,
                 };
 
+                if let Some(cache_control) = response.headers().get("cache-control") {
+                    if cache_control
+                        .to_str()
+                        .unwrap_or_default()
+                        .contains("no-store")
+                    {
+                        no_cache = true;
+                    }
+                }
+
                 let data = response.bytes().await;
 
                 match data {
@@ -1224,7 +1235,7 @@ impl AssetReader for IpfsIo {
             };
 
             if let Some(hash) = hash {
-                if ipfs_path.should_cache(&hash) {
+                if !no_cache && ipfs_path.should_cache(&hash) {
                     let mut cache_path = PathBuf::from(self.cache_path());
                     cache_path.push(format!("{}.part", hash));
                     let cache_path_str = cache_path.to_string_lossy().into_owned();
