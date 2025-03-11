@@ -804,6 +804,9 @@ impl IpfsIo {
         }
 
         let mut write = self.context.write().await;
+        if let (Some(cs), Some(content)) = (&content_server_override, about.content.as_mut()) {
+            content.public_url = format!("{cs}/content/");
+        }
         let base_url = content_server_override
             .as_deref()
             .or_else(|| about.content_url())
