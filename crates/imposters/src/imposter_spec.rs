@@ -1,4 +1,5 @@
 use std::{
+    io::Cursor,
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
@@ -8,6 +9,7 @@ use bevy::{asset::AsyncReadExt, prelude::*, utils::HashMap};
 use common::structs::IVec2Arg;
 use ipfs::IpfsIo;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use zip::ZipArchive;
 
 #[derive(Debug, Serialize, Deserialize, Component, Clone)]
 pub struct ImposterSpec {
@@ -118,9 +120,57 @@ pub async fn load_imposter(
     parcel: IVec2,
     level: usize,
     required_crc: Option<u32>,
+    download: bool,
 ) -> Option<BakedScene> {
     // try locally
-    let path = spec_path(ipfs.cache_path(), &id, parcel, level);
+    if let Some(imposter) = load_imposter_local(&ipfs, &id, parcel, level, required_crc).await {
+        return Some(imposter);
+    }
+
+    if download {
+        if let Err(e) = load_imposter_remote(&ipfs, &id, parcel, level).await {
+            warn!("{e}");
+            return None;
+        }
+        return load_imposter_local(&ipfs, &id, parcel, level, required_crc).await;
+    }
+
+    None
+}
+
+pub async fn load_imposter_remote(
+    ipfs: &IpfsIo,
+    id: &str,
+    parcel: IVec2,
+    level: usize,
+) -> Result<(), anyhow::Error> {
+    let client = ipfs.client();
+    let zip_file = zip_path(&PathBuf::new(), id, parcel, level)
+        .to_string_lossy()
+        .into_owned()
+        .replace("\\", "/");
+    let zip_url = format!("https://imposter.kuruk.net/{}", zip_file)
+        // double url encode
+        .replace("%", "%25");
+    debug!("zip_url {zip_url}");
+
+    let request = client.get(&zip_url).build()?;
+    let response = ipfs.async_request(request, client).await?;
+    let bytes = response.bytes().await?;
+    let mut zip = ZipArchive::new(Cursor::new(bytes))?;
+    let root = file_root(ipfs.cache_path(), id, level);
+    zip.extract(root)?;
+    Ok(())
+}
+
+pub async fn load_imposter_local(
+    ipfs: &IpfsIo,
+    id: &str,
+    parcel: IVec2,
+    level: usize,
+    required_crc: Option<u32>,
+) -> Option<BakedScene> {
+    let path = spec_path(ipfs.cache_path(), id, parcel, level);
     if let Ok(mut file) = async_fs::File::open(&path).await {
         let mut buf = Vec::default();
         if file.read_to_end(&mut buf).await.is_ok() {
@@ -129,7 +179,7 @@ pub async fn load_imposter(
                     return Some(baked_scene);
                 } else {
                     warn!(
-                        "mismatched hash for {path:?} (expected {}, found {}",
+                        "mismatched hash for {path:?} (expected {}, found {})",
                         required_crc.unwrap(),
                         baked_scene.crc
                     );
@@ -138,11 +188,7 @@ pub async fn load_imposter(
                 warn!("failed to deserialize {path:?}");
             }
         };
-    } else {
-        warn!("missing imposter @ {path:?}");
     }
-
-    // TODO try remote
 
     None
 }
