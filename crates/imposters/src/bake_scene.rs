@@ -1,6 +1,12 @@
 // scenes are saved by entity id
 // cache/imposters/scenes (/specs | /textures)
 
+use std::{
+    io::{Read, Write},
+    path::PathBuf,
+    time::Duration,
+};
+
 use bevy::{
     core::FrameCount,
     math::FloatOrd,
@@ -27,13 +33,17 @@ use scene_runner::{
     renderer_context::RendererSceneContext,
     DebugInfo,
 };
+use zip::{write::SimpleFileOptions, ZipWriter};
 
 use crate::{
-    imposter_spec::{floor_path, texture_path, write_imposter, BakedScene, ImposterSpec},
+    imposter_spec::{
+        floor_path, spec_path, texture_path, write_imposter, zip_path, BakedScene, ImposterSpec,
+    },
     render::{
         BakingIngredients, ImposterEntities, ImposterLookup, ImposterMissing, ImposterReady,
         ImposterState, ImposterTransitionOut, SceneImposter,
     },
+    DclImposterPlugin,
 };
 pub struct DclImposterBakeScenePlugin;
 
@@ -55,6 +65,7 @@ impl Plugin for DclImposterBakeScenePlugin {
                     bake_imposter_imposter,
                     check_bake_state,
                     pick_imposter_to_bake,
+                    output_progress,
                 )
                     .chain()
                     .before(crate::render::spawn_imposters)
@@ -72,7 +83,7 @@ pub struct ImposterOven {
     baked_scene: BakedScene,
 }
 
-const SCENE_BAKE_TICK: u32 = 100;
+const SCENE_BAKE_TICK: u32 = 200;
 
 fn make_scene_oven(
     current_imposter: Res<CurrentImposterScene>,
@@ -127,7 +138,7 @@ fn make_scene_oven(
 
         transform.translation.y = -2000.0;
 
-        let spawning_forever = tick.0 > start_tick.as_ref().unwrap().1 + 1000;
+        let spawning_forever = tick.0 > start_tick.as_ref().unwrap().1 + 10000;
 
         if context.tick_number < SCENE_BAKE_TICK && !context.broken && !spawning_forever {
             return;
@@ -165,7 +176,7 @@ fn make_scene_oven(
             return;
         }
 
-        warn!("baking scene {:?}", hash);
+        debug!("baking scene {:?}", hash);
 
         // disable animations and tweens
         for child in children.iter_descendants(*entity) {
@@ -218,6 +229,7 @@ fn bake_scene_imposters(
     mut materials: ResMut<Assets<SceneMaterial>>,
     lookup: Res<ImposterEntities>,
     config: Res<AppConfig>,
+    plugin: Res<DclImposterPlugin>,
 ) {
     if let Ok((baking_ent, mut oven)) = baking.get_single_mut() {
         let current_scene_ent = {
@@ -234,8 +246,25 @@ fn bake_scene_imposters(
 
         if !any_baking_cams {
             let Some(region) = oven.unbaked_parcels.pop() else {
-                warn!("no regions left");
-                write_imposter(&ipfas, &oven.hash, IVec2::MAX, 0, &oven.baked_scene);
+                debug!("no regions left");
+                write_imposter(
+                    ipfas.ipfs_cache_path(),
+                    &oven.hash,
+                    IVec2::MAX,
+                    0,
+                    &oven.baked_scene,
+                );
+                if let Some(output_path) = plugin.zip_output.clone() {
+                    save_and_zip_callback::<()>(
+                        |_| {},
+                        spec_path(ipfas.ipfs_cache_path(), &oven.hash, IVec2::MAX, 0),
+                        output_path,
+                        oven.hash.clone(),
+                        IVec2::MAX,
+                        0,
+                        None,
+                    )(());
+                }
 
                 // delete the scene since we messed with it a lot to get it stable
                 commands.entity(current_scene_ent).despawn_recursive();
@@ -264,7 +293,7 @@ fn bake_scene_imposters(
                 return;
             };
 
-            warn!("baking region: {:?}", region);
+            debug!("baking region: {:?}", region);
 
             // update materials
             for h_mat in children
@@ -335,12 +364,12 @@ fn bake_scene_imposters(
                 let center = Vec3::from(aabb.center);
                 let radius = aabb.half_extents.length();
 
-                warn!("region: {rmin}-{rmax}, snap: {}-{}", aabb.min(), aabb.max());
+                debug!("region: {rmin}-{rmax}, snap: {}-{}", aabb.min(), aabb.max());
                 let tile_size = (TILE_SIZE as f32
                     * aabb.half_extents.xz().length().max(aabb.half_extents.y)
                     / 16.0)
                     .clamp(2.0, TILE_SIZE as f32 * 2.0) as u32;
-                warn!("tile size: {tile_size}");
+                debug!("tile size: {tile_size}");
 
                 let max_tiles_per_frame = ((GRID_SIZE * GRID_SIZE) as f32
                     * config.scene_imposter_bake.as_mult())
@@ -355,10 +384,24 @@ fn bake_scene_imposters(
                     ..Default::default()
                 };
 
-                let path = texture_path(ipfas.ipfs(), &oven.hash, region.parcel_min(), 0);
+                let path =
+                    texture_path(ipfas.ipfs_cache_path(), &oven.hash, region.parcel_min(), 0);
                 let _ = std::fs::create_dir_all(path.parent().unwrap());
-                let callback = camera.save_asset_callback(path, true, true);
-                camera.set_callback(callback);
+                let save_asset_callback = camera.save_asset_callback(&path, true, true);
+
+                if let Some(output_path) = plugin.zip_output.clone() {
+                    camera.set_callback(save_and_zip_callback(
+                        save_asset_callback,
+                        path,
+                        output_path,
+                        oven.hash.clone(),
+                        region.parcel_min(),
+                        0,
+                        None,
+                    ));
+                } else {
+                    camera.set_callback(save_asset_callback);
+                }
 
                 commands.spawn(ImposterBakeBundle {
                     camera,
@@ -393,9 +436,22 @@ fn bake_scene_imposters(
                 ..Default::default()
             };
 
-            let path = floor_path(ipfas.ipfs(), &oven.hash, region.parcel_min(), 0);
-            let callback = top_down.save_asset_callback(path, true, true);
-            top_down.set_callback(callback);
+            let path = floor_path(ipfas.ipfs_cache_path(), &oven.hash, region.parcel_min(), 0);
+            let save_asset_callback = top_down.save_asset_callback(&path, true, true);
+
+            if let Some(output_path) = plugin.zip_output.clone() {
+                top_down.set_callback(save_and_zip_callback(
+                    save_asset_callback,
+                    path,
+                    output_path,
+                    oven.hash.clone(),
+                    region.parcel_min(),
+                    0,
+                    None,
+                ));
+            } else {
+                top_down.set_callback(save_asset_callback);
+            }
 
             commands.spawn(ImposterBakeBundle {
                 transform: Transform::from_translation(Vec3::new(tile_mid.x, -2000.0, tile_mid.z)),
@@ -404,14 +460,14 @@ fn bake_scene_imposters(
             });
         } else {
             if tick.0 % 200 == 0 {
-                warn!("waiting for bake ...");
+                debug!("waiting for bake ...");
             }
 
             // force failed
             if oven.start_tick + 200 < tick.0 {
                 for (_, mut cam) in all_baking_cams.iter_mut() {
                     if cam.wait_for_render {
-                        warn!("forcing failed bake ...");
+                        debug!("forcing failed bake ...");
                         cam.wait_for_render = false;
                     }
                 }
@@ -419,13 +475,90 @@ fn bake_scene_imposters(
 
             // despawn on complete
             if all_cams_finished {
-                warn!("finished baking");
+                debug!("finished baking");
 
                 for (cam_ent, _) in all_baking_cams.iter() {
                     commands.entity(cam_ent).despawn_recursive();
                 }
             }
         }
+    }
+}
+
+fn save_and_zip_callback<T>(
+    save_asset_callback: impl FnOnce(T) + Send + Sync + 'static,
+    path: PathBuf,
+    zip: PathBuf,
+    id: String,
+    parcel: IVec2,
+    level: usize,
+    crc: Option<u32>,
+) -> impl FnOnce(T) + Send + Sync + 'static {
+    move |arg: T| {
+        save_asset_callback(arg);
+
+        let output_path = zip_path(&zip, &id, parcel, level, crc);
+        let target_file = path.file_name().unwrap().to_string_lossy().into_owned();
+
+        // create folder if required
+        std::fs::create_dir_all(output_path.parent().unwrap()).unwrap();
+
+        // lock
+        let touch = output_path.clone().with_extension("touch");
+        while std::fs::File::create_new(&touch).is_err() {
+            // wait
+            std::thread::sleep(Duration::ZERO);
+        }
+
+        // move and read prev version
+        let mut old_path = output_path.clone();
+        old_path.set_extension(".old");
+        let prev_archive = if std::fs::exists(&output_path).unwrap() {
+            std::fs::rename(&output_path, &old_path).unwrap();
+            let old_file = std::fs::File::open(&old_path).unwrap();
+            Some(zip::ZipArchive::new(old_file).unwrap())
+        } else {
+            None
+        };
+
+        // create new
+        let output = std::fs::File::create_new(&output_path).unwrap();
+        let mut archive = ZipWriter::new(output);
+
+        // copy contents (except current file)
+        if let Some(mut prev_archive) = prev_archive {
+            let file_names = prev_archive
+                .file_names()
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>();
+            for file in file_names {
+                if file != target_file {
+                    archive
+                        .raw_copy_file(prev_archive.by_name(&file).unwrap())
+                        .unwrap();
+                }
+            }
+
+            // delete prev
+            std::fs::remove_file(&old_path).unwrap();
+        }
+
+        // write
+        let mut file = std::fs::File::open(&path).unwrap();
+        let mut data = Vec::default();
+        file.read_to_end(&mut data).unwrap();
+        archive
+            .start_file(
+                &target_file,
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
+            )
+            .unwrap();
+        archive.write_all(&data).unwrap();
+        archive.finish().unwrap();
+        debug!("added {target_file} to {output_path:?}");
+
+        // unlock
+        std::fs::remove_file(touch).unwrap();
     }
 }
 
@@ -441,6 +574,7 @@ fn bake_imposter_imposter(
     mut layers: Query<&mut RenderLayers>,
     tick: Res<FrameCount>,
     config: Res<AppConfig>,
+    plugin: Res<DclImposterPlugin>,
 ) {
     if baking.is_some() {
         let all_cams_finished = all_baking_cams
@@ -449,7 +583,7 @@ fn bake_imposter_imposter(
 
         if all_cams_finished {
             let (_, baking) = baking.take().unwrap();
-            warn!("all cams done");
+            debug!("all cams done");
             let Some(CurrentImposterImposterDetail { parcel, level, .. }) = current_imposter.0
             else {
                 return;
@@ -477,11 +611,33 @@ fn bake_imposter_imposter(
                 }
             }
 
-            write_imposter(&ipfas, &current_realm.address, parcel, level, &baking);
+            write_imposter(
+                ipfas.ipfs_cache_path(),
+                &current_realm.about_url,
+                parcel,
+                level,
+                &baking,
+            );
+            if let Some(output_path) = plugin.zip_output.clone() {
+                save_and_zip_callback::<()>(
+                    |_| {},
+                    spec_path(
+                        ipfas.ipfs_cache_path(),
+                        &current_realm.about_url,
+                        parcel,
+                        level,
+                    ),
+                    output_path,
+                    current_realm.about_url.clone(),
+                    parcel,
+                    level,
+                    Some(baking.crc),
+                )(());
+            }
             current_imposter.0.as_mut().unwrap().complete = true;
         } else if tick.0 > baking.as_ref().unwrap().0 + 100 {
             for (_, mut cam) in all_baking_cams.iter_mut() {
-                warn!("forcing failed imposter bake ...");
+                debug!("forcing failed imposter bake ...");
                 cam.wait_for_render = false;
             }
         }
@@ -496,7 +652,7 @@ fn bake_imposter_imposter(
         crc,
     }) = current_imposter.0.as_ref()
     {
-        warn!("baking mip: {:?}-{}", parcel, level);
+        debug!("baking mip: {:?}-{}", parcel, level);
         let size = 1 << level;
         let next_size = 1 << (level - 1);
         let mut baked_scene = BakedScene {
@@ -540,7 +696,7 @@ fn bake_imposter_imposter(
                 * aabb.half_extents.xz().length().max(aabb.half_extents.y)
                 / 16.0)
                 .clamp(2.0, 256.0) as u32;
-            warn!("tile size: {tile_size}");
+            debug!("tile size: {tile_size}");
 
             let max_tiles_per_frame = ((GRID_SIZE * GRID_SIZE) as f32
                 * config.scene_imposter_bake.as_mult())
@@ -556,10 +712,28 @@ fn bake_imposter_imposter(
                 ..Default::default()
             };
 
-            let path = texture_path(ipfas.ipfs(), &current_realm.address, *parcel, *level);
+            let path = texture_path(
+                ipfas.ipfs_cache_path(),
+                &current_realm.about_url,
+                *parcel,
+                *level,
+            );
             let _ = std::fs::create_dir_all(path.parent().unwrap());
-            let callback = camera.save_asset_callback(path, true, true);
-            camera.set_callback(callback);
+            let save_asset_callback = camera.save_asset_callback(&path, true, true);
+
+            if let Some(output_path) = plugin.zip_output.clone() {
+                camera.set_callback(save_and_zip_callback(
+                    save_asset_callback,
+                    path,
+                    output_path,
+                    current_realm.about_url.clone(),
+                    *parcel,
+                    *level,
+                    Some(*crc),
+                ));
+            } else {
+                camera.set_callback(save_asset_callback);
+            }
 
             commands.spawn((
                 ImposterBakeBundle {
@@ -598,9 +772,27 @@ fn bake_imposter_imposter(
                 ..Default::default()
             };
 
-            let path = floor_path(ipfas.ipfs(), &current_realm.address, *parcel, *level);
-            let callback = top_down.save_asset_callback(path, true, true);
-            top_down.set_callback(callback);
+            let path = floor_path(
+                ipfas.ipfs_cache_path(),
+                &current_realm.about_url,
+                *parcel,
+                *level,
+            );
+            let save_asset_callback = top_down.save_asset_callback(&path, true, true);
+
+            if let Some(output_path) = plugin.zip_output.clone() {
+                top_down.set_callback(save_and_zip_callback(
+                    save_asset_callback,
+                    path,
+                    output_path,
+                    current_realm.about_url.clone(),
+                    *parcel,
+                    *level,
+                    Some(*crc),
+                ));
+            } else {
+                top_down.set_callback(save_asset_callback);
+            }
 
             commands.spawn((
                 ImposterBakeBundle {
@@ -628,11 +820,12 @@ pub struct ImposterBakeList(Vec<ImposterToBake>);
 fn pick_imposter_to_bake(
     q: Query<(&SceneImposter, &ImposterMissing), Without<ImposterTransitionOut>>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
-    scene_pointers: Res<ScenePointers>,
+    mut scene_pointers: ResMut<ScenePointers>,
     live_scenes: Res<LiveScenes>,
     mut baking: ResMut<ImposterBakeList>,
     current_realm: Res<CurrentRealm>,
     config: Res<AppConfig>,
+    plugin: Res<DclImposterPlugin>,
 ) {
     if config.scene_imposter_bake == SceneImposterBake::Off {
         return;
@@ -705,6 +898,19 @@ fn pick_imposter_to_bake(
             baking
                 .0
                 .push(ImposterToBake::Mip(imposter.parcel, imposter.level));
+
+            // delete prev zip if exists
+            if let Some(output_path) = plugin.zip_output.clone() {
+                let path = zip_path(
+                    &output_path,
+                    &current_realm.about_url,
+                    imposter.parcel,
+                    imposter.level,
+                    scene_pointers.crc(imposter.parcel, imposter.level),
+                );
+                let _ = std::fs::remove_file(path);
+            }
+
             break;
         }
     }
@@ -854,4 +1060,32 @@ fn check_bake_state(
             }
         }
     }
+}
+
+fn output_progress(
+    q: Query<&SceneImposter, (With<ImposterMissing>, Without<ImposterTransitionOut>)>,
+    mut max_count: Local<usize>,
+    config: Res<AppConfig>,
+    time: Res<Time>,
+    mut last_time: Local<f32>,
+    plugin: Res<DclImposterPlugin>,
+) {
+    if plugin.zip_output.is_none() {
+        return;
+    }
+
+    if time.elapsed_seconds() < *last_time + 5.0 {
+        return;
+    }
+    *last_time = time.elapsed_seconds();
+
+    let max_level = config.scene_imposter_distances.len() - 1;
+    let count = q.iter().filter(|i| i.level == max_level).count();
+    *max_count = count.max(*max_count);
+    info!(
+        "imposter bake progress: {}/{} [l{max_level}] = {}%",
+        *max_count - count,
+        *max_count,
+        ((*max_count - count) as f32 / *max_count as f32 * 100.0).floor() as usize
+    );
 }

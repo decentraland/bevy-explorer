@@ -119,7 +119,7 @@ fastrand = "2"
 rand = "0.8.5"
 futures-util = "0.3.28"
 async-native-tls = { version = "0.5", features = ["runtime-async-std"] }
-boimp = { git = "https://github.com/robtfm/boimp", branch = "master" }
+boimp = { git = "https://github.com/robtfm/boimp", branch = "0.1.1" }
 crc = "3"
 num-traits = "0.2"
 async-compat = "0.2"

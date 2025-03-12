@@ -2,6 +2,7 @@ use std::{collections::VecDeque, marker::PhantomData, path::PathBuf, time::Durat
 
 use bevy::{
     app::Update,
+    asset::{AssetServer, Handle, LoadState, RecursiveDependencyLoadState, UntypedAssetId},
     ecs::{
         component::Component,
         event::{Event, Events},
@@ -10,11 +11,13 @@ use bevy::{
     },
     hierarchy::DespawnRecursiveExt,
     math::Vec3,
+    pbr::StandardMaterial,
     prelude::{
         despawn_with_children_recursive, BuildWorldChildren, Bundle, Entity, GlobalTransform,
-        IntoSystemConfigs, Plugin, With, World,
+        IntoSystemConfigs, Mesh, Plugin, Res, With, World,
     },
     render::view::{Layer, RenderLayers},
+    scene::{InstanceId, SceneSpawner},
     tasks::{IoTaskPool, Task},
 };
 use ethers_core::types::H160;
@@ -483,5 +486,63 @@ impl TaskCompat for IoTaskPool {
         T: Send + 'static,
     {
         self.spawn(async_compat::Compat::new(future))
+    }
+}
+
+#[allow(clippy::type_complexity)]
+#[derive(SystemParam)]
+pub struct SceneSpawnerPlus<'w, 's> {
+    scene_spawner: Res<'w, SceneSpawner>,
+    asset_server: Res<'w, AssetServer>,
+    query: Query<
+        'w,
+        's,
+        (
+            Option<&'static Handle<Mesh>>,
+            Option<&'static Handle<StandardMaterial>>,
+        ),
+    >,
+}
+
+impl std::ops::Deref for SceneSpawnerPlus<'_, '_> {
+    type Target = SceneSpawner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.scene_spawner
+    }
+}
+
+impl SceneSpawnerPlus<'_, '_> {
+    pub fn instance_is_really_ready(&self, instance: InstanceId) -> bool {
+        if !self.scene_spawner.instance_is_ready(instance) {
+            return false;
+        }
+
+        fn check_handle(asset_server: &AssetServer, id: impl Into<UntypedAssetId>) -> bool {
+            let id = id.into();
+            if asset_server.load_state(id) == LoadState::Loading {
+                return false;
+            }
+
+            if asset_server.recursive_dependency_load_state(id)
+                == RecursiveDependencyLoadState::Loading
+            {
+                return false;
+            }
+
+            true
+        }
+
+        for scene_ent in self.scene_spawner.iter_instance_entities(instance) {
+            let (maybe_h_mat, maybe_h_mesh) = self.query.get(scene_ent).unwrap();
+            if maybe_h_mat.is_some_and(|h| !check_handle(&self.asset_server, h)) {
+                return false;
+            }
+            if maybe_h_mesh.is_some_and(|h| !check_handle(&self.asset_server, h)) {
+                return false;
+            }
+        }
+
+        true
     }
 }

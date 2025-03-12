@@ -550,6 +550,7 @@ fn process_profile(
         };
         debug!("updating ...");
 
+        commands.entity(*booth_ent).despawn_recursive();
         current_profile.snapshots = Some((face, body));
         current_profile.is_deployed = false;
 

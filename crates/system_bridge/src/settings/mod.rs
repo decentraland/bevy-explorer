@@ -15,6 +15,7 @@ use bevy::{
 };
 use cache_size::CacheSizeSetting;
 use common::{
+    sets::SceneSets,
     structs::{
         AaSetting, AppConfig, BloomSetting, FogSetting, ShadowSetting, SsaoSetting, WindowSetting,
     },
@@ -89,7 +90,10 @@ impl Plugin for SettingBridgePlugin {
         ) {
             settings.add_int_setting::<T>();
             schedule.add_systems(apply_setting::<T>);
-            app.add_systems(Update, apply_to_camera::<T>);
+            app.add_systems(
+                Update,
+                apply_to_camera::<T>.in_set(SceneSets::RestrictedActions),
+            );
         }
 
         fn add_enum_setting<T: EnumAppSetting>(
@@ -99,7 +103,10 @@ impl Plugin for SettingBridgePlugin {
         ) {
             settings.add_enum_setting::<T>();
             schedule.add_systems(apply_setting::<T>);
-            app.add_systems(Update, apply_to_camera::<T>);
+            app.add_systems(
+                Update,
+                apply_to_camera::<T>.in_set(SceneSets::RestrictedActions),
+            );
         }
 
         let config_copy = app.world().resource::<AppConfig>().clone();

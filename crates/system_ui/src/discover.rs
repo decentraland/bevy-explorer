@@ -624,6 +624,7 @@ pub fn spawn_discover_popup(
     let system = move |mut settings: Query<&mut SettingsDialog>| {
         let cr_ev = ChangeRealmEvent {
             new_realm: url.clone(),
+            content_server_override: None,
         };
         let rpc_ev = RpcCall::TeleportPlayer {
             scene: None,

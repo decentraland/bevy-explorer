@@ -22,7 +22,11 @@ use bevy::{
     transform::TransformSystem,
     utils::HashMap,
 };
-use common::{anim_last_system, structs::AppConfig, util::ModifyComponentExt};
+use common::{
+    anim_last_system,
+    structs::AppConfig,
+    util::{ModifyComponentExt, SceneSpawnerPlus},
+};
 use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
@@ -356,7 +360,7 @@ fn update_ready_gltfs(
         ResMut<Assets<AnimationGraph>>,
         ResMut<Assets<Mesh>>,
     ),
-    scene_spawner: Res<SceneSpawner>,
+    scene_spawner: SceneSpawnerPlus,
     mut contexts: Query<(
         &mut RendererSceneContext,
         &mut SceneResourceLookup,
@@ -383,7 +387,7 @@ fn update_ready_gltfs(
             continue;
         }
         let instance = loaded.0.as_ref().unwrap();
-        if scene_spawner.instance_is_ready(*instance) {
+        if scene_spawner.instance_is_really_ready(*instance) {
             let Some(gltf) = gltfs.get(h_gltf) else {
                 commands
                     .entity(bevy_scene_entity)

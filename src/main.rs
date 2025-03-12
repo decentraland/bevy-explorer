@@ -216,6 +216,8 @@ fn main() {
         ..base_config
     };
 
+    let content_server_override = args.value_from_str("--content-server").ok();
+
     let test_scenes = args.value_from_str("--test_scenes").ok();
     let test_mode = args.contains("--testing") || test_scenes.is_some();
 
@@ -322,6 +324,7 @@ fn main() {
                 .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
                     preview: is_preview,
                     starting_realm: Some(final_config.server.clone()),
+                    content_server_override,
                     assets_root: Default::default(),
                     num_slots: final_config.max_concurrent_remotes,
                 })
@@ -358,12 +361,6 @@ fn main() {
                 // actual distance we need is last + diagonal of the largest mip size
                 let mip_size =
                     (1 << (final_config.scene_imposter_distances.len() - 1)) as f32 * 16.0;
-                // let req = last + (2.0 * mip_size * mip_size).sqrt();
-                // println!(
-                //     "imposter mips: {:?} -> distance {}",
-                //     final_config.scene_imposter_distances, req
-                // );
-                // req
                 last + (2.0 * mip_size * mip_size).sqrt()
             })
             .unwrap_or(0.0),
@@ -392,7 +389,10 @@ fn main() {
         .add_plugins(TweenPlugin)
         .add_plugins(CollectiblesPlugin)
         .add_plugins(WorldUiPlugin)
-        .add_plugins(DclImposterPlugin)
+        .add_plugins(DclImposterPlugin {
+            zip_output: None,
+            download: true,
+        })
         .add_plugins(TextureCameraPlugin)
         .add_plugins(SystemBridgePlugin { bare: false });
 

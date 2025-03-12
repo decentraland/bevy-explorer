@@ -1,4 +1,8 @@
-use comms::{preview::PreviewMode, profile::ProfileCache, CommsPlugin};
+use comms::{
+    preview::PreviewMode,
+    profile::{CurrentUserProfile, ProfileCache, UserProfile},
+    CommsPlugin,
+};
 use console::ConsolePlugin;
 use imposters::{render::ImposterMissing, DclImposterPlugin};
 
@@ -7,6 +11,7 @@ use bevy::{
 };
 
 use common::{
+    profile::SerializedProfile,
     rpc::RpcCall,
     sets::SetupSets,
     structs::{
@@ -77,6 +82,11 @@ fn main() {
         ..base_config
     };
 
+    let content_server_override = args.value_from_str("--content-server").ok();
+    let zip_output = args.value_from_str("--zip-output").ok();
+
+    let no_download = args.contains("--no-download");
+
     let remaining = args.finish();
     if !remaining.is_empty() {
         println!(
@@ -126,6 +136,7 @@ fn main() {
             .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
                 preview: false,
                 starting_realm: Some(final_config.server.clone()),
+                content_server_override,
                 assets_root: Default::default(),
                 num_slots: final_config.max_concurrent_remotes,
             }),
@@ -163,7 +174,10 @@ fn main() {
         .add_plugins(SceneRunnerPlugin)
         .add_plugins(CommsPlugin)
         .add_plugins(RestrictedActionsPlugin)
-        .add_plugins(DclImposterPlugin)
+        .add_plugins(DclImposterPlugin {
+            zip_output,
+            download: !no_download,
+        })
         .add_plugins(SystemBridgePlugin { bare: true });
 
     app.insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
@@ -217,6 +231,10 @@ fn check_done(
         *counter = 0;
         return;
     }
+    if !pointers.is_full() {
+        *counter = 0;
+        return;
+    }
 
     // wait till nothing missing
     if q.is_empty() {
@@ -235,6 +253,8 @@ fn setup(
     mut player_resource: ResMut<PrimaryPlayerRes>,
     mut cam_resource: ResMut<PrimaryCameraRes>,
     config: Res<AppConfig>,
+    mut wallet: ResMut<Wallet>,
+    mut current_profile: ResMut<CurrentUserProfile>,
 ) {
     info!("main::setup");
     // create the main player
@@ -261,4 +281,16 @@ fn setup(
 
     player_resource.0 = player_id;
     cam_resource.0 = camera_id;
+
+    wallet.finalize_as_guest();
+    current_profile.profile = Some(UserProfile {
+        version: 0,
+        content: SerializedProfile {
+            eth_address: format!("{:#x}", wallet.address().unwrap()),
+            user_id: Some(format!("{:#x}", wallet.address().unwrap())),
+            ..Default::default()
+        },
+        base_url: Default::default(),
+    });
+    current_profile.is_deployed = true;
 }

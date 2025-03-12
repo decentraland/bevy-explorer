@@ -3,7 +3,7 @@ use std::{borrow::Borrow, collections::VecDeque, num::ParseIntError, str::FromSt
 use analytics::segment_system::SegmentConfig;
 use bevy::{
     asset::{io::Reader, AssetLoader, LoadContext},
-    math::Vec3Swizzles,
+    math::{FloatOrd, Vec3Swizzles},
     pbr::NotShadowCaster,
     prelude::*,
     reflect::TypePath,
@@ -635,6 +635,15 @@ impl Default for ScenePointers {
 }
 
 impl ScenePointers {
+    pub fn is_full(&self) -> bool {
+        if self.realm_bounds.0.cmpgt(self.realm_bounds.1).any() {
+            return true;
+        }
+
+        let expected_count = (self.realm_bounds.1 - self.realm_bounds.0 + 1).element_product();
+        self.pointers.len() >= expected_count as usize
+    }
+
     pub fn get(&self, parcel: impl Borrow<IVec2>) -> Option<&PointerResult> {
         let parcel: &IVec2 = parcel.borrow();
         if parcel.cmplt(self.realm_bounds.0).any() || parcel.cmpgt(self.realm_bounds.1).any() {
@@ -917,21 +926,28 @@ fn load_active_entities(
             return;
         };
 
-        let required_parcels: HashSet<_> = parcels_in_range(
+        let mut required_parcels: Vec<_> = parcels_in_range(
             focus,
             range.load.max(range.load_imposter),
             pointers.min(),
             pointers.max(),
         )
         .into_iter()
-        .filter_map(|(parcel, _)| match pointers.get(parcel) {
+        .filter_map(|(parcel, distance)| match pointers.get(parcel) {
             Some(PointerResult::Exists { realm, .. }) => {
-                (realm != &current_realm.address).then_some(parcel)
+                (realm != &current_realm.address).then_some((distance, parcel))
             }
             Some(PointerResult::Nothing) => None,
-            _ => Some(parcel),
+            _ => Some((distance, parcel)),
         })
         .collect();
+        // limit to 5000 per request
+        required_parcels.sort_by_key(|(distance, _)| FloatOrd(*distance));
+        let required_parcels = required_parcels
+            .into_iter()
+            .take(5000)
+            .map(|(_, parcel)| parcel)
+            .collect::<HashSet<_>>();
 
         if !has_scene_urns {
             // load required pointers

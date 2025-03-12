@@ -1,6 +1,7 @@
 pub mod ipfs_path;
 
 use std::{
+    borrow::Cow,
     io::ErrorKind,
     marker::PhantomData,
     path::{Path, PathBuf},
@@ -191,8 +192,8 @@ impl AssetLoader for SceneJsLoader {
 pub struct ContentMap(HashMap<String, String>);
 
 impl ContentMap {
-    pub fn hash(&self, file: &str) -> Option<&str> {
-        self.0.get(file.to_lowercase().as_str()).map(String::as_str)
+    pub fn hash<'a>(&'a self, file: &str) -> Option<Cow<'a, String>> {
+        self.0.get(file.to_lowercase().as_str()).map(Cow::Borrowed)
     }
 
     pub fn files(&self) -> impl Iterator<Item = &String> {
@@ -427,6 +428,7 @@ pub struct IpfsIoPlugin {
     pub preview: bool,
     pub assets_root: Option<String>,
     pub starting_realm: Option<String>,
+    pub content_server_override: Option<String>,
     pub num_slots: usize,
 }
 
@@ -492,9 +494,10 @@ impl Plugin for IpfsIoPlugin {
         if let Some(realm) = &self.starting_realm {
             let ipfs = app.world().resource::<IpfsResource>().clone();
             let realm = realm.clone();
+            let content_server_override = self.content_server_override.clone();
             IoTaskPool::get()
                 .spawn_compat(async move {
-                    ipfs.set_realm(realm).await;
+                    ipfs.set_realm(realm, content_server_override).await;
                 })
                 .detach();
         }
@@ -506,6 +509,7 @@ impl Plugin for IpfsIoPlugin {
 #[command(name = "/changerealm")]
 struct ChangeRealmCommand {
     new_realm: String,
+    content_server_override: Option<String>,
 }
 
 fn change_realm_command(
@@ -515,6 +519,7 @@ fn change_realm_command(
     if let Some(Ok(command)) = input.take() {
         writer.send(ChangeRealmEvent {
             new_realm: command.new_realm,
+            content_server_override: command.content_server_override,
         });
         input.ok();
     }
@@ -523,6 +528,7 @@ fn change_realm_command(
 #[derive(Event, Clone)]
 pub struct ChangeRealmEvent {
     pub new_realm: String,
+    pub content_server_override: Option<String>,
 }
 
 #[derive(Resource, Default, Debug)]
@@ -576,15 +582,13 @@ pub fn change_realm(
 
     if !change_realm_requests.is_empty() {
         let ipfs = ipfs.clone();
-        let new_realm = change_realm_requests
-            .read()
-            .last()
-            .unwrap()
-            .new_realm
-            .to_owned();
+        let request = change_realm_requests.read().last().unwrap();
+
+        let new_realm = request.new_realm.to_owned();
+        let content_server_override = request.content_server_override.to_owned();
         IoTaskPool::get()
             .spawn_compat(async move {
-                ipfs.set_realm(new_realm).await;
+                ipfs.set_realm(new_realm, content_server_override).await;
             })
             .detach();
     }
@@ -719,8 +723,10 @@ impl IpfsIo {
         }
     }
 
-    pub async fn set_realm(&self, new_realm: String) {
-        let res = self.set_realm_inner(new_realm.clone()).await;
+    pub async fn set_realm(&self, new_realm: String, content_server_override: Option<String>) {
+        let res = self
+            .set_realm_inner(new_realm.clone(), content_server_override)
+            .await;
         if let Err(e) = res {
             error!("failed to set realm: {e}");
             self.realm_config_sender
@@ -747,7 +753,11 @@ impl IpfsIo {
         (context.base_url.clone(), context.about.clone())
     }
 
-    async fn set_realm_inner(&self, new_realm: String) -> Result<(), anyhow::Error> {
+    async fn set_realm_inner(
+        &self,
+        new_realm: String,
+        content_server_override: Option<String>,
+    ) -> Result<(), anyhow::Error> {
         self.realm_config_sender.send(None).expect("channel closed");
         let mut write = self.context.write().await;
         if write.about.is_some() {
@@ -759,6 +769,7 @@ impl IpfsIo {
 
         let mut retries = 0;
         let mut about;
+        let mut final_url;
         loop {
             let about_raw = self
                 .client
@@ -769,6 +780,7 @@ impl IpfsIo {
             if about_raw.status() != StatusCode::OK {
                 return Err(anyhow!("status: {}", about_raw.status()));
             }
+            final_url = about_raw.url().to_string();
 
             about = about_raw
                 .json::<ServerAbout>()
@@ -792,14 +804,18 @@ impl IpfsIo {
         }
 
         let mut write = self.context.write().await;
-        let base_url = about
-            .content_url()
+        if let (Some(cs), Some(content)) = (&content_server_override, about.content.as_mut()) {
+            content.public_url = format!("{cs}/content/");
+        }
+        let base_url = content_server_override
+            .as_deref()
+            .or_else(|| about.content_url())
             .map(|c| c.strip_suffix("/content/").unwrap_or(c));
-        write.base_url = base_url.unwrap_or(&new_realm).to_owned();
-        write.about_url = new_realm.clone();
+        write.base_url = base_url.unwrap_or(&final_url).to_owned();
+        write.about_url = final_url.clone();
         write.about = Some(about.clone());
         self.realm_config_sender
-            .send(Some((new_realm, write.base_url.clone(), about)))
+            .send(Some((final_url, write.base_url.clone(), about)))
             .expect("channel closed");
         Ok(())
     }
@@ -895,7 +911,7 @@ impl IpfsIo {
                             let mut file = async_fs::File::create(&cache_path).await?;
                             let mut buf = Vec::default();
                             serde_json::to_writer(&mut buf, &entity)?;
-                            file.write(&buf).await?;
+                            file.write_all(&buf).await?;
                             file.sync_all().await?;
                             // let file = std::fs::File::create(&cache_path)?;
                             // serde_json::to_writer(file, &entity)?;
@@ -1078,7 +1094,12 @@ impl AssetReader for IpfsIo {
                 }
             };
 
-            debug!("remote");
+            debug!(
+                "remote ({})",
+                hash.as_ref()
+                    .map(|h| format!("hash {h} not found"))
+                    .unwrap_or_else(|| "uncached".to_owned())
+            );
 
             let token = self.reqno.fetch_add(1, atomic::Ordering::SeqCst);
 
@@ -1127,6 +1148,7 @@ impl AssetReader for IpfsIo {
             debug!("[{token:?}]: remote url: `{remote}` proceeding");
 
             let mut attempt = 0;
+            let mut no_cache = false;
             let data = loop {
                 attempt += 1;
 
@@ -1180,6 +1202,16 @@ impl AssetReader for IpfsIo {
                     Ok(response) => response,
                 };
 
+                if let Some(cache_control) = response.headers().get("cache-control") {
+                    if cache_control
+                        .to_str()
+                        .unwrap_or_default()
+                        .contains("no-store")
+                    {
+                        no_cache = true;
+                    }
+                }
+
                 let data = response.bytes().await;
 
                 match data {
@@ -1203,7 +1235,7 @@ impl AssetReader for IpfsIo {
             };
 
             if let Some(hash) = hash {
-                if ipfs_path.should_cache(&hash) {
+                if !no_cache && ipfs_path.should_cache(&hash) {
                     let mut cache_path = PathBuf::from(self.cache_path());
                     cache_path.push(format!("{}.part", hash));
                     let cache_path_str = cache_path.to_string_lossy().into_owned();
@@ -1213,7 +1245,7 @@ impl AssetReader for IpfsIo {
                             warn!("failed to create cache `{cache_path_str}`: {e}");
                         }
                         Ok(mut f) => {
-                            if let Err(e) = f.write(&data).await {
+                            if let Err(e) = f.write_all(&data).await {
                                 warn!("failed to write cache `{cache_path_str}`: {e}");
                             } else if let Err(e) = f.sync_all().await {
                                 warn!("failed to sync cache `{cache_path_str}`: {e}");
