@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, f32::consts::PI, path::PathBuf, str::FromStr, time::Duration};
+use std::{collections::VecDeque, f32::consts::PI, path::PathBuf, time::Duration};
 
 use attach::AttachPlugin;
 use avatar_texture::AvatarTexturePlugin;
@@ -178,99 +178,94 @@ fn update_avatar_info(
                     .iter()
                     .map(|emote| emote.urn.clone())
                     .collect(),
+                force_render: avatar.force_render.clone().unwrap_or_default(),
             },
         )
     }
 }
 
 #[derive(Component, Clone)]
-pub struct AvatarShape {
-    pub shape: PbAvatarShape,
-    pub force_render: HashSet<WearableCategory>,
-}
+pub struct AvatarShape(pub PbAvatarShape);
 
 impl From<PbAvatarShape> for AvatarShape {
     fn from(value: PbAvatarShape) -> Self {
-        Self {
-            shape: value,
-            force_render: Default::default(),
-        }
+        Self(value)
     }
 }
 
 impl From<&UserProfile> for AvatarShape {
     fn from(profile: &UserProfile) -> Self {
-        AvatarShape {
-            shape: PbAvatarShape {
-                id: profile.content.eth_address.clone(),
-                // add label only for foreign players
-                name: Some(profile.content.name.to_owned()),
-                body_shape: Some(
-                    profile
-                        .content
-                        .avatar
-                        .body_shape
-                        .to_owned()
-                        .unwrap_or(base_wearables::default_bodyshape_urn().to_string()),
-                ),
-                skin_color: Some(
-                    profile
-                        .content
-                        .avatar
-                        .skin
-                        .map(|skin| skin.color)
-                        .unwrap_or(Color3 {
-                            r: 0.6,
-                            g: 0.462,
-                            b: 0.356,
-                        }),
-                ),
-                hair_color: Some(
-                    profile
-                        .content
-                        .avatar
-                        .hair
-                        .map(|hair| hair.color)
-                        .unwrap_or(Color3 {
-                            r: 0.283,
-                            g: 0.142,
-                            b: 0.0,
-                        }),
-                ),
-                eye_color: Some(profile.content.avatar.eyes.map(|eye| eye.color).unwrap_or(
-                    Color3 {
+        AvatarShape(PbAvatarShape {
+            id: profile.content.eth_address.clone(),
+            // add label only for foreign players
+            name: Some(profile.content.name.to_owned()),
+            body_shape: Some(
+                profile
+                    .content
+                    .avatar
+                    .body_shape
+                    .to_owned()
+                    .unwrap_or(base_wearables::default_bodyshape_urn().to_string()),
+            ),
+            skin_color: Some(
+                profile
+                    .content
+                    .avatar
+                    .skin
+                    .map(|skin| skin.color)
+                    .unwrap_or(Color3 {
                         r: 0.6,
                         g: 0.462,
                         b: 0.356,
-                    },
-                )),
-                expression_trigger_id: None,
-                expression_trigger_timestamp: None,
-                talking: None,
-                wearables: profile.content.avatar.wearables.to_vec(),
-                emotes: profile
+                    }),
+            ),
+            hair_color: Some(
+                profile
                     .content
                     .avatar
-                    .emotes
-                    .as_ref()
-                    .map(|emotes| {
-                        emotes
-                            .iter()
-                            .map(|emote| emote.urn.clone())
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default(),
-            },
+                    .hair
+                    .map(|hair| hair.color)
+                    .unwrap_or(Color3 {
+                        r: 0.283,
+                        g: 0.142,
+                        b: 0.0,
+                    }),
+            ),
+            eye_color: Some(
+                profile
+                    .content
+                    .avatar
+                    .eyes
+                    .map(|eye| eye.color)
+                    .unwrap_or(Color3 {
+                        r: 0.6,
+                        g: 0.462,
+                        b: 0.356,
+                    }),
+            ),
+            expression_trigger_id: None,
+            expression_trigger_timestamp: None,
+            talking: None,
+            wearables: profile.content.avatar.wearables.to_vec(),
+            emotes: profile
+                .content
+                .avatar
+                .emotes
+                .as_ref()
+                .map(|emotes| {
+                    emotes
+                        .iter()
+                        .map(|emote| emote.urn.clone())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default(),
             force_render: profile
                 .content
                 .avatar
                 .force_render
                 .clone()
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|c| WearableCategory::from_str(&c).ok())
-                .collect(),
-        }
+                .unwrap_or_default(),
+        })
     }
 }
 
@@ -291,7 +286,7 @@ fn update_base_avatar_shape(
 
         // show label only for other players
         if maybe_player.is_none() {
-            avatar_shape.shape.name = None;
+            avatar_shape.0.name = None;
         }
 
         commands.entity(ent).try_insert(avatar_shape);
@@ -344,11 +339,7 @@ fn select_avatar(
         updates.insert(
             id,
             AvatarUpdate {
-                base_name: base_shape
-                    .shape
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| "Guest".into()),
+                base_name: base_shape.0.name.clone().unwrap_or_else(|| "Guest".into()),
                 update_shape: ref_avatar.is_changed().then_some(base_shape.clone()),
                 active_scenes: containing_scene.get(entity),
                 prev_source: maybe_prev_selection
@@ -366,19 +357,16 @@ fn select_avatar(
             if ref_avatar.is_changed() {
                 commands.entity(ent).try_insert(AvatarSelection {
                     scene: Some(scene_ent.root),
-                    shape: AvatarShape {
-                        shape: PbAvatarShape {
-                            name: Some(
-                                scene_avatar_shape
-                                    .shape
-                                    .name
-                                    .clone()
-                                    .unwrap_or_else(|| "NPC".into()),
-                            ),
-                            ..scene_avatar_shape.shape.clone()
-                        },
-                        force_render: scene_avatar_shape.force_render.clone(),
-                    },
+                    shape: AvatarShape(PbAvatarShape {
+                        name: Some(
+                            scene_avatar_shape
+                                .0
+                                .name
+                                .clone()
+                                .unwrap_or_else(|| "NPC".into()),
+                        ),
+                        ..scene_avatar_shape.0.clone()
+                    }),
                     automatic_delete: true,
                 });
 
@@ -409,19 +397,16 @@ fn select_avatar(
 
         if ref_avatar.is_changed() || update.prev_source != update.current_source {
             // and it needs to be updated
-            update.update_shape = Some(AvatarShape {
-                shape: PbAvatarShape {
-                    name: Some(
-                        scene_avatar_shape
-                            .shape
-                            .name
-                            .clone()
-                            .unwrap_or_else(|| update.base_name.clone()),
-                    ),
-                    ..scene_avatar_shape.shape.clone()
-                },
-                force_render: scene_avatar_shape.force_render.clone(),
-            });
+            update.update_shape = Some(AvatarShape(PbAvatarShape {
+                name: Some(
+                    scene_avatar_shape
+                        .0
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| update.base_name.clone()),
+                ),
+                ..scene_avatar_shape.0.clone()
+            }));
         } else {
             // doesn't need to be updated, even if the base shape changed
             // TODO this probably won't pick up name changes though ?
@@ -550,7 +535,7 @@ fn update_render_avatar(
         // get body shape
         let body_urn = selection
             .shape
-            .shape
+            .0
             .body_shape
             .as_ref()
             .and_then(|b| WearableUrn::new(b).ok())
@@ -576,7 +561,7 @@ fn update_render_avatar(
         let mut all_loaded = true;
         let specified_wearables: Vec<_> = selection
             .shape
-            .shape
+            .0
             .wearables
             .iter()
             .flat_map(|w| WearableUrn::new(w).ok())
@@ -629,7 +614,7 @@ fn update_render_avatar(
         }
 
         // calculate what is hidden
-        let mut hides = HashSet::default();
+        let mut hides: HashSet<WearableCategory, _> = HashSet::default();
 
         debug!("calculating hides");
         for category in WearableCategory::hides_order() {
@@ -643,7 +628,7 @@ fn update_render_avatar(
                 debug!("add {:?} = {:?} -> {:?}", category, wearable.hides, hides);
             }
 
-            hides.retain(|cat| !selection.shape.force_render.contains(cat));
+            hides.retain(|cat| !selection.shape.0.force_render.iter().any(|h| h == cat.slot));
         }
 
         let initial_count = wearables.len();
@@ -668,16 +653,16 @@ fn update_render_avatar(
                     ..Default::default()
                 },
                 AvatarDefinition {
-                    label: selection.shape.shape.name.as_ref().map(|name| {
+                    label: selection.shape.0.name.as_ref().map(|name| {
                         format!(
                             "{}#{}",
                             name,
                             selection
                                 .shape
-                                .shape
+                                .0
                                 .id
                                 .chars()
-                                .skip(selection.shape.shape.id.len().saturating_sub(4))
+                                .skip(selection.shape.0.id.len().saturating_sub(4))
                                 .collect::<String>()
                         )
                     }),
@@ -687,7 +672,7 @@ fn update_render_avatar(
                     hides,
                     skin_color: selection
                         .shape
-                        .shape
+                        .0
                         .skin_color
                         .unwrap_or(Color3 {
                             r: 0.6,
@@ -697,7 +682,7 @@ fn update_render_avatar(
                         .convert_linear_rgb(),
                     hair_color: selection
                         .shape
-                        .shape
+                        .0
                         .hair_color
                         .unwrap_or(Color3 {
                             r: 0.283,
@@ -707,7 +692,7 @@ fn update_render_avatar(
                         .convert_linear_rgb(),
                     eyes_color: selection
                         .shape
-                        .shape
+                        .0
                         .eye_color
                         .unwrap_or(Color3 {
                             r: 0.6,
@@ -1418,7 +1403,7 @@ fn debug_dump_avatar(
         };
 
         let wearable_hashes: Vec<String> = shape
-            .shape
+            .0
             .wearables
             .iter()
             .flat_map(|w| WearableUrn::new(w).ok())
@@ -1426,7 +1411,7 @@ fn debug_dump_avatar(
             .collect();
 
         let emote_hashes: Vec<_> = shape
-            .shape
+            .0
             .emotes
             .iter()
             .inspect(|e| {

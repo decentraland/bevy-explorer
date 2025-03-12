@@ -235,7 +235,7 @@ fn set_emotes_content(
                 settings.into_inner()
             }
             None => {
-                let player_shape = &player.get_single().unwrap().shape;
+                let player_shape = &player.get_single().unwrap().0;
                 let body_instance =
                     WearableInstance::new(player_shape.body_shape.as_ref().unwrap())
                         .unwrap_or_else(|_| default_bodyshape_instance());
@@ -1032,9 +1032,9 @@ fn update_selected_item(
                 dialog.modified = true;
 
                 // update emotes on avatar
-                let old_emotes = avatar.shape.emotes.clone();
+                let old_emotes = avatar.0.emotes.clone();
                 let mut emotes = avatar
-                    .shape
+                    .0
                     .emotes
                     .drain(..)
                     .map(|e| EmoteInstance::new(&e).ok())
@@ -1057,7 +1057,7 @@ fn update_selected_item(
                     })
                     .collect();
                 debug!("emotes change\n{:?}\n{:?}", old_emotes, new_emotes);
-                avatar.shape.emotes = new_emotes;
+                avatar.0.emotes = new_emotes;
                 // and photobooth
                 booth.update_shape(booth_instance, avatar.clone());
 
