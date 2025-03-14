@@ -847,7 +847,7 @@ fn spawn_scenes(
 #[derive(Component)]
 pub struct AvatarMaterials(pub HashSet<AssetId<SceneMaterial>>);
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct PreviousAvatar(Entity);
 
 // update materials and hide base parts
@@ -874,10 +874,11 @@ fn process_avatar(
     (ui_view, dui, config): (Res<AvatarWorldUi>, Res<DuiRegistry>, Res<AppConfig>),
     mut emote_loader: CollectibleManager<Emote>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
-    (names, previous_avatar, scene_ent, mut contexts): (
+    (names, previous_avatar, scene_ent, previous_animator, mut contexts): (
         Query<(&Name, &Parent)>,
         Query<&PreviousAvatar>,
         Query<&SceneEntity>,
+        Query<(), (With<AnimationPlayer>, With<Handle<AnimationGraph>>, With<Clips>, With<AnimationTransitions>)>,
         Query<&mut RendererSceneContext>,
     ),
 ) {
@@ -900,27 +901,30 @@ fn process_avatar(
         let mut armature_node = None;
         let mut target_armature_entities = HashMap::default();
 
-        let mut player = AnimationPlayer::default();
-        let mut graph = AnimationGraph::new();
-        let mut clips = Clips::default();
-        let mut transitions = AnimationTransitions::default();
-        // play default idle anim to avoid t-posing
-        if let Some(clip) = emote_loader
-            .get_representation(EmoteUrn::new("Idle_Male").unwrap(), &def.body_shape)
-            .ok()
-            .and_then(|rep| rep.avatar_animation(&gltfs).ok())
-            .flatten()
-        {
-            let ix = graph.add_clip(clip, 1.0, graph.root);
-            clips.named.insert("Idle_Male".into(), (ix, 0.0));
-            transitions.play(&mut player, ix, Duration::from_secs_f32(0.2));
+        if previous_animator.get(root_player_entity.get()).is_err() {
+            let mut player = AnimationPlayer::default();
+            let mut graph = AnimationGraph::new();
+            let mut clips = Clips::default();
+            let mut transitions = AnimationTransitions::default();
+            // play default idle anim to avoid t-posing
+            if let Some(clip) = emote_loader
+                .get_representation(EmoteUrn::new("Idle_Male").unwrap(), &def.body_shape)
+                .ok()
+                .and_then(|rep| rep.avatar_animation(&gltfs).ok())
+                .flatten()
+            {
+                let ix = graph.add_clip(clip, 1.0, graph.root);
+                clips.named.insert("Idle_Male".into(), (ix, 0.0));
+                transitions.play(&mut player, ix, Duration::from_secs_f32(0.2));
+            }
+            commands.entity(root_player_entity.get()).try_insert((
+                player,
+                transitions,
+                clips,
+                graphs.add(graph),
+            ));
         }
-        commands.entity(root_player_entity.get()).try_insert((
-            player,
-            transitions,
-            clips,
-            graphs.add(graph),
-        ));
+
         // record the node with the animator
         commands
             .entity(root_player_entity.get())
