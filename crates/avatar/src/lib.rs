@@ -357,16 +357,7 @@ fn select_avatar(
             if ref_avatar.is_changed() {
                 commands.entity(ent).try_insert(AvatarSelection {
                     scene: Some(scene_ent.root),
-                    shape: AvatarShape(PbAvatarShape {
-                        name: Some(
-                            scene_avatar_shape
-                                .0
-                                .name
-                                .clone()
-                                .unwrap_or_else(|| "NPC".into()),
-                        ),
-                        ..scene_avatar_shape.0.clone()
-                    }),
+                    shape: AvatarShape(scene_avatar_shape.0.clone()),
                     automatic_delete: true,
                 });
 
@@ -653,8 +644,8 @@ fn update_render_avatar(
                     ..Default::default()
                 },
                 AvatarDefinition {
-                    label: selection.shape.0.name.as_ref().map(|name| {
-                        format!(
+                    label: selection.shape.0.name.as_ref().and_then(|name| {
+                        (!name.is_empty()).then_some(format!(
                             "{}#{}",
                             name,
                             selection
@@ -664,7 +655,7 @@ fn update_render_avatar(
                                 .chars()
                                 .skip(selection.shape.0.id.len().saturating_sub(4))
                                 .collect::<String>()
-                        )
+                        ))
                     }),
                     body,
                     body_shape: body_urn.as_str().to_owned(),
