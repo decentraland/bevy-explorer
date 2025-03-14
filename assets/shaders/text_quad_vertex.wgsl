@@ -2,6 +2,7 @@
     mesh_functions,
     view_transformations::position_world_to_clip,
     pbr_bindings::base_color_texture,
+    mesh_view_bindings::view,
 }
 #import bevy_render::instance_index::get_instance_index
 
@@ -17,6 +18,7 @@ struct TextQuadData {
     halign: f32,
     pix_per_m: f32,
     add_y_pix: f32,
+    vertex_billboard: u32,
 }
 
 @group(2) @binding(200)
@@ -41,7 +43,19 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
         0.0
     );
 
-    out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(modified_vertex_position, 1.0));
+    if (quad_data.vertex_billboard == 1u) {
+        out.world_position = mesh_functions::mesh_position_local_to_world(
+            mat4x4<f32>(
+                vec4<f32>(view.world_from_view[0].xyz, 0.0),
+                vec4<f32>(view.world_from_view[1].xyz, 0.0),
+                vec4<f32>(view.world_from_view[2].xyz, 0.0),
+                vec4<f32>(model[3].xyz, 1.0)
+            ), 
+            vec4<f32>(modified_vertex_position, 1.0)
+        );
+    } else {
+        out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(modified_vertex_position, 1.0));
+    }
     out.position = position_world_to_clip(out.world_position.xyz);
 
     out.uv = mix(quad_data.uvs.xy, quad_data.uvs.zw, vertex.uv) / vec2<f32>(tex_dims.xy);

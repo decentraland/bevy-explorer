@@ -50,6 +50,7 @@ pub struct WorldUi {
     pub bounds: Vec<BoundRegion>,
     pub view: Entity,
     pub ui_node: Entity,
+    pub vertex_billboard: bool,
 }
 
 pub fn spawn_world_ui_view(
@@ -119,6 +120,7 @@ pub fn add_worldui_materials(
             halign: wui.halign,
             pix_per_m: wui.pix_per_m,
             add_y_pix: wui.add_y_pix,
+            vertex_billboard: if wui.vertex_billboard { 1 } else { 0 },
         };
 
         let material = materials.add(TextShapeMaterial {
@@ -247,6 +249,7 @@ pub struct TextQuadData {
     pub halign: f32,
     pub pix_per_m: f32,
     pub add_y_pix: f32,
+    pub vertex_billboard: u32,
 }
 
 impl MaterialExtension for TextQuad {

@@ -381,6 +381,7 @@ fn update_text_shapes(
                 bounds: scene.bounds.clone(),
                 view: world_ui.view,
                 ui_node,
+                vertex_billboard: false,
             },
         ));
 

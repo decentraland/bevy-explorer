@@ -62,7 +62,7 @@ use ipfs::{
 };
 use scene_runner::{
     renderer_context::RendererSceneContext,
-    update_world::{animation::Clips, billboard::Billboard, AddCrdtInterfaceExt},
+    update_world::{animation::Clips, AddCrdtInterfaceExt},
     util::ConsoleRelay,
     ContainingScene, SceneEntity,
 };
@@ -878,7 +878,15 @@ fn process_avatar(
         Query<(&Name, &Parent)>,
         Query<&PreviousAvatar>,
         Query<&SceneEntity>,
-        Query<(), (With<AnimationPlayer>, With<Handle<AnimationGraph>>, With<Clips>, With<AnimationTransitions>)>,
+        Query<
+            (),
+            (
+                With<AnimationPlayer>,
+                With<Handle<AnimationGraph>>,
+                With<Clips>,
+                With<AnimationTransitions>,
+            ),
+        >,
         Query<&mut RendererSceneContext>,
     ),
 ) {
@@ -1319,8 +1327,8 @@ fn process_avatar(
                         bounds: def.bounds.clone(),
                         view: ui_view.view,
                         ui_node: label_ui,
+                        vertex_billboard: true,
                     },
-                    Billboard::Y,
                 ));
             });
         }
