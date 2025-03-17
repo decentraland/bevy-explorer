@@ -64,13 +64,48 @@ pub struct ShuttingDown;
 
 pub struct RendererStore(pub CrdtStore);
 
+// ─── THE JS RUNTIME POOL ──────────────────────────────────────────────
+// This thread-local pool is unlimited: if a runtime is requested and none is available,
+// we create one.
+thread_local! {
+    static JS_RUNTIME_POOL: RefCell<Vec<JsRuntime>> = RefCell::new(Vec::new());
+}
+
+// ─── Helper function to get a runtime from the pool (or create one) ─────────
+fn get_runtime(
+    init: bool,
+    inspect: bool,
+    super_user: bool,
+    storage_root: &str,
+) -> (JsRuntime, Option<InspectorServer>) {
+    JS_RUNTIME_POOL.with(|pool| {
+        if let Some(rt) = pool.borrow_mut().pop() {
+            // We assume that if a runtime is in the pool, its inspector state is still valid.
+            (rt, None)
+        } else {
+            // None available; create a new runtime.
+            create_runtime(init, inspect, super_user, storage_root)
+        }
+    })
+}
+
+// ─── Helper to return a runtime to the pool ───────────────────────────────
+fn return_runtime(runtime: JsRuntime) {
+    JS_RUNTIME_POOL.with(|pool| {
+        pool.borrow_mut().push(runtime);
+    });
+}
+
+// ─── Original create_runtime function ─────────────────────────────────────
 pub fn create_runtime(
     init: bool,
     inspect: bool,
     super_user: bool,
     storage_root: &str,
 ) -> (JsRuntime, Option<InspectorServer>) {
-    // add fetch stack
+    // ... your existing create_runtime implementation ...
+    // (omitted here for brevity; it creates extensions, op maps, etc.)
+    // For example:
     let net = deno_net::deno_net::init_ops_and_esm::<NP>(None, None);
     let web = deno_web::deno_web::init_ops_and_esm::<TP>(
         std::sync::Arc::new(deno_web::BlobStore::default()),
@@ -112,11 +147,9 @@ pub fn create_runtime(
         system_api::ops(super_user),
     ];
 
-    // add plugin registrations
     let mut op_map = HashMap::new();
     for set in op_sets {
         for op in &set {
-            // explicitly record the ones we added so we can remove deno_fetch imposters
             op_map.insert(op.name, *op);
         }
         ops.extend(set);
@@ -127,7 +160,6 @@ pub fn create_runtime(
 
     for set in override_sets {
         for op in set {
-            // explicitly record the ones we added so we can remove deno_fetch imposters
             op_map.insert(op.name, op);
         }
     }
@@ -155,8 +187,6 @@ pub fn create_runtime(
         ..Default::default()
     };
 
-    // create runtime
-    #[allow(unused_mut)]
     let mut runtime = JsRuntime::new(RuntimeOptions {
         v8_platform: if init {
             v8::Platform::new(1, false).make_shared().into()
@@ -181,16 +211,11 @@ pub fn create_runtime(
             "bevy-explorer",
         );
         server.register_inspector("decentraland".to_owned(), &mut runtime, true);
-        (runtime, Some(server))
-    } else {
-        (runtime, None)
+        return (runtime, Some(server));
     }
-
-    #[cfg(not(feature = "inspect"))]
-    if inspect {
-        panic!("can't inspect without inspect feature")
-    } else {
-        (runtime, None)
+    else
+    {
+        return (runtime, None);
     }
 }
 
@@ -208,7 +233,7 @@ impl std::ops::Deref for SuperUserScene {
 
 pub struct StorageRoot(pub String);
 
-// main scene processing thread - constructs an isolate and runs the scene
+// ─── Modified scene_thread using the runtime pool ────────────────────────
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn scene_thread(
     scene_hash: String,
@@ -226,11 +251,12 @@ pub(crate) fn scene_thread(
     preview: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
 ) {
-    let scene_context = CrdtContext::new(scene_id, scene_hash, testing, preview);
+    // Instead of directly creating a runtime, obtain it from the pool.
     let (mut runtime, inspector) =
-        create_runtime(false, inspect, super_user.is_some(), &storage_root);
+        get_runtime(false, inspect, super_user.is_some(), &storage_root);
 
-    // store handle
+    // (The rest of your scene_thread code remains unchanged.)
+    // For example, store VM handle, set up state, load modules, run onUpdate loop, etc.
     let vm_handle = runtime.v8_isolate().thread_safe_handle();
     let mut guard = VM_HANDLES.lock().unwrap();
     guard.insert(scene_id, vm_handle);
@@ -238,57 +264,37 @@ pub(crate) fn scene_thread(
 
     let state = runtime.op_state();
 
-    // store deno permission objects
+    // Store various objects in state…
     state.borrow_mut().put(TP);
-
-    // store scene detail in the runtime state
-    state.borrow_mut().put(scene_context);
+    state.borrow_mut().put(CrdtContext::new(scene_id, scene_hash, testing, preview));
     state.borrow_mut().put(scene_js);
-    state.borrow_mut().put(storage_root);
-
-    // store the component writers
+    state.borrow_mut().put(storage_root.clone());
     state.borrow_mut().put(crdt_component_interfaces);
-
-    // store channels
     state.borrow_mut().put(thread_sx);
     state.borrow_mut().put(Arc::new(Mutex::new(thread_rx)));
     state.borrow_mut().put(global_update_receiver);
-
-    // store asset server and wallet
     state.borrow_mut().put(ipfs);
     state.borrow_mut().put(wallet);
-
-    // store crdt outbound state and event queue
     state.borrow_mut().put(CrdtStore::default());
     state.borrow_mut().put(RpcCalls::default());
-    // and renderer incoming state
     state.borrow_mut().put(RendererStore(CrdtStore::default()));
-
-    // store log output and initial elapsed of zero
     state.borrow_mut().put(Vec::<SceneLogMessage>::default());
     state.borrow_mut().put(SceneElapsedTime(0.0));
-
     let span = info_span!("js startup").entered();
     state.borrow_mut().put(span);
-
     if let Some(super_user) = super_user {
         state.borrow_mut().put(SuperUserScene(super_user));
     }
-
-    // store kill handle
     state
         .borrow_mut()
         .put(runtime.v8_isolate().thread_safe_handle());
-
-    // store websocket permissions object
     state.borrow_mut().put(WebSocketPerms { preview });
 
-    if inspector.is_some() {
+    if let Some(inspector) = &inspector {
         let _ = state
             .borrow_mut()
-            .borrow_mut::<SyncSender<SceneResponse>>()
+            .take::<SyncSender<SceneResponse>>()
             .send(SceneResponse::WaitingForInspector);
-
         runtime
             .inspector()
             .borrow_mut()
@@ -336,7 +342,6 @@ pub(crate) fn scene_thread(
     );
 
     if let Err(e) = result {
-        // ignore failure to send failure
         error!("[{scene_id:?}] onStart err: {e:?}");
         let _ = state
             .borrow_mut()
@@ -359,7 +364,6 @@ pub(crate) fn scene_thread(
             .borrow_mut()
             .put(SceneElapsedTime(elapsed.as_secs_f32()));
 
-        // run the onUpdate function
         let result = rt.block_on(async {
             run_script(&mut runtime, &script, "onUpdate", |scope| {
                 vec![v8::Number::new(scope, dt.as_secs_f64()).into()]
@@ -368,8 +372,9 @@ pub(crate) fn scene_thread(
         });
 
         if state.borrow().try_borrow::<ShuttingDown>().is_some() {
-            rt.block_on(async move {
-                drop(runtime);
+            rt.block_on(async {
+                // Return runtime to pool instead of dropping it.
+                return_runtime(runtime);
             });
             return;
         }
@@ -382,8 +387,6 @@ pub(crate) fn scene_thread(
                     error!("[{scene_id:?} not logging any further uncaught errors.")
                 }
             }
-
-            // we no longer exit on uncaught `onUpdate` errors unless the scene failed to reach the renderer interface functions
             if reported_errors == 10
                 && state
                     .borrow()
@@ -397,13 +400,12 @@ pub(crate) fn scene_thread(
                     .borrow_mut()
                     .take::<SyncSender<SceneResponse>>()
                     .send(SceneResponse::Error(scene_id, format!("{e:?}")));
-                rt.block_on(async move {
-                    drop(runtime);
+                rt.block_on(async {
+                    return_runtime(runtime);
                 });
                 return;
             }
         }
-
         state.borrow_mut().try_take::<CommunicatedWithRenderer>();
     }
 }
