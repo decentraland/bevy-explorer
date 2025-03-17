@@ -348,7 +348,7 @@ pub(crate) fn load_scene_javascript(
         let storage_root = match &portable {
             Some(portable) => portable.pid.clone(),
             None => {
-                let about_url = ipfas.ipfs().about_url().unwrap();
+                let about_url = ipfas.ipfs().about_url().unwrap_or_default();
                 format!("{about_url}:{}:{}", base.x, base.y)
             }
         };

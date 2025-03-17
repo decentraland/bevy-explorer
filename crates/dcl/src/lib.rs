@@ -87,6 +87,11 @@ pub struct SceneLogMessage {
 pub(crate) static VM_HANDLES: Lazy<Mutex<HashMap<SceneId, IsolateHandle>>> =
     Lazy::new(Default::default);
 
+/// must be called from main thread on linux before any isolates are created
+pub fn init_runtime() {
+    let _ = deno_core::v8::Platform::new(1, false);
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_scene(
     scene_hash: String,

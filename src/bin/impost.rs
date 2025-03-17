@@ -4,6 +4,7 @@ use comms::{
     CommsPlugin,
 };
 use console::ConsolePlugin;
+use dcl::init_runtime;
 use imposters::{render::ImposterMissing, DclImposterPlugin};
 
 use bevy::{
@@ -37,6 +38,8 @@ use visuals::SceneGlobalLight;
 use wallet::Wallet;
 
 fn main() {
+    init_runtime();
+
     let mut args = pico_args::Arguments::from_env();
     let config_file = config_file();
 
