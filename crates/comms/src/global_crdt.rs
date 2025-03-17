@@ -117,7 +117,7 @@ impl GlobalCrdtState {
     }
 
     pub fn set_bounds(&mut self, min: IVec2, max: IVec2) {
-        println!("bounds: {min}-{max}");
+        info!("bounds: {min}-{max}");
         self.realm_bounds = (min, max);
     }
     pub fn update_crdt(

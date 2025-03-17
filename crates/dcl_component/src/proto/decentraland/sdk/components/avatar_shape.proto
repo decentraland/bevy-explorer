@@ -38,5 +38,6 @@ message PBAvatarShape {
   //     Shoes   : "urn:decentraland:off-chain:base-avatars:bun_shoes"]
   repeated string wearables = 10; 
   repeated string emotes = 11; // available emotes (default empty)
+  repeated string force_render = 12; // slots that will render even if hidden
 }
 

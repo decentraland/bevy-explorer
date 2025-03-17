@@ -172,14 +172,14 @@ fn save_settings(
                 .content
                 .avatar
                 .body_shape
-                .clone_from(&avatar.shape.body_shape);
-            profile.content.avatar.hair = avatar.shape.hair_color.map(AvatarColor::new);
-            profile.content.avatar.eyes = avatar.shape.eye_color.map(AvatarColor::new);
-            profile.content.avatar.skin = avatar.shape.skin_color.map(AvatarColor::new);
-            profile.content.avatar.wearables = avatar.shape.wearables.to_vec();
+                .clone_from(&avatar.0.body_shape);
+            profile.content.avatar.hair = avatar.0.hair_color.map(AvatarColor::new);
+            profile.content.avatar.eyes = avatar.0.eye_color.map(AvatarColor::new);
+            profile.content.avatar.skin = avatar.0.skin_color.map(AvatarColor::new);
+            profile.content.avatar.wearables = avatar.0.wearables.to_vec();
             profile.content.avatar.emotes = Some(
                 avatar
-                    .shape
+                    .0
                     .emotes
                     .iter()
                     .enumerate()
@@ -504,6 +504,7 @@ fn process_profile(
                     })
                     .collect(),
             );
+            profile.content.avatar.force_render = Some(equip.force_render.to_vec());
         }
 
         profile.version += 1;
