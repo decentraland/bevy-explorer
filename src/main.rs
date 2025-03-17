@@ -5,6 +5,7 @@ use std::{fs::File, io::Write, sync::OnceLock};
 
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use build_time::build_time_utc;
+use dcl::init_runtime;
 use imposters::DclImposterPlugin;
 use mimalloc::MiMalloc;
 
@@ -115,6 +116,9 @@ fn main() {
 
     File::create(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
     println!("log file: {}", SESSION_LOG.get().unwrap());
+
+    // initialize v8 runtime from main thread
+    init_runtime();
 
     // warnings before log init must be stored and replayed later
     let mut infos = Vec::default();

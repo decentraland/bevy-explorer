@@ -65,7 +65,6 @@ pub struct ShuttingDown;
 pub struct RendererStore(pub CrdtStore);
 
 pub fn create_runtime(
-    init: bool,
     inspect: bool,
     super_user: bool,
     storage_root: &str,
@@ -158,11 +157,6 @@ pub fn create_runtime(
     // create runtime
     #[allow(unused_mut)]
     let mut runtime = JsRuntime::new(RuntimeOptions {
-        v8_platform: if init {
-            v8::Platform::new(1, false).make_shared().into()
-        } else {
-            None
-        },
         extensions: vec![
             webidl, url, console, web, net, fetch, websocket, webstorage, ext,
         ],
@@ -227,8 +221,7 @@ pub(crate) fn scene_thread(
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
 ) {
     let scene_context = CrdtContext::new(scene_id, scene_hash, testing, preview);
-    let (mut runtime, inspector) =
-        create_runtime(false, inspect, super_user.is_some(), &storage_root);
+    let (mut runtime, inspector) = create_runtime(inspect, super_user.is_some(), &storage_root);
 
     // store handle
     let vm_handle = runtime.v8_isolate().thread_safe_handle();
