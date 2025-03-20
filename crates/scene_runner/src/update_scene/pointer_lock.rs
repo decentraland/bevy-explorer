@@ -3,7 +3,7 @@ use bevy::{
     prelude::*,
     window::{CursorGrabMode, PrimaryWindow},
 };
-use common::structs::PrimaryCamera;
+use common::structs::{CursorLocks, PrimaryCamera};
 
 use crate::{renderer_context::RendererSceneContext, SceneSets};
 use dcl::interface::CrdtType;
@@ -39,6 +39,8 @@ fn update_pointer_lock(
     window: Query<&Window, With<PrimaryWindow>>,
     mut mouse_events: EventReader<MouseMotion>,
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
+    mut prev_coords: Local<Option<Vec2>>,
+    locks: Res<CursorLocks>,
 ) {
     let Ok(window) = window.get_single() else {
         return;
@@ -47,12 +49,17 @@ fn update_pointer_lock(
         return;
     };
 
-    let screen_coordinates = if window.cursor.grab_mode == bevy::window::CursorGrabMode::Locked {
-        // if pointer locked, just middle
-        Some(Vec2::new(window.width(), window.height()) / 2.0)
+    let screen_coordinates = if locks.0.contains("pointer") {
+        *prev_coords
     } else {
-        window.cursor_position()
+        if window.cursor.grab_mode == bevy::window::CursorGrabMode::Locked {
+            // if pointer locked, just middle
+            Some(Vec2::new(window.width(), window.height()) / 2.0)
+        } else {
+            window.cursor_position()
+        }
     };
+    *prev_coords = screen_coordinates;
 
     let pointer_lock = PbPointerLock {
         is_pointer_locked: window.cursor.grab_mode == CursorGrabMode::Locked,
