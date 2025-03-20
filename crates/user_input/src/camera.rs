@@ -183,6 +183,11 @@ pub fn update_camera(
     let mut mouse_delta = Vec2::ZERO;
 
     let in_dialog = active_dialog.in_use();
+
+    if state == ClickState::Clicked {
+        *move_toggled = !*move_toggled;
+    }
+
     let lock = !in_dialog && (accept_input.mouse && state == ClickState::Held || *move_toggled);
 
     if lock {
@@ -202,10 +207,6 @@ pub fn update_camera(
     }
 
     if allow_cam_move {
-        if state == ClickState::Clicked {
-            *move_toggled = !*move_toggled;
-        }
-
         if accept_input.key {
             if key_input.pressed(options.key_roll_left) {
                 options.roll += dt * 1.0;
@@ -381,8 +382,6 @@ pub fn update_camera_position(
 pub fn update_cursor_lock(
     locks: Res<CursorLocks>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
-    mut locked_cursor_position: Local<Option<Vec2>>,
-    mut stupid_set_counter: Local<usize>,
 ) {
     let lock = !locks.0.is_empty();
 
@@ -392,32 +391,17 @@ pub fn update_cursor_lock(
                 continue;
             }
 
-            window.cursor.grab_mode = CursorGrabMode::Locked;
-            window.cursor.visible = false;
-
-            #[cfg(target_os = "windows")]
-            {
-                let current_position = locked_cursor_position
-                    .get_or_insert_with(|| window.cursor_position().unwrap_or_default());
-                // set to something slightly different so that the update on unlock is processed
-                window.set_cursor_position(Some(Vec2::ONE + *current_position));
+            if window.cursor.grab_mode == CursorGrabMode::None {
+                window.cursor.grab_mode = CursorGrabMode::Locked;
+                window.cursor.visible = false;
             }
         }
     } else {
         for mut window in &mut windows {
             if window.cursor.grab_mode != CursorGrabMode::None {
+
                 window.cursor.grab_mode = CursorGrabMode::None;
-                *stupid_set_counter = 1;
-            } else if *stupid_set_counter > 0 {
-                if let Some(cursor_position) = &*locked_cursor_position {
-                    // doesn't work if we set position the same frame as we disable grab
-                    window.set_cursor_position(Some(*cursor_position));
-                }
                 window.cursor.visible = true;
-                *stupid_set_counter -= 1;
-                if *stupid_set_counter == 0 {
-                    *locked_cursor_position = None;
-                }
             }
         }
     }
