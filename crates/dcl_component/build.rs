@@ -69,6 +69,7 @@ fn gen_sdk_components() -> Result<()> {
         "PBRealmInfo",
         "PBAvatarBase",
         "PBAvatarEquippedData",
+        "InputAction",
     ];
 
     let mut config = prost_build::Config::new();

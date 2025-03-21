@@ -6,6 +6,8 @@ use common::{
     util::FireEventEx,
 };
 use comms::{Transport, TransportType};
+use input_manager::{InputManager, InputPriority};
+use system_bridge::SystemAction;
 use ui_core::ui_actions::{Click, HoverEnter, HoverExit, On};
 
 use crate::{chat::BUTTON_SCALE, SystemUiRoot};
@@ -95,7 +97,7 @@ fn update_mic_ui(
     transport: Query<&Transport>,
     mut button: Query<&mut UiImage, With<MicUiMarker>>,
     mut pressed: Local<bool>,
-    input: Res<ButtonInput<KeyCode>>,
+    input_manager: InputManager,
     mic_images: Res<MicImages>,
     mut prev_active: Local<bool>,
 ) {
@@ -114,7 +116,7 @@ fn update_mic_ui(
         *button.single_mut() = mic_images.inactive.clone_weak().into();
     }
 
-    if input.pressed(KeyCode::ControlLeft) != *pressed {
+    if input_manager.is_down(SystemAction::Microphone, InputPriority::None) != *pressed {
         *pressed = !*pressed;
         mic_state.enabled = !mic_state.enabled;
     }

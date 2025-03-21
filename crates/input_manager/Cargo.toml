@@ -7,7 +7,8 @@ edition = "2021"
 
 [dependencies]
 dcl_component = { workspace = true }
-ui_core = { workspace = true }
+system_bridge = { workspace = true }
+common = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }

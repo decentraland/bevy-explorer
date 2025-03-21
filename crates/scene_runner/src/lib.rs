@@ -783,10 +783,10 @@ fn send_scene_updates(
                 width: (window.resolution.width()) as i32,
                 height: (window.resolution.height()) as i32,
                 interactable_area: Some(BorderRect {
-                    top: 0.05 * vmin,
+                    top: 0.06 * vmin,
                     left: 0.27 * vmin,  // minimap
-                    right: 0.11 * vmin, // icons
-                    bottom: 0.05 * vmin,
+                    right: 0.12 * vmin, // icons
+                    bottom: 0.06 * vmin,
                 }),
             }
         }

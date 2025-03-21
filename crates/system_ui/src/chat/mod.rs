@@ -23,10 +23,11 @@ use dcl::{SceneLogLevel, SceneLogMessage};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
 use history::ChatHistoryPlugin;
-use input_manager::should_accept_key;
+use input_manager::{InputManager, InputPriority};
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
 use shlex::Shlex;
 use social::FriendshipEvent;
+use system_bridge::SystemAction;
 use ui_core::{
     button::{DuiButton, TabSelection},
     focus::Focus,
@@ -51,7 +52,7 @@ impl Plugin for ChatPanelPlugin {
             OnEnter::<ui_core::State>(ui_core::State::Ready),
             setup_chat_popup,
         );
-        app.add_systems(Update, keyboard_popup.run_if(should_accept_key));
+        app.add_systems(Update, keyboard_popup);
         app.add_console_command::<Rechat, _>(debug_chat);
         app.add_event::<PrivateChatEntered>();
         app.add_plugins((FriendsPlugin, ChatHistoryPlugin));
@@ -131,11 +132,11 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
 
 fn keyboard_popup(
     mut commands: Commands,
-    input: Res<ButtonInput<KeyCode>>,
+    input_manager: InputManager,
     mut container: Query<&mut Style, With<ChatboxContainer>>,
     entry: Query<Entity, With<ChatInput>>,
 ) {
-    if input.just_pressed(KeyCode::Enter) || input.just_pressed(KeyCode::NumpadEnter) {
+    if input_manager.just_down(SystemAction::Chat, InputPriority::None) {
         if let Ok(mut style) = container.get_single_mut() {
             if style.display == Display::None {
                 commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));

@@ -77,7 +77,8 @@ bevy = { version = "0.14", default-features = false, features=[
     "tonemapping_luts",
     "default_font",
     "webgl2",
-    "jpeg"
+    "jpeg",
+    "serialize",
 ] }
 bevy_console = { git = "https://github.com/robtfm/bevy-console", branch="bevy-0.14" }
 bevy_egui = "0.28"
@@ -189,6 +190,7 @@ ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-l
 deno_core = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
 serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
 deno_ops = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
+winit = { git = "https://github.com/robtfm/winit", branch = "wnidows-cursor-lock" }
 
 deno_console = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_fetch = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }

@@ -28,7 +28,7 @@ pub struct UtilsPlugin;
 
 impl Plugin for UtilsPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
-        app.add_systems(Update, despawn_with);
+        app.add_systems(Update, despawn_with.in_set(SceneSets::RestrictedActions));
     }
 }
 
@@ -285,6 +285,8 @@ macro_rules! dcl_assert {
 }
 
 pub use dcl_assert;
+
+use crate::sets::SceneSets;
 
 // quaternion normalization
 pub trait QuatNormalizeExt {

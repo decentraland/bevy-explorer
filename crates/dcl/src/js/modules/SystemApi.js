@@ -116,3 +116,25 @@ module.exports.kernelFetch = async function (body) {
 module.exports.setAvatar = async function(avatar) {
     return await Deno.core.ops.op_set_avatar(avatar.base, avatar.equip)
 }
+
+// get the next key/button pressed by the user, identified as a string
+// -> string
+module.exports.getNativeInput = async function() {
+    return await Deno.core.ops.op_native_input()
+}
+
+// get current key bindings
+// -> {
+//   bindings: (string, string[])[]
+// }
+module.exports.getInputBindings = async function() {
+    return await Deno.core.ops.op_get_bindings()
+}
+
+// set current key bindings
+// arg: {
+//   bindings: (string, string[])[]
+// }
+module.exports.setInputBindings = async function(bindings) {
+    await Deno.core.ops.op_set_bindings(bindings)
+}

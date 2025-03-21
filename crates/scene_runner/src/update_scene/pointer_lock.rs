@@ -3,7 +3,7 @@ use bevy::{
     prelude::*,
     window::{CursorGrabMode, PrimaryWindow},
 };
-use common::structs::PrimaryCamera;
+use common::structs::{AppConfig, CursorLocks, PrimaryCamera};
 
 use crate::{renderer_context::RendererSceneContext, SceneSets};
 use dcl::interface::CrdtType;
@@ -39,6 +39,9 @@ fn update_pointer_lock(
     window: Query<&Window, With<PrimaryWindow>>,
     mut mouse_events: EventReader<MouseMotion>,
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
+    mut prev_coords: Local<Option<Vec2>>,
+    locks: Res<CursorLocks>,
+    config: Res<AppConfig>,
 ) {
     let Ok(window) = window.get_single() else {
         return;
@@ -47,12 +50,32 @@ fn update_pointer_lock(
         return;
     };
 
-    let screen_coordinates = if window.cursor.grab_mode == bevy::window::CursorGrabMode::Locked {
-        // if pointer locked, just middle
-        Some(Vec2::new(window.width(), window.height()) / 2.0)
+    let screen_coordinates = if locks.0.contains("pointer") {
+        *prev_coords
     } else {
-        window.cursor_position()
+        let real_window_size = Vec2::new(window.width(), window.height());
+        let vmin = real_window_size.min_element();
+        let (left, top, right, bottom) = if config.constrain_scene_ui {
+            (
+                vmin * 0.27,
+                vmin * 0.06,
+                real_window_size.x - vmin * 0.12,
+                real_window_size.y - vmin * 0.06,
+            )
+        } else {
+            (0.0, 0.0, real_window_size.x, real_window_size.y)
+        };
+
+        if window.cursor.grab_mode == bevy::window::CursorGrabMode::Locked {
+            // if pointer locked, just middle
+            let window_size = Vec2::new(right - left, bottom - top);
+            Some(window_size / 2.0)
+        } else {
+            let window_origin = Vec2::new(left, top);
+            window.cursor_position().map(|cp| cp - window_origin)
+        }
     };
+    *prev_coords = screen_coordinates;
 
     let pointer_lock = PbPointerLock {
         is_pointer_locked: window.cursor.grab_mode == CursorGrabMode::Locked,

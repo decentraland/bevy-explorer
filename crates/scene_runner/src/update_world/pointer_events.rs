@@ -61,8 +61,12 @@ fn hover_text(
                     if let Some(info) = pe.event_info.as_ref() {
                         if info.show_feedback.unwrap_or(true) {
                             if let Some(text) = info.hover_text.as_ref() {
+                                let button = input_map
+                                    .get_input(info.button())
+                                    .map(|b| serde_json::to_string(&b).unwrap())
+                                    .unwrap_or_else(|| "(No binding)".to_owned());
                                 return Some((
-                                    format!("{} : {}", input_map.get_input(info.button()), text),
+                                    format!("{} : {}", button, text),
                                     info.max_distance.unwrap_or(10.0) > distance.0,
                                 ));
                             }

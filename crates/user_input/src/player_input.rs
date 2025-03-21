@@ -6,7 +6,7 @@ use common::{
 };
 
 use dcl_component::proto_components::sdk::components::common::InputAction;
-use input_manager::InputManager;
+use input_manager::{InputManager, InputPriority};
 use scene_runner::update_world::avatar_modifier_area::PlayerModifiers;
 
 use crate::TRANSITION_TIME;
@@ -35,7 +35,7 @@ pub(crate) fn update_user_velocity(
         .unwrap_or_else(|| user.clone());
 
     // Handle key input
-    if input.is_down(InputAction::IaJump)
+    if input.is_down(InputAction::IaJump, InputPriority::None)
         && dynamic_state.ground_height < PLAYER_GROUND_THRESHOLD
         && dynamic_state.velocity.y <= 0.0
     {
@@ -44,18 +44,10 @@ pub(crate) fn update_user_velocity(
     }
 
     let mut axis_input = Vec2::ZERO;
-    if input.is_down(InputAction::IaForward) {
-        axis_input.y += 1.0;
-    }
-    if input.is_down(InputAction::IaBackward) {
-        axis_input.y -= 1.0;
-    }
-    if input.is_down(InputAction::IaRight) {
-        axis_input.x += 1.0;
-    }
-    if input.is_down(InputAction::IaLeft) {
-        axis_input.x -= 1.0;
-    }
+    axis_input.y += input.down_analog(InputAction::IaForward, InputPriority::None);
+    axis_input.y -= input.down_analog(InputAction::IaBackward, InputPriority::None);
+    axis_input.x += input.down_analog(InputAction::IaRight, InputPriority::None);
+    axis_input.x -= input.down_analog(InputAction::IaLeft, InputPriority::None);
 
     dynamic_state.force = Vec2::ZERO;
     dynamic_state.rotate = 0.0;
@@ -76,12 +68,16 @@ pub(crate) fn update_user_velocity(
     }
 
     if axis_input != Vec2::ZERO {
-        let max_speed = if !input.is_down(InputAction::IaWalk) || user.block_weighted_movement {
-            user.run_speed
+        let movement_axis = if user.block_weighted_movement {
+            axis_input.normalize_or_zero() * user.run_speed
         } else {
-            user.walk_speed
+            axis_input / axis_input.length().max(1.0)
+                * if input.is_down(InputAction::IaWalk, InputPriority::None) {
+                    user.walk_speed
+                } else {
+                    user.run_speed
+                }
         };
-        axis_input = axis_input.normalize();
 
         let ground = Vec3::X + Vec3::Z;
         let forward = (Vec3::from(relative_transform.forward()) * ground)
@@ -91,10 +87,9 @@ pub(crate) fn update_user_velocity(
             .xz()
             .normalize_or_zero();
 
-        let mut axis_output = forward * axis_input.y;
         dynamic_state.rotate = -axis_input.x * *tankiness * user.turn_speed;
-        axis_output += right * axis_input.x * (1.0 - *tankiness);
+        let axis_output = forward * movement_axis.y + right * movement_axis.x * (1.0 - *tankiness);
 
-        dynamic_state.force = axis_output * max_speed;
+        dynamic_state.force = axis_output;
     }
 }
