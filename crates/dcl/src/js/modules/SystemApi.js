@@ -125,17 +125,15 @@ module.exports.getNativeInput = async function() {
 
 // get current key bindings
 // -> {
-//   sceneBindings: Map<InputAction, string[]>
-//   systemBindings: Map<String, string[]>
+//   bindings: (string, string[])[]
 // }
 module.exports.getInputBindings = async function() {
     return await Deno.core.ops.op_get_bindings()
 }
 
 // set current key bindings
-// bindings: {
-//   sceneBindings: Map<InputAction, string[]>
-//   systemBindings: Map<String, string[]>
+// arg: {
+//   bindings: (string, string[])[]
 // }
 module.exports.setInputBindings = async function(bindings) {
     await Deno.core.ops.op_set_bindings(bindings)
