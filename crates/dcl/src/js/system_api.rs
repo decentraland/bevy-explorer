@@ -2,10 +2,11 @@ use bevy::log::debug;
 use dcl_component::proto_components::sdk::components::{PbAvatarBase, PbAvatarEquippedData};
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use http::Uri;
+use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
     settings::{SettingInfo, Settings},
-    SetAvatarData, SystemApi,
+    Action, BindingsData, InputIdentifier, SetAvatarData, SystemApi,
 };
 use wallet::{sign_request, Wallet};
 
@@ -29,6 +30,9 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_set_setting(),
             op_kernel_fetch_headers(),
             op_set_avatar(),
+            op_native_input(),
+            op_get_bindings(),
+            op_set_bindings(),
         ]
     } else {
         Vec::default()
@@ -44,8 +48,7 @@ async fn op_check_for_update(state: Rc<RefCell<OpState>>) -> Result<(String, Str
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::CheckForUpdate(sx.into()))
-        .unwrap();
+        .send(SystemApi::CheckForUpdate(sx.into()))?;
 
     Ok(rx
         .await
@@ -62,8 +65,7 @@ async fn op_motd(state: Rc<RefCell<OpState>>) -> Result<String, AnyError> {
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::MOTD(sx.into()))
-        .unwrap();
+        .send(SystemApi::MOTD(sx.into()))?;
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
 }
@@ -86,8 +88,7 @@ async fn op_get_previous_login(state: Rc<RefCell<OpState>>) -> Result<Option<Str
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::GetPreviousLogin(sx.into()))
-        .unwrap();
+        .send(SystemApi::GetPreviousLogin(sx.into()))?;
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
 }
@@ -101,8 +102,7 @@ async fn op_login_previous(state: Rc<RefCell<OpState>>) -> Result<(), AnyError> 
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::LoginPrevious(sx.into()))
-        .unwrap();
+        .send(SystemApi::LoginPrevious(sx.into()))?;
 
     rx.await
         .map_err(|e| anyhow::anyhow!(e))?
@@ -205,8 +205,7 @@ async fn load_settings(state: Rc<RefCell<OpState>>) -> Result<(), AnyError> {
         state
             .borrow_mut()
             .borrow_mut::<SuperUserScene>()
-            .send(SystemApi::GetSettings(sx.into()))
-            .unwrap();
+            .send(SystemApi::GetSettings(sx.into()))?;
 
         let settings = rx.await.map_err(|e| anyhow::anyhow!(e))?;
         state.borrow_mut().put(settings);
@@ -285,8 +284,72 @@ pub async fn op_set_avatar(
         .send(SystemApi::SetAvatar(
             SetAvatarData { base, equip },
             sx.into(),
-        ))
-        .unwrap();
+        ))?;
 
     rx.await?.map_err(|e| anyhow::anyhow!(e))
+}
+
+#[op2(async)]
+#[string]
+pub async fn op_native_input(state: Rc<RefCell<OpState>>) -> String {
+    let (sx, rx) = tokio::sync::oneshot::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetNativeInput(sx.into()))
+        .unwrap();
+
+    let identifier = rx.await.unwrap();
+    serde_json::to_string(&identifier)
+        .unwrap()
+        .strip_prefix("\"")
+        .unwrap()
+        .strip_suffix("\"")
+        .unwrap()
+        .to_owned()
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct JsBindingsData {
+    bindings: Vec<(Action, Vec<InputIdentifier>)>,
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_bindings(state: Rc<RefCell<OpState>>) -> Result<JsBindingsData, anyhow::Error> {
+    let (sx, rx) = tokio::sync::oneshot::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetBindings(sx.into()))
+        .unwrap();
+
+    rx.await.map_err(|e| anyhow::anyhow!(e)).map(|bd| {
+        let mut bindings: Vec<_> = bd.bindings.into_iter().collect();
+        bindings.sort_by_key(|k| k.0);
+        JsBindingsData { bindings }
+    })
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_set_bindings(
+    state: Rc<RefCell<OpState>>,
+    #[serde] bindings: JsBindingsData,
+) -> Result<(), anyhow::Error> {
+    let (sx, rx) = tokio::sync::oneshot::channel();
+
+    let bindings = BindingsData {
+        bindings: bindings.bindings.into_iter().collect(),
+    };
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SetBindings(bindings, sx.into()))
+        .unwrap();
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
 }

@@ -5,9 +5,8 @@ use std::{
 
 use bevy::{
     ecs::system::SystemParam,
-    input::mouse::{MouseMotion, MouseWheel},
+    input::mouse::MouseMotion,
     prelude::*,
-    utils::HashMap,
     window::{CursorGrabMode, PrimaryWindow},
 };
 
@@ -18,13 +17,12 @@ use common::{
     },
     util::ModifyComponentExt,
 };
-use input_manager::AcceptInput;
+use input_manager::{Action, InputManager, InputPriority, SystemAction};
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
     ContainingScene,
 };
 use tween::SystemTween;
-use ui_core::scrollable::UsedScrollWheel;
 
 use crate::TRANSITION_TIME;
 
@@ -38,9 +36,9 @@ pub struct CinematicInitialData {
 }
 
 #[derive(SystemParam)]
-pub struct MouseInteractionState<'w, 's> {
-    mouse_button_input: Res<'w, ButtonInput<MouseButton>>,
-    states: Local<'s, HashMap<MouseButton, (ClickState, f32)>>,
+pub struct CameraInteractionState<'w, 's> {
+    input_manager: InputManager<'w>,
+    state: Local<'s, (ClickState, f32)>,
     time: Res<'w, Time>,
     #[system_param(ignore)]
     _p: PhantomData<&'s ()>,
@@ -55,31 +53,29 @@ pub enum ClickState {
     Released,
 }
 
-impl MouseInteractionState<'_, '_> {
-    pub fn update(&mut self, button: MouseButton) -> ClickState {
-        let state = self.states.entry(button).or_default();
-
-        match state.0 {
+impl CameraInteractionState<'_, '_> {
+    pub fn update(&mut self, action: Action) -> ClickState {
+        match self.state.0 {
             ClickState::None | ClickState::Released => {
-                if self.mouse_button_input.just_pressed(button) {
-                    *state = (ClickState::Held, self.time.elapsed_seconds());
+                if self.input_manager.just_down(action, InputPriority::None) {
+                    *self.state = (ClickState::Held, self.time.elapsed_seconds());
                 } else {
-                    state.0 = ClickState::None;
+                    self.state.0 = ClickState::None;
                 }
             }
             ClickState::Held => {
-                if self.mouse_button_input.just_released(button) {
-                    if self.time.elapsed_seconds() - state.1 > 0.25 {
-                        state.0 = ClickState::Released;
+                if self.input_manager.just_up(action) {
+                    if self.time.elapsed_seconds() - self.state.1 > 0.25 {
+                        self.state.0 = ClickState::Released;
                     } else {
-                        state.0 = ClickState::Clicked;
+                        self.state.0 = ClickState::Clicked;
                     }
                 }
             }
-            ClickState::Clicked => state.0 = ClickState::Released,
+            ClickState::Clicked => self.state.0 = ClickState::Released,
         }
 
-        state.0
+        self.state.0
     }
 }
 
@@ -87,17 +83,13 @@ impl MouseInteractionState<'_, '_> {
 pub fn update_camera(
     time: Res<Time>,
     mut mouse_events: EventReader<MouseMotion>,
-    mut wheel_events: EventReader<MouseWheel>,
-    key_input: Res<ButtonInput<KeyCode>>,
     mut move_toggled: Local<bool>,
     mut camera: Query<(&Transform, &mut PrimaryCamera)>,
-    accept_input: Res<AcceptInput>,
-    used_wheel: Res<UsedScrollWheel>,
     mut cursor_locked: ResMut<CursorLocked>,
     mut locks: ResMut<CursorLocks>,
     active_dialog: Res<ActiveDialog>,
     mut cinematic_data: Local<Option<CinematicInitialData>>,
-    mut mb_state: MouseInteractionState,
+    mut mb_state: CameraInteractionState,
     gt_helper: TransformHelper,
 ) {
     let dt = time.delta_seconds();
@@ -173,8 +165,9 @@ pub fn update_camera(
     }
 
     // Handle mouse input
-    let mut state = mb_state.update(options.mouse_key_enable_mouse);
-    if key_input.just_pressed(KeyCode::Escape) && *move_toggled {
+    let mut state = mb_state.update(Action::System(SystemAction::CameraLock));
+    let input_manager = &mb_state.input_manager;
+    if input_manager.just_down(SystemAction::Cancel, InputPriority::None) && *move_toggled {
         // override
         state = ClickState::Released;
         *move_toggled = false;
@@ -188,7 +181,7 @@ pub fn update_camera(
         *move_toggled = !*move_toggled;
     }
 
-    let lock = !in_dialog && (accept_input.mouse && state == ClickState::Held || *move_toggled);
+    let lock = !in_dialog && (state == ClickState::Held || *move_toggled);
 
     if lock {
         locks.0.insert("camera");
@@ -207,32 +200,32 @@ pub fn update_camera(
     }
 
     if allow_cam_move {
-        if accept_input.key {
-            if key_input.pressed(options.key_roll_left) {
-                options.roll += dt * 1.0;
-            } else if key_input.pressed(options.key_roll_right) {
-                options.roll -= dt * 1.0;
+        if state == ClickState::Clicked {
+            *move_toggled = !*move_toggled;
+        }
+
+        if input_manager.is_down(Action::System(SystemAction::RollLeft), InputPriority::None) {
+            options.roll += dt * 1.0;
+        } else if input_manager
+            .is_down(Action::System(SystemAction::RollRight), InputPriority::None)
+        {
+            options.roll -= dt * 1.0;
+        } else {
+            // decay roll if not in cinematic mode
+            if options.roll > 0.0 {
+                options.roll = (options.roll - dt * 0.25).max(0.0);
             } else {
-                // decay roll if not in cinematic mode
-                if options.roll > 0.0 {
-                    options.roll = (options.roll - dt * 0.25).max(0.0);
-                } else {
-                    options.roll = (options.roll + dt * 0.25).min(0.0);
-                }
+                options.roll = (options.roll + dt * 0.25).min(0.0);
             }
         }
 
         options.pitch = (options.pitch - mouse_delta.y * options.sensitivity / 1000.0)
             .clamp(-PI / 2.1, PI / 2.1);
         options.yaw -= mouse_delta.x * options.sensitivity / 1000.0;
-        if accept_input.mouse && !used_wheel.0 {
-            if let Some(event) = wheel_events.read().last() {
-                if (event.y > 0.0) == zoom_range.is_none() {
-                    options.distance = 0f32.max((options.distance - 0.05) * 0.9);
-                } else {
-                    options.distance = 7000f32.min((options.distance / 0.9) + 0.05);
-                }
-            }
+        if input_manager.is_down(SystemAction::CameraZoomIn, InputPriority::None) {
+            options.distance = 0f32.max((options.distance - 0.05) * 0.9);
+        } else if input_manager.is_down(SystemAction::CameraZoomOut, InputPriority::None) {
+            options.distance = 7000f32.min((options.distance / 0.9) + 0.05);
         }
     }
 
@@ -399,7 +392,6 @@ pub fn update_cursor_lock(
     } else {
         for mut window in &mut windows {
             if window.cursor.grab_mode != CursorGrabMode::None {
-
                 window.cursor.grab_mode = CursorGrabMode::None;
                 window.cursor.visible = true;
             }

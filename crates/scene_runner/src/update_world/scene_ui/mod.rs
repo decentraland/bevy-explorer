@@ -552,7 +552,7 @@ fn create_ui_roots(
                                 height: Val::Percent(100.0),
                                 ..Default::default()
                             },
-                            z_index: ZIndex::Global(0), // behind the ZIndex(i16::MAX as i32 + 1) MouseInteractionComponent
+                            z_index: ZIndex::Global(0), // behind the ZIndex((1 << 18) + 1) MouseInteractionComponent
                             ..Default::default()
                         },
                     ));

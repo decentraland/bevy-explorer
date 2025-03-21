@@ -1,9 +1,11 @@
 use bevy::{
-    input::mouse::MouseWheel, prelude::*, transform::TransformSystem, ui::ManualCursorPosition,
-    utils::HashMap, window::PrimaryWindow,
+    prelude::*, transform::TransformSystem, ui::ManualCursorPosition, utils::HashMap,
+    window::PrimaryWindow,
 };
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
 use common::util::{ModifyComponentExt, ModifyDefaultComponentExt, TryPushChildrenEx};
+use dcl_component::proto_components::sdk::components::common::InputAction;
+use input_manager::{Action, InputManager, InputPriority, InputType, SystemAction};
 
 use crate::{
     bound_node::{BoundedNode, BoundedNodeBundle, NodeBounds},
@@ -17,8 +19,7 @@ pub struct ScrollablePlugin;
 
 impl Plugin for ScrollablePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<UsedScrollWheel>()
-            .add_systems(Startup, setup)
+        app.add_systems(Startup, setup)
             .add_systems(
                 PostUpdate,
                 update_scrollables.after(TransformSystem::TransformPropagate),
@@ -209,9 +210,6 @@ struct Slider {
     position: f32,
 }
 
-#[derive(Resource, Default)]
-pub struct UsedScrollWheel(pub bool);
-
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn update_scrollables(
     mut commands: Commands,
@@ -250,11 +248,9 @@ fn update_scrollables(
     >,
     mut clicked_slider: Local<Option<Entity>>,
     mut clicked_scrollable: Local<Option<(Entity, Vec2)>>,
-    mut wheel: EventReader<MouseWheel>,
-    mouse_button_input: Res<ButtonInput<MouseButton>>,
     mut events: EventReader<ScrollTargetEvent>,
     cursors: Query<(Entity, &ManualCursorPosition)>,
-    mut used_wheel: ResMut<UsedScrollWheel>,
+    mut input_manager: InputManager,
 ) {
     #[derive(Copy, Clone, Debug)]
     enum UpdateSliderPosition {
@@ -279,7 +275,22 @@ fn update_scrollables(
         .map(|ev| (ev.scrollable, ev.position))
         .collect::<HashMap<_, _>>();
 
-    used_wheel.0 = false;
+    const REGION_ACTIONS: [Action; 4] = [
+        Action::System(SystemAction::ScrollUp),
+        Action::System(SystemAction::ScrollDown),
+        Action::System(SystemAction::ScrollLeft),
+        Action::System(SystemAction::ScrollRight),
+    ];
+
+    for action in REGION_ACTIONS {
+        input_manager
+            .priorities()
+            .release(InputType::Action(action), InputPriority::Scroll);
+    }
+    input_manager.priorities().release(
+        InputType::Action(Action::Scene(InputAction::IaPointer)),
+        InputPriority::Scroll,
+    );
 
     let Ok(window) = window.get_single() else {
         return;
@@ -301,15 +312,13 @@ fn update_scrollables(
         Some(window_cursor_position)
     };
 
-    if mouse_button_input.just_released(MouseButton::Left) {
+    if input_manager.just_up(InputAction::IaPointer) {
         *clicked_slider = None;
         *clicked_scrollable = None;
     }
 
     let mut vertical_scrollers = HashMap::default();
     let mut horizontal_scrollers = HashMap::default();
-
-    let wheel_events = wheel.read().collect::<Vec<_>>();
 
     // gather scrollable components that need scrollbars
     for (
@@ -382,7 +391,9 @@ fn update_scrollables(
                     }
                 }
 
-                if interaction == &Interaction::Pressed {
+                if interaction != &Interaction::None
+                    && input_manager.is_down(InputAction::IaPointer, InputPriority::Scroll)
+                {
                     *clicked_scrollable = Some((entity, cursor_position));
                 }
             }
@@ -394,15 +405,21 @@ fn update_scrollables(
                 // - add another system to manage "container" focus based on child focus
                 if cursor_position.clamp(ui_position, ui_position + parent_size) == cursor_position
                 {
-                    used_wheel.0 = true;
-                    for ev in wheel_events.iter() {
-                        let unit = match ev.unit {
-                            bevy::input::mouse::MouseScrollUnit::Line => 20.0,
-                            bevy::input::mouse::MouseScrollUnit::Pixel => 1.0,
-                        };
-                        *new_slider_deltas.get_or_insert(Default::default()) +=
-                            Vec2::new(ev.x, ev.y) * unit / slide_amount;
+                    for action in REGION_ACTIONS {
+                        input_manager
+                            .priorities()
+                            .reserve(InputType::Action(action), InputPriority::Scroll);
                     }
+                    let scroll_delta = Vec2::new(
+                        input_manager.down_analog(SystemAction::ScrollLeft, InputPriority::Scroll)
+                            - input_manager
+                                .down_analog(SystemAction::ScrollRight, InputPriority::Scroll),
+                        input_manager.down_analog(SystemAction::ScrollUp, InputPriority::Scroll)
+                            - input_manager
+                                .down_analog(SystemAction::ScrollDown, InputPriority::Scroll),
+                    ) * 20.0;
+                    *new_slider_deltas.get_or_insert(Default::default()) +=
+                        scroll_delta / slide_amount;
                 }
             }
         }
@@ -506,7 +523,17 @@ fn update_scrollables(
             continue;
         };
 
-        if interaction == &Interaction::Pressed || clicked_slider.is_some_and(|ent| ent == entity) {
+        if interaction != &Interaction::None {
+            input_manager.priorities().reserve(
+                InputType::Action(Action::Scene(InputAction::IaPointer)),
+                InputPriority::Scroll,
+            );
+        }
+
+        if (interaction != &Interaction::None
+            && input_manager.is_down(InputAction::IaPointer, InputPriority::Scroll))
+            || clicked_slider.is_some_and(|ent| ent == entity)
+        {
             // jump the slider to the clicked position
             let Vec2 { x: left, y: top } = transform.translation().xy() - node.size() * 0.5;
             let relative_position = cursor_position - Vec2::new(left, top);

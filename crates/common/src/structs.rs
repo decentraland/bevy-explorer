@@ -85,9 +85,6 @@ impl AttachPoints {
 #[derive(Component)]
 pub struct PrimaryCamera {
     // settings
-    pub mouse_key_enable_mouse: MouseButton,
-    pub key_roll_left: KeyCode,
-    pub key_roll_right: KeyCode,
     pub distance: f32,
     pub sensitivity: f32,
     // impl details (todo: move to separate private struct)
@@ -126,15 +123,12 @@ pub enum CameraOverride {
 impl Default for PrimaryCamera {
     fn default() -> Self {
         Self {
-            mouse_key_enable_mouse: MouseButton::Right,
             sensitivity: 5.0,
             initialized: Default::default(),
             yaw: Default::default(),
             pitch: Default::default(),
             roll: Default::default(),
             distance: 1.0,
-            key_roll_left: KeyCode::KeyT,
-            key_roll_right: KeyCode::KeyG,
             scene_override: None,
         }
     }

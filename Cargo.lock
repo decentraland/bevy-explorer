@@ -1075,6 +1075,7 @@ dependencies = [
  "bevy_reflect",
  "bevy_tasks",
  "bevy_utils",
+ "serde",
  "uuid 1.12.1",
 ]
 
@@ -1312,6 +1313,7 @@ dependencies = [
  "bevy_math",
  "bevy_reflect",
  "bevy_utils",
+ "serde",
  "smol_str",
  "thiserror 1.0.69",
 ]
@@ -1674,6 +1676,7 @@ dependencies = [
  "bevy_reflect",
  "bevy_utils",
  "crossbeam-channel",
+ "serde",
  "thiserror 1.0.69",
 ]
 
@@ -1687,6 +1690,7 @@ dependencies = [
  "bevy_hierarchy",
  "bevy_math",
  "bevy_reflect",
+ "serde",
  "thiserror 1.0.69",
 ]
 
@@ -1714,6 +1718,7 @@ dependencies = [
  "bevy_window",
  "bytemuck",
  "nonmax",
+ "serde",
  "smallvec",
  "taffy",
  "thiserror 1.0.69",
@@ -1755,6 +1760,7 @@ dependencies = [
  "bevy_reflect",
  "bevy_utils",
  "raw-window-handle",
+ "serde",
  "smol_str",
 ]
 
@@ -1780,6 +1786,7 @@ dependencies = [
  "cfg-if",
  "crossbeam-channel",
  "raw-window-handle",
+ "serde",
  "wasm-bindgen",
  "web-sys",
  "winit",
@@ -5800,8 +5807,9 @@ dependencies = [
  "bevy_console",
  "bevy_egui",
  "bimap",
+ "common",
  "dcl_component",
- "ui_core",
+ "system_bridge",
 ]
 
 [[package]]
@@ -11456,6 +11464,8 @@ dependencies = [
  "bevy_egui",
  "bevy_simple_text_input",
  "common",
+ "dcl_component",
+ "input_manager",
  "once_cell",
  "opener",
 ]

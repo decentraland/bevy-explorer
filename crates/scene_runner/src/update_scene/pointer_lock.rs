@@ -3,7 +3,7 @@ use bevy::{
     prelude::*,
     window::{CursorGrabMode, PrimaryWindow},
 };
-use common::structs::{CursorLocks, PrimaryCamera};
+use common::structs::{AppConfig, CursorLocks, PrimaryCamera};
 
 use crate::{renderer_context::RendererSceneContext, SceneSets};
 use dcl::interface::CrdtType;
@@ -41,6 +41,7 @@ fn update_pointer_lock(
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
     mut prev_coords: Local<Option<Vec2>>,
     locks: Res<CursorLocks>,
+    config: Res<AppConfig>,
 ) {
     let Ok(window) = window.get_single() else {
         return;
@@ -52,11 +53,26 @@ fn update_pointer_lock(
     let screen_coordinates = if locks.0.contains("pointer") {
         *prev_coords
     } else {
+        let real_window_size = Vec2::new(window.width(), window.height());
+        let vmin = real_window_size.min_element();
+        let (left, top, right, bottom) = if config.constrain_scene_ui {
+            (
+                vmin * 0.27,
+                vmin * 0.06,
+                real_window_size.x - vmin * 0.12,
+                real_window_size.y - vmin * 0.06,
+            )
+        } else {
+            (0.0, 0.0, real_window_size.x, real_window_size.y)
+        };
+
         if window.cursor.grab_mode == bevy::window::CursorGrabMode::Locked {
             // if pointer locked, just middle
-            Some(Vec2::new(window.width(), window.height()) / 2.0)
+            let window_size = Vec2::new(right - left, bottom - top);
+            Some(window_size / 2.0)
         } else {
-            window.cursor_position()
+            let window_origin = Vec2::new(left, top);
+            window.cursor_position().map(|cp| cp - window_origin)
         }
     };
     *prev_coords = screen_coordinates;

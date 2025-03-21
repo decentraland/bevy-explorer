@@ -29,7 +29,7 @@ use common::{
 };
 use emote_select::EmoteUiPlugin;
 use foreign_profile::ForeignProfilePlugin;
-use input_manager::MouseInteractionComponent;
+use input_manager::{InputManager, InputPriority, MouseInteractionComponent};
 use login::LoginPlugin;
 use map::MapPlugin;
 use mic::MicUiPlugin;
@@ -37,6 +37,7 @@ use oow::OowUiPlugin;
 use permission_manager::PermissionPlugin;
 use profile_detail::ProfileDetailPlugin;
 use scene_runner::Toaster;
+use system_bridge::SystemAction;
 use toasts::ToastsPlugin;
 use tooltip::ToolTipPlugin;
 
@@ -88,7 +89,7 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
                     height: Val::Percent(100.0),
                     ..Default::default()
                 },
-                z_index: ZIndex::Global(i16::MAX as i32 + 2),
+                z_index: ZIndex::Global((1 << 18) + 2),
                 ..Default::default()
             },
             UiRoot,
@@ -107,7 +108,7 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
                 bottom: Val::Px(0.0),
                 ..Default::default()
             },
-            z_index: ZIndex::Global(i16::MAX as i32 + 1),
+            z_index: ZIndex::Global((1 << 18) + 1),
             ..Default::default()
         },
         Interaction::default(),
@@ -117,10 +118,10 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
 
 fn toggle_system_ui(
     mut toast: Toaster,
-    key_input: Res<ButtonInput<KeyCode>>,
+    input_manager: InputManager,
     mut root: Query<&mut Style, With<UiRoot>>,
 ) {
-    if key_input.just_pressed(KeyCode::PageUp) {
+    if input_manager.just_down(SystemAction::HideUi, InputPriority::None) {
         let Ok(mut root) = root.get_single_mut() else {
             warn!("no root");
             return;

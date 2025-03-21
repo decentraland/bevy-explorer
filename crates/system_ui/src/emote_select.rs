@@ -15,6 +15,8 @@ use common::{
     util::{FireEventEx, ModifyComponentExt},
 };
 use comms::profile::CurrentUserProfile;
+use input_manager::{InputManager, InputPriority};
+use system_bridge::SystemAction;
 use ui_core::{
     focus::Focus,
     ui_actions::{Click, Defocus, HoverEnter, HoverExit, On},
@@ -89,6 +91,7 @@ fn handle_emote_key(
     mut commands: Commands,
     player: Query<Entity, With<PrimaryUser>>,
     key_input: Res<ButtonInput<KeyCode>>,
+    input_manager: InputManager,
     window: Query<&Window, With<PrimaryWindow>>,
     mut w: EventWriter<EmoteUiEvent>,
     time: Res<Time>,
@@ -97,7 +100,7 @@ fn handle_emote_key(
     mut press_time: Local<f32>,
     mut lost_focus_events: EventReader<WindowFocused>,
 ) {
-    if key_input.just_pressed(KeyCode::AltLeft) {
+    if input_manager.just_down(SystemAction::Emote, InputPriority::None) {
         if !existing.is_empty() {
             w.send(EmoteUiEvent::Hide);
             return;
@@ -114,7 +117,7 @@ fn handle_emote_key(
         *press_time = time.elapsed_seconds();
     }
 
-    if key_input.just_released(KeyCode::AltLeft) && time.elapsed_seconds() > *press_time + 0.25 {
+    if input_manager.just_up(SystemAction::Emote) && time.elapsed_seconds() > *press_time + 0.25 {
         w.send(EmoteUiEvent::Hide);
     }
 
@@ -262,7 +265,7 @@ fn show_emote_ui(
             commands.entity(ent).despawn_recursive();
 
             for (button, interact) in &buttons {
-                if interact == &Interaction::Hovered || interact == &Interaction::Pressed {
+                if interact != &Interaction::None {
                     commands
                         .entity(player.single())
                         .try_insert(EmoteList::new(button.0.clone(), EmoteBroadcast::All));

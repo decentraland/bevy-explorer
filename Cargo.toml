@@ -77,7 +77,8 @@ bevy = { version = "0.14", default-features = false, features=[
     "tonemapping_luts",
     "default_font",
     "webgl2",
-    "jpeg"
+    "jpeg",
+    "serialize",
 ] }
 bevy_console = { git = "https://github.com/robtfm/bevy-console", branch="bevy-0.14" }
 bevy_egui = "0.28"

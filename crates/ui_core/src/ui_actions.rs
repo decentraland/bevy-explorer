@@ -8,7 +8,7 @@ use bevy::{
         query::{QueryData, WorldQuery},
         system::BoxedSystem,
     },
-    input::mouse::{MouseMotion, MouseWheel},
+    input::mouse::MouseMotion,
     prelude::*,
     ui::UiSystem,
     utils::{HashMap, HashSet},
@@ -16,6 +16,8 @@ use bevy::{
 };
 
 use common::{sets::SceneSets, structs::SystemAudio, util::FireEventEx};
+use dcl_component::proto_components::sdk::components::common::InputAction;
+use input_manager::{InputManager, InputPriority, SystemAction};
 
 use super::focus::Focus;
 
@@ -47,6 +49,7 @@ impl Plugin for UiActionPlugin {
             .add_systems(
                 PreUpdate,
                 (
+                    update_click,
                     update_drag,
                     update_wheel,
                     (
@@ -97,6 +100,15 @@ impl Plugin for UiActionPlugin {
 #[derive(Component)]
 pub struct On<M: ActionMarker>(Option<ActionImpl>, PhantomData<M>);
 
+#[derive(Component, Clone, Copy)]
+pub struct UiActionPriority(pub InputPriority);
+
+impl Default for UiActionPriority {
+    fn default() -> Self {
+        Self(InputPriority::Focus)
+    }
+}
+
 impl<M: ActionMarker> On<M> {
     pub fn new<S>(system: impl IntoSystem<(), (), S>) -> Self {
         Self(Some(ActionImpl::new(system)), Default::default())
@@ -139,21 +151,41 @@ pub trait ActionMarker: Send + Sync + 'static {
     }
 }
 
+#[derive(Component, Default)]
+pub struct ClickData {
+    just_down: bool,
+    is_down: bool,
+}
+
 pub struct Click;
 impl ActionMarker for Click {
-    type Component = (&'static Interaction, Option<&'static Enabled>);
+    type Component = (
+        &'static Interaction,
+        Option<&'static ClickData>,
+        Option<&'static Enabled>,
+    );
     fn activate(
-        (interact, enabled): <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>,
+        (interact, clickdata, enabled): <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>,
     ) -> bool {
-        matches!(interact, Interaction::Pressed) && enabled.is_none_or(|a| a.0)
+        !matches!(interact, Interaction::None)
+            && enabled.is_none_or(|a| a.0)
+            && clickdata.is_some_and(|cd| cd.just_down)
     }
 }
 
 pub struct ClickRepeat;
 impl ActionMarker for ClickRepeat {
-    type Component = <Click as ActionMarker>::Component;
-    fn activate(param: <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool {
-        <Click as ActionMarker>::activate(param)
+    type Component = (
+        &'static Interaction,
+        Option<&'static ClickData>,
+        Option<&'static Enabled>,
+    );
+    fn activate(
+        (interact, clickdata, enabled): <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>,
+    ) -> bool {
+        !matches!(interact, Interaction::None)
+            && enabled.is_none_or(|a| a.0)
+            && clickdata.is_some_and(|cd| cd.is_down)
     }
 
     fn repeat_activate() -> bool {
@@ -368,6 +400,41 @@ pub fn run_actions<M: ActionMarker>(world: &mut World) {
 }
 
 #[allow(clippy::type_complexity)]
+fn update_click(
+    mut commands: Commands,
+    mut q: Query<
+        (
+            Entity,
+            &Interaction,
+            Option<&UiActionPriority>,
+            Option<&mut ClickData>,
+        ),
+        Or<(With<ActionIndex<Click>>, With<ActionIndex<ClickRepeat>>)>,
+    >,
+    input_manager: InputManager,
+) {
+    for (ent, interact, maybe_priority, maybe_clickdata) in q.iter_mut() {
+        let priority = maybe_priority.copied().unwrap_or_default().0;
+        if interact != &Interaction::None && input_manager.is_down(InputAction::IaPointer, priority)
+        {
+            let just_down = input_manager.just_down(InputAction::IaPointer, priority);
+            if let Some(mut clickdata) = maybe_clickdata {
+                clickdata.is_down = true;
+                clickdata.just_down = just_down;
+            } else {
+                commands.entity(ent).try_insert(ClickData {
+                    is_down: true,
+                    just_down,
+                });
+            }
+        } else if let Some(mut clickdata) = maybe_clickdata {
+            clickdata.just_down = false;
+            clickdata.is_down = false;
+        }
+    }
+}
+
+#[allow(clippy::type_complexity)]
 fn update_drag(
     mut commands: Commands,
     mut q: Query<
@@ -376,15 +443,17 @@ fn update_drag(
             &Interaction,
             Option<&mut DragData>,
             Option<&mut ClickNoDragData>,
+            Option<&UiActionPriority>,
         ),
         Or<(With<ActionIndex<Dragged>>, With<ActionIndex<ClickNoDrag>>)>,
     >,
     mut mouse_events: EventReader<MouseMotion>,
     window: Query<&Window, With<PrimaryWindow>>,
+    input_manager: InputManager,
 ) {
     let delta: Vec2 = mouse_events.read().map(|mme| mme.delta).sum();
 
-    for (ent, interaction, drag_data, click_no_drag_data) in q.iter_mut() {
+    for (ent, interaction, drag_data, click_no_drag_data, maybe_priority) in q.iter_mut() {
         let (Some(mut drag_data), Some(mut click_no_drag_data)) = (drag_data, click_no_drag_data)
         else {
             commands
@@ -393,14 +462,28 @@ fn update_drag(
             continue;
         };
 
-        if interaction == &Interaction::Pressed {
+        let just_pressed = interaction != &Interaction::None
+            && input_manager.just_down(
+                InputAction::IaPointer,
+                maybe_priority.copied().unwrap_or_default().0,
+            );
+
+        let is_pressed = interaction != &Interaction::None
+            && input_manager.is_down(
+                InputAction::IaPointer,
+                maybe_priority.copied().unwrap_or_default().0,
+            );
+
+        if just_pressed {
             click_no_drag_data.trigger = false;
 
             if !click_no_drag_data.was_pressed {
                 click_no_drag_data.was_pressed = true;
                 click_no_drag_data.valid = true;
             }
+        }
 
+        if is_pressed {
             if delta != Vec2::ZERO {
                 click_no_drag_data.valid = false;
             }
@@ -410,9 +493,6 @@ fn update_drag(
             }
             click_no_drag_data.was_pressed = false;
             click_no_drag_data.valid = false;
-        }
-
-        if interaction != &Interaction::Pressed {
             drag_data.trigger = false;
             drag_data.was_pressed = false;
             continue;
@@ -436,12 +516,18 @@ fn update_drag(
 #[allow(clippy::type_complexity)]
 fn update_wheel(
     mut commands: Commands,
-    mut q: Query<(Entity, &Interaction, Option<&mut MouseWheelData>), With<ActionIndex<Dragged>>>,
-    mut wheel_events: EventReader<MouseWheel>,
+    mut q: Query<
+        (
+            Entity,
+            &Interaction,
+            Option<&mut MouseWheelData>,
+            Option<&UiActionPriority>,
+        ),
+        With<ActionIndex<MouseWheeled>>,
+    >,
+    input_manager: InputManager,
 ) {
-    let delta: f32 = wheel_events.read().map(|we| we.y).sum();
-
-    for (ent, interaction, wheel_data) in q.iter_mut() {
+    for (ent, interaction, wheel_data, maybe_priority) in q.iter_mut() {
         let Some(mut wheel_data) = wheel_data else {
             commands.entity(ent).try_insert(MouseWheelData::default());
             continue;
@@ -451,6 +537,9 @@ fn update_wheel(
             wheel_data.wheel = 0.0;
             continue;
         } else {
+            let priority = maybe_priority.copied().unwrap_or_default().0;
+            let delta = input_manager.down_analog(SystemAction::ScrollUp, priority)
+                - input_manager.down_analog(SystemAction::ScrollDown, priority);
             wheel_data.wheel = delta;
         }
     }
