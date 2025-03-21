@@ -180,7 +180,7 @@ bevy_simple_text_input = { workspace = true }
 prost-build = "0.11.8"
 
 [patch.crates-io]
-bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.14-dcl-cosmic-noimage-cursorfix" }
+bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.14-dcl-cosmic-noimage" }
 # bevy = { path="../bevy" }
 dcl-rpc = { git = "https://github.com/decentraland/rpc-rust", branch = "chore/bump-tokio-tungstenite" }
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
@@ -189,6 +189,7 @@ ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-l
 deno_core = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
 serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
 deno_ops = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
+winit = { git = "https://github.com/robtfm/winit", branch = "wnidows-cursor-lock" }
 
 deno_console = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_fetch = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
