@@ -1,7 +1,7 @@
 use bevy::{
     core::FrameCount,
     ecs::entity::Entities,
-    input::{mouse::MouseMotion, InputSystem},
+    input::InputSystem,
     math::FloatOrd,
     prelude::*,
     render::mesh::{Indices, VertexAttributeValues},
@@ -10,7 +10,7 @@ use bevy::{
 };
 use bevy_console::ConsoleCommand;
 use console::DoAddConsoleCommand;
-use system_bridge::Action;
+use system_bridge::{Action, POINTER_SET};
 
 use crate::{
     gltf_resolver::GltfMeshResolver,
@@ -631,7 +631,6 @@ fn send_action_events(
     frame: Res<FrameCount>,
     time: Res<Time>,
     mut drag_target: ResMut<PointerDragTarget>,
-    mut mouse_events: EventReader<MouseMotion>,
     mut locks: ResMut<CursorLocks>,
 ) {
     fn filtered_events<'a>(
@@ -753,10 +752,7 @@ fn send_action_events(
     }
 
     // send any drags
-    let mut frame_delta = Vec2::ZERO;
-    for mouse_event in mouse_events.read() {
-        frame_delta += mouse_event.delta;
-    }
+    let frame_delta = input_mgr.get_analog(POINTER_SET, InputPriority::Scene);
 
     let mut any_drag_lock = false;
     for (input, (info, lock)) in drag_target.entities.iter() {

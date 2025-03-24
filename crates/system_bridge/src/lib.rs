@@ -2,7 +2,7 @@ pub mod settings;
 
 use bevy::{
     app::{Plugin, Update},
-    prelude::{Event, EventWriter, KeyCode, MouseButton, ResMut, Resource},
+    prelude::{Event, EventWriter, GamepadButtonType, KeyCode, MouseButton, ResMut, Resource},
     utils::HashMap,
 };
 use common::rpc::RpcResultSender;
@@ -53,6 +53,10 @@ pub enum SystemAction {
     ScrollDown,
     ScrollLeft,
     ScrollRight,
+    PointerUp,
+    PointerDown,
+    PointerLeft,
+    PointerRight,
     ShowProfile,
 }
 
@@ -76,12 +80,46 @@ pub enum InputDirection {
     Right,
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub enum AxisIdentifier {
+    MouseMove,
+    MouseWheel,
+    GamepadLeft,
+    GamepadRight,
+    GamepadLeftTrigger,
+    GamepadRightTrigger,
+}
+
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub enum InputIdentifier {
     Key(KeyCode),
     Mouse(MouseButton),
-    MouseWheel(InputDirection),
+    Gamepad(GamepadButtonType),
+    Analog(AxisIdentifier, InputDirection),
 }
+
+// [RIGHT, LEFT, UP, DOWN]
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub struct InputDirectionalSet(pub [Action; 4]);
+
+pub const MOVE_SET: InputDirectionalSet = InputDirectionalSet([
+    Action::Scene(InputAction::IaRight),
+    Action::Scene(InputAction::IaLeft),
+    Action::Scene(InputAction::IaForward),
+    Action::Scene(InputAction::IaBackward),
+]);
+pub const SCROLL_SET: InputDirectionalSet = InputDirectionalSet([
+    Action::System(SystemAction::ScrollRight),
+    Action::System(SystemAction::ScrollLeft),
+    Action::System(SystemAction::ScrollUp),
+    Action::System(SystemAction::ScrollDown),
+]);
+pub const POINTER_SET: InputDirectionalSet = InputDirectionalSet([
+    Action::System(SystemAction::PointerRight),
+    Action::System(SystemAction::PointerLeft),
+    Action::System(SystemAction::PointerDown),
+    Action::System(SystemAction::PointerUp),
+]);
 
 impl serde::Serialize for InputIdentifier {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -110,10 +148,28 @@ impl serde::Serialize for InputIdentifier {
                 )
                 .serialize(serializer)
             }
-            InputIdentifier::MouseWheel(dir) => {
+            InputIdentifier::Gamepad(ref button) => {
+                let string = serde_json::to_string(button).unwrap();
+                format!(
+                    "Gamepad {}",
+                    string
+                        .strip_prefix("\"")
+                        .unwrap()
+                        .strip_suffix("\"")
+                        .unwrap()
+                )
+                .serialize(serializer)
+            }
+            InputIdentifier::Analog(ident, dir) => {
+                let ident = serde_json::to_string(&ident).unwrap();
+                let ident = ident
+                    .strip_prefix("\"")
+                    .unwrap()
+                    .strip_suffix("\"")
+                    .unwrap();
                 let dir = serde_json::to_string(&dir).unwrap();
                 let dir = dir.strip_prefix("\"").unwrap().strip_suffix("\"").unwrap();
-                format!("MouseWheel {}", dir).serialize(serializer)
+                format!("{ident} {dir}").serialize(serializer)
             }
         }
     }
@@ -131,11 +187,20 @@ impl<'de> serde::Deserialize<'de> for InputIdentifier {
                 return Err(serde::de::Error::custom("invalid string"));
             };
             Ok(Self::Mouse(button))
-        } else if let Some(dir) = string.strip_prefix("MouseWheel ") {
+        } else if let Some(button) = string.strip_prefix("Gamepad ") {
+            let Ok(button) = serde_json::from_str::<GamepadButtonType>(&format!("\"{button}\""))
+            else {
+                return Err(serde::de::Error::custom("invalid string"));
+            };
+            Ok(Self::Gamepad(button))
+        } else if let Some((ident, dir)) = string.split_once(" ") {
+            let Ok(ident) = serde_json::from_str::<AxisIdentifier>(&format!("\"{ident}\"")) else {
+                return Err(serde::de::Error::custom("invalid string"));
+            };
             let Ok(dir) = serde_json::from_str(&format!("\"{dir}\"")) else {
                 return Err(serde::de::Error::custom("invalid string"));
             };
-            Ok(Self::MouseWheel(dir))
+            Ok(Self::Analog(ident, dir))
         } else {
             let Ok(key) = serde_json::from_str::<KeyCode>(&format!("\"{string}\"")) else {
                 return Err(serde::de::Error::custom("invalid string"));

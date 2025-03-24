@@ -5,7 +5,6 @@ use std::{
 
 use bevy::{
     ecs::system::SystemParam,
-    input::mouse::MouseMotion,
     prelude::*,
     window::{CursorGrabMode, PrimaryWindow},
 };
@@ -17,7 +16,7 @@ use common::{
     },
     util::ModifyComponentExt,
 };
-use input_manager::{Action, InputManager, InputPriority, SystemAction};
+use input_manager::{Action, InputManager, InputPriority, SystemAction, POINTER_SET};
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
     ContainingScene,
@@ -82,7 +81,6 @@ impl CameraInteractionState<'_, '_> {
 #[allow(clippy::too_many_arguments)]
 pub fn update_camera(
     time: Res<Time>,
-    mut mouse_events: EventReader<MouseMotion>,
     mut move_toggled: Local<bool>,
     mut camera: Query<(&Transform, &mut PrimaryCamera)>,
     mut cursor_locked: ResMut<CursorLocked>,
@@ -189,9 +187,7 @@ pub fn update_camera(
             cursor_locked.0 = true;
         }
 
-        for mouse_event in mouse_events.read() {
-            mouse_delta += mouse_event.delta;
-        }
+        mouse_delta = input_manager.get_analog(POINTER_SET, InputPriority::BindInput);
     } else {
         locks.0.remove("camera");
         if !in_dialog {

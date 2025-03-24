@@ -8,7 +8,6 @@ use bevy::{
         query::{QueryData, WorldQuery},
         system::BoxedSystem,
     },
-    input::mouse::MouseMotion,
     prelude::*,
     ui::UiSystem,
     utils::{HashMap, HashSet},
@@ -17,7 +16,7 @@ use bevy::{
 
 use common::{sets::SceneSets, structs::SystemAudio, util::FireEventEx};
 use dcl_component::proto_components::sdk::components::common::InputAction;
-use input_manager::{InputManager, InputPriority, SystemAction};
+use input_manager::{InputManager, InputPriority, POINTER_SET, SCROLL_SET};
 
 use super::focus::Focus;
 
@@ -447,11 +446,10 @@ fn update_drag(
         ),
         Or<(With<ActionIndex<Dragged>>, With<ActionIndex<ClickNoDrag>>)>,
     >,
-    mut mouse_events: EventReader<MouseMotion>,
     window: Query<&Window, With<PrimaryWindow>>,
     input_manager: InputManager,
 ) {
-    let delta: Vec2 = mouse_events.read().map(|mme| mme.delta).sum();
+    let delta = input_manager.get_analog(POINTER_SET, InputPriority::BindInput);
 
     for (ent, interaction, drag_data, click_no_drag_data, maybe_priority) in q.iter_mut() {
         let (Some(mut drag_data), Some(mut click_no_drag_data)) = (drag_data, click_no_drag_data)
@@ -538,8 +536,7 @@ fn update_wheel(
             continue;
         } else {
             let priority = maybe_priority.copied().unwrap_or_default().0;
-            let delta = input_manager.down_analog(SystemAction::ScrollUp, priority)
-                - input_manager.down_analog(SystemAction::ScrollDown, priority);
+            let delta = input_manager.get_analog(SCROLL_SET, priority).y;
             wheel_data.wheel = delta;
         }
     }

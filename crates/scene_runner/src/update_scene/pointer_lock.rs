@@ -1,9 +1,10 @@
 use bevy::{
-    input::mouse::MouseMotion,
     prelude::*,
     window::{CursorGrabMode, PrimaryWindow},
 };
 use common::structs::{AppConfig, CursorLocks, PrimaryCamera};
+use input_manager::{InputManager, InputPriority};
+use system_bridge::POINTER_SET;
 
 use crate::{renderer_context::RendererSceneContext, SceneSets};
 use dcl::interface::CrdtType;
@@ -37,11 +38,11 @@ fn update_pointer_lock(
         Option<&mut CumulativePointerDelta>,
     )>,
     window: Query<&Window, With<PrimaryWindow>>,
-    mut mouse_events: EventReader<MouseMotion>,
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
     mut prev_coords: Local<Option<Vec2>>,
     locks: Res<CursorLocks>,
     config: Res<AppConfig>,
+    input_manager: InputManager,
 ) {
     let Ok(window) = window.get_single() else {
         return;
@@ -81,10 +82,7 @@ fn update_pointer_lock(
         is_pointer_locked: window.cursor.grab_mode == CursorGrabMode::Locked,
     };
 
-    let mut frame_delta = Vec2::ZERO;
-    for mouse_event in mouse_events.read() {
-        frame_delta += mouse_event.delta;
-    }
+    let frame_delta = input_manager.get_analog(POINTER_SET, InputPriority::Scene);
 
     let ray = screen_coordinates
         .and_then(|coords| camera.viewport_to_world(camera_position, coords))

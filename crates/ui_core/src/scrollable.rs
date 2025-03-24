@@ -5,7 +5,7 @@ use bevy::{
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
 use common::util::{ModifyComponentExt, ModifyDefaultComponentExt, TryPushChildrenEx};
 use dcl_component::proto_components::sdk::components::common::InputAction;
-use input_manager::{Action, InputManager, InputPriority, InputType, SystemAction};
+use input_manager::{Action, InputManager, InputPriority, InputType, SystemAction, SCROLL_SET};
 
 use crate::{
     bound_node::{BoundedNode, BoundedNodeBundle, NodeBounds},
@@ -410,14 +410,8 @@ fn update_scrollables(
                             .priorities()
                             .reserve(InputType::Action(action), InputPriority::Scroll);
                     }
-                    let scroll_delta = Vec2::new(
-                        input_manager.down_analog(SystemAction::ScrollLeft, InputPriority::Scroll)
-                            - input_manager
-                                .down_analog(SystemAction::ScrollRight, InputPriority::Scroll),
-                        input_manager.down_analog(SystemAction::ScrollUp, InputPriority::Scroll)
-                            - input_manager
-                                .down_analog(SystemAction::ScrollDown, InputPriority::Scroll),
-                    ) * 20.0;
+                    let scroll_delta =
+                        input_manager.get_analog(SCROLL_SET, InputPriority::Scroll) * 20.0;
                     *new_slider_deltas.get_or_insert(Default::default()) +=
                         scroll_delta / slide_amount;
                 }

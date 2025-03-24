@@ -2,12 +2,20 @@
 
 use std::collections::BTreeSet;
 
-use bevy::{ecs::system::SystemParam, input::mouse::MouseWheel, prelude::*, utils::HashMap};
+use bevy::{
+    ecs::system::SystemParam,
+    input::mouse::{MouseMotion, MouseWheel},
+    prelude::*,
+    utils::HashMap,
+    window::PrimaryWindow,
+};
 
-use common::rpc::RpcResultSender;
+use common::{rpc::RpcResultSender, structs::CursorLocks};
 use dcl_component::proto_components::sdk::components::common::InputAction;
-pub use system_bridge::{Action, SystemAction};
-use system_bridge::{BindingsData, InputDirection, InputIdentifier, SystemApi};
+pub use system_bridge::{Action, SystemAction, MOVE_SET, POINTER_SET, SCROLL_SET};
+use system_bridge::{
+    AxisIdentifier, BindingsData, InputDirection, InputDirectionalSet, InputIdentifier, SystemApi,
+};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Default, Debug)]
 #[repr(u32)]
@@ -71,8 +79,13 @@ impl Plugin for InputManagerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<InputMap>();
         app.init_resource::<InputPriorities>();
-        app.init_resource::<CumulativeWheelData>();
-        app.init_resource::<CurrentNativeInputRequest>();
+        app.insert_resource(CumulativeAxisData {
+            multipliers: HashMap::from_iter([
+                (AxisIdentifier::GamepadRight, 10.0),
+                (AxisIdentifier::MouseWheel, 10.0),
+            ]),
+            ..Default::default()
+        });
         app.add_systems(
             PreUpdate,
             (
@@ -80,6 +93,7 @@ impl Plugin for InputManagerPlugin {
                 handle_native_input,
                 handle_get_bindings,
                 handle_set_bindings,
+                handle_pointer_motion,
             ),
         );
     }
@@ -100,35 +114,59 @@ impl Default for InputMap {
             inputs: HashMap::from_iter([
                 (
                     Action::Scene(InputAction::IaPointer),
-                    vec![InputIdentifier::Mouse(MouseButton::Left)],
+                    vec![
+                        InputIdentifier::Mouse(MouseButton::Left),
+                        InputIdentifier::Gamepad(GamepadButtonType::LeftTrigger2),
+                    ],
                 ),
                 (
                     Action::Scene(InputAction::IaPrimary),
-                    vec![InputIdentifier::Key(KeyCode::KeyE)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::KeyE),
+                        InputIdentifier::Gamepad(GamepadButtonType::South),
+                    ],
                 ),
                 (
                     Action::Scene(InputAction::IaSecondary),
-                    vec![InputIdentifier::Key(KeyCode::KeyF)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::KeyF),
+                        InputIdentifier::Gamepad(GamepadButtonType::East),
+                    ],
                 ),
                 (
                     Action::Scene(InputAction::IaForward),
-                    vec![InputIdentifier::Key(KeyCode::KeyW)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::KeyW),
+                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Up),
+                    ],
                 ),
                 (
                     Action::Scene(InputAction::IaBackward),
-                    vec![InputIdentifier::Key(KeyCode::KeyS)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::KeyS),
+                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Down),
+                    ],
                 ),
                 (
                     Action::Scene(InputAction::IaRight),
-                    vec![InputIdentifier::Key(KeyCode::KeyD)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::KeyD),
+                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Right),
+                    ],
                 ),
                 (
                     Action::Scene(InputAction::IaLeft),
-                    vec![InputIdentifier::Key(KeyCode::KeyA)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::KeyA),
+                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Left),
+                    ],
                 ),
                 (
                     Action::Scene(InputAction::IaJump),
-                    vec![InputIdentifier::Key(KeyCode::Space)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::Space),
+                        InputIdentifier::Gamepad(GamepadButtonType::North),
+                    ],
                 ),
                 (
                     Action::Scene(InputAction::IaWalk),
@@ -136,23 +174,38 @@ impl Default for InputMap {
                 ),
                 (
                     Action::Scene(InputAction::IaAction3),
-                    vec![InputIdentifier::Key(KeyCode::Digit1)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::Digit1),
+                        InputIdentifier::Gamepad(GamepadButtonType::DPadUp),
+                    ],
                 ),
                 (
                     Action::Scene(InputAction::IaAction4),
-                    vec![InputIdentifier::Key(KeyCode::Digit2)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::Digit2),
+                        InputIdentifier::Gamepad(GamepadButtonType::DPadRight),
+                    ],
                 ),
                 (
                     Action::Scene(InputAction::IaAction5),
-                    vec![InputIdentifier::Key(KeyCode::Digit3)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::Digit3),
+                        InputIdentifier::Gamepad(GamepadButtonType::DPadDown),
+                    ],
                 ),
                 (
                     Action::Scene(InputAction::IaAction6),
-                    vec![InputIdentifier::Key(KeyCode::Digit4)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::Digit4),
+                        InputIdentifier::Gamepad(GamepadButtonType::DPadLeft),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::CameraLock),
-                    vec![InputIdentifier::Mouse(MouseButton::Right)],
+                    vec![
+                        InputIdentifier::Mouse(MouseButton::Right),
+                        InputIdentifier::Gamepad(GamepadButtonType::RightTrigger2),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::Emote),
@@ -160,7 +213,10 @@ impl Default for InputMap {
                 ),
                 (
                     Action::System(SystemAction::Cancel),
-                    vec![InputIdentifier::Key(KeyCode::Escape)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::Escape),
+                        InputIdentifier::Gamepad(GamepadButtonType::RightTrigger2),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::HideUi),
@@ -187,31 +243,80 @@ impl Default for InputMap {
                 ),
                 (
                     Action::System(SystemAction::CameraZoomIn),
-                    vec![InputIdentifier::MouseWheel(InputDirection::Up)],
+                    vec![
+                        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Up),
+                        InputIdentifier::Gamepad(GamepadButtonType::LeftTrigger),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::CameraZoomOut),
-                    vec![InputIdentifier::MouseWheel(InputDirection::Down)],
+                    vec![
+                        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Down),
+                        InputIdentifier::Gamepad(GamepadButtonType::RightTrigger),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::ScrollUp),
-                    vec![InputIdentifier::MouseWheel(InputDirection::Up)],
+                    vec![
+                        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Up),
+                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Up),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::ScrollDown),
-                    vec![InputIdentifier::MouseWheel(InputDirection::Down)],
+                    vec![
+                        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Down),
+                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Down),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::ScrollLeft),
-                    vec![InputIdentifier::MouseWheel(InputDirection::Left)],
+                    vec![
+                        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Left),
+                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Left),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::ScrollRight),
-                    vec![InputIdentifier::MouseWheel(InputDirection::Right)],
+                    vec![
+                        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Right),
+                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Right),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::ShowProfile),
-                    vec![InputIdentifier::Mouse(MouseButton::Middle)],
+                    vec![
+                        InputIdentifier::Mouse(MouseButton::Middle),
+                        InputIdentifier::Gamepad(GamepadButtonType::North),
+                    ],
+                ),
+                (
+                    Action::System(SystemAction::PointerUp),
+                    vec![InputIdentifier::Analog(
+                        AxisIdentifier::GamepadRight,
+                        InputDirection::Up,
+                    )],
+                ),
+                (
+                    Action::System(SystemAction::PointerDown),
+                    vec![InputIdentifier::Analog(
+                        AxisIdentifier::GamepadRight,
+                        InputDirection::Down,
+                    )],
+                ),
+                (
+                    Action::System(SystemAction::PointerLeft),
+                    vec![InputIdentifier::Analog(
+                        AxisIdentifier::GamepadRight,
+                        InputDirection::Left,
+                    )],
+                ),
+                (
+                    Action::System(SystemAction::PointerRight),
+                    vec![InputIdentifier::Analog(
+                        AxisIdentifier::GamepadRight,
+                        InputDirection::Right,
+                    )],
                 ),
             ]),
         }
@@ -225,14 +330,16 @@ impl InputMap {
 }
 
 #[derive(Resource, Default)]
-pub struct CumulativeWheelData {
-    current: Option<Vec2>,
-    prev: Option<Vec2>,
+pub struct CumulativeAxisData {
+    raw_mouse: Vec2,
+    current: HashMap<AxisIdentifier, Vec2>,
+    prev: HashMap<AxisIdentifier, Vec2>,
+    multipliers: HashMap<AxisIdentifier, f32>,
 }
 
-impl CumulativeWheelData {
-    fn _analog(vec: Option<Vec2>, dir: InputDirection) -> f32 {
-        let vec = vec.unwrap_or_default();
+impl CumulativeAxisData {
+    fn _analog(vec: Option<&Vec2>, dir: InputDirection) -> f32 {
+        let vec = vec.copied().unwrap_or_default();
         match dir {
             InputDirection::Up => vec.y.max(0.0),
             InputDirection::Down => -vec.y.min(0.0),
@@ -241,24 +348,26 @@ impl CumulativeWheelData {
         }
     }
 
-    fn check_dir(vec: Option<Vec2>, dir: InputDirection) -> bool {
+    fn check_dir(vec: Option<&Vec2>, dir: InputDirection) -> bool {
         Self::_analog(vec, dir) > 0.0
     }
 
-    pub fn just_down(&self, dir: InputDirection) -> bool {
-        Self::check_dir(self.current, dir) && !Self::check_dir(self.prev, dir)
+    pub fn just_down(&self, ident: AxisIdentifier, dir: InputDirection) -> bool {
+        Self::check_dir(self.current.get(&ident), dir)
+            && !Self::check_dir(self.prev.get(&ident), dir)
     }
 
-    pub fn just_up(&self, dir: InputDirection) -> bool {
-        !Self::check_dir(self.current, dir) && Self::check_dir(self.prev, dir)
+    pub fn just_up(&self, ident: AxisIdentifier, dir: InputDirection) -> bool {
+        !Self::check_dir(self.current.get(&ident), dir)
+            && Self::check_dir(self.prev.get(&ident), dir)
     }
 
-    pub fn down(&self, dir: InputDirection) -> bool {
-        Self::check_dir(self.current, dir)
+    pub fn down(&self, ident: AxisIdentifier, dir: InputDirection) -> bool {
+        Self::check_dir(self.current.get(&ident), dir)
     }
 
-    pub fn analog(&self, dir: InputDirection) -> f32 {
-        Self::_analog(self.current, dir)
+    pub fn analog(&self, ident: AxisIdentifier, dir: InputDirection) -> f32 {
+        Self::_analog(self.current.get(&ident), dir) * self.multipliers.get(&ident).unwrap_or(&1.0)
     }
 }
 
@@ -267,7 +376,8 @@ pub struct InputManager<'w> {
     map: Res<'w, InputMap>,
     mouse_input: Res<'w, ButtonInput<MouseButton>>,
     key_input: Res<'w, ButtonInput<KeyCode>>,
-    wheel_data: Res<'w, CumulativeWheelData>,
+    axis_data: ResMut<'w, CumulativeAxisData>,
+    gamepad_input: Res<'w, ButtonInput<GamepadButton>>,
     priorities: ResMut<'w, InputPriorities>,
 }
 
@@ -322,8 +432,15 @@ impl InputManager<'_> {
             InputIdentifier::Mouse(mb) => {
                 self.mouse_input.just_pressed(*mb) && self.check_priority(item, priority)
             }
-            InputIdentifier::MouseWheel(input_direction) => {
-                self.wheel_data.just_down(*input_direction) && self.check_priority(item, priority)
+            InputIdentifier::Gamepad(b) => {
+                self.gamepad_input
+                    .get_just_pressed()
+                    .any(|p| &p.button_type == b)
+                    && self.check_priority(item, priority)
+            }
+            InputIdentifier::Analog(axis, input_direction) => {
+                self.axis_data.just_down(*axis, *input_direction)
+                    && self.check_priority(item, priority)
             }
         })
     }
@@ -332,8 +449,12 @@ impl InputManager<'_> {
         self.inputs(action.into()).any(|item| match item {
             InputIdentifier::Key(k) => self.key_input.just_released(*k),
             InputIdentifier::Mouse(mb) => self.mouse_input.just_released(*mb),
-            InputIdentifier::MouseWheel(input_direction) => {
-                self.wheel_data.just_up(*input_direction)
+            InputIdentifier::Gamepad(b) => self
+                .gamepad_input
+                .get_just_released()
+                .any(|p| &p.button_type == b),
+            InputIdentifier::Analog(axis, input_direction) => {
+                self.axis_data.just_up(*axis, *input_direction)
             }
         })
     }
@@ -346,39 +467,71 @@ impl InputManager<'_> {
             InputIdentifier::Mouse(mb) => {
                 self.mouse_input.pressed(*mb) && self.check_priority(item, priority)
             }
-            InputIdentifier::MouseWheel(input_direction) => {
-                self.wheel_data.down(*input_direction) && self.check_priority(item, priority)
+            InputIdentifier::Gamepad(b) => {
+                self.gamepad_input
+                    .get_pressed()
+                    .any(|p| &p.button_type == b)
+                    && self.check_priority(item, priority)
+            }
+            InputIdentifier::Analog(axis, input_direction) => {
+                self.axis_data.down(*axis, *input_direction) && self.check_priority(item, priority)
             }
         })
     }
 
-    pub fn down_analog<T: Into<Action>>(&self, action: T, priority: InputPriority) -> f32 {
-        self.inputs(action.into())
-            .map(|item| match item {
-                InputIdentifier::Key(k) => {
-                    if self.key_input.pressed(*k) && self.check_priority(item, priority) {
-                        1.0
-                    } else {
-                        0.0
+    pub fn get_analog(&self, set: InputDirectionalSet, priority: InputPriority) -> Vec2 {
+        let mut amts = set.0.iter().map(|a| {
+            self.inputs(*a)
+                .map(|item| match item {
+                    InputIdentifier::Key(k) => {
+                        if self.key_input.pressed(*k) && self.check_priority(item, priority) {
+                            1.0
+                        } else {
+                            0.0
+                        }
                     }
-                }
-                InputIdentifier::Mouse(mb) => {
-                    if self.mouse_input.pressed(*mb) && self.check_priority(item, priority) {
-                        1.0
-                    } else {
-                        0.0
+                    InputIdentifier::Mouse(mb) => {
+                        if self.mouse_input.pressed(*mb) && self.check_priority(item, priority) {
+                            1.0
+                        } else {
+                            0.0
+                        }
                     }
-                }
-                InputIdentifier::MouseWheel(input_direction) => {
-                    let analog = self.wheel_data.analog(*input_direction);
-                    if analog > 0.0 && self.check_priority(item, priority) {
-                        analog
-                    } else {
-                        0.0
+                    InputIdentifier::Gamepad(b) => {
+                        if self
+                            .gamepad_input
+                            .get_pressed()
+                            .any(|p| &p.button_type == b)
+                            && self.check_priority(item, priority)
+                        {
+                            1.0
+                        } else {
+                            0.0
+                        }
                     }
-                }
-            })
-            .sum()
+                    InputIdentifier::Analog(axis, input_direction) => {
+                        let analog = self.axis_data.analog(*axis, *input_direction);
+                        if analog > 0.0 && self.check_priority(item, priority) {
+                            analog
+                        } else {
+                            0.0
+                        }
+                    }
+                })
+                .sum::<f32>()
+        });
+
+        let mouse = if set == POINTER_SET {
+            self.axis_data.raw_mouse
+        } else {
+            Vec2::ZERO
+        };
+
+        mouse
+            + Vec2::new(
+                amts.next().unwrap() - amts.next().unwrap(),
+                amts.next().unwrap() - amts.next().unwrap(),
+            )
     }
 
     // only scene actions
@@ -396,8 +549,14 @@ impl InputManager<'_> {
                         self.mouse_input.just_pressed(*m)
                             && self.check_priority(button, InputPriority::Scene)
                     }
-                    InputIdentifier::MouseWheel(input_direction) => {
-                        self.wheel_data.just_down(*input_direction)
+                    InputIdentifier::Gamepad(b) => {
+                        self.gamepad_input
+                            .get_just_pressed()
+                            .any(|p| &p.button_type == b)
+                            && self.check_priority(button, InputPriority::Scene)
+                    }
+                    InputIdentifier::Analog(axis, input_direction) => {
+                        self.axis_data.just_down(*axis, *input_direction)
                             && self.check_priority(button, InputPriority::Scene)
                     }
                 })
@@ -419,8 +578,12 @@ impl InputManager<'_> {
                 buttons.iter().any(|button| match button {
                     InputIdentifier::Key(k) => self.key_input.just_released(*k),
                     InputIdentifier::Mouse(m) => self.mouse_input.just_released(*m),
-                    InputIdentifier::MouseWheel(input_direction) => {
-                        self.wheel_data.just_up(*input_direction)
+                    InputIdentifier::Gamepad(b) => self
+                        .gamepad_input
+                        .get_just_released()
+                        .any(|p| &p.button_type == b),
+                    InputIdentifier::Analog(axis, input_direction) => {
+                        self.axis_data.just_up(*axis, *input_direction)
                     }
                 })
             })
@@ -434,19 +597,67 @@ impl InputManager<'_> {
     }
 }
 
-#[derive(Resource, Default)]
-struct CurrentNativeInputRequest(Option<RpcResultSender<InputIdentifier>>);
+struct CurrentNativeInputRequest {
+    sender: RpcResultSender<InputIdentifier>,
+    axes: HashMap<AxisIdentifier, Vec2>,
+}
 
 fn update_deltas(
-    mut wheel_data: ResMut<CumulativeWheelData>,
+    mut axis_data: ResMut<CumulativeAxisData>,
     mut wheel_events: EventReader<MouseWheel>,
+    pad_axes: Res<Axis<GamepadAxis>>,
     prio: Res<InputPriorities>,
     mut prev: Local<InputPriorities>,
 ) {
-    wheel_data.prev = wheel_data.current;
-    wheel_data.current = None;
+    axis_data.prev = std::mem::take(&mut axis_data.current);
     for ev in wheel_events.read() {
-        wheel_data.current = Some(wheel_data.current.unwrap_or_default() + Vec2::new(ev.x, ev.y));
+        *axis_data
+            .current
+            .entry(AxisIdentifier::MouseWheel)
+            .or_default() += Vec2::new(ev.x, ev.y);
+    }
+    for device in pad_axes.devices() {
+        if let Some(value) = pad_axes.get(*device) {
+            match device.axis_type {
+                GamepadAxisType::LeftStickX => {
+                    *axis_data
+                        .current
+                        .entry(AxisIdentifier::GamepadLeft)
+                        .or_default() += Vec2::X * value
+                }
+                GamepadAxisType::LeftStickY => {
+                    *axis_data
+                        .current
+                        .entry(AxisIdentifier::GamepadLeft)
+                        .or_default() += Vec2::Y * value
+                }
+                GamepadAxisType::LeftZ => {
+                    *axis_data
+                        .current
+                        .entry(AxisIdentifier::GamepadLeftTrigger)
+                        .or_default() += Vec2::X * value
+                }
+                GamepadAxisType::RightStickX => {
+                    *axis_data
+                        .current
+                        .entry(AxisIdentifier::GamepadRight)
+                        .or_default() += Vec2::X * value
+                }
+                GamepadAxisType::RightStickY => {
+                    *axis_data
+                        .current
+                        .entry(AxisIdentifier::GamepadRight)
+                        .or_default() += Vec2::Y * value
+                }
+                GamepadAxisType::RightZ => {
+                    *axis_data
+                        .current
+                        .entry(AxisIdentifier::GamepadRightTrigger)
+                        .or_default() += Vec2::Y * value
+                }
+                GamepadAxisType::Other(_) => (),
+            }
+        }
     }
     if *prev != *prio {
         *prev = prio.clone();
@@ -454,39 +665,147 @@ fn update_deltas(
     }
 }
 
+fn handle_pointer_motion(
+    locks: Res<CursorLocks>,
+    mut input_manager: InputManager,
+    mut window: Query<&mut Window, With<PrimaryWindow>>,
+    mut mouse_events: EventReader<MouseMotion>,
+    mut last_position: Local<Vec2>,
+) {
+    input_manager.axis_data.raw_mouse = Vec2::ZERO;
+    let motion = input_manager.get_analog(POINTER_SET, InputPriority::BindInput);
+
+    if let Ok(mut window) = window.get_single_mut() {
+        let position = window.cursor_position().unwrap_or(*last_position);
+        if window.cursor_position().is_some() {
+            *last_position = position + motion;
+        }
+
+        if locks.0.is_empty() && motion != Vec2::ZERO {
+            window.set_cursor_position(Some(position + motion));
+        }
+    }
+
+    for ev in mouse_events.read() {
+        input_manager.axis_data.raw_mouse += ev.delta;
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn handle_native_input(
     mut events: EventReader<SystemApi>,
-    mut active: ResMut<CurrentNativeInputRequest>,
+    mut active: Local<Option<CurrentNativeInputRequest>>,
     mouse_input: Res<ButtonInput<MouseButton>>,
     key_input: Res<ButtonInput<KeyCode>>,
+    gamepad_input: Res<ButtonInput<GamepadButton>>,
+    mut wheel_events: EventReader<MouseWheel>,
+    mut mouse_events: EventReader<MouseMotion>,
+    pad_axes: Res<Axis<GamepadAxis>>,
     mut priorities: ResMut<InputPriorities>,
 ) {
-    if let Some(current) = active.0.take() {
-        if let Some(key) = key_input.get_just_pressed().next() {
-            current.send(InputIdentifier::Key(*key));
-            priorities.release(InputType::All, InputPriority::BindInput);
-        } else if let Some(mouse) = mouse_input.get_just_pressed().next() {
-            current.send(InputIdentifier::Mouse(*mouse));
-            priorities.release(InputType::All, InputPriority::BindInput);
+    fn vec2dir(vec: Vec2) -> InputDirection {
+        let max = vec.abs().max_element();
+        if max == vec.x {
+            InputDirection::Right
+        } else if max == vec.y {
+            InputDirection::Up
+        } else if max == -vec.x {
+            InputDirection::Left
         } else {
-            active.0 = Some(current);
+            InputDirection::Down
+        }
+    }
+
+    if let Some(mut current) = active.take() {
+        if let Some(key) = key_input.get_just_pressed().next() {
+            current.sender.send(InputIdentifier::Key(*key));
+            return;
+        } else if let Some(mouse) = mouse_input.get_just_pressed().next() {
+            current.sender.send(InputIdentifier::Mouse(*mouse));
+            return;
+        } else if let Some(gamepad) = gamepad_input.get_just_pressed().next() {
+            current
+                .sender
+                .send(InputIdentifier::Gamepad(gamepad.button_type));
+            return;
+        } else {
+            for ev in mouse_events.read() {
+                let axis = current.axes.entry(AxisIdentifier::MouseMove).or_default();
+                *axis += ev.delta;
+                if axis.abs().max_element() > 10.0 {
+                    current.sender.send(InputIdentifier::Analog(
+                        AxisIdentifier::MouseMove,
+                        vec2dir(*axis),
+                    ));
+                    return;
+                }
+            }
+            if let Some(ev) = wheel_events.read().next() {
+                current.sender.send(InputIdentifier::Analog(
+                    AxisIdentifier::MouseWheel,
+                    vec2dir(Vec2::new(ev.x, ev.y)),
+                ));
+                return;
+            }
+            for device in pad_axes.devices() {
+                if let Some(value) = pad_axes.get(*device) {
+                    let (axis, value) = match device.axis_type {
+                        GamepadAxisType::LeftStickX => {
+                            (AxisIdentifier::GamepadLeft, Vec2::X * value)
+                        }
+                        GamepadAxisType::LeftStickY => {
+                            (AxisIdentifier::GamepadLeft, Vec2::Y * value)
+                        }
+                        GamepadAxisType::LeftZ => {
+                            (AxisIdentifier::GamepadLeftTrigger, Vec2::X * value)
+                        }
+                        GamepadAxisType::RightStickX => {
+                            (AxisIdentifier::GamepadRight, Vec2::X * value)
+                        }
+                        GamepadAxisType::RightStickY => {
+                            (AxisIdentifier::GamepadRight, Vec2::Y * value)
+                        }
+                        GamepadAxisType::RightZ => {
+                            (AxisIdentifier::GamepadRightTrigger, Vec2::Y * value)
+                        }
+                        GamepadAxisType::Other(_) => continue,
+                    };
+                    let axis_val = current.axes.entry(axis).or_default();
+                    *axis_val += value;
+                    if axis_val.abs().max_element() > 10.0 {
+                        current
+                            .sender
+                            .send(InputIdentifier::Analog(axis, vec2dir(*axis_val)));
+                        return;
+                    }
+                }
+            }
+
+            *active = Some(current);
         }
         return;
     }
+
+    mouse_events.clear();
+    wheel_events.clear();
+    priorities.release(InputType::All, InputPriority::BindInput);
 
     if let Some(sender) = events
         .read()
         .filter_map(|e| {
             if let SystemApi::GetNativeInput(sender) = e {
-                Some(sender)
+                Some(sender.clone())
             } else {
                 None
             }
         })
         .last()
     {
+        *active = Some(CurrentNativeInputRequest {
+            sender,
+            axes: Default::default(),
+        });
         priorities.reserve(InputType::All, InputPriority::BindInput);
-        active.0 = Some(sender.clone());
     }
 }
 
