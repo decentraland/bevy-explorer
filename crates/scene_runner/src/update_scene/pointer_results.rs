@@ -10,7 +10,6 @@ use bevy::{
 };
 use bevy_console::ConsoleCommand;
 use console::DoAddConsoleCommand;
-use system_bridge::{Action, POINTER_SET};
 
 use crate::{
     gltf_resolver::GltfMeshResolver,
@@ -23,6 +22,7 @@ use crate::{
 };
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
+    inputs::{Action, CommonInputAction, POINTER_SET},
     structs::{CursorLocks, PrimaryCamera},
 };
 use dcl::interface::CrdtType;
@@ -38,6 +38,56 @@ use dcl_component::{
     SceneComponentId, SceneEntityId,
 };
 use input_manager::{InputManager, InputPriority, InputType, MouseInteractionComponent};
+
+pub trait IaToDcl {
+    fn to_dcl(&self) -> InputAction;
+}
+
+impl IaToDcl for CommonInputAction {
+    fn to_dcl(&self) -> InputAction {
+        match self {
+            CommonInputAction::IaPointer => InputAction::IaPointer,
+            CommonInputAction::IaPrimary => InputAction::IaPrimary,
+            CommonInputAction::IaSecondary => InputAction::IaSecondary,
+            CommonInputAction::IaAny => InputAction::IaAny,
+            CommonInputAction::IaForward => InputAction::IaForward,
+            CommonInputAction::IaBackward => InputAction::IaBackward,
+            CommonInputAction::IaRight => InputAction::IaRight,
+            CommonInputAction::IaLeft => InputAction::IaLeft,
+            CommonInputAction::IaJump => InputAction::IaJump,
+            CommonInputAction::IaWalk => InputAction::IaWalk,
+            CommonInputAction::IaAction3 => InputAction::IaAction3,
+            CommonInputAction::IaAction4 => InputAction::IaAction4,
+            CommonInputAction::IaAction5 => InputAction::IaAction5,
+            CommonInputAction::IaAction6 => InputAction::IaAction6,
+        }
+    }
+}
+
+pub trait IaToCommon {
+    fn to_common(&self) -> CommonInputAction;
+}
+
+impl IaToCommon for InputAction {
+    fn to_common(&self) -> CommonInputAction {
+        match self {
+            InputAction::IaPointer => CommonInputAction::IaPointer,
+            InputAction::IaPrimary => CommonInputAction::IaPrimary,
+            InputAction::IaSecondary => CommonInputAction::IaSecondary,
+            InputAction::IaAny => CommonInputAction::IaAny,
+            InputAction::IaForward => CommonInputAction::IaForward,
+            InputAction::IaBackward => CommonInputAction::IaBackward,
+            InputAction::IaRight => CommonInputAction::IaRight,
+            InputAction::IaLeft => CommonInputAction::IaLeft,
+            InputAction::IaJump => CommonInputAction::IaJump,
+            InputAction::IaWalk => CommonInputAction::IaWalk,
+            InputAction::IaAction3 => CommonInputAction::IaAction3,
+            InputAction::IaAction4 => CommonInputAction::IaAction4,
+            InputAction::IaAction5 => CommonInputAction::IaAction5,
+            InputAction::IaAction6 => CommonInputAction::IaAction6,
+        }
+    }
+}
 
 pub struct PointerResultPlugin;
 
@@ -613,7 +663,7 @@ fn send_hover_events(
         if let Some(info) = new_target.0.as_ref() {
             if let Some(action) = send_event(info, PointerEventType::PetHoverEnter) {
                 input_manager.priorities().reserve(
-                    InputType::Action(Action::Scene(action)),
+                    InputType::Action(Action::Scene(action.to_common())),
                     InputPriority::Scene,
                 );
             }
@@ -724,30 +774,31 @@ fn send_action_events(
     // send event to hover target
     if let Some(info) = target.0.as_ref() {
         for down in input_mgr.iter_scene_just_down() {
-            send_event(info, PointerEventType::PetDown, *down, None);
-            if filtered_events(&pointer_requests, info, PointerEventType::PetDrag, *down)
+            let down = down.to_dcl();
+            send_event(info, PointerEventType::PetDown, down, None);
+            if filtered_events(&pointer_requests, info, PointerEventType::PetDrag, down)
                 .next()
                 .is_some()
             {
                 debug!("added drag");
-                drag_target.entities.insert(*down, (info.clone(), false));
+                drag_target.entities.insert(down, (info.clone(), false));
             }
             if filtered_events(
                 &pointer_requests,
                 info,
                 PointerEventType::PetDragLocked,
-                *down,
+                down,
             )
             .next()
             .is_some()
             {
                 debug!("added drag lock");
-                drag_target.entities.insert(*down, (info.clone(), true));
+                drag_target.entities.insert(down, (info.clone(), true));
             }
         }
 
         for up in input_mgr.iter_scene_just_up() {
-            send_event(info, PointerEventType::PetUp, *up, None);
+            send_event(info, PointerEventType::PetUp, up.to_dcl(), None);
         }
     }
 
@@ -773,8 +824,9 @@ fn send_action_events(
 
     // send drag ends
     for up in input_mgr.iter_scene_just_up() {
-        if let Some((info, _)) = drag_target.entities.remove(up) {
-            send_event(&info, PointerEventType::PetDragEnd, *up, None);
+        let up = up.to_dcl();
+        if let Some((info, _)) = drag_target.entities.remove(&up) {
+            send_event(&info, PointerEventType::PetDragEnd, up, None);
         }
     }
 

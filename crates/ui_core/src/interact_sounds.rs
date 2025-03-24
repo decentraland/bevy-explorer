@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use bevy_ecss::PropertyValues;
-use common::structs::SystemAudio;
-use dcl_component::proto_components::sdk::components::common::InputAction;
+use common::{inputs::CommonInputAction, structs::SystemAudio};
 use input_manager::InputManager;
 
 use crate::{
@@ -55,7 +54,7 @@ fn play_interact_sounds(
 
         if maybe_last < Some(&LastInteractSound(InteractSound::Click))
             && input_manager.just_down(
-                InputAction::IaPointer,
+                CommonInputAction::IaPointer,
                 maybe_priority.copied().unwrap_or_default().0,
             )
         {

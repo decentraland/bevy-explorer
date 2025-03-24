@@ -6,14 +6,14 @@ use bevy::{
 };
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
+    inputs::{CommonInputAction, SystemAction},
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
     structs::{PrimaryCamera, ShowProfileEvent, ToolTips, TooltipSource},
     util::{AsH160, FireEventEx},
 };
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
-use dcl_component::proto_components::sdk::components::common::InputAction;
-use input_manager::{InputManager, InputPriority, InputType, SystemAction};
+use input_manager::{InputManager, InputPriority, InputType};
 use rapier3d_f64::{
     na::Isometry,
     prelude::{ColliderBuilder, SharedShape},
@@ -214,7 +214,7 @@ fn update_avatar_collider_actions(
             vec![("Middle Click : Profile".to_owned(), true)],
         );
 
-        if input_manager.just_down(InputAction::IaPointer, InputPriority::Scene) {
+        if input_manager.just_down(CommonInputAction::IaPointer, InputPriority::Scene) {
             // send event
             let event = json!({
                 "userId": format!("{:#x}", player.address),

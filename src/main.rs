@@ -35,6 +35,7 @@ use bevy_console::ConsoleCommand;
 
 use collectibles::CollectiblesPlugin;
 use common::{
+    inputs::InputMap,
     sets::SetupSets,
     structs::{
         AppConfig, AttachPoints, AvatarDynamicState, Cubemap, GraphicsSettings, IVec2Arg,
@@ -341,6 +342,10 @@ fn main() {
     if final_config.graphics.log_fps {
         app.add_plugins(LogDiagnosticsPlugin::default());
     }
+
+    app.insert_resource(InputMap {
+        inputs: final_config.inputs.0.clone().into_iter().collect(),
+    });
 
     // Analytics
     app.add_plugins(MetricsPlugin);

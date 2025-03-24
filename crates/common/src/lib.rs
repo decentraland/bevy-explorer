@@ -1,4 +1,5 @@
 pub mod dynamics;
+pub mod inputs;
 pub mod profile;
 pub mod rpc;
 pub mod sets;

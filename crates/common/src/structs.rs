@@ -9,6 +9,8 @@ use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+use crate::inputs::InputMapSerialized;
+
 #[derive(Resource)]
 pub struct Version(pub String);
 
@@ -198,6 +200,7 @@ pub struct AppConfig {
     pub default_permissions: HashMap<PermissionType, PermissionValue>,
     pub realm_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
     pub scene_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
+    pub inputs: InputMapSerialized,
 }
 
 impl Default for AppConfig {
@@ -233,6 +236,7 @@ impl Default for AppConfig {
             default_permissions: Default::default(),
             realm_permissions: Default::default(),
             scene_permissions: Default::default(),
+            inputs: Default::default(),
         }
     }
 }

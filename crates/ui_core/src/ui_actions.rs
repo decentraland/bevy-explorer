@@ -14,9 +14,13 @@ use bevy::{
     window::PrimaryWindow,
 };
 
-use common::{sets::SceneSets, structs::SystemAudio, util::FireEventEx};
-use dcl_component::proto_components::sdk::components::common::InputAction;
-use input_manager::{InputManager, InputPriority, POINTER_SET, SCROLL_SET};
+use common::{
+    inputs::{CommonInputAction, POINTER_SET, SCROLL_SET},
+    sets::SceneSets,
+    structs::SystemAudio,
+    util::FireEventEx,
+};
+use input_manager::{InputManager, InputPriority};
 
 use super::focus::Focus;
 
@@ -414,9 +418,10 @@ fn update_click(
 ) {
     for (ent, interact, maybe_priority, maybe_clickdata) in q.iter_mut() {
         let priority = maybe_priority.copied().unwrap_or_default().0;
-        if interact != &Interaction::None && input_manager.is_down(InputAction::IaPointer, priority)
+        if interact != &Interaction::None
+            && input_manager.is_down(CommonInputAction::IaPointer, priority)
         {
-            let just_down = input_manager.just_down(InputAction::IaPointer, priority);
+            let just_down = input_manager.just_down(CommonInputAction::IaPointer, priority);
             if let Some(mut clickdata) = maybe_clickdata {
                 clickdata.is_down = true;
                 clickdata.just_down = just_down;
@@ -462,13 +467,13 @@ fn update_drag(
 
         let just_pressed = interaction != &Interaction::None
             && input_manager.just_down(
-                InputAction::IaPointer,
+                CommonInputAction::IaPointer,
                 maybe_priority.copied().unwrap_or_default().0,
             );
 
         let is_pressed = interaction != &Interaction::None
             && input_manager.is_down(
-                InputAction::IaPointer,
+                CommonInputAction::IaPointer,
                 maybe_priority.copied().unwrap_or_default().0,
             );
 

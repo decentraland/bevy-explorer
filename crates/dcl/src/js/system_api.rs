@@ -1,4 +1,5 @@
 use bevy::log::debug;
+use common::inputs::{Action, BindingsData, InputIdentifier};
 use dcl_component::proto_components::sdk::components::{PbAvatarBase, PbAvatarEquippedData};
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use http::Uri;
@@ -6,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
     settings::{SettingInfo, Settings},
-    Action, BindingsData, InputIdentifier, SetAvatarData, SystemApi,
+    SetAvatarData, SystemApi,
 };
 use wallet::{sign_request, Wallet};
 

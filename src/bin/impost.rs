@@ -12,6 +12,7 @@ use bevy::{
 };
 
 use common::{
+    inputs::InputMap,
     profile::SerializedProfile,
     rpc::RpcCall,
     sets::SetupSets,
@@ -22,7 +23,6 @@ use common::{
     },
     util::{config_file, UtilsPlugin},
 };
-use input_manager::InputMap;
 use nft::asset_source::Nft;
 use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;

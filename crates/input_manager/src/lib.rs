@@ -10,12 +10,16 @@ use bevy::{
     window::PrimaryWindow,
 };
 
-use common::{rpc::RpcResultSender, structs::CursorLocks};
-use dcl_component::proto_components::sdk::components::common::InputAction;
-pub use system_bridge::{Action, SystemAction, MOVE_SET, POINTER_SET, SCROLL_SET};
-use system_bridge::{
-    AxisIdentifier, BindingsData, InputDirection, InputDirectionalSet, InputIdentifier, SystemApi,
+use common::{
+    inputs::{
+        Action, AxisIdentifier, BindingsData, CommonInputAction, InputDirection,
+        InputDirectionalSet, InputIdentifier, InputMap, InputMapSerialized, POINTER_SET,
+    },
+    rpc::RpcResultSender,
+    structs::{AppConfig, CursorLocks},
+    util::config_file,
 };
+use system_bridge::SystemApi;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Default, Debug)]
 #[repr(u32)]
@@ -77,7 +81,6 @@ pub struct InputManagerPlugin;
 
 impl Plugin for InputManagerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<InputMap>();
         app.init_resource::<InputPriorities>();
         app.insert_resource(CumulativeAxisData {
             multipliers: HashMap::from_iter([
@@ -102,232 +105,6 @@ impl Plugin for InputManagerPlugin {
 // marker to attach to components that pass mouse input through to scenes
 #[derive(Component)]
 pub struct MouseInteractionComponent;
-
-#[derive(Resource)]
-pub struct InputMap {
-    inputs: HashMap<Action, Vec<InputIdentifier>>,
-}
-
-impl Default for InputMap {
-    fn default() -> Self {
-        Self {
-            inputs: HashMap::from_iter([
-                (
-                    Action::Scene(InputAction::IaPointer),
-                    vec![
-                        InputIdentifier::Mouse(MouseButton::Left),
-                        InputIdentifier::Gamepad(GamepadButtonType::LeftTrigger2),
-                    ],
-                ),
-                (
-                    Action::Scene(InputAction::IaPrimary),
-                    vec![
-                        InputIdentifier::Key(KeyCode::KeyE),
-                        InputIdentifier::Gamepad(GamepadButtonType::South),
-                    ],
-                ),
-                (
-                    Action::Scene(InputAction::IaSecondary),
-                    vec![
-                        InputIdentifier::Key(KeyCode::KeyF),
-                        InputIdentifier::Gamepad(GamepadButtonType::East),
-                    ],
-                ),
-                (
-                    Action::Scene(InputAction::IaForward),
-                    vec![
-                        InputIdentifier::Key(KeyCode::KeyW),
-                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Up),
-                    ],
-                ),
-                (
-                    Action::Scene(InputAction::IaBackward),
-                    vec![
-                        InputIdentifier::Key(KeyCode::KeyS),
-                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Down),
-                    ],
-                ),
-                (
-                    Action::Scene(InputAction::IaRight),
-                    vec![
-                        InputIdentifier::Key(KeyCode::KeyD),
-                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Right),
-                    ],
-                ),
-                (
-                    Action::Scene(InputAction::IaLeft),
-                    vec![
-                        InputIdentifier::Key(KeyCode::KeyA),
-                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Left),
-                    ],
-                ),
-                (
-                    Action::Scene(InputAction::IaJump),
-                    vec![
-                        InputIdentifier::Key(KeyCode::Space),
-                        InputIdentifier::Gamepad(GamepadButtonType::North),
-                    ],
-                ),
-                (
-                    Action::Scene(InputAction::IaWalk),
-                    vec![InputIdentifier::Key(KeyCode::ShiftLeft)],
-                ),
-                (
-                    Action::Scene(InputAction::IaAction3),
-                    vec![
-                        InputIdentifier::Key(KeyCode::Digit1),
-                        InputIdentifier::Gamepad(GamepadButtonType::DPadUp),
-                    ],
-                ),
-                (
-                    Action::Scene(InputAction::IaAction4),
-                    vec![
-                        InputIdentifier::Key(KeyCode::Digit2),
-                        InputIdentifier::Gamepad(GamepadButtonType::DPadRight),
-                    ],
-                ),
-                (
-                    Action::Scene(InputAction::IaAction5),
-                    vec![
-                        InputIdentifier::Key(KeyCode::Digit3),
-                        InputIdentifier::Gamepad(GamepadButtonType::DPadDown),
-                    ],
-                ),
-                (
-                    Action::Scene(InputAction::IaAction6),
-                    vec![
-                        InputIdentifier::Key(KeyCode::Digit4),
-                        InputIdentifier::Gamepad(GamepadButtonType::DPadLeft),
-                    ],
-                ),
-                (
-                    Action::System(SystemAction::CameraLock),
-                    vec![
-                        InputIdentifier::Mouse(MouseButton::Right),
-                        InputIdentifier::Gamepad(GamepadButtonType::RightTrigger2),
-                    ],
-                ),
-                (
-                    Action::System(SystemAction::Emote),
-                    vec![InputIdentifier::Key(KeyCode::AltLeft)],
-                ),
-                (
-                    Action::System(SystemAction::Cancel),
-                    vec![
-                        InputIdentifier::Key(KeyCode::Escape),
-                        InputIdentifier::Gamepad(GamepadButtonType::Select),
-                    ],
-                ),
-                (
-                    Action::System(SystemAction::HideUi),
-                    vec![InputIdentifier::Key(KeyCode::PageUp)],
-                ),
-                (
-                    Action::System(SystemAction::RollLeft),
-                    vec![InputIdentifier::Key(KeyCode::KeyT)],
-                ),
-                (
-                    Action::System(SystemAction::RollRight),
-                    vec![InputIdentifier::Key(KeyCode::KeyG)],
-                ),
-                (
-                    Action::System(SystemAction::Microphone),
-                    vec![InputIdentifier::Key(KeyCode::ControlLeft)],
-                ),
-                (
-                    Action::System(SystemAction::Chat),
-                    vec![
-                        InputIdentifier::Key(KeyCode::Enter),
-                        InputIdentifier::Key(KeyCode::NumpadEnter),
-                    ],
-                ),
-                (
-                    Action::System(SystemAction::CameraZoomIn),
-                    vec![
-                        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Up),
-                        InputIdentifier::Gamepad(GamepadButtonType::LeftTrigger),
-                    ],
-                ),
-                (
-                    Action::System(SystemAction::CameraZoomOut),
-                    vec![
-                        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Down),
-                        InputIdentifier::Gamepad(GamepadButtonType::RightTrigger),
-                    ],
-                ),
-                (
-                    Action::System(SystemAction::ScrollUp),
-                    vec![
-                        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Up),
-                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Up),
-                    ],
-                ),
-                (
-                    Action::System(SystemAction::ScrollDown),
-                    vec![
-                        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Down),
-                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Down),
-                    ],
-                ),
-                (
-                    Action::System(SystemAction::ScrollLeft),
-                    vec![
-                        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Left),
-                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Left),
-                    ],
-                ),
-                (
-                    Action::System(SystemAction::ScrollRight),
-                    vec![
-                        InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Right),
-                        InputIdentifier::Analog(AxisIdentifier::GamepadLeft, InputDirection::Right),
-                    ],
-                ),
-                (
-                    Action::System(SystemAction::ShowProfile),
-                    vec![
-                        InputIdentifier::Mouse(MouseButton::Middle),
-                        InputIdentifier::Gamepad(GamepadButtonType::North),
-                    ],
-                ),
-                (
-                    Action::System(SystemAction::PointerUp),
-                    vec![InputIdentifier::Analog(
-                        AxisIdentifier::GamepadRight,
-                        InputDirection::Up,
-                    )],
-                ),
-                (
-                    Action::System(SystemAction::PointerDown),
-                    vec![InputIdentifier::Analog(
-                        AxisIdentifier::GamepadRight,
-                        InputDirection::Down,
-                    )],
-                ),
-                (
-                    Action::System(SystemAction::PointerLeft),
-                    vec![InputIdentifier::Analog(
-                        AxisIdentifier::GamepadRight,
-                        InputDirection::Left,
-                    )],
-                ),
-                (
-                    Action::System(SystemAction::PointerRight),
-                    vec![InputIdentifier::Analog(
-                        AxisIdentifier::GamepadRight,
-                        InputDirection::Right,
-                    )],
-                ),
-            ]),
-        }
-    }
-}
-
-impl InputMap {
-    pub fn get_input(&self, action: InputAction) -> Option<InputIdentifier> {
-        self.inputs.get(&Action::Scene(action))?.first().copied()
-    }
-}
 
 #[derive(Resource, Default)]
 pub struct CumulativeAxisData {
@@ -400,7 +177,7 @@ impl InputManager<'_> {
             .filter(move |(a, _)| {
                 (**a == action)
                     || (matches!(a, Action::Scene(_))
-                        && action == Action::Scene(InputAction::IaAny))
+                        && action == Action::Scene(CommonInputAction::IaAny))
             })
             .flat_map(|(_, v)| v.iter())
     }
@@ -535,7 +312,7 @@ impl InputManager<'_> {
     }
 
     // only scene actions
-    pub fn iter_scene_just_down(&self) -> impl Iterator<Item = &InputAction> {
+    pub fn iter_scene_just_down(&self) -> impl Iterator<Item = &CommonInputAction> {
         self.map
             .inputs
             .iter()
@@ -570,7 +347,7 @@ impl InputManager<'_> {
             })
     }
 
-    pub fn iter_scene_just_up(&self) -> impl Iterator<Item = &InputAction> {
+    pub fn iter_scene_just_up(&self) -> impl Iterator<Item = &CommonInputAction> {
         self.map
             .inputs
             .iter()
@@ -823,7 +600,11 @@ fn handle_get_bindings(mut events: EventReader<SystemApi>, map: Res<InputMap>) {
     }
 }
 
-fn handle_set_bindings(mut events: EventReader<SystemApi>, mut map: ResMut<InputMap>) {
+fn handle_set_bindings(
+    mut events: EventReader<SystemApi>,
+    mut map: ResMut<InputMap>,
+    mut config: ResMut<AppConfig>,
+) {
     for (binding_data, sender) in events.read().filter_map(|e| {
         if let SystemApi::SetBindings(binding_data, sender) = e {
             Some((binding_data, sender))
@@ -832,6 +613,14 @@ fn handle_set_bindings(mut events: EventReader<SystemApi>, mut map: ResMut<Input
         }
     }) {
         map.inputs = binding_data.bindings.clone();
+        config.inputs = InputMapSerialized(binding_data.bindings.clone().into_iter().collect());
+
+        let config_file = config_file();
+        if let Some(folder) = config_file.parent() {
+            std::fs::create_dir_all(folder).unwrap();
+        }
+        let _ = std::fs::write(config_file, serde_json::to_string(&*config).unwrap());
+
         sender.send(());
     }
 }

@@ -10,13 +10,14 @@ use bevy::{
 };
 
 use common::{
+    inputs::{Action, SystemAction, POINTER_SET},
     structs::{
         ActiveDialog, AvatarDynamicState, CameraOverride, CursorLocked, CursorLocks, PrimaryCamera,
         PrimaryUser,
     },
     util::ModifyComponentExt,
 };
-use input_manager::{Action, InputManager, InputPriority, SystemAction, POINTER_SET};
+use input_manager::{InputManager, InputPriority};
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
     ContainingScene,

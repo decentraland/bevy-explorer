@@ -1,13 +1,13 @@
 use av::microphone::MicState;
 use bevy::prelude::*;
 use common::{
+    inputs::SystemAction,
     sets::SetupSets,
     structs::{SystemAudio, ToolTips, TooltipSource},
     util::FireEventEx,
 };
 use comms::{Transport, TransportType};
 use input_manager::{InputManager, InputPriority};
-use system_bridge::SystemAction;
 use ui_core::ui_actions::{Click, HoverEnter, HoverExit, On};
 
 use crate::{chat::BUTTON_SCALE, SystemUiRoot};

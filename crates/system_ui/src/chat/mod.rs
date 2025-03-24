@@ -8,6 +8,7 @@ use bevy_console::{ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, 
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     dcl_assert,
+    inputs::SystemAction,
     sets::SetupSets,
     structs::{PrimaryUser, SystemAudio, ToolTips, TooltipSource},
     util::{
@@ -27,7 +28,6 @@ use input_manager::{InputManager, InputPriority};
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
 use shlex::Shlex;
 use social::FriendshipEvent;
-use system_bridge::SystemAction;
 use ui_core::{
     button::{DuiButton, TabSelection},
     focus::Focus,

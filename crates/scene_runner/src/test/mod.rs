@@ -35,6 +35,7 @@ use crate::{
     SceneUpdates,
 };
 use common::{
+    inputs::InputMap,
     rpc::RpcCall,
     structs::{
         AppConfig, CursorLocks, GraphicsSettings, PrimaryCamera, PrimaryPlayerRes,
@@ -51,7 +52,7 @@ use dcl_component::{
     transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
     SceneCrdtTimestamp, SceneEntityId,
 };
-use input_manager::{CumulativeAxisData, InputMap, InputPriorities};
+use input_manager::{CumulativeAxisData, InputPriorities};
 use ipfs::{IpfsIoPlugin, IpfsResource, ServerAbout, ServerConfiguration};
 use wallet::WalletPlugin;
 

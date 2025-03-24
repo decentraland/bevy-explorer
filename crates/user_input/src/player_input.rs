@@ -2,11 +2,11 @@ use bevy::{math::Vec3Swizzles, prelude::*};
 
 use common::{
     dynamics::PLAYER_GROUND_THRESHOLD,
+    inputs::{CommonInputAction, MOVE_SET},
     structs::{AvatarControl, AvatarDynamicState, PrimaryCamera, PrimaryUser},
 };
 
-use dcl_component::proto_components::sdk::components::common::InputAction;
-use input_manager::{InputManager, InputPriority, MOVE_SET};
+use input_manager::{InputManager, InputPriority};
 use scene_runner::update_world::avatar_modifier_area::PlayerModifiers;
 
 use crate::TRANSITION_TIME;
@@ -35,7 +35,7 @@ pub(crate) fn update_user_velocity(
         .unwrap_or_else(|| user.clone());
 
     // Handle key input
-    if input.is_down(InputAction::IaJump, InputPriority::Scene)
+    if input.is_down(CommonInputAction::IaJump, InputPriority::Scene)
         && dynamic_state.ground_height < PLAYER_GROUND_THRESHOLD
         && dynamic_state.velocity.y <= 0.0
     {
@@ -68,7 +68,7 @@ pub(crate) fn update_user_velocity(
             axis_input.normalize_or_zero() * user.run_speed
         } else {
             axis_input / axis_input.length().max(1.0)
-                * if input.is_down(InputAction::IaWalk, InputPriority::Scene) {
+                * if input.is_down(CommonInputAction::IaWalk, InputPriority::Scene) {
                     user.walk_speed
                 } else {
                     user.run_speed

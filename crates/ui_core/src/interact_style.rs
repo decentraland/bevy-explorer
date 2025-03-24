@@ -2,7 +2,7 @@
 // note: active must be added, this is a bit rubbish
 // todo: add more components (maybe make the component generic and change to InteractStylePlugin<T> ?)
 use bevy::prelude::*;
-use dcl_component::proto_components::sdk::components::common::InputAction;
+use common::inputs::CommonInputAction;
 use input_manager::InputManager;
 
 use crate::{
@@ -79,7 +79,7 @@ pub fn set_interaction_style(
             &styles.active
         } else if maybe_interaction.is_some_and(|i| i != &Interaction::None)
             && input_manager.is_down(
-                InputAction::IaPointer,
+                CommonInputAction::IaPointer,
                 maybe_priority.copied().unwrap_or_default().0,
             )
         {

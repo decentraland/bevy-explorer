@@ -10,13 +10,13 @@ use bevy::{
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};
 use common::{
+    inputs::SystemAction,
     sets::SetupSets,
     structs::{ActiveDialog, PrimaryUser, SystemAudio},
     util::{FireEventEx, ModifyComponentExt},
 };
 use comms::profile::CurrentUserProfile;
 use input_manager::{InputManager, InputPriority};
-use system_bridge::SystemAction;
 use ui_core::{
     focus::Focus,
     ui_actions::{Click, Defocus, HoverEnter, HoverExit, On},

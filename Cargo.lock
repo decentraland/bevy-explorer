@@ -5809,6 +5809,7 @@ dependencies = [
  "bimap",
  "common",
  "dcl_component",
+ "serde_json",
  "system_bridge",
 ]
 

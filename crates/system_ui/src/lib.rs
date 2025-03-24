@@ -24,6 +24,7 @@ use bevy::prelude::*;
 
 use change_realm::ChangeRealmPlugin;
 use common::{
+    inputs::SystemAction,
     sets::SetupSets,
     structs::{ActiveDialog, UiRoot},
 };
@@ -37,7 +38,6 @@ use oow::OowUiPlugin;
 use permission_manager::PermissionPlugin;
 use profile_detail::ProfileDetailPlugin;
 use scene_runner::Toaster;
-use system_bridge::SystemAction;
 use toasts::ToastsPlugin;
 use tooltip::ToolTipPlugin;
 

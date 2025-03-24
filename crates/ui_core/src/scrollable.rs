@@ -3,9 +3,11 @@ use bevy::{
     window::PrimaryWindow,
 };
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
-use common::util::{ModifyComponentExt, ModifyDefaultComponentExt, TryPushChildrenEx};
-use dcl_component::proto_components::sdk::components::common::InputAction;
-use input_manager::{Action, InputManager, InputPriority, InputType, SystemAction, SCROLL_SET};
+use common::{
+    inputs::{Action, CommonInputAction, SCROLL_SET},
+    util::{ModifyComponentExt, ModifyDefaultComponentExt, TryPushChildrenEx},
+};
+use input_manager::{InputManager, InputPriority, InputType};
 
 use crate::{
     bound_node::{BoundedNode, BoundedNodeBundle, NodeBounds},
@@ -275,20 +277,13 @@ fn update_scrollables(
         .map(|ev| (ev.scrollable, ev.position))
         .collect::<HashMap<_, _>>();
 
-    const REGION_ACTIONS: [Action; 4] = [
-        Action::System(SystemAction::ScrollUp),
-        Action::System(SystemAction::ScrollDown),
-        Action::System(SystemAction::ScrollLeft),
-        Action::System(SystemAction::ScrollRight),
-    ];
-
-    for action in REGION_ACTIONS {
+    for action in SCROLL_SET.0 {
         input_manager
             .priorities()
             .release(InputType::Action(action), InputPriority::Scroll);
     }
     input_manager.priorities().release(
-        InputType::Action(Action::Scene(InputAction::IaPointer)),
+        InputType::Action(Action::Scene(CommonInputAction::IaPointer)),
         InputPriority::Scroll,
     );
 
@@ -312,7 +307,7 @@ fn update_scrollables(
         Some(window_cursor_position)
     };
 
-    if input_manager.just_up(InputAction::IaPointer) {
+    if input_manager.just_up(CommonInputAction::IaPointer) {
         *clicked_slider = None;
         *clicked_scrollable = None;
     }
@@ -392,7 +387,7 @@ fn update_scrollables(
                 }
 
                 if interaction != &Interaction::None
-                    && input_manager.is_down(InputAction::IaPointer, InputPriority::Scroll)
+                    && input_manager.is_down(CommonInputAction::IaPointer, InputPriority::Scroll)
                 {
                     *clicked_scrollable = Some((entity, cursor_position));
                 }
@@ -405,7 +400,7 @@ fn update_scrollables(
                 // - add another system to manage "container" focus based on child focus
                 if cursor_position.clamp(ui_position, ui_position + parent_size) == cursor_position
                 {
-                    for action in REGION_ACTIONS {
+                    for action in SCROLL_SET.0 {
                         input_manager
                             .priorities()
                             .reserve(InputType::Action(action), InputPriority::Scroll);
@@ -519,13 +514,13 @@ fn update_scrollables(
 
         if interaction != &Interaction::None {
             input_manager.priorities().reserve(
-                InputType::Action(Action::Scene(InputAction::IaPointer)),
+                InputType::Action(Action::Scene(CommonInputAction::IaPointer)),
                 InputPriority::Scroll,
             );
         }
 
         if (interaction != &Interaction::None
-            && input_manager.is_down(InputAction::IaPointer, InputPriority::Scroll))
+            && input_manager.is_down(CommonInputAction::IaPointer, InputPriority::Scroll))
             || clicked_slider.is_some_and(|ent| ent == entity)
         {
             // jump the slider to the clicked position

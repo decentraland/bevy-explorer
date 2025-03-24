@@ -2,9 +2,11 @@ use bevy::{
     prelude::*,
     window::{CursorGrabMode, PrimaryWindow},
 };
-use common::structs::{AppConfig, CursorLocks, PrimaryCamera};
+use common::{
+    inputs::POINTER_SET,
+    structs::{AppConfig, CursorLocks, PrimaryCamera},
+};
 use input_manager::{InputManager, InputPriority};
-use system_bridge::POINTER_SET;
 
 use crate::{renderer_context::RendererSceneContext, SceneSets};
 use dcl::interface::CrdtType;
