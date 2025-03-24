@@ -215,7 +215,7 @@ impl Default for InputMap {
                     Action::System(SystemAction::Cancel),
                     vec![
                         InputIdentifier::Key(KeyCode::Escape),
-                        InputIdentifier::Gamepad(GamepadButtonType::RightTrigger2),
+                        InputIdentifier::Gamepad(GamepadButtonType::Select),
                     ],
                 ),
                 (

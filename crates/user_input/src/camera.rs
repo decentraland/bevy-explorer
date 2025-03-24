@@ -165,7 +165,10 @@ pub fn update_camera(
     // Handle mouse input
     let mut state = mb_state.update(Action::System(SystemAction::CameraLock));
     let input_manager = &mb_state.input_manager;
-    if input_manager.just_down(SystemAction::Cancel, InputPriority::None) && *move_toggled {
+    if state == ClickState::None
+        && input_manager.just_down(SystemAction::Cancel, InputPriority::None)
+        && *move_toggled
+    {
         // override
         state = ClickState::Released;
         *move_toggled = false;
@@ -196,10 +199,6 @@ pub fn update_camera(
     }
 
     if allow_cam_move {
-        if state == ClickState::Clicked {
-            *move_toggled = !*move_toggled;
-        }
-
         if input_manager.is_down(Action::System(SystemAction::RollLeft), InputPriority::None) {
             options.roll += dt * 1.0;
         } else if input_manager
