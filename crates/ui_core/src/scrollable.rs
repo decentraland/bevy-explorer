@@ -386,7 +386,8 @@ fn update_scrollables(
                     }
                 }
 
-                if interaction != &Interaction::None
+                if clicked_scrollable.is_none_or(|(prev_entity, _)| prev_entity == entity)
+                    && interaction != &Interaction::None
                     && input_manager.is_down(CommonInputAction::IaPointer, InputPriority::Scroll)
                 {
                     *clicked_scrollable = Some((entity, cursor_position));
@@ -398,7 +399,9 @@ fn update_scrollables(
                 // - check all children for interaction (yuck)
                 // - add some context to FocusPolicy (e.g. FocusPolicy::Block(HashSet<Buttons>))
                 // - add another system to manage "container" focus based on child focus
-                if cursor_position.clamp(ui_position, ui_position + parent_size) == cursor_position
+                if clicked_scrollable.is_none_or(|(prev_entity, _)| prev_entity == entity)
+                    && cursor_position.clamp(ui_position, ui_position + parent_size)
+                        == cursor_position
                 {
                     for action in SCROLL_SET.0 {
                         input_manager
@@ -520,7 +523,7 @@ fn update_scrollables(
         }
 
         if (interaction != &Interaction::None
-            && input_manager.is_down(CommonInputAction::IaPointer, InputPriority::Scroll))
+            && input_manager.just_down(CommonInputAction::IaPointer, InputPriority::Scroll))
             || clicked_slider.is_some_and(|ent| ent == entity)
         {
             // jump the slider to the clicked position
