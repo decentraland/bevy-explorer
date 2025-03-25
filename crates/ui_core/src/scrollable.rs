@@ -409,7 +409,7 @@ fn update_scrollables(
                             .reserve(InputType::Action(action), InputPriority::Scroll);
                     }
                     let scroll_delta =
-                        input_manager.get_analog(SCROLL_SET, InputPriority::Scroll) * 20.0;
+                        input_manager.get_analog(SCROLL_SET, InputPriority::Scroll);
                     *new_slider_deltas.get_or_insert(Default::default()) +=
                         scroll_delta / slide_amount;
                 }
