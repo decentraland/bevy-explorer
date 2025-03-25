@@ -666,9 +666,6 @@ pub struct Cubemap {
 }
 
 #[derive(Resource, Default)]
-pub struct CursorLocked(pub bool);
-
-#[derive(Resource, Default)]
 pub struct CursorLocks(pub HashSet<&'static str>);
 
 #[derive(Default, Clone, Copy)]

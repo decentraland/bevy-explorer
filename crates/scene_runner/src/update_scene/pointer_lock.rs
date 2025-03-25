@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use bevy::{ecs::system::SystemParam, prelude::*, window::PrimaryWindow};
 use common::{
     inputs::{Action, SystemAction, POINTER_SET},
-    structs::{ActiveDialog, AppConfig, CursorLocked, CursorLocks, PrimaryCamera},
+    structs::{ActiveDialog, AppConfig, CursorLocks, PrimaryCamera},
 };
 use input_manager::{InputManager, InputPriority};
 
@@ -106,8 +106,7 @@ pub fn update_pointer_lock(
     mut locks: ResMut<CursorLocks>,
     config: Res<AppConfig>,
     mut mb_state: CameraInteractionState,
-    active_dialog: Res<ActiveDialog>,
-    mut cursor_locked: ResMut<CursorLocked>,
+    active_dialog: Option<Res<ActiveDialog>>,
     mut toggle: Local<bool>,
     mut last_explicit_tick: Local<u32>,
 ) {
@@ -161,7 +160,8 @@ pub fn update_pointer_lock(
         *toggle = !*toggle;
     }
 
-    let mut camera_locked = !active_dialog.in_use() && (state == ClickState::Held || *toggle);
+    let mut camera_locked =
+        active_dialog.is_none_or(|ad| !ad.in_use()) && (state == ClickState::Held || *toggle);
 
     for (_, context, _, maybe_super, maybe_lock) in scenes.iter_mut() {
         if maybe_super.is_some()
@@ -178,10 +178,8 @@ pub fn update_pointer_lock(
 
     if camera_locked {
         locks.0.insert("camera");
-        cursor_locked.0 = true;
     } else {
         locks.0.remove("camera");
-        cursor_locked.0 = false;
     }
 
     let pointer_lock = PbPointerLock {
