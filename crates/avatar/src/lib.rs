@@ -95,7 +95,7 @@ impl Plugin for AvatarPlugin {
                 select_avatar,
                 update_render_avatar,
                 spawn_scenes,
-                process_avatar,
+                process_avatar.after(update_render_avatar),
                 set_avatar_visibility,
             ),
         );
@@ -474,6 +474,7 @@ fn update_render_avatar(
             Option<&Children>,
             Option<&AttachPoints>,
             Option<&SceneEntity>,
+            Option<&PreviousAvatar>,
         ),
         Or<(Changed<AvatarSelection>, With<RetryRenderAvatar>)>,
     >,
@@ -499,7 +500,9 @@ fn update_render_avatar(
         }
     }
 
-    for (entity, selection, maybe_children, maybe_attach_points, maybe_scene_ent) in &query {
+    for (entity, selection, maybe_children, maybe_attach_points, maybe_scene_ent, maybe_prev) in
+        &query
+    {
         commands.entity(entity).remove::<RetryRenderAvatar>();
 
         debug!("updating render avatar");
@@ -508,19 +511,6 @@ fn update_render_avatar(
             commands
                 .entity(entity)
                 .try_push_children(&attach_points.entities());
-        }
-
-        // remove existing children
-        if let Some(children) = maybe_children {
-            for render_child in children
-                .iter()
-                .filter(|child| avatar_render_entities.get(**child).is_ok())
-            {
-                commands
-                    .entity(entity)
-                    .insert(PreviousAvatar(*render_child));
-                // commands.entity(*render_child).despawn_recursive();
-            }
         }
 
         // get body shape
@@ -699,6 +689,29 @@ fn update_render_avatar(
                 UsedWearables(urns),
             ));
         });
+
+        // remove existing children
+        let mut chose_existing = false;
+        if let Some(children) = maybe_children {
+            for render_child in children
+                .iter()
+                .filter(|child| avatar_render_entities.get(**child).is_ok())
+            {
+                if maybe_prev.is_some_and(|e| e.0 != *render_child) {
+                    debug!("despawn {render_child:?} as prev is already {maybe_prev:?}");
+                    commands.entity(*render_child).despawn_recursive();
+                } else {
+                    debug!("set prev -> {render_child:?}");
+                    if chose_existing {
+                        panic!();
+                    }
+                    chose_existing = true;
+                    commands
+                        .entity(entity)
+                        .insert(PreviousAvatar(*render_child));
+                }
+            }
+        }
     }
 }
 
@@ -1326,6 +1339,7 @@ fn process_avatar(
 
         // remove previous
         if let Ok(prev) = previous_avatar.get(root_player_entity.get()) {
+            debug!("new {avatar_ent:?} done, remove prev -> {prev:?}");
             if let Some(commands) = commands.get_entity(prev.0) {
                 commands.despawn_recursive();
             }
