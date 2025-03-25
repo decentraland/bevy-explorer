@@ -1,20 +1,13 @@
-use std::{
-    f32::consts::{FRAC_PI_4, PI},
-    marker::PhantomData,
-};
+use std::f32::consts::{FRAC_PI_4, PI};
 
 use bevy::{
-    ecs::system::SystemParam,
     prelude::*,
     window::{CursorGrabMode, PrimaryWindow},
 };
 
 use common::{
     inputs::{Action, SystemAction, POINTER_SET},
-    structs::{
-        ActiveDialog, AvatarDynamicState, CameraOverride, CursorLocked, CursorLocks, PrimaryCamera,
-        PrimaryUser,
-    },
+    structs::{AvatarDynamicState, CameraOverride, CursorLocks, PrimaryCamera, PrimaryUser},
     util::ModifyComponentExt,
 };
 use input_manager::{InputManager, InputPriority};
@@ -35,60 +28,13 @@ pub struct CinematicInitialData {
     cinematic_transform: GlobalTransform,
 }
 
-#[derive(SystemParam)]
-pub struct CameraInteractionState<'w, 's> {
-    input_manager: InputManager<'w>,
-    state: Local<'s, (ClickState, f32)>,
-    time: Res<'w, Time>,
-    #[system_param(ignore)]
-    _p: PhantomData<&'s ()>,
-}
-
-#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ClickState {
-    #[default]
-    None,
-    Clicked,
-    Held,
-    Released,
-}
-
-impl CameraInteractionState<'_, '_> {
-    pub fn update(&mut self, action: Action) -> ClickState {
-        match self.state.0 {
-            ClickState::None | ClickState::Released => {
-                if self.input_manager.just_down(action, InputPriority::None) {
-                    *self.state = (ClickState::Held, self.time.elapsed_seconds());
-                } else {
-                    self.state.0 = ClickState::None;
-                }
-            }
-            ClickState::Held => {
-                if self.input_manager.just_up(action) {
-                    if self.time.elapsed_seconds() - self.state.1 > 0.25 {
-                        self.state.0 = ClickState::Released;
-                    } else {
-                        self.state.0 = ClickState::Clicked;
-                    }
-                }
-            }
-            ClickState::Clicked => self.state.0 = ClickState::Released,
-        }
-
-        self.state.0
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub fn update_camera(
     time: Res<Time>,
-    mut move_toggled: Local<bool>,
     mut camera: Query<(&Transform, &mut PrimaryCamera)>,
-    mut cursor_locked: ResMut<CursorLocked>,
-    mut locks: ResMut<CursorLocks>,
-    active_dialog: Res<ActiveDialog>,
+    locks: Res<CursorLocks>,
     mut cinematic_data: Local<Option<CinematicInitialData>>,
-    mut mb_state: CameraInteractionState,
+    input_manager: InputManager,
     gt_helper: TransformHelper,
 ) {
     let dt = time.delta_seconds();
@@ -163,40 +109,9 @@ pub fn update_camera(
         );
     }
 
-    // Handle mouse input
-    let mut state = mb_state.update(Action::System(SystemAction::CameraLock));
-    let input_manager = &mb_state.input_manager;
-    if state == ClickState::None
-        && input_manager.just_down(SystemAction::Cancel, InputPriority::None)
-        && *move_toggled
-    {
-        // override
-        state = ClickState::Released;
-        *move_toggled = false;
-    }
-
     let mut mouse_delta = Vec2::ZERO;
-
-    let in_dialog = active_dialog.in_use();
-
-    if state == ClickState::Clicked {
-        *move_toggled = !*move_toggled;
-    }
-
-    let lock = !in_dialog && (state == ClickState::Held || *move_toggled);
-
-    if lock {
-        locks.0.insert("camera");
-        if !in_dialog {
-            cursor_locked.0 = true;
-        }
-
+    if locks.0.contains("camera") {
         mouse_delta = input_manager.get_analog(POINTER_SET, InputPriority::BindInput);
-    } else {
-        locks.0.remove("camera");
-        if !in_dialog {
-            cursor_locked.0 = false;
-        }
     }
 
     if allow_cam_move {

@@ -20,6 +20,7 @@ use dynamics::{
     jump_cmd, no_clip, speed_cmd, JumpCommand, NoClipCommand, SpeedCommand, UserClipping,
 };
 use scene_runner::{
+    update_scene::pointer_lock::update_pointer_lock,
     update_world::{
         avatar_modifier_area::PlayerModifiers,
         gltf_container::GltfLinkSet,
@@ -45,7 +46,8 @@ impl Plugin for UserInputPlugin {
             Update,
             (update_user_velocity, update_camera)
                 .chain()
-                .in_set(SceneSets::Input),
+                .in_set(SceneSets::Input)
+                .after(update_pointer_lock),
         );
         app.add_systems(Update, manage_player_visibility.in_set(SceneSets::PostLoop));
         app.add_systems(
