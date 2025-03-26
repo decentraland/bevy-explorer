@@ -1226,19 +1226,12 @@ pub fn process_scene_lifecycle(
         live_scenes.scenes.remove(removed_hash);
     }
 
-    // if the current scene is still loading, we don't try to spawn any new scenes
-    if current_scene_loading {
-        return;
-    }
-
     if let Some(current_scene) = current_scene {
         if required_scene_ids.contains_key(&current_scene)
-            && !existing_ids.contains(&current_scene.0)
+            && (!existing_ids.contains(&current_scene.0) || current_scene_loading)
         {
             // if the current scene is not even spawned, spawn only that scene
-            let su = *required_scene_ids.get(&current_scene).unwrap();
-            required_scene_ids.clear();
-            required_scene_ids.extend([(current_scene, su)]);
+            required_scene_ids.retain(|scene, super_user| *super_user || (scene == &current_scene));
         }
     }
 
