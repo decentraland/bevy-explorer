@@ -25,9 +25,7 @@ use ipfs::{
 use multihash_codetable::MultihashDigest;
 
 use crate::{
-    initialize_scene::{LiveScenes, PortableScenes},
-    renderer_context::RendererSceneContext,
-    ContainingScene, Toaster,
+    initialize_scene::LiveScenes, renderer_context::RendererSceneContext, ContainingScene, Toaster,
 };
 
 pub struct SceneUtilPlugin;
@@ -186,20 +184,19 @@ struct ReloadCommand {
     hash: Option<String>,
 }
 
-fn reload_command(
-    mut input: ConsoleCommand<ReloadCommand>,
-    mut live_scenes: ResMut<LiveScenes>,
-    mut portables: ResMut<PortableScenes>,
-) {
+fn reload_command(mut input: ConsoleCommand<ReloadCommand>, mut live_scenes: ResMut<LiveScenes>) {
     if let Some(Ok(ReloadCommand { hash })) = input.take() {
         match hash {
             Some(hash) => {
-                live_scenes.scenes.remove(&hash);
-                portables.0.remove(&hash);
+                if live_scenes.scenes.remove(&hash).is_some() {
+                    input.reply_ok(format!("{hash} reloaded"));
+                } else {
+                    input.reply_failed(format!("{hash} not found"));
+                }
             }
             None => {
                 live_scenes.scenes.clear();
-                portables.0.clear();
+                input.reply_ok("all scenes reloaded");
             }
         }
     }
@@ -214,7 +211,6 @@ struct ClearStoreCommand {
 fn clear_store_command(
     mut input: ConsoleCommand<ClearStoreCommand>,
     mut live_scenes: ResMut<LiveScenes>,
-    mut portables: ResMut<PortableScenes>,
     contexts: Query<&RendererSceneContext>,
     mut clear_task: Local<Option<Task<()>>>,
 ) {
@@ -262,13 +258,11 @@ fn clear_store_command(
                 );
             }
             live_scenes.block_new_scenes = clear_task.is_some();
-            portables.0.remove(&hash);
         } else {
             // all
             live_scenes.scenes.clear();
             remove(project_directories().data_local_dir(), "LocalStorage");
             live_scenes.block_new_scenes = clear_task.is_some();
-            portables.0.clear();
         }
     }
 }
@@ -276,7 +270,6 @@ fn clear_store_command(
 fn handle_preview_command(
     mut events: EventReader<PreviewCommand>,
     mut live_scenes: ResMut<LiveScenes>,
-    mut portables: ResMut<PortableScenes>,
     scenes: Query<&RendererSceneContext>,
     mut toaster: Toaster,
 ) {
@@ -294,7 +287,6 @@ fn handle_preview_command(
                     }
                 };
                 live_scenes.scenes.remove(hash);
-                portables.0.remove(hash);
             }
         }
     }

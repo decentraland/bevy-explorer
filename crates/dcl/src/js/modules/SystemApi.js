@@ -138,3 +138,12 @@ module.exports.getInputBindings = async function() {
 module.exports.setInputBindings = async function(bindings) {
     await Deno.core.ops.op_set_bindings(bindings)
 }
+
+
+/// reload 
+// hash: string | undefined
+// if hash is provided, that specific scene is reloaded
+// if unspecified, all scenes are reloaded
+module.exports.reload = async function(hash) {
+    await Deno.core.ops.op_console_command("reload", hash !== undefined ? [hash] : [])
+}

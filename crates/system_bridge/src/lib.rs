@@ -2,8 +2,10 @@ pub mod settings;
 
 use bevy::{
     app::{Plugin, Update},
+    ecs::{event::EventReader, system::Local},
     prelude::{Event, EventWriter, ResMut, Resource},
 };
+use bevy_console::{clap::builder::StyledStr, ConsoleCommandEntered, PrintConsoleLine};
 use common::{
     inputs::{BindingsData, InputIdentifier},
     rpc::RpcResultSender,
@@ -39,6 +41,7 @@ pub struct SetAvatarData {
 
 #[derive(Event, Clone)]
 pub enum SystemApi {
+    ConsoleCommand(String, Vec<String>, RpcResultSender<Result<String, String>>),
     CheckForUpdate(RpcResultSender<Option<(String, String)>>),
     MOTD(RpcResultSender<String>),
     GetPreviousLogin(RpcResultSender<Option<String>>),
@@ -68,8 +71,51 @@ pub struct SystemBridge {
     receiver: tokio::sync::mpsc::UnboundedReceiver<SystemApi>,
 }
 
-pub fn post_events(mut bridge: ResMut<SystemBridge>, mut writer: EventWriter<SystemApi>) {
+pub fn post_events(
+    mut bridge: ResMut<SystemBridge>,
+    mut writer: EventWriter<SystemApi>,
+    mut console: EventWriter<ConsoleCommandEntered>,
+    mut console_response: Local<Option<RpcResultSender<Result<String, String>>>>,
+    mut replies: EventReader<PrintConsoleLine>,
+) {
     while let Ok(ev) = bridge.receiver.try_recv() {
-        writer.send(ev);
+        if let SystemApi::ConsoleCommand(cmd, args, sender) = ev {
+            console.send(ConsoleCommandEntered {
+                command_name: cmd,
+                args,
+            });
+            *console_response = Some(sender);
+        } else {
+            writer.send(ev);
+        }
+    }
+
+    if let Some(response) = console_response.take() {
+        let mut reply = replies.read().collect::<Vec<_>>();
+        match reply.pop() {
+            Some(PrintConsoleLine { line }) if line == &StyledStr::from("[ok]") => {
+                response.send(Ok(reply
+                    .into_iter()
+                    .map(|l| format!("{}", l.line))
+                    .collect::<Vec<_>>()
+                    .join("\n")));
+            }
+            Some(PrintConsoleLine { line }) if line == &StyledStr::from("[failed]") => {
+                response.send(Err(reply
+                    .into_iter()
+                    .map(|l| format!("{}", l.line))
+                    .collect::<Vec<_>>()
+                    .join("\n")));
+            }
+            Some(PrintConsoleLine { line }) => {
+                println!("got {line}");
+                *console_response = Some(response);
+            }
+            _ => {
+                *console_response = Some(response);
+            }
+        }
+    } else {
+        replies.clear();
     }
 }

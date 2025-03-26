@@ -34,6 +34,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_native_input(),
             op_get_bindings(),
             op_set_bindings(),
+            op_console_command(),
         ]
     } else {
         Vec::default()
@@ -353,4 +354,28 @@ pub async fn op_set_bindings(
         .unwrap();
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+#[op2(async)]
+#[string]
+pub async fn op_console_command(
+    state: Rc<RefCell<OpState>>,
+    #[string] cmd: String,
+    #[serde] args: Vec<String>,
+) -> Result<String, anyhow::Error> {
+    let (sx, rx) = tokio::sync::oneshot::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::ConsoleCommand(
+            format!("/{cmd}"),
+            args,
+            sx.into(),
+        ))
+        .unwrap();
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
 }
