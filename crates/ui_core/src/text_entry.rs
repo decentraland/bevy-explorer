@@ -1,6 +1,6 @@
 use crate::{
     dui_utils::PropsExt,
-    focus::{BlockKeyboard, Focusable},
+    focus::Focusable,
     text_size::FontSize,
     ui_actions::{DataChanged, Defocus, On, Submit, UiCaller},
 };
@@ -15,6 +15,7 @@ use bevy_simple_text_input::{
     TextInputTextStyle, TextInputValue,
 };
 use common::sets::SceneSets;
+use input_manager::{InputManager, InputPriority, InputType};
 
 use super::focus::Focus;
 
@@ -131,7 +132,6 @@ pub fn update_text_entry_components(
                         inactive.get_mut(caller.0).unwrap().0 = true;
                     },
                 ),
-                BlockKeyboard,
             ));
 
             if textbox.text_style.is_none() {
@@ -162,8 +162,8 @@ pub fn update_fontsize(
 fn propagate_focus(
     q: Query<(&TextEntry, &Children), Changed<Focus>>,
     child: Query<Entity, With<TextInputSettings>>,
-    focussed_text: Query<Entity, (With<TextInputSettings>, With<Focus>)>,
-    key_events: Res<ButtonInput<KeyCode>>,
+    focussed_text: Query<(), (With<TextInputSettings>, With<Focus>)>,
+    mut input_manager: InputManager,
     mut commands: Commands,
 ) {
     for (textbox, children) in q.iter() {
@@ -175,10 +175,14 @@ fn propagate_focus(
         }
     }
 
-    if let Ok(focussed_text) = focussed_text.get_single() {
-        if key_events.just_pressed(KeyCode::Escape) {
-            commands.entity(focussed_text).remove::<Focus>();
-        }
+    if focussed_text.get_single().is_ok() {
+        input_manager
+            .priorities()
+            .reserve(InputType::Keyboard, InputPriority::TextEntry);
+    } else {
+        input_manager
+            .priorities()
+            .release(InputType::Keyboard, InputPriority::TextEntry);
     }
 }
 

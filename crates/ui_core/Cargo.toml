@@ -7,6 +7,8 @@ edition = "2021"
 
 [dependencies]
 common = { workspace = true }
+input_manager = { workspace = true }
+dcl_component = { workspace = true }
 
 bevy = { workspace = true }
 bevy_egui = { workspace = true }

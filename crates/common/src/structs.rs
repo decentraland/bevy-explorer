@@ -9,6 +9,8 @@ use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+use crate::inputs::InputMapSerialized;
+
 #[derive(Resource)]
 pub struct Version(pub String);
 
@@ -85,9 +87,6 @@ impl AttachPoints {
 #[derive(Component)]
 pub struct PrimaryCamera {
     // settings
-    pub mouse_key_enable_mouse: MouseButton,
-    pub key_roll_left: KeyCode,
-    pub key_roll_right: KeyCode,
     pub distance: f32,
     pub sensitivity: f32,
     // impl details (todo: move to separate private struct)
@@ -126,15 +125,12 @@ pub enum CameraOverride {
 impl Default for PrimaryCamera {
     fn default() -> Self {
         Self {
-            mouse_key_enable_mouse: MouseButton::Right,
             sensitivity: 5.0,
             initialized: Default::default(),
             yaw: Default::default(),
             pitch: Default::default(),
             roll: Default::default(),
             distance: 1.0,
-            key_roll_left: KeyCode::KeyT,
-            key_roll_right: KeyCode::KeyG,
             scene_override: None,
         }
     }
@@ -204,6 +200,7 @@ pub struct AppConfig {
     pub default_permissions: HashMap<PermissionType, PermissionValue>,
     pub realm_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
     pub scene_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
+    pub inputs: InputMapSerialized,
 }
 
 impl Default for AppConfig {
@@ -239,6 +236,7 @@ impl Default for AppConfig {
             default_permissions: Default::default(),
             realm_permissions: Default::default(),
             scene_permissions: Default::default(),
+            inputs: Default::default(),
         }
     }
 }
@@ -666,9 +664,6 @@ pub struct Cubemap {
     pub is_loaded: bool,
     pub image_handle: Handle<Image>,
 }
-
-#[derive(Resource, Default)]
-pub struct CursorLocked(pub bool);
 
 #[derive(Resource, Default)]
 pub struct CursorLocks(pub HashSet<&'static str>);

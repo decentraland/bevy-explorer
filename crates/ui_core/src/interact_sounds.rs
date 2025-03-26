@@ -1,8 +1,12 @@
 use bevy::prelude::*;
 use bevy_ecss::PropertyValues;
-use common::structs::SystemAudio;
+use common::{inputs::CommonInputAction, structs::SystemAudio};
+use input_manager::InputManager;
 
-use crate::{dui_utils::DuiFromStr, ui_actions::UiActionSet};
+use crate::{
+    dui_utils::DuiFromStr,
+    ui_actions::{UiActionPriority, UiActionSet},
+};
 
 #[derive(Component)]
 pub struct InteractSounds {
@@ -18,27 +22,58 @@ impl Plugin for InteractSoundsPlugin {
     }
 }
 
+#[derive(Component, PartialEq, PartialOrd)]
+pub struct LastInteractSound(InteractSound);
+
+#[derive(PartialEq, PartialOrd)]
+enum InteractSound {
+    Hover,
+    Click,
+}
+
+#[allow(clippy::type_complexity)]
 fn play_interact_sounds(
-    q: Query<(&InteractSounds, &Interaction), Changed<Interaction>>,
+    mut commands: Commands,
+    q: Query<(
+        Entity,
+        &InteractSounds,
+        &Interaction,
+        Option<&UiActionPriority>,
+        Option<&LastInteractSound>,
+    )>,
     mut writer: EventWriter<SystemAudio>,
+    input_manager: InputManager,
 ) {
-    for (sounds, act) in q.iter() {
-        match (sounds, act) {
-            (
-                InteractSounds {
-                    press: Some(sound), ..
-                },
-                Interaction::Pressed,
+    for (entity, sounds, act, maybe_priority, maybe_last) in q.iter() {
+        if act == &Interaction::None {
+            if maybe_last.is_some() {
+                commands.entity(entity).remove::<LastInteractSound>();
+            }
+            continue;
+        }
+
+        if maybe_last < Some(&LastInteractSound(InteractSound::Click))
+            && input_manager.just_down(
+                CommonInputAction::IaPointer,
+                maybe_priority.copied().unwrap_or_default().0,
             )
-            | (
-                InteractSounds {
-                    hover: Some(sound), ..
-                },
-                Interaction::Hovered,
-            ) => {
+        {
+            if let Some(sound) = sounds.press.as_ref() {
                 writer.send(format!("sounds/ui/{}", sound).into());
             }
-            _ => (),
+            commands
+                .entity(entity)
+                .try_insert(LastInteractSound(InteractSound::Click));
+            continue;
+        }
+
+        if maybe_last < Some(&LastInteractSound(InteractSound::Hover)) {
+            if let Some(sound) = sounds.hover.as_ref() {
+                writer.send(format!("sounds/ui/{}", sound).into());
+            }
+            commands
+                .entity(entity)
+                .try_insert(LastInteractSound(InteractSound::Hover));
         }
     }
 }

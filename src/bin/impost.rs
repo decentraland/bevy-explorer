@@ -12,6 +12,7 @@ use bevy::{
 };
 
 use common::{
+    inputs::InputMap,
     profile::SerializedProfile,
     rpc::RpcCall,
     sets::SetupSets,
@@ -22,7 +23,6 @@ use common::{
     },
     util::{config_file, UtilsPlugin},
 };
-use input_manager::{AcceptInput, InputMap};
 use nft::asset_source::Nft;
 use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
@@ -195,7 +195,6 @@ fn main() {
         .add_event::<SystemAudio>()
         .init_resource::<PermissionManager>()
         .init_resource::<InputMap>()
-        .init_resource::<AcceptInput>()
         .init_resource::<ToolTips>()
         .init_resource::<SceneGlobalLight>()
         .add_event::<RpcCall>()

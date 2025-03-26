@@ -19,8 +19,8 @@ use console::DoAddConsoleCommand;
 use dynamics::{
     jump_cmd, no_clip, speed_cmd, JumpCommand, NoClipCommand, SpeedCommand, UserClipping,
 };
-use input_manager::should_accept_key;
 use scene_runner::{
+    update_scene::pointer_lock::update_pointer_lock,
     update_world::{
         avatar_modifier_area::PlayerModifiers,
         gltf_container::GltfLinkSet,
@@ -44,12 +44,10 @@ impl Plugin for UserInputPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (
-                update_user_velocity.run_if(should_accept_key),
-                update_camera,
-            )
+            (update_user_velocity, update_camera)
                 .chain()
-                .in_set(SceneSets::Input),
+                .in_set(SceneSets::Input)
+                .after(update_pointer_lock),
         );
         app.add_systems(Update, manage_player_visibility.in_set(SceneSets::PostLoop));
         app.add_systems(

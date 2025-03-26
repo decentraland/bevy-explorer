@@ -6,13 +6,14 @@ use bevy::{
 };
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
+    inputs::{CommonInputAction, SystemAction},
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
     structs::{PrimaryCamera, ShowProfileEvent, ToolTips, TooltipSource},
     util::{AsH160, FireEventEx},
 };
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
-use input_manager::AcceptInput;
+use input_manager::{InputManager, InputPriority, InputType};
 use rapier3d_f64::{
     na::Isometry,
     prelude::{ColliderBuilder, SharedShape},
@@ -107,7 +108,7 @@ fn update_avatar_collider_actions(
     mut colliders: ResMut<AvatarColliders>,
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
     windows: Query<&Window>,
-    (accept_input, pointer_target, frame): (Res<AcceptInput>, Res<PointerTarget>, Res<FrameCount>),
+    (pointer_target, frame): (Res<PointerTarget>, Res<FrameCount>),
     mut tooltips: ResMut<ToolTips>,
     profiles: Query<(
         &ForeignPlayer,
@@ -115,11 +116,11 @@ fn update_avatar_collider_actions(
         &PlayerModifiers,
         Ref<AvatarMaterials>,
     )>,
-    mouse_input: Res<ButtonInput<MouseButton>>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
     mut hilighted_materials: Local<HashSet<AssetId<SceneMaterial>>>,
     mut scene_materials: ResMut<Assets<SceneMaterial>>,
+    mut input_manager: InputManager,
 ) {
     // gather any event receivers
     for sender in subscribe_events.read().filter_map(|ev| match ev {
@@ -132,7 +133,7 @@ fn update_avatar_collider_actions(
     tooltips.0.remove(&TooltipSource::Label("avatar_pointer"));
 
     // check for scene ui
-    if !matches!(*ui_target, UiPointerTarget::None) {
+    if !ui_target.0.is_empty() {
         return;
     }
 
@@ -140,11 +141,6 @@ fn update_avatar_collider_actions(
         // can't do much without a camera
         return;
     };
-
-    // check for system ui
-    if !accept_input.mouse {
-        return;
-    }
 
     // get new 3d hover target
     let Ok(window) = windows.get_single() else {
@@ -188,6 +184,11 @@ fn update_avatar_collider_actions(
         u32::MAX,
         true,
     ) {
+        input_manager.priorities().reserve(
+            InputType::Action(SystemAction::ShowProfile.into()),
+            InputPriority::AvatarCollider,
+        );
+
         let avatar = colliders.lookup.get(&avatar_target.id).unwrap();
         let Ok((player, profile, modifiers, materials)) = profiles.get(*avatar) else {
             return;
@@ -213,7 +214,7 @@ fn update_avatar_collider_actions(
             vec![("Middle Click : Profile".to_owned(), true)],
         );
 
-        if mouse_input.just_pressed(MouseButton::Left) {
+        if input_manager.just_down(CommonInputAction::IaPointer, InputPriority::Scene) {
             // send event
             let event = json!({
                 "userId": format!("{:#x}", player.address),
@@ -228,7 +229,7 @@ fn update_avatar_collider_actions(
             }
         }
 
-        if mouse_input.just_pressed(MouseButton::Middle) {
+        if input_manager.just_down(SystemAction::ShowProfile, InputPriority::AvatarCollider) {
             // display profile
             if let Some(address) = profile.content.eth_address.as_h160() {
                 commands.fire_event(ShowProfileEvent(address));
@@ -236,6 +237,11 @@ fn update_avatar_collider_actions(
                 warn!("Profile has a bad address {}", profile.content.eth_address);
             }
         }
+    } else {
+        input_manager.priorities().release(
+            InputType::Action(SystemAction::ShowProfile.into()),
+            InputPriority::AvatarCollider,
+        );
     }
 
     senders.retain(|s| !s.is_closed());

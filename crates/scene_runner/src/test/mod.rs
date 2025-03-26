@@ -35,6 +35,7 @@ use crate::{
     SceneUpdates,
 };
 use common::{
+    inputs::InputMap,
     rpc::RpcCall,
     structs::{
         AppConfig, CursorLocks, GraphicsSettings, PrimaryCamera, PrimaryPlayerRes,
@@ -51,7 +52,7 @@ use dcl_component::{
     transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
     SceneCrdtTimestamp, SceneEntityId,
 };
-use input_manager::{AcceptInput, InputMap};
+use input_manager::{CumulativeAxisData, InputPriorities};
 use ipfs::{IpfsIoPlugin, IpfsResource, ServerAbout, ServerConfiguration};
 use wallet::WalletPlugin;
 
@@ -131,7 +132,8 @@ fn init_test_app(entity_json: &str) -> App {
     app.insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER));
     app.init_resource::<PermissionManager>();
     app.init_resource::<InputMap>();
-    app.init_resource::<AcceptInput>();
+    app.init_resource::<InputPriorities>();
+    app.init_resource::<CumulativeAxisData>();
     app.init_resource::<ToolTips>();
     app.init_resource::<SceneGlobalLight>();
     app.add_event::<RpcCall>();

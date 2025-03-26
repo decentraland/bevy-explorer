@@ -4,7 +4,10 @@ use bevy::{
     app::{Plugin, Update},
     prelude::{Event, EventWriter, ResMut, Resource},
 };
-use common::rpc::RpcResultSender;
+use common::{
+    inputs::{BindingsData, InputIdentifier},
+    rpc::RpcResultSender,
+};
 use dcl_component::proto_components::sdk::components::{PbAvatarBase, PbAvatarEquippedData};
 use serde::{Deserialize, Serialize};
 use settings::{SettingBridgePlugin, Settings};
@@ -49,6 +52,9 @@ pub enum SystemApi {
     Logout,
     GetSettings(RpcResultSender<Settings>),
     SetAvatar(SetAvatarData, RpcResultSender<Result<u32, String>>),
+    GetNativeInput(RpcResultSender<InputIdentifier>),
+    GetBindings(RpcResultSender<BindingsData>),
+    SetBindings(BindingsData, RpcResultSender<()>),
 }
 
 #[derive(Resource)]

@@ -15,7 +15,7 @@ use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     sets::{SceneSets, SetupSets},
     structs::{
-        AppConfig, CursorLocked, PreviewCommand, PrimaryUser, SettingsTab, ShowSettingsEvent,
+        AppConfig, CursorLocks, PreviewCommand, PrimaryUser, SettingsTab, ShowSettingsEvent,
         SystemScene, Version,
     },
     util::ModifyComponentExt,
@@ -50,7 +50,6 @@ pub struct SysInfoPanelPlugin;
 
 impl Plugin for SysInfoPanelPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<CursorLocked>();
         app.add_systems(
             Startup,
             setup.in_set(SetupSets::Main).after(SetupSets::Init),
@@ -163,7 +162,7 @@ pub(crate) fn setup(
                     },
                     background_color: Color::srgba(0.8, 0.8, 1.0, 0.8).into(),
                     focus_policy: FocusPolicy::Block,
-                    z_index: ZIndex::Global(i16::MAX as i32 + 3),
+                    z_index: ZIndex::Global((1 << 18) + 3),
                     ..default()
                 },
                 SysInfoContainer,
@@ -765,16 +764,17 @@ fn set_track_components(
 }
 
 fn update_crosshair(
-    locked: Res<CursorLocked>,
+    locks: Res<CursorLocks>,
     mut prev: Local<Option<bool>>,
     mut crosshair: Query<&mut UiImage, With<CrossHair>>,
 ) {
-    if Some(locked.0) != *prev {
+    let locked = locks.0.contains("Camera");
+    if Some(locked) != *prev {
         let Ok(mut img) = crosshair.get_single_mut() else {
             return;
         };
-        *prev = Some(locked.0);
-        if locked.0 {
+        *prev = Some(locked);
+        if locked {
             img.color.set_alpha(0.7);
         } else {
             img.color.set_alpha(0.2);
