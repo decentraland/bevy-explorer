@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
     settings::{SettingInfo, Settings},
-    SetAvatarData, SystemApi,
+    LiveSceneInfo, SetAvatarData, SystemApi,
 };
 use wallet::{sign_request, Wallet};
 
@@ -35,6 +35,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_bindings(),
             op_set_bindings(),
             op_console_command(),
+            op_live_scene_info(),
         ]
     } else {
         Vec::default()
@@ -378,4 +379,20 @@ pub async fn op_console_command(
     rx.await
         .map_err(|e| anyhow::anyhow!(e))?
         .map_err(|e| anyhow::anyhow!(e))
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_live_scene_info(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Vec<LiveSceneInfo>, anyhow::Error> {
+    let (sx, rx) = tokio::sync::oneshot::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::LiveSceneInfo(sx.into()))
+        .unwrap();
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
 }

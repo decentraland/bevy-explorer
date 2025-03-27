@@ -155,7 +155,7 @@ pub fn update_camera(
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn update_camera_position(
     mut commands: Commands,
     mut camera: Query<(
@@ -258,7 +258,7 @@ pub fn update_camera_position(
                     Color::linear_rgb(1.0, 0.0, 0.0),
                 );
             }
-            let mut offset_distances = vec![FloatOrd(1.0); 5];
+            let mut offset_distances = [FloatOrd(1.0); 5];
             for scene in (scenes_head).union(&scenes_cam) {
                 let Ok((context, mut colliders)) = scene_colliders.get_mut(*scene) else {
                     continue;
@@ -283,7 +283,7 @@ pub fn update_camera_position(
                 "{distance} vs {:?}",
                 offset_distances.iter().map(|d| d.0).collect::<Vec<_>>()
             );
-            distance = offset_distances.iter().max().unwrap().0 * distance;
+            distance *= offset_distances.iter().max().unwrap().0;
         }
 
         target_transform.translation =

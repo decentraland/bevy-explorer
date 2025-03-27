@@ -158,7 +158,7 @@ module.exports.reload = async function(hash) {
 // if show is undefined, acts as a toggle
 // returns: visible bool 
 // note: doesn't hide/show the system ui scene
-module.exports.showUi = async function (args) {
+module.exports.showUi = async function(args) {
   let argsArray = [args?.hash ?? "all"]
   if (args?.show !== undefined) {
     argsArray.push(args.show ? "true" : "false")
@@ -167,4 +167,19 @@ module.exports.showUi = async function (args) {
   const reply = await Deno.core.ops.op_console_command("show_ui", argsArray)
   const value = reply.split(":").pop()?.trim().toLowerCase();
   return value === "true";  
+}
+
+// [{
+//     hash: string,
+//     base_url?: string,
+//     title: string,
+//     parcels: [Vector2],
+//     isPortable: bool,
+//     isBroken: bool,
+//     isBlocked: bool,
+//     isSuper: bool,
+//     sdkVersion: string,
+// }]
+module.exports.liveSceneInfo = async function() {
+    return await Deno.core.ops.op_live_scene_info()
 }

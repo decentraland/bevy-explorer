@@ -12,7 +12,10 @@ use common::{
     inputs::{BindingsData, InputIdentifier},
     rpc::RpcResultSender,
 };
-use dcl_component::proto_components::sdk::components::{PbAvatarBase, PbAvatarEquippedData};
+use dcl_component::proto_components::{
+    common::Vector2,
+    sdk::components::{PbAvatarBase, PbAvatarEquippedData},
+};
 use serde::{Deserialize, Serialize};
 use settings::{SettingBridgePlugin, Settings};
 
@@ -41,6 +44,20 @@ pub struct SetAvatarData {
     pub equip: Option<PbAvatarEquippedData>,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveSceneInfo {
+    pub hash: String,
+    pub base_url: Option<String>,
+    pub title: String,
+    pub parcels: Vec<Vector2>,
+    pub is_portable: bool,
+    pub is_broken: bool,
+    pub is_blocked: bool,
+    pub is_super: bool,
+    pub sdk_version: String,
+}
+
 #[derive(Event, Clone)]
 pub enum SystemApi {
     ConsoleCommand(String, Vec<String>, RpcResultSender<Result<String, String>>),
@@ -60,6 +77,7 @@ pub enum SystemApi {
     GetNativeInput(RpcResultSender<InputIdentifier>),
     GetBindings(RpcResultSender<BindingsData>),
     SetBindings(BindingsData, RpcResultSender<()>),
+    LiveSceneInfo(RpcResultSender<Vec<LiveSceneInfo>>),
 }
 
 #[derive(Resource)]

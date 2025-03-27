@@ -1146,7 +1146,7 @@ fn toggle_scene_ui_command(
             // get the ui root
             let Ok(mut style) = styles.get_mut(link.ui_entity) else {
                 if !all {
-                    input.reply_failed(format!("failed to obtain ui root entity"));
+                    input.reply_failed("failed to obtain ui root entity");
                     return;
                 } else {
                     continue;
