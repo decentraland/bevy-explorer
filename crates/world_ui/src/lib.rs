@@ -223,7 +223,7 @@ pub fn update_worldui_materials(
                 warn!("too many textshapes, truncating image");
                 // TODO: split out to separate textures
             }
-            let req_size = req_size.min(max_size);
+            let req_size = req_size.min(max_size).max(image.size());
             debug!("resized to {}", req_size);
             images.get_mut(id).unwrap().resize(Extent3d {
                 width: req_size.x,
