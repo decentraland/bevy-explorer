@@ -1,5 +1,7 @@
 pub mod settings;
 
+use std::collections::VecDeque;
+
 use bevy::{
     app::{Plugin, Update},
     ecs::{event::EventReader, system::Local},
@@ -77,14 +79,11 @@ pub fn post_events(
     mut console: EventWriter<ConsoleCommandEntered>,
     mut console_response: Local<Option<RpcResultSender<Result<String, String>>>>,
     mut replies: EventReader<PrintConsoleLine>,
+    mut pending: Local<VecDeque<(String, Vec<String>, RpcResultSender<Result<String, String>>)>>,
 ) {
     while let Ok(ev) = bridge.receiver.try_recv() {
         if let SystemApi::ConsoleCommand(cmd, args, sender) = ev {
-            console.send(ConsoleCommandEntered {
-                command_name: cmd,
-                args,
-            });
-            *console_response = Some(sender);
+            pending.push_back((cmd, args, sender));
         } else {
             writer.send(ev);
         }
@@ -115,7 +114,13 @@ pub fn post_events(
                 *console_response = Some(response);
             }
         }
-    } else {
-        replies.clear();
+    } else if let Some((cmd, args, sender)) = pending.pop_front() {
+        console.send(ConsoleCommandEntered {
+            command_name: cmd,
+            args,
+        });
+        *console_response = Some(sender);
     }
+
+    replies.clear();
 }

@@ -13,7 +13,9 @@ use bevy::{
     ui::{FocusPolicy, ManualCursorPosition},
     utils::{HashMap, HashSet},
 };
+use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
+use console::DoAddConsoleCommand;
 use ui_background::{set_ui_background, UiBackground};
 use ui_dropdown::{set_ui_dropdown, UiDropdown};
 use ui_input::{set_ui_input, UiInput};
@@ -21,8 +23,9 @@ use ui_pointer::set_ui_pointer_events;
 use ui_text::{set_ui_text, UiText};
 
 use crate::{
-    initialize_scene::SuperUserScene, renderer_context::RendererSceneContext, ContainerEntity,
-    ContainingScene, SceneEntity, SceneSets,
+    initialize_scene::{LiveScenes, SuperUserScene},
+    renderer_context::RendererSceneContext,
+    ContainerEntity, ContainingScene, SceneEntity, SceneSets,
 };
 use common::{
     structs::{AppConfig, PrimaryUser},
@@ -342,6 +345,8 @@ impl Plugin for SceneUiPlugin {
             ComponentPosition::EntityOnly,
         );
 
+        app.init_resource::<HiddenSceneUis>();
+
         app.add_systems(Update, init_scene_ui_root.in_set(SceneSets::PostInit));
         app.add_systems(
             Update,
@@ -361,6 +366,7 @@ impl Plugin for SceneUiPlugin {
                 .chain()
                 .in_set(SceneSets::PostLoop),
         );
+        app.add_console_command::<ToggleSceneUiCommand, _>(toggle_scene_ui_command);
     }
 }
 
@@ -446,7 +452,13 @@ pub struct SceneUiRoot {
 
 fn create_ui_roots(
     mut commands: Commands,
-    mut scene_uis: Query<(Entity, Option<&UiLink>, &SceneUiData)>,
+    mut scene_uis: Query<(
+        Entity,
+        &RendererSceneContext,
+        Option<&UiLink>,
+        &SceneUiData,
+        Option<&SuperUserScene>,
+    )>,
     player: Query<Entity, With<PrimaryUser>>,
     containing_scene: ContainingScene,
     current_uis: Query<(Entity, &SceneUiRoot)>,
@@ -459,6 +471,7 @@ fn create_ui_roots(
         Option<&mut UiTextureOutput>,
     )>,
     images: ResMut<Assets<Image>>,
+    hidden_uis: Res<HiddenSceneUis>,
 ) {
     let images = images.into_inner();
 
@@ -479,10 +492,23 @@ fn create_ui_roots(
     }
 
     // spawn window root ui nodes
-    for (ent, maybe_link, ui_data) in scene_uis.iter_mut() {
+    for (ent, context, maybe_link, ui_data, maybe_super) in scene_uis.iter_mut() {
         if current_scenes.contains(&ent) && (maybe_link.is_none() || config.is_changed()) {
+            let display = if maybe_super.is_some()
+                || hidden_uis
+                    .scenes
+                    .get(&context.hash)
+                    .copied()
+                    .unwrap_or(hidden_uis.show_all)
+            {
+                Display::Flex
+            } else {
+                Display::None
+            };
+
             let root_style = if config.constrain_scene_ui {
                 Style {
+                    display,
                     position_type: PositionType::Absolute,
                     left: Val::VMin(27.0),
                     right: Val::VMin(12.0),
@@ -493,6 +519,7 @@ fn create_ui_roots(
                 }
             } else {
                 Style {
+                    display,
                     position_type: PositionType::Absolute,
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
@@ -1053,5 +1080,93 @@ fn update_children_target_camera(
             commands,
             updated_entities,
         );
+    }
+}
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/show_ui")]
+struct ToggleSceneUiCommand {
+    hash: String,
+    enable: Option<bool>,
+}
+
+#[derive(Resource)]
+pub struct HiddenSceneUis {
+    pub scenes: HashMap<String, bool>,
+    pub show_all: bool,
+}
+
+impl Default for HiddenSceneUis {
+    fn default() -> Self {
+        Self {
+            scenes: Default::default(),
+            show_all: true,
+        }
+    }
+}
+
+fn toggle_scene_ui_command(
+    mut input: ConsoleCommand<ToggleSceneUiCommand>,
+    live_scenes: Res<LiveScenes>,
+    ui_links: Query<(Entity, &UiLink), (With<SceneUiData>, Without<SuperUserScene>)>,
+    mut styles: Query<&mut Style>,
+    mut hidden_uis: ResMut<HiddenSceneUis>,
+) {
+    if let Some(Ok(ToggleSceneUiCommand { hash, enable })) = input.take() {
+        let all = hash == "all";
+
+        // get final state
+        let enable = enable
+            .unwrap_or_else(|| !(hidden_uis.scenes.get(&hash).unwrap_or(&hidden_uis.show_all)));
+
+        // if hash is all, toggle everything
+        if all {
+            hidden_uis.show_all = enable;
+            hidden_uis.scenes.clear();
+        }
+
+        // get target entity if required
+        let target_entity = if hash != "all" {
+            let Some(entity) = live_scenes.scenes.get(&hash) else {
+                input.reply_failed(format!("{hash} not found in live scenes"));
+                return;
+            };
+
+            Some(entity)
+        } else {
+            None
+        };
+
+        for (scene_ent, link) in ui_links.iter() {
+            // skip non-matching entities
+            if target_entity.is_some_and(|e| e != &scene_ent) {
+                continue;
+            }
+
+            // get the ui root
+            let Ok(mut style) = styles.get_mut(link.ui_entity) else {
+                if !all {
+                    input.reply_failed(format!("failed to obtain ui root entity"));
+                    return;
+                } else {
+                    continue;
+                }
+            };
+
+            // set the target state
+            if enable {
+                style.display = Display::Flex;
+            } else {
+                style.display = Display::None;
+            };
+
+            // store the scene specific state
+            if !all {
+                hidden_uis.scenes.insert(hash.clone(), enable);
+                input.reply_ok(format!("{hash}: {enable}"));
+            }
+        }
+
+        input.reply_ok(format!("{hash}: {}", enable));
     }
 }
