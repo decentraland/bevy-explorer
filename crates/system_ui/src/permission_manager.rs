@@ -108,7 +108,7 @@ fn update_permissions(
 
     let mut repush_requests = Vec::default();
     while let Some(req) = manager.pending.pop_front() {
-        if req.realm != current_realm.address && !req.is_portable {
+        if req.realm != current_realm.about_url && !req.is_portable {
             continue;
         }
 
