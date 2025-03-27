@@ -173,7 +173,6 @@ pub fn update_camera_position(
     mut scene_colliders: Query<(&RendererSceneContext, &mut SceneColliderData)>,
     mut prev_override: Local<Option<CameraOverride>>,
     gt_helper: TransformHelper,
-    mut giz: Gizmos,
 ) {
     let (
         Ok((player_transform, dynamic_state)),
@@ -251,13 +250,6 @@ pub fn update_camera_position(
                 Vec3::new(0.0, -OFFSET_SIZE, 0.0),
                 Vec3::new(0.0, OFFSET_SIZE, 0.0),
             ];
-            for offset in offsets {
-                giz.line(
-                    player_head + target_transform.rotation.mul_vec3(offset),
-                    target_translation,
-                    Color::linear_rgb(1.0, 0.0, 0.0),
-                );
-            }
             let mut offset_distances = [FloatOrd(1.0); 5];
             for scene in (scenes_head).union(&scenes_cam) {
                 let Ok((context, mut colliders)) = scene_colliders.get_mut(*scene) else {
