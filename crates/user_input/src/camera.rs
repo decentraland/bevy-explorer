@@ -279,7 +279,7 @@ pub fn update_camera_position(
                     }
                 }
             }
-            println!(
+            debug!(
                 "{distance} vs {:?}",
                 offset_distances.iter().map(|d| d.0).collect::<Vec<_>>()
             );
