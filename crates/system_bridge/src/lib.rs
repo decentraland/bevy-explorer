@@ -11,6 +11,8 @@ use bevy_console::{clap::builder::StyledStr, ConsoleCommandEntered, PrintConsole
 use common::{
     inputs::{BindingsData, InputIdentifier},
     rpc::RpcResultSender,
+    structs::AppConfig,
+    util::config_file,
 };
 use dcl_component::proto_components::{
     common::Vector2,
@@ -28,7 +30,7 @@ impl Plugin for SystemBridgePlugin {
         app.add_event::<SystemApi>();
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(SystemBridge { sender, receiver });
-        app.add_systems(Update, post_events);
+        app.add_systems(Update, (post_events, handle_home_scene));
 
         if self.bare {
             return;
@@ -58,6 +60,12 @@ pub struct LiveSceneInfo {
     pub sdk_version: String,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct HomeScene {
+    pub realm: String,
+    pub parcel: Vector2,
+}
+
 #[derive(Event, Clone)]
 pub enum SystemApi {
     ConsoleCommand(String, Vec<String>, RpcResultSender<Result<String, String>>),
@@ -78,6 +86,8 @@ pub enum SystemApi {
     GetBindings(RpcResultSender<BindingsData>),
     SetBindings(BindingsData, RpcResultSender<()>),
     LiveSceneInfo(RpcResultSender<Vec<LiveSceneInfo>>),
+    GetHomeScene(RpcResultSender<HomeScene>),
+    SetHomeScene(HomeScene),
 }
 
 #[derive(Resource)]
@@ -141,4 +151,25 @@ pub fn post_events(
     }
 
     replies.clear();
+}
+
+fn handle_home_scene(mut ev: EventReader<SystemApi>, mut config: ResMut<AppConfig>) {
+    for ev in ev.read() {
+        match ev {
+            SystemApi::GetHomeScene(rpc_result_sender) => rpc_result_sender.send(HomeScene {
+                realm: config.server.clone(),
+                parcel: config.location.as_vec2().into(),
+            }),
+            SystemApi::SetHomeScene(home_scene) => {
+                config.server = home_scene.realm.clone();
+                config.location = bevy::math::Vec2::from(&home_scene.parcel).as_ivec2();
+                let config_file = config_file();
+                if let Some(folder) = config_file.parent() {
+                    std::fs::create_dir_all(folder).unwrap();
+                }
+                let _ = std::fs::write(config_file, serde_json::to_string(&*config).unwrap());
+            }
+            _ => (),
+        }
+    }
 }

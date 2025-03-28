@@ -1,13 +1,17 @@
 use bevy::log::debug;
 use common::inputs::{Action, BindingsData, InputIdentifier};
-use dcl_component::proto_components::sdk::components::{PbAvatarBase, PbAvatarEquippedData};
+use dcl_component::proto_components::{
+    common::Vector2,
+    sdk::components::{PbAvatarBase, PbAvatarEquippedData},
+};
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use http::Uri;
+use ipfs::IpfsResource;
 use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
     settings::{SettingInfo, Settings},
-    LiveSceneInfo, SetAvatarData, SystemApi,
+    HomeScene, LiveSceneInfo, SetAvatarData, SystemApi,
 };
 use wallet::{sign_request, Wallet};
 
@@ -36,6 +40,9 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_set_bindings(),
             op_console_command(),
             op_live_scene_info(),
+            op_get_home_scene(),
+            op_set_home_scene(),
+            op_get_realm_provider(),
         ]
     } else {
         Vec::default()
@@ -395,4 +402,51 @@ pub async fn op_live_scene_info(
         .unwrap();
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_home_scene(state: Rc<RefCell<OpState>>) -> Result<HomeScene, anyhow::Error> {
+    let (sx, rx) = tokio::sync::oneshot::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetHomeScene(sx.into()))
+        .unwrap();
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+#[op2]
+pub fn op_set_home_scene(
+    state: Rc<RefCell<OpState>>,
+    #[string] realm: String,
+    #[serde] parcel: Vector2,
+) {
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SetHomeScene(HomeScene { realm, parcel }))
+        .unwrap();
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RealmProviderString {
+    realm: String,
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_realm_provider(
+    state: Rc<RefCell<OpState>>,
+) -> Result<RealmProviderString, anyhow::Error> {
+    state
+        .borrow_mut()
+        .borrow_mut::<IpfsResource>()
+        .about_url()
+        .ok_or(anyhow::anyhow!("not connected"))
+        .map(|realm| RealmProviderString {
+            realm: realm.to_owned(),
+        })
 }

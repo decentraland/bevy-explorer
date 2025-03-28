@@ -183,3 +183,25 @@ module.exports.showUi = async function(args) {
 module.exports.liveSceneInfo = async function() {
     return await Deno.core.ops.op_live_scene_info()
 }
+
+// { 
+//   realm: string, // about_url (e.g. `realm-provider.decentraland.org/main`)
+//   parcel: Vector2,
+// }
+module.exports.getHomeScene = async function() {
+    return await Deno.core.ops.op_get_home_scene()
+}
+
+// { 
+//   realm: string, // about_url (e.g. `realm-provider.decentraland.org/main`)
+//   parcel: Vector2,
+// }
+module.exports.setHomeScene = async function(args) {
+    await Deno.core.ops.op_set_home_scene(args.realm, args.parcel)
+}
+
+// string
+module.exports.getRealmProvider = async function() {
+    return (await Deno.core.ops.op_get_realm_provider()).realm
+}
+
