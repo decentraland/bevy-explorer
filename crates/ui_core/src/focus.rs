@@ -33,11 +33,15 @@ impl Plugin for FocusPlugin {
 fn defocus(
     mut commands: Commands,
     focus_elements: Query<(Entity, Ref<Focus>)>,
+    mut removed: RemovedComponents<Focus>,
     mut input_manager: InputManager,
 ) {
     let refocussed = input_manager.just_down(CommonInputAction::IaPointer, InputPriority::Focus)
         || input_manager.just_down(SystemAction::Cancel, InputPriority::CancelFocus)
-        || focus_elements.iter().any(|(_, focus)| focus.is_changed());
+        || focus_elements.iter().any(|(_, focus)| focus.is_changed())
+        || !removed.is_empty();
+
+    removed.clear();
 
     if refocussed {
         let mut any_still_focussed = false;
