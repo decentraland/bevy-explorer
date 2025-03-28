@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::anyhow;
 use bevy::{
@@ -22,14 +22,10 @@ use bevy::{
 use bevy_dui::{DuiRegistry, DuiTemplate};
 use collectibles::{urn::CollectibleUrn, Emote};
 use common::{sets::SetupSets, structs::AvatarDynamicState};
-use dcl_component::proto_components::sdk::components::PbAvatarEmoteCommand;
 use propagate::Propagate;
 use ui_core::ui_actions::{DragData, Dragged, On};
 
-use crate::{
-    animate::{EmoteBroadcast, EmoteCommand, EmoteList},
-    AvatarSelection, AvatarShape,
-};
+use crate::{animate::EmoteCommand, AvatarSelection, AvatarShape};
 
 pub struct AvatarTexturePlugin;
 
@@ -138,18 +134,13 @@ impl PhotoBooth<'_, '_> {
     }
 
     pub fn play_emote(&mut self, instance: &BoothInstance, emote: CollectibleUrn<Emote>) {
-        let mut list = VecDeque::new();
-        list.push_back(EmoteCommand {
-            emote: PbAvatarEmoteCommand {
-                emote_urn: emote.to_string(),
-                r#loop: false,
-                timestamp: 0,
-            },
-            broadcast: EmoteBroadcast::None,
-        });
         self.commands
             .entity(*instance.avatar)
-            .try_insert(EmoteList(list));
+            .try_insert(EmoteCommand {
+                urn: emote.to_string(),
+                r#loop: false,
+                timestamp: self.frame.0 as i64,
+            });
     }
 }
 

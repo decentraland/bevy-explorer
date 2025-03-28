@@ -1,6 +1,7 @@
-use avatar::animate::{EmoteBroadcast, EmoteList};
+use avatar::animate::EmoteCommand;
 use bevy::{
     color::palettes::css,
+    core::FrameCount,
     prelude::*,
     text::BreakLineOn,
     ui::FocusPolicy,
@@ -99,6 +100,7 @@ fn handle_emote_key(
     buttons: Query<&EmoteButton>,
     mut press_time: Local<f32>,
     mut lost_focus_events: EventReader<WindowFocused>,
+    frame: Res<FrameCount>,
 ) {
     if input_manager.just_down(SystemAction::Emote, InputPriority::None) {
         if !existing.is_empty() {
@@ -141,9 +143,11 @@ fn handle_emote_key(
         for (emote_key, slot) in EMOTE_KEYS {
             if key_input.just_pressed(emote_key) {
                 if let Some(button) = buttons.iter().find(|b| b.1 == slot) {
-                    commands
-                        .entity(player.single())
-                        .try_insert(EmoteList::new(button.0.clone(), EmoteBroadcast::All));
+                    commands.entity(player.single()).try_insert(EmoteCommand {
+                        urn: button.0.clone(),
+                        r#loop: false,
+                        timestamp: frame.0 as i64,
+                    });
                     w.send(EmoteUiEvent::Hide);
                 }
             }
@@ -253,6 +257,7 @@ fn show_emote_ui(
     player: Query<Entity, With<PrimaryUser>>,
     mut retry: Local<Option<EmoteUiEvent>>,
     active_dialog: Res<ActiveDialog>,
+    frame: Res<FrameCount>,
 ) {
     let mut ev = events.read().last().copied();
     if retry.is_some() {
@@ -266,9 +271,11 @@ fn show_emote_ui(
 
             for (button, interact) in &buttons {
                 if interact != &Interaction::None {
-                    commands
-                        .entity(player.single())
-                        .try_insert(EmoteList::new(button.0.clone(), EmoteBroadcast::All));
+                    commands.entity(player.single()).try_insert(EmoteCommand {
+                        urn: button.0.clone(),
+                        r#loop: false,
+                        timestamp: frame.0 as i64,
+                    });
                 }
             }
         }

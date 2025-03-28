@@ -54,7 +54,9 @@ impl<T: CollectibleType> TryFrom<&str> for CollectibleUrn<T> {
         Self::try_new_and_token(value)
             .map(|(urn, _)| urn)
             .inspect_err(|e| {
-                warn!("invalid collectible urn: {}, {}", e.msg, e.value);
+                if e.msg != "empty urn" {
+                    warn!("invalid collectible urn: {}, {}", e.msg, e.value);
+                }
             })
     }
 }
