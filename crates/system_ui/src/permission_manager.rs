@@ -121,6 +121,19 @@ fn update_permissions(
             continue;
         };
 
+        // final check before dialog
+        match config.get_permission(req.ty, &req.realm, hash, req.is_portable) {
+            PermissionValue::Allow => {
+                req.sender.clone().send(true);
+                continue;
+            }
+            PermissionValue::Deny => {
+                req.sender.clone().send(false);
+                continue;
+            }
+            _ => (),
+        }
+
         let title = format!("Permission Request - {} - {}", name, req.ty.title());
         let body = match &req.additional {
             Some(add) => format!("{}\n{add}", req.ty.request()),
