@@ -36,7 +36,7 @@ impl Plugin for VisualsPlugin {
             .add_systems(Update, apply_global_light)
             .add_systems(Update, move_ground)
             .add_systems(Startup, setup.in_set(SetupSets::Main))
-            .insert_resource(RenderAssetBytesPerFrame::new(16777216));
+            .insert_resource(RenderAssetBytesPerFrame::new(1 << 27)); // ~100mb/frame @ 60fps
 
         app.add_console_command::<ShadowConsoleCommand, _>(shadow_console_command);
         app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
