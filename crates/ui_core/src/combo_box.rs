@@ -192,7 +192,6 @@ fn update_comboboxen(
                       combo: Query<(&ComboBox, &Node, &GlobalTransform)>,
                       target_camera: TargetCameraHelper,
                       dui: Res<DuiRegistry>| {
-                    println!("click");
                     let Ok((cbox, node, gt)) = combo.get(ent) else {
                         warn!("no node");
                         return;
