@@ -12,7 +12,6 @@ use crate::profile::SettingsDialog;
 use system_bridge::settings::{
     ambient_brightness_setting::AmbientSetting,
     constrain_ui::ConstrainUiSetting,
-    despawn_workaround::DespawnWorkaroundSetting,
     frame_rate::FpsTargetSetting,
     load_distance::{LoadDistanceSetting, UnloadDistanceSetting},
     max_avatars::MaxAvatarsSetting,
@@ -125,7 +124,6 @@ fn set_app_settings_content(
             spawn_int_setting_template::<MaxAvatarsSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<MaxDownloadsSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<CacheSizeSetting>(&mut commands, &dui, &config),
-            spawn_enum_setting_template::<DespawnWorkaroundSetting>(&mut commands, &dui, &config),
             commands
                 .spawn_template(
                     &dui,

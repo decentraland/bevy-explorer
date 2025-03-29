@@ -22,7 +22,6 @@ use common::{
     util::config_file,
 };
 use constrain_ui::ConstrainUiSetting;
-use despawn_workaround::DespawnWorkaroundSetting;
 use frame_rate::FpsTargetSetting;
 use load_distance::{LoadDistanceSetting, UnloadDistanceSetting};
 use max_avatars::MaxAvatarsSetting;
@@ -48,7 +47,6 @@ pub mod ambient_brightness_setting;
 pub mod bloom_settings;
 pub mod cache_size;
 pub mod constrain_ui;
-pub mod despawn_workaround;
 pub mod fog_settings;
 pub mod frame_rate;
 pub mod load_distance;
@@ -159,7 +157,6 @@ impl Plugin for SettingBridgePlugin {
         add_int_setting::<VideoThreadsSetting>(app, &mut settings, &mut schedule);
         add_int_setting::<MaxDownloadsSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<CacheSizeSetting>(app, &mut settings, &mut schedule);
-        add_enum_setting::<DespawnWorkaroundSetting>(app, &mut settings, &mut schedule);
 
         app.insert_resource(settings);
         app.insert_resource(ApplyAppSettingsSchedule(schedule));

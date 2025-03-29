@@ -1112,7 +1112,6 @@ pub fn process_scene_lifecycle(
     mut live_scenes: ResMut<LiveScenes>,
     mut spawn: EventWriter<LoadSceneEvent>,
     pointers: Res<ScenePointers>,
-    config: Res<AppConfig>,
     imposter_scene: Res<CurrentImposterScene>,
 ) {
     let mut required_scene_ids: HashMap<(String, Option<String>), bool> = HashMap::default();
@@ -1200,10 +1199,6 @@ pub fn process_scene_lifecycle(
                 existing_ids.insert(<&String>::clone(hash));
             }
             None => {
-                if config.despawn_workaround && !removed_hashes.is_empty() {
-                    info!("skip despawn");
-                    continue;
-                }
                 if let Some(commands) = commands.get_entity(entity) {
                     info!("despawning {:?}", entity);
                     commands.despawn_recursive();
