@@ -84,16 +84,8 @@ impl Default for SerializedProfile {
                     \"urn:decentraland:off-chain:base-avatars:f_mouth_00\"
                 ],
                 \"emotes\":[
-                    {\"slot\": 0, \"urn\": \"handsair\" },
-                    {\"slot\": 1, \"urn\": \"wave\" },
-                    {\"slot\": 2, \"urn\": \"fistpump\" },
-                    {\"slot\": 3, \"urn\": \"dance\" },
-                    {\"slot\": 4, \"urn\": \"raisehand\" },
-                    {\"slot\": 5, \"urn\": \"clap\" },
-                    {\"slot\": 6, \"urn\": \"money\" },
-                    {\"slot\": 7, \"urn\": \"kiss\" },
-                    {\"slot\": 8, \"urn\": \"headexplode\" },
-                    {\"slot\": 9, \"urn\": \"shrug\" }
+                    {\"slot\": 0, \"urn\": \"urn:decentraland:matic:collections-v2:0xef832a5183bf2e4099efed4c6ec981b7b41aa545:0\" },
+                    {\"slot\": 1, \"urn\": \"urn:decentraland:matic:collections-v2:0x66c256e64eb5dcc6b33adac215692cf7905cf038:0\" }
                 ],
                \"snapshots\": {
                     \"face256\":\"\",

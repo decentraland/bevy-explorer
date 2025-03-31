@@ -443,14 +443,20 @@ impl Emote {
         &self,
         gltfs: &Assets<Gltf>,
     ) -> Result<Option<Handle<AnimationClip>>, CollectibleError> {
-        Ok(gltfs
-            .get(self.gltf.id())
-            .ok_or(CollectibleError::Loading)?
+        let gltf = gltfs.get(self.gltf.id()).ok_or(CollectibleError::Loading)?;
+        if let Some(anim) = gltf
             .named_animations
             .iter()
             .find(|(name, _)| name.ends_with("_Avatar"))
             .map(|(_, handle)| handle)
-            .cloned())
+            .cloned()
+        {
+            Ok(Some(anim))
+        } else if gltf.named_animations.len() == 1 {
+            Ok(Some(gltf.named_animations.iter().next().unwrap().1.clone()))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn prop_scene(
@@ -539,6 +545,7 @@ impl AssetLoader for EmoteLoader {
                 .load(reader, settings, load_context)
                 .await?;
             let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
+            debug!("meta: {metadata:#?}");
             let meta = serde_json::from_value::<EmoteMeta>(metadata)?;
 
             let thumbnail =
@@ -609,6 +616,7 @@ impl AssetLoader for EmoteMetaLoader {
                 .load(reader, settings, load_context)
                 .await?;
             let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
+            debug!("meta: {metadata:#?}");
             let meta = serde_json::from_value::<EmoteMeta>(metadata)?;
 
             let thumbnail =
