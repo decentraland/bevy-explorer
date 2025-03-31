@@ -119,8 +119,8 @@ impl ProfileManager<'_, '_> {
                 if snapshots.face256.is_empty() {
                     None
                 } else {
-                    let url = format!("{}{}", profile.base_url, snapshots.face256);
-                    let ipfs_path = IpfsPath::new_from_url(&url, "png");
+                    // let url = format!("{}{}", profile.base_url, snapshots.face256);
+                    let ipfs_path = IpfsPath::new_from_url(&snapshots.face256, "png");
                     Some(PathBuf::from(&ipfs_path))
                 }
             })
@@ -694,7 +694,7 @@ pub async fn get_remote_profile(
         .get(format!("{endpoint}/profiles/{address:#x}"))
         .send()
         .await?;
-    let mut content = response
+    let content = response
         .json::<LambdaProfiles>()
         .await?
         .avatars
@@ -702,23 +702,24 @@ pub async fn get_remote_profile(
         .next()
         .ok_or(anyhow!("not found"))?;
 
-    // clean up the lambda result
-    if let Some(snapshots) = content.avatar.snapshots.as_mut() {
-        if let Some(hash) = snapshots
-            .body
-            .rsplit_once('/')
-            .map(|(_, hash)| hash.to_owned())
-        {
-            snapshots.body = hash;
-        }
-        if let Some(hash) = snapshots
-            .face256
-            .rsplit_once('/')
-            .map(|(_, hash)| hash.to_owned())
-        {
-            snapshots.face256 = hash;
-        }
-    }
+    // debug!("loaded profile content preclean: {content:#?}");
+    // // clean up the lambda result
+    // if let Some(snapshots) = content.avatar.snapshots.as_mut() {
+    //     if let Some(hash) = snapshots
+    //         .body
+    //         .rsplit_once('/')
+    //         .map(|(_, hash)| hash.to_owned())
+    //     {
+    //         snapshots.body = hash;
+    //     }
+    //     if let Some(hash) = snapshots
+    //         .face256
+    //         .rsplit_once('/')
+    //         .map(|(_, hash)| hash.to_owned())
+    //     {
+    //         snapshots.face256 = hash;
+    //     }
+    // }
 
     let profile = UserProfile {
         version: content.version as u32,
