@@ -394,7 +394,7 @@ static DEFAULT_ANIMATION_LOOKUP: Lazy<HashMap<&str, DefaultAnim>> = Lazy::new(||
         ),
         (
             "jump",
-            DefaultAnim::new("jump", "Jump", "Jump", true, false).with_sounds(&[
+            DefaultAnim::new("jump", "Jump", "Jump", false, false).with_sounds(&[
                 (
                     0.0,
                     &[

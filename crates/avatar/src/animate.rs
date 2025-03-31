@@ -611,6 +611,7 @@ fn play_current_emote(
                 continue;
             }
         };
+        active_emote.repeat |= emote.default_repeat;
 
         let clip = match emote.avatar_animation(&gltfs) {
             Err(e) => {
