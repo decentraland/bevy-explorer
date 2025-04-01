@@ -448,7 +448,7 @@ fn animate(
 struct SpawnedExtras {
     urn: EmoteUrn,
     scene: Option<InstanceId>,
-    scene_rotated: bool,
+    scene_initialized: bool,
     audio: Option<(Entity, f32)>,
     clip: Option<(AnimationNodeIndex, Handle<AnimationGraph>)>,
 }
@@ -458,7 +458,7 @@ impl SpawnedExtras {
         Self {
             urn,
             scene: None,
-            scene_rotated: false,
+            scene_initialized: false,
             audio: None,
             clip: None,
         }
@@ -499,7 +499,7 @@ fn play_current_emote(
     ),
     mut emitters: Query<&mut bevy_kira_audio::prelude::AudioEmitter>,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
-    transform_and_parent: Query<(&Transform, &Parent)>,
+    prop_details: Query<(Option<&Name>, &Transform, &Parent)>,
 ) {
     let prior_playing = std::mem::take(&mut *playing);
     let mut prev_spawned_extras = std::mem::take(&mut *spawned_extras);
@@ -645,9 +645,23 @@ fn play_current_emote(
                     continue;
                 }
 
-                if !extras.scene_rotated {
+                if !extras.scene_initialized {
                     for spawned_ent in scene_spawner.iter_instance_entities(instance) {
-                        if let Ok((transform, parent)) = transform_and_parent.get(spawned_ent) {
+                        if let Ok((maybe_name, transform, parent)) = prop_details.get(spawned_ent) {
+                            // hide stuff like unity
+                            // what a mess
+                            if let Some(name) =
+                                maybe_name.map(Name::as_str).map(str::to_ascii_lowercase)
+                            {
+                                if name.contains("_reference")
+                                    || name.ends_with("_basemesh")
+                                    || name.starts_with("m_mask_")
+                                {
+                                    commands.entity(spawned_ent).try_insert(Visibility::Hidden);
+                                    warn!("hiding emote prop `{name}` due to name");
+                                }
+                            }
+
                             if parent.get() == entity {
                                 // children of root nodes -> rotate
                                 if parent.get() == entity {
@@ -661,7 +675,7 @@ fn play_current_emote(
                             }
                         }
                     }
-                    extras.scene_rotated = true;
+                    extras.scene_initialized = true;
                 }
 
                 if let Ok(Some(prop_clip)) = emote.prop_anim(&gltfs) {
