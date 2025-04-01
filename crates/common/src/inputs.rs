@@ -1,7 +1,10 @@
 use bevy::{prelude::*, utils::HashMap};
 use serde::{Deserialize, Serialize};
+use strum_macros::EnumIter;
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Copy, Hash, Debug, PartialOrd, Ord)]
+#[derive(
+    Serialize, Deserialize, PartialEq, Eq, Clone, Copy, Hash, Debug, PartialOrd, Ord, EnumIter,
+)]
 pub enum SystemAction {
     Cancel,
     CameraLock,
@@ -438,4 +441,11 @@ impl Default for InputMapSerialized {
     fn default() -> Self {
         Self(InputMap::default().inputs.into_iter().collect())
     }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemActionEvent {
+    pub action: SystemAction,
+    pub pressed: bool,
 }

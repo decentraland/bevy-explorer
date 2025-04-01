@@ -9,7 +9,7 @@ use bevy::{
 };
 use bevy_console::{clap::builder::StyledStr, ConsoleCommandEntered, PrintConsoleLine};
 use common::{
-    inputs::{BindingsData, InputIdentifier},
+    inputs::{BindingsData, InputIdentifier, SystemActionEvent},
     rpc::RpcResultSender,
     structs::AppConfig,
     util::config_file,
@@ -88,6 +88,7 @@ pub enum SystemApi {
     LiveSceneInfo(RpcResultSender<Vec<LiveSceneInfo>>),
     GetHomeScene(RpcResultSender<HomeScene>),
     SetHomeScene(HomeScene),
+    GetSystemActionStream(tokio::sync::mpsc::UnboundedSender<SystemActionEvent>),
 }
 
 #[derive(Resource)]

@@ -2549,6 +2549,8 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+ "strum 0.27.1",
+ "strum_macros 0.27.1",
  "tokio",
  "uuid 1.12.1",
 ]
@@ -3087,7 +3089,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b28bfe653d79bd16c77f659305b195b82bb5ce0c0eb2a4846b82ddbd77586813"
 dependencies = [
  "bitflags 2.8.0",
- "libloading 0.7.4",
+ "libloading 0.8.5",
  "winapi",
 ]
 
@@ -3665,7 +3667,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330c60081dcc4c72131f8eb70510f1ac07223e5d4163db481a04a0befcffa412"
 dependencies = [
- "libloading 0.7.4",
+ "libloading 0.8.5",
 ]
 
 [[package]]
@@ -5096,7 +5098,7 @@ dependencies = [
  "bitflags 2.8.0",
  "com",
  "libc",
- "libloading 0.7.4",
+ "libloading 0.8.5",
  "thiserror 1.0.69",
  "widestring",
  "winapi",
@@ -5810,7 +5812,9 @@ dependencies = [
  "common",
  "dcl_component",
  "serde_json",
+ "strum 0.27.1",
  "system_bridge",
+ "tokio",
 ]
 
 [[package]]
@@ -7423,7 +7427,7 @@ version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af1844ef2428cc3e1cb900be36181049ef3d3193c63e43026cfe202983b27a56"
 dependencies = [
- "proc-macro-crate 2.0.0",
+ "proc-macro-crate 3.2.0",
  "proc-macro2",
  "quote",
  "syn 2.0.87",
@@ -10310,6 +10314,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "strum"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f64def088c51c9510a8579e3c5d67c65349dcf755e5479ad3d010aa6454e2c32"
+
+[[package]]
 name = "strum_macros"
 version = "0.25.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10327,6 +10337,19 @@ name = "strum_macros"
 version = "0.26.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c6bee85a5a24955dc440386795aa378cd9cf82acd5f764469152d2270e581be"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 2.0.87",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c77a8c5abcaf0f9ce05d62342b7d298c346515365c36b673df4ebe3ced01fde8"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -12349,7 +12372,7 @@ dependencies = [
  "js-sys",
  "khronos-egl",
  "libc",
- "libloading 0.7.4",
+ "libloading 0.8.5",
  "log",
  "metal",
  "naga",
@@ -12449,7 +12472,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

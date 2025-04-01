@@ -1,19 +1,21 @@
 // input settings
 
 use std::collections::BTreeSet;
+use strum::IntoEnumIterator;
 
 use bevy::{
     ecs::system::SystemParam,
     input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
-    utils::HashMap,
+    utils::{HashMap, HashSet},
     window::PrimaryWindow,
 };
 
 use common::{
     inputs::{
         Action, AxisIdentifier, BindingsData, CommonInputAction, InputDirection,
-        InputDirectionalSet, InputIdentifier, InputMap, InputMapSerialized, POINTER_SET,
+        InputDirectionalSet, InputIdentifier, InputMap, InputMapSerialized, SystemAction,
+        SystemActionEvent, POINTER_SET,
     },
     rpc::RpcResultSender,
     structs::{AppConfig, CursorLocks},
@@ -97,6 +99,7 @@ impl Plugin for InputManagerPlugin {
                 handle_get_bindings,
                 handle_set_bindings,
                 handle_pointer_motion,
+                handle_system_input_stream,
             ),
         );
     }
@@ -623,4 +626,59 @@ fn handle_set_bindings(
 
         sender.send(());
     }
+}
+
+fn handle_system_input_stream(
+    mut events: EventReader<SystemApi>,
+    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<SystemActionEvent>>>,
+    input_manager: InputManager,
+    mut pressed: Local<HashSet<SystemAction>>,
+) {
+    let new_senders = events
+        .read()
+        .filter_map(|ev| {
+            if let SystemApi::GetSystemActionStream(s) = ev {
+                Some(s.clone())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    for new_sender in &new_senders {
+        for &action in &pressed {
+            let _ = new_sender.send(SystemActionEvent {
+                action,
+                pressed: true,
+            });
+        }
+    }
+
+    senders.extend(new_senders);
+
+    senders.retain(|s| !s.is_closed());
+
+    let new_pressed = SystemAction::iter()
+        .filter(|a| input_manager.is_down(*a, InputPriority::Scene))
+        .collect::<HashSet<_>>();
+
+    for &action in new_pressed.difference(&*pressed) {
+        for s in &senders {
+            let _ = s.send(SystemActionEvent {
+                action,
+                pressed: true,
+            });
+        }
+    }
+
+    for &action in pressed.difference(&new_pressed) {
+        for s in &senders {
+            let _ = s.send(SystemActionEvent {
+                action,
+                pressed: false,
+            });
+        }
+    }
+
+    *pressed = new_pressed;
 }

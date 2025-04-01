@@ -1,10 +1,10 @@
 use bevy::log::debug;
-use common::inputs::{Action, BindingsData, InputIdentifier};
+use common::inputs::{Action, BindingsData, InputIdentifier, SystemActionEvent};
 use dcl_component::proto_components::{
     common::Vector2,
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
 };
-use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
+use deno_core::{anyhow, error::AnyError, op2, AsyncRefCell, OpDecl, OpState, ResourceId};
 use http::Uri;
 use ipfs::IpfsResource;
 use serde::{Deserialize, Serialize};
@@ -43,6 +43,8 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_home_scene(),
             op_set_home_scene(),
             op_get_realm_provider(),
+            op_get_system_action_stream(),
+            op_read_system_action_stream(),
         ]
     } else {
         Vec::default()
@@ -449,4 +451,45 @@ pub async fn op_get_realm_provider(
         .map(|realm| RealmProviderString {
             realm: realm.to_owned(),
         })
+}
+
+pub struct StreamResource<T: 'static> {
+    receiver: Rc<AsyncRefCell<tokio::sync::mpsc::UnboundedReceiver<T>>>,
+}
+
+impl<T: 'static> deno_core::Resource for StreamResource<T> {}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_system_action_stream(state: Rc<RefCell<OpState>>) -> deno_core::ResourceId {
+    let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let rid = state.borrow_mut().resource_table.add(StreamResource {
+        receiver: Rc::new(AsyncRefCell::new(rx)),
+    });
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetSystemActionStream(sx))
+        .unwrap();
+
+    rid
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_system_action_stream(
+    state: Rc<RefCell<OpState>>,
+    #[serde] rid: ResourceId,
+) -> Result<Option<SystemActionEvent>, deno_core::anyhow::Error> {
+    let resource = state
+        .borrow()
+        .resource_table
+        .get::<StreamResource<SystemActionEvent>>(rid)?;
+    let mut rx = resource.receiver.borrow_mut().await;
+
+    match rx.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    }
 }

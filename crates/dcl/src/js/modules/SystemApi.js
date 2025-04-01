@@ -205,3 +205,16 @@ module.exports.getRealmProvider = async function() {
     return (await Deno.core.ops.op_get_realm_provider()).realm
 }
 
+module.exports.getSystemActionStream = async function() {
+  const rid = await Deno.core.ops.op_get_system_action_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_system_action_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
