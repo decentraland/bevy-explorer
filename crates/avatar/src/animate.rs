@@ -1,5 +1,5 @@
 use core::f32;
-use std::{collections::VecDeque, time::Duration};
+use std::time::Duration;
 
 use bevy::{
     animation::RepeatAnimation,
@@ -28,7 +28,7 @@ use comms::{
     NetworkMessage, Transport,
 };
 use console::DoAddConsoleCommand;
-use dcl::interface::{ComponentPosition, CrdtType};
+use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::{
         kernel::comms::rfc4::{self, Chat},
@@ -40,12 +40,7 @@ use ipfs::IpfsAssetServer;
 use scene_runner::{
     permissions::Permission,
     renderer_context::RendererSceneContext,
-    update_world::{
-        animation::Clips,
-        avatar_modifier_area::PlayerModifiers,
-        transform_and_parent::{ParentPositionSync, SceneProxyStage},
-        AddCrdtInterfaceExt,
-    },
+    update_world::{animation::Clips, avatar_modifier_area::PlayerModifiers},
     ContainerEntity, ContainingScene,
 };
 
@@ -56,48 +51,12 @@ pub struct AvatarAnimPlayer(pub Entity);
 
 pub struct AvatarAnimationPlugin;
 
-#[derive(Debug, Clone)]
-pub struct EmoteCommand {
-    pub emote: PbAvatarEmoteCommand,
-    pub broadcast: EmoteBroadcast,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EmoteBroadcast {
-    All,
-    None,
-    Omit(Entity),
-}
-
-#[derive(Component, Default, Deref, DerefMut, Debug, Clone)]
-pub struct EmotesFromScene(pub(crate) VecDeque<PbAvatarEmoteCommand>);
-
-#[derive(Component, Default, Deref, DerefMut, Debug, Clone)]
-pub struct EmoteList(pub(crate) VecDeque<EmoteCommand>);
-
-impl EmoteList {
-    pub fn new(emote_urn: impl Into<String>, origin: EmoteBroadcast) -> Self {
-        Self(VecDeque::from_iter([EmoteCommand {
-            emote: PbAvatarEmoteCommand {
-                emote_urn: emote_urn.into(),
-                r#loop: false,
-                timestamp: 0,
-            },
-            broadcast: origin,
-        }]))
-    }
-}
-
 impl Plugin for AvatarAnimationPlugin {
     fn build(&self, app: &mut App) {
-        app.add_crdt_go_component::<PbAvatarEmoteCommand, EmotesFromScene>(
-            SceneComponentId::AVATAR_EMOTE_COMMAND,
-            ComponentPosition::EntityOnly,
-        );
         app.add_systems(
             Update,
             (
-                (read_player_emotes, broadcast_emote, receive_emotes).before(animate),
+                (handle_trigger_emotes, broadcast_emote, receive_emotes).before(animate),
                 (animate, play_current_emote).chain().after(process_avatar),
             )
                 .in_set(SceneSets::PostLoop),
@@ -106,64 +65,60 @@ impl Plugin for AvatarAnimationPlugin {
     }
 }
 
-// copy emotes from scene-player entities onto main player entity
+#[derive(Component, Clone, Debug, PartialEq, Default)]
+pub struct EmoteCommand {
+    pub urn: String,
+    pub timestamp: i64,
+    pub r#loop: bool,
+}
+
+#[derive(Component, Default)]
+pub struct LastEmoteCommand(EmoteCommand);
+
 #[allow(clippy::type_complexity)]
-fn read_player_emotes(
+fn handle_trigger_emotes(
     mut commands: Commands,
-    scene_player_emotes: Query<
-        (
-            Entity,
-            Ref<EmotesFromScene>,
-            &ParentPositionSync<SceneProxyStage>,
-            &ContainerEntity,
-        ),
-        Without<PrimaryUser>,
-    >,
-    player: Query<Entity, With<PrimaryUser>>,
-    mut perms: Permission<EmoteList>,
+    mut emote_cmds: EventReader<RpcCall>,
+    player: Query<(Entity, Option<&EmoteCommand>), With<PrimaryUser>>,
+    mut perms: Permission<EmoteCommand>,
 ) {
-    let Ok(player) = player.get_single() else {
+    let Ok((player, maybe_prev)) = player.get_single() else {
         return;
     };
 
-    for (scene_ent, emotes, parent, container) in &scene_player_emotes {
-        if emotes.0.is_empty() || !emotes.is_changed() {
-            continue;
-        }
-
-        let mut list = EmoteList::default();
-        for emote in &emotes.0 {
-            list.0.push_back(EmoteCommand {
-                emote: emote.to_owned(),
-                broadcast: EmoteBroadcast::Omit(container.root),
-            })
-        }
-
-        if parent.0 == player {
-            commands.entity(scene_ent).remove::<EmoteList>();
-            perms.check(
-                common::structs::PermissionType::PlayEmote,
-                container.root,
-                list,
-                None,
-                false,
-            );
+    for (scene, urn, r#loop) in emote_cmds.read().filter_map(|ev| {
+        if let RpcCall::TriggerEmote { scene, urn, r#loop } = ev {
+            Some((scene, urn, *r#loop))
         } else {
-            commands.entity(player).insert(list);
+            None
         }
+    }) {
+        perms.check(
+            common::structs::PermissionType::PlayEmote,
+            *scene,
+            EmoteCommand {
+                urn: urn.clone(),
+                r#loop,
+                timestamp: maybe_prev
+                    .map(|prev| prev.timestamp + 1)
+                    .unwrap_or_default(),
+            },
+            None,
+            false,
+        );
     }
 
-    for list in perms.drain_success(common::structs::PermissionType::PlayEmote) {
-        commands.entity(player).insert(list.clone());
+    for emote in perms.drain_success(common::structs::PermissionType::PlayEmote) {
+        commands.entity(player).insert(emote.clone());
     }
 
     for _ in perms.drain_fail(common::structs::PermissionType::PlayEmote) {}
 }
 
 fn broadcast_emote(
-    q: Query<&EmoteList, With<PrimaryUser>>,
+    q: Query<&EmoteCommand, With<PrimaryUser>>,
     transports: Query<&Transport>,
-    mut last: Local<Option<String>>,
+    mut last: Local<Option<EmoteCommand>>,
     mut count: Local<usize>,
     time: Res<Time>,
     mut senders: Local<Vec<RpcEventSender>>,
@@ -177,41 +132,35 @@ fn broadcast_emote(
         senders.push(sender.clone());
     }
 
-    for list in q.iter() {
-        if let Some(EmoteCommand {
-            emote: PbAvatarEmoteCommand { emote_urn, .. },
-            ..
-        }) = list.back()
-        {
-            if last.as_ref() != Some(emote_urn) {
-                *count += 1;
-                debug!("sending emote: {emote_urn:?} {}", *count);
-                let packet = rfc4::Packet {
-                    message: Some(rfc4::packet::Message::Chat(Chat {
-                        message: format!("{}{} {}", chat_marker_things::EMOTE, emote_urn, *count),
-                        timestamp: time.elapsed_seconds_f64(),
-                    })),
-                    protocol_version: 100,
-                };
+    if let Ok(emote) = q.get_single() {
+        if last.as_ref() != Some(emote) {
+            *count += 1;
+            debug!("sending emote: {emote:?} {}", *count);
+            let packet = rfc4::Packet {
+                message: Some(rfc4::packet::Message::Chat(Chat {
+                    message: format!("{}{} {}", chat_marker_things::EMOTE, emote.urn, *count),
+                    timestamp: time.elapsed_seconds_f64(),
+                })),
+                protocol_version: 100,
+            };
 
-                for transport in transports.iter() {
-                    let _ = transport
-                        .sender
-                        .blocking_send(NetworkMessage::reliable(&packet));
-                }
-
-                *last = Some(emote_urn.to_owned());
-
-                senders.retain(|sender| {
-                    let _ = sender.send(format!("{{ \"expressionId\": \"{emote_urn}\" }}"));
-                    !sender.is_closed()
-                })
+            for transport in transports.iter() {
+                let _ = transport
+                    .sender
+                    .blocking_send(NetworkMessage::reliable(&packet));
             }
-            return;
-        }
 
-        *last = None;
+            *last = Some(emote.clone());
+
+            senders.retain(|sender| {
+                let _ = sender.send(format!("{{ \"expressionId\": \"{}\" }}", emote.urn));
+                !sender.is_closed()
+            })
+        }
+        return;
     }
+
+    *last = None;
 }
 
 fn receive_emotes(mut commands: Commands, mut chat_events: EventReader<ChatEvent>) {
@@ -219,17 +168,20 @@ fn receive_emotes(mut commands: Commands, mut chat_events: EventReader<ChatEvent
         .read()
         .filter(|e| e.message.starts_with(chat_marker_things::EMOTE))
     {
-        if let Some(emote_urn) = ev
+        let mut emote_and_timestamp = ev
             .message
             .strip_prefix(chat_marker_things::EMOTE)
             .unwrap()
-            .split(' ')
-            .next()
+            .split(' ');
+        if let (Some(emote_urn), Some(timestamp)) =
+            (emote_and_timestamp.next(), emote_and_timestamp.next())
         {
             debug!("adding remote emote: {}", emote_urn);
-            commands
-                .entity(ev.sender)
-                .try_insert(EmoteList::new(emote_urn, EmoteBroadcast::All));
+            commands.entity(ev.sender).try_insert(EmoteCommand {
+                urn: emote_urn.to_owned(),
+                timestamp: timestamp.parse().unwrap_or_default(),
+                r#loop: false,
+            });
         }
     }
 }
@@ -267,10 +219,13 @@ fn animate(
     mut avatars: Query<(
         Entity,
         &mut AvatarDynamicState,
-        Option<&mut EmoteList>,
+        Option<&EmoteCommand>,
         &GlobalTransform,
         Option<&mut ActiveEmote>,
         Option<&ForeignPlayer>,
+        Option<&ContainerEntity>,
+        Option<&PrimaryUser>,
+        Option<&mut LastEmoteCommand>,
     )>,
     mut velocities: Local<HashMap<Entity, Vec3>>,
     mut current_emote_min_velocities: Local<HashMap<Entity, f32>>,
@@ -290,27 +245,26 @@ fn animate(
     let prior_velocities = std::mem::take(&mut *velocities);
     let prior_min_velocities = std::mem::take(&mut *current_emote_min_velocities);
 
-    for (avatar_ent, mut dynamic_state, mut emotes, gt, active_emote, maybe_foreign) in
-        avatars.iter_mut()
+    for (
+        avatar_ent,
+        mut dynamic_state,
+        emote,
+        gt,
+        active_emote,
+        maybe_foreign,
+        maybe_container,
+        maybe_primary,
+        last_emote,
+    ) in avatars.iter_mut()
     {
         let Some(mut active_emote) = active_emote else {
-            commands.entity(avatar_ent).insert(ActiveEmote::default());
+            commands.entity(avatar_ent).insert((
+                ActiveEmote::default(),
+                EmoteCommand::default(),
+                LastEmoteCommand::default(),
+            ));
             continue;
         };
-
-        // take a copy of the last entry, remove others
-        let emotes_changed = emotes.as_ref().is_some_and(Mut::is_changed);
-        let emote = emotes
-            .as_mut()
-            .map(|e| {
-                let last = e.pop_back();
-                e.clear();
-                if let Some(last) = last.clone() {
-                    e.push_back(last);
-                }
-                last
-            })
-            .unwrap_or_default();
 
         // calculate/store damped velocity
         let prior_velocity = prior_velocities
@@ -324,22 +278,19 @@ fn animate(
         velocities.insert(avatar_ent, damped_velocity);
 
         // get requested emote
-        let (mut requested_emote, given_urn, request_loop, origin) = if let Some(EmoteCommand {
-            emote: PbAvatarEmoteCommand {
-                emote_urn, r#loop, ..
-            },
-            broadcast: origin,
-        }) = emote
-        {
-            (
-                EmoteUrn::new(emote_urn.as_str()).ok(),
-                Some(emote_urn),
-                r#loop,
-                origin,
-            )
-        } else {
-            (None, None, false, EmoteBroadcast::None)
-        };
+        let (mut requested_emote, given_urn, request_loop) =
+            if let Some(EmoteCommand { urn, r#loop, .. }) = emote {
+                (EmoteUrn::new(urn.as_str()).ok(), Some(urn), *r#loop)
+            } else {
+                (None, None, false)
+            };
+
+        let emote_changed = emote != last_emote.as_ref().map(|l| &l.0);
+
+        // check expired
+        if !emote_changed && Some(&active_emote.urn) != requested_emote.as_ref() {
+            requested_emote = None;
+        }
 
         // check / cancel requested emote
         if Some(&active_emote.urn) == requested_emote.as_ref() {
@@ -353,22 +304,15 @@ fn animate(
                     "clear on motion {} > {}",
                     damped_velocity_len, playing_min_vel
                 );
-                if let Some(emotes) = emotes.as_mut() {
-                    emotes.clear();
-                }
                 requested_emote = None;
             } else {
                 current_emote_min_velocities
                     .insert(avatar_ent, damped_velocity_len.min(playing_min_vel));
             }
 
-            if active_emote.finished && !emotes_changed {
+            if active_emote.finished {
                 debug!("finished emoting {:?}", active_emote.urn);
                 requested_emote = None;
-
-                if let Some(emotes) = emotes.as_mut() {
-                    emotes.clear();
-                }
             }
         } else {
             current_emote_min_velocities.insert(avatar_ent, damped_velocity_len);
@@ -376,22 +320,31 @@ fn animate(
 
         // play requested emote
         *active_emote = if let Some(requested_emote) = requested_emote {
-            if emotes_changed && origin != EmoteBroadcast::None {
+            if emote_changed {
                 dynamic_state.move_kind = MoveKind::Emote;
 
                 // send to scenes
                 let broadcast_urn = given_urn.unwrap();
                 debug!("broadcasting emote to scenes: {:?}", broadcast_urn);
 
-                let scene_id = maybe_foreign
-                    .map(|f| f.scene_id)
-                    .unwrap_or(SceneEntityId::PLAYER);
-                for scene_ent in containing_scene.get_area(avatar_ent, PLAYER_COLLIDER_RADIUS) {
-                    if EmoteBroadcast::Omit(scene_ent) == origin {
-                        // skip the scene that created the emote
-                        continue;
+                let (scene, scene_id) = match (maybe_foreign, maybe_primary, maybe_container) {
+                    (Some(f), ..) => (None, f.scene_id),
+                    (None, Some(_), _) => (None, SceneEntityId::PLAYER),
+                    (None, None, Some(container)) => {
+                        (Some(container.container), container.container_id)
                     }
+                    _ => (Some(Entity::PLACEHOLDER), SceneEntityId::ROOT),
+                };
 
+                let report_scenes = match scene {
+                    Some(scene) => vec![scene],
+                    None => containing_scene
+                        .get_area(avatar_ent, PLAYER_COLLIDER_RADIUS)
+                        .into_iter()
+                        .collect(),
+                };
+
+                for scene_ent in report_scenes {
                     let Ok(mut scene) = scenes.get_mut(scene_ent) else {
                         warn!("no scene to receive emote");
                         continue;
@@ -411,9 +364,12 @@ fn animate(
                     );
                 }
             }
+            commands
+                .entity(avatar_ent)
+                .insert(LastEmoteCommand(emote.unwrap().clone()));
             ActiveEmote {
                 urn: requested_emote,
-                restart: emotes_changed,
+                restart: emote_changed,
                 repeat: request_loop,
                 ..Default::default()
             }
@@ -492,7 +448,7 @@ fn animate(
 struct SpawnedExtras {
     urn: EmoteUrn,
     scene: Option<InstanceId>,
-    scene_rotated: bool,
+    scene_initialized: bool,
     audio: Option<(Entity, f32)>,
     clip: Option<(AnimationNodeIndex, Handle<AnimationGraph>)>,
 }
@@ -502,7 +458,7 @@ impl SpawnedExtras {
         Self {
             urn,
             scene: None,
-            scene_rotated: false,
+            scene_initialized: false,
             audio: None,
             clip: None,
         }
@@ -543,7 +499,7 @@ fn play_current_emote(
     ),
     mut emitters: Query<&mut bevy_kira_audio::prelude::AudioEmitter>,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
-    transform_and_parent: Query<(&Transform, &Parent)>,
+    prop_details: Query<(Option<&Name>, &Transform, &Parent)>,
 ) {
     let prior_playing = std::mem::take(&mut *playing);
     let mut prev_spawned_extras = std::mem::take(&mut *spawned_extras);
@@ -655,6 +611,7 @@ fn play_current_emote(
                 continue;
             }
         };
+        active_emote.repeat |= emote.default_repeat;
 
         let clip = match emote.avatar_animation(&gltfs) {
             Err(e) => {
@@ -688,9 +645,23 @@ fn play_current_emote(
                     continue;
                 }
 
-                if !extras.scene_rotated {
+                if !extras.scene_initialized {
                     for spawned_ent in scene_spawner.iter_instance_entities(instance) {
-                        if let Ok((transform, parent)) = transform_and_parent.get(spawned_ent) {
+                        if let Ok((maybe_name, transform, parent)) = prop_details.get(spawned_ent) {
+                            // hide stuff like unity
+                            // what a mess
+                            if let Some(name) =
+                                maybe_name.map(Name::as_str).map(str::to_ascii_lowercase)
+                            {
+                                if name.contains("_reference")
+                                    || name.ends_with("_basemesh")
+                                    || name.starts_with("m_mask_")
+                                {
+                                    commands.entity(spawned_ent).try_insert(Visibility::Hidden);
+                                    warn!("hiding emote prop `{name}` due to name");
+                                }
+                            }
+
                             if parent.get() == entity {
                                 // children of root nodes -> rotate
                                 if parent.get() == entity {
@@ -704,7 +675,7 @@ fn play_current_emote(
                             }
                         }
                     }
-                    extras.scene_rotated = true;
+                    extras.scene_initialized = true;
                 }
 
                 if let Ok(Some(prop_clip)) = emote.prop_anim(&gltfs) {
@@ -952,11 +923,11 @@ struct EmoteConsoleCommand {
 fn emote_console_command(
     mut commands: Commands,
     mut input: ConsoleCommand<EmoteConsoleCommand>,
-    player: Query<Entity, With<PrimaryUser>>,
+    player: Query<(Entity, Option<&EmoteCommand>), With<PrimaryUser>>,
     profile: Res<CurrentUserProfile>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        if let Ok(player) = player.get_single() {
+        if let Ok((player, maybe_prev)) = player.get_single() {
             let mut urn = &command.urn;
             if let Ok(slot) = command.urn.parse::<u32>() {
                 if let Some(emote) = profile
@@ -970,10 +941,13 @@ fn emote_console_command(
             }
 
             info!("anim {} -> {}", command.urn, urn);
+            let timestamp = maybe_prev.map(|p| p.timestamp).unwrap_or_default();
 
-            commands
-                .entity(player)
-                .try_insert(EmoteList::new(urn.clone(), EmoteBroadcast::All));
+            commands.entity(player).try_insert(EmoteCommand {
+                urn: urn.clone(),
+                timestamp,
+                r#loop: false,
+            });
         };
         input.ok();
     }

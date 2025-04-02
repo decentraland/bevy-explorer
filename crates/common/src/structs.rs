@@ -174,6 +174,7 @@ pub struct PreviousLogin {
 
 // app configuration
 #[derive(Serialize, Deserialize, Resource, Clone)]
+#[serde(default)]
 pub struct AppConfig {
     pub server: String,
     pub location: IVec2,
@@ -195,7 +196,6 @@ pub struct AppConfig {
     pub player_settings: PrimaryUser,
     pub max_videos: usize,
     pub max_concurrent_remotes: usize,
-    pub despawn_workaround: bool,
     pub user_id: String,
     pub default_permissions: HashMap<PermissionType, PermissionValue>,
     pub realm_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
@@ -228,10 +228,6 @@ impl Default for AppConfig {
             player_settings: Default::default(),
             max_videos: 1,
             max_concurrent_remotes: 32,
-            #[cfg(target_os = "linux")]
-            despawn_workaround: true,
-            #[cfg(not(target_os = "linux"))]
-            despawn_workaround: false,
             user_id: uuid::Uuid::new_v4().to_string(),
             default_permissions: Default::default(),
             realm_permissions: Default::default(),

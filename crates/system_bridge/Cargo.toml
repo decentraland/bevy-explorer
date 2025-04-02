@@ -12,6 +12,7 @@ workspace = true
 common = { workspace = true }
 
 bevy = { workspace = true }
+bevy_console = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }

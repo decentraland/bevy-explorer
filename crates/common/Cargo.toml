@@ -21,6 +21,8 @@ directories = { workspace = true }
 uuid = { workspace = true }
 reqwest = { workspace = true }
 async-compat = { workspace = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
 
 hex = "0.4.3"
 smallvec = "1.11"

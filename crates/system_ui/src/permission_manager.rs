@@ -108,7 +108,7 @@ fn update_permissions(
 
     let mut repush_requests = Vec::default();
     while let Some(req) = manager.pending.pop_front() {
-        if req.realm != current_realm.address && !req.is_portable {
+        if req.realm != current_realm.about_url && !req.is_portable {
             continue;
         }
 
@@ -120,6 +120,19 @@ fn update_permissions(
         let Ok((hash, name)) = scenes.get(req.scene).map(|ctx| (&ctx.hash, &ctx.title)) else {
             continue;
         };
+
+        // final check before dialog
+        match config.get_permission(req.ty, &req.realm, hash, req.is_portable) {
+            PermissionValue::Allow => {
+                req.sender.clone().send(true);
+                continue;
+            }
+            PermissionValue::Deny => {
+                req.sender.clone().send(false);
+                continue;
+            }
+            _ => (),
+        }
 
         let title = format!("Permission Request - {} - {}", name, req.ty.title());
         let body = match &req.additional {

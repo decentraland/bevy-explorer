@@ -65,6 +65,7 @@ fn gen_sdk_components() -> Result<()> {
     sources.push("src/proto/decentraland/social/friendships/friendships.proto".into());
 
     let serde_components = [
+        "Vector2",
         "Color3",
         "PBRealmInfo",
         "PBAvatarBase",

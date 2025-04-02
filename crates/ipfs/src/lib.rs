@@ -991,6 +991,19 @@ impl IpfsIo {
         ))
     }
 
+    pub fn base_urls(&self) -> HashMap<String, String> {
+        self.context
+            .blocking_read()
+            .modifiers
+            .iter()
+            .filter_map(|(k, v)| {
+                v.base_url
+                    .as_ref()
+                    .map(|burl| (k.to_owned(), burl.to_owned()))
+            })
+            .collect()
+    }
+
     // note - blocking. use from a blockable thread
     pub fn content_url(&self, file_path: &str, content_hash: &str) -> Option<String> {
         let ipfs_path = IpfsPath::new(IpfsType::new_content_file(

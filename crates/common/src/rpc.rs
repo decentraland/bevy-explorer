@@ -212,4 +212,9 @@ pub enum RpcCall {
         message: Option<String>,
         response: RpcResultSender<bool>,
     },
+    TriggerEmote {
+        scene: Entity,
+        urn: String,
+        r#loop: bool,
+    },
 }

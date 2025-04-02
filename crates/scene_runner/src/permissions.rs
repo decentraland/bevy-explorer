@@ -143,7 +143,7 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
                     scene,
                     self.manager.request(
                         ty,
-                        self.realm.address.clone(),
+                        self.realm.about_url.clone(),
                         scene,
                         is_portable,
                         additional,
@@ -190,7 +190,7 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
                         scene,
                         self.manager.request(
                             ty,
-                            self.realm.address.clone(),
+                            self.realm.about_url.clone(),
                             scene,
                             is_portable,
                             None,

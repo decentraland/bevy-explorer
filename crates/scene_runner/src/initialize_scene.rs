@@ -30,7 +30,7 @@ use ipfs::{
     IpfsResource, SceneIpfsLocation, SceneJsFile,
 };
 use scene_material::BoundRegion;
-use system_bridge::SystemBridge;
+use system_bridge::{LiveSceneInfo, SystemApi, SystemBridge};
 use wallet::Wallet;
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
@@ -87,6 +87,7 @@ impl Plugin for SceneLifecyclePlugin {
                 initialize_scene,
                 animate_ready_scene,
                 update_loading_quads,
+                handle_live_scene_info,
             )
                 .in_set(SceneSets::Init),
         );
@@ -1111,7 +1112,6 @@ pub fn process_scene_lifecycle(
     mut live_scenes: ResMut<LiveScenes>,
     mut spawn: EventWriter<LoadSceneEvent>,
     pointers: Res<ScenePointers>,
-    config: Res<AppConfig>,
     imposter_scene: Res<CurrentImposterScene>,
 ) {
     let mut required_scene_ids: HashMap<(String, Option<String>), bool> = HashMap::default();
@@ -1199,10 +1199,6 @@ pub fn process_scene_lifecycle(
                 existing_ids.insert(<&String>::clone(hash));
             }
             None => {
-                if config.despawn_workaround && !removed_hashes.is_empty() {
-                    info!("skip despawn");
-                    continue;
-                }
                 if let Some(commands) = commands.get_entity(entity) {
                     info!("despawning {:?}", entity);
                     commands.despawn_recursive();
@@ -1459,5 +1455,51 @@ impl Material for LoadingMaterial {
 
     fn alpha_mode(&self) -> AlphaMode {
         AlphaMode::Blend
+    }
+}
+
+pub fn handle_live_scene_info(
+    mut events: EventReader<SystemApi>,
+    scenes: Query<(&RendererSceneContext, Option<&SuperUserScene>)>,
+    ipfas: IpfsAssetServer,
+) {
+    let mut senders = events
+        .read()
+        .filter_map(|ev| {
+            if let SystemApi::LiveSceneInfo(sender) = ev {
+                Some(sender)
+            } else {
+                None
+            }
+        })
+        .peekable();
+
+    if senders.peek().is_none() {
+        return;
+    }
+
+    let base_urls = ipfas.ipfs().base_urls();
+
+    let scene_info = scenes
+        .iter()
+        .map(|(ctx, maybe_super)| LiveSceneInfo {
+            hash: ctx.hash.clone(),
+            base_url: base_urls.get(&ctx.hash).map(ToOwned::to_owned),
+            title: ctx.title.clone(),
+            parcels: ctx
+                .parcels
+                .iter()
+                .map(|v| dcl_component::proto_components::common::Vector2::from(v.as_vec2()))
+                .collect(),
+            is_portable: ctx.is_portable,
+            is_broken: ctx.broken,
+            is_blocked: !ctx.blocked.is_empty(),
+            is_super: maybe_super.is_some(),
+            sdk_version: ctx.sdk_version.to_string(),
+        })
+        .collect::<Vec<_>>();
+
+    for sender in senders {
+        sender.send(scene_info.clone());
     }
 }

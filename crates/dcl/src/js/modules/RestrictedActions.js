@@ -13,13 +13,11 @@ module.exports.teleportTo = async function (body) {
 }
 
 module.exports.triggerEmote = async function (body) { 
-    // if only there was a way to run an ecs system here
     Deno.core.ops.op_emote(body.predefinedEmote)
     return {} 
 }
 
 module.exports.triggerSceneEmote = async function (body) { 
-    // if only there was a way to run an ecs system here
     Deno.core.ops.op_scene_emote(body.src, body.looping)
     return {} 
 }

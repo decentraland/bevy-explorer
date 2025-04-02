@@ -138,3 +138,83 @@ module.exports.getInputBindings = async function() {
 module.exports.setInputBindings = async function(bindings) {
     await Deno.core.ops.op_set_bindings(bindings)
 }
+
+
+/// reload 
+// hash: string | undefined
+// if hash is provided, that specific scene is reloaded
+// if unspecified, all scenes are reloaded
+module.exports.reload = async function(hash) {
+    await Deno.core.ops.op_console_command("reload", hash !== undefined ? [hash] : [])
+}
+
+// show_ui
+// {
+//   hash: string | undefined,
+//   show: bool | undefined
+// }
+//
+// if hash is undefined, all scenes are modified
+// if show is undefined, acts as a toggle
+// returns: visible bool 
+// note: doesn't hide/show the system ui scene
+module.exports.showUi = async function(args) {
+  let argsArray = [args?.hash ?? "all"]
+  if (args?.show !== undefined) {
+    argsArray.push(args.show ? "true" : "false")
+  }
+
+  const reply = await Deno.core.ops.op_console_command("show_ui", argsArray)
+  const value = reply.split(":").pop()?.trim().toLowerCase();
+  return value === "true";  
+}
+
+// [{
+//     hash: string,
+//     base_url?: string,
+//     title: string,
+//     parcels: [Vector2],
+//     isPortable: bool,
+//     isBroken: bool,
+//     isBlocked: bool,
+//     isSuper: bool,
+//     sdkVersion: string,
+// }]
+module.exports.liveSceneInfo = async function() {
+    return await Deno.core.ops.op_live_scene_info()
+}
+
+// { 
+//   realm: string, // about_url (e.g. `realm-provider.decentraland.org/main`)
+//   parcel: Vector2,
+// }
+module.exports.getHomeScene = async function() {
+    return await Deno.core.ops.op_get_home_scene()
+}
+
+// { 
+//   realm: string, // about_url (e.g. `realm-provider.decentraland.org/main`)
+//   parcel: Vector2,
+// }
+module.exports.setHomeScene = async function(args) {
+    await Deno.core.ops.op_set_home_scene(args.realm, args.parcel)
+}
+
+// string
+module.exports.getRealmProvider = async function() {
+    return (await Deno.core.ops.op_get_realm_provider()).realm
+}
+
+module.exports.getSystemActionStream = async function() {
+  const rid = await Deno.core.ops.op_get_system_action_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_system_action_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}

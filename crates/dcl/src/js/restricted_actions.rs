@@ -7,15 +7,10 @@ use deno_core::{
 };
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{
-    interface::{crdt_context::CrdtContext, CrdtType},
-    js::RendererStore,
-    CrdtStore,
-};
+use crate::{interface::crdt_context::CrdtContext, js::RendererStore};
 use dcl_component::{
-    proto_components::sdk::components::PbAvatarEmoteCommand,
     transform_and_parent::{DclTransformAndParent, DclTranslation},
-    DclReader, DclWriter, SceneComponentId, SceneEntityId,
+    DclReader, SceneComponentId, SceneEntityId,
 };
 
 use super::{runtime::scene_information, RpcCalls};
@@ -164,13 +159,7 @@ async fn op_external_url(state: Rc<RefCell<OpState>>, #[string] url: String) -> 
 #[op2(fast)]
 fn op_emote(op_state: &mut OpState, #[string] emote: String) {
     debug!("op_emote");
-    let emote = PbAvatarEmoteCommand {
-        emote_urn: emote,
-        r#loop: false,
-        timestamp: 0,
-    };
-
-    send_emote(op_state, emote);
+    send_emote(op_state, emote, false);
 }
 
 #[op2(async)]
@@ -199,31 +188,17 @@ async fn op_scene_emote(
         .hash;
     let emote_urn = format!("urn:decentraland:off-chain:scene-emote:{emote_hash}-{looping}");
 
-    let emote = PbAvatarEmoteCommand {
-        emote_urn,
-        r#loop: looping,
-        timestamp: 0,
-    };
-
-    send_emote(&mut op_state.borrow_mut(), emote);
+    send_emote(&mut op_state.borrow_mut(), emote_urn, looping);
     Ok(())
 }
 
-fn send_emote(op_state: &mut OpState, emote: PbAvatarEmoteCommand) {
-    //ensure entity
-    let context = op_state.borrow_mut::<CrdtContext>();
-    context.init(SceneEntityId::PLAYER);
+fn send_emote(op_state: &mut OpState, urn: String, r#loop: bool) {
+    let context = op_state.borrow::<CrdtContext>();
+    let scene = context.scene_id.0;
 
-    // write update
-    let outbound = op_state.borrow_mut::<CrdtStore>();
-    let mut buf = Vec::default();
-    DclWriter::new(&mut buf).write(&emote);
-    outbound.force_update(
-        SceneComponentId::AVATAR_EMOTE_COMMAND,
-        CrdtType::GO_ANY,
-        SceneEntityId::PLAYER,
-        Some(&mut DclReader::new(&buf)),
-    );
+    op_state
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::TriggerEmote { scene, urn, r#loop });
 }
 
 #[op2(async)]

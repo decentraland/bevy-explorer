@@ -1,5 +1,6 @@
 use std::{collections::VecDeque, f32::consts::PI, path::PathBuf, time::Duration};
 
+use animate::EmoteCommand;
 use attach::AttachPlugin;
 use avatar_texture::AvatarTexturePlugin;
 use bevy::{
@@ -253,10 +254,13 @@ impl From<&UserProfile> for AvatarShape {
                 .emotes
                 .as_ref()
                 .map(|emotes| {
-                    emotes
-                        .iter()
-                        .map(|emote| emote.urn.clone())
-                        .collect::<Vec<_>>()
+                    let mut vec = vec![Default::default(); 10];
+                    for emote in emotes.iter() {
+                        if (emote.slot as usize) < vec.len() {
+                            vec[emote.slot as usize] = emote.urn.clone()
+                        }
+                    }
+                    vec
                 })
                 .unwrap_or_default(),
             force_render: profile
@@ -458,6 +462,7 @@ pub struct AvatarDefinition {
     wearables: Vec<Wearable>,
     hides: HashSet<WearableCategory>,
     bounds: Vec<BoundRegion>,
+    emote: Option<EmoteCommand>,
 }
 
 #[derive(Component)]
@@ -685,6 +690,20 @@ fn update_render_avatar(
                         .and_then(|se| scenes.get(se.root).ok())
                         .map(|ctx| ctx.bounds.clone())
                         .unwrap_or_default(),
+                    emote: selection
+                        .shape
+                        .0
+                        .expression_trigger_id
+                        .as_ref()
+                        .map(|e| EmoteCommand {
+                            urn: e.clone(),
+                            r#loop: false,
+                            timestamp: selection
+                                .shape
+                                .0
+                                .expression_trigger_timestamp
+                                .unwrap_or_default(),
+                        }),
                 },
                 UsedWearables(urns),
             ));
@@ -935,6 +954,13 @@ fn process_avatar(
                 clips,
                 graphs.add(graph),
             ));
+        }
+
+        if let Some(emote) = &def.emote {
+            debug!("set emote -> {emote:?}");
+            commands
+                .entity(root_player_entity.get())
+                .try_insert(emote.clone());
         }
 
         // record the node with the animator
