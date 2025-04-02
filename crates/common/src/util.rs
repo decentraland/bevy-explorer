@@ -433,7 +433,11 @@ pub struct VolumePanning<'w, 's> {
 }
 
 impl VolumePanning<'_, '_> {
-    pub fn volume_and_panning(&self, translation: Vec3, layers: Option<&RenderLayers>) -> (f32, f32) {
+    pub fn volume_and_panning(
+        &self,
+        translation: Vec3,
+        layers: Option<&RenderLayers>,
+    ) -> (f32, f32) {
         let (mut left, mut right): (f32, f32) = (0.0, 0.0);
 
         for (transform, _) in self

@@ -3,6 +3,7 @@ syntax = "proto3";
 package decentraland.sdk.components;
 
 import "decentraland/sdk/components/common/id.proto";
+import "decentraland/common/colors.proto";
 import "decentraland/common/vectors.proto";
 
 option (common.ecs_component_id) = 1050;
@@ -160,12 +161,38 @@ message PBUiTransform {
   float padding_bottom = 51;
   
   optional PointerFilterMode pointer_filter = 52; // default: PointerFilterMode.PFM_NONE
-  optional float opacity = 53; // default: 1
 
-  optional string element_id = 54; // default empty
+  // Border Width
+  optional YGUnit border_left_width_unit = 53; // YGUnit.YGU_UNDEFINED
+  optional float border_left_width = 54;
+  optional YGUnit border_top_width_unit = 55; // YGUnit.YGU_UNDEFINED
+  optional float border_top_width = 56;
+  optional YGUnit border_right_width_unit = 57; // YGUnit.YGU_UNDEFINED
+  optional float border_right_width = 58;
+  optional YGUnit border_bottom_width_unit = 59; // YGUnit.YGU_UNDEFINED
+  optional float border_bottom_width = 60;
 
-  optional ScrollPositionValue scroll_position = 55; // default position=(0,0)
-  optional ShowScrollBar scroll_visible = 56; // default ShowScrollBar.SSB_BOTH
+  // Border Radius
+  optional YGUnit border_top_left_radius_unit = 61; // YGUnit.YGU_UNDEFINED
+  optional float border_top_left_radius = 62;
+  optional YGUnit border_top_right_radius_unit = 63; // YGUnit.YGU_UNDEFINED
+  optional float border_top_right_radius = 64;
+  optional YGUnit border_bottom_left_radius_unit = 65; // YGUnit.YGU_UNDEFINED
+  optional float border_bottom_left_radius = 66;
+  optional YGUnit border_bottom_right_radius_unit = 67; // YGUnit.YGU_UNDEFINED
+  optional float border_bottom_right_radius = 68;
 
-  optional int32 z_index = 57;
+  // Border Color
+  optional decentraland.common.Color4 border_top_color = 69;
+  optional decentraland.common.Color4 border_bottom_color = 70;
+  optional decentraland.common.Color4 border_left_color = 71;
+  optional decentraland.common.Color4 border_right_color = 72;
+
+  optional float opacity = 73; // default: 1
+
+  optional string element_id = 74; // reference for scroll_position. default empty
+  optional ScrollPositionValue scroll_position = 75; // default position=(0,0)
+  optional ShowScrollBar scroll_visible = 76; // default ShowScrollBar.SSB_BOTH
+
+  optional int32 z_index = 77; // default 0
 }

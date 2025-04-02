@@ -104,6 +104,7 @@ pub fn spawn_audio_streams(
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn spawn_and_locate_foreign_streams(
     mut commands: Commands,
     mut streams: Query<(

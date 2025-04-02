@@ -134,7 +134,7 @@ pub fn set_interaction_style(
 
         if let Some(mut border) = maybe_border {
             if let Some(border_color) = style.border {
-                border.0 = border_color;
+                *border = BorderColor::all(border_color);
             }
         }
     }
