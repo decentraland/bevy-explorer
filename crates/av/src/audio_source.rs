@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use bevy::{
     prelude::*,
+    render::view::RenderLayers,
     utils::{HashMap, HashSet},
 };
 use bevy_kira_audio::{prelude::AudioEmitter, AudioControl, AudioInstance, AudioTween};
@@ -46,7 +47,9 @@ impl Plugin for AudioSourcePlugin {
 }
 
 fn setup_audio(mut commands: Commands, camera: Res<PrimaryCameraRes>) {
-    commands.entity(camera.0).try_insert(AudioReceiver);
+    commands
+        .entity(camera.0)
+        .try_insert(AudioReceiver::default());
 }
 
 #[derive(Component)]
@@ -252,6 +255,7 @@ fn update_source_volume(
         Option<&SceneEntity>,
         Option<&AudioSource>,
         &mut AudioEmitter,
+        Option<&RenderLayers>,
         &GlobalTransform,
     )>,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
@@ -270,7 +274,7 @@ fn update_source_volume(
 
     let mut prev_instances = std::mem::take(&mut *all_instances);
 
-    for (ent, maybe_scene, maybe_source, mut emitter, transform) in query.iter_mut() {
+    for (ent, maybe_scene, maybe_source, mut emitter, layers, transform) in query.iter_mut() {
         if maybe_scene.is_none_or(|scene| current_scenes.contains(&scene.root)) {
             let (volume, panning) = if maybe_source.is_some_and(|source| source.0.global()) {
                 (
@@ -286,7 +290,7 @@ fn update_source_volume(
                     settings.avatar()
                 };
 
-                let (volume, panning) = pan.volume_and_panning(transform.translation());
+                let (volume, panning) = pan.volume_and_panning(transform.translation(), layers);
 
                 (volume * volume_adjust, panning)
             };
