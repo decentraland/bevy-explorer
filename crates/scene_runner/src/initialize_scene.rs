@@ -821,7 +821,10 @@ pub fn process_realm_change(
     mut segment_config: Option<ResMut<SegmentConfig>>,
 ) {
     if current_realm.is_changed() {
-        info!("realm change `{}`! purging scenes", current_realm.address);
+        info!(
+            "realm change `{}` / `{}`! purging scenes",
+            current_realm.address, current_realm.about_url
+        );
         let mut realm_scene_urns = HashSet::default();
         for urn in current_realm
             .config

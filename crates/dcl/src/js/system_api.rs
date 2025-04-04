@@ -443,14 +443,17 @@ pub struct RealmProviderString {
 pub async fn op_get_realm_provider(
     state: Rc<RefCell<OpState>>,
 ) -> Result<RealmProviderString, anyhow::Error> {
-    state
+    let url = state
         .borrow_mut()
         .borrow_mut::<IpfsResource>()
         .about_url()
-        .ok_or(anyhow::anyhow!("not connected"))
-        .map(|realm| RealmProviderString {
-            realm: realm.to_owned(),
-        })
+        .ok_or(anyhow::anyhow!("not connected"))?;
+
+    let url = url.strip_suffix("/about").unwrap_or(&url);
+
+    Ok(RealmProviderString {
+        realm: url.to_owned(),
+    })
 }
 
 pub struct StreamResource<T: 'static> {
