@@ -676,7 +676,7 @@ fn send_hover_events(
 fn send_action_events(
     target: Res<PointerTarget>,
     pointer_requests: Query<(&SceneEntity, Option<&PointerEvents>)>,
-    mut scenes: Query<(Entity, &mut RendererSceneContext, &GlobalTransform)>,
+    mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform)>,
     input_mgr: InputManager,
     frame: Res<FrameCount>,
     time: Res<Time>,
@@ -720,7 +720,7 @@ fn send_action_events(
             filtered_events(&pointer_requests, info, ev_type, action).peekable();
         // check there's at least one potential request before doing any work
         if potential_entries.peek().is_some() {
-            let Ok((_, mut context, scene_transform)) = scenes.get_mut(scene_entity.root) else {
+            let Ok((mut context, scene_transform)) = scenes.get_mut(scene_entity.root) else {
                 return false;
             };
 
@@ -841,38 +841,8 @@ fn send_action_events(
         return;
     }
 
-    let scene_entity = target
-        .0
-        .as_ref()
-        .and_then(|info| pointer_requests.get(info.container).map(|(e, _)| e).ok());
-    let scene_root = scene_entity.map(|e| e.root);
-
-    for (root_ent, mut context, scene_transform) in scenes.iter_mut() {
+    for (mut context, _) in scenes.iter_mut() {
         let tick_number = context.tick_number;
-        // we send the entity id to the containing scene, otherwise we send ROOT
-        // as the entity id is only valid within the containing scene context
-        let entity_id = if scene_root == Some(root_ent) {
-            scene_entity.as_ref().unwrap().id.as_proto_u32()
-        } else {
-            SceneEntityId::ROOT.as_proto_u32()
-        };
-
-        let hit = RaycastHit {
-            position: target.0.as_ref().and_then(|info| {
-                info.position
-                    .as_ref()
-                    .map(|p| Vector3::world_vec_from_vec3(&(*p - scene_transform.translation())))
-            }),
-            global_origin: None,
-            direction: None,
-            normal_hit: target
-                .0
-                .as_ref()
-                .and_then(|info| info.normal.as_ref().map(Vector3::world_vec_from_vec3)),
-            length: target.0.as_ref().map_or(0.0, |info| info.distance.0),
-            mesh_name: target.0.as_ref().and_then(|info| info.mesh_name.clone()),
-            entity_id,
-        };
 
         for down in input_mgr.iter_scene_just_down() {
             context.update_crdt(
@@ -881,7 +851,7 @@ fn send_action_events(
                 SceneEntityId::ROOT,
                 &PbPointerEventsResult {
                     button: *down as i32,
-                    hit: Some(hit.clone()),
+                    hit: None,
                     state: PointerEventType::PetDown as i32,
                     timestamp: frame.0,
                     analog: None,
@@ -897,7 +867,7 @@ fn send_action_events(
                 SceneEntityId::ROOT,
                 &PbPointerEventsResult {
                     button: *up as i32,
-                    hit: Some(hit.clone()),
+                    hit: None,
                     state: PointerEventType::PetUp as i32,
                     timestamp: frame.0,
                     analog: None,
