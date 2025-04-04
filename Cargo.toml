@@ -203,6 +203,9 @@ deno_web = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_websocket = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 
+# [patch."https://github.com/robtfm/bevy"]
+# bevy = { path = "../bevy" }
+
 # [patch."https://github.com/robtfm/bevy_dui"]
 # bevy_dui = { path = "../bevy_dui" }
 
