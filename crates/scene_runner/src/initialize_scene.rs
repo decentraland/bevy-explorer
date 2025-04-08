@@ -1040,9 +1040,9 @@ fn load_active_entities(
         };
 
         info!(
-            "found {} entities over parcels {:?}",
+            "found {} entities over {} parcels",
             retrieved_parcels.len(),
-            requested_parcels
+            requested_parcels.len(),
         );
 
         for active_entity in retrieved_parcels {
