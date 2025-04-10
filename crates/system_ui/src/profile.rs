@@ -536,7 +536,7 @@ fn process_profile(
                     .id(),
                 profile.version,
                 sender.clone(),
-            ));            
+            ));
         } else {
             sender.send(Ok(u32::MAX))
         }
