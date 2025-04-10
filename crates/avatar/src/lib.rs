@@ -172,12 +172,17 @@ fn update_avatar_info(
             player.map(|p| p.scene_id).unwrap_or(SceneEntityId::PLAYER),
             &PbAvatarEquippedData {
                 wearable_urns: avatar.wearables.to_vec(),
-                emote_urns: avatar
-                    .emotes
-                    .as_ref()
-                    .unwrap_or(&Vec::default())
-                    .iter()
-                    .map(|emote| emote.urn.clone())
+                emote_urns: (0..10)
+                    .map(|ix| {
+                        avatar
+                            .emotes
+                            .as_ref()
+                            .unwrap_or(&Vec::default())
+                            .iter()
+                            .find(|emote| emote.slot == ix)
+                            .map(|emote| emote.urn.clone())
+                            .unwrap_or_default()
+                    })
                     .collect(),
                 force_render: avatar.force_render.clone().unwrap_or_default(),
             },
