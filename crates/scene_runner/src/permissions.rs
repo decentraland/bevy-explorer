@@ -93,6 +93,13 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
             .ok()
     }
 
+    fn is_system_scene(&self, hash: &str) -> bool {
+        self.system_scene
+            .as_ref()
+            .and_then(|ss| ss.hash.as_ref())
+            .is_some_and(|sh| sh == hash)
+    }
+
     pub fn check(
         &mut self,
         ty: PermissionType,
@@ -107,11 +114,7 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
         };
 
         // allow system scene to do anything
-        if self
-            .system_scene
-            .as_ref()
-            .is_some_and(|ss| ss.hash.as_deref() == Some(hash))
-        {
+        if self.is_system_scene(hash) {
             self.success.push((value, ty, scene));
             return;
         };
@@ -214,20 +217,22 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
         if let Some(last) = matching.last() {
             let (_, _, scene) = last;
             let scene = *scene;
-            let portable_name = self
-                .get_scene_info(scene)
-                .and_then(|(_, _, title, is_portable)| is_portable.then_some(title));
-            self.toaster.add_clicky_toast(
-                format!("{:?}", ty),
-                ty.on_success(portable_name),
-                On::<Click>::new(
-                    (move |mut target: ResMut<PermissionTarget>| {
-                        target.scene = Some(scene);
-                        target.ty = Some(ty);
-                    })
-                    .pipe(ShowSettingsEvent(SettingsTab::Permissions).send_value()),
-                ),
-            );
+            if let Some((_, hash, title, is_portable)) = self.get_scene_info(scene) {
+                if !self.is_system_scene(hash) {
+                    let portable_name = is_portable.then_some(title);
+                    self.toaster.add_clicky_toast(
+                        format!("{:?}", ty),
+                        ty.on_success(portable_name),
+                        On::<Click>::new(
+                            (move |mut target: ResMut<PermissionTarget>| {
+                                target.scene = Some(scene);
+                                target.ty = Some(ty);
+                            })
+                            .pipe(ShowSettingsEvent(SettingsTab::Permissions).send_value()),
+                        ),
+                    );
+                }
+            }
         }
         matching.into_iter().map(|(value, _, _)| value)
     }
@@ -242,20 +247,22 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
         if let Some(last) = matching.last() {
             let (_, _, scene) = last;
             let scene = *scene;
-            let portable_name = self
-                .get_scene_info(scene)
-                .and_then(|(_, _, title, is_portable)| is_portable.then_some(title));
-            self.toaster.add_clicky_toast(
-                format!("{:?}", ty),
-                ty.on_fail(portable_name),
-                On::<Click>::new(
-                    (move |mut target: ResMut<PermissionTarget>| {
-                        target.scene = Some(scene);
-                        target.ty = Some(ty);
-                    })
-                    .pipe(ShowSettingsEvent(SettingsTab::Permissions).send_value()),
-                ),
-            );
+            if let Some((_, hash, title, is_portable)) = self.get_scene_info(scene) {
+                if !self.is_system_scene(hash) {
+                    let portable_name = is_portable.then_some(title);
+                    self.toaster.add_clicky_toast(
+                        format!("{:?}", ty),
+                        ty.on_fail(portable_name),
+                        On::<Click>::new(
+                            (move |mut target: ResMut<PermissionTarget>| {
+                                target.scene = Some(scene);
+                                target.ty = Some(ty);
+                            })
+                            .pipe(ShowSettingsEvent(SettingsTab::Permissions).send_value()),
+                        ),
+                    );
+                }
+            }
         }
         matching.into_iter().map(|(value, _, _)| value)
     }
