@@ -94,6 +94,7 @@ pub enum SystemApi {
 #[derive(Resource)]
 pub struct NativeUi {
     pub login: bool,
+    pub emote_wheel: bool,
 }
 
 #[derive(Resource)]

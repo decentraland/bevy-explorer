@@ -18,6 +18,7 @@ use common::{
 };
 use comms::profile::CurrentUserProfile;
 use input_manager::{InputManager, InputPriority};
+use system_bridge::NativeUi;
 use ui_core::{
     focus::Focus,
     ui_actions::{Click, Defocus, HoverEnter, HoverExit, On},
@@ -29,6 +30,10 @@ pub struct EmoteUiPlugin;
 
 impl Plugin for EmoteUiPlugin {
     fn build(&self, app: &mut App) {
+        if !app.world().resource::<NativeUi>().emote_wheel {
+            return;
+        }
+
         app.add_event::<EmoteUiEvent>()
             .add_systems(Startup, setup.in_set(SetupSets::Main))
             .add_systems(
