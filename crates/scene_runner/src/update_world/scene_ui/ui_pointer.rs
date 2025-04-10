@@ -1,4 +1,7 @@
-use bevy::{prelude::*, ui::FocusPolicy};
+use bevy::{
+    prelude::*,
+    ui::{FocusPolicy, RelativeCursorPosition},
+};
 use ui_core::ui_actions::{HoverEnter, HoverExit, On};
 
 use crate::{
@@ -35,21 +38,23 @@ pub fn set_ui_pointer_events(
             let is_primary = link.is_window_ui;
             commands.try_insert((
                 FocusPolicy::Block,
+                RelativeCursorPosition::default(),
                 Interaction::default(),
                 On::<HoverEnter>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
                     debug!("hover enter {ent:?}");
                     if is_primary {
-                        ui_target.0.push(UiPointerTargetValue::Primary(ent));
+                        ui_target.0 = UiPointerTargetValue::Primary(ent);
                     } else {
-                        ui_target.0.push(UiPointerTargetValue::World(ent));
+                        ui_target.0 = UiPointerTargetValue::World(ent);
                     }
                 }),
                 On::<HoverExit>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
                     debug!("hover exit  {ent:?}");
-                    ui_target.0.retain(|v| {
-                        v != &UiPointerTargetValue::Primary(ent)
-                            && v != &UiPointerTargetValue::World(ent)
-                    });
+                    if ui_target.0 == UiPointerTargetValue::Primary(ent)
+                        || ui_target.0 == UiPointerTargetValue::World(ent)
+                    {
+                        ui_target.0 = UiPointerTargetValue::None;
+                    }
                 }),
             ));
         }

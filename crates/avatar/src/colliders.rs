@@ -20,7 +20,7 @@ use rapier3d_f64::{
 };
 use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_RED};
 use scene_runner::{
-    update_scene::pointer_results::{PointerTarget, UiPointerTarget},
+    update_scene::pointer_results::{PointerTarget, UiPointerTarget, UiPointerTargetValue},
     update_world::{
         avatar_modifier_area::PlayerModifiers,
         mesh_collider::{ColliderId, SceneColliderData},
@@ -133,7 +133,7 @@ fn update_avatar_collider_actions(
     tooltips.0.remove(&TooltipSource::Label("avatar_pointer"));
 
     // check for scene ui
-    if !ui_target.0.is_empty() {
+    if ui_target.0 != UiPointerTargetValue::None {
         return;
     }
 

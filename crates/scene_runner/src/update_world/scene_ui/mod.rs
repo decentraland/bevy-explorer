@@ -493,7 +493,7 @@ fn update_scene_ui_components(
 #[derive(Component, Clone, PartialEq)]
 pub struct UiLink {
     // the bevy ui entity corresponding to this scene entity
-    ui_entity: Entity,
+    pub ui_entity: Entity,
     // where child entities should be added
     content_entity: Entity,
     // opacity
