@@ -693,7 +693,7 @@ impl ScenePointers {
             let bounds = (self.realm_bounds.1 >> add_level) - (self.realm_bounds.0 >> add_level);
             let count = (bounds.x + 1) * (bounds.y + 1);
             self.crcs
-                .push(Vec::from_iter(std::iter::repeat(None).take(count as usize)));
+                .push(Vec::from_iter(std::iter::repeat_n(None, count as usize)));
             // println!("added {} entry with {} members", self.crcs.len(), self.crcs[self.crcs.len()-1].len());
         }
 

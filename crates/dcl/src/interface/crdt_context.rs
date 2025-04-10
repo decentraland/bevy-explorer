@@ -25,7 +25,7 @@ impl CrdtContext {
             hash,
             testing,
             preview,
-            live_entities: Vec::from_iter(std::iter::repeat((0, false)).take(u16::MAX as usize)),
+            live_entities: vec![(0, false); u16::MAX as usize],
             nascent: Default::default(),
             death_row: Default::default(),
             last_new: u16::MAX,

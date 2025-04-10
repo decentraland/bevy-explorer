@@ -241,7 +241,10 @@ fn main() {
     let ui_scene: Option<String> = args.value_from_str("--ui").ok();
     if let Some(source) = ui_scene {
         app.add_systems(Update, process_system_ui_scene);
-        app.insert_resource(NativeUi { login: false, emote_wheel: false });
+        app.insert_resource(NativeUi {
+            login: false,
+            emote_wheel: false,
+        });
         app.insert_resource(SystemScene {
             source: Some(source),
             preview: args.contains("--ui-preview"),
@@ -249,7 +252,10 @@ fn main() {
             hash: None,
         });
     } else {
-        app.insert_resource(NativeUi { login: true, emote_wheel: true });
+        app.insert_resource(NativeUi {
+            login: true,
+            emote_wheel: true,
+        });
     }
 
     let remaining = args.finish();
