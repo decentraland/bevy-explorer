@@ -10,13 +10,16 @@ use common::{
     dcl_assert,
     inputs::SystemAction,
     sets::SetupSets,
-    structs::{PrimaryUser, SystemAudio, ToolTips, TooltipSource},
+    structs::{PrimaryPlayerRes, PrimaryUser, SystemAudio, ToolTips, TooltipSource},
     util::{
         AsH160, FireEventEx, ModifyComponentExt, RingBuffer, RingBufferReceiver, TryPushChildrenEx,
     },
 };
 use comms::{
-    chat_marker_things, global_crdt::ChatEvent, profile::UserProfile, NetworkMessage, Transport,
+    chat_marker_things,
+    global_crdt::{ChatEvent, ForeignPlayer},
+    profile::UserProfile,
+    NetworkMessage, Transport,
 };
 use console::DoAddConsoleCommand;
 use conversation_manager::ConversationManager;
@@ -28,6 +31,7 @@ use input_manager::{InputManager, InputPriority};
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
 use shlex::Shlex;
 use social::FriendshipEvent;
+use system_bridge::{ChatMessage, SystemApi};
 use ui_core::{
     button::{DuiButton, TabSelection},
     focus::Focus,
@@ -37,6 +41,7 @@ use ui_core::{
 };
 
 use friends::FriendsPlugin;
+use wallet::Wallet;
 
 use super::SystemUiRoot;
 
@@ -47,6 +52,7 @@ impl Plugin for ChatPanelPlugin {
         app.add_systems(Update, display_chat);
         app.add_systems(Update, append_chat_messages);
         app.add_systems(Update, emit_user_chat);
+        app.add_systems(Update, (pipe_chats_to_scene, pipe_chats_from_scene));
         app.add_systems(Startup, setup.in_set(SetupSets::Main));
         app.add_systems(
             OnEnter::<ui_core::State>(ui_core::State::Ready),
@@ -619,5 +625,78 @@ pub(crate) fn select_chat_tab(
 
         debug!("tab set to {}", tab);
         chatbox.active_tab = tab;
+    }
+}
+
+fn pipe_chats_to_scene(
+    mut chat_events: EventReader<ChatEvent>,
+    mut requests: EventReader<SystemApi>,
+    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<ChatMessage>>>,
+    players: Query<&ForeignPlayer>,
+    primary_player: Res<PrimaryPlayerRes>,
+    wallet: Res<Wallet>,
+) {
+    senders.extend(requests.read().filter_map(|ev| {
+        if let SystemApi::GetChatStream(sender) = ev {
+            println!("got sender");
+            Some(sender.clone())
+        } else {
+            None
+        }
+    }));
+    senders.retain(|s| !s.is_closed());
+
+    if senders.is_empty() {
+        println!("no senders");
+    }
+
+    for chat_event in chat_events.read().filter(|ce| {
+        ce.sender != Entity::PLACEHOLDER && !ce.message.starts_with(chat_marker_things::EMOTE)
+    }) {
+        let Some(player_address) = players
+            .get(chat_event.sender)
+            .ok()
+            .map(|fp| fp.address)
+            .or_else(|| {
+                if chat_event.sender == primary_player.0 {
+                    wallet.address()
+                } else {
+                    None
+                }
+            })
+        else {
+            warn!("no player for {chat_event:?}");
+            continue;
+        };
+
+        for sender in senders.iter() {
+            let _ = sender.send(ChatMessage {
+                sender_address: format!("{:#x}", player_address),
+                message: chat_event.message.clone(),
+                channel: chat_event.channel.clone(),
+            });
+        }
+    }
+}
+
+fn pipe_chats_from_scene(
+    mut sender: EventWriter<ChatEvent>,
+    primary_player: Res<PrimaryPlayerRes>,
+    mut chats: EventReader<SystemApi>,
+    time: Res<Time>,
+) {
+    for (message, channel) in chats.read().filter_map(|ev| {
+        if let SystemApi::SendChat(message, channel) = ev {
+            Some((message.clone(), channel.clone()))
+        } else {
+            None
+        }
+    }) {
+        sender.send(ChatEvent {
+            timestamp: time.elapsed_seconds_f64(),
+            sender: primary_player.0,
+            channel,
+            message,
+        });
     }
 }

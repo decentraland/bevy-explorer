@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
     settings::{SettingInfo, Settings},
-    HomeScene, LiveSceneInfo, SetAvatarData, SystemApi,
+    ChatMessage, HomeScene, LiveSceneInfo, SetAvatarData, SystemApi,
 };
 use wallet::{sign_request, Wallet};
 
@@ -45,6 +45,9 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_realm_provider(),
             op_get_system_action_stream(),
             op_read_system_action_stream(),
+            op_get_chat_stream(),
+            op_read_chat_stream(),
+            op_send_chat(),
         ]
     } else {
         Vec::default()
@@ -443,14 +446,17 @@ pub struct RealmProviderString {
 pub async fn op_get_realm_provider(
     state: Rc<RefCell<OpState>>,
 ) -> Result<RealmProviderString, anyhow::Error> {
-    state
+    let url = state
         .borrow_mut()
         .borrow_mut::<IpfsResource>()
         .about_url()
-        .ok_or(anyhow::anyhow!("not connected"))
-        .map(|realm| RealmProviderString {
-            realm: realm.to_owned(),
-        })
+        .ok_or(anyhow::anyhow!("not connected"))?;
+
+    let url = url.strip_suffix("/about").unwrap_or(&url);
+
+    Ok(RealmProviderString {
+        realm: url.to_owned(),
+    })
 }
 
 pub struct StreamResource<T: 'static> {
@@ -492,4 +498,52 @@ pub async fn op_read_system_action_stream(
         Some(data) => Ok(Some(data)),
         None => Ok(None),
     }
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_chat_stream(state: Rc<RefCell<OpState>>) -> deno_core::ResourceId {
+    let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let rid = state.borrow_mut().resource_table.add(StreamResource {
+        receiver: Rc::new(AsyncRefCell::new(rx)),
+    });
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetChatStream(sx))
+        .unwrap();
+
+    rid
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_chat_stream(
+    state: Rc<RefCell<OpState>>,
+    #[serde] rid: ResourceId,
+) -> Result<Option<ChatMessage>, deno_core::anyhow::Error> {
+    let resource = state
+        .borrow()
+        .resource_table
+        .get::<StreamResource<ChatMessage>>(rid)?;
+    let mut rx = resource.receiver.borrow_mut().await;
+
+    match rx.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    }
+}
+
+#[op2(fast)]
+pub fn op_send_chat(
+    state: Rc<RefCell<OpState>>,
+    #[string] message: String,
+    #[string] channel: String,
+) {
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SendChat(message, channel))
+        .unwrap();
 }

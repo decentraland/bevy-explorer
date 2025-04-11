@@ -66,6 +66,13 @@ pub struct HomeScene {
     pub parcel: Vector2,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub sender_address: String,
+    pub message: String,
+    pub channel: String,
+}
+
 #[derive(Event, Clone)]
 pub enum SystemApi {
     ConsoleCommand(String, Vec<String>, RpcResultSender<Result<String, String>>),
@@ -89,11 +96,14 @@ pub enum SystemApi {
     GetHomeScene(RpcResultSender<HomeScene>),
     SetHomeScene(HomeScene),
     GetSystemActionStream(tokio::sync::mpsc::UnboundedSender<SystemActionEvent>),
+    GetChatStream(tokio::sync::mpsc::UnboundedSender<ChatMessage>),
+    SendChat(String, String),
 }
 
 #[derive(Resource)]
 pub struct NativeUi {
     pub login: bool,
+    pub emote_wheel: bool,
 }
 
 #[derive(Resource)]

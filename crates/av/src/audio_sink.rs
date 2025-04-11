@@ -1,5 +1,8 @@
-use bevy::prelude::*;
-use common::structs::{AudioDecoderError, AudioSettings, PrimaryCamera, PrimaryUser};
+use bevy::{prelude::*, render::view::RenderLayers};
+use common::{
+    structs::{AudioDecoderError, AudioSettings, PrimaryUser},
+    util::VolumePanning,
+};
 use comms::global_crdt::ForeignAudioSource;
 use kira::{manager::backend::DefaultBackend, sound::streaming::StreamingSoundData, tween::Tween};
 use scene_runner::{ContainingScene, SceneEntity};
@@ -101,29 +104,26 @@ pub fn spawn_audio_streams(
     }
 }
 
-const MAX_CHAT_DISTANCE: f32 = 25.0;
-
+#[allow(clippy::type_complexity)]
 pub fn spawn_and_locate_foreign_streams(
     mut commands: Commands,
     mut streams: Query<(
         Entity,
         &GlobalTransform,
+        Option<&RenderLayers>,
         &mut ForeignAudioSource,
         Option<&mut AudioSpawned>,
     )>,
     mut audio_manager: NonSendMut<bevy_kira_audio::audio_output::AudioOutput<DefaultBackend>>,
-    receiver: Query<&GlobalTransform, With<PrimaryCamera>>,
+    pan: VolumePanning,
     settings: Res<AudioSettings>,
 ) {
     if audio_manager.manager.is_none() {
         return;
     }
 
-    let Ok(receiver_transform) = receiver.get_single() else {
-        return;
-    };
-
-    for (ent, emitter_transform, mut stream, mut maybe_spawned) in streams.iter_mut() {
+    for (ent, emitter_transform, render_layers, mut stream, mut maybe_spawned) in streams.iter_mut()
+    {
         match stream.0.try_recv() {
             Ok(sound_data) => {
                 info!("{ent:?} received foreign sound data!");
@@ -140,18 +140,8 @@ pub fn spawn_and_locate_foreign_streams(
         }
 
         if let Some(handle) = maybe_spawned.as_mut().and_then(|a| a.0.as_mut()) {
-            let sound_path = emitter_transform.translation() - receiver_transform.translation();
-            let volume = (1. - sound_path.length() / MAX_CHAT_DISTANCE)
-                .clamp(0., 1.)
-                .powi(2);
-
-            let panning = if sound_path.length() > f32::EPSILON {
-                let right_ear_angle = receiver_transform.right().angle_between(sound_path);
-                (right_ear_angle.cos() + 1.) / 2.
-            } else {
-                0.5
-            };
-
+            let (volume, panning) =
+                pan.volume_and_panning(emitter_transform.translation(), render_layers);
             let volume = volume * settings.voice();
 
             let _ = handle.set_volume(volume as f64, Tween::default());

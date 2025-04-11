@@ -22,7 +22,7 @@ use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::SceneSets,
     structs::{AppConfig, Cubemap, PrimaryUser, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER},
-    util::camera_to_render_layers,
+    util::{camera_to_render_layers, AudioReceiver},
 };
 use comms::global_crdt::ForeignPlayer;
 use dcl_component::{
@@ -397,6 +397,13 @@ fn update_texture_cameras(
                         .unwrap_or(global_light.ambient_brightness)
                         * config.graphics.ambient_brightness as f32
                         * 20.0,
+                });
+            }
+
+            // set audio receiver
+            if texture_cam.0.volume() > 0.0 {
+                camera.insert(AudioReceiver {
+                    layers: render_layers,
                 });
             }
 

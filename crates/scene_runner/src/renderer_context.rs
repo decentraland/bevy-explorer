@@ -124,7 +124,7 @@ impl RendererSceneContext {
             spawn_points,
             nascent: Default::default(),
             death_row: Default::default(),
-            live_entities: Vec::from_iter(std::iter::repeat((0, None)).take(u16::MAX as usize)),
+            live_entities: vec![(0, None); u16::MAX as usize],
             unparented_entities: HashSet::new(),
             hierarchy_changed: false,
             last_sent: 0.0,

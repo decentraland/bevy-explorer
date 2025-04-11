@@ -510,6 +510,8 @@ fn process_profile(
         profile.version += 1;
         profile.content.version = profile.version as i64;
 
+        debug!("{:#?}", profile.content);
+
         if let Some(existing) = processing.take() {
             match existing {
                 ProcessProfileState::Snapping(entity, _, sender) => {
@@ -522,18 +524,23 @@ fn process_profile(
             }
         }
 
-        *processing = Some(ProcessProfileState::Snapping(
-            commands
-                .spawn(photo_booth.spawn_booth(
-                    PROFILE_UI_RENDERLAYER,
-                    (&*profile).into(),
-                    Default::default(),
-                    true,
-                ))
-                .id(),
-            profile.version,
-            sender.clone(),
-        ));
+        if profile.content.has_connected_web3.unwrap_or_default() {
+            *processing = Some(ProcessProfileState::Snapping(
+                commands
+                    .spawn(photo_booth.spawn_booth(
+                        PROFILE_UI_RENDERLAYER,
+                        (&*profile).into(),
+                        Default::default(),
+                        true,
+                    ))
+                    .id(),
+                profile.version,
+                sender.clone(),
+            ));
+        } else {
+            sender.send(Ok(u32::MAX))
+        }
+
         return;
     }
 

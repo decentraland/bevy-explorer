@@ -1,3 +1,4 @@
+use core::f32;
 use std::{collections::VecDeque, marker::PhantomData, path::PathBuf, time::Duration};
 
 use bevy::{
@@ -14,7 +15,7 @@ use bevy::{
     pbr::StandardMaterial,
     prelude::{
         despawn_with_children_recursive, BuildWorldChildren, Bundle, Entity, GlobalTransform,
-        IntoSystemConfigs, Mesh, Plugin, Res, With, World,
+        IntoSystemConfigs, Mesh, Plugin, Res, World,
     },
     render::view::{Layer, RenderLayers},
     scene::{InstanceId, SceneSpawner},
@@ -421,27 +422,44 @@ macro_rules! anim_last_system {
     };
 }
 
-#[derive(Component)]
-pub struct AudioReceiver;
+#[derive(Component, Default)]
+pub struct AudioReceiver {
+    pub layers: RenderLayers,
+}
 
 #[derive(SystemParam)]
 pub struct VolumePanning<'w, 's> {
-    receiver: Query<'w, 's, &'static GlobalTransform, With<AudioReceiver>>,
+    receivers: Query<'w, 's, (&'static GlobalTransform, &'static AudioReceiver)>,
 }
 
 impl VolumePanning<'_, '_> {
-    pub fn volume_and_panning(&self, translation: Vec3) -> (f32, f32) {
-        let Ok(receiver) = self.receiver.get_single() else {
-            return (1.0, 0.5);
-        };
-        let sound_path = translation - receiver.translation();
-        let volume = (1. - sound_path.length() / 75.0).clamp(0., 1.).powi(2);
-        let panning = if sound_path.length() > f32::EPSILON {
-            let right_ear_angle = receiver.right().angle_between(sound_path);
-            (right_ear_angle.cos() + 1.) / 2.
-        } else {
-            0.5
-        };
+    pub fn volume_and_panning(
+        &self,
+        translation: Vec3,
+        layers: Option<&RenderLayers>,
+    ) -> (f32, f32) {
+        let (mut left, mut right): (f32, f32) = (0.0, 0.0);
+
+        for (transform, _) in self
+            .receivers
+            .iter()
+            .filter(|(_, receiver)| layers.unwrap_or_default().intersects(&receiver.layers))
+        {
+            let sound_path = translation - transform.translation();
+            let volume = (1. - sound_path.length() / 75.0).clamp(0., 1.).powi(2);
+            let panning = if sound_path.length() > f32::EPSILON {
+                let right_ear_angle = transform.right().angle_between(sound_path);
+                (right_ear_angle.cos() + 1.) / 2.
+            } else {
+                0.5
+            };
+
+            left += volume * (1.0 - panning);
+            right += volume * panning;
+        }
+
+        let volume = left + right;
+        let panning = right / (left + right).max(f32::EPSILON);
 
         (volume, panning)
     }

@@ -6,6 +6,7 @@ use bevy::{
     gltf::Gltf,
     math::Vec3Swizzles,
     prelude::*,
+    render::view::RenderLayers,
     scene::InstanceId,
     utils::{HashMap, HashSet},
 };
@@ -474,6 +475,7 @@ fn play_current_emote(
         &AvatarAnimPlayer,
         &Children,
         &GlobalTransform,
+        Option<&RenderLayers>,
     )>,
     definitions: Query<&AvatarDefinition>,
     mut emote_loader: CollectibleManager<Emote>,
@@ -504,7 +506,7 @@ fn play_current_emote(
     let prior_playing = std::mem::take(&mut *playing);
     let mut prev_spawned_extras = std::mem::take(&mut *spawned_extras);
 
-    for (entity, mut active_emote, target_entity, children, transform) in q.iter_mut() {
+    for (entity, mut active_emote, target_entity, children, transform, layers) in q.iter_mut() {
         debug!("emote {}", active_emote.urn);
         let Some(definition) = children
             .iter()
@@ -860,7 +862,7 @@ fn play_current_emote(
             if elapsed >= play_time {
                 debug!("duration {}", clip_duration);
                 debug!("play {:?} @ {}>{}", sound.path(), elapsed, play_time);
-                let (volume, panning) = pan.volume_and_panning(transform.translation());
+                let (volume, panning) = pan.volume_and_panning(transform.translation(), layers);
                 let existing = spawned_extras
                     .get_mut(&entity)
                     .and_then(|extras| extras.audio.as_mut());

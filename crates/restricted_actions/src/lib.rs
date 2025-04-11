@@ -1047,7 +1047,7 @@ fn show_nft_dialog(
                 description = description
                     .chars()
                     .take(500)
-                    .chain(std::iter::repeat('.').take(3))
+                    .chain(std::iter::repeat_n('.', 3))
                     .collect();
             }
 

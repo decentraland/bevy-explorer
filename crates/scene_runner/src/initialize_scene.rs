@@ -693,7 +693,7 @@ impl ScenePointers {
             let bounds = (self.realm_bounds.1 >> add_level) - (self.realm_bounds.0 >> add_level);
             let count = (bounds.x + 1) * (bounds.y + 1);
             self.crcs
-                .push(Vec::from_iter(std::iter::repeat(None).take(count as usize)));
+                .push(Vec::from_iter(std::iter::repeat_n(None, count as usize)));
             // println!("added {} entry with {} members", self.crcs.len(), self.crcs[self.crcs.len()-1].len());
         }
 
@@ -821,7 +821,10 @@ pub fn process_realm_change(
     mut segment_config: Option<ResMut<SegmentConfig>>,
 ) {
     if current_realm.is_changed() {
-        info!("realm change `{}`! purging scenes", current_realm.address);
+        info!(
+            "realm change `{}` / `{}`! purging scenes",
+            current_realm.address, current_realm.about_url
+        );
         let mut realm_scene_urns = HashSet::default();
         for urn in current_realm
             .config
@@ -1037,9 +1040,9 @@ fn load_active_entities(
         };
 
         info!(
-            "found {} entities over parcels {:?}",
+            "found {} entities over {} parcels",
             retrieved_parcels.len(),
-            requested_parcels
+            requested_parcels.len(),
         );
 
         for active_entity in retrieved_parcels {

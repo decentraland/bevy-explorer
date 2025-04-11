@@ -66,6 +66,25 @@ struct MaybeSize {
     height: Option<Val>,
 }
 
+trait ValueOrDefault {
+    type Value;
+    fn value_or_default(&self) -> Self::Value;
+}
+
+impl ValueOrDefault for f32 {
+    type Value = f32;
+    fn value_or_default(&self) -> Self::Value {
+        *self
+    }
+}
+
+impl ValueOrDefault for Option<f32> {
+    type Value = f32;
+    fn value_or_default(&self) -> Self::Value {
+        self.unwrap_or_default()
+    }
+}
+
 // macro helpers to convert proto format to bevy format for val, size, rect
 macro_rules! val {
     ($pb:ident, $u:ident, $v:ident, $d:expr) => {
@@ -73,17 +92,17 @@ macro_rules! val {
             YgUnit::YguUndefined => $d,
             YgUnit::YguAuto => Val::Auto,
             YgUnit::YguPoint => {
-                if $pb.$v.is_nan() {
+                if $pb.$v.value_or_default().is_nan() {
                     $d
                 } else {
-                    Val::Px($pb.$v)
+                    Val::Px($pb.$v.value_or_default())
                 }
             }
             YgUnit::YguPercent => {
-                if $pb.$v.is_nan() {
+                if $pb.$v.value_or_default().is_nan() {
                     $d
                 } else {
-                    Val::Percent($pb.$v)
+                    Val::Percent($pb.$v.value_or_default())
                 }
             }
         }
@@ -135,6 +154,17 @@ macro_rules! rect {
     };
 }
 
+macro_rules! radius {
+    ($pb:ident, $tlu:ident, $tl:ident, $tru:ident, $tr:ident, $blu:ident, $bl:ident, $bru:ident, $br:ident, $d:expr) => {
+        BorderRadius {
+            top_left: val!($pb, $tlu, $tl, $d),
+            top_right: val!($pb, $tru, $tr, $d),
+            bottom_left: val!($pb, $blu, $bl, $d),
+            bottom_right: val!($pb, $bru, $br, $d),
+        }
+    };
+}
+
 #[derive(Component, Debug, Clone)]
 pub struct UiTransform {
     element_id: Option<String>,
@@ -164,6 +194,9 @@ pub struct UiTransform {
     padding: UiRect,
     opacity: f32,
     zindex: Option<i16>,
+    border: UiRect,
+    border_radius: BorderRadius,
+    border_color: BorderColor,
 }
 
 impl From<PbUiTransform> for UiTransform {
@@ -305,6 +338,48 @@ impl From<PbUiTransform> for UiTransform {
             ),
             opacity: value.opacity.unwrap_or(1.0),
             zindex: value.z_index.map(|z| z as i16),
+            border: rect!(
+                value,
+                border_left_width_unit,
+                border_left_width,
+                border_right_width_unit,
+                border_right_width,
+                border_top_width_unit,
+                border_top_width,
+                border_bottom_width_unit,
+                border_bottom_width,
+                Val::Auto
+            ),
+            border_radius: radius!(
+                value,
+                border_top_left_radius_unit,
+                border_top_left_radius,
+                border_top_right_radius_unit,
+                border_top_right_radius,
+                border_bottom_left_radius_unit,
+                border_bottom_left_radius,
+                border_bottom_right_radius_unit,
+                border_bottom_right_radius,
+                Val::ZERO
+            ),
+            border_color: BorderColor {
+                top: value
+                    .border_top_color
+                    .map(Color4DclToBevy::convert_srgba)
+                    .unwrap_or(Color::NONE),
+                bottom: value
+                    .border_bottom_color
+                    .map(Color4DclToBevy::convert_srgba)
+                    .unwrap_or(Color::NONE),
+                left: value
+                    .border_left_color
+                    .map(Color4DclToBevy::convert_srgba)
+                    .unwrap_or(Color::NONE),
+                right: value
+                    .border_right_color
+                    .map(Color4DclToBevy::convert_srgba)
+                    .unwrap_or(Color::NONE),
+            },
         }
     }
 }
@@ -418,7 +493,7 @@ fn update_scene_ui_components(
 #[derive(Component, Clone, PartialEq)]
 pub struct UiLink {
     // the bevy ui entity corresponding to this scene entity
-    ui_entity: Entity,
+    pub ui_entity: Entity,
     // where child entities should be added
     content_entity: Entity,
     // opacity
@@ -899,6 +974,7 @@ fn layout_scene_ui(
                     bottom: ui_transform.position.bottom,
                     margin: ui_transform.margin,
                     padding: ui_transform.padding,
+                    border: ui_transform.border,
                     ..Default::default()
                 };
 
@@ -919,14 +995,32 @@ fn layout_scene_ui(
                     );
                 }
 
-                commands.entity(link.ui_entity).try_insert(style);
+                let mut cmds = commands.entity(link.ui_entity);
+                cmds.try_insert(style);
 
+                if ui_transform.border_radius != BorderRadius::DEFAULT {
+                    cmds.try_insert(ui_transform.border_radius);
+                } else {
+                    cmds.remove::<BorderRadius>();
+                }
+
+                if ui_transform.border_color != BorderColor::DEFAULT {
+                    cmds.try_insert(ui_transform.border_color);
+                } else {
+                    cmds.remove::<BorderColor>();
+                }
+
+                let mut zindex_added = false;
                 if let Some(zindex) = ui_transform.zindex {
                     if zindex != 0 {
-                        commands.entity(link.ui_entity).try_insert(ZIndex::Global(
+                        zindex_added = true;
+                        cmds.try_insert(ZIndex::Global(
                             zindex as i32 + if ui_data.super_user { 1 << 17 } else { 0 },
                         ));
                     }
+                }
+                if !zindex_added {
+                    cmds.remove::<ZIndex>();
                 }
             }
 

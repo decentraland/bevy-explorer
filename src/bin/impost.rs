@@ -77,8 +77,7 @@ fn main() {
         scene_load_distance: -1.0,
         scene_unload_extra_distance: 0.0,
         scene_imposter_bake: SceneImposterBake::FullSpeed,
-        scene_imposter_distances: std::iter::repeat(0.0)
-            .take(levels)
+        scene_imposter_distances: std::iter::repeat_n(0.0, levels)
             .chain(std::iter::once(range))
             .collect(),
         scene_log_to_console: args.contains("--scene_log_to_console"),

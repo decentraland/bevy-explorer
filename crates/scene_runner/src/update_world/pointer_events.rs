@@ -6,7 +6,10 @@ use common::{
 
 use crate::update_scene::pointer_results::{IaToCommon, PointerTarget, PointerTargetInfo};
 use dcl::interface::ComponentPosition;
-use dcl_component::{proto_components::sdk::components::PbPointerEvents, SceneComponentId};
+use dcl_component::{
+    proto_components::sdk::components::{common::InputAction, PbPointerEvents},
+    SceneComponentId,
+};
 
 use super::AddCrdtInterfaceExt;
 
@@ -65,8 +68,23 @@ fn hover_text(
                             if let Some(text) = info.hover_text.as_ref() {
                                 let button = input_map
                                     .get_input(info.button().to_common())
-                                    .map(|b| serde_json::to_string(&b).unwrap())
-                                    .unwrap_or_else(|| "(No binding)".to_owned());
+                                    .map(|b| {
+                                        let button_str = serde_json::to_string(&b).unwrap();
+                                        let button_str =
+                                            button_str.strip_prefix("\"").unwrap_or(&button_str);
+                                        button_str
+                                            .strip_suffix("\"")
+                                            .unwrap_or(button_str)
+                                            .to_owned()
+                                    })
+                                    .unwrap_or_else(|| {
+                                        if info.button() == InputAction::IaAny {
+                                            "(ANY)"
+                                        } else {
+                                            "(No binding)"
+                                        }
+                                        .to_owned()
+                                    });
                                 return Some((
                                     format!("{} : {}", button, text),
                                     info.max_distance.unwrap_or(10.0) > distance.0,
