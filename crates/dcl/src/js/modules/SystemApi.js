@@ -205,6 +205,11 @@ module.exports.getRealmProvider = async function() {
     return (await Deno.core.ops.op_get_realm_provider()).realm
 }
 
+// get system actions as a stream
+// type SystemAction = {
+//   action: string,
+//   pressed: boolean,
+// }
 module.exports.getSystemActionStream = async function() {
   const rid = await Deno.core.ops.op_get_system_action_stream();
 
@@ -217,4 +222,33 @@ module.exports.getSystemActionStream = async function() {
   }
 
   return streamGenerator();
+}
+
+// get chat messages as a stream
+// type ChatMessage = {
+//   senderAddress: string,
+//   message: string,
+//   channel: string,
+// }
+module.exports.getChatStream = async function() {
+  const rid = await Deno.core.ops.op_get_chat_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_chat_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
+// send a chat message
+// { 
+//   message: string,
+//   channel?: string
+// }
+module.exports.sendChat = async function(message, channel) {
+    Deno.core.ops.op_send_chat(message, channel ?? "Nearby")
 }

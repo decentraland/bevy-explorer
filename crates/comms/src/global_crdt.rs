@@ -213,7 +213,7 @@ pub struct ProfileEvent {
     pub event: ProfileEventType,
 }
 
-#[derive(Event)]
+#[derive(Event, Debug)]
 pub struct ChatEvent {
     pub timestamp: f64,
     pub sender: Entity,
