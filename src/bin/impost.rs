@@ -23,6 +23,7 @@ use common::{
     },
     util::{config_file, UtilsPlugin},
 };
+use input_manager::{CumulativeAxisData, InputPriorities};
 use nft::asset_source::Nft;
 use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
@@ -194,6 +195,8 @@ fn main() {
         .add_event::<SystemAudio>()
         .init_resource::<PermissionManager>()
         .init_resource::<InputMap>()
+        .init_resource::<InputPriorities>()
+        .init_resource::<CumulativeAxisData>()
         .init_resource::<ToolTips>()
         .init_resource::<SceneGlobalLight>()
         .add_event::<RpcCall>()
