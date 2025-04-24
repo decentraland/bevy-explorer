@@ -11,6 +11,7 @@ use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
     rpc::RpcResultSender,
+    sets::SceneSets,
     structs::{ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin, SystemAudio},
     util::{config_file, FireEventEx, TaskCompat, TaskExt},
 };
@@ -40,7 +41,7 @@ impl Plugin for LoginPlugin {
             Update,
             (
                 (login, update_profile_for_realm).run_if(in_state(ui_core::State::Ready)),
-                process_login_bridge,
+                process_login_bridge.in_set(SceneSets::PostLoop), // use post loop here so that the PlayerIdentityData can be picked up in RestrictedActions
             ),
         );
     }
