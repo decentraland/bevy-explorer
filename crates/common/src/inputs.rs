@@ -324,7 +324,10 @@ impl Default for InputMap {
                 ),
                 (
                     Action::System(SystemAction::Emote),
-                    vec![InputIdentifier::Key(KeyCode::AltLeft)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::AltLeft),
+                        InputIdentifier::Gamepad(GamepadButtonType::West),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::Cancel),
