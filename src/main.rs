@@ -167,6 +167,10 @@ fn main() {
                 .value_from_str::<_, usize>("--fps")
                 .ok()
                 .unwrap_or(base_config.graphics.fps_target),
+            gpu_bytes_per_frame: args
+                .value_from_str::<_, usize>("--gpu_bytes_per_frame")
+                .ok()
+                .unwrap_or(base_config.graphics.gpu_bytes_per_frame),
             ..base_config.graphics
         },
         scene_threads: args

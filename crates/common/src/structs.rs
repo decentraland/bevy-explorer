@@ -292,6 +292,7 @@ pub struct GraphicsSettings {
     pub ssao: SsaoSetting,
     pub oob: f32,
     pub ambient_brightness: i32,
+    pub gpu_bytes_per_frame: usize,
 }
 
 impl Default for GraphicsSettings {
@@ -311,6 +312,7 @@ impl Default for GraphicsSettings {
             ssao: SsaoSetting::Off,
             oob: 2.0,
             ambient_brightness: 50,
+            gpu_bytes_per_frame: 0,
         }
     }
 }

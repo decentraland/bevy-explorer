@@ -35,8 +35,15 @@ impl Plugin for VisualsPlugin {
             .add_plugins(WireframePlugin)
             .add_systems(Update, apply_global_light)
             .add_systems(Update, move_ground)
-            .add_systems(Startup, setup.in_set(SetupSets::Main))
-            .insert_resource(RenderAssetBytesPerFrame::new(1 << 27)); // ~100mb/frame @ 60fps
+            .add_systems(Startup, setup.in_set(SetupSets::Main));
+
+        let config = app.world().resource::<AppConfig>();
+
+        if config.graphics.gpu_bytes_per_frame > 0 {
+            app.insert_resource(RenderAssetBytesPerFrame::new(
+                config.graphics.gpu_bytes_per_frame,
+            ));
+        }
 
         app.add_console_command::<ShadowConsoleCommand, _>(shadow_console_command);
         app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
