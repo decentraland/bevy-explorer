@@ -188,7 +188,7 @@ fn propagate_focus(
 
 fn pipe_events(
     mut submit: EventReader<TextInputSubmitEvent>,
-    changed: Query<(Entity, &TextInputValue), Changed<TextInputValue>>,
+    changed: Query<(Entity, Ref<TextInputValue>), Changed<TextInputValue>>,
     parents: Query<&Parent>,
     settings: Query<&TextEntry>,
     mut commands: Commands,
@@ -215,6 +215,10 @@ fn pipe_events(
     }
 
     for (entity, value) in changed.iter() {
+        if value.is_added() {
+            debug!("{:?} skip updated (added)", entity);
+            continue;
+        }
         debug!("{:?} update", entity);
         if let Some(mut commands) = parents
             .get(entity)
