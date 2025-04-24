@@ -66,12 +66,15 @@ impl Plugin for TextEntryPlugin {
     }
 }
 
+#[derive(Component)]
+struct TextEntryEntity(Entity);
+
 #[allow(clippy::type_complexity)]
-pub fn update_text_entry_components(
+fn update_text_entry_components(
     mut commands: Commands,
-    text_entries: Query<(Entity, &TextEntry), Added<TextEntry>>,
+    text_entries: Query<(Entity, Ref<TextEntry>, Option<&TextEntryEntity>), Changed<TextEntry>>,
 ) {
-    for (entity, textbox) in text_entries.iter() {
+    for (entity, textbox, maybe_existing) in text_entries.iter() {
         let text_lightness = Lcha::from(
             textbox
                 .text_style
@@ -86,58 +89,70 @@ pub fn update_text_entry_components(
             (Color::WHITE, Color::BLACK.with_alpha(0.85))
         };
 
-        commands.entity(entity).with_children(|c| {
-            let mut cmds = c.spawn((
-                NodeBundle {
-                    style: Style {
-                        width: Val::Percent(100.0),
-                        min_width: Val::Percent(100.0),
-                        height: Val::Percent(100.0),
+        let mut cmds = match maybe_existing {
+            Some(existing) => commands.entity(existing.0),
+            None => {
+                let id = commands.spawn_empty().id();
+                commands
+                    .entity(entity)
+                    .push_children(&[id])
+                    .insert(TextEntryEntity(id));
+                let mut cmds = commands.entity(id);
+                cmds.insert((
+                    NodeBundle {
+                        style: Style {
+                            width: Val::Percent(100.0),
+                            min_width: Val::Percent(100.0),
+                            height: Val::Percent(100.0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
-                    ..Default::default()
-                },
-                TextInputBundle {
-                    settings: TextInputSettings {
-                        multiline: textbox.multiline > 1,
-                        retain_on_submit: !textbox.accept_line,
-                        mask_character: None,
+                    TextInputBundle {
+                        inactive: TextInputInactive(true),
+                        value: TextInputValue(textbox.content.clone()),
+                        ..Default::default()
                     },
-                    text_style: TextInputTextStyle(textbox.text_style.clone().unwrap_or_default()),
-                    selection_style: TextInputSelectionStyle {
-                        color: Some(select),
-                        background: Some(select_bg),
-                    },
-                    inactive: TextInputInactive(true),
-                    placeholder: TextInputPlaceholder {
-                        value: textbox.hint_text.clone(),
-                        text_style: Some(TextStyle {
-                            color: textbox
-                                .hint_text_color
-                                .unwrap_or(Color::srgb(0.3, 0.3, 0.3)),
-                            ..textbox.text_style.clone().unwrap_or_default()
-                        }),
-                    },
-                    value: TextInputValue(textbox.content.clone()),
-                    ..Default::default()
-                },
-                Focusable,
-                On::<Focus>::new(
-                    |caller: Res<UiCaller>, mut inactive: Query<&mut TextInputInactive>| {
-                        inactive.get_mut(caller.0).unwrap().0 = false;
-                    },
-                ),
-                On::<Defocus>::new(
-                    |caller: Res<UiCaller>, mut inactive: Query<&mut TextInputInactive>| {
-                        inactive.get_mut(caller.0).unwrap().0 = true;
-                    },
-                ),
-            ));
-
-            if textbox.text_style.is_none() {
-                cmds.insert(FontSize(0.03 / 1.3));
+                    Focusable,
+                    On::<Focus>::new(
+                        |caller: Res<UiCaller>, mut inactive: Query<&mut TextInputInactive>| {
+                            inactive.get_mut(caller.0).unwrap().0 = false;
+                        },
+                    ),
+                    On::<Defocus>::new(
+                        |caller: Res<UiCaller>, mut inactive: Query<&mut TextInputInactive>| {
+                            inactive.get_mut(caller.0).unwrap().0 = true;
+                        },
+                    ),
+                ));
+                if textbox.text_style.is_none() {
+                    cmds.insert(FontSize(0.03 / 1.3));
+                }
+                cmds
             }
-        });
+        };
+
+        cmds.insert((
+            TextInputSettings {
+                multiline: textbox.multiline > 1,
+                retain_on_submit: !textbox.accept_line,
+                mask_character: None,
+            },
+            TextInputTextStyle(textbox.text_style.clone().unwrap_or_default()),
+            TextInputSelectionStyle {
+                color: Some(select),
+                background: Some(select_bg),
+            },
+            TextInputPlaceholder {
+                value: textbox.hint_text.clone(),
+                text_style: Some(TextStyle {
+                    color: textbox
+                        .hint_text_color
+                        .unwrap_or(Color::srgb(0.3, 0.3, 0.3)),
+                    ..textbox.text_style.clone().unwrap_or_default()
+                }),
+            },
+        ));
     }
 }
 
