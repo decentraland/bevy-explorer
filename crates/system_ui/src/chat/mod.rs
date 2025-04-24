@@ -638,17 +638,12 @@ fn pipe_chats_to_scene(
 ) {
     senders.extend(requests.read().filter_map(|ev| {
         if let SystemApi::GetChatStream(sender) = ev {
-            println!("got sender");
             Some(sender.clone())
         } else {
             None
         }
     }));
     senders.retain(|s| !s.is_closed());
-
-    if senders.is_empty() {
-        println!("no senders");
-    }
 
     for chat_event in chat_events.read().filter(|ce| {
         ce.sender != Entity::PLACEHOLDER && !ce.message.starts_with(chat_marker_things::EMOTE)
