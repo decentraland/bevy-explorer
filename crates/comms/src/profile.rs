@@ -21,7 +21,11 @@ use super::{
     NetworkMessage, Transport,
 };
 use common::{
-    profile::{AvatarSnapshots, LambdaProfiles, SerializedProfile}, rpc::RpcEventSender, sets::SceneSets, structs::PrimaryUser, util::{FireEventEx, TaskCompat, TaskExt}
+    profile::{AvatarSnapshots, LambdaProfiles, SerializedProfile},
+    rpc::RpcEventSender,
+    sets::SceneSets,
+    structs::PrimaryUser,
+    util::{FireEventEx, TaskCompat, TaskExt},
 };
 use common::{rpc::RpcCall, util::AsH160};
 use dcl_component::{
@@ -36,16 +40,12 @@ impl Plugin for UserProfilePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (
-                request_missing_profiles,
-                process_profile_events,
-            )
-                .before(process_transport_updates), // .in_set(TODO)
+            (request_missing_profiles, process_profile_events).before(process_transport_updates), // .in_set(TODO)
         );
 
         app.add_systems(
             Update,
-            setup_primary_profile.in_set(SceneSets::RestrictedActions) // in restricted actions so we get profile updates from login before a scene tick runs
+            setup_primary_profile.in_set(SceneSets::RestrictedActions), // in restricted actions so we get profile updates from login before a scene tick runs
         );
 
         app.insert_resource(CurrentUserProfile::default());
