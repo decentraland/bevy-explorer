@@ -206,9 +206,9 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            server: "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-main-latest"
+            server: "https://realm-provider-ea.decentraland.org/main"
                 .to_owned(),
-            location: IVec2::new(78, -7),
+            location: IVec2::new(0, 0),
             previous_login: None,
             graphics: Default::default(),
             audio: Default::default(),
