@@ -206,8 +206,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            server: "https://realm-provider-ea.decentraland.org/main"
-                .to_owned(),
+            server: "https://realm-provider-ea.decentraland.org/main".to_owned(),
             location: IVec2::new(0, 0),
             previous_login: None,
             graphics: Default::default(),
