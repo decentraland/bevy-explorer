@@ -300,7 +300,7 @@ impl Default for GraphicsSettings {
         Self {
             vsync: false,
             log_fps: true,
-            msaa: AaSetting::Msaa4x,
+            msaa: AaSetting::FxaaHigh,
             fps_target: 60,
             shadow_distance: 200.0,
             shadow_settings: ShadowSetting::High,
