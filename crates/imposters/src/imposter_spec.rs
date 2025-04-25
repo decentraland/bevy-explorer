@@ -169,6 +169,7 @@ pub async fn load_imposter_remote(
     let bytes = response.bytes().await?;
     let mut zip = ZipArchive::new(Cursor::new(bytes))?;
     let root = file_root(ipfs.cache_path(), id, level);
+    async_fs::create_dir_all(&root).await?;
     zip.extract(root)?;
     Ok(())
 }
