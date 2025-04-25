@@ -10,7 +10,7 @@ use bevy::{
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};
 use bevy_simple_text_input::{
-    TextInputBundle, TextInputInactive, TextInputPlaceholder, TextInputPlugin,
+    TextInputCursorTimer, TextInputInactive, TextInputPlaceholder, TextInputPlugin,
     TextInputSelectionStyle, TextInputSettings, TextInputSubmitEvent, TextInputSystem,
     TextInputTextStyle, TextInputValue,
 };
@@ -73,6 +73,7 @@ struct TextEntryEntity(Entity);
 fn update_text_entry_components(
     mut commands: Commands,
     text_entries: Query<(Entity, Ref<TextEntry>, Option<&TextEntryEntity>), Changed<TextEntry>>,
+    current_input_values: Query<&TextInputValue>,
 ) {
     for (entity, textbox, maybe_existing) in text_entries.iter() {
         let text_lightness = Lcha::from(
@@ -108,11 +109,9 @@ fn update_text_entry_components(
                         },
                         ..Default::default()
                     },
-                    TextInputBundle {
-                        inactive: TextInputInactive(true),
-                        value: TextInputValue(textbox.content.clone()),
-                        ..Default::default()
-                    },
+                    TextInputInactive(true),
+                    TextInputCursorTimer::default(),
+                    Interaction::default(),
                     Focusable,
                     On::<Focus>::new(
                         |caller: Res<UiCaller>, mut inactive: Query<&mut TextInputInactive>| {
@@ -131,6 +130,12 @@ fn update_text_entry_components(
                 cmds
             }
         };
+
+        // (re)insert value to trigger observable
+        let value = maybe_existing
+            .and_then(|e| current_input_values.get(e.0).ok())
+            .map(|tev| &tev.0)
+            .unwrap_or_else(|| &textbox.content);
 
         cmds.insert((
             TextInputSettings {
@@ -152,6 +157,7 @@ fn update_text_entry_components(
                     ..textbox.text_style.clone().unwrap_or_default()
                 }),
             },
+            TextInputValue(value.clone()),
         ));
     }
 }
