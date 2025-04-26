@@ -17,7 +17,8 @@ use cache_size::CacheSizeSetting;
 use common::{
     sets::SceneSets,
     structs::{
-        AaSetting, AppConfig, BloomSetting, FogSetting, ShadowSetting, SsaoSetting, WindowSetting,
+        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, ShadowSetting, SsaoSetting,
+        WindowSetting,
     },
     util::config_file,
 };
@@ -47,6 +48,7 @@ pub mod ambient_brightness_setting;
 pub mod bloom_settings;
 pub mod cache_size;
 pub mod constrain_ui;
+pub mod dof_setting;
 pub mod fog_settings;
 pub mod frame_rate;
 pub mod load_distance;
@@ -131,6 +133,7 @@ impl Plugin for SettingBridgePlugin {
 
         add_enum_setting::<FogSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<BloomSetting>(app, &mut settings, &mut schedule);
+        add_enum_setting::<DofSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<SsaoSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<OobSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<AaSetting>(app, &mut settings, &mut schedule);

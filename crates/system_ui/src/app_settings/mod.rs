@@ -1,9 +1,9 @@
 use bevy::{ecs::system::StaticSystemParam, prelude::*, ui::RelativeCursorPosition};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use common::structs::{
-    AaSetting, AppConfig, BloomSetting, FogSetting, SettingsTab, ShadowSetting, SsaoSetting,
-    WindowSetting,
-};
+use common::{structs::{
+    AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, SettingsTab, ShadowSetting,
+    SsaoSetting, WindowSetting,
+}, util::TryPushChildrenEx};
 use system_bridge::settings::{cache_size::CacheSizeSetting, EnumAppSetting, IntAppSetting};
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
@@ -105,6 +105,7 @@ fn set_app_settings_content(
             spawn_int_setting_template::<ShadowCasterCountSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<FogSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<BloomSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<DofSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<SsaoSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<OobSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<ConstrainUiSetting>(&mut commands, &dui, &config),
@@ -155,7 +156,7 @@ fn set_app_settings_content(
 
         commands
             .entity(components.named("settings"))
-            .push_children(&children);
+            .try_push_children(&children);
 
         commands
             .entity(components.named("settings-description"))

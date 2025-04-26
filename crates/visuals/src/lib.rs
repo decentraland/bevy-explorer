@@ -1,5 +1,8 @@
 use bevy::{
-    core_pipeline::Skybox,
+    core_pipeline::{
+        dof::{DepthOfFieldMode, DepthOfFieldSettings},
+        Skybox,
+    },
     pbr::{wireframe::WireframePlugin, CascadeShadowConfigBuilder, DirectionalLightShadowMap},
     prelude::*,
     render::{
@@ -16,8 +19,8 @@ use bevy_console::ConsoleCommand;
 use common::{
     sets::SetupSets,
     structs::{
-        AppConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser, SceneLoadDistance,
-        ShadowSetting, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER,
+        AppConfig, DofConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
+        SceneLoadDistance, ShadowSetting, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER,
     },
 };
 use console::DoAddConsoleCommand;
@@ -35,6 +38,7 @@ impl Plugin for VisualsPlugin {
             .add_plugins(WireframePlugin)
             .add_systems(Update, apply_global_light)
             .add_systems(Update, move_ground)
+            .add_systems(Update, update_dof)
             .add_systems(Startup, setup.in_set(SetupSets::Main));
 
         let config = app.world().resource::<AppConfig>();
@@ -47,6 +51,7 @@ impl Plugin for VisualsPlugin {
 
         app.add_console_command::<ShadowConsoleCommand, _>(shadow_console_command);
         app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
+        app.add_console_command::<DofConsoleCommand, _>(dof_console_command);
     }
 }
 
@@ -356,4 +361,62 @@ fn fog_console_command(
             }
         ));
     }
+}
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/dof")]
+struct DofConsoleCommand {
+    focal_distance_extra: f32,
+    sensor_height: f32,
+    fstops: f32,
+    max_circle: f32,
+    max_depth: f32,
+    mode: usize,
+}
+
+fn dof_console_command(
+    mut input: ConsoleCommand<DofConsoleCommand>,
+    mut cam: Query<(&mut DepthOfFieldSettings, &mut DofConfig)>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let Ok((mut dof, mut mydof)) = cam.get_single_mut() else {
+            return;
+        };
+
+        *dof = DepthOfFieldSettings {
+            mode: if command.mode == 0 {
+                DepthOfFieldMode::Gaussian
+            } else {
+                DepthOfFieldMode::Bokeh
+            },
+            aperture_f_stops: command.fstops,
+            max_circle_of_confusion_diameter: command.max_circle,
+            max_depth: command.max_depth,
+            ..Default::default()
+        };
+        mydof.default_sensor_height = command.sensor_height;
+        mydof.extra_focal_distance = command.focal_distance_extra;
+        input.reply_ok("");
+    }
+}
+
+fn update_dof(
+    mut cam: Query<(&Transform, &DofConfig, &mut DepthOfFieldSettings), With<PrimaryCamera>>,
+    player: Query<&Transform, With<PrimaryUser>>,
+) {
+    let (Ok((cam, mydof, mut dof)), Ok(player)) = (cam.get_single_mut(), player.get_single())
+    else {
+        return;
+    };
+
+    // let base_distance = 10.0;
+    let constant_distance = mydof.extra_focal_distance;
+    let current_distance =
+        ((cam.translation - (player.translation + Vec3::Y * 1.81)).length() + constant_distance).min(100.0);
+
+    dof.sensor_height = mydof.default_sensor_height;
+        // * ((current_distance * (current_distance + constant_distance))
+        //     / (base_distance * (base_distance + constant_distance)))
+        //     .sqrt();
+    dof.focal_distance = current_distance;
 }

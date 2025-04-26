@@ -288,6 +288,7 @@ pub struct GraphicsSettings {
     // pub fullscreen_res: FullscreenResSetting,
     pub fog: FogSetting,
     pub bloom: BloomSetting,
+    pub dof: DofSetting,
     pub ssao: SsaoSetting,
     pub oob: f32,
     pub ambient_brightness: i32,
@@ -308,6 +309,7 @@ impl Default for GraphicsSettings {
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
             fog: FogSetting::Atmospheric,
             bloom: BloomSetting::Low,
+            dof: DofSetting::High,
             ssao: SsaoSetting::Off,
             oob: 2.0,
             ambient_brightness: 50,
@@ -391,6 +393,20 @@ pub enum BloomSetting {
     Off,
     Low,
     High,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DofSetting {
+    Off,
+    Low,
+    High,
+}
+
+#[derive(Component)]
+// (sensor height, extra focal distance)
+pub struct DofConfig {
+    pub default_sensor_height: f32,
+    pub extra_focal_distance: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
