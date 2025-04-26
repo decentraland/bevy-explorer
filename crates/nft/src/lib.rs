@@ -114,6 +114,7 @@ fn update_nft_shapes(
                         "nft://{}.nft",
                         urlencoding::encode(&nft_shape.0.urn)
                     ))),
+                    scene_ent.clone(),
                 ));
             })
             .id();
@@ -221,6 +222,7 @@ fn load_nft(
     config: Res<AppConfig>,
 ) {
     for (ent, scene_ent, nft) in q.iter() {
+        println!("checking: {ent:?}");
         let Some(nft) = nfts.get(nft.0.id()) else {
             if let LoadState::Failed(_) = asset_server.load_state(nft.0.id()) {
                 debug!("nft failed");
@@ -238,8 +240,11 @@ fn load_nft(
 
         // get bounds
         let Ok(bounds) = scenes.get(scene_ent.root).map(|ctx| ctx.bounds.clone()) else {
+            println!("fail bounds");
             continue;
         };
+
+        println!("got all: {ipfs_path:?} , {bounds:?}");
 
         commands
             .entity(ent)
