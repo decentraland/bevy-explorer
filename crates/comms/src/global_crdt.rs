@@ -8,7 +8,8 @@ use bevy::{
 use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender},
-    structs::{AttachPoints, AudioDecoderError}, util::TryPushChildrenEx,
+    structs::{AttachPoints, AudioDecoderError},
+    util::TryPushChildrenEx,
 };
 use ethers_core::types::Address;
 use kira::sound::streaming::StreamingSoundData;

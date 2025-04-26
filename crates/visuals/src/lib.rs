@@ -411,12 +411,13 @@ fn update_dof(
 
     // let base_distance = 10.0;
     let constant_distance = mydof.extra_focal_distance;
-    let current_distance =
-        ((cam.translation - (player.translation + Vec3::Y * 1.81)).length() + constant_distance).min(100.0);
+    let current_distance = ((cam.translation - (player.translation + Vec3::Y * 1.81)).length()
+        + constant_distance)
+        .min(100.0);
 
     dof.sensor_height = mydof.default_sensor_height;
-        // * ((current_distance * (current_distance + constant_distance))
-        //     / (base_distance * (base_distance + constant_distance)))
-        //     .sqrt();
+    // * ((current_distance * (current_distance + constant_distance))
+    //     / (base_distance * (base_distance + constant_distance)))
+    //     .sqrt();
     dof.focal_distance = current_distance;
 }

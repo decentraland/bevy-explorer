@@ -1,9 +1,12 @@
 use bevy::{ecs::system::StaticSystemParam, prelude::*, ui::RelativeCursorPosition};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use common::{structs::{
-    AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, SettingsTab, ShadowSetting,
-    SsaoSetting, WindowSetting,
-}, util::TryPushChildrenEx};
+use common::{
+    structs::{
+        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, SettingsTab, ShadowSetting,
+        SsaoSetting, WindowSetting,
+    },
+    util::TryPushChildrenEx,
+};
 use system_bridge::settings::{cache_size::CacheSizeSetting, EnumAppSetting, IntAppSetting};
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
