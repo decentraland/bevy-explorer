@@ -819,6 +819,7 @@ pub fn process_realm_change(
     current_realm: Res<CurrentRealm>,
     mut live_scenes: ResMut<LiveScenes>,
     mut segment_config: Option<ResMut<SegmentConfig>>,
+    scenes: Query<&RendererSceneContext>,
 ) {
     if current_realm.is_changed() {
         info!(
@@ -860,10 +861,11 @@ pub fn process_realm_change(
         //     PointerResult::Exists{ hash, .. } => realm_scene_ids.contains_key(hash),
         // });
         if !realm_scene_ids.is_empty() {
-            // purge pointers and scenes that are not in the realm list
-            live_scenes
-                .scenes
-                .retain(|hash, _| realm_scene_ids.contains_key(hash));
+            // purge pointers and scenes that are not in the realm list (and not portable)
+            live_scenes.scenes.retain(|hash, entity| {
+                realm_scene_ids.contains_key(hash)
+                    || scenes.get(*entity).is_ok_and(|ctx| ctx.is_portable)
+            });
         }
 
         if let Some(ref mut segment_config) = segment_config {
