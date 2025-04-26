@@ -12,8 +12,14 @@ pub trait DynRpcResult: std::any::Any + std::fmt::Debug + Send + Sync + 'static 
     fn as_any(&mut self) -> &mut dyn Any;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RpcResultSender<T>(Arc<RwLock<Option<tokio::sync::oneshot::Sender<T>>>>);
+
+impl<T> std::fmt::Debug for RpcResultSender<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("RpcResultSender").finish()
+    }
+}
 
 impl<T: 'static> Default for RpcResultSender<T> {
     fn default() -> Self {

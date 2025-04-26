@@ -14,7 +14,7 @@ use bevy_simple_text_input::{
     TextInputSelectionStyle, TextInputSettings, TextInputSubmitEvent, TextInputSystem,
     TextInputTextStyle, TextInputValue,
 };
-use common::sets::SceneSets;
+use common::{sets::SceneSets, util::TryPushChildrenEx};
 use input_manager::{InputManager, InputPriority, InputType};
 
 use super::focus::Focus;
@@ -96,7 +96,7 @@ fn update_text_entry_components(
                 let id = commands.spawn_empty().id();
                 commands
                     .entity(entity)
-                    .push_children(&[id])
+                    .try_push_children(&[id])
                     .insert(TextEntryEntity(id));
                 let mut cmds = commands.entity(id);
                 cmds.insert((

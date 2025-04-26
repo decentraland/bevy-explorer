@@ -14,7 +14,7 @@ use common::{
     inputs::SystemAction,
     sets::SetupSets,
     structs::{ActiveDialog, PrimaryUser, SystemAudio},
-    util::{FireEventEx, ModifyComponentExt},
+    util::{FireEventEx, ModifyComponentExt, TryPushChildrenEx},
 };
 use comms::profile::CurrentUserProfile;
 use input_manager::{InputManager, InputPriority};
@@ -89,7 +89,7 @@ fn setup(
         DuiComponentFromClone::<DuiLayout>::new("layout"),
     );
 
-    commands.entity(ui_root.0).push_children(&[button]);
+    commands.entity(ui_root.0).try_push_children(&[button]);
 }
 
 #[allow(clippy::too_many_arguments)]

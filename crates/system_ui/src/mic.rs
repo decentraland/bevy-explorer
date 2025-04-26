@@ -4,7 +4,7 @@ use common::{
     inputs::SystemAction,
     sets::SetupSets,
     structs::{SystemAudio, ToolTips, TooltipSource},
-    util::FireEventEx,
+    util::{FireEventEx, TryPushChildrenEx},
 };
 use comms::{Transport, TransportType};
 use input_manager::{InputManager, InputPriority};
@@ -87,7 +87,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
         ))
         .id();
 
-    commands.entity(ui_root.0).push_children(&[mic_button]);
+    commands.entity(ui_root.0).try_push_children(&[mic_button]);
 }
 
 #[allow(clippy::too_many_arguments)]

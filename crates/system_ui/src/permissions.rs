@@ -4,7 +4,7 @@ use common::{
     structs::{
         AppConfig, PermissionTarget, PermissionType, PermissionValue, PrimaryPlayerRes, SettingsTab,
     },
-    util::{FireEventEx, ModifyComponentExt},
+    util::{FireEventEx, ModifyComponentExt, TryPushChildrenEx},
 };
 use ipfs::CurrentRealm;
 use scene_runner::{
@@ -335,7 +335,7 @@ fn set_permission_settings_content(
 
         commands
             .entity(components.named("permissions-box"))
-            .push_children(&children);
+            .try_push_children(&children);
 
         commands
             .entity(components.named("permission-description"))

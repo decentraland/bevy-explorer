@@ -212,7 +212,7 @@ pub enum Action {
     System(SystemAction),
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct BindingsData {
     pub bindings: HashMap<Action, Vec<InputIdentifier>>,

@@ -42,7 +42,7 @@ use common::{
         PreviewCommand, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser,
         SceneImposterBake, SceneLoadDistance, SystemScene, Version, GROUND_RENDERLAYER,
     },
-    util::{config_file, project_directories, TaskCompat, TaskExt, UtilsPlugin},
+    util::{config_file, project_directories, TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
 };
 use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
@@ -492,7 +492,7 @@ fn setup(
             GroundCollider::default(),
             propagate::Propagate(RenderLayers::default()),
         ))
-        .push_children(&attach_points.entities())
+        .try_push_children(&attach_points.entities())
         .insert(attach_points)
         .id();
 

@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_simple_text_input::{
     TextInputBundle, TextInputPlaceholder, TextInputPlugin, TextInputSettings, TextInputSubmitEvent,
 };
-use common::util::AsH160;
+use common::util::{AsH160, TryPushChildrenEx};
 use dcl_component::proto_components::social::friendship_event_response;
 use social::{
     client::{DirectChatMessage, SocialClientHandler},
@@ -152,7 +152,7 @@ fn update(
                 ..Default::default()
             })
             .id();
-        c2.entity(output).push_children(&[text]);
+        c2.entity(output).try_push_children(&[text]);
     };
 
     for ev in input.read() {
@@ -164,7 +164,7 @@ fn update(
                 ..Default::default()
             })
             .id();
-        commands.entity(output).push_children(&[text]);
+        commands.entity(output).try_push_children(&[text]);
 
         if ev.value.starts_with('/') {
             let mut words = ev.value[1..].trim().split(' ');

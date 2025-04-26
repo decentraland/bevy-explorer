@@ -1,6 +1,6 @@
 use bevy::{color::palettes::css, prelude::*};
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
-use common::{profile::SerializedProfile, structs::SettingsTab};
+use common::{profile::SerializedProfile, structs::SettingsTab, util::TryPushChildrenEx};
 use comms::profile::CurrentUserProfile;
 use ui_core::{
     button::{DuiButton, TabSelection},
@@ -183,6 +183,6 @@ fn set_profile_detail_content(
 
         commands
             .entity(components.named("items"))
-            .push_children(&cat_items.iter().map(|de| de.root).collect::<Vec<_>>());
+            .try_push_children(&cat_items.iter().map(|de| de.root).collect::<Vec<_>>());
     }
 }

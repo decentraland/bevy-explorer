@@ -853,7 +853,7 @@ impl DuiTemplate for ScrollableTemplate {
                     },
                     ..Default::default()
                 })
-                .push_children(&[content]);
+                .try_push_children(&[content]);
             });
 
         commands.try_insert((Interaction::default(), scrollable, ScrollContent(content)));

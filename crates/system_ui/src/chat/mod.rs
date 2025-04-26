@@ -133,7 +133,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
         ))
         .id();
 
-    commands.entity(ui_root.0).push_children(&[button]);
+    commands.entity(ui_root.0).try_push_children(&[button]);
 }
 
 fn keyboard_popup(
