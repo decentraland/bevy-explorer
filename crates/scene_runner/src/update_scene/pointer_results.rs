@@ -130,6 +130,7 @@ pub struct PointerTargetInfo {
     pub position: Option<Vec3>,
     pub normal: Option<Vec3>,
     pub face: Option<usize>,
+    pub is_ui: Option<bool>,
 }
 
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
@@ -243,6 +244,7 @@ fn update_pointer_target(
                 position: Some(ray.origin + ray.direction * hit.toi),
                 normal: Some(hit.normal.normalize_or_zero()),
                 face: hit.face,
+                is_ui: Some(false),
             });
         } else {
             warn!("hit some dead entity?");
@@ -469,6 +471,7 @@ fn resolve_pointer_target(
                 position: None,
                 normal: None,
                 face: None,
+                is_ui: Some(true),
             });
         }
         UiPointerTargetValue::World(e) => {
@@ -485,6 +488,7 @@ fn resolve_pointer_target(
                 position: None,
                 normal: None,
                 face: None,
+                is_ui: Some(true),
             });
         }
         UiPointerTargetValue::None => target.0.clone_from(&world_target.0),
@@ -683,6 +687,7 @@ fn send_hover_events(
                 position: None,
                 normal: None,
                 face: None,
+                is_ui: None,
             },
             PointerEventType::PetHoverLeave,
         );
@@ -712,7 +717,7 @@ fn send_hover_events(
 fn send_action_events(
     target: Res<PointerTarget>,
     pointer_requests: Query<(&SceneEntity, Option<&PointerEvents>)>,
-    mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform)>,
+    mut scenes: Query<(Entity, &mut RendererSceneContext, &GlobalTransform)>,
     input_mgr: InputManager,
     frame: Res<FrameCount>,
     time: Res<Time>,
@@ -756,7 +761,7 @@ fn send_action_events(
             filtered_events(&pointer_requests, info, ev_type, action).peekable();
         // check there's at least one potential request before doing any work
         if potential_entries.peek().is_some() {
-            let Ok((mut context, scene_transform)) = scenes.get_mut(scene_entity.root) else {
+            let Ok((_, mut context, scene_transform)) = scenes.get_mut(scene_entity.root) else {
                 return false;
             };
 
@@ -779,7 +784,7 @@ fn send_action_events(
                         mesh_name: info.mesh_name.clone(),
                         entity_id: scene_entity.id.as_proto_u32(),
                     };
-                    debug!("({:?}) pointer hit: {hit:?}", ev_type);
+                    debug!("({:?} / {action:?}) pointer hit: {hit:?}", ev_type);
                     // send to target entity
                     context.update_crdt(
                         SceneComponentId::POINTER_RESULT,
@@ -877,8 +882,42 @@ fn send_action_events(
         return;
     }
 
-    for (mut context, _) in scenes.iter_mut() {
+    let scene_entity = target
+        .0
+        .as_ref()
+        // TODO fix this hack - seems like foundation only sends the entity id for non-ui entities
+        // we need to send the entity for metadyne cubes, but not for ui onMouseDown (to avoid duplicating)
+        .filter(|info| info.is_ui != Some(true))
+        .and_then(|info| pointer_requests.get(info.container).map(|(e, _)| e).ok());
+    let scene_root = scene_entity.map(|e| e.root);
+
+    for (root_ent, mut context, scene_transform) in scenes.iter_mut() {
         let tick_number = context.tick_number;
+
+        // we send the entity id to the containing scene, otherwise we send ROOT
+        // as the entity id is only valid within the containing scene context
+        let entity_id = if scene_root == Some(root_ent) {
+            scene_entity.as_ref().unwrap().id.as_proto_u32()
+        } else {
+            SceneEntityId::ROOT.as_proto_u32()
+        };
+
+        let hit = RaycastHit {
+            position: target.0.as_ref().and_then(|info| {
+                info.position
+                    .as_ref()
+                    .map(|p| Vector3::world_vec_from_vec3(&(*p - scene_transform.translation())))
+            }),
+            global_origin: None,
+            direction: None,
+            normal_hit: target
+                .0
+                .as_ref()
+                .and_then(|info| info.normal.as_ref().map(Vector3::world_vec_from_vec3)),
+            length: target.0.as_ref().map_or(0.0, |info| info.distance.0),
+            mesh_name: target.0.as_ref().and_then(|info| info.mesh_name.clone()),
+            entity_id,
+        };
 
         for down in input_mgr.iter_scene_just_down() {
             context.update_crdt(
@@ -887,7 +926,7 @@ fn send_action_events(
                 SceneEntityId::ROOT,
                 &PbPointerEventsResult {
                     button: *down as i32,
-                    hit: None,
+                    hit: Some(hit.clone()),
                     state: PointerEventType::PetDown as i32,
                     timestamp: frame.0,
                     analog: None,
@@ -903,7 +942,7 @@ fn send_action_events(
                 SceneEntityId::ROOT,
                 &PbPointerEventsResult {
                     button: *up as i32,
-                    hit: None,
+                    hit: Some(hit.clone()),
                     state: PointerEventType::PetUp as i32,
                     timestamp: frame.0,
                     analog: None,
