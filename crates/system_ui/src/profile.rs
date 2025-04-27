@@ -14,7 +14,7 @@ use common::{
         ActiveDialog, AppConfig, PermissionTarget, SettingsTab, ShowSettingsEvent, SystemAudio,
         PROFILE_UI_RENDERLAYER,
     },
-    util::FireEventEx,
+    util::{FireEventEx, TryPushChildrenEx},
 };
 use comms::profile::{CurrentUserProfile, ProfileDeployedEvent};
 use ipfs::{ChangeRealmEvent, CurrentRealm};
@@ -82,7 +82,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
         ))
         .id();
 
-    commands.entity(ui_root.0).push_children(&[button]);
+    commands.entity(ui_root.0).try_push_children(&[button]);
 }
 
 pub struct InfoDialog;

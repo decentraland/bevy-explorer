@@ -22,7 +22,7 @@ use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::SceneSets,
     structs::{AppConfig, Cubemap, PrimaryUser, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER},
-    util::{camera_to_render_layers, AudioReceiver},
+    util::{camera_to_render_layers, AudioReceiver, TryPushChildrenEx},
 };
 use comms::global_crdt::ForeignPlayer;
 use dcl_component::{
@@ -411,7 +411,7 @@ fn update_texture_cameras(
 
             commands
                 .entity(ent)
-                .push_children(&[camera_id])
+                .try_push_children(&[camera_id])
                 .insert((TextureCamEntity(camera_id), VideoTextureOutput(image)));
 
             new_cam_events.send(NewCameraEvent(camera_id));

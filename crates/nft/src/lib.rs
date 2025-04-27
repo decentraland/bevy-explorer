@@ -114,6 +114,7 @@ fn update_nft_shapes(
                         "nft://{}.nft",
                         urlencoding::encode(&nft_shape.0.urn)
                     ))),
+                    scene_ent.clone(),
                 ));
             })
             .id();

@@ -25,6 +25,16 @@ pub enum SystemAction {
     PointerLeft,
     PointerRight,
     ShowProfile,
+    QuickEmote1,
+    QuickEmote2,
+    QuickEmote3,
+    QuickEmote4,
+    QuickEmote5,
+    QuickEmote6,
+    QuickEmote7,
+    QuickEmote8,
+    QuickEmote9,
+    QuickEmote0,
 }
 
 impl From<SystemAction> for Action {
@@ -202,7 +212,7 @@ pub enum Action {
     System(SystemAction),
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct BindingsData {
     pub bindings: HashMap<Action, Vec<InputIdentifier>>,
@@ -314,7 +324,10 @@ impl Default for InputMap {
                 ),
                 (
                     Action::System(SystemAction::Emote),
-                    vec![InputIdentifier::Key(KeyCode::AltLeft)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::AltLeft),
+                        InputIdentifier::Gamepad(GamepadButtonType::West),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::Cancel),
@@ -422,6 +435,46 @@ impl Default for InputMap {
                         AxisIdentifier::GamepadRight,
                         InputDirection::Right,
                     )],
+                ),
+                (
+                    Action::System(SystemAction::QuickEmote0),
+                    vec![InputIdentifier::Key(KeyCode::Digit0)],
+                ),
+                (
+                    Action::System(SystemAction::QuickEmote1),
+                    vec![InputIdentifier::Key(KeyCode::Digit1)],
+                ),
+                (
+                    Action::System(SystemAction::QuickEmote2),
+                    vec![InputIdentifier::Key(KeyCode::Digit2)],
+                ),
+                (
+                    Action::System(SystemAction::QuickEmote3),
+                    vec![InputIdentifier::Key(KeyCode::Digit3)],
+                ),
+                (
+                    Action::System(SystemAction::QuickEmote4),
+                    vec![InputIdentifier::Key(KeyCode::Digit4)],
+                ),
+                (
+                    Action::System(SystemAction::QuickEmote5),
+                    vec![InputIdentifier::Key(KeyCode::Digit5)],
+                ),
+                (
+                    Action::System(SystemAction::QuickEmote6),
+                    vec![InputIdentifier::Key(KeyCode::Digit6)],
+                ),
+                (
+                    Action::System(SystemAction::QuickEmote7),
+                    vec![InputIdentifier::Key(KeyCode::Digit7)],
+                ),
+                (
+                    Action::System(SystemAction::QuickEmote8),
+                    vec![InputIdentifier::Key(KeyCode::Digit8)],
+                ),
+                (
+                    Action::System(SystemAction::QuickEmote9),
+                    vec![InputIdentifier::Key(KeyCode::Digit9)],
                 ),
             ]),
         }

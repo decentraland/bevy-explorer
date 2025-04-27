@@ -669,7 +669,7 @@ fn update_map_visibilty(
         };
         *init = true;
         // todo this is really bad
-        if realm.address == "https://realm-provider.decentraland.org/main" {
+        if realm.about_url.ends_with("decentraland.org/main/about") {
             style.display = Display::Flex;
         } else {
             style.display = Display::None;

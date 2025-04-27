@@ -9,6 +9,7 @@ use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender},
     structs::{AttachPoints, AudioDecoderError},
+    util::TryPushChildrenEx,
 };
 use ethers_core::types::Address;
 use kira::sound::streaming::StreamingSoundData;
@@ -310,7 +311,7 @@ pub fn process_transport_updates(
                         ForeignAudioSource(audio_receiver),
                         propagate::Propagate(RenderLayers::default()),
                     ))
-                    .push_children(&attach_points.entities())
+                    .try_push_children(&attach_points.entities())
                     .insert(attach_points)
                     .id();
 

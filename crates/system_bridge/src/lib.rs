@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 use bevy::{
     app::{Plugin, Update},
     ecs::{event::EventReader, system::Local},
+    log::debug,
     prelude::{Event, EventWriter, ResMut, Resource},
 };
 use bevy_console::{clap::builder::StyledStr, ConsoleCommandEntered, PrintConsoleLine};
@@ -40,7 +41,7 @@ impl Plugin for SystemBridgePlugin {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SetAvatarData {
     pub base: Option<PbAvatarBase>,
     pub equip: Option<PbAvatarEquippedData>,
@@ -60,7 +61,7 @@ pub struct LiveSceneInfo {
     pub sdk_version: String,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HomeScene {
     pub realm: String,
     pub parcel: Vector2,
@@ -73,7 +74,7 @@ pub struct ChatMessage {
     pub channel: String,
 }
 
-#[derive(Event, Clone)]
+#[derive(Event, Clone, Debug)]
 pub enum SystemApi {
     ConsoleCommand(String, Vec<String>, RpcResultSender<Result<String, String>>),
     CheckForUpdate(RpcResultSender<Option<(String, String)>>),
@@ -122,8 +123,10 @@ pub fn post_events(
 ) {
     while let Ok(ev) = bridge.receiver.try_recv() {
         if let SystemApi::ConsoleCommand(cmd, args, sender) = ev {
+            debug!("system bridge (cc): {cmd} {args:?}");
             pending.push_back((cmd, args, sender));
         } else {
+            debug!("system bridge: {ev:?}");
             writer.send(ev);
         }
     }

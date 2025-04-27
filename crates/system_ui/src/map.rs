@@ -157,7 +157,7 @@ fn set_map_content(
                     let cursor_rel_position = cursor_rel_position * Vec2::new(1.0, -1.0);
                     let cursor_parcel = map.center + cursor_rel_position / data.pixels_per_parcel;
 
-                    let adj = 1.1f32.powf(-wheel.wheel);
+                    let adj = 1.01f32.powf(-wheel.wheel);
                     map.parcels_per_vmin = (map.parcels_per_vmin * adj).clamp(10.0, 500.0);
                     let pixels_per_parcel =
                         (window.width().min(window.height()) / map.parcels_per_vmin).round();

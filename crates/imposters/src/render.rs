@@ -18,7 +18,7 @@ use common::{
     util::{TaskCompat, TaskExt},
 };
 use crc::CRC_32_CKSUM;
-use ipfs::{ChangeRealmEvent, CurrentRealm, IpfsAssetServer};
+use ipfs::{CurrentRealm, IpfsAssetServer};
 
 use scene_runner::{
     initialize_scene::{
@@ -272,20 +272,21 @@ pub fn spawn_imposters(
     config: Res<AppConfig>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
     mut required: Local<HashSet<(IVec2, usize, bool)>>,
-    realm_changed: EventReader<ChangeRealmEvent>,
+    current_realm: Res<CurrentRealm>,
     ingredients: Res<BakingIngredients>,
     pointers: Res<ScenePointers>,
     live_scenes: Res<LiveScenes>,
     scenes: Query<&RendererSceneContext, Without<SceneLoading>>,
     current_imposter_scene: Res<CurrentImposterScene>,
 ) {
-    if !realm_changed.is_empty() {
+    if current_realm.is_changed() {
         for (_, entity) in lookup.0.drain() {
             if let Some(commands) = commands.get_entity(entity) {
                 commands.despawn_recursive();
             }
         }
 
+        debug!("purge");
         return;
     }
 
@@ -373,11 +374,11 @@ pub fn spawn_imposters(
             };
 
             if render_tile {
-                debug!("adding {}:{} == {}", tile, level, tile_origin_parcel);
+                trace!("adding {}:{} == {}", tile, level, tile_origin_parcel);
                 required.insert((tile_origin_parcel, level, false));
             } else {
                 // add to next level requirements
-                debug!(
+                trace!(
                     "cant' add {}:{} == {} (distance = {} vs {}, live minmax = {},{})",
                     tile,
                     level,
@@ -388,7 +389,7 @@ pub fn spawn_imposters(
                     live_max
                 );
                 for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
-                    debug!("maybe the child {}:{}", tile * 2 + offset, level - 1);
+                    trace!("maybe the child {}:{}", tile * 2 + offset, level - 1);
                     required_tiles.insert(tile * 2 + offset);
                 }
             }

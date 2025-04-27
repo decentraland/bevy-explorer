@@ -175,7 +175,7 @@ impl ConversationManager<'_, '_> {
                 .insert_children(0, &[bubble]);
             added.1 = Some((address, color, (bubble, content)));
         } else {
-            self.commands.entity(container).push_children(&[bubble]);
+            self.commands.entity(container).try_push_children(&[bubble]);
             added.2 = Some((address, color, (bubble, content)));
         }
 

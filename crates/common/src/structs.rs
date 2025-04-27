@@ -206,9 +206,8 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            server: "https://sdk-team-cdn.decentraland.org/ipfs/goerli-plaza-main-latest"
-                .to_owned(),
-            location: IVec2::new(78, -7),
+            server: "https://realm-provider-ea.decentraland.org/main".to_owned(),
+            location: IVec2::new(0, 0),
             previous_login: None,
             graphics: Default::default(),
             audio: Default::default(),
@@ -289,9 +288,11 @@ pub struct GraphicsSettings {
     // pub fullscreen_res: FullscreenResSetting,
     pub fog: FogSetting,
     pub bloom: BloomSetting,
+    pub dof: DofSetting,
     pub ssao: SsaoSetting,
     pub oob: f32,
     pub ambient_brightness: i32,
+    pub gpu_bytes_per_frame: usize,
 }
 
 impl Default for GraphicsSettings {
@@ -299,7 +300,7 @@ impl Default for GraphicsSettings {
         Self {
             vsync: false,
             log_fps: true,
-            msaa: AaSetting::Msaa4x,
+            msaa: AaSetting::FxaaHigh,
             fps_target: 60,
             shadow_distance: 200.0,
             shadow_settings: ShadowSetting::High,
@@ -308,9 +309,11 @@ impl Default for GraphicsSettings {
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
             fog: FogSetting::Atmospheric,
             bloom: BloomSetting::Low,
+            dof: DofSetting::High,
             ssao: SsaoSetting::Off,
             oob: 2.0,
             ambient_brightness: 50,
+            gpu_bytes_per_frame: 0,
         }
     }
 }
@@ -390,6 +393,20 @@ pub enum BloomSetting {
     Off,
     Low,
     High,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DofSetting {
+    Off,
+    Low,
+    High,
+}
+
+#[derive(Component)]
+// (sensor height, extra focal distance)
+pub struct DofConfig {
+    pub default_sensor_height: f32,
+    pub extra_focal_distance: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]

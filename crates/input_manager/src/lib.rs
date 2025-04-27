@@ -171,6 +171,9 @@ impl InputManager<'_> {
             || self.mouse_input.get_just_released().len() != 0
             || self.key_input.get_just_pressed().len() != 0
             || self.key_input.get_just_released().len() != 0
+            || self.gamepad_input.get_just_pressed().len() != 0
+            || self.gamepad_input.get_just_released().len() != 0
+            || !self.axis_data.current.is_empty()
     }
 
     fn inputs(&self, action: Action) -> impl Iterator<Item = &InputIdentifier> {

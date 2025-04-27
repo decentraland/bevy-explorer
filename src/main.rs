@@ -42,7 +42,7 @@ use common::{
         PreviewCommand, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser,
         SceneImposterBake, SceneLoadDistance, SystemScene, Version, GROUND_RENDERLAYER,
     },
-    util::{config_file, project_directories, TaskCompat, TaskExt, UtilsPlugin},
+    util::{config_file, project_directories, TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
 };
 use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
@@ -167,6 +167,10 @@ fn main() {
                 .value_from_str::<_, usize>("--fps")
                 .ok()
                 .unwrap_or(base_config.graphics.fps_target),
+            gpu_bytes_per_frame: args
+                .value_from_str::<_, usize>("--gpu_bytes_per_frame")
+                .ok()
+                .unwrap_or(base_config.graphics.gpu_bytes_per_frame),
             ..base_config.graphics
         },
         scene_threads: args
@@ -488,7 +492,7 @@ fn setup(
             GroundCollider::default(),
             propagate::Propagate(RenderLayers::default()),
         ))
-        .push_children(&attach_points.entities())
+        .try_push_children(&attach_points.entities())
         .insert(attach_points)
         .id();
 
