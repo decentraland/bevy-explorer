@@ -614,7 +614,7 @@ pub fn spawn_discover_popup(
             "https://worlds-content-server.decentraland.org/world/{}",
             name.clone()
         ),
-        None => "https://realm-provider.decentraland.org/main".to_owned(),
+        None => "https://realm-provider-ea.decentraland.org/main".to_owned(),
     };
 
     let Ok(to) = IVec2Arg::from_str(&item.base_position) else {
