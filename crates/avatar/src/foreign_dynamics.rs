@@ -74,6 +74,11 @@ fn update_foreign_user_target_position(
                         // we're using movement compressed, and this is a "later" timestamp
                         // TODO: we can avoid using out-of-order messages as well by checking threshold vs prev
                         is_valid = true;
+                    } else {
+                        debug!(
+                            "invalid timestamp: ev: {:?}, last: {:?}",
+                            timestamp, pos.timestamp
+                        );
                     }
                 }
 
@@ -151,7 +156,12 @@ fn update_foreign_user_actual_position(
                 dynamic_state.velocity = velocity;
                 turn_time = 0.0;
             } else {
-                let dt = t1 - t0;
+                // use some extrapolation but slow it down so we don't overcompensate for missed packets
+                let dt = if (t1 - t0) < 1.0 {
+                    t1 - t0
+                } else {
+                    (t1 - t0).sqrt()
+                };
 
                 let p0 = actual.translation;
                 let p1 = target.translation;

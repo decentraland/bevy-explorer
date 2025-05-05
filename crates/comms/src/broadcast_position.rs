@@ -28,7 +28,7 @@ const DYNAMIC_FREQ: f64 = 0.1;
 fn broadcast_position(
     player: Query<(&GlobalTransform, &AvatarDynamicState), With<PrimaryUser>>,
     transports: Query<&Transport>,
-    mut last_position: Local<(Vec3, Quat)>,
+    mut last_position: Local<(Vec3, Quat, Vec3)>,
     mut last_sent: Local<f64>,
     mut last_index: Local<u32>,
     time: Res<Time>,
@@ -47,10 +47,14 @@ fn broadcast_position(
     if elapsed < STATIC_FREQ
         && (translation - last_position.0).length_squared() < 0.01
         && rotation == last_position.1
+        && (dynamics.velocity - last_position.2).length_squared() < 0.01
     {
         return;
     }
 
+    // OLD CLIENT MESSAGES
+    // (bevy uses the old version only if no new ones are received from a particular player,
+    // so it doesn't use them between bevy instances)
     let dcl_position = DclTranslation::from_bevy_translation(translation);
     let dcl_rotation = DclQuat::from_bevy_quat(rotation);
     let position_packet = rfc4::Position {
@@ -82,6 +86,7 @@ fn broadcast_position(
         }
     }
 
+    // NEW CLIENT MESSAGES
     let movement = Movement::new(
         translation,
         dynamics.velocity,
@@ -121,7 +126,7 @@ fn broadcast_position(
         }
     }
 
-    *last_position = (translation, rotation);
+    *last_position = (translation, rotation, dynamics.velocity);
     *last_index += 1;
     *last_sent = time;
 }
