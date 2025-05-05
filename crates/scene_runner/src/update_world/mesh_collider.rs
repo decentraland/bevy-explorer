@@ -38,7 +38,7 @@ use super::AddCrdtInterfaceExt;
 
 pub struct MeshColliderPlugin;
 
-#[derive(Component, Clone)]
+#[derive(Component, Clone, Debug)]
 pub struct MeshCollider {
     pub shape: MeshColliderShape,
     pub collision_mask: u32,
@@ -61,7 +61,7 @@ impl Default for MeshCollider {
 pub struct DisableCollisions;
 
 // #[derive(Debug)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum MeshColliderShape {
     Box,
     Cylinder { radius_top: f32, radius_bottom: f32 },

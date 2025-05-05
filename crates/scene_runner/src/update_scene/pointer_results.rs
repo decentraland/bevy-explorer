@@ -527,6 +527,7 @@ fn debug_pointer(
     pointer_target: Res<PointerTarget>,
     target: Query<&ContainerEntity>,
     scene: Query<&RendererSceneContext>,
+    colliders: Query<&MeshCollider>,
 ) {
     if debug.0 {
         let info = if let UiPointerTargetValue::Primary(ui_ent) = &ui_target.0 {
@@ -552,8 +553,12 @@ fn debug_pointer(
             if let Ok(target) = target.get(container) {
                 if let Ok(scene) = scene.get(target.root) {
                     format!(
-                        "world entity {}-{:?} from scene {}, [{}]",
-                        target.container_id, mesh_name, scene.title, distance.0
+                        "world entity {}-{:?} from scene {}, [{}], container: {:?}",
+                        target.container_id,
+                        mesh_name,
+                        scene.title,
+                        distance.0,
+                        colliders.get(container)
                     )
                 } else {
                     format!(
