@@ -206,10 +206,20 @@ pub trait Color4DclToBevy {
 
 impl Color4DclToBevy for common::Color4 {
     fn convert_linear_rgba(self) -> bevy::prelude::Color {
-        bevy::prelude::Color::linear_rgba(self.r, self.g, self.b, self.a)
+        bevy::prelude::Color::linear_rgba(
+            self.r.clamp(0.0, 1.0),
+            self.g.clamp(0.0, 1.0),
+            self.b.clamp(0.0, 1.0),
+            self.a.clamp(0.0, 1.0),
+        )
     }
     fn convert_srgba(self) -> bevy::prelude::Color {
-        bevy::prelude::Color::srgba(self.r, self.g, self.b, self.a)
+        bevy::prelude::Color::srgba(
+            self.r.clamp(0.0, 1.0),
+            self.g.clamp(0.0, 1.0),
+            self.b.clamp(0.0, 1.0),
+            self.a.clamp(0.0, 1.0),
+        )
     }
 }
 
@@ -246,10 +256,18 @@ pub trait Color3DclToBevy {
 
 impl Color3DclToBevy for common::Color3 {
     fn convert_linear_rgb(self) -> bevy::prelude::Color {
-        bevy::prelude::Color::linear_rgb(self.r, self.g, self.b)
+        bevy::prelude::Color::linear_rgb(
+            self.r.clamp(0.0, 1.0),
+            self.g.clamp(0.0, 1.0),
+            self.b.clamp(0.0, 1.0),
+        )
     }
     fn convert_srgb(self) -> bevy::prelude::Color {
-        bevy::prelude::Color::srgb(self.r, self.g, self.b)
+        bevy::prelude::Color::srgb(
+            self.r.clamp(0.0, 1.0),
+            self.g.clamp(0.0, 1.0),
+            self.b.clamp(0.0, 1.0),
+        )
     }
 }
 
