@@ -1040,7 +1040,7 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
         .map(|chunk| chunk.try_into().unwrap())
         .collect();
 
-    SharedShape::trimesh_with_flags(positions_parry, indices_parry, TriMeshFlags::empty())
+    SharedShape::trimesh_with_flags(positions_parry, indices_parry, TriMeshFlags::empty()).unwrap()
 }
 
 #[derive(Component)]
