@@ -1,9 +1,17 @@
-module.exports.movePlayerTo = async function (body) { 
-    if (body["cameraTarget"] !== undefined) {
-        Deno.core.ops.op_move_player_to(false, body.newRelativePosition.x, body.newRelativePosition.y, body.newRelativePosition.z, true, body.cameraTarget.x, body.cameraTarget.y, body.cameraTarget.z);
-    } else {
-        Deno.core.ops.op_move_player_to(false, body.newRelativePosition.x, body.newRelativePosition.y, body.newRelativePosition.z, false, 0, 0, 0);
-    }
+module.exports.movePlayerTo = async function (body) {
+    Deno.core.ops.op_move_player_to(
+        body.newRelativePosition.x, 
+        body.newRelativePosition.y, 
+        body.newRelativePosition.z, 
+        body.cameraTarget !== undefined, 
+        body.cameraTarget?.x ?? 0, 
+        body.cameraTarget?.y ?? 0, 
+        body.cameraTarget?.z ?? 0,
+        body.avatarTarget !== undefined,
+        body.avatarTarget?.x ?? 0, 
+        body.avatarTarget?.y ?? 0, 
+        body.avatarTarget?.z ?? 0,
+    );
     return {} 
 }
 

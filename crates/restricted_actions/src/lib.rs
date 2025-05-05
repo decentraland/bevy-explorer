@@ -162,8 +162,8 @@ pub fn move_camera(
     player: Query<(&Transform, Entity), With<PrimaryUser>>,
     containing_scene: ContainingScene,
 ) {
-    for (root, translation) in events.read().filter_map(|ev| match ev {
-        RpcCall::MoveCamera { scene, to } => Some((scene, to)),
+    for (root, facing) in events.read().filter_map(|ev| match ev {
+        RpcCall::MoveCamera { scene, facing } => Some((scene, facing)),
         _ => None,
     }) {
         if !player
@@ -180,11 +180,7 @@ pub fn move_camera(
             return;
         }
 
-        let rotation = Transform::IDENTITY
-            .looking_at(*translation - player.single().0.translation, Vec3::Y)
-            .rotation;
-
-        let (yaw, pitch, roll) = rotation.to_euler(EulerRot::YXZ);
+        let (yaw, pitch, roll) = facing.to_euler(EulerRot::YXZ);
 
         let mut camera = camera.single_mut();
         camera.yaw = yaw;
