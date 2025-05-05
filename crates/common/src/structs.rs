@@ -275,6 +275,7 @@ impl AppConfig {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct GraphicsSettings {
     pub vsync: bool,
     pub log_fps: bool,
