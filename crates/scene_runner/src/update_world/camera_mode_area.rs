@@ -10,7 +10,9 @@ use common::{
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{
-    proto_components::sdk::components::{common::CameraType, PbCameraModeArea},
+    proto_components::sdk::components::{
+        common::CameraType, PbCameraModeArea, PbMainCamera, PbVirtualCamera,
+    },
     SceneComponentId, SceneEntityId,
 };
 
@@ -27,11 +29,39 @@ impl From<PbCameraModeArea> for CameraModeArea {
     }
 }
 
+#[derive(Component, Debug)]
+pub struct VirtualCamera(pub PbVirtualCamera);
+
+impl From<PbVirtualCamera> for VirtualCamera {
+    fn from(value: PbVirtualCamera) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Component, Debug)]
+pub struct MainSceneCamera(pub PbMainCamera);
+
+impl From<PbMainCamera> for MainSceneCamera {
+    fn from(value: PbMainCamera) -> Self {
+        Self(value)
+    }
+}
+
 impl Plugin for CameraModeAreaPlugin {
     fn build(&self, app: &mut App) {
         app.add_crdt_lww_component::<PbCameraModeArea, CameraModeArea>(
             SceneComponentId::CAMERA_MODE_AREA,
             ComponentPosition::Any,
+        );
+
+        app.add_crdt_lww_component::<PbVirtualCamera, VirtualCamera>(
+            SceneComponentId::VIRTUAL_CAMERA,
+            ComponentPosition::EntityOnly,
+        );
+
+        app.add_crdt_lww_component::<PbMainCamera, MainSceneCamera>(
+            SceneComponentId::MAIN_CAMERA,
+            ComponentPosition::EntityOnly,
         );
 
         app.add_systems(Update, update_camera_mode_area.in_set(SceneSets::PostLoop));
@@ -49,7 +79,18 @@ pub enum PermissionState {
 pub fn update_camera_mode_area(
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     containing_scene: ContainingScene,
-    areas: Query<(Entity, &SceneEntity, &CameraModeArea, &GlobalTransform)>,
+    areas: Query<
+        (
+            Entity,
+            &SceneEntity,
+            Option<&CameraModeArea>,
+            &GlobalTransform,
+            Option<&VirtualCamera>,
+        ),
+        Or<(With<CameraModeArea>, With<VirtualCamera>)>,
+    >,
+    virtual_cameras: Query<&VirtualCamera>,
+    main_scene_cameras: Query<&MainSceneCamera>,
     contexts: Query<&RendererSceneContext>,
     mut current_areas: Local<Vec<(Entity, PermissionState)>>,
     mut camera: Query<&mut PrimaryCamera>,
@@ -92,13 +133,14 @@ pub fn update_camera_mode_area(
     };
 
     // check areas
-    for (ent, scene_ent, area, transform) in areas.iter() {
+    for (ent, scene_ent, maybe_area, transform, _) in areas.iter() {
         let current_index = current_areas
             .iter()
             .enumerate()
             .find(|(_, (e, _))| ent == *e)
             .map(|(ix, _)| ix);
-        let in_area = scenes.contains(&scene_ent.root) && player_in_area(area, transform);
+        let in_area = scenes.contains(&scene_ent.root)
+            && maybe_area.is_some_and(|area| player_in_area(area, transform));
 
         if in_area == current_index.is_some() {
             continue;
@@ -124,7 +166,7 @@ pub fn update_camera_mode_area(
         .filter_map(|(ent, permitted)| match permitted {
             PermissionState::Resolved(true) => Some(*ent),
             PermissionState::NotRequested => {
-                let (_, scene_ent, _, _) = areas.get(*ent).unwrap();
+                let (_, scene_ent, _, _, _) = areas.get(*ent).unwrap();
                 perms.check_unique(
                     PermissionType::ForceCamera,
                     scene_ent.root,
@@ -139,18 +181,41 @@ pub fn update_camera_mode_area(
         })
         .next();
 
-    if let Some(area) = area {
-        let (_, scene_ent, area, _) = areas.get(area).unwrap();
+    let virtual_camera = scenes
+        .iter()
+        .flat_map(|scene| {
+            let Ok(ctx) = contexts.get(*scene) else {
+                return None;
+            };
 
-        match area.0.mode() {
-            CameraType::CtFirstPerson => {
+            ctx.bevy_entity(SceneEntityId::CAMERA)
+                .and_then(|cam_ent| main_scene_cameras.get(cam_ent).ok())
+                .and_then(|main_cam| main_cam.0.virtual_camera_entity)
+                .and_then(|virtual_scene_ent| {
+                    ctx.bevy_entity(SceneEntityId::from_proto_u32(virtual_scene_ent))
+                })
+                .filter(|virtual_bevy_ent| virtual_cameras.get(*virtual_bevy_ent).is_ok())
+        })
+        .next();
+
+    // use virtual cam if specified, fall back to area
+    let area_or_virtual = virtual_camera.or(area);
+
+    if let Some(area_or_virtual) = area_or_virtual {
+        let (bevy_ent, scene_ent, maybe_area, _, maybe_virtual) =
+            areas.get(area_or_virtual).unwrap();
+
+        match maybe_area.map(|area| area.0.mode()) {
+            Some(CameraType::CtFirstPerson) => {
                 camera.scene_override = Some(CameraOverride::Distance(0.0))
             }
-            CameraType::CtThirdPerson => {
+            Some(CameraType::CtThirdPerson) => {
                 camera.scene_override = Some(CameraOverride::Distance(1.0))
             }
-            CameraType::CtCinematic => {
-                let Some(cinematic_settings) = area.0.cinematic_settings.as_ref() else {
+            Some(CameraType::CtCinematic) => {
+                let Some(cinematic_settings) =
+                    maybe_area.as_ref().unwrap().0.cinematic_settings.as_ref()
+                else {
                     warn!("no cinematic settings");
                     return;
                 };
@@ -173,6 +238,32 @@ pub fn update_camera_mode_area(
                     roll_range: cinematic_settings.roll_range,
                     zoom_min: cinematic_settings.zoom_min,
                     zoom_max: cinematic_settings.zoom_max,
+                    look_at_entity: None,
+                    transition: None,
+                }));
+            }
+            None => {
+                let Ok(ctx) = contexts.get(scene_ent.root) else {
+                    warn!("no scene");
+                    return;
+                };
+                camera.scene_override = Some(CameraOverride::Cinematic(CinematicSettings {
+                    origin: bevy_ent,
+                    allow_manual_rotation: false,
+                    yaw_range: Some(0.0),
+                    pitch_range: Some(0.0),
+                    roll_range: Some(0.0),
+                    zoom_min: None,
+                    zoom_max: None,
+                    look_at_entity: maybe_virtual
+                        .as_ref()
+                        .and_then(|v| v.0.look_at_entity)
+                        .and_then(|look_at| {
+                            ctx.bevy_entity(SceneEntityId::from_proto_u32(look_at))
+                        }),
+                    transition: maybe_virtual
+                        .as_ref()
+                        .and_then(|v| v.0.default_transition.clone()),
                 }));
             }
         }

@@ -11,6 +11,7 @@ use common::{
     structs::{AvatarDynamicState, CameraOverride, CursorLocks, PrimaryCamera, PrimaryUser},
     util::ModifyComponentExt,
 };
+use dcl_component::proto_components::sdk::components::common::camera_transition::TransitionMode;
 use input_manager::{InputManager, InputPriority};
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
@@ -80,6 +81,9 @@ pub fn update_camera(
                 });
 
                 options.distance = cinematic_distance;
+                options.yaw = 0.0;
+                options.pitch = 0.0;
+                options.roll = 0.0;
             }
             Some(ref mut existing) => {
                 if existing.cinematic_transform != origin {
@@ -183,6 +187,7 @@ pub fn update_camera_position(
     };
 
     let mut target_transform = *camera_transform;
+    let mut target_transition = TransitionMode::Time(TRANSITION_TIME);
 
     if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.as_ref() {
         let Ok(origin) = gt_helper.compute_global_transform(cine.origin) else {
@@ -193,8 +198,19 @@ pub fn update_camera_position(
         let (_, rotation, translation) = origin.to_scale_rotation_translation();
 
         target_transform.translation = translation;
-        target_transform.rotation =
-            rotation * Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll);
+        target_transform.rotation = if let Some(look_at_transform) = cine
+            .look_at_entity
+            .and_then(|e| gt_helper.compute_global_transform(e).ok())
+        {
+            Transform::IDENTITY
+                .looking_at(
+                    look_at_transform.translation() - camera_transform.translation,
+                    Vec3::Y,
+                )
+                .rotation
+        } else {
+            rotation * Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll)
+        };
         let target_fov = FRAC_PI_4 * 1.25 / options.distance;
         let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
         else {
@@ -202,6 +218,13 @@ pub fn update_camera_position(
         };
         if *fov != target_fov {
             *fov = target_fov;
+        }
+        if let Some(transition) = cine
+            .transition
+            .as_ref()
+            .and_then(|ct| ct.transition_mode.as_ref())
+        {
+            target_transition = transition.clone();
         }
     } else {
         let target_fov = (dynamic_state.velocity.length() / 4.0).clamp(1.25, 1.25) * FRAC_PI_4;
@@ -282,13 +305,24 @@ pub fn update_camera_position(
             player_head + head_offset * distance.clamp(0.0, 3.0) + target_direction * distance;
     }
 
-    if prev_override.as_ref().map(std::mem::discriminant)
-        != options.scene_override.as_ref().map(std::mem::discriminant)
-    {
+    let changed = (prev_override.is_some() != options.scene_override.is_some())
+        || prev_override
+            .as_ref()
+            .is_some_and(|prev| !prev.effectively_equals(options.scene_override.as_ref().unwrap()));
+
+    if changed {
         prev_override.clone_from(&options.scene_override);
+        let time = match target_transition {
+            TransitionMode::Time(t) => t,
+            TransitionMode::Speed(s) => {
+                let distance =
+                    (target_transform.translation - camera_transform.translation).length();
+                distance / s.max(0.001)
+            }
+        };
         commands.entity(camera_ent).try_insert(SystemTween {
             target: target_transform,
-            time: TRANSITION_TIME,
+            time,
         });
     } else if let Some(mut tween) = maybe_tween {
         // bypass change detection so the tween state doesn't reset

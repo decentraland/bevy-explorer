@@ -5,6 +5,7 @@ use bevy::{
     render::view::RenderLayers,
     utils::{HashMap, HashSet},
 };
+use dcl_component::proto_components::sdk::components::common::CameraTransition;
 use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -107,6 +108,8 @@ pub struct CinematicSettings {
     pub roll_range: Option<f32>,
     pub zoom_min: Option<f32>,
     pub zoom_max: Option<f32>,
+    pub look_at_entity: Option<Entity>,
+    pub transition: Option<CameraTransition>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -120,6 +123,18 @@ pub enum AvatarControl {
 pub enum CameraOverride {
     Distance(f32),
     Cinematic(CinematicSettings),
+}
+
+impl CameraOverride {
+    pub fn effectively_equals(&self, other: &CameraOverride) -> bool {
+        match (self, other) {
+            (CameraOverride::Distance(x), CameraOverride::Distance(y)) => x == y,
+            (CameraOverride::Cinematic(c0), CameraOverride::Cinematic(c1)) => {
+                c0.origin == c1.origin
+            }
+            _ => false,
+        }
+    }
 }
 
 impl Default for PrimaryCamera {

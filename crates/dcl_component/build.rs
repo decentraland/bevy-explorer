@@ -52,6 +52,8 @@ fn gen_sdk_components() -> Result<()> {
         "camera_layers",
         "primary_pointer_info",
         "realm_info",
+        "virtual_camera",
+        "main_camera",
     ];
 
     let mut sources = components

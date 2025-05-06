@@ -22,8 +22,8 @@ use dcl::{
     spawn_scene, SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
-    transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
-    SceneEntityId,
+    proto_components::sdk::components::PbMainCamera, transform_and_parent::DclTransformAndParent,
+    DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
 use ipfs::{
     ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsAssetServer,
@@ -423,6 +423,18 @@ pub(crate) fn load_scene_javascript(
             // explicitly set initial tick as run
             renderer_context.tick_number = 1;
         }
+
+        // add MainCamera component
+        let mut buf = Vec::default();
+        DclWriter::new(&mut buf).write(&PbMainCamera {
+            virtual_camera_entity: None,
+        });
+        initial_crdt.force_update(
+            SceneComponentId::MAIN_CAMERA,
+            CrdtType::LWW_ENT,
+            SceneEntityId::CAMERA,
+            Some(&mut DclReader::new(&buf)),
+        );
 
         // store main.crdt + initial global state to post to the scene thread on first request
         renderer_context.crdt_store = initial_crdt;

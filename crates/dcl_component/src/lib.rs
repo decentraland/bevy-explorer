@@ -92,6 +92,8 @@ impl SceneComponentId {
     pub const AVATAR_MODIFIER_AREA: SceneComponentId = SceneComponentId(1070);
     pub const CAMERA_MODE_AREA: SceneComponentId = SceneComponentId(1071);
     pub const CAMERA_MODE: SceneComponentId = SceneComponentId(1072);
+    pub const MAIN_CAMERA: SceneComponentId = SceneComponentId(1075);
+    pub const VIRTUAL_CAMERA: SceneComponentId = SceneComponentId(1076);
 
     pub const AVATAR_ATTACHMENT: SceneComponentId = SceneComponentId(1073);
 
