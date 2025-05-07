@@ -11461,6 +11461,7 @@ dependencies = [
  "common",
  "dcl",
  "dcl_component",
+ "scene_material",
  "scene_runner",
  "simple-easing",
 ]

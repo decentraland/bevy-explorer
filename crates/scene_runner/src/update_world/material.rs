@@ -1,13 +1,10 @@
 use std::sync::OnceLock;
 
 use bevy::{
-    ecs::system::SystemParam,
-    pbr::NotShadowCaster,
-    prelude::*,
-    render::{
+    ecs::system::SystemParam, math::Affine2, pbr::NotShadowCaster, prelude::*, render::{
         primitives::Aabb,
         texture::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
-    },
+    }
 };
 use common::{structs::AppConfig, util::AsH160};
 use comms::profile::ProfileManager;
@@ -20,7 +17,7 @@ use crate::{
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
-        common::{texture_union, TextureUnion},
+        common::{texture_union, TextureUnion, Vector2},
         sdk::components::{pb_material, MaterialTransparencyMode, PbMaterial},
         Color3BevyToDcl, Color3DclToBevy, Color4BevyToDcl, Color4DclToBevy,
     },
@@ -89,11 +86,21 @@ impl MaterialDefinition {
                     AlphaMode::Opaque
                 };
 
+                let inner_texture = unlit.texture.as_ref().and_then(|t| t.tex.as_ref()).and_then(|t| match t {
+                    texture_union::Tex::Texture(texture) => Some(texture),
+                    _ => None,
+                });
+                let uv_transform = Affine2 {
+                    matrix2: Mat2::from_diagonal(inner_texture.and_then(|t| t.tiling).map(|t| Vec2::from(&t)).unwrap_or(Vec2::ONE)),
+                    translation: inner_texture.and_then(|t| t.offset).map(|o| Vec2::from(&o)).unwrap_or(Vec2::ZERO),
+                };
+
                 (
                     StandardMaterial {
                         base_color,
                         unlit: true,
                         alpha_mode,
+                        uv_transform,
                         ..base.clone()
                     },
                     unlit.texture.clone(),
@@ -529,6 +536,11 @@ pub fn dcl_material_from_standard_material(
         } else {
             &ImageSamplerDescriptor::default()
         };
+
+        let (scale, _, translation) = base.uv_transform.to_scale_angle_translation();
+        let tiling = (scale != Vec2::ONE).then_some(Vector2::from(scale));
+        let offset = (translation != Vec2::ZERO).then_some(Vector2::from(translation));
+
         TextureUnion {
             tex: Some(dcl_component::proto_components::common::texture_union::Tex::Texture(dcl_component::proto_components::common::Texture {
                 src,
@@ -542,6 +554,8 @@ pub fn dcl_material_from_standard_material(
                     ImageFilterMode::Nearest => dcl_component::proto_components::common::TextureFilterMode::TfmPoint,
                     ImageFilterMode::Linear => dcl_component::proto_components::common::TextureFilterMode::TfmBilinear,
                 } as i32),
+                offset,
+                tiling,
             })),
         }
     };
