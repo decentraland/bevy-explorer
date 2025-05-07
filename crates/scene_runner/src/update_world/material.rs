@@ -1,10 +1,14 @@
 use std::sync::OnceLock;
 
 use bevy::{
-    ecs::system::SystemParam, math::Affine2, pbr::NotShadowCaster, prelude::*, render::{
+    ecs::system::SystemParam,
+    math::Affine2,
+    pbr::NotShadowCaster,
+    prelude::*,
+    render::{
         primitives::Aabb,
         texture::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
-    }
+    },
 };
 use common::{structs::AppConfig, util::AsH160};
 use comms::profile::ProfileManager;
@@ -86,13 +90,25 @@ impl MaterialDefinition {
                     AlphaMode::Opaque
                 };
 
-                let inner_texture = unlit.texture.as_ref().and_then(|t| t.tex.as_ref()).and_then(|t| match t {
-                    texture_union::Tex::Texture(texture) => Some(texture),
-                    _ => None,
-                });
+                let inner_texture = unlit
+                    .texture
+                    .as_ref()
+                    .and_then(|t| t.tex.as_ref())
+                    .and_then(|t| match t {
+                        texture_union::Tex::Texture(texture) => Some(texture),
+                        _ => None,
+                    });
                 let uv_transform = Affine2 {
-                    matrix2: Mat2::from_diagonal(inner_texture.and_then(|t| t.tiling).map(|t| Vec2::from(&t)).unwrap_or(Vec2::ONE)),
-                    translation: inner_texture.and_then(|t| t.offset).map(|o| Vec2::from(&o)).unwrap_or(Vec2::ZERO),
+                    matrix2: Mat2::from_diagonal(
+                        inner_texture
+                            .and_then(|t| t.tiling)
+                            .map(|t| Vec2::from(&t))
+                            .unwrap_or(Vec2::ONE),
+                    ),
+                    translation: inner_texture
+                        .and_then(|t| t.offset)
+                        .map(|o| Vec2::from(&o))
+                        .unwrap_or(Vec2::ZERO),
                 };
 
                 (

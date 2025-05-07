@@ -3,17 +3,18 @@ use common::sets::SceneSets;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{
-        pb_tween::Mode, EasingFunction, PbTween, PbTweenState, TextureMovementType, TweenStateStatus
+        pb_tween::Mode, EasingFunction, PbTween, PbTweenState, TextureMovementType,
+        TweenStateStatus,
     },
     transform_and_parent::DclTransformAndParent,
     SceneComponentId,
 };
 
+use scene_material::SceneMaterial;
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::AddCrdtInterfaceExt, ContainerEntity,
     SceneEntity,
 };
-use scene_material::SceneMaterial;
 
 #[derive(Component, Debug)]
 pub struct Tween(PbTween);
@@ -25,7 +26,13 @@ impl From<PbTween> for Tween {
 }
 
 impl Tween {
-    fn apply(&self, time: f32, transform: &mut Transform, maybe_h_mat: Option<&Handle<SceneMaterial>>, materials: &mut Assets<SceneMaterial>) {
+    fn apply(
+        &self,
+        time: f32,
+        transform: &mut Transform,
+        maybe_h_mat: Option<&Handle<SceneMaterial>>,
+        materials: &mut Assets<SceneMaterial>,
+    ) {
         use simple_easing::*;
         use EasingFunction::*;
         let f = match self.0.easing_function() {
@@ -106,10 +113,12 @@ impl Tween {
 
                 match data.movement_type() {
                     TextureMovementType::TmtOffset => {
-                        material.base.uv_transform.translation = start + ((end - start) * ease_value);
+                        material.base.uv_transform.translation =
+                            start + ((end - start) * ease_value);
                     }
                     TextureMovementType::TmtTiling => {
-                        material.base.uv_transform.matrix2 = Mat2::from_diagonal(start + ((end - start) * ease_value));
+                        material.base.uv_transform.matrix2 =
+                            Mat2::from_diagonal(start + ((end - start) * ease_value));
                     }
                 }
             }
@@ -268,7 +277,10 @@ pub fn update_system_tween(
                     (1.0 - ratio) * data.start_pos.translation + ratio * tween.target.translation;
                 transform.scale = (1.0 - ratio) * data.start_pos.scale + ratio * tween.target.scale;
                 transform.rotation = data.start_pos.rotation.slerp(tween.target.rotation, ratio);
-                debug!("system tween partial {}/{} @ {:?}", elapsed, tween.time, transform);
+                debug!(
+                    "system tween partial {}/{} @ {:?}",
+                    elapsed, tween.time, transform
+                );
             }
         }
     }

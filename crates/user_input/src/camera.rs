@@ -209,9 +209,18 @@ pub fn update_camera_position(
                 )
                 .rotation
         } else {
-            let yaw = cine.yaw_range.map(|r| options.yaw.clamp(-r, r)).unwrap_or(options.yaw);
-            let pitch = cine.yaw_range.map(|r| options.pitch.clamp(-r, r)).unwrap_or(options.pitch);
-            let roll = cine.yaw_range.map(|r| options.roll.clamp(-r, r)).unwrap_or(options.roll);
+            let yaw = cine
+                .yaw_range
+                .map(|r| options.yaw.clamp(-r, r))
+                .unwrap_or(options.yaw);
+            let pitch = cine
+                .yaw_range
+                .map(|r| options.pitch.clamp(-r, r))
+                .unwrap_or(options.pitch);
+            let roll = cine
+                .yaw_range
+                .map(|r| options.roll.clamp(-r, r))
+                .unwrap_or(options.roll);
             rotation * Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll)
         };
         let target_fov = FRAC_PI_4 * 1.25 / options.distance;
@@ -324,14 +333,20 @@ pub fn update_camera_position(
                 distance / s.max(0.001)
             }
         };
-        debug!("tween {:?} to {:?} over {time} seconds", camera_transform, target_transform);
+        debug!(
+            "tween {:?} to {:?} over {time} seconds",
+            camera_transform, target_transform
+        );
         commands.entity(camera_ent).try_insert(SystemTween {
             target: target_transform,
             time,
         });
     } else if let Some(mut tween) = maybe_tween {
         if target_transform != tween.bypass_change_detection().target {
-            debug!("tween changed to {:?} to {:?}", camera_transform, target_transform);        
+            debug!(
+                "tween changed to {:?} to {:?}",
+                camera_transform, target_transform
+            );
             tween.bypass_change_detection().target = target_transform;
         }
     } else {
