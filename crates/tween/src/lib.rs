@@ -109,7 +109,7 @@ impl Plugin for TweenPlugin {
             ComponentPosition::EntityOnly,
         );
         app.add_systems(Update, update_tween.in_set(SceneSets::PostLoop));
-        app.add_systems(Update, update_system_tween);
+        app.add_systems(PostUpdate, update_system_tween);
     }
 }
 
@@ -218,14 +218,21 @@ pub fn update_system_tween(
 ) {
     for (ent, mut transform, tween, data) in q.iter_mut() {
         if tween.is_changed() || data.is_none() {
-            commands.entity(ent).try_insert(SystemTweenData {
-                start_pos: *transform,
-                start_time: time.elapsed_seconds(),
-            });
+            if tween.time <= 0.0 {
+                debug!("system tween instant complete @ {:?}", tween.target);
+                *transform = tween.target;
+            } else {
+                debug!("system tween starting {} @ {:?}", tween.time, tween.target);
+                commands.entity(ent).try_insert(SystemTweenData {
+                    start_pos: *transform,
+                    start_time: time.elapsed_seconds(),
+                });
+            }
         } else {
             let data = data.unwrap();
             let elapsed = time.elapsed_seconds() - data.start_time;
             if elapsed >= tween.time {
+                debug!("system tween complete @ {:?}", tween.target);
                 *transform = tween.target;
                 commands
                     .entity(ent)
@@ -237,6 +244,7 @@ pub fn update_system_tween(
                     (1.0 - ratio) * data.start_pos.translation + ratio * tween.target.translation;
                 transform.scale = (1.0 - ratio) * data.start_pos.scale + ratio * tween.target.scale;
                 transform.rotation = data.start_pos.rotation.slerp(tween.target.rotation, ratio);
+                debug!("system tween partial {}/{} @ {:?}", elapsed, tween.time, transform);
             }
         }
     }

@@ -209,7 +209,10 @@ pub fn update_camera_position(
                 )
                 .rotation
         } else {
-            rotation * Quat::from_euler(EulerRot::YXZ, options.yaw, options.pitch, options.roll)
+            let yaw = cine.yaw_range.map(|r| options.yaw.clamp(-r, r)).unwrap_or(options.yaw);
+            let pitch = cine.yaw_range.map(|r| options.pitch.clamp(-r, r)).unwrap_or(options.pitch);
+            let roll = cine.yaw_range.map(|r| options.roll.clamp(-r, r)).unwrap_or(options.roll);
+            rotation * Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll)
         };
         let target_fov = FRAC_PI_4 * 1.25 / options.distance;
         let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
@@ -311,6 +314,7 @@ pub fn update_camera_position(
             .is_some_and(|prev| !prev.effectively_equals(options.scene_override.as_ref().unwrap()));
 
     if changed {
+        debug!("changed cam to {:?}", options.scene_override);
         prev_override.clone_from(&options.scene_override);
         let time = match target_transition {
             TransitionMode::Time(t) => t,
@@ -320,13 +324,16 @@ pub fn update_camera_position(
                 distance / s.max(0.001)
             }
         };
+        debug!("tween {:?} to {:?} over {time} seconds", camera_transform, target_transform);
         commands.entity(camera_ent).try_insert(SystemTween {
             target: target_transform,
             time,
         });
     } else if let Some(mut tween) = maybe_tween {
-        // bypass change detection so the tween state doesn't reset
-        tween.bypass_change_detection().target = target_transform;
+        if target_transform != tween.bypass_change_detection().target {
+            debug!("tween changed to {:?} to {:?}", camera_transform, target_transform);        
+            tween.bypass_change_detection().target = target_transform;
+        }
     } else {
         commands
             .entity(camera_ent)

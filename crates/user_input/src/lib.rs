@@ -28,6 +28,7 @@ use scene_runner::{
     },
     OutOfWorld,
 };
+use tween::update_system_tween;
 
 use self::{
     camera::{update_camera, update_camera_position},
@@ -66,7 +67,8 @@ impl Plugin for UserInputPlugin {
                     .after(parent_position_sync::<AvatarAttachStage>)
                     .before(parent_position_sync::<SceneProxyStage>)
                     .before(TransformSystem::TransformPropagate)
-                    .before(CameraUpdateSystem),
+                    .before(CameraUpdateSystem)
+                    .before(update_system_tween),
                 update_cursor_lock.after(update_camera_position),
             ),
         );
