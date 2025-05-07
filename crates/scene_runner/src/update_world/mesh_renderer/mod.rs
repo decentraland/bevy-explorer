@@ -54,8 +54,8 @@ impl From<PbMeshRenderer> for MeshDefinition {
                 radius_bottom,
                 radius_top,
             })) => Self::Cylinder {
-                radius_top: radius_top.unwrap_or(1.0),
-                radius_bottom: radius_bottom.unwrap_or(1.0),
+                radius_top: radius_top.unwrap_or(0.5),
+                radius_bottom: radius_bottom.unwrap_or(0.5),
             },
             Some(pb_mesh_renderer::Mesh::Plane(pb_mesh_renderer::PlaneMesh { uvs })) => {
                 Self::Plane {
@@ -256,7 +256,7 @@ pub fn update_mesh(
                 radius_bottom,
                 radius_top,
             } => {
-                if *radius_bottom == 1.0 && *radius_top == 1.0 {
+                if *radius_bottom == 0.5 && *radius_top == 0.5 {
                     defaults.cylinder.clone()
                 } else {
                     meshes.add(Mesh::from(TruncatedCone {

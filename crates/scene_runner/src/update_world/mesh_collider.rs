@@ -81,8 +81,8 @@ impl From<PbMeshCollider> for MeshCollider {
                 radius_bottom,
                 radius_top,
             })) => MeshColliderShape::Cylinder {
-                radius_top: radius_top.unwrap_or(1.0),
-                radius_bottom: radius_bottom.unwrap_or(1.0),
+                radius_top: radius_top.unwrap_or(0.5),
+                radius_bottom: radius_bottom.unwrap_or(0.5),
             },
             Some(pb_mesh_collider::Mesh::Gltf(pb_mesh_collider::GltfMesh { gltf_src, name })) => {
                 MeshColliderShape::GltfShape { gltf_src, name }
