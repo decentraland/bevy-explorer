@@ -7,7 +7,10 @@ use bevy::{
     prelude::*,
     render::{
         primitives::Aabb,
-        texture::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
+        texture::{
+            ImageAddressMode, ImageFilterMode, ImageLoaderSettings, ImageSampler,
+            ImageSamplerDescriptor,
+        },
     },
 };
 use common::{structs::AppConfig, util::AsH160};
@@ -21,7 +24,7 @@ use crate::{
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
-        common::{texture_union, TextureUnion, Vector2},
+        common::{texture_union, TextureFilterMode, TextureUnion, TextureWrapMode, Vector2},
         sdk::components::{pb_material, MaterialTransparencyMode, PbMaterial},
         Color3BevyToDcl, Color3DclToBevy, Color4BevyToDcl, Color4DclToBevy,
     },
@@ -272,11 +275,45 @@ impl TextureResolver<'_, '_> {
     ) -> Result<ResolvedTexture, TextureResolveError> {
         match texture {
             texture_union::Tex::Texture(texture) => {
-                // TODO handle wrapmode and filtering once we have some asset processing pipeline in place (bevy 0.11-0.12)
+                let filter_mode = texture
+                    .filter_mode
+                    .and_then(TextureFilterMode::from_i32)
+                    .unwrap_or(TextureFilterMode::TfmBilinear);
+                let filter_mode = match filter_mode {
+                    TextureFilterMode::TfmPoint => ImageFilterMode::Nearest,
+                    TextureFilterMode::TfmBilinear => ImageFilterMode::Linear,
+                    TextureFilterMode::TfmTrilinear => ImageFilterMode::Linear,
+                };
+
+                let wrap_mode = texture
+                    .wrap_mode
+                    .and_then(TextureWrapMode::from_i32)
+                    .unwrap_or(TextureWrapMode::TwmClamp);
+                let wrap_mode = match wrap_mode {
+                    TextureWrapMode::TwmRepeat => ImageAddressMode::Repeat,
+                    TextureWrapMode::TwmClamp => ImageAddressMode::ClampToEdge,
+                    TextureWrapMode::TwmMirror => ImageAddressMode::MirrorRepeat,
+                };
+
+                // TODO handle different wrapmode and filtering for the same image at some point...
                 Ok(ResolvedTexture {
                     image: self
                         .ipfas
-                        .load_content_file::<Image>(&texture.src, &scene.hash)
+                        .load_content_file_with_settings::<Image, _>(
+                            &texture.src,
+                            &scene.hash,
+                            move |s: &mut ImageLoaderSettings| {
+                                s.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+                                    address_mode_u: wrap_mode,
+                                    address_mode_v: wrap_mode,
+                                    address_mode_w: wrap_mode,
+                                    mag_filter: filter_mode,
+                                    min_filter: filter_mode,
+                                    mipmap_filter: filter_mode,
+                                    ..default()
+                                })
+                            },
+                        )
                         .unwrap(),
                     source_entity: None,
                     camera_target: None,
