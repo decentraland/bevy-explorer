@@ -3,11 +3,10 @@ use bevy::{math::Vec3Swizzles, prelude::*};
 use common::{
     dynamics::PLAYER_GROUND_THRESHOLD,
     inputs::{CommonInputAction, MOVE_SET},
-    structs::{AvatarControl, AvatarDynamicState, PrimaryCamera, PrimaryUser},
+    structs::{AvatarControl, AvatarDynamicState, PlayerModifiers, PrimaryCamera, PrimaryUser},
 };
 
 use input_manager::{InputManager, InputPriority};
-use scene_runner::update_world::avatar_modifier_area::PlayerModifiers;
 
 use crate::TRANSITION_TIME;
 
@@ -38,6 +37,7 @@ pub(crate) fn update_user_velocity(
     if input.is_down(CommonInputAction::IaJump, InputPriority::Scene)
         && dynamic_state.ground_height < PLAYER_GROUND_THRESHOLD
         && dynamic_state.velocity.y <= 0.0
+        && !user.block_jump
     {
         dynamic_state.velocity.y = (user.jump_height * -user.gravity * 2.0).sqrt();
         dynamic_state.jump_time = time.elapsed_seconds();
@@ -64,7 +64,7 @@ pub(crate) fn update_user_velocity(
     }
 
     if axis_input != Vec2::ZERO {
-        let movement_axis = if user.block_weighted_movement {
+        let movement_axis = if user.block_walk {
             axis_input.normalize_or_zero() * user.run_speed
         } else {
             axis_input / axis_input.length().max(1.0)

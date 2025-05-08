@@ -26,7 +26,10 @@ pub struct PrimaryUser {
     pub fall_speed: f32,
     pub control_type: AvatarControl,
     pub turn_speed: f32,
-    pub block_weighted_movement: bool,
+    pub block_run: bool,
+    pub block_walk: bool,
+    pub block_jump: bool,
+    pub block_emote: bool,
 }
 
 impl Default for PrimaryUser {
@@ -40,9 +43,63 @@ impl Default for PrimaryUser {
             fall_speed: -15.0,
             control_type: AvatarControl::Relative,
             turn_speed: PI,
-            block_weighted_movement: false,
+            block_run: false,
+            block_walk: false,
+            block_jump: false,
+            block_emote: false,
         }
     }
+}
+
+#[derive(Component, Default)]
+pub struct PlayerModifiers {
+    pub hide: bool,
+    pub hide_profile: bool,
+    pub walk_speed: Option<f32>,
+    pub run_speed: Option<f32>,
+    pub friction: Option<f32>,
+    pub gravity: Option<f32>,
+    pub jump_height: Option<f32>,
+    pub fall_speed: Option<f32>,
+    pub control_type: Option<AvatarControl>,
+    pub turn_speed: Option<f32>,
+    pub block_run: bool,
+    pub block_walk: bool,
+    pub block_jump: bool,
+    pub block_emote: bool,
+    pub areas: Vec<ActiveAvatarArea>,
+}
+
+#[derive(Clone)]
+pub struct ActiveAvatarArea {
+    pub entity: Entity,
+    pub allow_locomotion: PermissionState,
+}
+
+impl PlayerModifiers {
+    pub fn combine(&self, user: &PrimaryUser) -> PrimaryUser {
+        PrimaryUser {
+            walk_speed: self.walk_speed.unwrap_or(user.walk_speed),
+            run_speed: self.run_speed.unwrap_or(user.run_speed),
+            friction: self.friction.unwrap_or(user.friction),
+            gravity: self.gravity.unwrap_or(user.gravity),
+            jump_height: self.jump_height.unwrap_or(user.jump_height),
+            fall_speed: self.fall_speed.unwrap_or(user.fall_speed),
+            control_type: self.control_type.unwrap_or(user.control_type),
+            turn_speed: self.turn_speed.unwrap_or(user.turn_speed),
+            block_run: self.block_run || user.block_run,
+            block_walk: self.block_walk || user.block_walk,
+            block_jump: self.block_jump || user.block_jump,
+            block_emote: self.block_emote || user.block_emote,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PermissionState {
+    Resolved(bool),
+    NotRequested,
+    Pending,
 }
 
 // attachment points for local or foreign players

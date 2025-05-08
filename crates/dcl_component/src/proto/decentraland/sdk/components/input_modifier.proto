@@ -1,0 +1,20 @@
+syntax = "proto3";
+package decentraland.sdk.components;
+import "decentraland/sdk/components/common/id.proto";
+option (common.ecs_component_id) = 1078;
+
+message PBInputModifier {
+    // when a boolean = false (default) the message is ignored and doesn't consume bandwidth
+    message StandardInput {
+        optional bool disable_all = 1;
+        optional bool disable_walk = 2;
+        optional bool disable_jog = 3;
+        optional bool disable_run = 4;
+        optional bool disable_jump = 5;
+        optional bool disable_emote = 6;
+    }
+
+    oneof mode {
+        StandardInput standard = 1;
+    }
+}

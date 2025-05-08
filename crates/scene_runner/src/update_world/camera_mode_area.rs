@@ -6,7 +6,10 @@ use crate::{
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     sets::SceneSets,
-    structs::{CameraOverride, CinematicSettings, PermissionType, PrimaryCamera, PrimaryUser},
+    structs::{
+        CameraOverride, CinematicSettings, PermissionState, PermissionType, PrimaryCamera,
+        PrimaryUser,
+    },
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{
@@ -66,13 +69,6 @@ impl Plugin for CameraModeAreaPlugin {
 
         app.add_systems(Update, update_camera_mode_area.in_set(SceneSets::PostLoop));
     }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum PermissionState {
-    Resolved(bool),
-    NotRequested,
-    Pending,
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -19,7 +19,7 @@ use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
-    structs::{AppConfig, AvatarDynamicState, MoveKind, PrimaryUser},
+    structs::{AppConfig, AvatarDynamicState, MoveKind, PlayerModifiers, PrimaryUser},
     util::{TryPushChildrenEx, VolumePanning},
 };
 use comms::{
@@ -39,10 +39,8 @@ use dcl_component::{
 };
 use ipfs::IpfsAssetServer;
 use scene_runner::{
-    permissions::Permission,
-    renderer_context::RendererSceneContext,
-    update_world::{animation::Clips, avatar_modifier_area::PlayerModifiers},
-    ContainerEntity, ContainingScene,
+    permissions::Permission, renderer_context::RendererSceneContext,
+    update_world::animation::Clips, ContainerEntity, ContainingScene,
 };
 
 use crate::{process_avatar, AvatarDefinition};
