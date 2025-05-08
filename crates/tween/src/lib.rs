@@ -114,7 +114,7 @@ impl Tween {
                 match data.movement_type() {
                     TextureMovementType::TmtOffset => {
                         material.base.uv_transform.translation =
-                            start + ((end - start) * ease_value);
+                            (start + ((end - start) * ease_value)) * Vec2::new(1.0, -1.0);
                     }
                     TextureMovementType::TmtTiling => {
                         material.base.uv_transform.matrix2 =

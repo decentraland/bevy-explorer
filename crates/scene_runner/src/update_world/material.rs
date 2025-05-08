@@ -110,7 +110,7 @@ impl MaterialDefinition {
                     ),
                     translation: inner_texture
                         .and_then(|t| t.offset)
-                        .map(|o| Vec2::from(&o))
+                        .map(|o| Vec2::from(&o) * Vec2::new(1.0, -1.0))
                         .unwrap_or(Vec2::ZERO),
                 };
 
@@ -592,7 +592,8 @@ pub fn dcl_material_from_standard_material(
 
         let (scale, _, translation) = base.uv_transform.to_scale_angle_translation();
         let tiling = (scale != Vec2::ONE).then_some(Vector2::from(scale));
-        let offset = (translation != Vec2::ZERO).then_some(Vector2::from(translation));
+        let offset = (translation != Vec2::ZERO)
+            .then_some(Vector2::from(translation * Vec2::new(1.0, -1.0)));
 
         TextureUnion {
             tex: Some(dcl_component::proto_components::common::texture_union::Tex::Texture(dcl_component::proto_components::common::Texture {
