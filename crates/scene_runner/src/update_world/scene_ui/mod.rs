@@ -949,7 +949,7 @@ fn layout_scene_ui(
 
             // update style
             if !existing || transform_is_changed {
-                let style = Style {
+                let mut style = Style {
                     align_content: ui_transform.align_content,
                     align_items: ui_transform.align_items,
                     flex_wrap: ui_transform.wrap,
@@ -992,6 +992,12 @@ fn layout_scene_ui(
                             style.justify_content = new_style.justify_content;
                             style.overflow = new_style.overflow;
                         },
+                    );
+                    let padding = std::mem::take(&mut style.padding);
+                    commands.entity(link.scroll_entity.unwrap()).modify_component(
+                        move |style: &mut Style| {
+                            style.padding = padding;
+                        }
                     );
                 }
 
