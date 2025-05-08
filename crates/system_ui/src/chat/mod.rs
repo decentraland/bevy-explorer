@@ -51,7 +51,7 @@ impl Plugin for ChatPanelPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, display_chat);
         app.add_systems(Update, append_chat_messages);
-        app.add_systems(Update, emit_user_chat);
+        app.add_systems(Update, (emit_user_chat, broadcast_nearby_chats).chain());
         app.add_systems(Update, (pipe_chats_to_scene, pipe_chats_from_scene));
         app.add_systems(Startup, setup.in_set(SetupSets::Main));
         app.add_systems(
@@ -488,7 +488,6 @@ fn emit_user_chat(
     mut commands: Commands,
     mut chats: EventWriter<ChatEvent>,
     mut private: EventWriter<PrivateChatEntered>,
-    transports: Query<&Transport>,
     player: Query<Entity, With<PrimaryUser>>,
     time: Res<Time>,
     chat_input: Query<(Entity, &TextEntrySubmit), With<ChatInput>>,
@@ -550,21 +549,6 @@ fn emit_user_chat(
                         console_config.commands.keys().collect::<Vec<_>>()
                     );
                 }
-            } else if output.active_tab == "Nearby" {
-                commands.fire_event(SystemAudio(
-                    "sounds/ui/widget_chat_message_private_send.wav".to_owned(),
-                ));
-                for transport in transports.iter() {
-                    let _ = transport
-                        .sender
-                        .try_send(NetworkMessage::reliable(&rfc4::Packet {
-                            message: Some(rfc4::packet::Message::Chat(rfc4::Chat {
-                                message: message.clone(),
-                                timestamp: time.elapsed_seconds_f64(),
-                            })),
-                            protocol_version: 100,
-                        }));
-                }
             }
         }
     }
@@ -576,6 +560,40 @@ fn emit_user_chat(
             channel: "Nearby".to_owned(),
             message: line.to_string(),
         });
+    }
+}
+
+pub fn broadcast_nearby_chats(
+    mut commands: Commands,
+    mut chat_events: EventReader<ChatEvent>,
+    transports: Query<&Transport>,
+    player: Query<Entity, With<PrimaryUser>>,
+) {
+    let Ok(player) = player.get_single() else {
+        return;
+    };
+
+    for ev in chat_events
+        .read()
+        .filter(|ev| ev.channel == "Nearby")
+        .filter(|ev| ev.sender == player)
+        .filter(|ev| !ev.message.starts_with("/"))
+    {
+        commands.fire_event(SystemAudio(
+            "sounds/ui/widget_chat_message_private_send.wav".to_owned(),
+        ));
+
+        for transport in transports.iter() {
+            let _ = transport
+                .sender
+                .try_send(NetworkMessage::reliable(&rfc4::Packet {
+                    message: Some(rfc4::packet::Message::Chat(rfc4::Chat {
+                        message: ev.message.clone(),
+                        timestamp: ev.timestamp,
+                    })),
+                    protocol_version: 100,
+                }));
+        }
     }
 }
 
