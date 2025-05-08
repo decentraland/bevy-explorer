@@ -994,11 +994,11 @@ fn layout_scene_ui(
                         },
                     );
                     let padding = std::mem::take(&mut style.padding);
-                    commands.entity(link.scroll_entity.unwrap()).modify_component(
-                        move |style: &mut Style| {
+                    commands
+                        .entity(link.scroll_entity.unwrap())
+                        .modify_component(move |style: &mut Style| {
                             style.padding = padding;
-                        }
-                    );
+                        });
                 }
 
                 let mut cmds = commands.entity(link.ui_entity);
