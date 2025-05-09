@@ -138,9 +138,13 @@ pub fn update_camera(
         options.pitch = (options.pitch - mouse_delta.y * options.sensitivity / 1000.0)
             .clamp(-PI / 2.1, PI / 2.1);
         options.yaw -= mouse_delta.x * options.sensitivity / 1000.0;
-        if input_manager.is_down(SystemAction::CameraZoomIn, InputPriority::None) {
+        if input_manager.is_down(SystemAction::CameraZoomIn, InputPriority::None)
+            || input_manager.just_down(SystemAction::CameraZoomIn, InputPriority::None)
+        {
             options.distance = 0f32.max((options.distance - 0.05) * 0.9);
-        } else if input_manager.is_down(SystemAction::CameraZoomOut, InputPriority::None) {
+        } else if input_manager.is_down(SystemAction::CameraZoomOut, InputPriority::None)
+            || input_manager.just_down(SystemAction::CameraZoomOut, InputPriority::None)
+        {
             options.distance = 7000f32.min((options.distance / 0.9) + 0.05);
         }
     }

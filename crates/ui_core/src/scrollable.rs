@@ -388,7 +388,9 @@ fn update_scrollables(
 
                 if clicked_scrollable.is_none_or(|(prev_entity, _)| prev_entity == entity)
                     && interaction != &Interaction::None
-                    && input_manager.is_down(CommonInputAction::IaPointer, InputPriority::Scroll)
+                    && (input_manager.is_down(CommonInputAction::IaPointer, InputPriority::Scroll)
+                        || input_manager
+                            .just_down(CommonInputAction::IaPointer, InputPriority::Scroll))
                 {
                     *clicked_scrollable = Some((entity, cursor_position));
                 }

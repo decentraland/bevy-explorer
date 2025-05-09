@@ -419,7 +419,8 @@ fn update_click(
     for (ent, interact, maybe_priority, maybe_clickdata) in q.iter_mut() {
         let priority = maybe_priority.copied().unwrap_or_default().0;
         if interact != &Interaction::None
-            && input_manager.is_down(CommonInputAction::IaPointer, priority)
+            && (input_manager.is_down(CommonInputAction::IaPointer, priority)
+                || input_manager.just_down(CommonInputAction::IaPointer, priority))
         {
             let just_down = input_manager.just_down(CommonInputAction::IaPointer, priority);
             if let Some(mut clickdata) = maybe_clickdata {

@@ -668,7 +668,10 @@ fn handle_system_input_stream(
     senders.retain(|s| !s.is_closed());
 
     let new_pressed = SystemAction::iter()
-        .filter(|a| input_manager.is_down(*a, InputPriority::Scene))
+        .filter(|a| {
+            input_manager.is_down(*a, InputPriority::Scene)
+                || input_manager.just_down(*a, InputPriority::Scene)
+        })
         .filter(|a| !block_emote || a != &SystemAction::Emote)
         .collect::<HashSet<_>>();
 
