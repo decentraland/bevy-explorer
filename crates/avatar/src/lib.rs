@@ -1362,6 +1362,7 @@ fn process_avatar(
                         view: ui_view.view,
                         ui_node: label_ui,
                         vertex_billboard: true,
+                        blend_mode: AlphaMode::Mask(0.5),
                     },
                 ));
             });

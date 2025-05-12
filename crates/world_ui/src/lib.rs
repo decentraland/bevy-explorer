@@ -51,6 +51,7 @@ pub struct WorldUi {
     pub view: Entity,
     pub ui_node: Entity,
     pub vertex_billboard: bool,
+    pub blend_mode: AlphaMode,
 }
 
 pub fn spawn_world_ui_view(
@@ -129,7 +130,7 @@ pub fn add_worldui_materials(
                     base_color: Color::srgb(2.0, 2.0, 2.0),
                     base_color_texture: Some(target.clone()),
                     unlit: true,
-                    alpha_mode: AlphaMode::Blend,
+                    alpha_mode: wui.blend_mode,
                     ..Default::default()
                 },
                 extension: SceneBound::new(wui.bounds.clone(), config.graphics.oob),
