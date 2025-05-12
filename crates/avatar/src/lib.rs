@@ -1,6 +1,5 @@
 use std::{collections::VecDeque, f32::consts::PI, path::PathBuf, time::Duration};
 
-use animate::EmoteCommand;
 use attach::AttachPlugin;
 use avatar_texture::AvatarTexturePlugin;
 use bevy::{
@@ -38,7 +37,7 @@ pub mod npc_dynamics;
 
 use common::{
     sets::SetupSets,
-    structs::{AppConfig, AttachPoints, PrimaryUser},
+    structs::{AppConfig, AttachPoints, EmoteCommand, PrimaryUser},
     util::{DespawnWith, SceneSpawnerPlus, TryPushChildrenEx},
 };
 use comms::{

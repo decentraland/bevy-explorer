@@ -19,20 +19,22 @@ use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
-    structs::{AppConfig, AvatarDynamicState, MoveKind, PlayerModifiers, PrimaryUser},
+    structs::{
+        AppConfig, AvatarDynamicState, EmoteCommand, MoveKind, PlayerModifiers, PrimaryUser,
+    },
     util::{TryPushChildrenEx, VolumePanning},
 };
 use comms::{
     chat_marker_things,
     global_crdt::{ChatEvent, ForeignPlayer},
     profile::CurrentUserProfile,
-    NetworkMessage, Transport,
+    NetworkMessage, Transport, TransportType,
 };
 use console::DoAddConsoleCommand;
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::{
-        kernel::comms::rfc4::{self, Chat},
+        kernel::comms::rfc4::{self, Chat, PlayerEmote},
         sdk::components::PbAvatarEmoteCommand,
     },
     SceneComponentId, SceneEntityId,
@@ -62,13 +64,6 @@ impl Plugin for AvatarAnimationPlugin {
         );
         app.add_console_command::<EmoteConsoleCommand, _>(emote_console_command);
     }
-}
-
-#[derive(Component, Clone, Debug, PartialEq, Default)]
-pub struct EmoteCommand {
-    pub urn: String,
-    pub timestamp: i64,
-    pub r#loop: bool,
 }
 
 #[derive(Component, Default)]
@@ -135,7 +130,7 @@ fn broadcast_emote(
         if last.as_ref() != Some(emote) {
             *count += 1;
             debug!("sending emote: {emote:?} {}", *count);
-            let packet = rfc4::Packet {
+            let old_packet = rfc4::Packet {
                 message: Some(rfc4::packet::Message::Chat(Chat {
                     message: format!("{}{} {}", chat_marker_things::EMOTE, emote.urn, *count),
                     timestamp: time.elapsed_seconds_f64(),
@@ -143,10 +138,26 @@ fn broadcast_emote(
                 protocol_version: 100,
             };
 
+            let new_packet = rfc4::Packet {
+                message: Some(rfc4::packet::Message::PlayerEmote(PlayerEmote {
+                    incremental_id: *count as u32,
+                    urn: emote.urn.clone(),
+                })),
+                protocol_version: 100,
+            };
+
             for transport in transports.iter() {
-                let _ = transport
-                    .sender
-                    .blocking_send(NetworkMessage::reliable(&packet));
+                if transport.transport_type != TransportType::Archipelago {
+                    if transport.transport_type != TransportType::SceneRoom {
+                        let _ = transport
+                            .sender
+                            .blocking_send(NetworkMessage::reliable(&old_packet));
+                    }
+
+                    let _ = transport
+                        .sender
+                        .blocking_send(NetworkMessage::reliable(&new_packet));
+                }
             }
 
             *last = Some(emote.clone());

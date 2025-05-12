@@ -8,7 +8,7 @@ use bevy::{
 use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender},
-    structs::{AttachPoints, AudioDecoderError},
+    structs::{AttachPoints, AudioDecoderError, EmoteCommand},
     util::TryPushChildrenEx,
 };
 use ethers_core::types::Address;
@@ -407,6 +407,7 @@ pub fn process_transport_updates(
                 let last = duplicate_chat_filter.entry(entity).or_default();
 
                 if *last < chat.timestamp {
+                    debug!("chat data: `{chat:#?}`");
                     chat_events.send(ChatEvent {
                         sender: entity,
                         timestamp: chat.timestamp,
@@ -528,8 +529,17 @@ pub fn process_transport_updates(
                         .max(movement.temporal.long_jump_or_err().ok()),
                 });
             }
-            PlayerMessage::PlayerData(Message::PlayerEmote(_)) => (),
-            PlayerMessage::PlayerData(Message::SceneEmote(_)) => (),
+            PlayerMessage::PlayerData(Message::PlayerEmote(emote)) => {
+                debug!("emote: {emote:?}");
+                commands.entity(entity).try_insert(EmoteCommand {
+                    urn: emote.urn.to_owned(),
+                    timestamp: emote.incremental_id as i64,
+                    r#loop: false,
+                });
+            }
+            PlayerMessage::PlayerData(Message::SceneEmote(scene_emote)) => {
+                debug!("scene emote: {scene_emote:?}");
+            }
         }
     }
 }

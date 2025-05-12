@@ -141,6 +141,13 @@ impl AttachPoints {
     }
 }
 
+#[derive(Component, Clone, Debug, PartialEq, Default)]
+pub struct EmoteCommand {
+    pub urn: String,
+    pub timestamp: i64,
+    pub r#loop: bool,
+}
+
 // main camera entity
 #[derive(Component)]
 pub struct PrimaryCamera {

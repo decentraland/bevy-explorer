@@ -1,4 +1,3 @@
-use avatar::animate::EmoteCommand;
 use bevy::{
     color::palettes::css,
     core::FrameCount,
@@ -13,7 +12,7 @@ use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};
 use common::{
     inputs::SystemAction,
     sets::SetupSets,
-    structs::{ActiveDialog, PrimaryUser, SystemAudio},
+    structs::{ActiveDialog, EmoteCommand, PrimaryUser, SystemAudio},
     util::{FireEventEx, ModifyComponentExt, TryPushChildrenEx},
 };
 use comms::profile::CurrentUserProfile;
