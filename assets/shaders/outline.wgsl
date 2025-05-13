@@ -18,7 +18,13 @@ fn apply_outline(position: vec4<f32>, color_in: vec4<f32>, hilight: bool, sample
     var edge1 = false;
     var edge2 = false;
 
-    let mid = get_depth(position, sample_index);
+    let is_orthographic = view.clip_from_view[3].w == 1.0;
+    var mid = 0.0;
+    if is_orthographic {
+        mid = 2.0 / view.clip_from_view[1].y;
+    } else {
+        mid = get_depth(position, sample_index);
+    }
     let width = (1.0 / mid) * view.viewport.z / 640.0;
     let d = clamp(width, 1.0, 5.0);
 
@@ -29,7 +35,7 @@ fn apply_outline(position: vec4<f32>, color_in: vec4<f32>, hilight: bool, sample
 
     let expected = (pxpy + pxmy + mxpy + mxmy) / 4.0;
 
-    if /*(expected / depth - 1.0) > 0.005 ||*/ (expected / mid - 1) > 0.03 {
+    if (expected / mid - 1) > 0.03 {
         edge1 = true;
     }
 
