@@ -88,4 +88,24 @@ impl AppSetting for AaSetting {
             });
         }
     }
+
+    fn apply_to_camera(
+        &self,
+        _param: &SystemParamItem<Self::Param>,
+        mut commands: Commands,
+        camera_entity: Entity,
+    ) {
+        commands.entity(camera_entity).remove::<Fxaa>();
+        if let Some(sensitivity) = match self {
+            AaSetting::FxaaLow => Some(Sensitivity::Medium),
+            AaSetting::FxaaHigh => Some(Sensitivity::Ultra),
+            _ => None,
+        } {
+            commands.entity(camera_entity).insert(Fxaa {
+                enabled: true,
+                edge_threshold: sensitivity,
+                edge_threshold_min: sensitivity,
+            });
+        }
+    }
 }
