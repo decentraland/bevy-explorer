@@ -1004,16 +1004,11 @@ fn layout_scene_ui(
                 let mut cmds = commands.entity(link.ui_entity);
                 cmds.try_insert(style);
 
-                if ui_transform.border_radius != BorderRadius::DEFAULT {
-                    cmds.try_insert(ui_transform.border_radius);
-                } else {
-                    cmds.remove::<BorderRadius>();
-                }
-
                 if ui_transform.border_color != BorderColor::DEFAULT {
                     cmds.try_insert(ui_transform.border_color);
+                    cmds.try_insert(ui_transform.border_radius);
                 } else {
-                    cmds.remove::<BorderColor>();
+                    cmds.remove::<(BorderColor, BorderRadius)>();
                 }
 
                 let mut zindex_added = false;
