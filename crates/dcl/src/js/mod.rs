@@ -54,6 +54,7 @@ pub mod ethereum_controller;
 pub mod events;
 #[cfg(feature = "inspect")]
 pub mod inspector;
+mod local_storage;
 pub mod player;
 pub mod system_api;
 pub mod testing;
@@ -121,8 +122,11 @@ pub fn create_runtime(
         ops.extend(set);
     }
 
-    let override_sets: [Vec<deno_core::OpDecl>; 2] =
-        [fetch::override_ops(), websocket::override_ops()];
+    let override_sets: [Vec<deno_core::OpDecl>; 3] = [
+        fetch::override_ops(),
+        websocket::override_ops(),
+        local_storage::override_ops(),
+    ];
 
     for set in override_sets {
         for op in set {

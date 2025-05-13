@@ -45,7 +45,21 @@ async fn op_send_async(
 
             rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
         }
-        _ => {
+        "eth_getTransactionReceipt"
+        | "eth_estimateGas"
+        | "eth_call"
+        | "eth_getBalance"
+        | "eth_getStorageAt"
+        | "eth_blockNumber"
+        | "eth_gasPrice"
+        | "eth_protocolVersion"
+        | "net_version"
+        | "web3_sha3"
+        | "web3_clientVersion"
+        | "eth_getTransactionCount"
+        | "eth_getBlockByNumber"
+        | "eth_requestAccounts"
+        | "eth_getCode" => {
             let provider = {
                 let mut state = state.borrow_mut();
 
@@ -59,6 +73,7 @@ async fn op_send_async(
                 .send_async(method.as_str(), params.as_slice())
                 .await
         }
+        _ => anyhow::bail!("invalid method, no hacking thx"),
     }
 }
 
