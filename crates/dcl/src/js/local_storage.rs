@@ -23,6 +23,11 @@ fn address(state: &OpState) -> String {
         .unwrap_or_default()
 }
 
+fn strip_prefix(key: impl AsRef<str>) -> String {
+    key.as_ref().split_once(':').unwrap().1.to_owned()
+}
+
+// returns filtered keys matching current user, including the prefix
 fn iterate_keys(
     state: &mut OpState,
     persistent: bool,
@@ -44,7 +49,9 @@ pub fn op_webstorage_key(
     #[smi] index: u32,
     persistent: bool,
 ) -> Result<Option<String>, AnyError> {
-    Ok(iterate_keys(state, persistent)?.nth(index as usize))
+    Ok(iterate_keys(state, persistent)?
+        .nth(index as usize)
+        .map(strip_prefix))
 }
 
 #[op2(fast)]
@@ -103,5 +110,5 @@ pub fn op_webstorage_iterate_keys(
     state: &mut OpState,
     persistent: bool,
 ) -> Result<Vec<String>, AnyError> {
-    Ok(iterate_keys(state, persistent)?.collect())
+    Ok(iterate_keys(state, persistent)?.map(strip_prefix).collect())
 }
