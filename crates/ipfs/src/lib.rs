@@ -192,8 +192,8 @@ impl AssetLoader for SceneJsLoader {
 pub struct ContentMap(HashMap<String, String>);
 
 impl ContentMap {
-    pub fn hash<'a>(&'a self, file: &str) -> Option<Cow<'a, String>> {
-        self.0.get(file.to_lowercase().as_str()).map(Cow::Borrowed)
+    pub fn hash<'a>(&'a self, file: &str) -> Option<Cow<'a, str>> {
+        self.0.get(file.to_lowercase().as_str()).map(Into::into)
     }
 
     pub fn files(&self) -> impl Iterator<Item = &String> {
@@ -1082,10 +1082,9 @@ impl AssetReader for IpfsIo {
     {
         Box::pin(async_compat::Compat::new(async move {
             let wrap_err = |e| {
-                bevy::asset::io::AssetReaderError::Io(Arc::new(std::io::Error::new(
-                    ErrorKind::Other,
-                    format!("w: {e}"),
-                )))
+                bevy::asset::io::AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
+                    "w: {e}"
+                ))))
             };
 
             debug!("request: {:?}", path);
@@ -1151,8 +1150,7 @@ impl AssetReader for IpfsIo {
                 {
                     self.context.write().await.failed_remotes.remove(&remote);
                 } else {
-                    return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
-                        ErrorKind::Other,
+                    return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
                         format!("(repeat request for failed `{remote}`)"),
                     ))));
                 }
@@ -1176,10 +1174,9 @@ impl AssetReader for IpfsIo {
                     .timeout(Duration::from_secs(5 + 30 * attempt))
                     .build()
                     .map_err(|e| {
-                        AssetReaderError::Io(Arc::new(std::io::Error::new(
-                            ErrorKind::Other,
-                            format!("[{token:?}]: {e}"),
-                        )))
+                        AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
+                            "[{token:?}]: {e}"
+                        ))))
                     })?;
 
                 let response = self.client.execute(request).await;
@@ -1197,8 +1194,7 @@ impl AssetReader for IpfsIo {
                             .await
                             .failed_remotes
                             .insert(remote.clone(), Instant::now());
-                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
-                            ErrorKind::Other,
+                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
                             format!("[{token:?}]: server responded `{e}` requesting `{remote}`"),
                         ))));
                     }
@@ -1208,8 +1204,7 @@ impl AssetReader for IpfsIo {
                             .await
                             .failed_remotes
                             .insert(remote.clone(), Instant::now());
-                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
-                            ErrorKind::Other,
+                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
                             format!(
                                 "[{token:?}]: server responded with status {} requesting `{}`",
                                 response.status(),
@@ -1244,8 +1239,7 @@ impl AssetReader for IpfsIo {
                             .await
                             .failed_remotes
                             .insert(remote.clone(), Instant::now());
-                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
-                            ErrorKind::Other,
+                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
                             format!("[{token:?}] failed to convert to bytes: `{remote}`: {e}"),
                         ))));
                     }

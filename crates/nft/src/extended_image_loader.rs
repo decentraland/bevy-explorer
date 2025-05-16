@@ -94,12 +94,7 @@ impl AssetLoader for ExtendedImageLoader {
                         self.svg_loader
                             .load(reader, settings, load_context)
                             .await
-                            .map_err(|e| {
-                                ImageLoaderError::Io(std::io::Error::new(
-                                    std::io::ErrorKind::Other,
-                                    e,
-                                ))
-                            })
+                            .map_err(|e| ImageLoaderError::Io(std::io::Error::other(e)))
                     } else {
                         Err(ImageLoaderError::FileTexture(e))
                     }

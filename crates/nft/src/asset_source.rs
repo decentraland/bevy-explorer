@@ -102,14 +102,12 @@ impl AssetReader for NftReader {
                 let response = match response {
                     Err(e) if e.is_timeout() && attempt <= 3 => continue,
                     Err(e) => {
-                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
-                            ErrorKind::Other,
+                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
                             format!("[{token:?}]: {e}"),
                         ))))
                     }
                     Ok(response) if !matches!(response.status(), StatusCode::OK) => {
-                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
-                            ErrorKind::Other,
+                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
                             format!(
                                 "[{token:?}]: server responded with status {} requesting `{}`",
                                 response.status(),
@@ -128,8 +126,7 @@ impl AssetReader for NftReader {
                         if e.is_timeout() && attempt <= 3 {
                             continue;
                         }
-                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::new(
-                            ErrorKind::Other,
+                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
                             format!("[{token:?}] {e}"),
                         ))));
                     }
