@@ -22,7 +22,6 @@ use scene_material::SceneBoundPlugin;
 use spin_sleep::SpinSleeper;
 use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, stretch_uvs_image::StretchUvMaterial};
-use visuals::SceneGlobalLight;
 
 use crate::{
     initialize_scene::{PointerResult, ScenePointers},
@@ -39,7 +38,7 @@ use common::{
     rpc::RpcCall,
     structs::{
         AppConfig, CursorLocks, GraphicsSettings, PrimaryCamera, PrimaryPlayerRes,
-        SceneLoadDistance, ToolTips,
+        SceneGlobalLight, SceneLoadDistance, ToolTips,
     },
 };
 use comms::{preview::PreviewMode, CommsPlugin};

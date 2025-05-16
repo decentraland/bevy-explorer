@@ -5,7 +5,6 @@ use bevy::{
         bloom::BloomSettings,
         prepass::{DepthPrepass, NormalPrepass},
         tonemapping::{DebandDither, Tonemapping},
-        Skybox,
     },
     pbr::ShadowFilteringMethod,
     prelude::*,
@@ -21,7 +20,9 @@ use bevy_atmosphere::plugin::AtmosphereCamera;
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::SceneSets,
-    structs::{AppConfig, Cubemap, PrimaryUser, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER},
+    structs::{
+        AppConfig, PrimaryUser, SceneGlobalLight, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER,
+    },
     util::{camera_to_render_layers, AudioReceiver, TryPushChildrenEx},
 };
 use comms::global_crdt::ForeignPlayer;
@@ -41,7 +42,6 @@ use scene_runner::{
     ContainerEntity, ContainingScene,
 };
 use system_bridge::settings::NewCameraEvent;
-use visuals::SceneGlobalLight;
 
 pub struct TextureCameraPlugin;
 
@@ -216,7 +216,6 @@ fn update_texture_cameras(
     mut cameras: Query<&mut Camera>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
-    cubemap: Res<Cubemap>,
     mut new_cam_events: EventWriter<NewCameraEvent>,
     global_light: Res<SceneGlobalLight>,
     config: Res<AppConfig>,
@@ -373,15 +372,10 @@ fn update_texture_cameras(
             if maybe_layer.is_some_and(|l| l.show_skybox())
                 && !matches!(texture_cam.0.mode, Some(dcl_component::proto_components::sdk::components::pb_texture_camera::Mode::Orthographic(_)))
             {
-                camera.insert((
-                    Skybox {
-                        image: cubemap.image_handle.clone(),
-                        brightness: 1000.0,
-                    },
-                    AtmosphereCamera {
+                camera.insert(AtmosphereCamera {
                         render_layers: Some(render_layers.clone()),
                     }
-                ));
+                );
             }
 
             if maybe_layer.is_some_and(|l| {

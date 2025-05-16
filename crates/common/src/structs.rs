@@ -752,12 +752,6 @@ impl SceneImposterBake {
     }
 }
 
-#[derive(Resource)]
-pub struct Cubemap {
-    pub is_loaded: bool,
-    pub image_handle: Handle<Image>,
-}
-
 #[derive(Resource, Default)]
 pub struct CursorLocks(pub HashSet<&'static str>);
 
@@ -796,4 +790,15 @@ pub struct SystemScene {
     pub preview: bool,
     pub hot_reload: Option<tokio::sync::mpsc::UnboundedSender<PreviewCommand>>,
     pub hash: Option<String>,
+}
+
+#[derive(Resource, Default, Clone, Debug)]
+pub struct SceneGlobalLight {
+    pub source: Option<Entity>,
+    pub dir_color: Color,
+    pub dir_illuminance: f32,
+    pub dir_direction: Vec3,
+    pub ambient_color: Color,
+    pub ambient_brightness: f32,
+    pub layers: RenderLayers,
 }
