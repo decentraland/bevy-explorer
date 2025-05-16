@@ -120,7 +120,27 @@ fn fragment(
 @fragment
 fn fragment(in: VertexOutput) {
     let world_position = in.world_position.xyz;
-    let outside_amt = max(max(max(0.0, bounds.bounds.x - world_position.x), max(world_position.x - bounds.bounds.z, bounds.bounds.y - world_position.z)), world_position.z - bounds.bounds.w);
+    var outside_amt: f32 = 9999.0;
+    var nearest_region_distance: f32 = 9999.0;
+    var nearest_region_height: f32 = 9999.0;
+    if bounds.num_bounds > 0 {
+        for (var ix = 0u; ix < bounds.num_bounds; ix += 1u) {
+            let min_wp = unpack_bounds(bounds.bounds[ix].min);
+            let max_wp = unpack_bounds(bounds.bounds[ix].max);
+
+            let outside_xy = abs(clamp(world_position.xz, min_wp, max_wp) - world_position.xz);
+            let distance = max(outside_xy.x, outside_xy.y);
+            if distance < nearest_region_distance {
+                nearest_region_distance = distance;
+                nearest_region_height = bounds.bounds[ix].height;
+            }
+            outside_amt = min(outside_amt, distance);
+        }
+        let outside_height = max(world_position.y - nearest_region_height, 0.0);
+        outside_amt = max(outside_amt, outside_height);
+    } else {
+        outside_amt = 0.0;
+    }
 
     var noise = 0.0;
     if outside_amt > 0.0 {

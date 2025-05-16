@@ -2,11 +2,15 @@ use std::sync::OnceLock;
 
 use bevy::{
     ecs::system::SystemParam,
+    math::Affine2,
     pbr::NotShadowCaster,
     prelude::*,
     render::{
         primitives::Aabb,
-        texture::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
+        texture::{
+            ImageAddressMode, ImageFilterMode, ImageLoaderSettings, ImageSampler,
+            ImageSamplerDescriptor,
+        },
     },
 };
 use common::{structs::AppConfig, util::AsH160};
@@ -20,7 +24,7 @@ use crate::{
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
-        common::{texture_union, TextureUnion},
+        common::{texture_union, TextureFilterMode, TextureUnion, TextureWrapMode, Vector2},
         sdk::components::{pb_material, MaterialTransparencyMode, PbMaterial},
         Color3BevyToDcl, Color3DclToBevy, Color4BevyToDcl, Color4DclToBevy,
     },
@@ -89,11 +93,33 @@ impl MaterialDefinition {
                     AlphaMode::Opaque
                 };
 
+                let inner_texture = unlit
+                    .texture
+                    .as_ref()
+                    .and_then(|t| t.tex.as_ref())
+                    .and_then(|t| match t {
+                        texture_union::Tex::Texture(texture) => Some(texture),
+                        _ => None,
+                    });
+                let uv_transform = Affine2 {
+                    matrix2: Mat2::from_diagonal(
+                        inner_texture
+                            .and_then(|t| t.tiling)
+                            .map(|t| Vec2::from(&t))
+                            .unwrap_or(Vec2::ONE),
+                    ),
+                    translation: inner_texture
+                        .and_then(|t| t.offset)
+                        .map(|o| Vec2::from(&o) * Vec2::new(1.0, -1.0))
+                        .unwrap_or(Vec2::ZERO),
+                };
+
                 (
                     StandardMaterial {
                         base_color,
                         unlit: true,
                         alpha_mode,
+                        uv_transform,
                         ..base.clone()
                     },
                     unlit.texture.clone(),
@@ -249,11 +275,45 @@ impl TextureResolver<'_, '_> {
     ) -> Result<ResolvedTexture, TextureResolveError> {
         match texture {
             texture_union::Tex::Texture(texture) => {
-                // TODO handle wrapmode and filtering once we have some asset processing pipeline in place (bevy 0.11-0.12)
+                let filter_mode = texture
+                    .filter_mode
+                    .and_then(TextureFilterMode::from_i32)
+                    .unwrap_or(TextureFilterMode::TfmBilinear);
+                let filter_mode = match filter_mode {
+                    TextureFilterMode::TfmPoint => ImageFilterMode::Nearest,
+                    TextureFilterMode::TfmBilinear => ImageFilterMode::Linear,
+                    TextureFilterMode::TfmTrilinear => ImageFilterMode::Linear,
+                };
+
+                let wrap_mode = texture
+                    .wrap_mode
+                    .and_then(TextureWrapMode::from_i32)
+                    .unwrap_or(TextureWrapMode::TwmClamp);
+                let wrap_mode = match wrap_mode {
+                    TextureWrapMode::TwmRepeat => ImageAddressMode::Repeat,
+                    TextureWrapMode::TwmClamp => ImageAddressMode::ClampToEdge,
+                    TextureWrapMode::TwmMirror => ImageAddressMode::MirrorRepeat,
+                };
+
+                // TODO handle different wrapmode and filtering for the same image at some point...
                 Ok(ResolvedTexture {
                     image: self
                         .ipfas
-                        .load_content_file::<Image>(&texture.src, &scene.hash)
+                        .load_content_file_with_settings::<Image, _>(
+                            &texture.src,
+                            &scene.hash,
+                            move |s: &mut ImageLoaderSettings| {
+                                s.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+                                    address_mode_u: wrap_mode,
+                                    address_mode_v: wrap_mode,
+                                    address_mode_w: wrap_mode,
+                                    mag_filter: filter_mode,
+                                    min_filter: filter_mode,
+                                    mipmap_filter: filter_mode,
+                                    ..default()
+                                })
+                            },
+                        )
                         .unwrap(),
                     source_entity: None,
                     camera_target: None,
@@ -529,6 +589,12 @@ pub fn dcl_material_from_standard_material(
         } else {
             &ImageSamplerDescriptor::default()
         };
+
+        let (scale, _, translation) = base.uv_transform.to_scale_angle_translation();
+        let tiling = (scale != Vec2::ONE).then_some(Vector2::from(scale));
+        let offset = (translation != Vec2::ZERO)
+            .then_some(Vector2::from(translation * Vec2::new(1.0, -1.0)));
+
         TextureUnion {
             tex: Some(dcl_component::proto_components::common::texture_union::Tex::Texture(dcl_component::proto_components::common::Texture {
                 src,
@@ -542,6 +608,8 @@ pub fn dcl_material_from_standard_material(
                     ImageFilterMode::Nearest => dcl_component::proto_components::common::TextureFilterMode::TfmPoint,
                     ImageFilterMode::Linear => dcl_component::proto_components::common::TextureFilterMode::TfmBilinear,
                 } as i32),
+                offset,
+                tiling,
             })),
         }
     };

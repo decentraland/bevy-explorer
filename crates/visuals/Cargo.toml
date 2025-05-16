@@ -14,3 +14,5 @@ bevy_atmosphere = { git = "https://github.com/robtfm/bevy_atmosphere", branch = 
 bevy_console = { workspace = true }
 
 clap = { workspace = true }
+chrono = { workspace = true }
+noise = "0.9"

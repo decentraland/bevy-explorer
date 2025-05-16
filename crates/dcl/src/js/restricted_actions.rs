@@ -1,4 +1,8 @@
-use bevy::{log::debug, math::IVec2};
+use bevy::{
+    log::debug,
+    math::{IVec2, Vec3},
+    transform::components::Transform,
+};
 use common::rpc::RpcCall;
 use deno_core::{
     anyhow::{self, anyhow},
@@ -7,11 +11,8 @@ use deno_core::{
 };
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{interface::crdt_context::CrdtContext, js::RendererStore};
-use dcl_component::{
-    transform_and_parent::{DclTransformAndParent, DclTranslation},
-    DclReader, SceneComponentId, SceneEntityId,
-};
+use crate::interface::crdt_context::CrdtContext;
+use dcl_component::transform_and_parent::DclTranslation;
 
 use super::{runtime::scene_information, RpcCalls};
 
@@ -32,7 +33,6 @@ pub fn ops() -> Vec<OpDecl> {
 #[allow(clippy::too_many_arguments)]
 fn op_move_player_to(
     op_state: &mut OpState,
-    absolute: bool,
     position_x: f32,
     position_y: f32,
     position_z: f32,
@@ -40,6 +40,10 @@ fn op_move_player_to(
     maybe_camera_x: f32,
     maybe_camera_y: f32,
     maybe_camera_z: f32,
+    looking_at: bool,
+    maybe_looking_at_x: f32,
+    maybe_looking_at_y: f32,
+    maybe_looking_at_z: f32,
 ) {
     let position = [position_x, position_y, position_z];
     let maybe_camera = if camera {
@@ -47,44 +51,19 @@ fn op_move_player_to(
     } else {
         None
     };
-
-    debug!("move player to {:?}", position);
-    let scene = op_state.borrow::<CrdtContext>().scene_id.0;
-
-    // get current
-    let inbound = &op_state.borrow::<RendererStore>().0;
-    let get_transform = |id: SceneEntityId| -> DclTransformAndParent {
-        DclReader::new(
-            &inbound
-                .lww
-                .get(&SceneComponentId::TRANSFORM)
-                .unwrap()
-                .last_write
-                .get(&id)
-                .unwrap()
-                .data,
-        )
-        .read()
-        .unwrap()
+    let maybe_looking_at = if looking_at {
+        Some([maybe_looking_at_x, maybe_looking_at_y, maybe_looking_at_z])
+    } else {
+        None
     };
 
-    let to = if absolute {
-        let origin = get_transform(SceneEntityId::WORLD_ORIGIN).translation;
-        DclTranslation(position) - origin
-    } else {
-        DclTranslation(position)
-    }
-    .to_bevy_translation();
+    debug!("move player to {position:?}, camera: {maybe_camera:?}, rotate: {maybe_looking_at:?}");
+    let scene = op_state.borrow::<CrdtContext>().scene_id.0;
 
-    let looking_at = maybe_camera.map(|camera| {
-        if absolute {
-            let origin = get_transform(SceneEntityId::WORLD_ORIGIN).translation;
-            DclTranslation(camera) - origin
-        } else {
-            DclTranslation(camera)
-        }
-        .to_bevy_translation()
-    });
+    let to = DclTranslation(position).to_bevy_translation();
+
+    let avatar_target = maybe_looking_at.or(maybe_camera);
+    let looking_at = avatar_target.map(|target| DclTranslation(target).to_bevy_translation());
 
     op_state.borrow_mut::<RpcCalls>().push(RpcCall::MovePlayer {
         scene,
@@ -92,11 +71,16 @@ fn op_move_player_to(
         looking_at,
     });
 
-    if let Some(looking_at) = looking_at {
-        op_state.borrow_mut::<RpcCalls>().push(RpcCall::MoveCamera {
-            scene,
-            to: looking_at,
-        });
+    let camera_rotation = maybe_camera.map(|camera| {
+        let camera_target = DclTranslation(camera).to_bevy_translation();
+        Transform::IDENTITY
+            .looking_at(camera_target - to, Vec3::Y)
+            .rotation
+    });
+    if let Some(facing) = camera_rotation {
+        op_state
+            .borrow_mut::<RpcCalls>()
+            .push(RpcCall::MoveCamera { scene, facing });
     }
 }
 

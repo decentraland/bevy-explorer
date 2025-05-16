@@ -4,7 +4,7 @@ use bevy::{math::FloatOrd, prelude::*, render::view::RenderLayers};
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::SceneSets,
-    structs::{AppConfig, PrimaryUser, PRIMARY_AVATAR_LIGHT_LAYER},
+    structs::{AppConfig, PrimaryUser, SceneGlobalLight, PRIMARY_AVATAR_LIGHT_LAYER},
     util::TryPushChildrenEx,
 };
 use dcl::interface::ComponentPosition;
@@ -16,7 +16,6 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use visuals::SceneGlobalLight;
 
 use crate::{renderer_context::RendererSceneContext, ContainerEntity, ContainingScene};
 
@@ -109,7 +108,7 @@ pub fn update_directional_light(
     time: Res<Time>,
 ) {
     // reset to default
-    let t = ((TAU * 0.15 + time.elapsed_seconds_wrapped() / 400.0) % TAU) * 0.6 - TAU * 0.05;
+    let t = (time.elapsed_seconds_wrapped() / 400.0 + 1.0) % TAU;
 
     *global_light = SceneGlobalLight {
         source: None,

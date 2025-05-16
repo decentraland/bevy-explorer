@@ -527,6 +527,7 @@ fn debug_pointer(
     pointer_target: Res<PointerTarget>,
     target: Query<&ContainerEntity>,
     scene: Query<&RendererSceneContext>,
+    colliders: Query<&MeshCollider>,
 ) {
     if debug.0 {
         let info = if let UiPointerTargetValue::Primary(ui_ent) = &ui_target.0 {
@@ -552,8 +553,12 @@ fn debug_pointer(
             if let Ok(target) = target.get(container) {
                 if let Ok(scene) = scene.get(target.root) {
                     format!(
-                        "world entity {}-{:?} from scene {}, [{}]",
-                        target.container_id, mesh_name, scene.title, distance.0
+                        "world entity {}-{:?} from scene {}, [{}], container: {:?}",
+                        target.container_id,
+                        mesh_name,
+                        scene.title,
+                        distance.0,
+                        colliders.get(container)
                     )
                 } else {
                     format!(
@@ -717,7 +722,7 @@ fn send_hover_events(
 fn send_action_events(
     target: Res<PointerTarget>,
     pointer_requests: Query<(&SceneEntity, Option<&PointerEvents>)>,
-    mut scenes: Query<(Entity, &mut RendererSceneContext, &GlobalTransform)>,
+    mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform)>,
     input_mgr: InputManager,
     frame: Res<FrameCount>,
     time: Res<Time>,
@@ -761,10 +766,11 @@ fn send_action_events(
             filtered_events(&pointer_requests, info, ev_type, action).peekable();
         // check there's at least one potential request before doing any work
         if potential_entries.peek().is_some() {
-            let Ok((_, mut context, scene_transform)) = scenes.get_mut(scene_entity.root) else {
+            let Ok((mut context, scene_transform)) = scenes.get_mut(scene_entity.root) else {
                 return false;
             };
 
+            let mut consumed = false;
             for ev in potential_entries {
                 let max_distance = ev
                     .event_info
@@ -800,47 +806,54 @@ fn send_action_events(
                         },
                     );
                     context.last_action_event = Some(time.elapsed_seconds());
+                    consumed = true;
                 }
             }
-            true
+            consumed
         } else {
-            // warn!(
-            //     "failed to query entity for button event [{action:?} {ev_type:?}]: {:?}",
-            //     info.container
-            // );
             false
         }
     };
 
-    // send event to hover target
+    // send event to action target
+    let mut unconsumed = Vec::default();
     if let Some(info) = target.0.as_ref() {
-        for down in input_mgr.iter_scene_just_down() {
-            let down = down.to_dcl();
-            send_event(info, PointerEventType::PetDown, down, None);
-            if filtered_events(&pointer_requests, info, PointerEventType::PetDrag, down)
+        let unconsumed_down = input_mgr
+            .iter_scene_just_down()
+            .map(IaToDcl::to_dcl)
+            .filter(|down| {
+                let consumed = send_event(info, PointerEventType::PetDown, *down, None);
+                if filtered_events(&pointer_requests, info, PointerEventType::PetDrag, *down)
+                    .next()
+                    .is_some()
+                {
+                    debug!("added drag");
+                    drag_target.entities.insert(*down, (info.clone(), false));
+                }
+                if filtered_events(
+                    &pointer_requests,
+                    info,
+                    PointerEventType::PetDragLocked,
+                    *down,
+                )
                 .next()
                 .is_some()
-            {
-                debug!("added drag");
-                drag_target.entities.insert(down, (info.clone(), false));
-            }
-            if filtered_events(
-                &pointer_requests,
-                info,
-                PointerEventType::PetDragLocked,
-                down,
-            )
-            .next()
-            .is_some()
-            {
-                debug!("added drag lock");
-                drag_target.entities.insert(down, (info.clone(), true));
-            }
-        }
+                {
+                    debug!("added drag lock");
+                    drag_target.entities.insert(*down, (info.clone(), true));
+                }
 
-        for up in input_mgr.iter_scene_just_up() {
-            send_event(info, PointerEventType::PetUp, up.to_dcl(), None);
-        }
+                !consumed
+            })
+            .map(|button| (PointerEventType::PetDown, button));
+        unconsumed.extend(unconsumed_down);
+
+        let unconsumed_up = input_mgr
+            .iter_scene_just_up()
+            .map(IaToDcl::to_dcl)
+            .filter(|up| !send_event(info, PointerEventType::PetUp, *up, None))
+            .map(|button| (PointerEventType::PetUp, button));
+        unconsumed.extend(unconsumed_up);
     }
 
     // send any drags
@@ -878,72 +891,22 @@ fn send_action_events(
     }
 
     // send events to scene roots
-    if !input_mgr.any_just_acted() {
+    if unconsumed.is_empty() {
         return;
     }
 
-    let scene_entity = target
-        .0
-        .as_ref()
-        // TODO fix this hack - seems like foundation only sends the entity id for non-ui entities
-        // we need to send the entity for metadyne cubes, but not for ui onMouseDown (to avoid duplicating)
-        .filter(|info| info.is_ui != Some(true))
-        .and_then(|info| pointer_requests.get(info.container).map(|(e, _)| e).ok());
-    let scene_root = scene_entity.map(|e| e.root);
-
-    for (root_ent, mut context, scene_transform) in scenes.iter_mut() {
+    for (mut context, _) in scenes.iter_mut() {
         let tick_number = context.tick_number;
 
-        // we send the entity id to the containing scene, otherwise we send ROOT
-        // as the entity id is only valid within the containing scene context
-        let entity_id = if scene_root == Some(root_ent) {
-            scene_entity.as_ref().unwrap().id.as_proto_u32()
-        } else {
-            SceneEntityId::ROOT.as_proto_u32()
-        };
-
-        let hit = RaycastHit {
-            position: target.0.as_ref().and_then(|info| {
-                info.position
-                    .as_ref()
-                    .map(|p| Vector3::world_vec_from_vec3(&(*p - scene_transform.translation())))
-            }),
-            global_origin: None,
-            direction: None,
-            normal_hit: target
-                .0
-                .as_ref()
-                .and_then(|info| info.normal.as_ref().map(Vector3::world_vec_from_vec3)),
-            length: target.0.as_ref().map_or(0.0, |info| info.distance.0),
-            mesh_name: target.0.as_ref().and_then(|info| info.mesh_name.clone()),
-            entity_id,
-        };
-
-        for down in input_mgr.iter_scene_just_down() {
+        for &(pet, button) in &unconsumed {
             context.update_crdt(
                 SceneComponentId::POINTER_RESULT,
                 CrdtType::GO_ENT,
                 SceneEntityId::ROOT,
                 &PbPointerEventsResult {
-                    button: *down as i32,
-                    hit: Some(hit.clone()),
-                    state: PointerEventType::PetDown as i32,
-                    timestamp: frame.0,
-                    analog: None,
-                    tick_number,
-                },
-            );
-        }
-
-        for up in input_mgr.iter_scene_just_up() {
-            context.update_crdt(
-                SceneComponentId::POINTER_RESULT,
-                CrdtType::GO_ENT,
-                SceneEntityId::ROOT,
-                &PbPointerEventsResult {
-                    button: *up as i32,
-                    hit: Some(hit.clone()),
-                    state: PointerEventType::PetUp as i32,
+                    button: button as i32,
+                    hit: None,
+                    state: pet as i32,
                     timestamp: frame.0,
                     analog: None,
                     tick_number,

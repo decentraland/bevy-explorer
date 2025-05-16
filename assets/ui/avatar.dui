@@ -4,10 +4,10 @@
             <bounds
                 style="position-type: absolute; width: 100%; height: 100%;"
                 corner-size="1.5vmin"
-                blend-size="0.125vmin"
+                blend-size="0vmin"
                 border-size="0.75vmin"
                 border-color="#eeeeee"
-                color="#aac11d66"
+                color="#446134"
             >
             </bounds>
             <div style="margin: 5px">

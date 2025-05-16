@@ -96,39 +96,55 @@ pub fn set_interaction_style(
 
         if let Some(mut nineslice) = maybe_nineslice {
             if let Some(req_bg) = style.background {
-                nineslice.tint = Some(req_bg);
+                if nineslice.tint != Some(req_bg) {
+                    nineslice.tint = Some(req_bg);
+                }
             }
 
             if let Some(image) = &style.image {
-                nineslice.image = image.clone();
+                if &nineslice.image != image {
+                    nineslice.image = image.clone();
+                }
             }
         }
 
         if let Some(mut bounded) = maybe_bounded {
             if let Some(req_bg) = style.background {
-                bounded.color = Some(req_bg);
+                if bounded.color != Some(req_bg) {
+                    bounded.color = Some(req_bg);
+                }
             }
             if let Some(image) = &style.image {
-                bounded.image = Some(image.clone());
+                if bounded.image.as_ref() != Some(image) {
+                    bounded.image = Some(image.clone());
+                }
             }
         }
 
         if let Some(mut bounds) = maybe_bounds {
             if let Some(border) = style.border {
-                bounds.border_color = border;
+                if bounds.border_color != border {
+                    bounds.border_color = border;
+                }
             }
         }
 
         if let Some(mut ui_image) = maybe_image {
             if let Some(image) = &style.image {
-                ui_image.texture = image.clone();
+                if &ui_image.texture != image {
+                    ui_image.texture = image.clone();
+                }
             }
             if let Some(req_bg) = style.background {
-                ui_image.color = req_bg;
+                if ui_image.color != req_bg {
+                    ui_image.color = req_bg;
+                }
             }
         } else if let Some(mut bg) = maybe_bg {
             if let Some(req_bg) = style.background {
-                bg.0 = req_bg;
+                if bg.0 != req_bg {
+                    bg.0 = req_bg;
+                }
             }
         }
 

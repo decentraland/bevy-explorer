@@ -4,6 +4,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 use std::{fs::File, io::Write, sync::OnceLock};
 
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
+#[cfg(not(debug_assertions))]
 use build_time::build_time_utc;
 use dcl::init_runtime;
 use imposters::DclImposterPlugin;
@@ -13,21 +14,16 @@ use mimalloc::MiMalloc;
 static GLOBAL: MiMalloc = MiMalloc;
 
 use bevy::{
-    asset::LoadState,
     core::TaskPoolThreadAssignmentPolicy,
     core_pipeline::{
         bloom::BloomSettings,
         prepass::{DepthPrepass, NormalPrepass},
         tonemapping::{DebandDither, Tonemapping},
-        Skybox,
     },
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::ShadowFilteringMethod,
     prelude::*,
-    render::{
-        render_resource::{TextureViewDescriptor, TextureViewDimension},
-        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
-    },
+    render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
     tasks::{IoTaskPool, Task},
     window::WindowResolution,
 };
@@ -38,9 +34,9 @@ use common::{
     inputs::InputMap,
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, AvatarDynamicState, Cubemap, GraphicsSettings, IVec2Arg,
-        PreviewCommand, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser,
-        SceneImposterBake, SceneLoadDistance, SystemScene, Version, GROUND_RENDERLAYER,
+        AppConfig, AttachPoints, AvatarDynamicState, GraphicsSettings, IVec2Arg, PreviewCommand,
+        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake,
+        SceneLoadDistance, SystemScene, Version, GROUND_RENDERLAYER,
     },
     util::{config_file, project_directories, TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
 };
@@ -78,13 +74,17 @@ use world_ui::WorldUiPlugin;
 static SESSION_LOG: OnceLock<String> = OnceLock::new();
 
 pub fn version() -> String {
-    format!(
+    #[cfg(not(debug_assertions))]
+    return format!(
         "{}{}",
         env!("BEVY_EXPLORER_VERSION"),
         (env!("BEVY_EXPLORER_LOCAL_MODIFICATION") == "true")
             .then_some(format!("-{}", build_time_utc!("%Y-%m-%d %H:%M")))
             .unwrap_or_default()
-    )
+    );
+
+    #[cfg(debug_assertions)]
+    "debug".to_string()
 }
 
 fn main() {
@@ -434,7 +434,6 @@ fn main() {
         .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
         .add_systems(Startup, setup.in_set(SetupSets::Init))
-        .add_systems(Update, asset_loaded)
         .insert_resource(AmbientLight {
             color: Color::srgb(0.85, 0.85, 1.0),
             brightness: 575.0,
@@ -471,7 +470,6 @@ fn setup(
     mut player_resource: ResMut<PrimaryPlayerRes>,
     mut cam_resource: ResMut<PrimaryCameraRes>,
     config: Res<AppConfig>,
-    asset_server: Res<AssetServer>,
 ) {
     info!("main::setup");
     // create the main player
@@ -495,8 +493,6 @@ fn setup(
         .try_push_children(&attach_points.entities())
         .insert(attach_points)
         .id();
-
-    let skybox = asset_server.load("images/skybox/skybox_cubemap.png");
 
     // add a camera
     let camera_id = commands
@@ -546,40 +542,12 @@ fn setup(
             PrimaryCamera::default(),
             DepthPrepass,
             NormalPrepass,
-            Skybox {
-                image: skybox.clone(),
-                brightness: 1000.0,
-            },
             GROUND_RENDERLAYER.with(0),
         ))
         .id();
 
-    commands.insert_resource(Cubemap {
-        is_loaded: false,
-        image_handle: skybox,
-    });
-
     player_resource.0 = player_id;
     cam_resource.0 = camera_id;
-}
-
-fn asset_loaded(
-    asset_server: Res<AssetServer>,
-    mut images: ResMut<Assets<Image>>,
-    mut cubemap: ResMut<Cubemap>,
-) {
-    if !cubemap.is_loaded && asset_server.load_state(&cubemap.image_handle) == LoadState::Loaded {
-        let image = images.get_mut(&cubemap.image_handle).unwrap();
-        // NOTE: PNGs do not have any metadata that could indicate they contain a cubemap texture,
-        // so they appear as one texture. The following code reconfigures the texture as necessary.
-        image.reinterpret_stacked_2d_as_array(image.height() / image.width());
-        image.texture_view_descriptor = Some(TextureViewDescriptor {
-            dimension: Some(TextureViewDimension::Cube),
-            ..default()
-        });
-
-        cubemap.is_loaded = true;
-    }
 }
 
 // TODO move these somewhere better

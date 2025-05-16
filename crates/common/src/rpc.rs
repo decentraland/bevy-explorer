@@ -116,7 +116,7 @@ pub enum RpcCall {
     },
     MoveCamera {
         scene: Entity,
-        to: Vec3,
+        facing: Quat,
     },
     SpawnPortable {
         location: PortableLocation,

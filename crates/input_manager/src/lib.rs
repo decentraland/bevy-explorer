@@ -18,7 +18,7 @@ use common::{
         SystemActionEvent, POINTER_SET,
     },
     rpc::RpcResultSender,
-    structs::{AppConfig, CursorLocks},
+    structs::{AppConfig, CursorLocks, PlayerModifiers},
     util::config_file,
 };
 use system_bridge::SystemApi;
@@ -636,7 +636,13 @@ fn handle_system_input_stream(
     mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<SystemActionEvent>>>,
     input_manager: InputManager,
     mut pressed: Local<HashSet<SystemAction>>,
+    modifiers: Query<&PlayerModifiers>,
 ) {
+    let block_emote = modifiers
+        .get_single()
+        .map(|m| m.block_emote)
+        .unwrap_or(false);
+
     let new_senders = events
         .read()
         .filter_map(|ev| {
@@ -662,7 +668,11 @@ fn handle_system_input_stream(
     senders.retain(|s| !s.is_closed());
 
     let new_pressed = SystemAction::iter()
-        .filter(|a| input_manager.is_down(*a, InputPriority::Scene))
+        .filter(|a| {
+            input_manager.is_down(*a, InputPriority::Scene)
+                || input_manager.just_down(*a, InputPriority::Scene)
+        })
+        .filter(|a| !block_emote || a != &SystemAction::Emote)
         .collect::<HashSet<_>>();
 
     for &action in new_pressed.difference(&*pressed) {

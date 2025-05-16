@@ -1,17 +1,19 @@
+mod nishita_cloud;
+
 use bevy::{
-    core_pipeline::{
-        dof::{DepthOfFieldMode, DepthOfFieldSettings},
-        Skybox,
-    },
+    core_pipeline::dof::{DepthOfFieldMode, DepthOfFieldSettings},
     pbr::{wireframe::WireframePlugin, CascadeShadowConfigBuilder, DirectionalLightShadowMap},
     prelude::*,
     render::{
         render_asset::RenderAssetBytesPerFrame,
         view::{Layer, RenderLayers},
+        RenderApp,
     },
 };
 use bevy_atmosphere::{
-    prelude::{AtmosphereCamera, AtmosphereModel, AtmospherePlugin, Nishita},
+    model::AddAtmosphereModel,
+    pipeline::AtmosphereImageBindGroupLayout,
+    prelude::{AtmosphereCamera, AtmosphereModel, AtmospherePlugin, AtmosphereSettings},
     system_param::AtmosphereMut,
 };
 
@@ -20,10 +22,12 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, DofConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
-        SceneLoadDistance, ShadowSetting, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER,
+        SceneGlobalLight, SceneLoadDistance, ShadowSetting, GROUND_RENDERLAYER,
+        PRIMARY_AVATAR_LIGHT_LAYER,
     },
 };
 use console::DoAddConsoleCommand;
+use nishita_cloud::{init_noise, NishitaCloud};
 
 pub struct VisualsPlugin {
     pub no_fog: bool,
@@ -33,7 +37,12 @@ impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DirectionalLightShadowMap { size: 4096 })
             .init_resource::<SceneGlobalLight>()
-            .insert_resource(AtmosphereModel::default())
+            .insert_resource(CloudCover(0.45))
+            .insert_resource(AtmosphereSettings {
+                resolution: 512,
+                dithering: true,
+            })
+            .insert_resource(AtmosphereModel::new(NishitaCloud::default()))
             .add_plugins(AtmospherePlugin)
             .add_plugins(WireframePlugin)
             .add_systems(Update, apply_global_light)
@@ -52,6 +61,14 @@ impl Plugin for VisualsPlugin {
         app.add_console_command::<ShadowConsoleCommand, _>(shadow_console_command);
         app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
         app.add_console_command::<DofConsoleCommand, _>(dof_console_command);
+        app.add_console_command::<CloudConsoleCommand, _>(cloud_console_command);
+    }
+
+    fn finish(&self, app: &mut App) {
+        let render_app = app.sub_app_mut(RenderApp);
+        render_app.init_resource::<AtmosphereImageBindGroupLayout>();
+
+        app.add_atmosphere_model::<NishitaCloud>();
     }
 }
 
@@ -63,6 +80,8 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     camera: Res<PrimaryCameraRes>,
+    mut atmosphere: AtmosphereMut<NishitaCloud>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     info!("visuals::setup");
 
@@ -85,6 +104,7 @@ fn setup(
                 perceptual_roughness: 1.0,
                 metallic: 0.0,
                 depth_bias: -100.0,
+                fog_enabled: false,
                 ..Default::default()
             }),
             ..Default::default()
@@ -92,17 +112,11 @@ fn setup(
         Ground,
         GROUND_RENDERLAYER.clone(),
     ));
-}
 
-#[derive(Resource, Default, Clone, Debug)]
-pub struct SceneGlobalLight {
-    pub source: Option<Entity>,
-    pub dir_color: Color,
-    pub dir_illuminance: f32,
-    pub dir_direction: Vec3,
-    pub ambient_color: Color,
-    pub ambient_brightness: f32,
-    pub layers: RenderLayers,
+    let noise = init_noise(512);
+    let h_noise = images.add(noise);
+
+    atmosphere.noise_texture = h_noise;
 }
 
 static TRANSITION_TIME: f32 = 1.0;
@@ -111,7 +125,8 @@ static TRANSITION_TIME: f32 = 1.0;
 fn apply_global_light(
     mut commands: Commands,
     setting: Res<AppConfig>,
-    mut atmosphere: AtmosphereMut<Nishita>,
+    mut atmosphere: AtmosphereMut<NishitaCloud>,
+    cloud: Res<CloudCover>,
     mut sun: Query<(
         Entity,
         &DirectionalLightLayer,
@@ -120,18 +135,12 @@ fn apply_global_light(
     )>,
     mut ambient: ResMut<AmbientLight>,
     time: Res<Time>,
-    mut cameras: Query<
-        (
-            Option<&PrimaryCamera>,
-            Option<&mut Skybox>,
-            Option<&mut FogSettings>,
-        ),
-        With<Camera3d>,
-    >,
+    mut cameras: Query<(Option<&PrimaryCamera>, Option<&mut FogSettings>), With<Camera3d>>,
     scene_distance: Res<SceneLoadDistance>,
     scene_global_light: Res<SceneGlobalLight>,
     mut prev: Local<(f32, SceneGlobalLight)>,
     config: Res<AppConfig>,
+    mut cloud_dt: Local<f32>,
 ) {
     let next_light = if prev.0 >= TRANSITION_TIME && prev.1.source == scene_global_light.source {
         scene_global_light.clone()
@@ -165,6 +174,26 @@ fn apply_global_light(
 
     let rotation = Quat::from_rotation_arc(Vec3::NEG_Z, next_light.dir_direction);
     atmosphere.sun_position = -next_light.dir_direction;
+    atmosphere.rayleigh_coefficient =
+        Vec3::new(5.5e-6, 13.0e-6, 22.4e-6) * next_light.dir_color.to_srgba().to_vec3();
+    atmosphere.dir_light_intensity = next_light.dir_illuminance;
+    atmosphere.sun_color = next_light.dir_color.to_srgba().to_vec3();
+    atmosphere.tick += 1;
+
+    if atmosphere.cloudy != cloud.0 {
+        *cloud_dt = (*cloud_dt + time.delta_seconds() * 20.0)
+            .min(80.0 * (atmosphere.cloudy - cloud.0).abs())
+            .max(1.0);
+        atmosphere.cloudy += (cloud.0 - atmosphere.cloudy).clamp(
+            -time.delta_seconds() * 0.005 * *cloud_dt,
+            time.delta_seconds() * 0.005 * *cloud_dt,
+        );
+        // atmosphere.time += time.delta_seconds() * 10.0;
+    } else {
+        *cloud_dt = f32::max(*cloud_dt - time.delta_seconds(), 1.0);
+    }
+
+    atmosphere.time += time.delta_seconds() * *cloud_dt;
 
     let mut directional_layers = RenderLayers::none();
     for (entity, layer, mut light_trans, mut directional) in sun.iter_mut() {
@@ -232,15 +261,10 @@ fn apply_global_light(
         ));
     }
 
-    for (maybe_primary, maybe_skybox, maybe_fog) in cameras.iter_mut() {
+    for (maybe_primary, maybe_fog) in cameras.iter_mut() {
         let dir_light_lightness = Lcha::from(next_light.dir_color).lightness;
         let skybox_brightness =
             (next_light.dir_illuminance.sqrt() * 40.0 * dir_light_lightness).min(2000.0);
-        if let Some(mut skybox) = maybe_skybox {
-            skybox.brightness = skybox_brightness;
-            atmosphere.rayleigh_coefficient =
-                Vec3::new(5.5e-6, 13.0e-6, 22.4e-6) * next_light.dir_color.to_srgba().to_vec3();
-        }
 
         if let Some(mut fog) = maybe_fog {
             let distance = (scene_distance.load + scene_distance.unload)
@@ -269,12 +293,6 @@ fn apply_global_light(
                     fog.directional_light_color = next_light.dir_color;
                 }
             }
-
-            // let sun_up = atmosphere.sun_position.dot(Vec3::Y);
-            // let rgb = Vec3::new(0.4, 0.4, 0.2) * sun_up.clamp(0.0, 1.0)
-            //     + Vec3::new(0.0, 0.0, 0.0) * (8.0 * (0.125 - sun_up.clamp(0.0, 0.125)));
-            // let rgb = rgb.powf(1.0 / 2.2);
-            // fog.color = Color::srgb(rgb.x, rgb.y, rgb.z);
         }
     }
 
@@ -420,4 +438,24 @@ fn update_dof(
     //     / (base_distance * (base_distance + constant_distance)))
     //     .sqrt();
     dof.focal_distance = current_distance;
+}
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/cloud")]
+struct CloudConsoleCommand {
+    cover: f32,
+}
+
+#[derive(Resource)]
+pub struct CloudCover(pub f32);
+
+fn cloud_console_command(
+    mut input: ConsoleCommand<CloudConsoleCommand>,
+    mut cloud: ResMut<CloudCover>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        cloud.0 = command.cover;
+
+        input.reply_ok(format!("cloud {}", command.cover));
+    }
 }

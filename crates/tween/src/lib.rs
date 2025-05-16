@@ -3,12 +3,14 @@ use common::sets::SceneSets;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{
-        pb_tween::Mode, EasingFunction, PbTween, PbTweenState, TweenStateStatus,
+        pb_tween::Mode, EasingFunction, PbTween, PbTweenState, TextureMovementType,
+        TweenStateStatus,
     },
     transform_and_parent::DclTransformAndParent,
     SceneComponentId,
 };
 
+use scene_material::SceneMaterial;
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::AddCrdtInterfaceExt, ContainerEntity,
     SceneEntity,
@@ -24,7 +26,13 @@ impl From<PbTween> for Tween {
 }
 
 impl Tween {
-    fn apply(&self, time: f32, transform: &mut Transform) {
+    fn apply(
+        &self,
+        time: f32,
+        transform: &mut Transform,
+        maybe_h_mat: Option<&Handle<SceneMaterial>>,
+        materials: &mut Assets<SceneMaterial>,
+    ) {
         use simple_easing::*;
         use EasingFunction::*;
         let f = match self.0.easing_function() {
@@ -92,6 +100,28 @@ impl Tween {
                 let end = data.end.unwrap_or_default().abs_vec_to_vec3();
                 transform.scale = start + ((end - start) * ease_value);
             }
+            Some(Mode::TextureMove(data)) => {
+                let start: Vec2 = (&data.start.unwrap_or_default()).into();
+                let end: Vec2 = (&data.end.unwrap_or_default()).into();
+                let Some(h_mat) = maybe_h_mat else {
+                    return;
+                };
+
+                let Some(material) = materials.get_mut(h_mat) else {
+                    return;
+                };
+
+                match data.movement_type() {
+                    TextureMovementType::TmtOffset => {
+                        material.base.uv_transform.translation =
+                            (start + ((end - start) * ease_value)) * Vec2::new(1.0, -1.0);
+                    }
+                    TextureMovementType::TmtTiling => {
+                        material.base.uv_transform.matrix2 =
+                            Mat2::from_diagonal(start + ((end - start) * ease_value));
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -109,7 +139,7 @@ impl Plugin for TweenPlugin {
             ComponentPosition::EntityOnly,
         );
         app.add_systems(Update, update_tween.in_set(SceneSets::PostLoop));
-        app.add_systems(Update, update_system_tween);
+        app.add_systems(PostUpdate, update_system_tween);
     }
 }
 
@@ -124,11 +154,14 @@ pub fn update_tween(
         Ref<Tween>,
         &mut Transform,
         Option<&mut TweenState>,
+        Option<&Handle<SceneMaterial>>,
     )>,
     mut scenes: Query<&mut RendererSceneContext>,
     parents: Query<&SceneEntity>,
+    materials: ResMut<Assets<SceneMaterial>>,
 ) {
-    for (ent, scene_ent, parent, tween, mut transform, state) in tweens.iter_mut() {
+    let materials = materials.into_inner();
+    for (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat) in tweens.iter_mut() {
         let playing = tween.0.playing.unwrap_or(true);
         let delta = if playing {
             time.delta_seconds() * 1000.0 / tween.0.duration
@@ -177,7 +210,7 @@ pub fn update_tween(
                 commands.entity(ent).try_insert(updated_state);
             }
 
-            tween.apply(updated_time, &mut transform);
+            tween.apply(updated_time, &mut transform, maybe_h_mat, materials);
 
             let Ok(parent) = parents.get(parent.get()) else {
                 warn!("no parent for tweened ent");
@@ -218,14 +251,21 @@ pub fn update_system_tween(
 ) {
     for (ent, mut transform, tween, data) in q.iter_mut() {
         if tween.is_changed() || data.is_none() {
-            commands.entity(ent).try_insert(SystemTweenData {
-                start_pos: *transform,
-                start_time: time.elapsed_seconds(),
-            });
+            if tween.time <= 0.0 {
+                debug!("system tween instant complete @ {:?}", tween.target);
+                *transform = tween.target;
+            } else {
+                debug!("system tween starting {} @ {:?}", tween.time, tween.target);
+                commands.entity(ent).try_insert(SystemTweenData {
+                    start_pos: *transform,
+                    start_time: time.elapsed_seconds(),
+                });
+            }
         } else {
             let data = data.unwrap();
             let elapsed = time.elapsed_seconds() - data.start_time;
             if elapsed >= tween.time {
+                debug!("system tween complete @ {:?}", tween.target);
                 *transform = tween.target;
                 commands
                     .entity(ent)
@@ -237,6 +277,10 @@ pub fn update_system_tween(
                     (1.0 - ratio) * data.start_pos.translation + ratio * tween.target.translation;
                 transform.scale = (1.0 - ratio) * data.start_pos.scale + ratio * tween.target.scale;
                 transform.rotation = data.start_pos.rotation.slerp(tween.target.rotation, ratio);
+                debug!(
+                    "system tween partial {}/{} @ {:?}",
+                    elapsed, tween.time, transform
+                );
             }
         }
     }

@@ -15,6 +15,7 @@ message PBTween {
     Move move = 3;
     Rotate rotate = 4;
     Scale scale = 5;
+    TextureMove texture_move = 8;
   }
 
   optional bool playing = 6; // default true (pause or running)
@@ -35,6 +36,19 @@ message Rotate {
 message Scale {
   decentraland.common.Vector3 start = 1;
   decentraland.common.Vector3 end = 2;
+}
+
+// This tween mode allows to move the texture of a PbrMaterial or UnlitMaterial.
+// You can also specify the movement type (offset or tiling)
+message TextureMove {
+  decentraland.common.Vector2 start = 1;
+  decentraland.common.Vector2 end = 2;
+  optional TextureMovementType movement_type = 3; // default = TextureMovementType.TMT_OFFSET
+}
+
+enum TextureMovementType {
+  TMT_OFFSET = 0; // default = TextureMovementType.TMT_OFFSET
+  TMT_TILING = 1;
 }
 
 // Implementation guidelines for these easing functions can be found

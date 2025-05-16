@@ -9,7 +9,7 @@ use common::{
     inputs::{CommonInputAction, SystemAction},
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
-    structs::{PrimaryCamera, ShowProfileEvent, ToolTips, TooltipSource},
+    structs::{PlayerModifiers, PrimaryCamera, ShowProfileEvent, ToolTips, TooltipSource},
     util::{AsH160, FireEventEx},
 };
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
@@ -21,10 +21,7 @@ use rapier3d_f64::{
 use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_RED};
 use scene_runner::{
     update_scene::pointer_results::{PointerTarget, UiPointerTarget, UiPointerTargetValue},
-    update_world::{
-        avatar_modifier_area::PlayerModifiers,
-        mesh_collider::{ColliderId, SceneColliderData},
-    },
+    update_world::mesh_collider::{ColliderId, SceneColliderData},
 };
 use serde_json::json;
 

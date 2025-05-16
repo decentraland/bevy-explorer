@@ -13,7 +13,9 @@ use camera::update_cursor_lock;
 use common::{
     anim_last_system,
     sets::SceneSets,
-    structs::{CursorLocks, PrimaryCamera, PrimaryUser, PRIMARY_AVATAR_LIGHT_LAYER_INDEX},
+    structs::{
+        CursorLocks, PlayerModifiers, PrimaryCamera, PrimaryUser, PRIMARY_AVATAR_LIGHT_LAYER_INDEX,
+    },
 };
 use console::DoAddConsoleCommand;
 use dynamics::{
@@ -22,12 +24,12 @@ use dynamics::{
 use scene_runner::{
     update_scene::pointer_lock::update_pointer_lock,
     update_world::{
-        avatar_modifier_area::PlayerModifiers,
         gltf_container::GltfLinkSet,
         transform_and_parent::{parent_position_sync, AvatarAttachStage, SceneProxyStage},
     },
     OutOfWorld,
 };
+use tween::update_system_tween;
 
 use self::{
     camera::{update_camera, update_camera_position},
@@ -66,7 +68,8 @@ impl Plugin for UserInputPlugin {
                     .after(parent_position_sync::<AvatarAttachStage>)
                     .before(parent_position_sync::<SceneProxyStage>)
                     .before(TransformSystem::TransformPropagate)
-                    .before(CameraUpdateSystem),
+                    .before(CameraUpdateSystem)
+                    .before(update_system_tween),
                 update_cursor_lock.after(update_camera_position),
             ),
         );

@@ -388,7 +388,9 @@ fn update_scrollables(
 
                 if clicked_scrollable.is_none_or(|(prev_entity, _)| prev_entity == entity)
                     && interaction != &Interaction::None
-                    && input_manager.is_down(CommonInputAction::IaPointer, InputPriority::Scroll)
+                    && (input_manager.is_down(CommonInputAction::IaPointer, InputPriority::Scroll)
+                        || input_manager
+                            .just_down(CommonInputAction::IaPointer, InputPriority::Scroll))
                 {
                     *clicked_scrollable = Some((entity, cursor_position));
                 }
@@ -433,7 +435,7 @@ fn update_scrollables(
                         slide_amount,
                         ratio: ratio.x,
                         bar_position: ui_position * 0.0
-                            + Vec2::new(bar_width, parent_size.y - bar_width - 5.0),
+                            + Vec2::new(bar_width * 1.5, parent_size.y - bar_width - 5.0),
                         length: parent_size.x - bar_width * 3.0,
                         start,
                         redraw,
@@ -458,7 +460,7 @@ fn update_scrollables(
                         slide_amount,
                         ratio: ratio.y,
                         bar_position: ui_position * 0.0
-                            + Vec2::new(parent_size.x - bar_width - 5.0, bar_width),
+                            + Vec2::new(parent_size.x - bar_width - 5.0, bar_width * 1.5),
                         length: parent_size.y - bar_width * 3.0,
                         start,
                         redraw,

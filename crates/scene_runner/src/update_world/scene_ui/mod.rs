@@ -949,7 +949,7 @@ fn layout_scene_ui(
 
             // update style
             if !existing || transform_is_changed {
-                let style = Style {
+                let mut style = Style {
                     align_content: ui_transform.align_content,
                     align_items: ui_transform.align_items,
                     flex_wrap: ui_transform.wrap,
@@ -993,21 +993,22 @@ fn layout_scene_ui(
                             style.overflow = new_style.overflow;
                         },
                     );
+                    let padding = std::mem::take(&mut style.padding);
+                    commands
+                        .entity(link.scroll_entity.unwrap())
+                        .modify_component(move |style: &mut Style| {
+                            style.padding = padding;
+                        });
                 }
 
                 let mut cmds = commands.entity(link.ui_entity);
                 cmds.try_insert(style);
 
-                if ui_transform.border_radius != BorderRadius::DEFAULT {
-                    cmds.try_insert(ui_transform.border_radius);
-                } else {
-                    cmds.remove::<BorderRadius>();
-                }
-
                 if ui_transform.border_color != BorderColor::DEFAULT {
                     cmds.try_insert(ui_transform.border_color);
+                    cmds.try_insert(ui_transform.border_radius);
                 } else {
-                    cmds.remove::<BorderColor>();
+                    cmds.remove::<(BorderColor, BorderRadius)>();
                 }
 
                 let mut zindex_added = false;

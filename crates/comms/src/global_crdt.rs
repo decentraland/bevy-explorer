@@ -1,4 +1,4 @@
-use std::ops::RangeInclusive;
+use std::{f32::consts::TAU, ops::RangeInclusive};
 
 use bevy::{
     prelude::*,
@@ -8,7 +8,7 @@ use bevy::{
 use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender},
-    structs::{AttachPoints, AudioDecoderError},
+    structs::{AttachPoints, AudioDecoderError, EmoteCommand},
     util::TryPushChildrenEx,
 };
 use ethers_core::types::Address;
@@ -407,6 +407,7 @@ pub fn process_transport_updates(
                 let last = duplicate_chat_filter.entry(entity).or_default();
 
                 if *last < chat.timestamp {
+                    debug!("chat data: `{chat:#?}`");
                     chat_events.send(ChatEvent {
                         sender: entity,
                         timestamp: chat.timestamp,
@@ -461,6 +462,34 @@ pub fn process_transport_updates(
             PlayerMessage::PlayerData(Message::Voice(_)) => (),
             PlayerMessage::PlayerData(Message::Movement(m)) => {
                 debug!("movement data: {m:?}");
+                let pos = Vec3::new(m.position_x, m.position_y, -m.position_z);
+                let vel = Vec3::new(m.velocity_x, m.velocity_y, -m.velocity_z);
+                let rot = Quat::from_rotation_y(-m.rotation_y / 360.0 * TAU);
+                let dcl_transform = DclTransformAndParent {
+                    translation: DclTranslation::from_bevy_translation(pos),
+                    rotation: DclQuat::from_bevy_quat(rot),
+                    scale: Vec3::ONE,
+                    parent: SceneEntityId::WORLD_ORIGIN,
+                };
+
+                state.update_crdt(
+                    SceneComponentId::TRANSFORM,
+                    CrdtType::LWW_ANY,
+                    scene_id,
+                    &dcl_transform,
+                );
+                position_events.send(PlayerPositionEvent {
+                    index: None,
+                    time: time.elapsed_seconds(),
+                    timestamp: Some(m.timestamp),
+                    player: entity,
+                    translation: dcl_transform.translation,
+                    rotation: dcl_transform.rotation,
+                    velocity: Some(vel),
+                    grounded: Some(m.is_grounded),
+                    // Some(true) if either is Some(true), else Some(false) if either is Some(false), else None
+                    jumping: Some(m.is_jumping || m.is_long_jump),
+                });
             }
             PlayerMessage::PlayerData(Message::MovementCompressed(m)) => {
                 debug!("movement compressed data: {m:?}");
@@ -500,8 +529,17 @@ pub fn process_transport_updates(
                         .max(movement.temporal.long_jump_or_err().ok()),
                 });
             }
-            PlayerMessage::PlayerData(Message::PlayerEmote(_)) => (),
-            PlayerMessage::PlayerData(Message::SceneEmote(_)) => (),
+            PlayerMessage::PlayerData(Message::PlayerEmote(emote)) => {
+                debug!("emote: {emote:?}");
+                commands.entity(entity).try_insert(EmoteCommand {
+                    urn: emote.urn.to_owned(),
+                    timestamp: emote.incremental_id as i64,
+                    r#loop: false,
+                });
+            }
+            PlayerMessage::PlayerData(Message::SceneEmote(scene_emote)) => {
+                debug!("scene emote: {scene_emote:?}");
+            }
         }
     }
 }

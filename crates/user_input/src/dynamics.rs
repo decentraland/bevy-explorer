@@ -56,15 +56,12 @@ use common::{
         MAX_CLIMBABLE_INCLINE, MAX_STEP_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS,
         PLAYER_GROUND_THRESHOLD,
     },
-    structs::{AvatarDynamicState, PrimaryUser},
+    structs::{AvatarDynamicState, PlayerModifiers, PrimaryUser},
 };
 
 use scene_runner::{
     renderer_context::RendererSceneContext,
-    update_world::{
-        avatar_modifier_area::PlayerModifiers,
-        mesh_collider::{ColliderId, GroundCollider, SceneColliderData},
-    },
+    update_world::mesh_collider::{ColliderId, GroundCollider, SceneColliderData},
     ContainingScene, OutOfWorld,
 };
 

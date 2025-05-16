@@ -382,6 +382,7 @@ fn update_text_shapes(
                 view: world_ui.view,
                 ui_node,
                 vertex_billboard: false,
+                blend_mode: AlphaMode::Blend,
             },
         ));
 

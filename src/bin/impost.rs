@@ -18,8 +18,8 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg, PrimaryCamera,
-        PrimaryCameraRes, PrimaryPlayerRes, SceneImposterBake, SceneLoadDistance, SystemAudio,
-        ToolTips,
+        PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake, SceneLoadDistance,
+        SystemAudio, ToolTips,
     },
     util::{config_file, UtilsPlugin},
 };
@@ -35,7 +35,6 @@ use scene_runner::{
 use ipfs::{CurrentRealm, IpfsIoPlugin};
 use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, UiCorePlugin};
-use visuals::SceneGlobalLight;
 use wallet::Wallet;
 
 fn main() {

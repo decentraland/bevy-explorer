@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use common::util::TryPushChildrenEx;
 use dcl_component::proto_components::{
-    common::{texture_union, BorderRect, TextureUnion},
+    common::{BorderRect, TextureUnion},
     sdk::components::{self, PbUiBackground},
     Color4DclToBevy,
 };
@@ -178,16 +178,11 @@ pub fn set_ui_background(
             }
             let image = image.and_then(|r| r.ok());
 
-            let texture_mode = match texture.tex.tex {
-                Some(texture_union::Tex::Texture(_)) => texture.mode,
-                _ => BackgroundTextureMode::stretch_default(),
-            };
-
             if let Some(image) = image {
                 let image_color = background.color.unwrap_or(Color::WHITE);
                 let image_color = image_color.with_alpha(image_color.alpha() * link.opacity.0);
 
-                let background_entity = match texture_mode {
+                let background_entity = match texture.mode {
                     BackgroundTextureMode::NineSlices(rect) => commands
                         .commands()
                         .spawn((

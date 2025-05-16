@@ -125,8 +125,8 @@ impl IpfsType {
         }
     }
 
-    fn hash<'a>(&'a self, context: &'a IpfsContext) -> Option<Cow<'a, String>> {
-        match self {
+    fn hash<'a>(&'a self, context: &'a IpfsContext) -> Option<Cow<'a, str>> {
+        let x: Option<Cow<'a, str>> = match self {
             IpfsType::ContentFile {
                 content_hash: scene_hash,
                 file_path,
@@ -144,7 +144,8 @@ impl IpfsType {
             IpfsType::UrlCached { hash, .. } => Some(Cow::Borrowed(hash)),
             IpfsType::UrlUncached { .. } => None,
             IpfsType::Entity { hash, .. } => Some(Cow::Borrowed(hash)),
-        }
+        };
+        x
     }
 
     // the container hash if this is a container request, or the path hash otherwise
