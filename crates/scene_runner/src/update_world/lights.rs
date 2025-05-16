@@ -108,7 +108,7 @@ pub fn update_directional_light(
     time: Res<Time>,
 ) {
     // reset to default
-    let t = (time.elapsed_seconds_wrapped() / 40.0 + 1.0) % TAU;
+    let t = (time.elapsed_seconds_wrapped() / 400.0 + 1.0) % TAU;
 
     *global_light = SceneGlobalLight {
         source: None,
