@@ -113,7 +113,7 @@ pub fn update_directional_light(
     *global_light = SceneGlobalLight {
         source: None,
         dir_color: Color::srgb(1.0, 1.0, 0.7),
-        dir_illuminance: t.sin().max(0.0).powf(2.0) * 10_000.0,
+        dir_illuminance: (t - 0.2).sin().max((t + 0.2).sin()).max(0.0).powf(2.0) * 10_000.0,
         dir_direction: Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0) * Vec3::NEG_Z,
         ambient_color: Color::srgb(0.85, 0.85, 1.0),
         ambient_brightness: 1.0,

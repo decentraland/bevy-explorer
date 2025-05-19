@@ -39,7 +39,7 @@ impl Plugin for VisualsPlugin {
             .init_resource::<SceneGlobalLight>()
             .insert_resource(CloudCover(0.45))
             .insert_resource(AtmosphereSettings {
-                resolution: 512,
+                resolution: 1024,
                 dithering: true,
             })
             .insert_resource(AtmosphereModel::new(NishitaCloud::default()))

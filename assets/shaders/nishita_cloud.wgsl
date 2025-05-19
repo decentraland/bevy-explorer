@@ -220,12 +220,12 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 
     shade_sum /= max(shade_sum.y, density_cap);
 
-    let light_cloud_color_indirect = max(vec3(0.1), nishita.sun_color * min(1.0, nishita.dir_light_intensity / 5000.0));
-    let light_cloud_color_direct = max(vec3(0.1), nishita.sun_color * min(nishita.dir_light_intensity / 1000.0, 4.0));
+    let light_cloud_color_indirect = max(vec3(0.05), nishita.sun_color * min(1.0, nishita.dir_light_intensity / 5000.0));
+    let light_cloud_color_direct = max(vec3(0.05), nishita.sun_color * min(nishita.dir_light_intensity / 1000.0, 4.0));
     let light_cloud_color = mix(light_cloud_color_indirect, light_cloud_color_direct, pow(smoothstep(0.8 + (0.1 * shade_sum.y), 1.0, sun_amount), 5.0));
     shade_sum.y = mix(shade_sum.y, sqrt(shade_sum.y), smoothstep(0.9, 1.0, sun_amount));
 
-    let clouds = mix(light_cloud_color, vec3(0.1), shade_sum.x);
+    let clouds = mix(light_cloud_color, vec3(0.05), shade_sum.x);
     let result = mix(sky, min(clouds, vec3<f32>(1.0)), shade_sum.y);
     return clamp(result, vec3<f32>(0.0), vec3<f32>(1.0));
 }
@@ -233,7 +233,12 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 @group(1) @binding(0)
 var image: texture_storage_2d_array<rgba16float, write>;
 
-
+fn hash13(p: vec3<f32>) -> f32 {
+    // A common simple hash function
+    var p3 = fract(p * vec3<f32>(0.1031, 0.1030, 0.0973));
+    p3 = p3 + dot(p3, p3.yzx + 19.19);
+    return fract((p3.x + p3.y) * p3.z);
+}
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
@@ -241,10 +246,23 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
     let scale = f32(size) / 2f;
 
     // dither pattern for updates
-    let tick = nishita.tick & 15;
-    var UPDATE_OFFSETS_X: array<u32,16> = array(0u, 2u, 2u, 0u, 1u, 3u, 3u, 1u, 1u, 3u, 3u, 1u, 0u, 2u, 2u, 0u);
-    var UPDATE_OFFSETS_Y: array<u32,16> = array(0u, 2u, 0u, 2u, 1u, 3u, 1u, 3u, 0u, 2u, 0u, 2u, 1u, 3u, 1u, 3u);
-    let invocation_id = original_invocation_id * vec3(4, 4, 1) + vec3(UPDATE_OFFSETS_X[tick], UPDATE_OFFSETS_Y[tick], 0);
+    let tick = nishita.tick & 63;
+
+    var UPDATE_OFFSETS_X: array<u32,64> = array<u32,64>(
+        0u, 4u, 4u, 0u, 2u, 6u, 6u, 2u, 2u, 6u, 6u, 2u, 0u, 4u, 4u, 0u,
+        1u, 5u, 5u, 1u, 3u, 7u, 7u, 3u, 3u, 7u, 7u, 3u, 1u, 5u, 5u, 1u,
+        1u, 5u, 5u, 1u, 3u, 7u, 7u, 3u, 3u, 7u, 7u, 3u, 1u, 5u, 5u, 1u,
+        0u, 4u, 4u, 0u, 2u, 6u, 6u, 2u, 2u, 6u, 6u, 2u, 0u, 4u, 4u, 0u
+    );
+
+    var UPDATE_OFFSETS_Y: array<u32,64> = array<u32,64>(
+        0u, 4u, 0u, 4u, 2u, 6u, 2u, 6u, 0u, 4u, 0u, 4u, 2u, 6u, 2u, 6u,
+        1u, 5u, 1u, 5u, 3u, 7u, 3u, 7u, 1u, 5u, 1u, 5u, 3u, 7u, 3u, 7u,
+        4u, 0u, 4u, 0u, 6u, 2u, 6u, 2u, 4u, 0u, 4u, 0u, 6u, 2u, 6u, 2u,
+        5u, 1u, 5u, 1u, 7u, 3u, 7u, 3u, 5u, 1u, 5u, 1u, 7u, 3u, 7u, 3u
+    );
+
+    let invocation_id = original_invocation_id * vec3(8, 8, 1) + vec3(UPDATE_OFFSETS_X[tick], UPDATE_OFFSETS_Y[tick], 0);
 
     let dir = vec2<f32>((f32(invocation_id.x) / scale) - 1f, (f32(invocation_id.y) / scale) - 1f);
 
@@ -281,33 +299,74 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
 
         return;
     }
+    ray = normalize(ray);
 
-    var render_base = render_nishita(
-        ray,
-        nishita.ray_origin,
-        nishita.sun_position,
-        nishita.sun_intensity,
-        nishita.planet_radius,
-        nishita.atmosphere_radius,
-        nishita.rayleigh_coefficient,
-        nishita.mie_coefficient,
-        nishita.rayleigh_scale_height,
-        nishita.mie_scale_height,
-        nishita.mie_direction,
-    );
 
-    // add sun
-    let sun_weight = dot(normalize(ray), normalize(nishita.sun_position));
-    if sun_weight >= 0.995 {
-        render_base = max(render_base, mix(render_base, nishita.sun_color, smoothstep(0.995, 0.999, sun_weight)));
+    var render_base = vec3<f32>(0.0);
+
+    let fwd = normalize(nishita.sun_position);
+    let basis_u = vec3<f32>(0.0, sign(nishita.sun_position.z), 0.0);
+    let right = normalize(cross(basis_u, fwd));
+    let up = normalize(cross(fwd, right));
+    let sun_transform = mat3x3(right, up, fwd);
+
+    if nishita.dir_light_intensity > 0.0 {
+        render_base = render_nishita(
+            ray,
+            nishita.ray_origin,
+            nishita.sun_position,
+            nishita.sun_intensity,
+            nishita.planet_radius,
+            nishita.atmosphere_radius,
+            nishita.rayleigh_coefficient,
+            nishita.mie_coefficient,
+            nishita.rayleigh_scale_height,
+            nishita.mie_scale_height,
+            nishita.mie_direction,
+        );
+
+
+        // add sun
+        let sun_weight = dot(ray, normalize(nishita.sun_position));
+        if sun_weight >= 0.997 {
+            render_base = max(render_base, mix(render_base, nishita.sun_color, smoothstep(0.997, 0.999, sun_weight)));
+        }
+        // sun 2 ..
+        let angle = 0.3;
+        let cosa = cos(angle);
+        let sina = sin(angle);
+        let sun_weight_2 = dot(ray, normalize(nishita.sun_position - vec3(0.3, 0.3, 0.3)));
+        if sun_weight_2 >= 0.998 {
+            render_base = max(render_base, mix(render_base, nishita.sun_color, smoothstep(0.999, 1.0, sun_weight_2)));
+        }
     }
-    // sun 2 ..
-    let angle = 0.3;
-    let cosa = cos(angle);
-    let sina = sin(angle);
-    let sun_weight_2 = dot(normalize(ray), normalize(nishita.sun_position - vec3(0.3, 0.3, 0.3)));
-    if sun_weight_2 >= 0.998 {
-        render_base = max(render_base, mix(render_base, nishita.sun_color, smoothstep(0.999, 1.0, sun_weight_2)));
+
+    // stars
+    if nishita.dir_light_intensity < 1000.0 {
+        for (var i=0u; i<1000u; i++) {
+            let star_world_dir = normalize(
+                vec3<f32>(
+                    hash13(vec3::<f32>(17.5, 19.2, -888.2) * f32(i)), 
+                    hash13(vec3::<f32>(117.5, 19.2, -888.2) * f32(i)), 
+                    abs(hash13(vec3::<f32>(217.5, 19.2, -888.2) * f32(i)))
+                ) * 2.0 - 1.0
+            );
+            let star_dir = sun_transform * star_world_dir;
+            let stardirdot = dot(normalize(star_dir), ray);
+            let hash = hash13(star_world_dir);
+            // size range should vary based on resolution of the cubemap
+            let size = 0.99999 + 0.000005 * pow(fract(hash * 100000.0), 0.25);
+            if stardirdot > size {
+                let color = vec3<f32>(0.25 + 0.75 * fract(hash * 1000.0), 0.625 + 0.375 * fract(hash * 1000.0), 1.0);
+                let brightness = smoothstep(1.0, 0.99999, size);
+                render_base += vec3<f32>(
+                    color 
+                    * clamp(1.0 - nishita.dir_light_intensity / 1000.0, 0.0, 1.0)) // sun brightness
+                    * brightness // star brightness
+                    * pow(smoothstep(size, 1.0, stardirdot), 3.0)  // distance from middle of the star
+                    * clamp(ray.y * 10.0, 0.0, 1.0); // distance above horizon
+            }
+        }
     }
 
     let render = render_cloud(render_base, nishita.ray_origin * 0.0, normalize(ray));
