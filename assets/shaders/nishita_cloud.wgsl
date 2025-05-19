@@ -355,10 +355,10 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
             let stardirdot = dot(normalize(star_dir), ray);
             let hash = hash13(star_world_dir);
             // size range should vary based on resolution of the cubemap
-            let size = 0.99999 + 0.000005 * pow(fract(hash * 100000.0), 0.25);
+            let size = 0.99995 + 0.000025 * pow(fract(hash * 100000.0), 0.25);
             if stardirdot > size {
                 let color = vec3<f32>(0.25 + 0.75 * fract(hash * 1000.0), 0.625 + 0.375 * fract(hash * 1000.0), 1.0);
-                let brightness = smoothstep(1.0, 0.99999, size);
+                let brightness = smoothstep(0.99995 + 0.000025, 0.99995, size);
                 render_base += vec3<f32>(
                     color 
                     * clamp(1.0 - nishita.dir_light_intensity / 1000.0, 0.0, 1.0)) // sun brightness
