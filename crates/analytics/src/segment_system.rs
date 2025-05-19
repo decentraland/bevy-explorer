@@ -152,7 +152,7 @@ async fn send_segment_batch(write_key: &str, events: &[String]) -> Result<(), an
         .await?;
 
     if response.status().is_success() {
-        info!(
+        debug!(
             "successfully sent segment event, status: {}, payload  {}",
             response.status(),
             json_body
