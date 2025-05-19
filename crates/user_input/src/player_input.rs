@@ -34,11 +34,11 @@ pub(crate) fn update_user_velocity(
         .unwrap_or_else(|| user.clone());
 
     // Handle key input
-    if input.is_down(CommonInputAction::IaJump, InputPriority::Scene)
-        || input.just_down(CommonInputAction::IaJump, InputPriority::Scene)
-            && dynamic_state.ground_height < PLAYER_GROUND_THRESHOLD
-            && dynamic_state.velocity.y <= 0.0
-            && !user.block_jump
+    if (input.is_down(CommonInputAction::IaJump, InputPriority::Scene)
+        || input.just_down(CommonInputAction::IaJump, InputPriority::Scene))
+        && dynamic_state.ground_height < PLAYER_GROUND_THRESHOLD
+        && dynamic_state.velocity.y <= 0.0
+        && !user.block_jump
     {
         dynamic_state.velocity.y = (user.jump_height * -user.gravity * 2.0).sqrt();
         dynamic_state.jump_time = time.elapsed_seconds();
