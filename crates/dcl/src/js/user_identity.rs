@@ -39,6 +39,7 @@ pub struct UserData {
     user_id: String,
     version: i64,
     avatar: Option<AvatarForUserData>,
+    has_claimed_name: bool,
 }
 
 pub struct UserEthAddress(pub String);
@@ -122,6 +123,7 @@ impl From<SerializedProfile> for UserData {
                     body: s.body,
                 }),
             }),
+            has_claimed_name: profile.has_claimed_name,
         }
     }
 }
