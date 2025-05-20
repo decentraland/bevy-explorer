@@ -802,3 +802,16 @@ pub struct SceneGlobalLight {
     pub ambient_brightness: f32,
     pub layers: RenderLayers,
 }
+
+#[derive(Resource)]
+pub struct TimeOfDay {
+    pub time: f32, // secs since midnight
+    pub target_time: Option<f32>,
+    pub speed: f32,
+}
+
+impl TimeOfDay {
+    pub fn elapsed_seconds(&self) -> f32 {
+        self.time
+    }
+}

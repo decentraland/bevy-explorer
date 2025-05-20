@@ -21,9 +21,7 @@ use bevy_console::ConsoleCommand;
 use common::{
     sets::SetupSets,
     structs::{
-        AppConfig, DofConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
-        SceneGlobalLight, SceneLoadDistance, ShadowSetting, GROUND_RENDERLAYER,
-        PRIMARY_AVATAR_LIGHT_LAYER,
+        AppConfig, DofConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser, SceneGlobalLight, SceneLoadDistance, ShadowSetting, TimeOfDay, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER
     },
 };
 use console::DoAddConsoleCommand;
@@ -37,6 +35,11 @@ impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DirectionalLightShadowMap { size: 4096 })
             .init_resource::<SceneGlobalLight>()
+            .insert_resource(TimeOfDay {
+                time: 10.0 * 3600.0,
+                target_time: None,
+                speed: 12.0,
+            })
             .insert_resource(CloudCover(0.45))
             .insert_resource(AtmosphereSettings {
                 resolution: 1024,
@@ -45,6 +48,7 @@ impl Plugin for VisualsPlugin {
             .insert_resource(AtmosphereModel::new(NishitaCloud::default()))
             .add_plugins(AtmospherePlugin)
             .add_plugins(WireframePlugin)
+            .add_systems(First, update_time_of_day.after(bevy::time::TimeSystem))
             .add_systems(Update, apply_global_light)
             .add_systems(Update, move_ground)
             .add_systems(Update, update_dof)
@@ -62,6 +66,7 @@ impl Plugin for VisualsPlugin {
         app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
         app.add_console_command::<DofConsoleCommand, _>(dof_console_command);
         app.add_console_command::<CloudConsoleCommand, _>(cloud_console_command);
+        app.add_console_command::<TimeOfDayConsoleCommand, _>(timeofday_console_command);
     }
 
     fn finish(&self, app: &mut App) {
@@ -326,6 +331,45 @@ fn move_ground(
     transform.translation = target.translation() * Vec3::new(1.0, 0.0, 1.0) + Vec3::Y * -0.05;
 }
 
+fn update_time_of_day(
+    time: Res<Time>,
+    mut tod: ResMut<TimeOfDay>,
+    mut t_delta: Local<f32>,
+) {
+    if let Some(target) = tod.target_time {
+        let initial_time = tod.time;
+        let seconds_diff = (target - tod.time) % (24.0 * 3600.0);
+        let seconds_to_travel = (seconds_diff + 12.0 * 3600.0) % (24.0 * 3600.0) - (12.0 * 3600.0);
+        let unwrapped_target = initial_time + seconds_to_travel;
+
+        tod.time += *t_delta * time.delta_seconds();
+
+        const ACCEL: f32 = 4.0 * 3600.0;
+
+        let total_change_min = *t_delta * 0.5 * (*t_delta / ACCEL);
+        if (tod.time + total_change_min - unwrapped_target).signum() == (tod.time - unwrapped_target).signum() {
+            *t_delta = *t_delta + time.delta_seconds() * ACCEL * seconds_to_travel.signum();
+        } else {
+            *t_delta = *t_delta - time.delta_seconds() * ACCEL * seconds_to_travel.signum();
+        }
+
+        if (initial_time - target).signum() != (tod.time - target).signum() {
+            tod.time = target;
+            tod.target_time = None;
+            *t_delta = 0.0;
+        }
+
+        println!("time: {initial_time}, target: {:?}, secs_to_travel: {seconds_to_travel}, t_delta: {}, final: {}", target, *t_delta, tod.time);
+    } else {
+        let speed = tod.speed;
+        tod.time += time.delta_seconds() * speed;
+        tod.time %= 3600.0 * 24.0;
+        if tod.time < 0.0 {
+            tod.time += 3600.0 * 24.0;
+        }
+    }
+}
+
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/shadows")]
 struct ShadowConsoleCommand {
@@ -459,3 +503,29 @@ fn cloud_console_command(
         input.reply_ok(format!("cloud {}", command.cover));
     }
 }
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/time")]
+pub struct TimeOfDayConsoleCommand{ 
+    pub time: Option<f32>,
+    pub speed: Option<f32>,
+}
+
+fn timeofday_console_command(
+    mut input: ConsoleCommand<TimeOfDayConsoleCommand>,
+    mut time: ResMut<TimeOfDay>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        if let Some(hours) = command.time {
+            time.target_time = Some(hours * 3600.0);
+        }
+        if let Some(speed) = command.speed {
+            time.speed = speed;
+        }
+
+        let target = time.target_time.unwrap_or(time.time);
+        input.reply_ok(format!("time {}:{} -> {}:{}, speed {} (elapsed: {})", (time.time as u32 / 3600), time.time as u32 % 3600 / 60, (target as u32 / 3600), target as u32 % 3600 / 60, time.speed, time.elapsed_seconds()));
+    }
+}
+
+
