@@ -21,7 +21,9 @@ use bevy_console::ConsoleCommand;
 use common::{
     sets::SetupSets,
     structs::{
-        AppConfig, DofConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser, SceneGlobalLight, SceneLoadDistance, ShadowSetting, TimeOfDay, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER
+        AppConfig, DofConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
+        SceneGlobalLight, SceneLoadDistance, ShadowSetting, TimeOfDay, GROUND_RENDERLAYER,
+        PRIMARY_AVATAR_LIGHT_LAYER,
     },
 };
 use console::DoAddConsoleCommand;
@@ -331,11 +333,7 @@ fn move_ground(
     transform.translation = target.translation() * Vec3::new(1.0, 0.0, 1.0) + Vec3::Y * -0.05;
 }
 
-fn update_time_of_day(
-    time: Res<Time>,
-    mut tod: ResMut<TimeOfDay>,
-    mut t_delta: Local<f32>,
-) {
+fn update_time_of_day(time: Res<Time>, mut tod: ResMut<TimeOfDay>, mut t_delta: Local<f32>) {
     if let Some(target) = tod.target_time {
         let initial_time = tod.time;
         let seconds_diff = (target - tod.time) % (24.0 * 3600.0);
@@ -347,10 +345,13 @@ fn update_time_of_day(
         const ACCEL: f32 = 4.0 * 3600.0;
 
         let total_change_min = *t_delta * 0.5 * (*t_delta / ACCEL);
-        if (tod.time + total_change_min - unwrapped_target).signum() == (tod.time - unwrapped_target).signum() {
-            *t_delta = *t_delta + time.delta_seconds() * ACCEL * seconds_to_travel.signum();
+        if (tod.time + total_change_min - unwrapped_target).signum()
+            == (tod.time - unwrapped_target).signum()
+        {
+            *t_delta += time.delta_seconds() * ACCEL * seconds_to_travel.signum();
         } else {
-            *t_delta = *t_delta - time.delta_seconds() * ACCEL * seconds_to_travel.signum();
+            // we overshoot at this speed, start slowing down
+            *t_delta -= time.delta_seconds() * ACCEL * seconds_to_travel.signum();
         }
 
         if (initial_time - target).signum() != (tod.time - target).signum() {
@@ -506,7 +507,7 @@ fn cloud_console_command(
 
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/time")]
-pub struct TimeOfDayConsoleCommand{ 
+pub struct TimeOfDayConsoleCommand {
     pub time: Option<f32>,
     pub speed: Option<f32>,
 }
@@ -524,8 +525,14 @@ fn timeofday_console_command(
         }
 
         let target = time.target_time.unwrap_or(time.time);
-        input.reply_ok(format!("time {}:{} -> {}:{}, speed {} (elapsed: {})", (time.time as u32 / 3600), time.time as u32 % 3600 / 60, (target as u32 / 3600), target as u32 % 3600 / 60, time.speed, time.elapsed_seconds()));
+        input.reply_ok(format!(
+            "time {}:{} -> {}:{}, speed {} (elapsed: {})",
+            (time.time as u32 / 3600),
+            time.time as u32 % 3600 / 60,
+            (target as u32 / 3600),
+            target as u32 % 3600 / 60,
+            time.speed,
+            time.elapsed_seconds()
+        ));
     }
 }
-
-
