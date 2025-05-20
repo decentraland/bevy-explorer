@@ -360,7 +360,7 @@ fn update_time_of_day(time: Res<Time>, mut tod: ResMut<TimeOfDay>, mut t_delta: 
             *t_delta = 0.0;
         }
 
-        println!("time: {initial_time}, target: {:?}, secs_to_travel: {seconds_to_travel}, t_delta: {}, final: {}", target, *t_delta, tod.time);
+        debug!("time: {initial_time}, target: {:?}, secs_to_travel: {seconds_to_travel}, t_delta: {}, final: {}", target, *t_delta, tod.time);
     } else {
         let speed = tod.speed;
         tod.time += time.delta_seconds() * speed;
