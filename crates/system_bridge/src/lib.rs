@@ -105,6 +105,7 @@ pub enum SystemApi {
 pub struct NativeUi {
     pub login: bool,
     pub emote_wheel: bool,
+    pub chat: bool,
 }
 
 #[derive(Resource)]
@@ -149,7 +150,7 @@ pub fn post_events(
                     .join("\n")));
             }
             Some(PrintConsoleLine { line }) => {
-                println!("got {line}");
+                debug!("got {line}");
                 *console_response = Some(response);
             }
             _ => {

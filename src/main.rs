@@ -248,6 +248,7 @@ fn main() {
         app.insert_resource(NativeUi {
             login: false,
             emote_wheel: false,
+            chat: !args.contains("--no-chat"),
         });
         app.insert_resource(SystemScene {
             source: Some(source),
@@ -259,6 +260,7 @@ fn main() {
         app.insert_resource(NativeUi {
             login: true,
             emote_wheel: true,
+            chat: true,
         });
     }
 

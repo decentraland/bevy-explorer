@@ -31,7 +31,7 @@ use input_manager::{InputManager, InputPriority};
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
 use shlex::Shlex;
 use social::FriendshipEvent;
-use system_bridge::{ChatMessage, SystemApi};
+use system_bridge::{ChatMessage, NativeUi, SystemApi};
 use ui_core::{
     button::{DuiButton, TabSelection},
     focus::Focus,
@@ -49,16 +49,21 @@ pub struct ChatPanelPlugin;
 
 impl Plugin for ChatPanelPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, display_chat);
-        app.add_systems(Update, append_chat_messages);
         app.add_systems(Update, (emit_user_chat, broadcast_nearby_chats).chain());
         app.add_systems(Update, (pipe_chats_to_scene, pipe_chats_from_scene));
-        app.add_systems(Startup, setup.in_set(SetupSets::Main));
-        app.add_systems(
-            OnEnter::<ui_core::State>(ui_core::State::Ready),
-            setup_chat_popup,
-        );
-        app.add_systems(Update, keyboard_popup);
+
+        let native_chat = app.world().resource::<NativeUi>().chat;
+
+        if native_chat {
+            app.add_systems(Update, display_chat);
+            app.add_systems(Update, append_chat_messages);
+            app.add_systems(Startup, setup.in_set(SetupSets::Main));
+            app.add_systems(
+                OnEnter::<ui_core::State>(ui_core::State::Ready),
+                setup_chat_popup,
+            );
+            app.add_systems(Update, keyboard_popup);
+        }
         app.add_console_command::<Rechat, _>(debug_chat);
         app.add_event::<PrivateChatEntered>();
         app.add_plugins((FriendsPlugin, ChatHistoryPlugin));
