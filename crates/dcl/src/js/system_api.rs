@@ -488,16 +488,25 @@ pub async fn op_read_system_action_stream(
     state: Rc<RefCell<OpState>>,
     #[serde] rid: ResourceId,
 ) -> Result<Option<SystemActionEvent>, deno_core::anyhow::Error> {
-    let resource = state
-        .borrow()
-        .resource_table
-        .get::<StreamResource<SystemActionEvent>>(rid)?;
-    let mut rx = resource.receiver.borrow_mut().await;
+    let receiver = {
+        let Ok(state) = state.try_borrow() else {
+            return Ok(None);
+        };
 
-    match rx.recv().await {
+        let resource = state
+            .resource_table
+            .get::<StreamResource<SystemActionEvent>>(rid)?;
+        resource.receiver.clone()
+    };
+
+    let mut rx = receiver.borrow_mut().await;
+
+    let res = match rx.recv().await {
         Some(data) => Ok(Some(data)),
         None => Ok(None),
-    }
+    };
+
+    res
 }
 
 #[op2(async)]
@@ -523,16 +532,25 @@ pub async fn op_read_chat_stream(
     state: Rc<RefCell<OpState>>,
     #[serde] rid: ResourceId,
 ) -> Result<Option<ChatMessage>, deno_core::anyhow::Error> {
-    let resource = state
-        .borrow()
-        .resource_table
-        .get::<StreamResource<ChatMessage>>(rid)?;
-    let mut rx = resource.receiver.borrow_mut().await;
+    let receiver = {
+        let Ok(state) = state.try_borrow() else {
+            return Ok(None);
+        };
 
-    match rx.recv().await {
+        let resource = state
+            .resource_table
+            .get::<StreamResource<ChatMessage>>(rid)?;
+        resource.receiver.clone()
+    };
+
+    let mut rx = receiver.borrow_mut().await;
+
+    let res = match rx.recv().await {
         Some(data) => Ok(Some(data)),
         None => Ok(None),
-    }
+    };
+
+    res
 }
 
 #[op2(fast)]
