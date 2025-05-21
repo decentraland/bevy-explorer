@@ -690,7 +690,7 @@ fn update_scrollables(
         };
 
         if let Some(UpdateSliderPosition::Abs(val)) = info.update_slider {
-            position = val;
+            position = val.clamp(0.0, 1.0);
         }
 
         let slider_len = (info.length * info.ratio).max(bar_width);
