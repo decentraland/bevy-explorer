@@ -184,10 +184,16 @@ fn update_comboboxen(
                 .entity(components.named("text"))
                 .insert(FontSize(0.03 / 1.3));
         }
+        let entity = components.root;
         commands.entity(components.root).set_parent(ent).insert((
             ComboMarker,
             Interaction::default(),
-            On::<Click>::new(
+            On::<Click>::new(move |mut commands: Commands| {
+                if let Some(mut commands) = commands.get_entity(entity) {
+                    commands.insert(Focus);
+                }
+            }),
+            On::<Focus>::new(
                 move |mut commands: Commands,
                       combo: Query<(&ComboBox, &Node, &GlobalTransform)>,
                       target_camera: TargetCameraHelper,

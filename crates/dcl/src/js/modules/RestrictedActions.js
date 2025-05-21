@@ -45,3 +45,6 @@ module.exports.setCommunicationsAdapter = async function (body) {
     console.error("RestrictedActions::setCommunicationsAdapter not implemented");
     return {} 
 }
+module.exports.setUiFocus = async function(body) {
+    return await Deno.core.ops.op_set_ui_focus(body.elementId);
+}
