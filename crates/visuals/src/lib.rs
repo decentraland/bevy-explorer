@@ -1,3 +1,4 @@
+pub mod env_downsample;
 mod nishita_cloud;
 
 use bevy::{
@@ -28,6 +29,7 @@ use common::{
 };
 use console::DoAddConsoleCommand;
 use nishita_cloud::{init_noise, NishitaCloud};
+// use env_downsample::{Envmap, EnvmapDownsamplePlugin};
 
 pub struct VisualsPlugin {
     pub no_fog: bool,
@@ -64,6 +66,8 @@ impl Plugin for VisualsPlugin {
             ));
         }
 
+        // app.add_plugins(EnvmapDownsamplePlugin);
+
         app.add_console_command::<ShadowConsoleCommand, _>(shadow_console_command);
         app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
         app.add_console_command::<DofConsoleCommand, _>(dof_console_command);
@@ -89,6 +93,7 @@ fn setup(
     camera: Res<PrimaryCameraRes>,
     mut atmosphere: AtmosphereMut<NishitaCloud>,
     mut images: ResMut<Assets<Image>>,
+    // envmap: Res<Envmap>,
 ) {
     info!("visuals::setup");
 
@@ -124,6 +129,14 @@ fn setup(
     let h_noise = images.add(noise);
 
     atmosphere.noise_texture = h_noise;
+
+    // commands.entity(camera.0).try_insert(
+    //     EnvironmentMapLight {
+    //         diffuse_map: envmap.0.clone(),
+    //         specular_map: envmap.0.clone(),
+    //         intensity: 3000.0,
+    //     }
+    // );
 }
 
 static TRANSITION_TIME: f32 = 1.0;
