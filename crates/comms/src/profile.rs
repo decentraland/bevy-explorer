@@ -589,9 +589,14 @@ async fn deploy_profile(
         .content
         .avatar
         .snapshots
-        .as_ref()
-        .ok_or(anyhow!("no snapshots"))?
-        .clone();
+        .as_mut()
+        .ok_or(anyhow!("no snapshots"))?;
+    if let Some(hash) = snapshots.body.rsplit('/').nth(1).map(ToOwned::to_owned) {
+        snapshots.body = hash;
+    }
+    if let Some(hash) = snapshots.face256.rsplit('/').nth(1).map(ToOwned::to_owned) {
+        snapshots.face256 = hash;
+    }
 
     let deployment = serde_json::to_string(&Deployment {
         version: "v3",
@@ -601,11 +606,11 @@ async fn deploy_profile(
         content: vec![
             TypedIpfsRef {
                 file: "body.png".to_owned(),
-                hash: snapshots.body,
+                hash: snapshots.body.clone(),
             },
             TypedIpfsRef {
                 file: "face256.png".to_owned(),
-                hash: snapshots.face256,
+                hash: snapshots.face256.clone(),
             },
         ],
         metadata: serde_json::json!({
