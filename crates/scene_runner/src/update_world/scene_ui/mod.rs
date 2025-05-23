@@ -28,7 +28,8 @@ use crate::{
     ContainerEntity, ContainingScene, SceneEntity, SceneSets,
 };
 use common::{
-    structs::{AppConfig, PrimaryUser},
+    rpc::RpcCall,
+    structs::{AppConfig, PrimaryPlayerRes, PrimaryUser},
     util::{DespawnWith, FireEventEx, ModifyComponentExt},
 };
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -44,6 +45,7 @@ use dcl_component::{
     SceneComponentId, SceneEntityId,
 };
 use ui_core::{
+    focus::Focus,
     scrollable::{
         ScrollDirection, ScrollPosition, ScrollTarget, ScrollTargetEvent, Scrollable, StartPosition,
     },
@@ -437,6 +439,7 @@ impl Plugin for SceneUiPlugin {
                     set_ui_pointer_events,
                 ),
                 fully_update_target_camera_system,
+                set_ui_focus,
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),
@@ -448,6 +451,7 @@ impl Plugin for SceneUiPlugin {
 #[derive(Component, Default)]
 pub struct SceneUiData {
     nodes: BTreeSet<Entity>,
+    named_nodes: HashMap<String, Entity>,
     relayout: bool,
     super_user: bool,
 }
@@ -782,7 +786,7 @@ fn layout_scene_ui(
 
         let mut valid_nodes = HashMap::new();
         let mut invalid_ui_entities = HashSet::new();
-        let mut named_nodes = HashMap::new();
+        ui_data.named_nodes.clear();
         let mut pending_scroll_events = HashMap::new();
 
         let mut blocked_elements: HashMap<
@@ -1058,7 +1062,7 @@ fn layout_scene_ui(
             }
 
             if let Some(name) = ui_transform.element_id.clone() {
-                named_nodes.insert(name, link.ui_entity);
+                ui_data.named_nodes.insert(name, link.ui_entity);
             }
 
             // add any blocked elts
@@ -1109,7 +1113,7 @@ fn layout_scene_ui(
 
         // send any pending events
         for (scrollable, target) in pending_scroll_events {
-            if let Some(target) = named_nodes.get(&target) {
+            if let Some(target) = ui_data.named_nodes.get(&target) {
                 commands.fire_event(ScrollTargetEvent {
                     scrollable,
                     position: ScrollTarget::Entity(*target),
@@ -1263,5 +1267,52 @@ fn toggle_scene_ui_command(
         }
 
         input.reply_ok(format!("{hash}: {}", enable));
+    }
+}
+
+fn set_ui_focus(
+    mut commands: Commands,
+    mut events: EventReader<RpcCall>,
+    containing_scene: ContainingScene,
+    player: Res<PrimaryPlayerRes>,
+    ui_data: Query<&SceneUiData>,
+) {
+    for (scene, element, response) in events.read().flat_map(|ev| {
+        let RpcCall::SetUiFocus {
+            scene,
+            element_id,
+            response,
+        } = ev
+        else {
+            return None;
+        };
+
+        Some((scene, element_id, response))
+    }) {
+        if !containing_scene.get(player.0).contains(scene) {
+            response.send(Err("scene is not active".into()));
+            continue;
+        }
+
+        let Ok(ui_data) = ui_data.get(*scene) else {
+            response.send(Err("no ui".to_owned()));
+            continue;
+        };
+
+        let Some(target) = ui_data.named_nodes.get(element) else {
+            response.send(Err(format!(
+                "couldn't find element {element} - existing named elements are: {:?}",
+                ui_data.named_nodes.keys()
+            )));
+            continue;
+        };
+
+        let Some(mut commands) = commands.get_entity(*target) else {
+            response.send(Err(format!("element {element} destroyed",)));
+            continue;
+        };
+
+        commands.insert(Focus);
+        response.send(Ok(()));
     }
 }

@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, utils::HashSet};
 use input_manager::{InputManager, InputPriority, InputType};
 
 use crate::ui_actions::{UiActionPriority, UiFocusActionSet};
@@ -35,13 +35,17 @@ fn defocus(
     focus_elements: Query<(Entity, Ref<Focus>)>,
     mut removed: RemovedComponents<Focus>,
     mut input_manager: InputManager,
+    mut we_defocussed: Local<HashSet<Entity>>,
 ) {
+    let any_removed = removed.read().any(|e| !we_defocussed.contains(&e));
+
     let refocussed = input_manager.just_down(CommonInputAction::IaPointer, InputPriority::Focus)
         || input_manager.just_down(SystemAction::Cancel, InputPriority::CancelFocus)
         || focus_elements.iter().any(|(_, focus)| focus.is_changed())
-        || !removed.is_empty();
+        || any_removed;
 
     removed.clear();
+    we_defocussed.clear();
 
     if refocussed {
         let mut any_still_focussed = false;
@@ -49,6 +53,7 @@ fn defocus(
             if !ref_focus.is_changed() {
                 commands.entity(entity).remove::<Focus>();
                 debug!("defocus {:?}", entity);
+                we_defocussed.insert(entity);
             } else {
                 any_still_focussed = true;
             }

@@ -26,6 +26,7 @@ pub fn ops() -> Vec<OpDecl> {
         op_emote(),
         op_scene_emote(),
         op_open_nft_dialog(),
+        op_set_ui_focus(),
     ]
 }
 
@@ -201,6 +202,29 @@ async fn op_open_nft_dialog(
         state.borrow_mut::<RpcCalls>().push(RpcCall::OpenNftDialog {
             scene,
             urn,
+            response: sx.into(),
+        });
+    }
+
+    rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
+}
+
+#[op2(async)]
+async fn op_set_ui_focus(
+    op_state: Rc<RefCell<OpState>>,
+    #[string] element_id: String,
+) -> Result<(), AnyError> {
+    debug!("op_set_ui_focus");
+    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+
+    {
+        let mut state = op_state.borrow_mut();
+        let context = state.borrow::<CrdtContext>();
+        let scene = context.scene_id.0;
+
+        state.borrow_mut::<RpcCalls>().push(RpcCall::SetUiFocus {
+            scene,
+            element_id,
             response: sx.into(),
         });
     }

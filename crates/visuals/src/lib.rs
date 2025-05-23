@@ -1,3 +1,4 @@
+pub mod env_downsample;
 mod nishita_cloud;
 
 use bevy::{
@@ -28,6 +29,7 @@ use common::{
 };
 use console::DoAddConsoleCommand;
 use nishita_cloud::{init_noise, NishitaCloud};
+// use env_downsample::{Envmap, EnvmapDownsamplePlugin};
 
 pub struct VisualsPlugin {
     pub no_fog: bool,
@@ -42,7 +44,10 @@ impl Plugin for VisualsPlugin {
                 target_time: None,
                 speed: 12.0,
             })
-            .insert_resource(CloudCover(0.45))
+            .insert_resource(CloudCover {
+                cover: 0.45,
+                speed: 10.0,
+            })
             .insert_resource(AtmosphereSettings {
                 resolution: 1024,
                 dithering: true,
@@ -63,6 +68,8 @@ impl Plugin for VisualsPlugin {
                 config.graphics.gpu_bytes_per_frame,
             ));
         }
+
+        // app.add_plugins(EnvmapDownsamplePlugin);
 
         app.add_console_command::<ShadowConsoleCommand, _>(shadow_console_command);
         app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
@@ -89,6 +96,7 @@ fn setup(
     camera: Res<PrimaryCameraRes>,
     mut atmosphere: AtmosphereMut<NishitaCloud>,
     mut images: ResMut<Assets<Image>>,
+    // envmap: Res<Envmap>,
 ) {
     info!("visuals::setup");
 
@@ -124,6 +132,14 @@ fn setup(
     let h_noise = images.add(noise);
 
     atmosphere.noise_texture = h_noise;
+
+    // commands.entity(camera.0).try_insert(
+    //     EnvironmentMapLight {
+    //         diffuse_map: envmap.0.clone(),
+    //         specular_map: envmap.0.clone(),
+    //         intensity: 3000.0,
+    //     }
+    // );
 }
 
 static TRANSITION_TIME: f32 = 1.0;
@@ -187,17 +203,17 @@ fn apply_global_light(
     atmosphere.sun_color = next_light.dir_color.to_srgba().to_vec3();
     atmosphere.tick += 1;
 
-    if atmosphere.cloudy != cloud.0 {
+    if atmosphere.cloudy != cloud.cover {
         *cloud_dt = (*cloud_dt + time.delta_seconds() * 20.0)
-            .min(80.0 * (atmosphere.cloudy - cloud.0).abs())
+            .min(80.0 * (atmosphere.cloudy - cloud.cover).abs())
             .max(1.0);
-        atmosphere.cloudy += (cloud.0 - atmosphere.cloudy).clamp(
+        atmosphere.cloudy += (cloud.cover - atmosphere.cloudy).clamp(
             -time.delta_seconds() * 0.005 * *cloud_dt,
             time.delta_seconds() * 0.005 * *cloud_dt,
         );
         // atmosphere.time += time.delta_seconds() * 10.0;
     } else {
-        *cloud_dt = f32::max(*cloud_dt - time.delta_seconds(), 1.0);
+        *cloud_dt = f32::max(*cloud_dt - time.delta_seconds(), cloud.speed);
     }
 
     atmosphere.time += time.delta_seconds() * *cloud_dt;
@@ -489,19 +505,30 @@ fn update_dof(
 #[command(name = "/cloud")]
 struct CloudConsoleCommand {
     cover: f32,
+    speed: Option<f32>,
 }
 
 #[derive(Resource)]
-pub struct CloudCover(pub f32);
+pub struct CloudCover {
+    pub cover: f32,
+    pub speed: f32,
+}
 
 fn cloud_console_command(
     mut input: ConsoleCommand<CloudConsoleCommand>,
     mut cloud: ResMut<CloudCover>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        cloud.0 = command.cover;
+        cloud.cover = command.cover;
 
-        input.reply_ok(format!("cloud {}", command.cover));
+        if let Some(speed) = command.speed {
+            cloud.speed = speed;
+        }
+
+        input.reply_ok(format!(
+            "cloud cover {}, speed {}",
+            command.cover, cloud.speed
+        ));
     }
 }
 

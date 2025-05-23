@@ -31,7 +31,7 @@ use input_manager::{InputManager, InputPriority};
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
 use shlex::Shlex;
 use social::FriendshipEvent;
-use system_bridge::{ChatMessage, SystemApi};
+use system_bridge::{ChatMessage, NativeUi, SystemApi};
 use ui_core::{
     button::{DuiButton, TabSelection},
     focus::Focus,
@@ -49,16 +49,21 @@ pub struct ChatPanelPlugin;
 
 impl Plugin for ChatPanelPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, display_chat);
-        app.add_systems(Update, append_chat_messages);
         app.add_systems(Update, (emit_user_chat, broadcast_nearby_chats).chain());
         app.add_systems(Update, (pipe_chats_to_scene, pipe_chats_from_scene));
-        app.add_systems(Startup, setup.in_set(SetupSets::Main));
-        app.add_systems(
-            OnEnter::<ui_core::State>(ui_core::State::Ready),
-            setup_chat_popup,
-        );
-        app.add_systems(Update, keyboard_popup);
+
+        let native_chat = app.world().resource::<NativeUi>().chat;
+
+        if native_chat {
+            app.add_systems(Update, display_chat);
+            app.add_systems(Update, append_chat_messages);
+            app.add_systems(Startup, setup.in_set(SetupSets::Main));
+            app.add_systems(
+                OnEnter::<ui_core::State>(ui_core::State::Ready),
+                setup_chat_popup,
+            );
+            app.add_systems(Update, keyboard_popup);
+        }
         app.add_console_command::<Rechat, _>(debug_chat);
         app.add_event::<PrivateChatEntered>();
         app.add_plugins((FriendsPlugin, ChatHistoryPlugin));
@@ -664,20 +669,27 @@ fn pipe_chats_to_scene(
     senders.retain(|s| !s.is_closed());
 
     for chat_event in chat_events.read().filter(|ce| {
-        ce.sender != Entity::PLACEHOLDER && !ce.message.starts_with(chat_marker_things::EMOTE)
+        !chat_marker_things::ALL
+            .iter()
+            .any(|marker| ce.message.starts_with(*marker))
     }) {
-        let Some(player_address) = players
-            .get(chat_event.sender)
-            .ok()
-            .map(|fp| fp.address)
-            .or_else(|| {
-                if chat_event.sender == primary_player.0 {
-                    wallet.address()
-                } else {
-                    None
-                }
-            })
-        else {
+        let player_address = if chat_event.sender == Entity::PLACEHOLDER {
+            Some(Default::default())
+        } else {
+            players
+                .get(chat_event.sender)
+                .ok()
+                .map(|fp| fp.address)
+                .or_else(|| {
+                    if chat_event.sender == primary_player.0 {
+                        wallet.address()
+                    } else {
+                        None
+                    }
+                })
+        };
+
+        let Some(player_address) = player_address else {
             warn!("no player for {chat_event:?}");
             continue;
         };
@@ -697,6 +709,9 @@ fn pipe_chats_from_scene(
     primary_player: Res<PrimaryPlayerRes>,
     mut chats: EventReader<SystemApi>,
     time: Res<Time>,
+    console_config: Res<ConsoleConfiguration>,
+    mut command_entered: EventWriter<ConsoleCommandEntered>,
+    mut console_lines: EventReader<PrintConsoleLine>,
 ) {
     for (message, channel) in chats.read().filter_map(|ev| {
         if let SystemApi::SendChat(message, channel) = ev {
@@ -705,11 +720,50 @@ fn pipe_chats_from_scene(
             None
         }
     }) {
+        if message.starts_with('/') {
+            sender.send(ChatEvent {
+                timestamp: time.elapsed_seconds_f64(),
+                sender: primary_player.0,
+                channel: "System".to_owned(),
+                message: message.clone(),
+            });
+
+            let mut args = Shlex::new(&message).collect::<Vec<_>>();
+
+            let command_name = args.remove(0);
+            debug!("Command entered: `{command_name}`, with args: `{args:?}`");
+
+            let command = console_config.commands.get(command_name.as_str());
+
+            if command.is_some() {
+                command_entered.send(ConsoleCommandEntered { command_name, args });
+            } else {
+                sender.send(ChatEvent {
+                    timestamp: time.elapsed_seconds_f64(),
+                    sender: Entity::PLACEHOLDER,
+                    channel: "System".to_owned(),
+                    message: format!(
+                        "Command not recognized, recognized commands: `{:?}`",
+                        console_config.commands.keys().collect::<Vec<_>>()
+                    ),
+                });
+            }
+        } else {
+            sender.send(ChatEvent {
+                timestamp: time.elapsed_seconds_f64(),
+                sender: primary_player.0,
+                channel,
+                message,
+            });
+        }
+    }
+
+    for PrintConsoleLine { line } in console_lines.read() {
         sender.send(ChatEvent {
             timestamp: time.elapsed_seconds_f64(),
-            sender: primary_player.0,
-            channel,
-            message,
+            sender: Entity::PLACEHOLDER,
+            channel: "System".to_owned(),
+            message: line.to_string(),
         });
     }
 }

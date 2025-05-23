@@ -223,4 +223,9 @@ pub enum RpcCall {
         urn: String,
         r#loop: bool,
     },
+    SetUiFocus {
+        scene: Entity,
+        element_id: String,
+        response: RpcResultSender<Result<(), String>>,
+    },
 }

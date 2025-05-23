@@ -251,6 +251,10 @@ fn pipe_events(
                 .insert(TextEntryValue(value.0.trim().to_owned()));
             debug!("{:?} update to {}", commands.id(), value.0);
         }
+
+        if value.0 == "\n" {
+            commands.entity(entity).insert(TextInputValue::default());
+        }
     }
 }
 
