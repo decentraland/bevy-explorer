@@ -155,7 +155,7 @@ fn FBM(p0: vec3<f32>) -> f32 {
 
     let speed = 2.0;
 
-    p.x += nishita.time * 20.0 * speed;
+    p.x += nishita.time * 3.0 * speed;
 	
 	var f = 0.3750 * noise(p.xz); p = m*p; p.y -= nishita.time * 20.0 * speed;
 	f += 0.3750   * noise(p.xz); p = m*p; p.y += nishita.time * 10.0 * speed;
@@ -220,12 +220,12 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 
     shade_sum /= max(shade_sum.y, density_cap);
 
-    let light_cloud_color_indirect = max(vec3(0.05), nishita.sun_color * min(1.0, nishita.dir_light_intensity / 5000.0));
-    let light_cloud_color_direct = max(vec3(0.05), nishita.sun_color * min(nishita.dir_light_intensity / 1000.0, 4.0));
+    let light_cloud_color_indirect = max(vec3(0.05), saturate(nishita.sun_color * 1.5) * min(1.0, nishita.dir_light_intensity / 5000.0));
+    let light_cloud_color_direct = max(vec3(0.05), saturate(nishita.sun_color * 1.5) * min(nishita.dir_light_intensity / 1000.0, 4.0));
     let light_cloud_color = mix(light_cloud_color_indirect, light_cloud_color_direct, pow(smoothstep(0.8 + (0.1 * shade_sum.y), 1.0, sun_amount), 5.0));
     shade_sum.y = mix(shade_sum.y, sqrt(shade_sum.y), smoothstep(0.9, 1.0, sun_amount));
 
-    let clouds = mix(light_cloud_color, vec3(0.05), shade_sum.x);
+    let clouds = mix(light_cloud_color, vec3(0.05), pow(shade_sum.x, 3.0));
     let result = mix(sky, min(clouds, vec3<f32>(1.0)), shade_sum.y);
     return clamp(result, vec3<f32>(0.0), vec3<f32>(1.0));
 }
@@ -289,15 +289,9 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
         }
     }
 
+    var initial_y = normalize(ray).y;
     if ray.y < 0.0 {
-        textureStore(
-            image,
-            vec2<i32>(invocation_id.xy),
-            i32(invocation_id.z),
-            vec4<f32>(0.07074, 0.17261, 0.02899, 1.0),
-        );
-
-        return;
+        ray.y = 0.0;
     }
     ray = normalize(ray);
 
@@ -310,12 +304,14 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
     let up = normalize(cross(fwd, right));
     let sun_transform = mat3x3(right, up, fwd);
 
+    let multiplier = 1.0 + saturate(nishita.dir_light_intensity / 11000.0);
+
     if nishita.dir_light_intensity > 0.0 {
         render_base = render_nishita(
             ray,
             nishita.ray_origin,
             nishita.sun_position,
-            nishita.sun_intensity,
+            nishita.sun_intensity * multiplier,
             nishita.planet_radius,
             nishita.atmosphere_radius,
             nishita.rayleigh_coefficient,
@@ -326,7 +322,7 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
         );
 
 
-        // add sun
+        // // add sun
         let sun_weight = dot(ray, normalize(nishita.sun_position));
         if sun_weight >= 0.997 {
             render_base = max(render_base, mix(render_base, nishita.sun_color, smoothstep(0.997, 0.999, sun_weight)));
@@ -371,10 +367,12 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
 
     let render = render_cloud(render_base, nishita.ray_origin * 0.0, normalize(ray));
 
+    let store_value = mix(render, vec3(0.0), smoothstep(0.0, -0.5, initial_y));
+
     textureStore(
         image,
         vec2<i32>(invocation_id.xy),
         i32(invocation_id.z),
-        vec4<f32>(render, 1.0)
+        vec4<f32>(store_value, 1.0)
     );
 }
