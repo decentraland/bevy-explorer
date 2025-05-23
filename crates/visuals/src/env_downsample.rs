@@ -8,7 +8,13 @@ use bevy::{
         render_asset::{RenderAssetUsages, RenderAssets},
         render_graph::{self, RenderGraph, RenderLabel},
         render_resource::{
-            binding_types::{sampler, texture_2d}, BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, BlendState, CachedPipelineState, CachedRenderPipelineId, ColorTargetState, ColorWrites, Extent3d, FragmentState, MultisampleState, Operations, PipelineCache, PrimitiveState, RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor, Sampler, SamplerDescriptor, ShaderStages, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension
+            binding_types::{sampler, texture_2d},
+            BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, BlendState,
+            CachedPipelineState, CachedRenderPipelineId, ColorTargetState, ColorWrites, Extent3d,
+            FragmentState, MultisampleState, Operations, PipelineCache, PrimitiveState,
+            RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor, Sampler,
+            SamplerDescriptor, ShaderStages, TextureAspect, TextureDescriptor, TextureDimension,
+            TextureFormat, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension,
         },
         renderer::RenderDevice,
         texture::GpuImage,
@@ -203,7 +209,7 @@ fn prepare_envmap_resources(
                 &data.bind_group_layout,
                 &BindGroupEntries::sequential((&source_view, &data.sampler)),
             );
-            
+
             data.source_view.push(source_view);
             data.target_view.push(target_view);
             data.bindgroups.push(bindgroup);
