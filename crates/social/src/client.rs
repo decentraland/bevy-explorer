@@ -12,6 +12,7 @@ use dcl_component::proto_components::social::{
     RequestResponse, SubscribeFriendshipEventsUpdatesResponse, UpdateFriendshipPayload, User,
     Users,
 };
+#[cfg(all(not(target_arch="wasm32"), feature="social"))]
 use dcl_rpc::{client::RpcClient, transports::web_sockets::WebSocketTransport};
 use ethers_core::types::Address;
 use futures_util::{pin_mut, select, FutureExt};
@@ -119,6 +120,16 @@ pub struct SocialClientHandler {
 }
 
 impl SocialClientHandler {
+    #[cfg(any(target_arch="wasm32", not(feature="social")))]
+    pub fn connect(
+        _wallet: wallet::Wallet,
+        _friend_callback: impl Fn(&friendship_event_response::Body) + Send + Sync + 'static,
+        _chat_callback: impl Fn(DirectChatMessage) + Send + Sync + 'static,
+    ) -> Option<Self> {
+        None
+    }
+
+    #[cfg(all(not(target_arch="wasm32"), feature="social"))]
     pub fn connect(
         wallet: wallet::Wallet,
         friend_callback: impl Fn(&friendship_event_response::Body) + Send + Sync + 'static,
@@ -370,6 +381,7 @@ const SOCIAL_URL: &str = "wss://rpc-social-service.decentraland.org"; // zone do
 #[cfg(not(test))]
 const SOCIAL_URL: &str = "wss://rpc-social-service.decentraland.org";
 
+#[cfg(all(not(target_arch="wasm32"), feature="social"))]
 async fn social_socket_handler_inner(
     wallet: wallet::Wallet,
     mut rx: UnboundedReceiver<FriendshipOutbound>,

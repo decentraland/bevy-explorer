@@ -3,8 +3,13 @@ name = "decentra-bevy"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib/web.rs"
+name = "webgpu_build"
+
 [features]
-default = ["livekit", "ffmpeg", "inspect"]
+default = ["livekit", "ffmpeg", "inspect", "social"]
 console = []
 dcl-assert = ["common/dcl-assert"]
 gen-tests = []
@@ -13,6 +18,7 @@ inspect = ["dcl/inspect", "system_ui/inspect"]
 hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
 livekit = ["comms/livekit"]
 ffmpeg = ["av/ffmpeg"]
+social = ["dcl_component/social", "social/social"]
 
 [profile.release]
 codegen-units = 1

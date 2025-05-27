@@ -23,7 +23,6 @@ console = { workspace = true }
 scene_material = { workspace = true }
 world_ui = { workspace = true }
 analytics = { workspace = true }
-social = { workspace = true }
 system_bridge = { workspace = true }
 propagate = { workspace = true }
 

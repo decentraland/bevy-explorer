@@ -5,6 +5,9 @@ edition = "2021"
 
 [lib]
 
+[features]
+social = ["dep:dcl-rpc", "dep:matrix-sdk"]
+
 [dependencies]
 common = { workspace = true }
 comms = { workspace = true }
@@ -36,7 +39,7 @@ futures-lite = { workspace = true }
 async-tungstenite = { workspace = true }
 
 prost = { workspace = true }
-dcl-rpc = { workspace = true }
+dcl-rpc = { workspace = true, optional = true }
 futures-util = { workspace = true }
 
-matrix-sdk = { version = "0.10", default-features = false, features = ["e2e-encryption", "native-tls"] }
+matrix-sdk = { version = "0.10", default-features = false, features = ["e2e-encryption", "native-tls"], optional = true }
