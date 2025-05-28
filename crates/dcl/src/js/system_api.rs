@@ -290,6 +290,7 @@ pub async fn op_set_avatar(
     state: Rc<RefCell<OpState>>,
     #[serde] base: Option<PbAvatarBase>,
     #[serde] equip: Option<PbAvatarEquippedData>,
+    has_claimed_name: Option<bool>,
 ) -> Result<u32, anyhow::Error> {
     let (sx, rx) = tokio::sync::oneshot::channel();
 
@@ -297,7 +298,11 @@ pub async fn op_set_avatar(
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
         .send(SystemApi::SetAvatar(
-            SetAvatarData { base, equip },
+            SetAvatarData {
+                base,
+                equip,
+                has_claimed_name,
+            },
             sx.into(),
         ))?;
 

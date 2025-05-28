@@ -485,6 +485,10 @@ fn process_profile(
             profile.content.avatar.name = Some(base.name.clone());
         }
 
+        if let Some(has_claimed_name) = set_avatar.has_claimed_name {
+            profile.content.has_claimed_name = has_claimed_name;
+        }
+
         if let Some(equip) = &set_avatar.equip {
             profile.content.avatar.wearables = equip.wearable_urns.to_vec();
             profile.content.avatar.emotes = Some(
