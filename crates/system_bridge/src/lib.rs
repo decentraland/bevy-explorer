@@ -45,6 +45,7 @@ impl Plugin for SystemBridgePlugin {
 pub struct SetAvatarData {
     pub base: Option<PbAvatarBase>,
     pub equip: Option<PbAvatarEquippedData>,
+    pub has_claimed_name: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

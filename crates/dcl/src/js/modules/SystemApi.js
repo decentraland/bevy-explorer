@@ -109,12 +109,13 @@ module.exports.kernelFetch = async function (body) {
 }
 
 // avatar { 
-//   base: PBAvatarBase, 
-//   equip: PBAvatarEquippedData,
+//   base?: PBAvatarBase, 
+//   equip?: PBAvatarEquippedData,
+//   hasClaimedName?: bool,
 // }
 // => deployed version
 module.exports.setAvatar = async function(avatar) {
-    return await Deno.core.ops.op_set_avatar(avatar.base, avatar.equip)
+    return await Deno.core.ops.op_set_avatar(avatar.base, avatar.equip, avatar.hasClaimedName)
 }
 
 // get the next key/button pressed by the user, identified as a string
