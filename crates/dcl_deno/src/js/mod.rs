@@ -114,16 +114,22 @@ pub fn create_runtime(
         }
     }
 
+    let mut esm_files = include_js_files!(
+        BevyExplorer
+        dir "../dcl/src/js/modules",
+    )
+    .to_vec();
+
+    esm_files.extend(include_js_files!(
+        BevyExplorer
+        dir "src/js/modules",
+        "init.js",
+    ));
+
     let ext = Extension {
         name: "decentraland",
         ops: ops.into(),
-        esm_files: include_js_files!(
-            BevyExplorer
-            dir "../dcl/src/js/modules",
-            "init.js",
-        )
-        .to_vec()
-        .into(),
+        esm_files: esm_files.into(),
         esm_entry_point: Some("ext:BevyExplorer/init.js"),
         middleware_fn: Some(Box::new(move |op: OpDecl| -> OpDecl {
             if let Some(custom_op) = op_map.get(&op.name) {
