@@ -854,6 +854,19 @@ fn send_action_events(
             .filter(|up| !send_event(info, PointerEventType::PetUp, *up, None))
             .map(|button| (PointerEventType::PetUp, button));
         unconsumed.extend(unconsumed_up);
+    } else {
+        unconsumed.extend(
+            input_mgr
+                .iter_scene_just_down()
+                .map(IaToDcl::to_dcl)
+                .map(|b| (PointerEventType::PetDown, b)),
+        );
+        unconsumed.extend(
+            input_mgr
+                .iter_scene_just_up()
+                .map(IaToDcl::to_dcl)
+                .map(|b| (PointerEventType::PetUp, b)),
+        );
     }
 
     // send any drags
