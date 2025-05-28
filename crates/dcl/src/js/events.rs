@@ -2,15 +2,11 @@ use std::marker::PhantomData;
 
 use bevy::utils::tracing::{debug, warn};
 use common::rpc::RpcCall;
-use deno_core::{op2, OpDecl, OpState};
 use serde::Serialize;
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
-// list of op declarations
-pub fn ops() -> Vec<OpDecl> {
-    vec![op_subscribe(), op_unsubscribe(), op_send_batch()]
-}
+use super::State;
 
 struct EventReceiver<T: EventType> {
     inner: tokio::sync::mpsc::UnboundedReceiver<String>,
@@ -44,8 +40,7 @@ impl_event!(RealmChanged, "onRealmChanged");
 impl_event!(PlayerClicked, "playerClicked");
 impl_event!(MessageBus, "comms");
 
-#[op2(fast)]
-fn op_subscribe(state: &mut OpState, #[string] id: &str) {
+pub fn op_subscribe(state: &mut impl State, id: &str) {
     macro_rules! register {
         ($id: expr, $state: expr, $marker: ty, $call: expr) => {{
             if id == <$marker as EventType>::label() {
@@ -106,8 +101,7 @@ fn op_subscribe(state: &mut OpState, #[string] id: &str) {
     warn!("subscribe to unrecognised event {id}");
 }
 
-#[op2(fast)]
-fn op_unsubscribe(state: &mut OpState, #[string] id: &str) {
+pub fn op_unsubscribe(state: &mut impl State, id: &str) {
     debug!("op_unsubscribe {id}");
 
     macro_rules! unregister {
@@ -135,7 +129,7 @@ fn op_unsubscribe(state: &mut OpState, #[string] id: &str) {
 }
 
 #[derive(Serialize)]
-struct Event {
+pub struct Event {
     generic: EventGeneric,
 }
 
@@ -146,9 +140,7 @@ struct EventGeneric {
     event_data: String,
 }
 
-#[op2]
-#[serde]
-fn op_send_batch(state: &mut OpState) -> Vec<Event> {
+pub fn op_send_batch(state: &mut impl State) -> Vec<Event> {
     debug!("op_send_batch");
     let mut results = Vec::default();
 

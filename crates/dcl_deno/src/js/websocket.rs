@@ -5,7 +5,7 @@ use deno_core::{anyhow, error::AnyError, op2, ByteString, OpDecl, OpState, Resou
 use deno_websocket::{CreateResponse, WebSocketPermissions};
 use tokio::sync::oneshot::channel;
 
-use crate::{interface::crdt_context::CrdtContext, RpcCalls};
+use dcl::{interface::crdt_context::CrdtContext, RpcCalls};
 
 // list of op declarations
 pub fn override_ops() -> Vec<OpDecl> {

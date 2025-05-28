@@ -6,7 +6,8 @@ use std::{fs::File, io::Write, sync::OnceLock};
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 #[cfg(not(debug_assertions))]
 use build_time::build_time_utc;
-use dcl::init_runtime;
+#[cfg(feature = "deno")]
+use dcl_deno::init_runtime;
 use imposters::DclImposterPlugin;
 use mimalloc::MiMalloc;
 

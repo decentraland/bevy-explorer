@@ -16,12 +16,13 @@ use common::{
 };
 use dcl::{
     interface::{CrdtComponentInterfaces, CrdtStore, CrdtType},
-    spawn_scene, SceneId,
+    SceneId,
 };
 use dcl_component::{
     transform_and_parent::DclTransformAndParent, DclReader, DclWriter, SceneComponentId,
     SceneEntityId,
 };
+use dcl_deno::spawn_scene;
 use futures_lite::future::block_on;
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},

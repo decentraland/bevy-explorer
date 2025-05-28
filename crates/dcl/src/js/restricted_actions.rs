@@ -1,39 +1,20 @@
+use anyhow::anyhow;
 use bevy::{
     log::debug,
     math::{IVec2, Vec3},
     transform::components::Transform,
 };
 use common::rpc::RpcCall;
-use deno_core::{
-    anyhow::{self, anyhow},
-    error::AnyError,
-    op2, OpDecl, OpState,
-};
 use std::{cell::RefCell, rc::Rc};
 
-use crate::interface::crdt_context::CrdtContext;
+use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 use dcl_component::transform_and_parent::DclTranslation;
 
-use super::{runtime::scene_information, RpcCalls};
+use super::{runtime::scene_information, State};
 
-// list of op declarations
-pub fn ops() -> Vec<OpDecl> {
-    vec![
-        op_move_player_to(),
-        op_teleport_to(),
-        op_change_realm(),
-        op_external_url(),
-        op_emote(),
-        op_scene_emote(),
-        op_open_nft_dialog(),
-        op_set_ui_focus(),
-    ]
-}
-
-#[op2(fast)]
 #[allow(clippy::too_many_arguments)]
-fn op_move_player_to(
-    op_state: &mut OpState,
+pub fn op_move_player_to(
+    op_state: &mut impl State,
     position_x: f32,
     position_y: f32,
     position_z: f32,
@@ -85,8 +66,11 @@ fn op_move_player_to(
     }
 }
 
-#[op2(async)]
-async fn op_teleport_to(state: Rc<RefCell<OpState>>, position_x: i32, position_y: i32) -> bool {
+pub async fn op_teleport_to(
+    state: Rc<RefCell<impl State>>,
+    position_x: i32,
+    position_y: i32,
+) -> bool {
     debug!("op_teleport_to");
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
@@ -102,11 +86,10 @@ async fn op_teleport_to(state: Rc<RefCell<OpState>>, position_x: i32, position_y
     matches!(rx.await, Ok(Ok(_)))
 }
 
-#[op2(async)]
-async fn op_change_realm(
-    state: Rc<RefCell<OpState>>,
-    #[string] realm: String,
-    #[string] message: Option<String>,
+pub async fn op_change_realm(
+    state: Rc<RefCell<impl State>>,
+    realm: String,
+    message: Option<String>,
 ) -> bool {
     debug!("op_change_realm");
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
@@ -124,8 +107,7 @@ async fn op_change_realm(
     matches!(rx.await, Ok(Ok(_)))
 }
 
-#[op2(async)]
-async fn op_external_url(state: Rc<RefCell<OpState>>, #[string] url: String) -> bool {
+pub async fn op_external_url(state: Rc<RefCell<impl State>>, url: String) -> bool {
     debug!("op_external_url");
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
@@ -141,16 +123,14 @@ async fn op_external_url(state: Rc<RefCell<OpState>>, #[string] url: String) -> 
     matches!(rx.await, Ok(Ok(_)))
 }
 
-#[op2(fast)]
-fn op_emote(op_state: &mut OpState, #[string] emote: String) {
+pub fn op_emote(op_state: &mut impl State, emote: String) {
     debug!("op_emote");
     send_emote(op_state, emote, false);
 }
 
-#[op2(async)]
-async fn op_scene_emote(
-    op_state: Rc<RefCell<OpState>>,
-    #[string] emote: String,
+pub async fn op_scene_emote(
+    op_state: Rc<RefCell<impl State>>,
+    emote: String,
     looping: bool,
 ) -> Result<(), anyhow::Error> {
     debug!("op_scene_emote");
@@ -173,11 +153,11 @@ async fn op_scene_emote(
         .hash;
     let emote_urn = format!("urn:decentraland:off-chain:scene-emote:{emote_hash}-{looping}");
 
-    send_emote(&mut op_state.borrow_mut(), emote_urn, looping);
+    send_emote(&mut *op_state.borrow_mut(), emote_urn, looping);
     Ok(())
 }
 
-fn send_emote(op_state: &mut OpState, urn: String, r#loop: bool) {
+pub fn send_emote(op_state: &mut impl State, urn: String, r#loop: bool) {
     let context = op_state.borrow::<CrdtContext>();
     let scene = context.scene_id.0;
 
@@ -186,11 +166,10 @@ fn send_emote(op_state: &mut OpState, urn: String, r#loop: bool) {
         .push(RpcCall::TriggerEmote { scene, urn, r#loop });
 }
 
-#[op2(async)]
-async fn op_open_nft_dialog(
-    op_state: Rc<RefCell<OpState>>,
-    #[string] urn: String,
-) -> Result<(), AnyError> {
+pub async fn op_open_nft_dialog(
+    op_state: Rc<RefCell<impl State>>,
+    urn: String,
+) -> Result<(), anyhow::Error> {
     debug!("op_open_nft_dialog");
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
 
@@ -209,11 +188,10 @@ async fn op_open_nft_dialog(
     rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
 }
 
-#[op2(async)]
-async fn op_set_ui_focus(
-    op_state: Rc<RefCell<OpState>>,
-    #[string] element_id: String,
-) -> Result<(), AnyError> {
+pub async fn op_set_ui_focus(
+    op_state: Rc<RefCell<impl State>>,
+    element_id: String,
+) -> Result<(), anyhow::Error> {
     debug!("op_set_ui_focus");
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
 

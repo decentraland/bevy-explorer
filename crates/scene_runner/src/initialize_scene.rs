@@ -19,12 +19,14 @@ use common::{
 use comms::{global_crdt::GlobalCrdtState, preview::PreviewMode};
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
-    spawn_scene, SceneElapsedTime, SceneId, SceneResponse,
+    SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
     proto_components::sdk::components::PbMainCamera, transform_and_parent::DclTransformAndParent,
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use dcl_deno::spawn_scene;
 use ipfs::{
     ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsAssetServer,
     IpfsResource, SceneIpfsLocation, SceneJsFile,

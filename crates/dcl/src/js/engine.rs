@@ -3,7 +3,6 @@ use bevy::{
     utils::tracing::span::EnteredSpan,
     utils::tracing::{debug, info, info_span, warn},
 };
-use deno_core::{op2, OpDecl, OpState};
 use std::{
     cell::RefCell,
     rc::Rc,
@@ -20,18 +19,9 @@ use crate::{
 };
 use dcl_component::DclReader;
 
-// list of op declarations
-pub fn ops() -> Vec<OpDecl> {
-    vec![op_crdt_send_to_renderer(), op_crdt_recv_from_renderer()]
-}
+use super::State;
 
-// receive and process a buffer of crdt messages
-#[op2(fast)]
-fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, #[arraybuffer] messages: &[u8]) {
-    crdt_send_to_renderer(op_state, messages)
-}
-
-pub fn crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
+pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8]) {
     let mut op_state = op_state.borrow_mut();
     let elapsed_time = op_state.borrow::<SceneElapsedTime>().0;
     let logs = op_state.take::<Vec<SceneLogMessage>>();
@@ -68,9 +58,7 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, messages: &[u8]) {
     op_state.put(crdt_store);
 }
 
-#[op2(async)]
-#[serde]
-async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<OpState>>) -> Vec<Vec<u8>> {
+pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Vec<Vec<u8>> {
     let span = op_state.borrow_mut().try_take::<EnteredSpan>();
     drop(span); // don't hold it over the await point so we get a clearer view of when js is running
 

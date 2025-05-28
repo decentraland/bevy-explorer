@@ -25,9 +25,9 @@ use fetch_response_body_resource::FetchResponseBodyResource;
 use tokio::sync::oneshot::channel;
 use wallet::{sign_request, Wallet};
 
-use crate::{interface::crdt_context::CrdtContext, RpcCalls};
+use dcl::{interface::crdt_context::CrdtContext, RpcCalls};
 
-use super::runtime::realm_information;
+use dcl::js::runtime::realm_information;
 
 // we have to provide fetch perm structs even though we don't use them
 pub struct FP;

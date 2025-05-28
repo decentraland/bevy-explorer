@@ -4,7 +4,7 @@ use comms::{
     CommsPlugin,
 };
 use console::ConsolePlugin;
-use dcl::init_runtime;
+use dcl_deno::init_runtime;
 use imposters::{render::ImposterMissing, DclImposterPlugin};
 
 use bevy::{

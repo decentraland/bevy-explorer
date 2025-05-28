@@ -3141,25 +3141,16 @@ checksum = "0c03c416ed1a30fbb027ef484ba6ab6f80e1eada675e1a2b92fd673c045a1f1d"
 name = "dcl"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "base64 0.22.1",
  "bevy",
  "bytes",
  "common",
  "dcl_component",
- "deno_console",
  "deno_core",
- "deno_fetch",
- "deno_net",
- "deno_url",
- "deno_web",
- "deno_webidl",
- "deno_websocket",
- "deno_webstorage",
  "ethers-providers",
- "fastwebsockets 0.4.4",
  "futures-lite 1.13.0",
  "http 1.2.0",
- "hyper 0.14.30",
  "ipfs",
  "multihash-codetable",
  "num",
@@ -3172,7 +3163,6 @@ dependencies = [
  "system_bridge",
  "tokio",
  "urlencoding",
- "uuid 1.12.1",
  "wallet",
 ]
 
@@ -3206,6 +3196,46 @@ dependencies = [
  "prost 0.11.9",
  "prost-build 0.11.9",
  "serde",
+]
+
+[[package]]
+name = "dcl_deno"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "bevy",
+ "bytes",
+ "common",
+ "dcl",
+ "dcl_component",
+ "deno_console",
+ "deno_core",
+ "deno_fetch",
+ "deno_net",
+ "deno_url",
+ "deno_web",
+ "deno_webidl",
+ "deno_websocket",
+ "deno_webstorage",
+ "ethers-providers",
+ "fastwebsockets 0.4.4",
+ "futures-lite 1.13.0",
+ "http 1.2.0",
+ "hyper 0.14.30",
+ "ipfs",
+ "multihash-codetable",
+ "num",
+ "num-derive",
+ "num-traits",
+ "once_cell",
+ "reqwest 0.12.12",
+ "serde",
+ "serde_json",
+ "system_bridge",
+ "tokio",
+ "urlencoding",
+ "uuid 1.12.1",
+ "wallet",
 ]
 
 [[package]]
@@ -3288,6 +3318,7 @@ dependencies = [
  "console",
  "dcl",
  "dcl_component",
+ "dcl_deno",
  "futures-lite 1.13.0",
  "imposters",
  "input_manager",
@@ -9682,6 +9713,7 @@ dependencies = [
  "crc",
  "dcl",
  "dcl_component",
+ "dcl_deno",
  "futures-lite 1.13.0",
  "image",
  "input_manager",

@@ -9,16 +9,17 @@ path = "src/lib/web.rs"
 name = "webgpu_build"
 
 [features]
-default = ["livekit", "ffmpeg", "inspect", "social"]
+default = ["deno", "livekit", "ffmpeg", "inspect", "social"]
 console = []
 dcl-assert = ["common/dcl-assert"]
 gen-tests = []
 tracy = ["bevy/trace_tracy"]
-inspect = ["dcl/inspect", "system_ui/inspect"]
+inspect = ["dcl_deno/inspect", "system_ui/inspect"]
 hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
 livekit = ["comms/livekit"]
 ffmpeg = ["av/ffmpeg"]
 social = ["dcl_component/social", "social/social"]
+deno = ["dep:dcl_deno", "scene_runner/deno"]
 
 [profile.release]
 codegen-units = 1
@@ -49,6 +50,7 @@ scene_runner = { path="crates/scene_runner" }
 console = { path="crates/console" }
 av = { path="crates/av" }
 dcl = { path="crates/dcl" }
+dcl_deno = { path="crates/dcl_deno" }
 dcl_component = { path="crates/dcl_component" }
 restricted_actions = { path="crates/restricted_actions" }
 wallet = { path="crates/wallet" }
@@ -153,6 +155,7 @@ av = { workspace = true }
 restricted_actions = { workspace = true }
 wallet = { workspace = true }
 dcl = { workspace = true }
+dcl_deno = { workspace = true, optional = true }
 nft = { workspace = true }
 tween = { workspace = true }
 scene_material = { workspace = true }
