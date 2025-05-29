@@ -14,6 +14,9 @@ use num::{BigInt, ToPrimitive};
 use reqwest::StatusCode;
 use serde::Deserialize;
 
+#[allow(unused_imports)]
+use platform::ReqwestBuilderExt;
+
 pub struct NftReaderPlugin;
 
 impl Plugin for NftReaderPlugin {

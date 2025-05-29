@@ -8,6 +8,7 @@ edition = "2021"
 [features]
 default = []
 deno = ["dep:deno_core"]
+wasm = []
 
 [dependencies]
 common = { workspace = true }

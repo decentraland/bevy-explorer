@@ -929,3 +929,5 @@ mod test {
         println!("done");
     }
 }
+
+pub type FriendshipEventBody = friendship_event_response::Body;

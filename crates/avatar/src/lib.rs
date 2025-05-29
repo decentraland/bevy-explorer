@@ -38,7 +38,7 @@ pub mod npc_dynamics;
 use common::{
     sets::SetupSets,
     structs::{AppConfig, AttachPoints, EmoteCommand, PrimaryUser},
-    util::{DespawnWith, SceneSpawnerPlus, TryPushChildrenEx},
+    util::{DespawnWith, SceneSpawnerPlus, TaskExt, TryPushChildrenEx},
 };
 use comms::{
     global_crdt::{ForeignPlayer, GlobalCrdtState},
@@ -1573,5 +1573,5 @@ fn debug_dump_avatar(
         }
     }
 
-    tasks.retain_mut(|t| !t.is_finished());
+    tasks.retain_mut(|t| !t.complete().is_some());
 }

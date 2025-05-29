@@ -15,4 +15,4 @@ RUST_BACKTRACE = "1"
 CARGO_FEATURE_CRT_STATIC = "ohyes"
 
 [build]
-# target = "wasm32-unknown-unknown"
+target = "wasm32-unknown-unknown"

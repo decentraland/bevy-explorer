@@ -7,8 +7,7 @@ use common::{
     util::{AsH160, FireEventEx},
 };
 use comms::{chat_marker_things, global_crdt::ChatEvent, profile::UserProfile};
-use dcl_component::proto_components::social::friendship_event_response::{self, Body};
-use social::{DirectChatMessage, DirectChatEvent, FriendshipEvent};
+use social::{FriendshipEventBody, DirectChatEvent, DirectChatMessage, FriendshipEvent};
 use ui_core::{
     bound_node::{BoundedNode, NodeBounds},
     button::TabManager,
@@ -59,7 +58,7 @@ fn update_chat_history(
     mut private_chats: EventReader<DirectChatEvent>,
     mut nearby_chats: EventReader<ChatEvent>,
     users: Query<&UserProfile>,
-    mut pending_friends: Local<Vec<friendship_event_response::Body>>,
+    mut pending_friends: Local<Vec<FriendshipEventBody>>,
     mut pending_private_chats: Local<Vec<DirectChatMessage>>,
     mut pending_nearby_chats: Local<Vec<DirectChatMessage>>,
     mut convo: ConversationManager,
@@ -148,27 +147,27 @@ fn update_chat_history(
     // add new
     for friend in pending_friends.drain(..) {
         let (message, color, address) = match &friend {
-            Body::Request(r) => (
+            FriendshipEventBody::Request(r) => (
                 "you received a friend request",
                 Color::srgb(0.8, 1.0, 1.0),
                 &r.user.as_ref().map(|u| &u.address),
             ),
-            Body::Accept(r) => (
+            FriendshipEventBody::Accept(r) => (
                 "your friend request was accepted",
                 Color::srgb(0.8, 1.0, 1.0),
                 &r.user.as_ref().map(|u| &u.address),
             ),
-            Body::Reject(r) => (
+            FriendshipEventBody::Reject(r) => (
                 "your friend request was rejected",
                 Color::srgb(1.0, 0.8, 0.8),
                 &r.user.as_ref().map(|u| &u.address),
             ),
-            Body::Delete(r) => (
+            FriendshipEventBody::Delete(r) => (
                 "your friendship is over",
                 Color::srgb(1.0, 0.8, 0.8),
                 &r.user.as_ref().map(|u| &u.address),
             ),
-            Body::Cancel(r) => (
+            FriendshipEventBody::Cancel(r) => (
                 "the friend request was cancelled",
                 Color::srgb(1.0, 0.8, 0.8),
                 &r.user.as_ref().map(|u| &u.address),

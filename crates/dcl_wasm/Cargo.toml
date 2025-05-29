@@ -11,7 +11,7 @@ default = []
 [dependencies]
 common = { workspace = true }
 dcl_component = { workspace = true }
-dcl = { workspace = true, features=["deno"] }
+dcl = { workspace = true, features=["wasm"] }
 ipfs = { workspace = true }
 wallet = { workspace = true }
 system_bridge = { workspace = true }

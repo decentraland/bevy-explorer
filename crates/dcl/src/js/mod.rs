@@ -1,6 +1,5 @@
 use std::{
     cell::RefCell,
-    ops::{Deref, DerefMut},
     rc::Rc,
     sync::{mpsc::SyncSender, Arc},
 };

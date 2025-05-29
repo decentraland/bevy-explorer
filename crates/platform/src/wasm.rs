@@ -5,7 +5,7 @@ pub use tungstenite::client::IntoClientRequest;
 pub struct WebSocket {}
 
 impl WebSocket {
-    pub async fn send(&mut self, item: tungstenite::Message) -> Result<(), anyhow::Error> {
+    pub async fn send(&mut self, _item: tungstenite::Message) -> Result<(), anyhow::Error> {
         todo!()
     }
 
@@ -21,7 +21,7 @@ impl WebSocket {
 pub struct WebSocketSplitSink {}
 
 impl WebSocketSplitSink {
-    pub async fn send(&mut self, item: tungstenite::Message) -> Result<(), anyhow::Error> {
+    pub async fn send(&mut self, _item: tungstenite::Message) -> Result<(), anyhow::Error> {
         todo!()
     }
 }
@@ -34,7 +34,7 @@ impl WebSocketSplitStream {
     }
 }
 
-pub async fn websocket<R>(request: R) -> Result<WebSocket, anyhow::Error>
+pub async fn websocket<R>(_request: R) -> Result<WebSocket, anyhow::Error>
 where
     R: IntoClientRequest + Unpin,
 {
@@ -48,11 +48,11 @@ pub trait ReqwestBuilderExt {
 }
 
 impl ReqwestBuilderExt for reqwest::ClientBuilder {
-    fn timeout(self, timeout: Duration) -> Self {
+    fn timeout(self, _timeout: Duration) -> Self {
         self
     }
 
-    fn connect_timeout(self, timeout: Duration) -> Self {
+    fn connect_timeout(self, _timeout: Duration) -> Self {
         self
     }
     
@@ -62,11 +62,11 @@ impl ReqwestBuilderExt for reqwest::ClientBuilder {
 }
 
 impl ReqwestBuilderExt for reqwest::RequestBuilder {
-    fn timeout(self, timeout: Duration) -> Self {
+    fn timeout(self, _timeout: Duration) -> Self {
         self
     }
 
-    fn connect_timeout(self, timeout: Duration) -> Self {
+    fn connect_timeout(self, _timeout: Duration) -> Self {
         self
     }
     

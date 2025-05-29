@@ -9,8 +9,8 @@ path = "src/lib/web.rs"
 name = "webgpu_build"
 
 [features]
-default = ["native", "livekit", "ffmpeg", "inspect", "social"]
-# default = ["wasm"]
+# default = ["native", "livekit", "ffmpeg", "inspect", "social"]
+default = ["wasm"]
 console = []
 dcl-assert = ["common/dcl-assert"]
 gen-tests = []

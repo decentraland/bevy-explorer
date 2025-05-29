@@ -7241,6 +7241,7 @@ dependencies = [
  "ipfs",
  "num",
  "once_cell",
+ "platform",
  "reqwest 0.12.12",
  "resvg",
  "scene_material",
