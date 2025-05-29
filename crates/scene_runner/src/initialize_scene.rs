@@ -25,8 +25,6 @@ use dcl_component::{
     proto_components::sdk::components::PbMainCamera, transform_and_parent::DclTransformAndParent,
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
-#[cfg(not(target_arch = "wasm32"))]
-use dcl_deno::spawn_scene;
 use ipfs::{
     ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsAssetServer,
     IpfsResource, SceneIpfsLocation, SceneJsFile,
@@ -41,6 +39,12 @@ use crate::{
     update_world::ComponentTracker, ContainerEntity, DeletedSceneEntities, SceneEntity,
     SceneThreadHandle,
 };
+
+#[cfg(feature="deno")]
+use dcl_deno::spawn_scene;
+
+#[cfg(feature="wasm")]
+use dcl_wasm::spawn_scene;
 
 #[derive(Default)]
 pub struct CrdtLoader;

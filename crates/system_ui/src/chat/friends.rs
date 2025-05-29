@@ -6,7 +6,7 @@ use common::{
 };
 use comms::profile::ProfileManager;
 use ethers_core::types::Address;
-use social::{client::DirectChatMessage, DirectChatEvent, FriendshipEvent, SocialClient};
+use social::{DirectChatMessage, DirectChatEvent, FriendshipEvent, SocialClient};
 use tokio::sync::mpsc::Receiver;
 use ui_core::{
     button::{DuiButton, TabManager, TabSelection},

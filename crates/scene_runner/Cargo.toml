@@ -9,15 +9,17 @@ edition = "2021"
 workspace = true
 
 [features]
-default = ["deno"]
+default = []
 gen-tests = []
 deno = ["dep:dcl_deno"]
+wasm = ["dep:dcl_wasm"]
 
 [dependencies]
 common = { workspace = true }
 dcl_component = { workspace = true }
 dcl = { workspace = true }
 dcl_deno = { workspace = true, optional = true }
+dcl_wasm = { workspace = true, optional = true }
 ipfs = { workspace = true }
 comms = { workspace = true }
 ui_core = { workspace = true }

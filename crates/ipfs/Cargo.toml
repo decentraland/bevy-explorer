@@ -7,10 +7,13 @@ edition = "2021"
 
 [features]
 hot_reload = []
+native = []
+wasm = []
 
 [dependencies]
 common = { workspace = true }
 console = { workspace = true }
+platform = { workspace = true }
 
 bevy = { workspace = true }
 anyhow = { workspace = true }

@@ -1,7 +1,14 @@
+#[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+pub mod fake_client;
+#[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+use fake_client::SocialClientHandler;
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
 pub mod client;
+#[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+use client::SocialClientHandler;
 
 use bevy::prelude::*;
-use client::{DirectChatMessage, SocialClientHandler};
 use common::util::FireEventEx;
 use dcl_component::proto_components::social::friendship_event_response;
 use ethers_core::types::Address;
@@ -86,8 +93,22 @@ impl SocialClient {
     }
 }
 
+#[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+
 #[derive(Event)]
 pub struct FriendshipEvent(pub Option<friendship_event_response::Body>);
 
+#[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+#[derive(Event)]
+pub struct FriendshipEvent(pub Option<()>);
+
 #[derive(Event)]
 pub struct DirectChatEvent(pub DirectChatMessage);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectChatMessage {
+    pub partner: Address,
+    pub me_speaking: bool,
+    pub message: String,
+}
+

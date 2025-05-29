@@ -17,8 +17,7 @@ use async_std::io::{Cursor, ReadExt, WriteExt};
 use bevy::{
     asset::{
         io::{
-            file::FileAssetReader, AssetReader, AssetReaderError, AssetSource, AssetSourceId,
-            ErasedAssetReader, Reader,
+            AssetReader, AssetReaderError, AssetSource, AssetSourceId, ErasedAssetReader, Reader
         },
         meta::Settings,
         Asset, AssetLoader, LoadState, UntypedAssetId,
@@ -29,6 +28,13 @@ use bevy::{
     tasks::{IoTaskPool, Task},
     utils::{ConditionalSendFuture, HashMap},
 };
+
+#[cfg(feature = "native")]
+use bevy::asset::io::file::FileAssetReader;
+
+#[cfg(feature = "wasm")]
+use bevy::asset::io::wasm::HttpWasmAssetReader;
+
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use common::{
     structs::AppConfig,
@@ -40,6 +46,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use console::DoAddConsoleCommand;
+
+#[allow(unused_imports)]
+use platform::ReqwestBuilderExt;
 
 use self::ipfs_path::{normalize_path, IpfsPath, IpfsType};
 
@@ -437,7 +446,10 @@ impl Plugin for IpfsIoPlugin {
         info!("remote server: {:?}", self.starting_realm);
 
         let file_path = self.assets_root.clone().unwrap_or("assets".to_owned());
+        #[cfg(feature="native")]
         let default_reader = FileAssetReader::new(file_path.clone());
+        #[cfg(feature="wasm")]
+        let default_reader = HttpWasmAssetReader::new(file_path.clone());
         let cache_root = if self.assets_root.is_some() {
             // use app folder for unit tests
             default_reader.root_path().join("cache")

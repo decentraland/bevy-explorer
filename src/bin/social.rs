@@ -4,10 +4,7 @@ use bevy_simple_text_input::{
 };
 use common::util::{AsH160, TryPushChildrenEx};
 use dcl_component::proto_components::social::friendship_event_response;
-use social::{
-    client::{DirectChatMessage, SocialClientHandler},
-    SocialClient, SocialPlugin,
-};
+use social::{client::SocialClientHandler, DirectChatMessage, SocialClient, SocialPlugin};
 use tokio::sync::mpsc::unbounded_channel;
 use wallet::{Wallet, WalletPlugin};
 

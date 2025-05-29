@@ -15,6 +15,7 @@ dcl_component = { workspace = true }
 ipfs = { workspace = true }
 wallet = { workspace = true }
 propagate = { workspace = true }
+platform = { workspace = true }
 
 bevy = { workspace = true }
 bimap = { workspace = true }
@@ -31,7 +32,6 @@ async-std = { workspace = true }
 bevy_kira_audio = { workspace = true }
 kira = { workspace = true }
 async-trait = { workspace = true }
-async-tungstenite = { workspace = true }
 futures-util = { workspace = true }
 rand = { workspace = true }
 num-traits = { workspace = true }

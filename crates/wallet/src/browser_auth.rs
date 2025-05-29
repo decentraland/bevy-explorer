@@ -10,6 +10,8 @@ use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 
 use crate::SimpleAuthChain;
+#[allow(unused_imports)]
+use platform::ReqwestBuilderExt;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

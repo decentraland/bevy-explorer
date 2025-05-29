@@ -8,7 +8,7 @@ use common::{
 };
 use comms::{chat_marker_things, global_crdt::ChatEvent, profile::UserProfile};
 use dcl_component::proto_components::social::friendship_event_response::{self, Body};
-use social::{client::DirectChatMessage, DirectChatEvent, FriendshipEvent};
+use social::{DirectChatMessage, DirectChatEvent, FriendshipEvent};
 use ui_core::{
     bound_node::{BoundedNode, NodeBounds},
     button::TabManager,

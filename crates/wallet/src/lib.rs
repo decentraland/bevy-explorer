@@ -106,7 +106,8 @@ impl Wallet {
     }
 }
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub(crate) trait ObjSafeWalletSigner {
     async fn sign_message(
         &self,
@@ -125,7 +126,8 @@ pub(crate) trait ObjSafeWalletSigner {
     // fn chain_id(&self) -> u64;
 }
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl ObjSafeWalletSigner for LocalWallet {
     async fn sign_message(
         &self,

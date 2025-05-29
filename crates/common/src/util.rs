@@ -46,6 +46,13 @@ pub trait TaskExt {
 impl<T> TaskExt for Task<T> {
     type Output = T;
 
+    #[cfg(target_arch = "wasm32")]
+    fn complete(&mut self) -> Option<Self::Output> {
+        // wasm doesn't have `is_finished``, but polling is cheap as it is just a oneshot receiver
+        future::block_on(future::poll_once(self))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn complete(&mut self) -> Option<Self::Output> {
         match self.is_finished() {
             true => {
@@ -479,6 +486,7 @@ pub fn camera_to_render_layers<'a>(
 }
 
 // convenient non-pooled client use for infrequent requests
+#[cfg(not(target_arch = "wasm32"))]
 pub fn reqwest_client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
@@ -488,6 +496,25 @@ pub fn reqwest_client() -> reqwest::Client {
         .unwrap()
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn reqwest_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .user_agent("DCLExplorer/0.1")
+        .build()
+        .unwrap()
+}
+
+#[cfg(target_arch = "wasm32")]
+pub trait TaskCompat {
+    fn spawn_compat<T>(
+        &self,
+        future: impl core::future::Future<Output = T> + 'static,
+    ) -> Task<T>
+    where
+        T: Send + 'static;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub trait TaskCompat {
     fn spawn_compat<T>(
         &self,
@@ -498,6 +525,18 @@ pub trait TaskCompat {
 }
 
 impl TaskCompat for IoTaskPool {
+    #[cfg(target_arch = "wasm32")]
+    fn spawn_compat<T>(
+        &self,
+        future: impl core::future::Future<Output = T> + 'static,
+    ) -> Task<T>
+    where
+        T: Send + 'static,
+    {
+        self.spawn(future)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn spawn_compat<T>(
         &self,
         future: impl core::future::Future<Output = T> + Send + 'static,

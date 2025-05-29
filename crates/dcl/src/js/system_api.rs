@@ -405,7 +405,7 @@ pub async fn op_get_system_action_stream(state: Rc<RefCell<impl State>>) -> u32 
 pub async fn op_read_system_action_stream(
     state: Rc<RefCell<impl State>>,
     _rid: u32,
-) -> Result<Option<SystemActionEvent>, deno_core::anyhow::Error> {
+) -> Result<Option<SystemActionEvent>, anyhow::Error> {
     let Some(mut receiver) = state
         .borrow_mut()
         .try_take::<UnboundedReceiver<SystemActionEvent>>()
@@ -423,7 +423,7 @@ pub async fn op_read_system_action_stream(
     res
 }
 
-pub async fn op_get_chat_stream(state: Rc<RefCell<impl State>>) -> deno_core::ResourceId {
+pub async fn op_get_chat_stream(state: Rc<RefCell<impl State>>) -> u32 {
     let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
     state.borrow_mut().put(rx);
 
@@ -439,7 +439,7 @@ pub async fn op_get_chat_stream(state: Rc<RefCell<impl State>>) -> deno_core::Re
 pub async fn op_read_chat_stream(
     state: Rc<RefCell<impl State>>,
     _rid: u32,
-) -> Result<Option<ChatMessage>, deno_core::anyhow::Error> {
+) -> Result<Option<ChatMessage>, anyhow::Error> {
     let Some(mut receiver) = state
         .borrow_mut()
         .try_take::<UnboundedReceiver<ChatMessage>>()

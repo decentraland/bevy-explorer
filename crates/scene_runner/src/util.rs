@@ -175,7 +175,7 @@ fn debug_dump_scene(
         }
     }
 
-    tasks.retain_mut(|t| !t.is_finished());
+    tasks.retain_mut(|t| !t.complete().is_some());
 }
 
 #[derive(clap::Parser, ConsoleCommand)]

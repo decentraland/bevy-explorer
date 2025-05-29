@@ -1,16 +1,16 @@
 use anyhow::{anyhow, bail};
-use async_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValue};
 use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
 use bimap::BiMap;
-use futures_lite::future;
-use futures_util::{pin_mut, select, stream::StreamExt, FutureExt, SinkExt};
+use futures_util::{pin_mut, select, FutureExt};
+use http::HeaderValue;
+use platform::IntoClientRequest;
 use prost::Message;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use common::util::{dcl_assert, AsH160};
+use common::util::{dcl_assert, AsH160, TaskExt};
 use dcl_component::proto_components::kernel::comms::{
     rfc4,
     rfc5::{
@@ -128,9 +128,8 @@ fn reconnect_websocket(
 ) {
     for (transport_id, mut transport, mut conn) in websockets.iter_mut() {
         if transport.retries < 3 {
-            if conn.0.is_finished() {
+            if let Some((receiver, err)) = conn.0.complete() {
                 transport.retries += 1;
-                let (receiver, err) = future::block_on(future::poll_once(&mut conn.0)).unwrap();
                 warn!(
                     "websocket room error: {err}, retrying [{}]",
                     transport.address
@@ -147,10 +146,11 @@ fn reconnect_websocket(
                 ));
                 conn.0 = task;
             }
-        } else if transport.retries == 3 && conn.0.is_finished() {
-            transport.retries += 1;
-            let (_, err) = future::block_on(future::poll_once(&mut conn.0)).unwrap();
-            warn!("websocket room error: {err}, giving up");
+        } else if transport.retries == 3 {
+            if let Some((_, err)) = conn.0.complete() {
+                transport.retries += 1;
+                warn!("websocket room error: {err}, giving up");
+            }
         }
     }
 }
@@ -189,8 +189,8 @@ async fn websocket_room_handler_inner(
         .headers_mut()
         .append("Sec-WebSocket-Protocol", HeaderValue::from_static("rfc5"));
 
-    let (mut stream, response) = async_tungstenite::async_std::connect_async(request).await?;
-    debug!("<< stream connected, response: {response:?}");
+    let mut stream = platform::websocket(request).await?;
+    debug!("<< stream connected");
 
     // send peer identification
     let ident = WsPacket {

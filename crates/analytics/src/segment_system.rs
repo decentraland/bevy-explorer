@@ -8,7 +8,6 @@ use std::time::Duration;
 use crate::data_definition::{
     build_segment_event_batch_item, SegmentEvent, SegmentEventCommonExplorerFields,
 };
-
 pub struct SegmentMetricPlugin;
 
 impl Plugin for SegmentMetricPlugin {

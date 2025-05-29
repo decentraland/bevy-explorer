@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use async_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValue};
+use http::HeaderValue;
 #[cfg(feature = "livekit")]
 use livekit::{
     options::TrackPublishOptions,
@@ -13,6 +13,7 @@ use livekit::{
     },
     RoomOptions,
 };
+use platform::IntoClientRequest;
 use wallet::{signed_login::signed_login, SignedLoginMeta, Wallet};
 
 #[test]
@@ -83,7 +84,7 @@ fn test_async_tls() {
         request
             .headers_mut()
             .append("Sec-WebSocket-Protocol", HeaderValue::from_static("rfc5"));
-        async_tungstenite::async_std::connect_async(request).await
+        platform::websocket(request).await
     })
     .unwrap();
 }

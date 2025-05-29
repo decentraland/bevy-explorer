@@ -1,5 +1,5 @@
 [package]
-name = "dcl"
+name = "dcl_wasm"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,11 +7,11 @@ edition = "2021"
 
 [features]
 default = []
-deno = ["dep:deno_core"]
 
 [dependencies]
 common = { workspace = true }
 dcl_component = { workspace = true }
+dcl = { workspace = true, features=["deno"] }
 ipfs = { workspace = true }
 wallet = { workspace = true }
 system_bridge = { workspace = true }
@@ -32,6 +32,3 @@ multihash-codetable = { workspace = true }
 num-derive = "0.4.2"
 num = "0.4"
 bytes = "1.4.0"
-ethers-providers = { version = "2", features = ["ws","openssl"] }
-anyhow = { workspace = true }
-deno_core = { version = "0.307", optional = true }

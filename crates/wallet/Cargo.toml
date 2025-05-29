@@ -28,8 +28,7 @@ data-encoding = { workspace = true }
 opener = { workspace = true }
 chrono = { workspace = true }
 async-trait = { workspace = true }
-async-tungstenite = { workspace = true }
 futures-util = { workspace = true }
-async-native-tls = { workspace = true }
 rand = { workspace = true }
 http = { workspace = true }
+platform = { workspace = true }

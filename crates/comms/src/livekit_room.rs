@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use async_tungstenite::tungstenite::http::Uri;
 use bevy::{prelude::*, utils::HashMap};
 use futures_lite::StreamExt;
+use http::Uri;
 use livekit::{
     id::{ParticipantIdentity, TrackSid},
     options::TrackPublishOptions,

@@ -1,18 +1,25 @@
 #![cfg_attr(not(feature = "console"), windows_subsystem = "windows")]
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+#[cfg(not(debug_assertions))]
+use build_time::build_time_utc;
+
+#[cfg(feature = "native")]
+use dcl_deno::init_runtime;
+
+#[cfg(feature = "wasm")]
+use dcl_wasm::init_runtime;
+
+#[cfg(feature = "native")]
+use mimalloc::MiMalloc;
+#[cfg(feature = "native")]
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 use std::{fs::File, io::Write, sync::OnceLock};
 
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
-#[cfg(not(debug_assertions))]
-use build_time::build_time_utc;
-#[cfg(feature = "deno")]
-use dcl_deno::init_runtime;
 use imposters::DclImposterPlugin;
-use mimalloc::MiMalloc;
-
-#[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
 
 use bevy::{
     core::TaskPoolThreadAssignmentPolicy,

@@ -1,0 +1,20 @@
+[package]
+name = "platform"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[features]
+native = ["dep:async-tungstenite"]
+wasm = []
+
+[dependencies]
+common = { workspace = true }
+
+http = { workspace = true }
+anyhow = { workspace = true }
+tungstenite = { workspace = true }
+async-tungstenite = { workspace = true, optional = true }
+futures-util = { workspace = true }
+reqwest = { workspace = true }

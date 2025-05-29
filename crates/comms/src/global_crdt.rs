@@ -12,7 +12,6 @@ use common::{
     util::TryPushChildrenEx,
 };
 use ethers_core::types::Address;
-use kira::sound::streaming::StreamingSoundData;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::{broadcast, mpsc};
@@ -33,6 +32,12 @@ use dcl_component::{
 };
 
 use crate::{movement_compressed::MovementCompressed, profile::ProfileMetaCache};
+
+#[cfg(not(target_arch="wasm32"))]
+use kira::sound::streaming::StreamingSoundData;
+
+#[cfg(target_arch="wasm32")]
+pub struct StreamingSoundData<T>(std::marker::PhantomData::<fn() -> T>);
 
 const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 6..=406;
 

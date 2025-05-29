@@ -36,7 +36,7 @@ build-time = { workspace = true }
 
 futures-lite = { workspace = true }
 
-async-tungstenite = { workspace = true }
+# platform = { workspace = true }
 
 prost = { workspace = true }
 dcl-rpc = { workspace = true, optional = true }
