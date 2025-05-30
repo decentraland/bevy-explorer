@@ -1,6 +1,4 @@
 use analytics::segment_system::SegmentConfig;
-use imposters::DclImposterPlugin;
-use std::str::FromStr;
 use bevy::{
     core_pipeline::{
         bloom::BloomSettings,
@@ -12,15 +10,17 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bevy_console::ConsoleCommand;
+use imposters::DclImposterPlugin;
+use std::str::FromStr;
 
 use collectibles::CollectiblesPlugin;
 use common::{
     inputs::InputMap,
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, AvatarDynamicState, PreviewCommand, PrimaryCamera,
+        AppConfig, AttachPoints, AvatarDynamicState, IVec2Arg, PreviewCommand, PrimaryCamera,
         PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, SystemScene, Version,
-        GROUND_RENDERLAYER, IVec2Arg,
+        GROUND_RENDERLAYER,
     },
     util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
 };
@@ -61,7 +61,9 @@ fn main_inner(server: &str, location: &str) {
 
     let final_config = AppConfig {
         server: server.to_owned(),
-        location: IVec2Arg::from_str(location).map(|l| l.0).unwrap_or(IVec2::ZERO),
+        location: IVec2Arg::from_str(location)
+            .map(|l| l.0)
+            .unwrap_or(IVec2::ZERO),
         ..Default::default()
     };
 

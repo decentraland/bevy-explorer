@@ -120,7 +120,7 @@ fn load_animations(
                 asset_server.load("animations/tik-tok-dance.glb"),
                 asset_server.load("animations/walk.glb"),
                 asset_server.load("animations/Wave_Female.glb"),
-                asset_server.load("animations/Wave_Male.glb"),            
+                asset_server.load("animations/Wave_Male.glb"),
             ]);
         }
         AnimLoadState::WaitingForGltfs(ref mut h_gltfs) => {

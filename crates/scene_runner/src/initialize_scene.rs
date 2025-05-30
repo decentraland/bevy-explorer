@@ -40,10 +40,10 @@ use crate::{
     SceneThreadHandle,
 };
 
-#[cfg(not(target_arch="wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 use dcl_deno::spawn_scene;
 
-#[cfg(target_arch="wasm32")]
+#[cfg(target_arch = "wasm32")]
 use dcl_wasm::spawn_scene;
 
 #[derive(Default)]

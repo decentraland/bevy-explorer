@@ -30,12 +30,12 @@ use bevy::{
     utils::{ConditionalSendFuture, HashMap},
 };
 
-#[cfg(not(target_arch="wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 use bevy::asset::io::file::FileAssetReader;
-#[cfg(not(target_arch="wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 use platform::project_directories;
 
-#[cfg(target_arch="wasm32")]
+#[cfg(target_arch = "wasm32")]
 use bevy::asset::io::wasm::HttpWasmAssetReader;
 
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
@@ -446,12 +446,12 @@ impl Plugin for IpfsIoPlugin {
         info!("remote server: {:?}", self.starting_realm);
 
         let file_path = self.assets_root.clone().unwrap_or("assets".to_owned());
-        #[cfg(not(target_arch="wasm32"))]
+        #[cfg(not(target_arch = "wasm32"))]
         let default_reader = FileAssetReader::new(file_path.clone());
-        #[cfg(target_arch="wasm32")]
+        #[cfg(target_arch = "wasm32")]
         let default_reader = HttpWasmAssetReader::new(file_path.clone());
 
-        #[cfg(not(target_arch="wasm32"))]
+        #[cfg(not(target_arch = "wasm32"))]
         let cache_root = if self.assets_root.is_some() {
             // use app folder for unit tests
             Some(default_reader.root_path().join("cache"))
@@ -463,7 +463,7 @@ impl Plugin for IpfsIoPlugin {
                     .join("cache"),
             )
         };
-        #[cfg(target_arch="wasm32")]
+        #[cfg(target_arch = "wasm32")]
         let cache_root = None;
         info!("cache folder {cache_root:?}");
         if let Some(root) = &cache_root {
