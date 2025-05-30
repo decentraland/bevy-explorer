@@ -6,8 +6,6 @@ edition = "2021"
 [lib]
 
 [features]
-native = []
-wasm = []
 
 [dependencies]
 common = { workspace = true }

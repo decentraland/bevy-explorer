@@ -7,8 +7,6 @@ edition = "2021"
 
 [features]
 hot_reload = []
-native = []
-wasm = []
 
 [dependencies]
 common = { workspace = true }

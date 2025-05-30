@@ -4,15 +4,9 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[cfg(not(debug_assertions))]
 use build_time::build_time_utc;
 
-#[cfg(feature = "native")]
 use dcl_deno::init_runtime;
 
-#[cfg(feature = "wasm")]
-use dcl_wasm::init_runtime;
-
-#[cfg(feature = "native")]
 use mimalloc::MiMalloc;
-#[cfg(feature = "native")]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 

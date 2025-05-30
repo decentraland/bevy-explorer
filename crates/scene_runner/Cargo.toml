@@ -11,8 +11,6 @@ workspace = true
 [features]
 default = []
 gen-tests = []
-deno = ["dep:dcl_deno"]
-wasm = ["dep:dcl_wasm"]
 
 [dependencies]
 common = { workspace = true }
@@ -60,4 +58,7 @@ image = "0.25"
 boimp = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-dcl_deno = { workspace = true, optional = true }
+dcl_deno = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+dcl_wasm = { workspace = true }

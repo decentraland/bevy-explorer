@@ -13,7 +13,7 @@ name = "webgpu_build"
 # - wasm-pack build --dev --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm" && npx serve deploy/web
 
 [features]
-default = ["native", "livekit", "ffmpeg", "inspect", "social"]
+default = ["livekit", "ffmpeg", "inspect", "social"]
 # default = ["wasm"]
 console = []
 dcl-assert = ["common/dcl-assert"]
@@ -24,9 +24,8 @@ hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
 livekit = ["comms/livekit"]
 ffmpeg = ["av/ffmpeg"]
 social = ["dcl_component/social", "social/social"]
-native = ["platform/native", "dep:dcl_deno", "scene_runner/deno", "ipfs/native", "dep:mimalloc"]
-# wasm =   ["platform/wasm",   "dep:dcl_wasm", "scene_runner/wasm", "ipfs/wasm"  , "uuid/js", "bevy/webgpu"]
-wasm =   ["platform/wasm",   "dep:dcl_wasm", "scene_runner/wasm", "ipfs/wasm"  , "uuid/js"]
+# wasm =   ["uuid/js", "bevy/webgpu"]
+wasm =   ["uuid/js"]
 
 [profile.release]
 codegen-units = 1
@@ -168,7 +167,6 @@ av = { workspace = true }
 restricted_actions = { workspace = true }
 wallet = { workspace = true }
 dcl = { workspace = true }
-dcl_wasm = { workspace = true, optional = true }
 nft = { workspace = true }
 tween = { workspace = true }
 scene_material = { workspace = true }
@@ -192,7 +190,6 @@ build-time = { workspace = true }
 web-time = { workspace = true }
 
 pico-args = "0.5.0"
-mimalloc = { version = "*", default-features = false, optional = true }
 chrono = { workspace = true }
 tracing-appender = "0.2.3"
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
@@ -206,13 +203,16 @@ bevy_simple_text_input = { workspace = true }
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-dcl_deno = { workspace = true, optional = true }
+dcl_deno = { workspace = true }
+mimalloc = { version = "*", default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+dcl_wasm = { workspace = true }
 console_error_panic_hook = "0.1.7"
 console_log = "1.0"
 log = "0.4"
 wasm-bindgen = { workspace = true }
+
 
 [build-dependencies]
 prost-build = "0.11.8"
