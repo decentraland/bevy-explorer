@@ -82,7 +82,7 @@ pub fn write_config_file(config: &AppConfig) {
     if let Some(folder) = config_file.parent() {
         std::fs::create_dir_all(folder).unwrap();
     }
-    let _ = std::fs::write(config_file, serde_json::to_string(&*config).unwrap());
+    let _ = std::fs::write(config_file, serde_json::to_string(config).unwrap());
 }
 
 // re-export prepass types

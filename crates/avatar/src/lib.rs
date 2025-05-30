@@ -1574,5 +1574,5 @@ fn debug_dump_avatar(
         }
     }
 
-    tasks.retain_mut(|t| !t.complete().is_some());
+    tasks.retain_mut(|t| t.complete().is_none());
 }

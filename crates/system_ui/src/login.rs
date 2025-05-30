@@ -370,7 +370,7 @@ fn get_previous_login(config: &AppConfig) -> Option<PreviousLogin> {
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn process_login_bridge(
     mut e: EventReader<SystemApi>,
     ipfas: IpfsAssetServer,

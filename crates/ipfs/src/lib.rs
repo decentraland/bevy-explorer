@@ -891,7 +891,7 @@ impl IpfsIo {
     }
 
     pub fn cache_path(&self) -> Option<&Path> {
-        self.default_fs_path.as_ref().map(PathBuf::as_path)
+        self.default_fs_path.as_deref()
     }
 
     // load entities from pointers and cache urls

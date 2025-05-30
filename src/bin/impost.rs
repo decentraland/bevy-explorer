@@ -26,7 +26,7 @@ use common::{
         PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake, SceneLoadDistance,
         SystemAudio, ToolTips,
     },
-    util::{config_file, UtilsPlugin},
+    util::UtilsPlugin,
 };
 use input_manager::{CumulativeAxisData, InputPriorities};
 use nft::asset_source::Nft;
