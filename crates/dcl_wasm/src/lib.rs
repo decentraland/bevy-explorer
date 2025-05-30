@@ -1,9 +1,10 @@
 use std::sync::mpsc::SyncSender;
 
+use bevy::log::warn;
 use dcl::{interface::CrdtComponentInterfaces, RendererResponse, SceneId, SceneResponse};
 use ipfs::{IpfsResource, SceneJsFile};
 use system_bridge::SystemApi;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::{channel, Sender};
 use wallet::Wallet;
 
 pub fn init_runtime() {}
@@ -24,5 +25,7 @@ pub fn spawn_scene(
     _preview: bool,
     _super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
 ) -> Sender<RendererResponse> {
-    todo!()
+    warn!("spawn_scene not implemented");
+    let (sx, _rx) = channel(1);
+    sx
 }

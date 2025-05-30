@@ -81,6 +81,7 @@ impl SceneBound {
                 bounds,
                 distance,
                 flags: 0,
+                _pad: 0,
             },
         }
     }
@@ -111,6 +112,7 @@ impl SceneBound {
                     } else {
                         0
                     },
+                _pad: 0,
             },
         }
     }
@@ -224,6 +226,7 @@ pub struct SceneBoundData {
     pub distance: f32,
     pub flags: u32,
     pub num_bounds: u32,
+    _pad: u32,
 }
 
 impl MaterialExtension for SceneBound {

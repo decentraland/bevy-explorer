@@ -5,9 +5,9 @@ use comms::{
 };
 use console::ConsolePlugin;
 
-#[cfg(feature="native")]
+#[cfg(feature = "native")]
 use dcl_deno::init_runtime;
-#[cfg(feature="wasm")]
+#[cfg(feature = "wasm")]
 use dcl_wasm::init_runtime;
 
 use imposters::{render::ImposterMissing, DclImposterPlugin};
@@ -46,7 +46,10 @@ fn main() {
     init_runtime();
 
     let mut args = pico_args::Arguments::from_env();
-    let config_file = config_file();
+    let config_file = platform::project_directories()
+        .unwrap()
+        .config_dir()
+        .join("config.json");
 
     let levels = args.value_from_str("--levels").unwrap_or(5);
     let range = args

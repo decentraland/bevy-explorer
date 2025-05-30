@@ -24,7 +24,6 @@ impl SocialClientHandler {
 
     pub fn update(&self) -> () {}
 
-    
     pub fn live(&self) -> bool {
         false
     }

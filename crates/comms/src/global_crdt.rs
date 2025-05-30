@@ -33,11 +33,11 @@ use dcl_component::{
 
 use crate::{movement_compressed::MovementCompressed, profile::ProfileMetaCache};
 
-#[cfg(not(target_arch="wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 use kira::sound::streaming::StreamingSoundData;
 
-#[cfg(target_arch="wasm32")]
-pub struct StreamingSoundData<T>(std::marker::PhantomData::<fn() -> T>);
+#[cfg(target_arch = "wasm32")]
+pub struct StreamingSoundData<T>(std::marker::PhantomData<fn() -> T>);
 
 const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 6..=406;
 

@@ -10,9 +10,12 @@ rustflags = ["-C", "link-args=-ObjC"]
 [target.aarch64-apple-darwin]
 rustflags = ["-C", "link-args=-ObjC"]
 
+[target.wasm32-unknown-unknown]
+rustflags = ["--cfg=web_sys_unstable_apis"]
+
 [env]
 RUST_BACKTRACE = "1"
 CARGO_FEATURE_CRT_STATIC = "ohyes"
 
-[build]
-target = "wasm32-unknown-unknown"
+# [build]
+# target = "wasm32-unknown-unknown"

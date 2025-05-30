@@ -104,4 +104,3 @@ pub struct DirectChatMessage {
     pub me_speaking: bool,
     pub message: String,
 }
-

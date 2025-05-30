@@ -2,7 +2,6 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bevy::utils::tracing::{debug, error, info_span};
-use common::util::project_directories;
 use dcl::{
     interface::CrdtComponentInterfaces,
     js::{
@@ -18,6 +17,7 @@ use deno_core::{
     RuntimeOptions,
 };
 use multihash_codetable::MultihashDigest;
+use platform::project_directories;
 use system_bridge::SystemApi;
 use tokio::sync::mpsc::Receiver;
 
@@ -68,6 +68,7 @@ pub fn create_runtime(
     let storage_digest = multihash_codetable::Code::Sha2_256.digest(storage_root.as_bytes());
     let storage_hash = BASE64_URL_SAFE_NO_PAD.encode(storage_digest.digest());
     let storage_folder = project_directories()
+        .unwrap()
         .data_local_dir()
         .join("LocalStorage")
         .join(storage_hash);
@@ -334,7 +335,7 @@ pub(crate) fn scene_thread(
             if reported_errors <= 10 {
                 error!("[{scene_id:?}] uncaught error: {e:?}");
                 if reported_errors == 10 {
-                    error!("[{scene_id:?} not logging any further uncaught errors.")
+                    error!("[{scene_id:?}] not logging any further uncaught errors.")
                 }
             }
 

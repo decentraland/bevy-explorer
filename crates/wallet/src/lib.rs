@@ -244,8 +244,8 @@ pub async fn sign_request<META: Serialize>(
     wallet: &Wallet,
     meta: META,
 ) -> Result<Vec<(String, String)>, anyhow::Error> {
-    let unix_time = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let unix_time = web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
         .unwrap()
         .as_millis();
 

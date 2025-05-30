@@ -19,7 +19,6 @@ use common::{
     },
     rpc::RpcResultSender,
     structs::{AppConfig, CursorLocks, PlayerModifiers},
-    util::config_file,
 };
 use system_bridge::SystemApi;
 
@@ -621,11 +620,7 @@ fn handle_set_bindings(
         map.inputs = binding_data.bindings.clone();
         config.inputs = InputMapSerialized(binding_data.bindings.clone().into_iter().collect());
 
-        let config_file = config_file();
-        if let Some(folder) = config_file.parent() {
-            std::fs::create_dir_all(folder).unwrap();
-        }
-        let _ = std::fs::write(config_file, serde_json::to_string(&*config).unwrap());
+        platform::write_config_file(&config);
 
         sender.send(());
     }

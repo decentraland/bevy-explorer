@@ -1491,6 +1491,7 @@ fn debug_dump_avatar(
                 .ipfs()
                 .cache_path()
                 .to_owned()
+                .unwrap()
                 .join("scene_dump")
                 .join(folder)
                 .join(&scene_hash);

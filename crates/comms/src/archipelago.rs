@@ -12,7 +12,10 @@ use prost::Message;
 use serde_json::json;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use common::{rpc::{RpcCall, RpcEventSender}, util::TaskExt};
+use common::{
+    rpc::{RpcCall, RpcEventSender},
+    util::TaskExt,
+};
 use wallet::Wallet;
 
 use crate::{AdapterManager, Transport, TransportType};

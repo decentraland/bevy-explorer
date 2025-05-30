@@ -9,6 +9,7 @@ edition = "2021"
 dcl_component = { workspace = true }
 system_bridge = { workspace = true }
 common = { workspace = true }
+platform = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }

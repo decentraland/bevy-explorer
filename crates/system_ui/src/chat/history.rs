@@ -7,7 +7,7 @@ use common::{
     util::{AsH160, FireEventEx},
 };
 use comms::{chat_marker_things, global_crdt::ChatEvent, profile::UserProfile};
-use social::{FriendshipEventBody, DirectChatEvent, DirectChatMessage, FriendshipEvent};
+use social::{DirectChatEvent, DirectChatMessage, FriendshipEvent, FriendshipEventBody};
 use ui_core::{
     bound_node::{BoundedNode, NodeBounds},
     button::TabManager,

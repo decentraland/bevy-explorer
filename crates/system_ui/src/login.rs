@@ -13,7 +13,7 @@ use common::{
     rpc::RpcResultSender,
     sets::SceneSets,
     structs::{ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin, SystemAudio},
-    util::{config_file, FireEventEx, TaskCompat, TaskExt},
+    util::{FireEventEx, TaskCompat, TaskExt},
 };
 use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
 use ethers_core::types::Address;
@@ -71,6 +71,7 @@ fn login(
     mut motd_shown: Local<bool>,
     mut bridge: EventWriter<SystemApi>,
     native_active: Res<NativeUi>,
+    config: Res<AppConfig>,
 ) {
     if !native_active.login {
         return;
@@ -138,7 +139,7 @@ fn login(
             return;
         };
 
-        let previous_login = get_previous_login();
+        let previous_login = get_previous_login(&config);
 
         let mut dlg = commands.spawn(permit);
         *dialog = Some(dlg.id());
@@ -332,12 +333,8 @@ fn update_profile_for_realm(
     }
 }
 
-fn get_previous_login() -> Option<PreviousLogin> {
-    let previous_login = std::fs::read(config_file())
-        .ok()
-        .and_then(|f| serde_json::from_slice::<AppConfig>(&f).ok())
-        .unwrap_or_default()
-        .previous_login;
+fn get_previous_login(config: &AppConfig) -> Option<PreviousLogin> {
+    let previous_login = config.previous_login.clone();
 
     let mut expired = false;
     if let Some(prev) = previous_login.as_ref() {
@@ -348,7 +345,13 @@ fn get_previous_login() -> Option<PreviousLogin> {
                         let exp = line.split_once(':').unwrap().1;
                         if let Ok(exp) = chrono::DateTime::<chrono::Utc>::from_str(exp.trim()) {
                             let now: chrono::DateTime<chrono::Utc> =
-                                std::time::SystemTime::now().into();
+                                chrono::DateTime::from_timestamp_millis(
+                                    web_time::SystemTime::now()
+                                        .duration_since(web_time::UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_millis() as i64,
+                                )
+                                .unwrap();
                             if now > exp {
                                 warn!("previous login expired, removing");
                                 expired = true;
@@ -391,6 +394,7 @@ fn process_login_bridge(
     mut segment_config: ResMut<SegmentConfig>,
     mut current_profile: ResMut<CurrentUserProfile>,
     mut window: Query<&mut Window, With<PrimaryWindow>>,
+    mut config: ResMut<AppConfig>,
 ) {
     for ev in e.read().cloned() {
         match ev {
@@ -404,12 +408,13 @@ fn process_login_bridge(
             }
             SystemApi::GetPreviousLogin(rpc_result_sender) => {
                 rpc_result_sender
-                    .send(get_previous_login().map(|pl| format!("{:#x}", pl.root_address)));
+                    .send(get_previous_login(&config).map(|pl| format!("{:#x}", pl.root_address)));
             }
             SystemApi::LoginPrevious(rpc_result_sender) => {
                 let ipfs = ipfas.ipfs().clone();
+                let maybe_previous_login = get_previous_login(&config);
                 *login_task = Some(IoTaskPool::get().spawn_compat(async move {
-                    let Some(previous_login) = get_previous_login() else {
+                    let Some(previous_login) = maybe_previous_login else {
                         rpc_result_sender.send(Err("No Previous Login Available".to_string()));
                         return Err(());
                     };
@@ -500,23 +505,12 @@ fn process_login_bridge(
                 let ephemeral_key = local_wallet.signer().to_bytes().to_vec();
 
                 // store to app config
-                let mut config: AppConfig = std::fs::read(config_file())
-                    .ok()
-                    .and_then(|f| serde_json::from_slice(&f).ok())
-                    .unwrap_or_default();
                 config.previous_login = Some(PreviousLogin {
                     root_address,
                     ephemeral_key,
                     auth: auth.clone(),
                 });
-                let config_file = config_file();
-                if let Some(folder) = config_file.parent() {
-                    std::fs::create_dir_all(folder).unwrap();
-                }
-                if let Err(e) = std::fs::write(config_file, serde_json::to_string(&config).unwrap())
-                {
-                    warn!("failed to write to config: {e}");
-                }
+                platform::write_config_file(&config);
 
                 wallet.finalize(root_address, local_wallet, auth);
                 segment_config.update_identity(format!("{:#x}", wallet.address().unwrap()), false);

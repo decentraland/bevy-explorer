@@ -20,7 +20,6 @@ use common::{
         AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, ShadowSetting, SsaoSetting,
         WindowSetting,
     },
-    util::config_file,
 };
 use constrain_ui::ConstrainUiSetting;
 use frame_rate::FpsTargetSetting;
@@ -384,15 +383,7 @@ fn apply_settings(world: &mut World) {
         },
     );
 
-    let config_file = config_file();
-    if let Some(folder) = config_file.parent() {
-        std::fs::create_dir_all(folder).unwrap();
-    }
-    std::fs::write(
-        config_file,
-        serde_json::to_string(world.resource::<AppConfig>()).unwrap(),
-    )
-    .unwrap();
+    platform::write_config_file(world.resource::<AppConfig>());
 }
 
 fn apply_setting<S: AppSetting>(

@@ -33,6 +33,7 @@ clap = { workspace = true }
 opener = { workspace = true }
 urlencoding = { workspace = true }
 build-time = { workspace = true }
+web-time = { workspace = true }
 
 futures-lite = { workspace = true }
 

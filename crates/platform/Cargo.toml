@@ -6,15 +6,27 @@ edition = "2021"
 [lib]
 
 [features]
-native = ["dep:async-tungstenite"]
+native = []
 wasm = []
 
 [dependencies]
 common = { workspace = true }
 
+bevy = { workspace = true }
 http = { workspace = true }
 anyhow = { workspace = true }
 tungstenite = { workspace = true }
-async-tungstenite = { workspace = true, optional = true }
 futures-util = { workspace = true }
 reqwest = { workspace = true }
+directories = { workspace = true }
+futures-lite = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+async-tungstenite = { workspace = true }
+async-compat = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = { version = "0.3" }
+web-sys = { version = "0.3", features = ["Performance", "Window"] }
+ws_stream_wasm = "0.7"

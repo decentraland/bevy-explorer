@@ -3,10 +3,7 @@ use std::sync::Arc;
 use anyhow::anyhow;
 use bevy::{
     core::FrameCount,
-    core_pipeline::{
-        bloom::BloomSettings,
-        prepass::{DepthPrepass, NormalPrepass},
-    },
+    core_pipeline::bloom::BloomSettings,
     ecs::system::SystemParam,
     prelude::*,
     render::{
@@ -25,6 +22,7 @@ use common::{
     sets::SetupSets,
     structs::{AvatarDynamicState, EmoteCommand},
 };
+use platform::{DepthPrepass, NormalPrepass};
 use propagate::Propagate;
 use ui_core::ui_actions::{DragData, Dragged, On};
 

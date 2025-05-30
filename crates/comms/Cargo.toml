@@ -38,6 +38,7 @@ num-traits = { workspace = true }
 http = { workspace = true }
 async-compat = { workspace = true }
 multihash-codetable = { workspace = true }
+web-time = { workspace = true }
 
 modular-bitfield = "0.11"
 

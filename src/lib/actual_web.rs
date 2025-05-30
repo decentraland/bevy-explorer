@@ -1,39 +1,15 @@
-#![cfg_attr(not(feature = "console"), windows_subsystem = "windows")]
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-#[cfg(not(debug_assertions))]
-use build_time::build_time_utc;
-
-#[cfg(feature = "native")]
-use dcl_deno::init_runtime;
-
-#[cfg(feature = "wasm")]
-use dcl_wasm::init_runtime;
-
-#[cfg(feature = "native")]
-use mimalloc::MiMalloc;
-#[cfg(feature = "native")]
-#[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
-
-use std::{fs::File, io::Write, sync::OnceLock};
-
-use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
+use analytics::segment_system::SegmentConfig;
 use imposters::DclImposterPlugin;
 
 use bevy::{
-    core::TaskPoolThreadAssignmentPolicy,
     core_pipeline::{
         bloom::BloomSettings,
-        prepass::{DepthPrepass, NormalPrepass},
         tonemapping::{DebandDither, Tonemapping},
     },
-    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::ShadowFilteringMethod,
     prelude::*,
     render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
     tasks::{IoTaskPool, Task},
-    window::WindowResolution,
 };
 use bevy_console::ConsoleCommand;
 
@@ -42,18 +18,17 @@ use common::{
     inputs::InputMap,
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, AvatarDynamicState, GraphicsSettings, IVec2Arg, PreviewCommand,
-        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake,
-        SceneLoadDistance, SystemScene, Version, GROUND_RENDERLAYER,
+        AppConfig, AttachPoints, AvatarDynamicState, PreviewCommand, PrimaryCamera,
+        PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, SystemScene, Version,
+        GROUND_RENDERLAYER,
     },
     util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
 };
 use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
-    automatic_testing::AutomaticTestingPlugin,
-    initialize_scene::{PortableScenes, PortableSource, TestingData, PARCEL_SIZE},
-    update_world::{mesh_collider::GroundCollider, NoGltf},
+    initialize_scene::{PortableScenes, PortableSource, TestingData},
+    update_world::mesh_collider::GroundCollider,
     OutOfWorld, SceneRunnerPlugin,
 };
 
@@ -67,9 +42,10 @@ use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
 use ipfs::{IpfsAssetServer, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
+use platform::{DepthPrepass, NormalPrepass};
 use social::SocialPlugin;
 use system_bridge::{NativeUi, SystemBridgePlugin};
-use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
+use system_ui::SystemUiPlugin;
 use texture_camera::TextureCameraPlugin;
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
@@ -79,280 +55,45 @@ use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
 use world_ui::WorldUiPlugin;
 
-static SESSION_LOG: OnceLock<String> = OnceLock::new();
-
-pub fn version() -> String {
-    #[cfg(not(debug_assertions))]
-    return format!(
-        "{}{}",
-        env!("BEVY_EXPLORER_VERSION"),
-        (env!("BEVY_EXPLORER_LOCAL_MODIFICATION") == "true")
-            .then_some(format!("-{}", build_time_utc!("%Y-%m-%d %H:%M")))
-            .unwrap_or_default()
-    );
-
-    #[cfg(debug_assertions)]
-    "debug".to_string()
-}
-
-fn main() {
-    let session_time: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_timestamp_millis(
-        web_time::SystemTime::now()
-            .duration_since(web_time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64,
-    )
-    .unwrap();
-    let dirs = platform::project_directories().unwrap();
-    let log_dir = dirs.data_local_dir();
-    let session_log = log_dir.join(format!("{}.log", session_time.format("%Y%m%d-%H%M%S")));
-    SESSION_LOG
-        .set(session_log.to_string_lossy().into_owned())
-        .unwrap();
-    std::fs::create_dir_all(log_dir).unwrap();
-
-    let crash_file = std::fs::read_dir(log_dir)
-        .unwrap()
-        .filter_map(|f| f.ok())
-        .find(|f| f.path().extension().map(|oss| oss.to_string_lossy()) == Some("touch".into()))
-        .map(|f| {
-            f.path()
-                .parent()
-                .unwrap()
-                .join(f.path().file_stem().unwrap())
-        });
-
-    let mut args = pico_args::Arguments::from_env();
-
-    File::create(SESSION_LOG.get().unwrap())
-        .expect("failed to create log file")
-        .write_all(format!("{}\n\n", SESSION_LOG.get().unwrap()).as_bytes())
-        .expect("failed to create log file");
-
-    File::create(format!("{}.touch", SESSION_LOG.get().unwrap())).unwrap();
-    println!("log file: {}", SESSION_LOG.get().unwrap());
-
-    // initialize v8 runtime from main thread
-    init_runtime();
-
+fn main_inner() {
     // warnings before log init must be stored and replayed later
-    let mut infos = Vec::default();
-    let mut warnings = Vec::default();
     let mut app = App::new();
 
-    let config_file = platform::project_directories()
-        .unwrap()
-        .config_dir()
-        .join("config.json");
-    let base_config: AppConfig = std::fs::read(&config_file)
-        .ok()
-        .and_then(|f| {
-            infos.push(format!("config file loaded from {:?}", config_file));
-            serde_json::from_slice(&f)
-                .map_err(|e| warnings.push(format!("failed to parse config.json: {e}")))
-                .ok()
-        })
-        .unwrap_or_else(|| {
-            warnings.push(format!(
-                "config file not found at {:?}, generating default",
-                config_file
-            ));
-            Default::default()
-        });
+    let final_config: AppConfig = Default::default();
 
-    let final_config = AppConfig {
-        server: args
-            .value_from_str("--server")
-            .ok()
-            .unwrap_or(base_config.server),
-        location: args
-            .value_from_str::<_, IVec2Arg>("--location")
-            .ok()
-            .map(|va| va.0)
-            .unwrap_or(base_config.location),
-        previous_login: base_config.previous_login,
-        graphics: GraphicsSettings {
-            vsync: args
-                .value_from_str("--vsync")
-                .ok()
-                .unwrap_or(base_config.graphics.vsync),
-            log_fps: args
-                .value_from_str("--log_fps")
-                .ok()
-                .unwrap_or(base_config.graphics.log_fps),
-            fps_target: args
-                .value_from_str::<_, usize>("--fps")
-                .ok()
-                .unwrap_or(base_config.graphics.fps_target),
-            gpu_bytes_per_frame: args
-                .value_from_str::<_, usize>("--gpu_bytes_per_frame")
-                .ok()
-                .unwrap_or(base_config.graphics.gpu_bytes_per_frame),
-            ..base_config.graphics
-        },
-        scene_threads: args
-            .value_from_str("--threads")
-            .ok()
-            .unwrap_or(base_config.scene_threads),
-        scene_load_distance: args
-            .value_from_str("--distance")
-            .ok()
-            .unwrap_or(base_config.scene_load_distance),
-        scene_unload_extra_distance: args
-            .value_from_str("--unload")
-            .ok()
-            .unwrap_or(base_config.scene_unload_extra_distance),
-        scene_imposter_bake: args
-            .value_from_str("--bake")
-            .ok()
-            .map(|bake: String| match bake.to_lowercase().chars().next() {
-                None | Some('f') => SceneImposterBake::FullSpeed,
-                Some('h') => SceneImposterBake::HalfSpeed,
-                Some('q') => SceneImposterBake::QuarterSpeed,
-                Some('o') => SceneImposterBake::Off,
-                _ => panic!(),
-            })
-            .unwrap_or(SceneImposterBake::Off),
-        scene_imposter_distances: args
-            .value_from_str("--impost")
-            .ok()
-            .map(|distances: String| {
-                distances
-                    .split(",")
-                    .map(str::parse::<f32>)
-                    .collect::<Result<Vec<f32>, _>>()
-                    .unwrap()
-            })
-            .unwrap_or(base_config.scene_imposter_distances)
-            .into_iter()
-            .enumerate()
-            .map(|(ix, d)| {
-                let edge_distance = (1 << ix) as f32 * PARCEL_SIZE;
-                let diagonal_distance = (edge_distance * edge_distance * 2.0).sqrt();
-                // println!("[{ix}] -> {}", d.max(diagonal_distance));
-                d.max(diagonal_distance)
-            })
-            .collect(),
-        scene_imposter_multisample: args
-            .value_from_str("--impost_multi")
-            .ok()
-            .unwrap_or(base_config.scene_imposter_multisample),
-        sysinfo_visible: args.contains("--sysinfo"),
-        scene_log_to_console: args.contains("--scene_log_to_console"),
-        ..base_config
-    };
-
-    let content_server_override = args.value_from_str("--content-server").ok();
-
-    let test_scenes = args.value_from_str("--test_scenes").ok();
-    let test_mode = args.contains("--testing") || test_scenes.is_some();
+    let content_server_override = None;
+    let test_scenes = None;
+    let test_mode = false;
 
     app.insert_resource(TestingData {
-        inspect_hash: args.value_from_str("--inspect").ok(),
+        inspect_hash: None,
         test_mode,
         test_scenes: test_scenes.clone(),
     });
 
-    let no_avatar = args.contains("--no_avatar");
-    let no_gltf = args.contains("--no_gltf");
-    let no_fog = args.contains("--no_fog");
+    let no_fog = false;
+    let is_preview = false;
 
-    let is_preview = args.contains("--preview");
+    app.insert_resource(NativeUi {
+        login: true,
+        emote_wheel: true,
+        chat: true,
+    });
 
-    let ui_scene: Option<String> = args.value_from_str("--ui").ok();
-    if let Some(source) = ui_scene {
-        app.add_systems(Update, process_system_ui_scene);
-        app.insert_resource(NativeUi {
-            login: false,
-            emote_wheel: false,
-            chat: !args.contains("--no-chat"),
-        });
-        app.insert_resource(SystemScene {
-            source: Some(source),
-            preview: args.contains("--ui-preview"),
-            hot_reload: None,
-            hash: None,
-        });
-    } else {
-        app.insert_resource(NativeUi {
-            login: true,
-            emote_wheel: true,
-            chat: true,
-        });
-    }
-
-    let remaining = args.finish();
-    if !remaining.is_empty() {
-        println!(
-            "failed to parse args: {}",
-            remaining
-                .iter()
-                .map(|arg| arg.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(" ")
-        );
-        return;
-    }
-
-    let present_mode = match final_config.graphics.vsync {
-        true => bevy::window::PresentMode::AutoVsync,
-        false => bevy::window::PresentMode::AutoNoVsync,
-    };
-
-    let version_hash = version();
-    let version = format!("{VERSION} ({version_hash})");
+    let version = format!("webgl proof of concept");
 
     app.insert_resource(Version(version.clone()))
         .insert_resource(final_config.audio.clone())
         .add_plugins(
             DefaultPlugins
-                .set(TaskPoolPlugin {
-                    task_pool_options: TaskPoolOptions {
-                        async_compute: TaskPoolThreadAssignmentPolicy {
-                            min_threads: 2,
-                            max_threads: 8,
-                            percent: 0.25,
-                        },
-                        io: TaskPoolThreadAssignmentPolicy {
-                            min_threads: 8,
-                            max_threads: 8,
-                            percent: 0.25,
-                        },
-                        compute: TaskPoolThreadAssignmentPolicy {
-                            min_threads: 2,
-                            max_threads: 8,
-                            percent: 0.25,
-                        },
-                        ..Default::default()
-                    },
-                })
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        title: "Decentraland Bevy Explorer".to_owned(),
-                        present_mode,
-                        resolution: WindowResolution::new(1280.0, 720.0)
-                            .with_scale_factor_override(1.0),
-                        ..Default::default()
+                        // provide the ID selector string here
+                        canvas: Some("#mygame-canvas".into()),
+                        // ... any other window properties ...
+                        ..default()
                     }),
                     ..Default::default()
-                })
-                .set(bevy::log::LogPlugin {
-                    filter: "wgpu=error,naga=error,bevy_animation=error,matrix=error".to_string(),
-                    custom_layer: |_| {
-                        let (non_blocking, guard) = tracing_appender::non_blocking(
-                            File::options()
-                                .write(true)
-                                .open(SESSION_LOG.get().unwrap())
-                                .unwrap(),
-                        );
-                        Box::leak(guard.into());
-                        Some(Box::new(
-                            bevy::log::tracing_subscriber::fmt::layer()
-                                .with_writer(non_blocking)
-                                .with_ansi(false),
-                        ))
-                    },
-                    ..default()
                 })
                 .build()
                 .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
@@ -365,23 +106,14 @@ fn main() {
                 .add_before::<IpfsIoPlugin, _>(NftReaderPlugin),
         );
 
-    if final_config.graphics.log_fps || is_preview {
-        app.add_plugins(FrameTimeDiagnosticsPlugin);
-    }
-    if final_config.graphics.log_fps {
-        app.add_plugins(LogDiagnosticsPlugin::default());
-    }
-
     app.insert_resource(InputMap {
         inputs: final_config.inputs.0.clone().into_iter().collect(),
     });
 
-    // Analytics
-    app.add_plugins(MetricsPlugin);
     app.insert_resource(SegmentConfig::new(
         final_config.user_id.clone(),
         Uuid::new_v4().to_string(),
-        version_hash,
+        "web test".to_owned(),
     ));
 
     app.insert_resource(PreviewMode {
@@ -405,10 +137,6 @@ fn main() {
     });
 
     app.insert_resource(final_config);
-    if no_gltf {
-        app.insert_resource(NoGltf(true));
-    }
-
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
 
     app.add_plugins(UtilsPlugin)
@@ -434,19 +162,7 @@ fn main() {
         .add_plugins(TextureCameraPlugin)
         .add_plugins(SystemBridgePlugin { bare: false });
 
-    if let Some(crashed) = crash_file {
-        app.add_plugins(CrashReportPlugin {
-            file: crashed.canonicalize().unwrap(),
-        });
-    }
-
-    if !no_avatar {
-        app.add_plugins(AvatarPlugin);
-    }
-
-    if test_scenes.is_some() {
-        app.add_plugins(AutomaticTestingPlugin);
-    }
+    app.add_plugins(AvatarPlugin);
 
     app.add_plugins(AudioPlugin)
         .add_plugins(RestrictedActionsPlugin)
@@ -465,23 +181,7 @@ fn main() {
 
     info!("Bevy-Explorer version {}", version);
 
-    // replay any logs
-    for info in infos {
-        info!("{}", info);
-    }
-    for warning in warnings {
-        warn!(warning);
-    }
-
-    // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
-    // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
-    // bevy_mod_debugdump::print_main_schedule(&mut app);
-    #[cfg(not(feature = "console"))]
-    log_panics::init();
-
     app.run();
-
-    let _ = std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap()));
 }
 
 fn setup(
@@ -711,4 +411,18 @@ pub fn process_system_ui_scene(
         }
         None => *task = Some(t),
     }
+}
+
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen(start)]
+pub fn initialize() -> Result<(), JsValue> {
+    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+    console_log::init_with_level(log::Level::Info).expect("error initializing logger");
+    Ok(())
+}
+
+#[wasm_bindgen]
+pub fn wasm_run() {
+    main_inner();
 }

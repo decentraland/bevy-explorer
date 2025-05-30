@@ -32,3 +32,4 @@ futures-util = { workspace = true }
 rand = { workspace = true }
 http = { workspace = true }
 platform = { workspace = true }
+web-time = { workspace = true }

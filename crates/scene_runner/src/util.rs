@@ -14,7 +14,7 @@ use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use clap::builder::StyledStr;
 use common::{
     structs::{PreviewCommand, PrimaryUser},
-    util::{project_directories, TaskExt},
+    util::TaskExt,
 };
 use console::DoAddConsoleCommand;
 use futures_lite::AsyncReadExt;
@@ -90,9 +90,15 @@ fn debug_dump_scene(
                 return;
             };
 
+            if ipfas.ipfs().cache_path().is_none() {
+                warn!("no cache");
+                return;
+            }
+
             let dump_folder = ipfas
                 .ipfs()
                 .cache_path()
+                .unwrap()
                 .to_owned()
                 .join("scene_dump")
                 .join(&scene.hash);
@@ -243,6 +249,11 @@ fn clear_store_command(
     };
 
     if let Some(Ok(ClearStoreCommand { hash })) = input.take() {
+        let Some(project_directories) = platform::project_directories() else {
+            warn!("not implemented");
+            return;
+        };
+
         if let Some(hash) = hash {
             if let Some(ctx) = live_scenes
                 .scenes
@@ -253,7 +264,7 @@ fn clear_store_command(
                     multihash_codetable::Code::Sha2_256.digest(ctx.storage_root.as_bytes());
                 let storage_hash = BASE64_URL_SAFE_NO_PAD.encode(storage_digest.digest());
                 remove(
-                    &project_directories().data_local_dir().join("LocalStorage"),
+                    &project_directories.data_local_dir().join("LocalStorage"),
                     &storage_hash,
                 );
             }
@@ -261,7 +272,7 @@ fn clear_store_command(
         } else {
             // all
             live_scenes.scenes.clear();
-            remove(project_directories().data_local_dir(), "LocalStorage");
+            remove(project_directories.data_local_dir(), "LocalStorage");
             live_scenes.block_new_scenes = clear_task.is_some();
         }
     }

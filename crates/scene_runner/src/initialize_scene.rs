@@ -40,10 +40,10 @@ use crate::{
     SceneThreadHandle,
 };
 
-#[cfg(feature="deno")]
+#[cfg(feature = "deno")]
 use dcl_deno::spawn_scene;
 
-#[cfg(feature="wasm")]
+#[cfg(feature = "wasm")]
 use dcl_wasm::spawn_scene;
 
 #[derive(Default)]

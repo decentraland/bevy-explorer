@@ -3,7 +3,9 @@ use bevy_simple_text_input::{
     TextInputBundle, TextInputPlaceholder, TextInputPlugin, TextInputSettings, TextInputSubmitEvent,
 };
 use common::util::{AsH160, TryPushChildrenEx};
-use social::{DirectChatMessage, FriendshipEventBody, SocialClient, SocialClientHandler, SocialPlugin};
+use social::{
+    DirectChatMessage, FriendshipEventBody, SocialClient, SocialClientHandler, SocialPlugin,
+};
 use tokio::sync::mpsc::unbounded_channel;
 use wallet::{Wallet, WalletPlugin};
 

@@ -277,7 +277,13 @@ impl bevy_atmosphere::model::RegisterAtmosphereModel for NishitaCloud {
 
 pub fn init_noise(size: usize) -> Image {
     // let fbm = Fbm::<Perlin>::new(170);
-    let datetime: chrono::DateTime<chrono::Utc> = std::time::SystemTime::now().into();
+    let datetime: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_timestamp_millis(
+        web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64,
+    )
+    .unwrap();
     let seed = datetime.date_naive().day();
     let noise_pixels = PlaneMapBuilder::new(Perlin::new(seed))
         .set_size(size, size)

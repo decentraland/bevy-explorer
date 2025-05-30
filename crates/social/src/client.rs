@@ -64,7 +64,13 @@ struct SocialLogin {
 
 impl SocialLogin {
     async fn try_new(wallet: &wallet::Wallet) -> Result<Self, anyhow::Error> {
-        let timestamp: chrono::DateTime<chrono::Utc> = std::time::SystemTime::now().into();
+        let timestamp: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_timestamp_millis(
+            web_time::SystemTime::now()
+                .duration_since(web_time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64,
+        )
+        .unwrap();
         let timestamp = format!("{}", timestamp.timestamp_millis());
 
         let auth_chain = wallet

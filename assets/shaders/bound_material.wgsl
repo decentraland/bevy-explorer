@@ -22,6 +22,7 @@ struct SceneBounds {
     distance: f32,
     flags: u32,
     num_bounds: u32,
+    _pad: u32,
 }
 
 fn unpack_bounds(packed: u32) -> vec2<f32> {

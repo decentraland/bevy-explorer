@@ -61,6 +61,8 @@ pub trait State {
 }
 
 #[cfg(feature = "deno")]
+use std::ops::{Deref, DerefMut};
+#[cfg(feature = "deno")]
 impl State for deno_core::OpState {
     fn borrow<T: 'static>(&self) -> &T {
         self.deref().borrow()

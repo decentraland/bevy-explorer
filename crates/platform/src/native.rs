@@ -1,4 +1,5 @@
 use async_tungstenite::{async_std::ConnectStream, WebSocketStream};
+use common::structs::AppConfig;
 use futures_util::{
     sink::SinkExt,
     stream::{SplitSink, SplitStream},
@@ -63,3 +64,26 @@ where
 }
 
 pub trait ReqwestBuilderExt {}
+
+pub fn compat<F>(f: F) -> async_compat::Compat<F> {
+    async_compat::Compat::new(f)
+}
+
+pub fn project_directories() -> Option<directories::ProjectDirs> {
+    directories::ProjectDirs::from("org", "decentraland", "BevyExplorer")
+}
+
+pub fn write_config_file(config: &AppConfig) {
+    let config_file = project_directories()
+        .unwrap()
+        .config_dir()
+        .join("config.json");
+
+    if let Some(folder) = config_file.parent() {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    let _ = std::fs::write(config_file, serde_json::to_string(&*config).unwrap());
+}
+
+// re-export prepass types
+pub use bevy::core_pipeline::prepass::{DepthPrepass, NormalPrepass};

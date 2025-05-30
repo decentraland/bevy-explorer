@@ -20,3 +20,4 @@ bevy_dui = { workspace = true }
 ipfs = { workspace = true }
 serde_json = { workspace = true }
 dcl_component = { workspace = true }
+platform = { workspace = true }

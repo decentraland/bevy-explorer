@@ -725,6 +725,7 @@ dependencies = [
  "ipfs",
  "itertools 0.12.1",
  "once_cell",
+ "platform",
  "propagate",
  "rapier3d-f64",
  "reqwest 0.12.12",
@@ -2001,7 +2002,7 @@ dependencies = [
 [[package]]
 name = "boimp"
 version = "0.1.1"
-source = "git+https://github.com/robtfm/boimp?branch=0.1.1#5d398ebceab2681d4e29377a64de2bb7a2503ef3"
+source = "git+https://github.com/robtfm/boimp?branch=0.1.1#107ee8394b20892eb5348579e463b4b372f7ee24"
 dependencies = [
  "anyhow",
  "async-channel 2.3.1",
@@ -2565,6 +2566,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "wallet",
+ "web-time",
 ]
 
 [[package]]
@@ -3191,6 +3193,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "once_cell",
+ "platform",
  "reqwest 0.12.12",
  "serde",
  "serde_json",
@@ -3338,6 +3341,7 @@ dependencies = [
  "uuid 1.17.0",
  "visuals",
  "wallet",
+ "web-time",
  "world_ui",
 ]
 
@@ -5852,6 +5856,7 @@ dependencies = [
  "bimap",
  "common",
  "dcl_component",
+ "platform",
  "serde_json",
  "strum 0.27.1",
  "system_bridge",
@@ -5925,6 +5930,7 @@ dependencies = [
  "url",
  "urlencoding",
  "urn",
+ "web-time",
 ]
 
 [[package]]
@@ -8213,12 +8219,20 @@ name = "platform"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-compat",
  "async-tungstenite",
+ "bevy",
  "common",
+ "directories",
+ "futures-lite 1.13.0",
  "futures-util",
  "http 1.2.0",
+ "js-sys",
  "reqwest 0.12.12",
+ "serde_json",
  "tungstenite 0.21.0",
+ "web-sys",
+ "ws_stream_wasm",
 ]
 
 [[package]]
@@ -9725,6 +9739,7 @@ dependencies = [
  "nalgebra",
  "once_cell",
  "petgraph",
+ "platform",
  "propagate",
  "rand 0.8.5",
  "rapier3d-f64",
@@ -9737,6 +9752,7 @@ dependencies = [
  "ui_core",
  "urlencoding",
  "wallet",
+ "web-time",
  "world_ui",
 ]
 
@@ -10239,6 +10255,7 @@ dependencies = [
  "urlencoding",
  "urn",
  "wallet",
+ "web-time",
 ]
 
 [[package]]
@@ -10695,6 +10712,7 @@ dependencies = [
  "common",
  "dcl_component",
  "ipfs",
+ "platform",
  "serde",
  "serde_json",
  "tokio",
@@ -10729,6 +10747,7 @@ dependencies = [
  "input_manager",
  "ipfs",
  "opener",
+ "platform",
  "reqwest 0.12.12",
  "scene_material",
  "scene_runner",
@@ -10743,6 +10762,7 @@ dependencies = [
  "urlencoding",
  "urn",
  "wallet",
+ "web-time",
  "world_ui",
 ]
 
@@ -10822,6 +10842,7 @@ dependencies = [
  "input_manager",
  "ipfs",
  "opener",
+ "platform",
  "propagate",
  "reqwest 0.12.12",
  "scene_material",
@@ -11976,6 +11997,8 @@ dependencies = [
  "common",
  "console",
  "noise",
+ "platform",
+ "web-time",
 ]
 
 [[package]]
@@ -12059,6 +12082,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "urlencoding",
+ "web-time",
 ]
 
 [[package]]
