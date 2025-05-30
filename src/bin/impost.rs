@@ -5,10 +5,7 @@ use comms::{
 };
 use console::ConsolePlugin;
 
-#[cfg(feature = "native")]
 use dcl_deno::init_runtime;
-#[cfg(feature = "wasm")]
-use dcl_wasm::init_runtime;
 
 use imposters::{render::ImposterMissing, DclImposterPlugin};
 
