@@ -1,6 +1,6 @@
 use analytics::segment_system::SegmentConfig;
 use imposters::DclImposterPlugin;
-
+use std::str::FromStr;
 use bevy::{
     core_pipeline::{
         bloom::BloomSettings,
@@ -20,7 +20,7 @@ use common::{
     structs::{
         AppConfig, AttachPoints, AvatarDynamicState, PreviewCommand, PrimaryCamera,
         PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, SystemScene, Version,
-        GROUND_RENDERLAYER,
+        GROUND_RENDERLAYER, IVec2Arg,
     },
     util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
 };
@@ -55,11 +55,15 @@ use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
 use world_ui::WorldUiPlugin;
 
-fn main_inner() {
+fn main_inner(server: &str, location: &str) {
     // warnings before log init must be stored and replayed later
     let mut app = App::new();
 
-    let final_config: AppConfig = Default::default();
+    let final_config = AppConfig {
+        server: server.to_owned(),
+        location: IVec2Arg::from_str(location).map(|l| l.0).unwrap_or(IVec2::ZERO),
+        ..Default::default()
+    };
 
     let content_server_override = None;
     let test_scenes = None;
@@ -423,6 +427,6 @@ pub fn initialize() -> Result<(), JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn wasm_run() {
-    main_inner();
+pub fn wasm_run(realm: &str, location: &str) {
+    main_inner(realm, location);
 }

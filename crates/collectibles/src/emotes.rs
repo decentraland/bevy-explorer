@@ -1,8 +1,6 @@
-use std::any::TypeId;
-
 use anyhow::anyhow;
 use bevy::{
-    asset::{AssetLoader, LoadState, LoadedFolder},
+    asset::AssetLoader,
     gltf::Gltf,
     prelude::*,
     utils::{ConditionalSendFuture, HashMap, HashSet},
@@ -80,7 +78,6 @@ pub struct EmoteRepresentation {
 enum AnimLoadState {
     #[default]
     Init,
-    WaitingForFolder(Handle<LoadedFolder>),
     WaitingForGltfs(Vec<Handle<Gltf>>),
     Done,
 }
@@ -93,26 +90,38 @@ fn load_animations(
     asset_server: Res<AssetServer>,
     mut gltfs: ResMut<Assets<Gltf>>,
     mut state: Local<AnimLoadState>,
-    folders: Res<Assets<LoadedFolder>>,
     mut emotes: CollectibleManager<Emote>,
     mut base_emotes: ResMut<BaseEmotes>,
 ) {
     match &mut *state {
         AnimLoadState::Init => {
-            *state = AnimLoadState::WaitingForFolder(asset_server.load_folder("animations"));
-        }
-        AnimLoadState::WaitingForFolder(h_folder) => {
-            if asset_server.load_state(h_folder.id()) == LoadState::Loaded {
-                let folder = folders.get(h_folder.id()).unwrap();
-                *state = AnimLoadState::WaitingForGltfs(
-                    folder
-                        .handles
-                        .iter()
-                        .filter(|h| h.type_id() == TypeId::of::<Gltf>())
-                        .map(|h| h.clone().typed())
-                        .collect(),
-                )
-            }
+            *state = AnimLoadState::WaitingForGltfs(vec![
+                asset_server.load("animations/clap.glb"),
+                asset_server.load("animations/Dance_Female.glb"),
+                asset_server.load("animations/Dance_Male.glb"),
+                asset_server.load("animations/disco_dance.glb"),
+                asset_server.load("animations/dont_wanna_see.glb"),
+                asset_server.load("animations/F_FistPump.glb"),
+                asset_server.load("animations/f_head_explode.glb"),
+                asset_server.load("animations/F_RobotDance.glb"),
+                asset_server.load("animations/Hands_Air.glb"),
+                asset_server.load("animations/idle.glb"),
+                asset_server.load("animations/jump2.glb"),
+                asset_server.load("animations/kiss.glb"),
+                asset_server.load("animations/mchammer-dance.glb"),
+                asset_server.load("animations/M_FistPump.glb"),
+                asset_server.load("animations/m_head_explode.glb"),
+                asset_server.load("animations/M_RobotDance.glb"),
+                asset_server.load("animations/Raise_Hand.glb"),
+                asset_server.load("animations/run.glb"),
+                asset_server.load("animations/shrug.glb"),
+                asset_server.load("animations/tektonik-dance.glb"),
+                asset_server.load("animations/Throw Money-Emote.glb"),
+                asset_server.load("animations/tik-tok-dance.glb"),
+                asset_server.load("animations/walk.glb"),
+                asset_server.load("animations/Wave_Female.glb"),
+                asset_server.load("animations/Wave_Male.glb"),            
+            ]);
         }
         AnimLoadState::WaitingForGltfs(ref mut h_gltfs) => {
             h_gltfs.retain(
@@ -204,9 +213,10 @@ fn load_animations(
                                     hash: Default::default(),
                                     urn: urn.as_str().to_string(),
                                     thumbnail: if register_base {
-                                        asset_server.load(format!(
-                                            "animations/thumbnails/{network_name}.png"
-                                        ))
+                                        // asset_server.load(format!(
+                                        //     "animations/thumbnails/{network_name}.png"
+                                        // ))
+                                        asset_server.load("images/redx.png")
                                     } else {
                                         Handle::default()
                                     },
