@@ -213,10 +213,10 @@ fn load_animations(
                                     hash: Default::default(),
                                     urn: urn.as_str().to_string(),
                                     thumbnail: if register_base {
-                                        // asset_server.load(format!(
-                                        //     "animations/thumbnails/{network_name}.png"
-                                        // ))
-                                        asset_server.load("images/redx.png")
+                                        asset_server.load(format!(
+                                            "animations/thumbnails/{network_name}.png"
+                                        ))
+                                        // asset_server.load("images/redx.png")
                                     } else {
                                         Handle::default()
                                     },
