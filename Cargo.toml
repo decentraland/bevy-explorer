@@ -8,6 +8,10 @@ crate-type = ["cdylib", "rlib"]
 path = "src/lib/web.rs"
 name = "webgpu_build"
 
+# to build wasm lib:
+# - copy ./assets to deploy/web/assets
+# - wasm-pack build --dev --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm" && npx serve deploy/web
+
 [features]
 default = ["native", "livekit", "ffmpeg", "inspect", "social"]
 # default = ["wasm"]
@@ -205,10 +209,10 @@ bevy_simple_text_input = { workspace = true }
 dcl_deno = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-#console_error_panic_hook = "0.1.7"
-#console_log = "1.0"
-#log = "0.4"
-#wasm-bindgen = { workspace = true, optional = true }
+console_error_panic_hook = "0.1.7"
+console_log = "1.0"
+log = "0.4"
+wasm-bindgen = { workspace = true }
 
 [build-dependencies]
 prost-build = "0.11.8"

@@ -355,7 +355,7 @@ fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>)
     }
 }
 
-#[allow(clippy::type_complexity)]
+/*#[allow(clippy::type_complexity)]
 pub fn process_system_ui_scene(
     mut system_scene: ResMut<SystemScene>,
     mut task: Local<Option<Task<Result<(String, PortableSource), String>>>>,
@@ -412,6 +412,7 @@ pub fn process_system_ui_scene(
         None => *task = Some(t),
     }
 }
+*/
 
 use wasm_bindgen::prelude::*;
 
