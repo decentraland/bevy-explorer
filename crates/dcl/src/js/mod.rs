@@ -60,9 +60,9 @@ pub trait State {
     fn try_take<T: 'static>(&mut self) -> Option<T>;
 }
 
-#[cfg(feature = "deno")]
+#[cfg(not(target_arch="wasm32"))]
 use std::ops::{Deref, DerefMut};
-#[cfg(feature = "deno")]
+#[cfg(not(target_arch="wasm32"))]
 impl State for deno_core::OpState {
     fn borrow<T: 'static>(&self) -> &T {
         self.deref().borrow()

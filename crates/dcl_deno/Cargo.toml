@@ -12,7 +12,7 @@ inspect = ["fastwebsockets", "hyper", "uuid"]
 [dependencies]
 common = { workspace = true }
 dcl_component = { workspace = true }
-dcl = { workspace = true, features=["deno"] }
+dcl = { workspace = true }
 ipfs = { workspace = true }
 wallet = { workspace = true }
 system_bridge = { workspace = true }
