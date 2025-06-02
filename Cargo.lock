@@ -4126,7 +4126,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "ws_stream_wasm",
+ "ws_stream_wasm 0.7.4 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -8236,7 +8236,7 @@ dependencies = [
  "serde_json",
  "tungstenite 0.21.0",
  "web-sys",
- "ws_stream_wasm",
+ "ws_stream_wasm 0.7.4 (git+https://github.com/robtfm/ws_stream_wasm)",
 ]
 
 [[package]]
@@ -13051,6 +13051,24 @@ dependencies = [
  "rustc_version 0.4.1",
  "send_wrapper 0.6.0",
  "thiserror 1.0.69",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
+name = "ws_stream_wasm"
+version = "0.7.4"
+source = "git+https://github.com/robtfm/ws_stream_wasm#3a5af625c9bc30753f9b82d7b6d7316831aee513"
+dependencies = [
+ "async_io_stream",
+ "futures",
+ "js-sys",
+ "log",
+ "pharos",
+ "rustc_version 0.4.1",
+ "send_wrapper 0.6.0",
+ "thiserror 2.0.11",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

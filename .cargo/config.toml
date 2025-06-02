@@ -11,11 +11,15 @@ rustflags = ["-C", "link-args=-ObjC"]
 rustflags = ["-C", "link-args=-ObjC"]
 
 [target.wasm32-unknown-unknown]
-rustflags = ["--cfg=web_sys_unstable_apis"]
+# rustflags = ["--cfg=web_sys_unstable_apis"]
+rustflags = ["--cfg=web_sys_unstable_apis", "-C", "target-feature=+atomics,+bulk-memory,+mutable-globals", "-C", "link-arg=--shared-memory"]
 
 [env]
 RUST_BACKTRACE = "1"
 CARGO_FEATURE_CRT_STATIC = "ohyes"
 
-# [build]
-# target = "wasm32-unknown-unknown"
+[unstable]
+build-std = ["std", "panic_abort"]
+
+[build]
+target = "wasm32-unknown-unknown"
