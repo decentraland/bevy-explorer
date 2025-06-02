@@ -134,8 +134,9 @@ pub async fn op_set_avatar(
     state: Rc<RefCell<OpState>>,
     #[serde] base: Option<PbAvatarBase>,
     #[serde] equip: Option<PbAvatarEquippedData>,
+    has_claimed_name: Option<bool>,
 ) -> Result<u32, anyhow::Error> {
-    dcl::js::system_api::op_set_avatar(state, base, equip).await
+    dcl::js::system_api::op_set_avatar(state, base, equip, has_claimed_name).await
 }
 
 #[op2(async)]
