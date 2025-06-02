@@ -10,6 +10,7 @@ name = "webgpu_build"
 
 # to build wasm lib:
 # - copy ./assets to deploy/web/assets
+# - copy ./crates/dcl/src/js/modules to deploy/web/modules
 # - wasm-pack build --dev --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm" && npx serve deploy/web
 
 [features]
@@ -148,6 +149,7 @@ multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
 strum = "0.27"
 strum_macros = "0.27"
 wasm-bindgen = "0.2.92"
+wasm-bindgen-futures = "0.4.50"
 web-time = "1.1"
 
 [dependencies]

@@ -8,7 +8,7 @@ pub fn ops() -> Vec<OpDecl> {
 }
 
 #[op2(fast)]
-fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, #[arraybuffer] messages: &[u8]) {
+fn op_crdt_send_to_renderer(op_state: Rc<RefCell<OpState>>, #[buffer] messages: &[u8]) {
     dcl::js::engine::crdt_send_to_renderer(op_state, messages)
 }
 

@@ -6,3 +6,4 @@
 config.json
 /log
 /deploy/web/assets
+/deploy/web/modules

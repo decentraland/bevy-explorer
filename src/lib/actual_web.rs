@@ -10,6 +10,7 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bevy_console::ConsoleCommand;
+use dcl_wasm::init_runtime;
 use imposters::DclImposterPlugin;
 use std::str::FromStr;
 
@@ -58,6 +59,8 @@ use world_ui::WorldUiPlugin;
 fn main_inner(server: &str, location: &str) {
     // warnings before log init must be stored and replayed later
     let mut app = App::new();
+
+    init_runtime();
 
     let final_config = AppConfig {
         server: server.to_owned(),
@@ -424,7 +427,7 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(start)]
 pub fn initialize() -> Result<(), JsValue> {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-    console_log::init_with_level(log::Level::Info).expect("error initializing logger");
+    let _ = console_log::init_with_level(log::Level::Info);
     Ok(())
 }
 
