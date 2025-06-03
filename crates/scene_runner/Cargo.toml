@@ -16,7 +16,6 @@ gen-tests = []
 common = { workspace = true }
 dcl_component = { workspace = true }
 dcl = { workspace = true }
-dcl_wasm = { workspace = true, optional = true }
 ipfs = { workspace = true }
 comms = { workspace = true }
 ui_core = { workspace = true }
