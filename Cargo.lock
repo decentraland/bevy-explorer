@@ -7817,13 +7817,14 @@ dependencies = [
 
 [[package]]
 name = "opener"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c62dcb6174f9cb326eac248f07e955d5d559c272730b6c03e396b443b562788"
+version = "0.8.2"
+source = "git+https://github.com/robtfm/opener#462051236eb3882332930b1ecf0319e3505ae0a8"
 dependencies = [
  "bstr",
  "normpath",
- "winapi",
+ "wasm-bindgen",
+ "web-sys",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
