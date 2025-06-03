@@ -5,6 +5,7 @@ import init, {
 
 const initialRealmInput = document.getElementById('initialRealm');
 const locationInput = document.getElementById('location');
+const systemSceneInput = document.getElementById('systemScene');
 const initButton = document.getElementById('initButton');
 const canvas = document.getElementById('mygame-canvas');
 
@@ -24,6 +25,12 @@ function populateInputsFromQueryParams() {
         locationInput.value = decodeURIComponent(locationParam);
     } else if (locationInput) {
         locationInput.value = "0,0";
+    }
+    const systemSceneParam = queryParams.get('systemScene');
+    if (systemSceneInput && systemSceneParam) {
+        systemSceneInput.value = decodeURIComponent(systemSceneParam);
+    } else if (systemSceneInput) {
+        systemSceneInput.value = "";
     }
 }
 function hideSettings() {
@@ -82,9 +89,10 @@ async function run() {
         initButton.onclick = () => {
             const initialRealm = initialRealmInput.value;
             const location = locationInput.value;
-            console.log(`[Main JS] "Go" button clicked. Initial Realm: "${initialRealm}", Location: "${location}"`);
+            const systemScene = systemSceneInput.value;
+            console.log(`[Main JS] "Go" button clicked. Initial Realm: "${initialRealm}", Location: "${location}", System Scene: "${systemScene}"`);
             hideSettings();
-            wasm_run(initialRealm, location);
+            wasm_run(initialRealm, location, systemScene);
         };
 
     } catch (error) {

@@ -56,7 +56,7 @@ use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
 use world_ui::WorldUiPlugin;
 
-fn main_inner(server: &str, location: &str) {
+fn main_inner(server: &str, location: &str, system_scene: &str) {
     // warnings before log init must be stored and replayed later
     let mut app = App::new();
 
@@ -83,11 +83,27 @@ fn main_inner(server: &str, location: &str) {
     let no_fog = false;
     let is_preview = false;
 
-    app.insert_resource(NativeUi {
-        login: true,
-        emote_wheel: true,
-        chat: true,
-    });
+    let ui_scene = if system_scene.is_empty() { None } else { Some(system_scene.to_owned()) };
+    if let Some(source) = ui_scene {
+        app.add_systems(Update, process_system_ui_scene);
+        app.insert_resource(NativeUi {
+            login: false,
+            emote_wheel: false,
+            chat: false,
+        });
+        app.insert_resource(SystemScene {
+            source: Some(source),
+            preview: false,
+            hot_reload: None,
+            hash: None,
+        });
+    } else {
+        app.insert_resource(NativeUi {
+            login: true,
+            emote_wheel: true,
+            chat: true,
+        });
+    }
 
     let version = format!("webgl proof of concept");
 
@@ -432,6 +448,6 @@ pub fn initialize() -> Result<(), JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn wasm_run(realm: &str, location: &str) {
-    main_inner(realm, location);
+pub fn wasm_run(realm: &str, location: &str, system_scene: &str) {
+    main_inner(realm, location, system_scene);
 }
