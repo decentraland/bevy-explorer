@@ -54,34 +54,20 @@ async function run() {
         });
 
         window.spawn_and_init_sandbox = async () => {
-            return new Promise((resolve, reject) => {
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none'; 
-                iframe.sandbox = 'allow-scripts allow-same-origin';
-
-                iframe.onload = () => {
-                    try {
-                        iframe.contentWindow.postMessage({
-                            type: 'INIT_SANDBOX',
+            return new Promise((resolve, _reject) => {
+                const sandboxWorker = new Worker('sandbox_worker.js', { type: 'module' });
+                sandboxWorker.onmessage = (workerEvent) => {
+                    if (workerEvent.data.type === 'READY') {
+                        sandboxWorker.postMessage({
+                            type: 'INIT_WORKER',
                             payload: {
                                 compiledModule,
                                 sharedMemory
                             }
-                        }, '*'); 
-                        resolve();
-                    } catch (e) {
-                        console.error("[Main JS] Error posting message to iframe:", e);
-                        reject(e);
+                        });
                     }
+                    resolve()
                 };
-
-                iframe.onerror = (e) => {
-                     console.error("[Main JS] Sandboxed iframe failed to load.", e);
-                     reject(new Error("Iframe failed to load"));
-                };
-
-                iframe.src = 'iframe_controller.html';
-                document.body.appendChild(iframe);
             });
         };
 
