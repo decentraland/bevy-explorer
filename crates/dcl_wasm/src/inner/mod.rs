@@ -213,3 +213,33 @@ impl dcl::js::State for WorkerContext {
         self.state.try_take()
     }
 }    
+
+#[macro_export]
+macro_rules! serde_parse {
+    ($js_value: ident) => {
+        let $js_value = serde_wasm_bindgen::from_value($js_value).unwrap();
+    };
+}
+
+#[macro_export]
+macro_rules! serde_result {
+    ($code: expr) => {
+        $code
+            .map(|v| serde_wasm_bindgen::to_value(&v).unwrap())
+            .map_err(|e| WasmError::from(e))
+    };
+}
+
+pub struct WasmError(anyhow::Error);
+
+impl From<anyhow::Error> for WasmError {
+    fn from(value: anyhow::Error) -> Self {
+        Self(value)
+    }
+}
+
+impl From<WasmError> for JsValue {
+    fn from(value: WasmError) -> Self {
+        js_sys::Error::new(&value.0.to_string()).into()
+    }
+}
