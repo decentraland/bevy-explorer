@@ -11,6 +11,7 @@ const canvas = document.getElementById('mygame-canvas');
 
 let initialRealmGroup = document.getElementById('initialRealm')?.parentElement;
 let locationGroup = document.getElementById('location')?.parentElement;
+let systemSceneGroup = document.getElementById('systemScene')?.parentElement;
 
 function populateInputsFromQueryParams() {
     const queryParams = new URLSearchParams(window.location.search);
@@ -36,6 +37,7 @@ function populateInputsFromQueryParams() {
 function hideSettings() {
     if (initialRealmGroup) initialRealmGroup.style.display = 'none';
     if (locationGroup) locationGroup.style.display = 'none';
+    if (systemSceneGroup) systemSceneGroup.style.display = 'none';
     if (initButton) initButton.style.display = 'none';
 }
 

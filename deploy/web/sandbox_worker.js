@@ -22,6 +22,7 @@ const allowListES2020 = [
   "escape",
   "eval",
   "EvalError",
+  "fetch",
   "Float32Array",
   "Float64Array",
   "Function",
@@ -59,6 +60,7 @@ const allowListES2020 = [
   "unescape",
   "URIError",
   "WeakMap",
+  "WebSocket",
   "WeakSet",
 ];
 
