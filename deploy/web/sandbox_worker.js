@@ -119,8 +119,8 @@ function createJsContext(wasmApi, context) {
     },
     get(_target, propKey, _receiver) {
       if (propKey === "eval") return eval;
-      if (propKey === "globalThis") return proxy;
-      if (propKey === "global") return proxy;
+      if (propKey === "globalThis") return jsProxy;
+      if (propKey === "global") return jsProxy;
       if (propKey === "undefined") return undefined;
       if (jsContext[propKey] !== undefined) return jsContext[propKey];
       if (allowListES2020.includes(propKey)) {
