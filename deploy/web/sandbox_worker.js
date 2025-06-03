@@ -1,173 +1,248 @@
 // sandbox_worker.js - Runs inside the final Web Worker, the most isolated environment.
 
 // Import the wasm-bindgen generated JS glue code.
-import init, * as wasm_bindgen_exports from './pkg/webgpu_build.js';
+import init, * as wasm_bindgen_exports from "./pkg/webgpu_build.js";
 
-console.log("[Sandbox Worker] Script loaded. Awaiting 'INIT_WORKER' message.");
+console.log("[Sandbox Worker] Starting");
 
-const selfWorker = self;
+const allowListES2020 = [
+  "Array",
+  "ArrayBuffer",
+  "BigInt",
+  "BigInt64Array",
+  "BigUint64Array",
+  "Boolean",
+  "DataView",
+  "Date",
+  "decodeURI",
+  "decodeURIComponent",
+  "encodeURI",
+  "encodeURIComponent",
+  "Error",
+  "escape",
+  "eval",
+  "EvalError",
+  "Float32Array",
+  "Float64Array",
+  "Function",
+  "Infinity",
+  "Int16Array",
+  "Int32Array",
+  "Int8Array",
+  "isFinite",
+  "isNaN",
+  "JSON",
+  "Map",
+  "Math",
+  "NaN",
+  "Number",
+  "Object",
+  "parseFloat",
+  "parseInt",
+  "Promise",
+  "Proxy",
+  "RangeError",
+  "ReferenceError",
+  "Reflect",
+  "RegExp",
+  "Set",
+  "SharedArrayBuffer",
+  "String",
+  "Symbol",
+  "SyntaxError",
+  "TypeError",
+  "Uint16Array",
+  "Uint32Array",
+  "Uint8Array",
+  "Uint8ClampedArray",
+  "undefined",
+  "unescape",
+  "URIError",
+  "WeakMap",
+  "WeakSet",
+];
 
-function addDenoOps(wasmApi, context) {
-    const ops = {};
+const jsContext = Object.create(null);
+var jsProxy = undefined;
+var jsPreamble = undefined;
+function createJsContext(wasmApi, context) {
+  Object.defineProperty(jsContext, "console", {
+    value: {
+      log: console.log.bind(console),
+      info: console.log.bind(console),
+      debug: console.log.bind(console),
+      trace: console.log.bind(console),
+      warning: console.error.bind(console),
+      error: console.error.bind(console),
+    },
+  });
 
-    for (const exportName in wasmApi) {
-        console.log("checking", exportName);
-        if (exportName.substring(0,3) === "op_") {
-            console.log("adding", exportName);
-            ops[exportName] = (...args) => {
-                // wrap ops to inject context arg
-                return wasmApi[exportName](context, ...args);
-            };
-        }
+  const ops = Object.create(null);
+  for (const exportName in wasmApi) {
+    console.log("checking", exportName);
+    if (exportName.substring(0, 3) === "op_") {
+      console.log("adding", exportName);
+      Object.defineProperty(ops, exportName, {
+        configurable: false,
+        get() {
+          return (...args) => {
+            // wrap ops to inject context arg
+            return wasmApi[exportName](context, ...args);
+          };
+        },
+      });
     }
+  }
+  const core = Object.create(null);
+  Object.defineProperty(core, "ops", {
+    configurable: false,
+    value: ops,
+  });
+  const Deno = Object.create(null);
+  Object.defineProperty(Deno, "core", {
+    configurable: false,
+    value: core,
+  });
+  Object.defineProperty(jsContext, "Deno", {
+    configurable: false,
+    value: Deno,
+  });
 
-    globalThis.Deno = { core: { ops } };
+  Object.defineProperty(jsContext, "require", {
+    configurable: false,
+    value: require,
+  });
+
+  jsProxy = new Proxy(jsContext, {
+    has() {
+      return true;
+    },
+    get(_target, propKey, _receiver) {
+      if (propKey === "eval") return eval;
+      if (propKey === "globalThis") return proxy;
+      if (propKey === "global") return proxy;
+      if (propKey === "undefined") return undefined;
+      if (jsContext[propKey] !== undefined) return jsContext[propKey];
+      if (allowListES2020.includes(propKey)) {
+        return globalThis[propKey];
+      }
+      return undefined;
+    },
+  });
+
+  const contextKeys = Object.getOwnPropertyNames(jsContext);
+  const allGlobals = [...new Set([...allowListES2020, ...contextKeys])];
+  jsPreamble = allGlobals
+    .map((key) => `const ${key} = globalThis.${key};`)
+    .join("\n");
 }
 
-function secureGlobalScope() {
-    // This is our blacklist for the worker's own global scope.
-    // const sensitiveApis = [
-    //     // 'Worker', 'SharedWorker', 'importScripts', 'navigator',
-    //     // 'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'RTCDataChannel', 'RTCPeerConnection',
-    //     // 'indexedDB', 'localStorage', 'sessionStorage', 'caches', 'openDatabase', 'StorageManager',
-    //     // 'document', 'window', 
-    //     // 'alert', 'confirm', 'prompt',
-    //     // 'MessageChannel',
-    //     // 'WebAssembly',
-    //     // 'Function' will be removed because we grabbed a reference to it earlier.
-    //     // If we didn't need it, we could add it here.
-    // ];
+const defer = Promise.resolve().then.bind(Promise.resolve());
 
-    // sensitiveApis.forEach(apiKey => {
-    //     try {
-    //         // Check if the API exists (either as own property or inherited)
-    //         if (typeof selfWorker[apiKey] !== 'undefined') {
-    //             console.log(`[Sandbox Worker] Securing global API: ${apiKey}`);
-    //             Object.defineProperty(selfWorker, apiKey, {
-    //                 value: undefined, 
-    //                 writable: false,
-    //                 configurable: false 
-    //             });
-    //         }
-    //     } catch (e) {
-    //         console.warn(`[Sandbox Worker] Could not fully secure global API: ${apiKey}`, e.message);
-    //     }
-    // });
+async function runWithScope(code) {
+  const module = { exports: {} };
 
-    // Finally, remove the Function constructor from the real global scope.
-    // try {
-    //     Object.defineProperty(selfWorker, 'Function', {
-    //         value: undefined,
-    //         writable: false,
-    //         configurable: false
-    //     });
-    // } catch(e) {
-    //     console.warn(`[Sandbox Worker] Could not fully secure global API: Function`, e.message);
-    // }
-}
+  const func = new Function(
+    "globalThis",
+    "module",
+    "exports",
+    `${jsPreamble}\n\n${code}`
+  );
 
-function loadSource(moduleName, source) {
-    console.log("source: ", typeof source);
-    // create a wrapper for the imported script
-    source = source.replace(/^#!.*?\n/, "");
-    const head = "(function (exports, require, module, __filename, __dirname) { (function (exports, require, module, __filename, __dirname) {";
-    const foot = "\n}).call(this, exports, require, module, __filename, __dirname); })";
-    source = `${head}${source}${foot}`;
-    const wrapped = eval(source);
-
-    // create minimal context for the execution
-    var module = {
-        exports: {}
-    };
-    // call the script
-    wrapped.call(
-        module.exports,             // this
-        module.exports,             // exports
-        require,                    // require
-        module,                     // module
-        moduleName.substring(1),    // __filename
-        moduleName.substring(0,1)   // __dirname
-    );
-
-    return module.exports;
+  await defer(() => func.call(jsProxy, jsProxy, module, module.exports));
+  return module.exports;
 }
 
 // prefetch all the requireable scripts before we replace the fetch function
-const allowedModules = {
-    "~system/BevyExplorerApi": await fetch("modules/systemApi.js").then(async (response) => await response.text()),
-    "~system/CommunicationsController": await fetch("modules/CommunicationsController.js").then(async (response) => await response.text()),
-    "~system/CommsApi": await fetch("modules/CommsApi.js").then(async (response) => await response.text()),
-    "~system/EngineApi": await fetch("modules/EngineApi.js").then(async (response) => await response.text()),
-    "~system/EnvironmentApi": await fetch("modules/EnvironmentApi.js").then(async (response) => await response.text()),
-    "~system/EthereumController": await fetch("modules/EthereumController.js").then(async (response) => await response.text()),
-    "~system/Players": await fetch("modules/Players.js").then(async (response) => await response.text()),
-    "~system/PortableExperiences": await fetch("modules/PortableExperiences.js").then(async (response) => await response.text()),
-    "~system/RestrictedActions": await fetch("modules/RestrictedActions.js").then(async (response) => await response.text()),
-    "~system/Runtime": await fetch("modules/Runtime.js").then(async (response) => await response.text()),
-    "~system/Scene": await fetch("modules/Scene.js").then(async (response) => await response.text()),
-    "~system/SignedFetch": await fetch("modules/SignedFetch.js").then(async (response) => await response.text()),
-    "~system/Testing": await fetch("modules/Testing.js").then(async (response) => await response.text()),
-    "~system/UserActionModule": await fetch("modules/UserActionModule.js").then(async (response) => await response.text()),
-    "~system/UserIdentity": await fetch("modules/UserIdentity.js").then(async (response) => await response.text()),
-    "~system/AdaptationLayerHelper": await fetch("modules/AdaptationLayerHelper.js").then(async (response) => await response.text()),
+var allowedModules = undefined;
+
+async function preloadModules() {
+  const modules = {
+    "~system/BevyExplorerApi": "modules/systemApi.js",
+    "~system/CommunicationsController": "modules/CommunicationsController.js",
+    "~system/CommsApi": "modules/CommsApi.js",
+    "~system/EngineApi": "modules/EngineApi.js",
+    "~system/EnvironmentApi": "modules/EnvironmentApi.js",
+    "~system/EthereumController": "modules/EthereumController.js",
+    "~system/Players": "modules/Players.js",
+    "~system/PortableExperiences": "modules/PortableExperiences.js",
+    "~system/RestrictedActions": "modules/RestrictedActions.js",
+    "~system/Runtime": "modules/Runtime.js",
+    "~system/Scene": "modules/Scene.js",
+    "~system/SignedFetch": "modules/SignedFetch.js",
+    "~system/Testing": "modules/Testing.js",
+    "~system/UserActionModule": "modules/UserActionModule.js",
+    "~system/UserIdentity": "modules/UserIdentity.js",
+    "~system/AdaptationLayerHelper": "modules/AdaptationLayerHelper.js",
+  };
+
+  const promises = Object.entries(modules).map(async ([key, path]) => {
+    const response = await fetch(path);
+    const code = await response.text();
+    const result = await runWithScope(code);
+    return [key, result];
+  });
+
+  allowedModules = Object.fromEntries(await Promise.all(promises));
 }
 
 function require(moduleName) {
-    let code = allowedModules[moduleName];
-    if (!code) {
-        throw "can't find module"
-    }
+  let code = allowedModules[moduleName];
+  if (!code) {
+    console.log(allowedModules);
+    throw "can't find module `" + moduleName + "`";
+  }
 
-    return loadSource(moduleName, code);
+  return code;
 }
 
-selfWorker.onmessage = async (event) => {
-    if (event.data && event.data.type === 'INIT_WORKER') {
-        const { compiledModule, sharedMemory } = event.data.payload;
+self.onmessage = async (event) => {
+  if (event.data && event.data.type === "INIT_WORKER") {
+    const { compiledModule, sharedMemory } = event.data.payload;
 
-        if (!compiledModule || !sharedMemory) {
-            console.error("[Sandbox Worker] Invalid payload received.");
-            return;
-        }
-
-        try {
-            await init({ module: compiledModule, memory: sharedMemory });
-            const context = await wasm_bindgen_exports.wasm_init_scene();
-
-            addDenoOps(wasm_bindgen_exports, context);
-            
-            // TODO: lock down environment
-            // - remove sensitive apis (can we whitelist instead of blacklisting?)
-            // - replace fetch, websocket, localstorage
-
-            const sceneCode = context.get_source();
-            allowedModules["~scene.js"] = sceneCode;
-            let module = require("~scene.js");
-
-            // send any initial rpc requests
-            Deno.core.ops.op_crdt_send_to_renderer([]);
-
-            console.log("[Scene Worker] calling onStart");
-
-            await module.onStart();
-
-            console.log("[Scene Worker] entering onUpdate loop");
-
-            var elapsed = 0;
-            const startTime = new Date();
-            var prevElapsed = 0;
-            var count = 0;
-            while (true) {
-                const runTime = new Date();
-                const elapsed = runTime - startTime;
-                await module.onUpdate(elapsed - prevElapsed);
-                prevElapsed = elapsed;
-                count += 1;
-            }
-        } catch (e) {
-            console.error("[Scene Worker] Error during Wasm instantiation or setup:", e);
-        }
+    if (!compiledModule || !sharedMemory) {
+      console.error("[Sandbox Worker] Invalid payload received.");
+      return;
     }
+
+    try {
+      // init wasm
+      await init({ module: compiledModule, memory: sharedMemory });
+      const wasmContext = await wasm_bindgen_exports.wasm_init_scene();
+      createJsContext(wasm_bindgen_exports, wasmContext);
+
+      // preload modules
+      await preloadModules();
+
+      const sceneCode = wasmContext.get_source();
+      let module = await runWithScope(sceneCode);
+
+      // send any initial rpc requests
+      jsContext.Deno.core.ops.op_crdt_send_to_renderer([]);
+
+      console.log("[Scene Worker] calling onStart");
+      await module.onStart();
+
+      console.log("[Scene Worker] entering onUpdate loop");
+
+      var elapsed = 0;
+      const startTime = new Date();
+      var prevElapsed = 0;
+      var elapsed = 0;
+      var count = 0;
+      while (true) {
+        await module.onUpdate(elapsed - prevElapsed);
+        prevElapsed = elapsed;
+        elapsed = new Date() - startTime;
+        count += 1;
+      }
+    } catch (e) {
+      console.error(
+        "[Scene Worker] Error during Wasm instantiation or setup:",
+        e
+      );
+    }
+  }
 };
 
-postMessage({ type: `READY`});
+postMessage({ type: `READY` });
