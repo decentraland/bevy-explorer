@@ -83,7 +83,11 @@ fn main_inner(server: &str, location: &str, system_scene: &str) {
     let no_fog = false;
     let is_preview = false;
 
-    let ui_scene = if system_scene.is_empty() { None } else { Some(system_scene.to_owned()) };
+    let ui_scene = if system_scene.is_empty() {
+        None
+    } else {
+        Some(system_scene.to_owned())
+    };
     if let Some(source) = ui_scene {
         app.add_systems(Update, process_system_ui_scene);
         app.insert_resource(NativeUi {

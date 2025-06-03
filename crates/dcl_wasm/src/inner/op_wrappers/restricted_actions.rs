@@ -62,15 +62,16 @@ pub async fn op_scene_emote(
     emote: String,
     looping: bool,
 ) -> Result<(), WasmError> {
-    dcl::js::restricted_actions::op_scene_emote(op_state.rc(), emote, looping).await.map_err(|e| WasmError::from(e))
+    dcl::js::restricted_actions::op_scene_emote(op_state.rc(), emote, looping)
+        .await
+        .map_err(|e| WasmError::from(e))
 }
 
 #[wasm_bindgen]
-pub async fn op_open_nft_dialog(
-    op_state: &WorkerContext,
-    urn: String,
-) -> Result<(), WasmError> {
-    dcl::js::restricted_actions::op_open_nft_dialog(op_state.rc(), urn).await.map_err(|e| WasmError::from(e))
+pub async fn op_open_nft_dialog(op_state: &WorkerContext, urn: String) -> Result<(), WasmError> {
+    dcl::js::restricted_actions::op_open_nft_dialog(op_state.rc(), urn)
+        .await
+        .map_err(|e| WasmError::from(e))
 }
 
 #[wasm_bindgen]
@@ -78,5 +79,7 @@ pub async fn op_set_ui_focus(
     op_state: &WorkerContext,
     element_id: String,
 ) -> Result<(), WasmError> {
-    dcl::js::restricted_actions::op_set_ui_focus(op_state.rc(), element_id).await.map_err(|e| WasmError::from(e))
+    dcl::js::restricted_actions::op_set_ui_focus(op_state.rc(), element_id)
+        .await
+        .map_err(|e| WasmError::from(e))
 }

@@ -126,10 +126,7 @@ pub async fn op_get_bindings(state: &WorkerContext) -> Result<JsValue, WasmError
 }
 
 #[wasm_bindgen]
-pub async fn op_set_bindings(
-    state: &WorkerContext,
-    bindings: JsValue,
-) -> Result<(), WasmError> {
+pub async fn op_set_bindings(state: &WorkerContext, bindings: JsValue) -> Result<(), WasmError> {
     serde_parse!(bindings);
     dcl::js::system_api::op_set_bindings(state.rc(), bindings)
         .await
@@ -185,9 +182,7 @@ pub async fn op_read_system_action_stream(
     state: &WorkerContext,
     rid: u32,
 ) -> Result<JsValue, WasmError> {
-    serde_result!(
-        dcl::js::system_api::op_read_system_action_stream(state.rc(), rid).await
-    )
+    serde_result!(dcl::js::system_api::op_read_system_action_stream(state.rc(), rid).await)
 }
 
 #[wasm_bindgen]
@@ -196,10 +191,7 @@ pub async fn op_get_chat_stream(state: &WorkerContext) -> u32 {
 }
 
 #[wasm_bindgen]
-pub async fn op_read_chat_stream(
-    state: &WorkerContext,
-    rid: u32,
-) -> Result<JsValue, WasmError> {
+pub async fn op_read_chat_stream(state: &WorkerContext, rid: u32) -> Result<JsValue, WasmError> {
     serde_result!(dcl::js::system_api::op_read_chat_stream(state.rc(), rid).await)
 }
 

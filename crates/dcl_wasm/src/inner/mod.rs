@@ -1,7 +1,11 @@
 pub mod gotham_state;
 pub mod op_wrappers;
 
-use std::{cell::RefCell, rc::Rc, sync::{mpsc::SyncSender, Arc}};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{mpsc::SyncSender, Arc},
+};
 
 use bevy::tasks::IoTaskPool;
 use dcl::{interface::CrdtComponentInterfaces, RendererResponse, SceneId, SceneResponse};
@@ -136,13 +140,15 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
 
 #[wasm_bindgen]
 pub struct WorkerContext {
-    state: Rc::<RefCell<GothamState>>,
+    state: Rc<RefCell<GothamState>>,
 }
 
 #[wasm_bindgen]
 impl WorkerContext {
     pub fn get_source(&self) -> JsValue {
-        (*self.state.borrow().borrow::<SceneJsFile>().0).clone().into()
+        (*self.state.borrow().borrow::<SceneJsFile>().0)
+            .clone()
+            .into()
     }
 
     pub(crate) fn rc(&self) -> Rc<RefCell<GothamState>> {

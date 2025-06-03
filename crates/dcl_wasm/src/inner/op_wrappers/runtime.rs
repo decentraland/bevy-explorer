@@ -10,9 +10,7 @@ pub async fn op_read_file(
 }
 
 #[wasm_bindgen]
-pub async fn op_scene_information(
-    op_state: &WorkerContext,
-) -> Result<JsValue, WasmError> {
+pub async fn op_scene_information(op_state: &WorkerContext) -> Result<JsValue, WasmError> {
     serde_result!(dcl::js::runtime::op_scene_information(op_state.rc()).await)
 }
 
