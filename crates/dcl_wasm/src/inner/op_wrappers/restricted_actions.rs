@@ -1,10 +1,9 @@
-use std::{cell::RefCell, rc::Rc};
 use crate::{WasmError, WorkerContext};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub fn op_move_player_to(
-    op_state: &mut WorkerContext,
+    op_state: &WorkerContext,
     position_x: f32,
     position_y: f32,
     position_z: f32,
@@ -18,7 +17,7 @@ pub fn op_move_player_to(
     maybe_looking_at_z: f32,
 ) {
     dcl::js::restricted_actions::op_move_player_to(
-        op_state,
+        &mut *op_state.state.borrow_mut(),
         position_x,
         position_y,
         position_z,
@@ -34,50 +33,50 @@ pub fn op_move_player_to(
 }
 
 #[wasm_bindgen]
-pub async fn op_teleport_to(state: &mut WorkerContext, position_x: i32, position_y: i32) -> bool {
-    dcl::js::restricted_actions::op_teleport_to(Rc::new(RefCell::new(state)), position_x, position_y).await
+pub async fn op_teleport_to(state: &WorkerContext, position_x: i32, position_y: i32) -> bool {
+    dcl::js::restricted_actions::op_teleport_to(state.rc(), position_x, position_y).await
 }
 
 #[wasm_bindgen]
 pub async fn op_change_realm(
-    state: &mut WorkerContext,
+    state: &WorkerContext,
     realm: String,
     message: Option<String>,
 ) -> bool {
-    dcl::js::restricted_actions::op_change_realm(Rc::new(RefCell::new(state)), realm, message).await
+    dcl::js::restricted_actions::op_change_realm(state.rc(), realm, message).await
 }
 
 #[wasm_bindgen]
-pub async fn op_external_url(state: &mut WorkerContext, url: String) -> bool {
-    dcl::js::restricted_actions::op_external_url(Rc::new(RefCell::new(state)), url).await
+pub async fn op_external_url(state: &WorkerContext, url: String) -> bool {
+    dcl::js::restricted_actions::op_external_url(state.rc(), url).await
 }
 
 #[wasm_bindgen]
-pub fn op_emote(op_state: &mut WorkerContext, emote: String) {
-    dcl::js::restricted_actions::op_emote(op_state, emote);
+pub fn op_emote(op_state: &WorkerContext, emote: String) {
+    dcl::js::restricted_actions::op_emote(&mut *op_state.state.borrow_mut(), emote);
 }
 
 #[wasm_bindgen]
 pub async fn op_scene_emote(
-    op_state: &mut WorkerContext,
+    op_state: &WorkerContext,
     emote: String,
     looping: bool,
 ) -> Result<(), WasmError> {
-    dcl::js::restricted_actions::op_scene_emote(Rc::new(RefCell::new(op_state)), emote, looping).await.map_err(|e| WasmError::from(e))
+    dcl::js::restricted_actions::op_scene_emote(op_state.rc(), emote, looping).await.map_err(|e| WasmError::from(e))
 }
 
 #[wasm_bindgen]
 pub async fn op_open_nft_dialog(
-    op_state: &mut WorkerContext,
+    op_state: &WorkerContext,
     urn: String,
 ) -> Result<(), WasmError> {
-    dcl::js::restricted_actions::op_open_nft_dialog(Rc::new(RefCell::new(op_state)), urn).await.map_err(|e| WasmError::from(e))
+    dcl::js::restricted_actions::op_open_nft_dialog(op_state.rc(), urn).await.map_err(|e| WasmError::from(e))
 }
 
 #[wasm_bindgen]
 pub async fn op_set_ui_focus(
-    op_state: &mut WorkerContext,
+    op_state: &WorkerContext,
     element_id: String,
 ) -> Result<(), WasmError> {
-    dcl::js::restricted_actions::op_set_ui_focus(Rc::new(RefCell::new(op_state)), element_id).await.map_err(|e| WasmError::from(e))
+    dcl::js::restricted_actions::op_set_ui_focus(op_state.rc(), element_id).await.map_err(|e| WasmError::from(e))
 }

@@ -1,16 +1,15 @@
-use std::{cell::RefCell, rc::Rc};
 use crate::{serde_result, WasmError, WorkerContext};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-pub async fn op_get_user_data(state: &mut WorkerContext) -> Result<JsValue, WasmError> {
-    serde_result!(dcl::js::user_identity::op_get_user_data(Rc::new(RefCell::new(state))).await)
+pub async fn op_get_user_data(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::user_identity::op_get_user_data(state.rc()).await)
 }
 
 #[wasm_bindgen]
 pub async fn op_get_player_data(
-    state: &mut WorkerContext,
+    state: &WorkerContext,
     id: String,
 ) -> Result<JsValue, WasmError> {
-    serde_result!(dcl::js::user_identity::op_get_player_data(Rc::new(RefCell::new(state)), id).await)
+    serde_result!(dcl::js::user_identity::op_get_player_data(state.rc(), id).await)
 }

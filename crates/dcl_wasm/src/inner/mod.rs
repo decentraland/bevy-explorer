@@ -1,7 +1,7 @@
 pub mod gotham_state;
 pub mod op_wrappers;
 
-use std::sync::{mpsc::SyncSender, Arc};
+use std::{cell::RefCell, rc::Rc, sync::{mpsc::SyncSender, Arc}};
 
 use bevy::tasks::IoTaskPool;
 use dcl::{interface::CrdtComponentInterfaces, RendererResponse, SceneId, SceneResponse};
@@ -109,12 +109,12 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
 
     let scene_initialization_data: SceneInitializationData =
         SCENE_QUEUE.get().unwrap().lock().await.pop().unwrap();
-    let mut context = WorkerContext {
+    let context = WorkerContext {
         state: Default::default(),
     };
 
     dcl::js::init_state(
-        &mut &mut context,
+        &mut *context.state.borrow_mut(),
         scene_initialization_data.scene_hash,
         scene_initialization_data.id,
         scene_initialization_data.storage_root,
@@ -136,83 +136,53 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
 
 #[wasm_bindgen]
 pub struct WorkerContext {
-    state: GothamState,
+    state: Rc::<RefCell<GothamState>>,
 }
 
 #[wasm_bindgen]
 impl WorkerContext {
     pub fn get_source(&self) -> JsValue {
-        (*self.state.borrow::<SceneJsFile>().0).clone().into()
+        (*self.state.borrow().borrow::<SceneJsFile>().0).clone().into()
+    }
+
+    pub(crate) fn rc(&self) -> Rc<RefCell<GothamState>> {
+        self.state.clone()
     }
 }
 
-impl dcl::js::State for &mut WorkerContext {
+impl dcl::js::State for GothamState {
     fn borrow<T: 'static>(&self) -> &T {
-        self.state.borrow()
+        self.borrow()
     }
 
     fn try_borrow<T: 'static>(&self) -> Option<&T> {
-        self.state.try_borrow()
+        self.try_borrow()
     }
 
     fn borrow_mut<T: 'static>(&mut self) -> &mut T {
-        self.state.borrow_mut()
+        self.borrow_mut()
     }
 
     fn try_borrow_mut<T: 'static>(&mut self) -> Option<&mut T> {
-        self.state.try_borrow_mut()
+        self.try_borrow_mut()
     }
 
     fn has<T: 'static>(&self) -> bool {
-        self.state.has::<T>()
+        self.has::<T>()
     }
 
     fn put<T: 'static>(&mut self, value: T) {
-        self.state.put(value)
+        self.put(value)
     }
 
     fn take<T: 'static>(&mut self) -> T {
-        self.state.take()
+        self.take()
     }
 
     fn try_take<T: 'static>(&mut self) -> Option<T> {
-        self.state.try_take()
+        self.try_take()
     }
 }
-
-impl dcl::js::State for WorkerContext {
-    fn borrow<T: 'static>(&self) -> &T {
-        self.state.borrow()
-    }
-
-    fn try_borrow<T: 'static>(&self) -> Option<&T> {
-        self.state.try_borrow()
-    }
-
-    fn borrow_mut<T: 'static>(&mut self) -> &mut T {
-        self.state.borrow_mut()
-    }
-
-    fn try_borrow_mut<T: 'static>(&mut self) -> Option<&mut T> {
-        self.state.try_borrow_mut()
-    }
-
-    fn has<T: 'static>(&self) -> bool {
-        self.state.has::<T>()
-    }
-
-    fn put<T: 'static>(&mut self, value: T) {
-        self.state.put(value)
-    }
-
-    fn take<T: 'static>(&mut self) -> T {
-        self.state.take()
-    }
-
-    fn try_take<T: 'static>(&mut self) -> Option<T> {
-        self.state.try_take()
-    }
-}    
 
 #[macro_export]
 macro_rules! serde_parse {

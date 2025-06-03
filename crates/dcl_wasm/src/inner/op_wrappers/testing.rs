@@ -2,25 +2,25 @@ use crate::{serde_parse, serde_result, WasmError, WorkerContext};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-pub fn op_testing_enabled(op_state: &mut WorkerContext) -> bool {
-    dcl::js::testing::op_testing_enabled(op_state)
+pub fn op_testing_enabled(op_state: &WorkerContext) -> bool {
+    dcl::js::testing::op_testing_enabled(&mut *op_state.state.borrow_mut())
 }
 
 #[wasm_bindgen]
-pub fn op_log_test_plan(state: &mut WorkerContext, body: JsValue) {
+pub fn op_log_test_plan(state: &WorkerContext, body: JsValue) {
     serde_parse!(body);
-    dcl::js::testing::op_log_test_plan(state, body);
+    dcl::js::testing::op_log_test_plan(&mut *state.state.borrow_mut(), body);
 }
 
 #[wasm_bindgen]
-pub fn op_log_test_result(state: &mut WorkerContext, body: JsValue) {
+pub fn op_log_test_result(state: &WorkerContext, body: JsValue) {
     serde_parse!(body);
-    dcl::js::testing::op_log_test_result(state, body);
+    dcl::js::testing::op_log_test_result(&mut *state.state.borrow_mut(), body);
 }
 
 #[wasm_bindgen]
 pub fn op_take_and_compare_snapshot(
-    state: &mut WorkerContext,
+    state: &WorkerContext,
     name: String,
     camera_position: JsValue,
     camera_target: JsValue,
@@ -33,7 +33,7 @@ pub fn op_take_and_compare_snapshot(
     serde_parse!(method);
 
     serde_result!(dcl::js::testing::op_take_and_compare_snapshot(
-        state,
+        &mut *state.state.borrow_mut(),
         name,
         camera_position,
         camera_target,
