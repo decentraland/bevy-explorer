@@ -11,8 +11,12 @@ rustflags = ["-C", "link-args=-ObjC"]
 rustflags = ["-C", "link-args=-ObjC"]
 
 [target.wasm32-unknown-unknown]
-# rustflags = ["--cfg=web_sys_unstable_apis"]
-rustflags = ["--cfg=web_sys_unstable_apis", "-C", "target-feature=+atomics,+bulk-memory,+mutable-globals", "-C", "link-arg=--shared-memory", "-C", "link-arg=--max-memory=4294967296"]
+rustflags = [
+    "--cfg=web_sys_unstable_apis", 
+    "-C", "target-feature=+atomics,+bulk-memory,+mutable-globals", 
+    "-C", "link-arg=--shared-memory", 
+    "-C", "link-arg=--max-memory=4294967296", 
+]
 
 [env]
 RUST_BACKTRACE = "1"
@@ -22,5 +26,5 @@ CARGO_FEATURE_CRT_STATIC = "ohyes"
 build-std = ["std", "panic_abort"]
 
 # uncomment for rust analyzer to attempt (and fail) to use wasm32 as default
-# [build]
-# target = "wasm32-unknown-unknown"
+[build]
+target = "wasm32-unknown-unknown"
