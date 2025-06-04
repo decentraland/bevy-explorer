@@ -49,7 +49,7 @@ impl SocialIdentifier {
     fn new(address: Address) -> Self {
         Self {
             r#type: "m.id.user".to_owned(),
-            user: format!("{:#x}", address),
+            user: format!("{address:#x}"),
         }
     }
 }

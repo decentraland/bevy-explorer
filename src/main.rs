@@ -141,15 +141,14 @@ fn main() {
     let base_config: AppConfig = std::fs::read(&config_file)
         .ok()
         .and_then(|f| {
-            infos.push(format!("config file loaded from {:?}", config_file));
+            infos.push(format!("config file loaded from {config_file:?}"));
             serde_json::from_slice(&f)
                 .map_err(|e| warnings.push(format!("failed to parse config.json: {e}")))
                 .ok()
         })
         .unwrap_or_else(|| {
             warnings.push(format!(
-                "config file not found at {:?}, generating default",
-                config_file
+                "config file not found at {config_file:?}, generating default"
             ));
             Default::default()
         });
