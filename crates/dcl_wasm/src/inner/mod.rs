@@ -1,4 +1,5 @@
 pub mod gotham_state;
+pub mod local_storage;
 pub mod op_wrappers;
 
 use std::{
