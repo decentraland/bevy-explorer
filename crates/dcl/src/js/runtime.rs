@@ -86,7 +86,7 @@ pub async fn scene_information(
                 })
                 .collect(),
             metadata_json: entity.metadata.unwrap_or_default(),
-            base_url: format!("{}/contents/", base_url),
+            base_url: format!("{base_url}/contents/"),
         })
         .ok_or_else(|| anyhow!("Scene hash not found?!"))
 }

@@ -1266,7 +1266,7 @@ fn toggle_scene_ui_command(
             }
         }
 
-        input.reply_ok(format!("{hash}: {}", enable));
+        input.reply_ok(format!("{hash}: {enable}"));
     }
 }
 

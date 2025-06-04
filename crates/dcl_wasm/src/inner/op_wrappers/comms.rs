@@ -26,5 +26,5 @@ pub async fn op_comms_recv_binary(state: &WorkerContext) -> Result<js_sys::Array
             .map(JsValue::from)
             .collect()
     })
-    .map_err(|e| WasmError::from(e))
+    .map_err(WasmError::from)
 }

@@ -22,7 +22,7 @@ impl SocialClientHandler {
         Some(Self::default())
     }
 
-    pub fn update(&self) -> () {}
+    pub fn update(&self) {}
 
     pub fn live(&self) -> bool {
         false

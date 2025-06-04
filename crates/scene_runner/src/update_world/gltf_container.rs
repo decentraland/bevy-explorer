@@ -1014,7 +1014,7 @@ fn _node_graph(
     }
 
     let dot = petgraph::dot::Dot::with_config(&graph, &[petgraph::dot::Config::EdgeNoLabel]);
-    format!("{:?}", dot)
+    format!("{dot:?}")
 }
 
 pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {

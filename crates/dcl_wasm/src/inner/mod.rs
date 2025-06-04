@@ -41,7 +41,7 @@ pub struct SceneInitializationData {
 static SCENE_QUEUE: OnceCell<Arc<Mutex<Vec<SceneInitializationData>>>> = OnceCell::new();
 
 pub fn init_runtime() {
-    if let Err(_) = SCENE_QUEUE.set(Default::default()) {
+    if SCENE_QUEUE.set(Default::default()).is_err() {
         panic!("can't init wasm queue");
     }
 }
@@ -203,7 +203,7 @@ macro_rules! serde_result {
     ($code: expr) => {
         $code
             .map(|v| serde_wasm_bindgen::to_value(&v).unwrap())
-            .map_err(|e| WasmError::from(e))
+            .map_err(WasmError::from)
     };
 }
 

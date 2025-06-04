@@ -227,7 +227,7 @@ pub async fn finish_remote_ephemeral_request(
     let delegate = ChainLink {
         ty: "ECDSA_EPHEMERAL".to_owned(),
         payload: message,
-        signature: format!("0x{}", signature),
+        signature: format!("0x{signature}"),
     };
     Ok((signer, ephemeral_wallet, vec![delegate], 1))
 }

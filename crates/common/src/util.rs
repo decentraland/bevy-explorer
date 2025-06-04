@@ -95,7 +95,7 @@ impl AsH160 for String {
 }
 
 pub fn format_address(address: H160, name: Option<&str>) -> String {
-    let str_address = format!("{:x}", address);
+    let str_address = format!("{address:x}");
     let str_address = str_address
         .chars()
         .skip(str_address.len().saturating_sub(4))

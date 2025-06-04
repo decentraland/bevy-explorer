@@ -285,7 +285,7 @@ const BASE_WEARABLES: [&str; 278] = [
 pub fn base_wearable_urns() -> Vec<WearableUrn> {
     BASE_WEARABLES
         .iter()
-        .map(|wearable| format!("urn:decentraland:off-chain:base-avatars:{}", wearable))
+        .map(|wearable| format!("urn:decentraland:off-chain:base-avatars:{wearable}"))
         .map(|w| WearableUrn::new(&w))
         .map(Result::unwrap)
         .collect()

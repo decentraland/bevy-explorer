@@ -2,6 +2,7 @@ use crate::{WasmError, WorkerContext};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
 pub fn op_move_player_to(
     op_state: &WorkerContext,
     position_x: f32,
@@ -64,14 +65,14 @@ pub async fn op_scene_emote(
 ) -> Result<(), WasmError> {
     dcl::js::restricted_actions::op_scene_emote(op_state.rc(), emote, looping)
         .await
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
 pub async fn op_open_nft_dialog(op_state: &WorkerContext, urn: String) -> Result<(), WasmError> {
     dcl::js::restricted_actions::op_open_nft_dialog(op_state.rc(), urn)
         .await
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -81,5 +82,5 @@ pub async fn op_set_ui_focus(
 ) -> Result<(), WasmError> {
     dcl::js::restricted_actions::op_set_ui_focus(op_state.rc(), element_id)
         .await
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }

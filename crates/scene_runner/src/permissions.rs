@@ -221,7 +221,7 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
                 if !self.is_system_scene(hash) {
                     let portable_name = is_portable.then_some(title);
                     self.toaster.add_clicky_toast(
-                        format!("{:?}", ty),
+                        format!("{ty:?}"),
                         ty.on_success(portable_name),
                         On::<Click>::new(
                             (move |mut target: ResMut<PermissionTarget>| {
@@ -251,7 +251,7 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
                 if !self.is_system_scene(hash) {
                     let portable_name = is_portable.then_some(title);
                     self.toaster.add_clicky_toast(
-                        format!("{:?}", ty),
+                        format!("{ty:?}"),
                         ty.on_fail(portable_name),
                         On::<Click>::new(
                             (move |mut target: ResMut<PermissionTarget>| {
@@ -318,7 +318,7 @@ impl PermissionStrings for PermissionType {
         format!(
             "{} is {} (click to manage)",
             match portable {
-                Some(portable) => format!("The portable scene {}", portable),
+                Some(portable) => format!("The portable scene {portable}"),
                 None => "The scene".to_owned(),
             },
             self.active()
@@ -328,7 +328,7 @@ impl PermissionStrings for PermissionType {
         format!(
             "{} was blocked from {} (click to manage)",
             match portable {
-                Some(portable) => format!("The portable scene {}", portable),
+                Some(portable) => format!("The portable scene {portable}"),
                 None => "The scene".to_owned(),
             },
             self.active()

@@ -193,7 +193,7 @@ fn login(
                 *dialog = Some(components.root);
             }
             Ok(Err(e)) => {
-                toaster.add_toast("login profile", format!("Login failed: {}", e));
+                toaster.add_toast("login profile", format!("Login failed: {e}"));
                 if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
                     commands.despawn_recursive();
                     *dialog = None;
@@ -215,7 +215,7 @@ fn login(
             }
             Ok(Err(e)) => {
                 error!("{e}");
-                toaster.add_toast("login profile", format!("Login failed: {}", e));
+                toaster.add_toast("login profile", format!("Login failed: {e}"));
                 if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
                     commands.despawn_recursive();
                 }

@@ -86,7 +86,7 @@ fn hover_text(
                                         .to_owned()
                                     });
                                 return Some((
-                                    format!("{} : {}", button, text),
+                                    format!("{button} : {text}"),
                                     info.max_distance.unwrap_or(10.0) > distance.0,
                                 ));
                             }

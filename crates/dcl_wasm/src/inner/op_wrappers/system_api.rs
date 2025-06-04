@@ -10,7 +10,7 @@ pub async fn op_check_for_update(state: &WorkerContext) -> Result<JsValue, WasmE
 pub async fn op_motd(state: &WorkerContext) -> Result<String, WasmError> {
     dcl::js::system_api::op_motd(state.rc())
         .await
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -22,28 +22,28 @@ pub fn op_get_current_login(state: &WorkerContext) -> Option<String> {
 pub async fn op_get_previous_login(state: &WorkerContext) -> Result<Option<String>, WasmError> {
     dcl::js::system_api::op_get_previous_login(state.rc())
         .await
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
 pub async fn op_login_previous(state: &WorkerContext) -> Result<(), WasmError> {
     dcl::js::system_api::op_login_previous(state.rc())
         .await
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
 pub async fn op_login_new_code(state: &WorkerContext) -> Result<Option<String>, WasmError> {
     dcl::js::system_api::op_login_new_code(state.rc())
         .await
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
 pub async fn op_login_new_success(state: &WorkerContext) -> Result<(), WasmError> {
     dcl::js::system_api::op_login_new_success(state.rc())
         .await
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -70,7 +70,7 @@ pub async fn op_settings(state: &WorkerContext) -> Result<js_sys::Array, WasmErr
                 .map(|v| serde_wasm_bindgen::to_value(&v).unwrap())
                 .collect()
         })
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -81,7 +81,7 @@ pub async fn op_set_setting(
 ) -> Result<(), WasmError> {
     dcl::js::system_api::op_set_setting(state.rc(), name, val)
         .await
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -98,7 +98,7 @@ pub async fn op_kernel_fetch_headers(
                 .map(|v| serde_wasm_bindgen::to_value(&v).unwrap())
                 .collect()
         })
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -112,7 +112,7 @@ pub async fn op_set_avatar(
     serde_parse!(equip);
     dcl::js::system_api::op_set_avatar(state.rc(), base, equip, has_claimed_name)
         .await
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -130,7 +130,7 @@ pub async fn op_set_bindings(state: &WorkerContext, bindings: JsValue) -> Result
     serde_parse!(bindings);
     dcl::js::system_api::op_set_bindings(state.rc(), bindings)
         .await
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -141,7 +141,7 @@ pub async fn op_console_command(
 ) -> Result<String, WasmError> {
     dcl::js::system_api::op_console_command(state.rc(), cmd, args)
         .await
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -153,7 +153,7 @@ pub async fn op_live_scene_info(state: &WorkerContext) -> Result<js_sys::Array, 
                 .map(|v| serde_wasm_bindgen::to_value(&v).unwrap())
                 .collect()
         })
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]

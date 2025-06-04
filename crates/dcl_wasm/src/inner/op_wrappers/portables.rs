@@ -14,7 +14,7 @@ pub async fn op_portable_spawn(
 pub async fn op_portable_kill(state: &WorkerContext, pid: String) -> Result<bool, WasmError> {
     dcl::js::portables::op_portable_kill(state.rc(), pid)
         .await
-        .map_err(|e| WasmError::from(e))
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]

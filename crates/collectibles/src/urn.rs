@@ -91,7 +91,7 @@ impl<T: CollectibleType> CollectibleUrn<T> {
                 });
             };
 
-            urn = format!("{}:{}", base, urn);
+            urn = format!("{base}:{urn}");
         }
 
         let parts: Vec<_> = urn.split(':').collect();

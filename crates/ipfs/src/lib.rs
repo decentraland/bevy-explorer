@@ -1281,7 +1281,7 @@ impl AssetReader for IpfsIo {
             if let (Some(hash), Some(cache_path)) = (hash, self.cache_path()) {
                 if !no_cache && ipfs_path.should_cache(&hash) {
                     let mut cache_path = PathBuf::from(cache_path);
-                    cache_path.push(format!("{}.part", hash));
+                    cache_path.push(format!("{hash}.part"));
                     let cache_path_str = cache_path.to_string_lossy().into_owned();
                     // ignore errors trying to cache
                     match async_fs::File::create(&cache_path).await {

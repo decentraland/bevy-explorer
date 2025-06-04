@@ -14,6 +14,7 @@ pub struct GothamState {
     data: BTreeMap<TypeId, Box<dyn Any>>,
 }
 
+#[allow(clippy::should_implement_trait)]
 impl GothamState {
     /// Puts a value into the `GothamState` storage. One value of each type is retained.
     /// Successive calls to `put` will overwrite the existing value of the same

@@ -118,7 +118,7 @@ impl IpfsType {
                 .ok_or_else(|| {
                     anyhow::anyhow!("file not found in content map: {file_path:?} in {scene_hash}")
                 }),
-            IpfsType::Entity { hash, .. } => Ok(format!("{base_url}{}", hash)),
+            IpfsType::Entity { hash, .. } => Ok(format!("{base_url}{hash}")),
             IpfsType::UrlCached { url, .. } | IpfsType::UrlUncached { url, .. } => {
                 Ok(format!("{}", urlencoding::decode(url)?))
             }

@@ -196,7 +196,7 @@ impl SimpleAuthChain {
     pub fn headers(&self) -> impl Iterator<Item = (String, String)> + '_ {
         self.0.iter().enumerate().map(|(ix, link)| {
             (
-                format!("x-identity-auth-chain-{}", ix),
+                format!("x-identity-auth-chain-{ix}"),
                 serde_json::to_string(&link).unwrap(),
             )
         })
@@ -254,7 +254,7 @@ pub async fn sign_request<META: Serialize>(
     let auth_chain = wallet.sign_message(payload).await?;
 
     let mut headers: Vec<_> = auth_chain.headers().collect();
-    headers.push(("x-identity-timestamp".to_owned(), format!("{}", unix_time)));
+    headers.push(("x-identity-timestamp".to_owned(), format!("{unix_time}")));
     headers.push(("x-identity-metadata".to_owned(), meta));
     Ok(headers)
 }

@@ -546,7 +546,7 @@ fn kill_portable(
             PermissionType::KillPortables,
             *scene,
             (location.clone(), response.clone()),
-            Some(format!("{:?}", location)),
+            Some(format!("{location:?}")),
             false,
         );
     }
@@ -672,7 +672,7 @@ fn get_user_data(
                 }
 
                 if let Some(my_address) = me.address() {
-                    if *address == format!("{:#x}", my_address) {
+                    if *address == format!("{my_address:#x}") {
                         match profile.profile.as_ref() {
                             Some(profile) => response.send(Ok(profile.content.clone())),
                             None => response.send(Err(())),
@@ -729,7 +729,7 @@ fn get_connected_players(
         let results = others
             .iter()
             .map(|f| format!("{:#x}", f.address))
-            .chain(me.address().map(|address| format!("{:#x}", address)))
+            .chain(me.address().map(|address| format!("{address:#x}")))
             .collect();
         response.send(results);
     }
@@ -750,7 +750,7 @@ fn get_players_in_scene(
         if let Ok(player) = me.get_single() {
             if containing_scene.get(player).contains(scene) {
                 if let Some(address) = wallet.address() {
-                    results.push(format!("{:#x}", address));
+                    results.push(format!("{address:#x}"));
                 }
             }
         }
