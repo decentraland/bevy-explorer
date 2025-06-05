@@ -195,7 +195,7 @@ jobs:
       - name: Build WASM package
         run: |
           cp -r ./assets ./deploy/web/assets
-          wasm-pack build --dev --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm"
+          wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm"
       - name: Deploy
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_WEB_ACCESS_KEY_ID }}
