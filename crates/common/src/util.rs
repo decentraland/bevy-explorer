@@ -1,5 +1,5 @@
 use core::f32;
-use std::{collections::VecDeque, marker::PhantomData, path::PathBuf, time::Duration};
+use std::{collections::VecDeque, marker::PhantomData};
 
 use bevy::{
     app::Update,
@@ -22,7 +22,6 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use ethers_core::types::H160;
-use futures_lite::future;
 use smallvec::SmallVec;
 
 pub struct UtilsPlugin;
@@ -31,10 +30,6 @@ impl Plugin for UtilsPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.add_systems(Update, despawn_with.in_set(SceneSets::RestrictedActions));
     }
-}
-
-pub fn config_file() -> PathBuf {
-    project_directories().config_dir().join("config.json")
 }
 
 // get results from a task
@@ -46,11 +41,26 @@ pub trait TaskExt {
 impl<T> TaskExt for Task<T> {
     type Output = T;
 
+    #[cfg(target_arch = "wasm32")]
+    fn complete(&mut self) -> Option<Self::Output> {
+        use futures_lite::FutureExt;
+
+        // wasm doesn't have `is_finished``, but polling is cheap as it is just a oneshot receiver
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+        if let std::task::Poll::Ready(res) = self.poll(&mut context) {
+            Some(res)
+        } else {
+            None
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn complete(&mut self) -> Option<Self::Output> {
         match self.is_finished() {
-            true => {
-                Some(future::block_on(future::poll_once(self)).expect("is_finished but !Some?"))
-            }
+            true => Some(
+                futures_lite::future::block_on(futures_lite::future::poll_once(self))
+                    .expect("is_finished but !Some?"),
+            ),
             false => None,
         }
     }
@@ -85,7 +95,7 @@ impl AsH160 for String {
 }
 
 pub fn format_address(address: H160, name: Option<&str>) -> String {
-    let str_address = format!("{:x}", address);
+    let str_address = format!("{address:x}");
     let str_address = str_address
         .chars()
         .skip(str_address.len().saturating_sub(4))
@@ -316,10 +326,6 @@ fn despawn_with(mut commands: Commands, q: Query<(Entity, &DespawnWith)>) {
     }
 }
 
-pub fn project_directories() -> directories::ProjectDirs {
-    directories::ProjectDirs::from("org", "decentraland", "BevyExplorer").unwrap()
-}
-
 // commands to modify components
 
 pub struct ModifyComponent<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> {
@@ -479,15 +485,32 @@ pub fn camera_to_render_layers<'a>(
 }
 
 // convenient non-pooled client use for infrequent requests
+#[cfg(not(target_arch = "wasm32"))]
 pub fn reqwest_client() -> reqwest::Client {
     reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(5))
         .use_native_tls()
         .user_agent("DCLExplorer/0.1")
         .build()
         .unwrap()
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn reqwest_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .user_agent("DCLExplorer/0.1")
+        .build()
+        .unwrap()
+}
+
+#[cfg(target_arch = "wasm32")]
+pub trait TaskCompat {
+    fn spawn_compat<T>(&self, future: impl core::future::Future<Output = T> + 'static) -> Task<T>
+    where
+        T: Send + 'static;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub trait TaskCompat {
     fn spawn_compat<T>(
         &self,
@@ -498,6 +521,15 @@ pub trait TaskCompat {
 }
 
 impl TaskCompat for IoTaskPool {
+    #[cfg(target_arch = "wasm32")]
+    fn spawn_compat<T>(&self, future: impl core::future::Future<Output = T> + 'static) -> Task<T>
+    where
+        T: Send + 'static,
+    {
+        self.spawn(future)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn spawn_compat<T>(
         &self,
         future: impl core::future::Future<Output = T> + Send + 'static,

@@ -1,28 +1,21 @@
+use std::{cell::RefCell, rc::Rc};
+
+use anyhow::anyhow;
 use bevy::math::Vec2;
 use common::rpc::RpcCall;
-use deno_core::{
-    anyhow::{self, anyhow},
-    op2, OpDecl, OpState,
-};
 use serde::Serialize;
-use std::{cell::RefCell, rc::Rc};
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
-// list of op declarations
-pub fn ops() -> Vec<OpDecl> {
-    vec![op_get_texture_size()]
-}
+use super::State;
 
 #[derive(Serialize)]
-struct TextureSize {
+pub struct TextureSize {
     width: f32,
     height: f32,
 }
 
-#[op2(async)]
-#[serde]
-async fn op_get_texture_size(state: Rc<RefCell<OpState>>, #[string] src: String) -> TextureSize {
+pub async fn op_get_texture_size(state: Rc<RefCell<impl State>>, src: String) -> TextureSize {
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<Vec2, String>>();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
 

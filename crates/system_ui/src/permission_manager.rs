@@ -7,7 +7,6 @@ use common::{
         ActiveDialog, AppConfig, PermissionTarget, PermissionValue, PrimaryPlayerRes, SettingsTab,
         ShowSettingsEvent,
     },
-    util::config_file,
 };
 use ipfs::CurrentRealm;
 use scene_runner::{
@@ -165,15 +164,7 @@ fn update_permissions(
                         .insert(ty, value),
                     PermissionLevel::Global => config.default_permissions.insert(ty, value),
                 };
-                let config_file = config_file();
-                if let Some(folder) = config_file.parent() {
-                    std::fs::create_dir_all(folder).unwrap();
-                }
-                if let Err(e) =
-                    std::fs::write(config_file, serde_json::to_string(&*config).unwrap())
-                {
-                    warn!("failed to write to config: {e}");
-                }
+                platform::write_config_file(&config);
             }
         };
 

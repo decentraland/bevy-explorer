@@ -13,6 +13,7 @@ dcl_component = { workspace = true }
 scene_runner = { workspace = true }
 ipfs = { workspace = true }
 scene_material = { workspace = true }
+platform = { workspace = true }
 
 bevy = { workspace = true }
 anyhow = { workspace = true }

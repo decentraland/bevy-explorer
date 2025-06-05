@@ -696,7 +696,7 @@ fn pipe_chats_to_scene(
 
         for sender in senders.iter() {
             let _ = sender.send(ChatMessage {
-                sender_address: format!("{:#x}", player_address),
+                sender_address: format!("{player_address:#x}"),
                 message: chat_event.message.clone(),
                 channel: chat_event.channel.clone(),
             });

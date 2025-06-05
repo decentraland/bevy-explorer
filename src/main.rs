@@ -1,17 +1,19 @@
 #![cfg_attr(not(feature = "console"), windows_subsystem = "windows")]
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+#[cfg(not(debug_assertions))]
+use build_time::build_time_utc;
+
+use dcl_deno::init_runtime;
+
+use mimalloc::MiMalloc;
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 use std::{fs::File, io::Write, sync::OnceLock};
 
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
-#[cfg(not(debug_assertions))]
-use build_time::build_time_utc;
-use dcl::init_runtime;
 use imposters::DclImposterPlugin;
-use mimalloc::MiMalloc;
-
-#[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
 
 use bevy::{
     core::TaskPoolThreadAssignmentPolicy,
@@ -38,7 +40,7 @@ use common::{
         PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake,
         SceneLoadDistance, SystemScene, Version, GROUND_RENDERLAYER,
     },
-    util::{config_file, project_directories, TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
+    util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
 };
 use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
@@ -88,8 +90,14 @@ pub fn version() -> String {
 }
 
 fn main() {
-    let session_time: chrono::DateTime<chrono::Utc> = std::time::SystemTime::now().into();
-    let dirs = project_directories();
+    let session_time: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_timestamp_millis(
+        web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64,
+    )
+    .unwrap();
+    let dirs = platform::project_directories().unwrap();
     let log_dir = dirs.data_local_dir();
     let session_log = log_dir.join(format!("{}.log", session_time.format("%Y%m%d-%H%M%S")));
     SESSION_LOG
@@ -126,19 +134,21 @@ fn main() {
     let mut warnings = Vec::default();
     let mut app = App::new();
 
-    let config_file = config_file();
+    let config_file = platform::project_directories()
+        .unwrap()
+        .config_dir()
+        .join("config.json");
     let base_config: AppConfig = std::fs::read(&config_file)
         .ok()
         .and_then(|f| {
-            infos.push(format!("config file loaded from {:?}", config_file));
+            infos.push(format!("config file loaded from {config_file:?}"));
             serde_json::from_slice(&f)
                 .map_err(|e| warnings.push(format!("failed to parse config.json: {e}")))
                 .ok()
         })
         .unwrap_or_else(|| {
             warnings.push(format!(
-                "config file not found at {:?}, generating default",
-                config_file
+                "config file not found at {config_file:?}, generating default"
             ));
             Default::default()
         });

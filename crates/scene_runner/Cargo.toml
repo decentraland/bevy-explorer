@@ -9,6 +9,7 @@ edition = "2021"
 workspace = true
 
 [features]
+default = []
 gen-tests = []
 
 [dependencies]
@@ -24,6 +25,7 @@ wallet = { workspace = true }
 scene_material = { workspace = true }
 world_ui = { workspace = true }
 propagate = { workspace = true }
+platform = { workspace = true }
 
 bevy = { workspace = true }
 tokio = { workspace = true }
@@ -47,9 +49,15 @@ system_bridge = { workspace = true }
 multihash-codetable = { workspace = true }
 base64 = { workspace = true }
 async-std = { workspace = true }
+web-time = { workspace = true }
 
 petgraph = "0.6.3"
 spin_sleep = "1.1.1"
 image = "0.25"
 boimp = { workspace = true }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+dcl_deno = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+dcl_wasm = { workspace = true }

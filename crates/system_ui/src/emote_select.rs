@@ -305,7 +305,7 @@ fn show_emote_ui(
         for i in 0..=9 {
             // we will remove the empty slots later
             props.insert_prop(
-                format!("image_{}", i),
+                format!("image_{i}"),
                 asset_server.load::<Image>("images/redx.png"),
             );
         }

@@ -1,18 +1,21 @@
 use anyhow::{anyhow, bail};
-use async_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValue};
 use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
     utils::HashMap,
 };
-use futures_lite::future;
-use futures_util::{pin_mut, select, stream::StreamExt, FutureExt, SinkExt};
+use futures_util::{pin_mut, select, FutureExt};
+use http::HeaderValue;
 use ipfs::CurrentRealm;
+use platform::IntoClientRequest;
 use prost::Message;
 use serde_json::json;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use common::rpc::{RpcCall, RpcEventSender};
+use common::{
+    rpc::{RpcCall, RpcEventSender},
+    util::TaskExt,
+};
 use wallet::Wallet;
 
 use crate::{AdapterManager, Transport, TransportType};
@@ -185,9 +188,8 @@ fn reconnect_websocket(
 ) {
     for (transport_id, mut transport, mut conn) in websockets.iter_mut() {
         if transport.retries < 3 {
-            if conn.0.is_finished() {
+            if let Some((receiver, err)) = conn.0.complete() {
                 transport.retries += 1;
-                let (receiver, err) = future::block_on(future::poll_once(&mut conn.0)).unwrap();
                 warn!("archipelago error: {err}, retrying [{}]", transport.address);
                 let remote_address = transport.address.to_owned();
                 let wallet = wallet.clone();
@@ -201,10 +203,11 @@ fn reconnect_websocket(
                 ));
                 conn.0 = task;
             }
-        } else if transport.retries == 3 && conn.0.is_finished() {
-            transport.retries += 1;
-            let (_, err) = future::block_on(future::poll_once(&mut conn.0)).unwrap();
-            warn!("archipelago error: {err}, giving up");
+        } else if transport.retries == 3 {
+            if let Some((_, err)) = conn.0.complete() {
+                transport.retries += 1;
+                error!("archipelago error: {err}, giving up");
+            }
         }
     }
 }
@@ -244,8 +247,8 @@ async fn archipelago_handler_inner(
         HeaderValue::from_static("archipelago"),
     );
 
-    let (mut stream, response) = async_tungstenite::async_std::connect_async(request).await?;
-    debug!("<< stream connected, response: {response:?}");
+    let mut stream = platform::websocket(request).await?;
+    debug!("<< stream connected");
 
     // send peer identification
     let ident = ClientPacket {

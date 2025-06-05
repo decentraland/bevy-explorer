@@ -4,7 +4,9 @@ use comms::{
     CommsPlugin,
 };
 use console::ConsolePlugin;
-use dcl::init_runtime;
+
+use dcl_deno::init_runtime;
+
 use imposters::{render::ImposterMissing, DclImposterPlugin};
 
 use bevy::{
@@ -21,7 +23,7 @@ use common::{
         PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake, SceneLoadDistance,
         SystemAudio, ToolTips,
     },
-    util::{config_file, UtilsPlugin},
+    util::UtilsPlugin,
 };
 use input_manager::{CumulativeAxisData, InputPriorities};
 use nft::asset_source::Nft;
@@ -41,7 +43,10 @@ fn main() {
     init_runtime();
 
     let mut args = pico_args::Arguments::from_env();
-    let config_file = config_file();
+    let config_file = platform::project_directories()
+        .unwrap()
+        .config_dir()
+        .join("config.json");
 
     let levels = args.value_from_str("--levels").unwrap_or(5);
     let range = args

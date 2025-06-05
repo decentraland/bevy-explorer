@@ -299,7 +299,7 @@ impl Default for AppConfig {
             scene_imposter_multisample: true,
             scene_imposter_multisample_amount: 0.33,
             scene_imposter_bake: SceneImposterBake::Off,
-            sysinfo_visible: true,
+            sysinfo_visible: false,
             scene_log_to_console: false,
             max_avatars: 100,
             constrain_scene_ui: false,

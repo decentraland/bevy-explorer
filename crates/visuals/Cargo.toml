@@ -9,6 +9,7 @@ edition = "2021"
 common = { workspace = true }
 console = { workspace = true }
 bevy = { workspace = true }
+platform = { workspace = true }
 
 bevy_atmosphere = { git = "https://github.com/robtfm/bevy_atmosphere", branch = "0.14-dcl" }
 bevy_console = { workspace = true }
@@ -16,3 +17,4 @@ bevy_console = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
 noise = "0.9"
+web-time = { workspace = true }

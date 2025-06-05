@@ -2,18 +2,12 @@ use std::{cell::RefCell, rc::Rc};
 
 use bevy::log::debug;
 use common::rpc::RpcCall;
-use deno_core::{op2, OpDecl, OpState};
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
-// list of op declarations
-pub fn ops() -> Vec<OpDecl> {
-    vec![op_get_connected_players(), op_get_players_in_scene()]
-}
+use super::State;
 
-#[op2(async)]
-#[serde]
-async fn op_get_connected_players(state: Rc<RefCell<OpState>>) -> Vec<String> {
+pub async fn op_get_connected_players(state: Rc<RefCell<impl State>>) -> Vec<String> {
     debug!("op_get_connected_players");
     let (sx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();
 
@@ -27,9 +21,7 @@ async fn op_get_connected_players(state: Rc<RefCell<OpState>>) -> Vec<String> {
     rx.await.unwrap_or_default()
 }
 
-#[op2(async)]
-#[serde]
-async fn op_get_players_in_scene(state: Rc<RefCell<OpState>>) -> Vec<String> {
+pub async fn op_get_players_in_scene(state: Rc<RefCell<impl State>>) -> Vec<String> {
     debug!("op_get_players_in_scene");
 
     let (sx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();

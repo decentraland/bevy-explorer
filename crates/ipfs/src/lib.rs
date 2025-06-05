@@ -9,16 +9,16 @@ use std::{
         atomic::{self, AtomicU16},
         Arc,
     },
-    time::{Duration, Instant, SystemTime},
 };
+
+use web_time::{Duration, Instant};
 
 use anyhow::anyhow;
 use async_std::io::{Cursor, ReadExt, WriteExt};
 use bevy::{
     asset::{
         io::{
-            file::FileAssetReader, AssetReader, AssetReaderError, AssetSource, AssetSourceId,
-            ErasedAssetReader, Reader,
+            AssetReader, AssetReaderError, AssetSource, AssetSourceId, ErasedAssetReader, Reader,
         },
         meta::Settings,
         Asset, AssetLoader, LoadState, UntypedAssetId,
@@ -29,17 +29,26 @@ use bevy::{
     tasks::{IoTaskPool, Task},
     utils::{ConditionalSendFuture, HashMap},
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::asset::io::file::FileAssetReader;
+#[cfg(not(target_arch = "wasm32"))]
+use platform::project_directories;
+
+#[cfg(target_arch = "wasm32")]
+use bevy::asset::io::wasm::HttpWasmAssetReader;
+
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
-use common::{
-    structs::AppConfig,
-    util::{project_directories, TaskCompat},
-};
+use common::{structs::AppConfig, util::TaskCompat};
 use ipfs_path::IpfsAsset;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use console::DoAddConsoleCommand;
+
+#[allow(unused_imports)]
+use platform::ReqwestBuilderExt;
 
 use self::ipfs_path::{normalize_path, IpfsPath, IpfsType};
 
@@ -338,7 +347,7 @@ impl IpfsAssetServer<'_, '_> {
         &self.server
     }
 
-    pub fn ipfs_cache_path(&self) -> &Path {
+    pub fn ipfs_cache_path(&self) -> Option<&Path> {
         self.ipfs().cache_path()
     }
 
@@ -437,16 +446,30 @@ impl Plugin for IpfsIoPlugin {
         info!("remote server: {:?}", self.starting_realm);
 
         let file_path = self.assets_root.clone().unwrap_or("assets".to_owned());
+        #[cfg(not(target_arch = "wasm32"))]
         let default_reader = FileAssetReader::new(file_path.clone());
+        #[cfg(target_arch = "wasm32")]
+        let default_reader = HttpWasmAssetReader::new(file_path.clone());
+
+        #[cfg(not(target_arch = "wasm32"))]
         let cache_root = if self.assets_root.is_some() {
             // use app folder for unit tests
-            default_reader.root_path().join("cache")
+            Some(default_reader.root_path().join("cache"))
         } else {
-            project_directories().data_local_dir().join("cache")
+            Some(
+                project_directories()
+                    .unwrap()
+                    .data_local_dir()
+                    .join("cache"),
+            )
         };
+        #[cfg(target_arch = "wasm32")]
+        let cache_root = None;
         info!("cache folder {cache_root:?}");
-        std::fs::create_dir_all(&cache_root)
-            .unwrap_or_else(|_| panic!("failed to write to assets folder {cache_root:?}"));
+        if let Some(root) = &cache_root {
+            std::fs::create_dir_all(root)
+                .unwrap_or_else(|_| panic!("failed to write to assets folder {root:?}"));
+        }
 
         let ipfs_io = IpfsIo::new(
             self.preview,
@@ -629,7 +652,7 @@ fn clean_cache(mut exit: EventReader<AppExit>, config: Res<AppConfig>, ipfas: Ip
 pub struct IpfsIo {
     is_preview: bool, // determines whether we always retry failed assets immediately
     default_io: Box<dyn ErasedAssetReader>,
-    default_fs_path: PathBuf,
+    default_fs_path: Option<PathBuf>,
     realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, String, ServerAbout)>>,
     realm_config_sender: tokio::sync::watch::Sender<Option<(String, String, ServerAbout)>>,
     context: RwLock<IpfsContext>,
@@ -643,7 +666,7 @@ impl IpfsIo {
     pub fn new(
         is_preview: bool,
         default_io: Box<dyn ErasedAssetReader>,
-        default_fs_path: PathBuf,
+        default_fs_path: Option<PathBuf>,
         static_paths: HashMap<&'static str, &'static str>,
         num_slots: usize,
     ) -> Self {
@@ -672,7 +695,11 @@ impl IpfsIo {
     }
 
     pub fn trim_cache(&self, max_size: u64) {
-        let Ok(folder) = std::fs::read_dir(self.cache_path()) else {
+        let Some(cache_path) = self.cache_path() else {
+            return;
+        };
+
+        let Ok(folder) = std::fs::read_dir(cache_path) else {
             return;
         };
 
@@ -685,7 +712,9 @@ impl IpfsIo {
                 };
 
                 if metadata.is_file() {
-                    let accessed = metadata.accessed().unwrap_or(SystemTime::UNIX_EPOCH);
+                    let accessed = metadata
+                        .accessed()
+                        .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
                     Some((accessed, (metadata.len(), f.path())))
                 } else {
                     None
@@ -862,8 +891,8 @@ impl IpfsIo {
         write.entities.insert(hash, entity);
     }
 
-    pub fn cache_path(&self) -> &Path {
-        self.default_fs_path.as_path()
+    pub fn cache_path(&self) -> Option<&Path> {
+        self.default_fs_path.as_deref()
     }
 
     // load entities from pointers and cache urls
@@ -883,7 +912,7 @@ impl IpfsIo {
         }
         .map(|url| format!("{url}/entities/active"));
 
-        let cache_path = self.cache_path().to_owned();
+        let maybe_cache_path = self.cache_path().map(ToOwned::to_owned);
 
         match request {
             ActiveEntitiesRequest::Pointers(pointers) => {
@@ -910,16 +939,17 @@ impl IpfsIo {
                     for entity in active_entities.0 {
                         let id = entity.id.as_ref().unwrap();
                         // cache to file system
-                        let cache_path = cache_path.join(id);
 
-                        if id.starts_with("b64-") || !cache_path.exists() {
-                            let mut file = async_fs::File::create(&cache_path).await?;
-                            let mut buf = Vec::default();
-                            serde_json::to_writer(&mut buf, &entity)?;
-                            file.write_all(&buf).await?;
-                            file.sync_all().await?;
-                            // let file = std::fs::File::create(&cache_path)?;
-                            // serde_json::to_writer(file, &entity)?;
+                        if let Some(cache_path) = &maybe_cache_path {
+                            let cache_path = cache_path.join(id);
+
+                            if id.starts_with("b64-") || !cache_path.exists() {
+                                let mut file = async_fs::File::create(&cache_path).await?;
+                                let mut buf = Vec::default();
+                                serde_json::to_writer(&mut buf, &entity)?;
+                                file.write_all(&buf).await?;
+                                file.sync_all().await?;
+                            }
                         }
 
                         // return active entity struct
@@ -1080,7 +1110,7 @@ impl AssetReader for IpfsIo {
         path: &'a std::path::Path,
     ) -> impl ConditionalSendFuture<Output = Result<Box<Reader<'a>>, bevy::asset::io::AssetReaderError>>
     {
-        Box::pin(async_compat::Compat::new(async move {
+        Box::pin(platform::compat(async move {
             let wrap_err = |e| {
                 bevy::asset::io::AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
                     "w: {e}"
@@ -1099,17 +1129,19 @@ impl AssetReader for IpfsIo {
 
             let hash = ipfs_path.hash(&*self.context.read().await);
 
-            if let Some(hash) = &hash {
-                debug!("hash: {}", hash);
-                if !hash.starts_with("b64") {
-                    if let Ok(mut res) = self.default_io.read(&self.cache_path().join(hash)).await {
-                        let mut daft_buffer = Vec::default();
-                        res.read_to_end(&mut daft_buffer).await?;
-                        let reader: Box<Reader> = Box::new(Cursor::new(daft_buffer));
-                        return Ok(reader);
+            if let Some(cache_path) = self.cache_path() {
+                if let Some(hash) = &hash {
+                    debug!("hash: {}", hash);
+                    if !hash.starts_with("b64") {
+                        if let Ok(mut res) = self.default_io.read(&cache_path.join(hash)).await {
+                            let mut daft_buffer = Vec::default();
+                            res.read_to_end(&mut daft_buffer).await?;
+                            let reader: Box<Reader> = Box::new(Cursor::new(daft_buffer));
+                            return Ok(reader);
+                        }
                     }
-                }
-            };
+                };
+            }
 
             debug!(
                 "remote ({})",
@@ -1246,10 +1278,10 @@ impl AssetReader for IpfsIo {
                 }
             };
 
-            if let Some(hash) = hash {
+            if let (Some(hash), Some(cache_path)) = (hash, self.cache_path()) {
                 if !no_cache && ipfs_path.should_cache(&hash) {
-                    let mut cache_path = PathBuf::from(self.cache_path());
-                    cache_path.push(format!("{}.part", hash));
+                    let mut cache_path = PathBuf::from(cache_path);
+                    cache_path.push(format!("{hash}.part"));
                     let cache_path_str = cache_path.to_string_lossy().into_owned();
                     // ignore errors trying to cache
                     match async_fs::File::create(&cache_path).await {

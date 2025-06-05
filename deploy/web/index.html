@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bevy Explorer</title>
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; /* Changed to Inter */
+            margin: 20px; 
+            background-color: #f7fafc; /* Lighter gray */
+            color: #2d3748; /* Darker gray for text */
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Center content */
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 700px; /* Max width for content */
+        }
+        h1 { 
+            color: #2b6cb0; /* Tailwind blue-700 */
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-top: 15px;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #4a5568; /* Tailwind gray-700 */
+        }
+        input[type="text"] {
+            width: calc(100% - 22px); /* Full width minus padding and border */
+            padding: 10px;
+            border: 1px solid #cbd5e0; /* Tailwind gray-400 */
+            border-radius: 6px;
+            font-size: 1rem;
+            color: #2d3748;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #4299e1; /* Tailwind blue-500 */
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5);
+        }
+        button { 
+            padding: 12px 20px; 
+            background-color: #3182ce; /* Tailwind blue-600 */
+            color: white; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            margin-top: 25px;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: background-color 0.2s ease-in-out;
+            display: block; /* Make button block to center it */
+            margin-left: auto;
+            margin-right: auto;
+        }
+        button:hover { 
+            background-color: #2b6cb0; /* Tailwind blue-700 */
+        }
+        #mygame-canvas {
+            width: 100%; /* Make canvas responsive */
+            max-width: 1280px; /* Max width for canvas */
+            height: auto; /* Maintain aspect ratio */
+            aspect-ratio: 1280 / 720;
+            border: 1px solid #e2e8f0; /* Tailwind gray-300 */
+            border-radius: 6px;
+            margin-top: 20px;
+            display: block; /* Remove extra space below canvas */
+        }
+        /* Added for better structure and responsiveness */
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        /* For smaller screens */
+        @media (max-width: 600px) {
+            body {
+                margin: 10px;
+            }
+            .container {
+                padding: 20px;
+            }
+            h1 {
+                font-size: 1.8rem;
+            }
+            button {
+                width: 100%;
+            }
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <h1>Bevy Explorer</h1>
+
+        <div class="input-group">
+            <label for="initialRealm">Initial Realm:</label>
+            <input type="text" id="initialRealm" name="initialRealm" placeholder="e.g., world_alpha">
+        </div>
+
+        <div class="input-group">
+            <label for="location">Location:</label>
+            <input type="text" id="location" name="location" placeholder="e.g., 0,0">
+        </div>
+
+        <div class="input-group">
+            <label for="system scene">System Scene:</label>
+            <input type="text" id="systemScene" name="systemScene" placeholder="">
+        </div>
+
+        <button id="initButton">Go</button>
+        
+        </div>
+    <canvas id="mygame-canvas" width="1280" height="720"></canvas> 
+    
+    <script type="module" src="main.js"></script>
+</body>
+</html>

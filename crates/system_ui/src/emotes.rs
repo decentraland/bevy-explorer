@@ -301,7 +301,7 @@ fn set_emotes_content(
                         &dui,
                         "emote-slot",
                         DuiProps::new()
-                            .with_prop("slot-id", format!("{}", slot))
+                            .with_prop("slot-id", format!("{slot}"))
                             .with_prop("emote-img", emote_img),
                     )
                     .unwrap()

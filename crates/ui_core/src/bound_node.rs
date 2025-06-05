@@ -88,6 +88,7 @@ struct GpuBoundsData {
     corner_size: f32,
     corner_blend_size: f32,
     border_size: f32,
+    _pad: u32,
 }
 
 impl Default for GpuBoundsData {
@@ -99,6 +100,7 @@ impl Default for GpuBoundsData {
             corner_size: Default::default(),
             corner_blend_size: Default::default(),
             border_size: Default::default(),
+            _pad: 0,
         }
     }
 }

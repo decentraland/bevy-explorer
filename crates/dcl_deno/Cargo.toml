@@ -1,0 +1,52 @@
+[package]
+name = "dcl_deno"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[features]
+default = []
+inspect = ["fastwebsockets", "hyper", "uuid"]
+
+[dependencies]
+common = { workspace = true }
+dcl_component = { workspace = true }
+dcl = { workspace = true }
+ipfs = { workspace = true }
+wallet = { workspace = true }
+system_bridge = { workspace = true }
+platform = { workspace = true }
+
+bevy = { workspace = true }
+tokio = { workspace = true }
+once_cell = { workspace = true }
+futures-lite = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+num-traits = { workspace = true }
+http = { workspace = true }
+urlencoding = { workspace = true }
+base64 = { workspace = true }
+multihash-codetable = { workspace = true }
+
+deno_core = "0.307"
+deno_console = "0.168"
+deno_fetch = "0.192"
+deno_net = "0.160"
+deno_url = "0.168"
+deno_webidl = "0.168"
+deno_web = "0.199"
+deno_websocket = "0.173"
+deno_webstorage = "0.163"
+
+num-derive = "0.4.2"
+num = "0.4"
+bytes = "1.4.0"
+ethers-providers = { version = "2", features = ["ws","openssl"] }
+
+# inspector requirements
+fastwebsockets = { version = "0.4.4", optional = true, features = ["upgrade"] }
+hyper = { version = "0.14.26", features = ["runtime", "http1", "server"], optional = true }
+uuid = { workspace = true, optional = true }

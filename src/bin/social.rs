@@ -3,10 +3,8 @@ use bevy_simple_text_input::{
     TextInputBundle, TextInputPlaceholder, TextInputPlugin, TextInputSettings, TextInputSubmitEvent,
 };
 use common::util::{AsH160, TryPushChildrenEx};
-use dcl_component::proto_components::social::friendship_event_response;
 use social::{
-    client::{DirectChatMessage, SocialClientHandler},
-    SocialClient, SocialPlugin,
+    DirectChatMessage, FriendshipEventBody, SocialClient, SocialClientHandler, SocialPlugin,
 };
 use tokio::sync::mpsc::unbounded_channel;
 use wallet::{Wallet, WalletPlugin};
@@ -16,7 +14,7 @@ struct WalletSeed(Option<u32>);
 
 #[derive(Resource)]
 struct SocEvents(
-    tokio::sync::mpsc::UnboundedReceiver<friendship_event_response::Body>,
+    tokio::sync::mpsc::UnboundedReceiver<FriendshipEventBody>,
     tokio::sync::mpsc::UnboundedReceiver<DirectChatMessage>,
 );
 
@@ -58,7 +56,7 @@ fn setup(
     commands.insert_resource(SocEvents(rx, rx_c));
     client.0 = SocialClientHandler::connect(
         wallet.clone(),
-        move |ev: &friendship_event_response::Body| {
+        move |ev: &FriendshipEventBody| {
             let _ = sx.send(ev.clone());
         },
         move |ev: DirectChatMessage| {

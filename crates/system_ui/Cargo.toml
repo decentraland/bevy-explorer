@@ -28,6 +28,7 @@ world_ui = { workspace = true }
 analytics = { workspace = true }
 social = { workspace = true }
 system_bridge = { workspace = true }
+platform = { workspace = true }
 
 bevy = { workspace = true }
 bevy_egui = { workspace = true }
@@ -48,6 +49,7 @@ urlencoding = { workspace = true }
 build-time = { workspace = true }
 futures-lite = { workspace = true }
 async-compat = { workspace = true }
+web-time = { workspace = true }
 
 copypasta = "0.10"
 shlex = "1"

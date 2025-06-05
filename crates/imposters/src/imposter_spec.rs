@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use anyhow::anyhow;
 use bevy::{asset::AsyncReadExt, prelude::*, utils::HashMap};
 use common::structs::IVec2Arg;
 use ipfs::IpfsIo;
@@ -156,7 +157,7 @@ pub async fn load_imposter_remote(
         .to_string_lossy()
         .into_owned()
         .replace("\\", "/");
-    let zip_url = format!("https://imposter.kuruk.net/{}", zip_file)
+    let zip_url = format!("https://imposter.kuruk.net/{zip_file}")
         // double url encode
         .replace("%", "%25");
     debug!("zip_url {zip_url}");
@@ -168,7 +169,11 @@ pub async fn load_imposter_remote(
     }
     let bytes = response.bytes().await?;
     let mut zip = ZipArchive::new(Cursor::new(bytes))?;
-    let root = file_root(ipfs.cache_path(), id, level);
+    let root = file_root(
+        ipfs.cache_path().ok_or(anyhow!("no cache root"))?,
+        id,
+        level,
+    );
     async_fs::create_dir_all(&root).await?;
     zip.extract(root)?;
     Ok(())
@@ -181,7 +186,7 @@ pub async fn load_imposter_local(
     level: usize,
     required_crc: Option<u32>,
 ) -> Option<BakedScene> {
-    let path = spec_path(ipfs.cache_path(), id, parcel, level);
+    let path = spec_path(ipfs.cache_path()?, id, parcel, level);
     if let Ok(mut file) = async_fs::File::open(&path).await {
         let mut buf = Vec::default();
         if file.read_to_end(&mut buf).await.is_ok() {

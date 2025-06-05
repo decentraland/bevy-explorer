@@ -122,6 +122,9 @@ pub fn add_worldui_materials(
             pix_per_m: wui.pix_per_m,
             add_y_pix: wui.add_y_pix,
             vertex_billboard: if wui.vertex_billboard { 1 } else { 0 },
+            _pad0: 0,
+            _pad1: 0,
+            _pad2: 0,
         };
 
         let material = materials.add(TextShapeMaterial {
@@ -251,6 +254,9 @@ pub struct TextQuadData {
     pub pix_per_m: f32,
     pub add_y_pix: f32,
     pub vertex_billboard: u32,
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
 }
 
 impl MaterialExtension for TextQuad {

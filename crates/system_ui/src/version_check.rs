@@ -1,4 +1,3 @@
-use futures_lite::future;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -13,11 +12,16 @@ pub fn build_date() -> chrono::NaiveDate {
 }
 
 pub fn check_update_sync() -> Option<(String, String)> {
-    future::block_on(check_update())
+    #[cfg(not(target_arch = "wasm32"))]
+    return futures_lite::future::block_on(check_update());
+
+    // can't block in wasm
+    #[cfg(target_arch = "wasm32")]
+    None
 }
 
 pub async fn check_update() -> Option<(String, String)> {
-    let latest: GitData = async_compat::Compat::new(async {
+    let latest: GitData = platform::compat(async {
         reqwest::get("https://api.github.com/repos/decentraland/bevy-explorer/releases/latest")
             .await
             .ok()?

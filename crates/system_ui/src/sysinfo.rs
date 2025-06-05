@@ -336,13 +336,13 @@ fn update_scene_load_state(
         set_child(title);
         set_child(state.to_owned());
 
-        set_child(format!("{}", loading));
-        set_child(format!("{}", running));
-        set_child(format!("{}", blocked));
-        set_child(format!("{}", broken));
+        set_child(format!("{loading}"));
+        set_child(format!("{running}"));
+        set_child(format!("{blocked}"));
+        set_child(format!("{broken}"));
 
-        set_child(format!("{}", transports));
-        set_child(format!("{}", players));
+        set_child(format!("{transports}"));
+        set_child(format!("{players}"));
 
         let debug_info = debug_info
             .info
@@ -624,7 +624,7 @@ fn update_tracker(
                 "tracker-item",
                 DuiProps::new()
                     .with_prop("label", key.to_string())
-                    .with_prop("value", format!("{}", value)),
+                    .with_prop("value", format!("{value}")),
             )
             .unwrap();
     }

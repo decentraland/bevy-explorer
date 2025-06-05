@@ -37,6 +37,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, channel, Receiver, Sender, UnboundedReceiver, UnboundedSender};
 use wallet::SimpleAuthChain;
 
+use crate::DirectChatMessage;
+
 #[derive(Serialize, Deserialize)]
 struct SocialIdentifier {
     r#type: String,
@@ -47,7 +49,7 @@ impl SocialIdentifier {
     fn new(address: Address) -> Self {
         Self {
             r#type: "m.id.user".to_owned(),
-            user: format!("{:#x}", address),
+            user: format!("{address:#x}"),
         }
     }
 }
@@ -62,7 +64,13 @@ struct SocialLogin {
 
 impl SocialLogin {
     async fn try_new(wallet: &wallet::Wallet) -> Result<Self, anyhow::Error> {
-        let timestamp: chrono::DateTime<chrono::Utc> = std::time::SystemTime::now().into();
+        let timestamp: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_timestamp_millis(
+            web_time::SystemTime::now()
+                .duration_since(web_time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64,
+        )
+        .unwrap();
         let timestamp = format!("{}", timestamp.timestamp_millis());
 
         let auth_chain = wallet
@@ -78,13 +86,6 @@ impl SocialLogin {
             r#type: "m.login.decentraland".to_owned(),
         })
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DirectChatMessage {
-    pub partner: Address,
-    pub me_speaking: bool,
-    pub message: String,
 }
 
 enum FriendData {
@@ -370,6 +371,7 @@ const SOCIAL_URL: &str = "wss://rpc-social-service.decentraland.org"; // zone do
 #[cfg(not(test))]
 const SOCIAL_URL: &str = "wss://rpc-social-service.decentraland.org";
 
+#[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
 async fn social_socket_handler_inner(
     wallet: wallet::Wallet,
     mut rx: UnboundedReceiver<FriendshipOutbound>,
@@ -933,3 +935,5 @@ mod test {
         println!("done");
     }
 }
+
+pub type FriendshipEventBody = friendship_event_response::Body;

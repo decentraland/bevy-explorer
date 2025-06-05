@@ -19,7 +19,7 @@ use common::{
 use comms::{global_crdt::GlobalCrdtState, preview::PreviewMode};
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
-    spawn_scene, SceneElapsedTime, SceneId, SceneResponse,
+    SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
     proto_components::sdk::components::PbMainCamera, transform_and_parent::DclTransformAndParent,
@@ -39,6 +39,12 @@ use crate::{
     update_world::ComponentTracker, ContainerEntity, DeletedSceneEntities, SceneEntity,
     SceneThreadHandle,
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use dcl_deno::spawn_scene;
+
+#[cfg(target_arch = "wasm32")]
+use dcl_wasm::spawn_scene;
 
 #[derive(Default)]
 pub struct CrdtLoader;
@@ -318,7 +324,7 @@ pub(crate) fn load_scene_javascript(
             match ipfas.load_content_file::<SceneJsFile>(&meta.main, &definition.id) {
                 Ok(h_code) => h_code,
                 Err(e) => {
-                    fail(&format!("couldn't load javascript: {}", e));
+                    fail(&format!("couldn't load javascript: {e}"));
                     continue;
                 }
             }
@@ -485,7 +491,7 @@ impl FromStr for TestScenes {
         let scenes: Result<VecDeque<TestScene>, ParseIntError> = value
             .split(';')
             .map(|scene| {
-                println!("parsing test scenes scene {}", scene);
+                println!("parsing test scenes scene {scene}");
                 if let Some((parcel, fails)) = scene.split_once('/') {
                     let allow_failures = fails.split('/').map(ToOwned::to_owned).collect();
                     println!("allowed failures: {allow_failures:?}");

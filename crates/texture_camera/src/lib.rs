@@ -3,7 +3,6 @@ use std::f32::consts::FRAC_PI_4;
 use bevy::{
     core_pipeline::{
         bloom::BloomSettings,
-        prepass::{DepthPrepass, NormalPrepass},
         tonemapping::{DebandDither, Tonemapping},
     },
     pbr::ShadowFilteringMethod,
@@ -33,6 +32,7 @@ use dcl_component::{
     },
     SceneComponentId,
 };
+use platform::{DepthPrepass, NormalPrepass};
 use propagate::{HierarchyPropagatePlugin, Propagate, PropagateStop};
 use scene_runner::{
     renderer_context::RendererSceneContext,

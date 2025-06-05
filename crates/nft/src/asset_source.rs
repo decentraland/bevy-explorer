@@ -14,6 +14,9 @@ use num::{BigInt, ToPrimitive};
 use reqwest::StatusCode;
 use serde::Deserialize;
 
+#[allow(unused_imports)]
+use platform::ReqwestBuilderExt;
+
 pub struct NftReaderPlugin;
 
 impl Plugin for NftReaderPlugin {
@@ -36,7 +39,7 @@ impl AssetReader for NftReader {
         Output = Result<Box<bevy::asset::io::Reader<'a>>, bevy::asset::io::AssetReaderError>,
     > {
         let path = path.to_owned();
-        Box::pin(async_compat::Compat::new(async move {
+        Box::pin(platform::compat(async move {
             debug!("getting nft raw data");
 
             let path = path.to_string_lossy();

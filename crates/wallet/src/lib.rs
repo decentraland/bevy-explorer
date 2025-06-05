@@ -106,7 +106,8 @@ impl Wallet {
     }
 }
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub(crate) trait ObjSafeWalletSigner {
     async fn sign_message(
         &self,
@@ -125,7 +126,8 @@ pub(crate) trait ObjSafeWalletSigner {
     // fn chain_id(&self) -> u64;
 }
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl ObjSafeWalletSigner for LocalWallet {
     async fn sign_message(
         &self,
@@ -194,7 +196,7 @@ impl SimpleAuthChain {
     pub fn headers(&self) -> impl Iterator<Item = (String, String)> + '_ {
         self.0.iter().enumerate().map(|(ix, link)| {
             (
-                format!("x-identity-auth-chain-{}", ix),
+                format!("x-identity-auth-chain-{ix}"),
                 serde_json::to_string(&link).unwrap(),
             )
         })
@@ -242,8 +244,8 @@ pub async fn sign_request<META: Serialize>(
     wallet: &Wallet,
     meta: META,
 ) -> Result<Vec<(String, String)>, anyhow::Error> {
-    let unix_time = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let unix_time = web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
         .unwrap()
         .as_millis();
 
@@ -252,7 +254,7 @@ pub async fn sign_request<META: Serialize>(
     let auth_chain = wallet.sign_message(payload).await?;
 
     let mut headers: Vec<_> = auth_chain.headers().collect();
-    headers.push(("x-identity-timestamp".to_owned(), format!("{}", unix_time)));
+    headers.push(("x-identity-timestamp".to_owned(), format!("{unix_time}")));
     headers.push(("x-identity-metadata".to_owned(), meta));
     Ok(headers)
 }

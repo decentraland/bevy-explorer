@@ -5,13 +5,16 @@ edition = "2021"
 
 [lib]
 
+[features]
+social = ["dep:dcl-rpc"]
+
 [dependencies]
 bevy = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
-dcl-rpc = { workspace = true }
+dcl-rpc = { workspace = true, optional = true }
 async-trait = { workspace = true }
 
 [build-dependencies]
 prost-build = "0.11.8"
-dcl-rpc = { workspace = true }
+dcl-rpc = { workspace = true, optional = true }

@@ -2,8 +2,10 @@ use std::{
     collections::VecDeque,
     marker::PhantomData,
     sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError},
-    time::{Duration, SystemTime},
+    time::Duration,
 };
+
+use web_time::SystemTime;
 
 use bevy::{
     core::FrameCount,
@@ -11,7 +13,7 @@ use bevy::{
     math::{FloatOrd, Vec3A, Vec3Swizzles},
     prelude::*,
     scene::scene_spawner_system,
-    utils::{HashMap, HashSet, Instant},
+    utils::{HashMap, HashSet},
     window::PrimaryWindow,
     winit::WinitWindows,
 };
@@ -37,10 +39,13 @@ use dcl_component::{
 use initialize_scene::{PortableScenes, TestingData};
 use ipfs::{CurrentRealm, SceneIpfsLocation};
 use primary_entities::PrimaryEntities;
+#[cfg(not(target_arch = "wasm32"))]
 use spin_sleep::SpinSleeper;
 use ui_core::ui_actions::{Click, On};
 use update_world::lights::LightsPlugin;
 use util::SceneUtilPlugin;
+
+use web_time::Instant;
 
 use self::{
     initialize_scene::{
@@ -198,6 +203,7 @@ pub struct SceneLoopSchedule {
     schedule: Schedule,
     run_time: f64,
     prev_time: Instant,
+    #[cfg(not(target_arch = "wasm32"))]
     sleeper: SpinSleeper,
 }
 
@@ -217,7 +223,7 @@ impl Plugin for SceneRunnerPlugin {
             receiver,
             scene_ids: Default::default(),
             jobs_in_flight: Default::default(),
-            update_deadline: SystemTime::now(),
+            update_deadline: web_time::SystemTime::now(),
             eligible_jobs: 0,
             scene_queue: Default::default(),
             loop_end_time: Instant::now(),
@@ -312,6 +318,7 @@ impl Plugin for SceneRunnerPlugin {
             schedule: scene_schedule,
             prev_time: Instant::now(),
             run_time: 0.01,
+            #[cfg(not(target_arch = "wasm32"))]
             sleeper: SpinSleeper::default(),
         });
 
@@ -385,6 +392,7 @@ fn run_scene_loop(world: &mut World) {
     let mut loop_schedule = world.resource_mut::<SceneLoopSchedule>();
     loop_schedule.schedule = schedule;
 
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(sleep_time) = target_end_time.checked_duration_since(start_loop_time) {
         if fps != 0.0 {
             loop_schedule.sleeper.sleep(sleep_time)

@@ -29,6 +29,7 @@ pub struct MaskData {
     color: Vec4,
     distance: f32,
     num_bounds: u32,
+    _pad: u32,
 }
 
 // This is the struct that will be passed to your shader
@@ -80,6 +81,7 @@ impl MaskMaterial {
                 color: color.to_linear().to_vec4(),
                 bounds,
                 distance,
+                _pad: 0,
             },
             base_texture,
             mask_texture,

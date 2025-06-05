@@ -11,6 +11,7 @@ hot_reload = []
 [dependencies]
 common = { workspace = true }
 console = { workspace = true }
+platform = { workspace = true }
 
 bevy = { workspace = true }
 anyhow = { workspace = true }
@@ -28,6 +29,7 @@ async-compat = { workspace = true }
 async-fs = { workspace = true }
 multihash-codetable = { workspace = true }
 base64 = { workspace = true }
+web-time = { workspace = true }
 
 url = "2.4.0"
 downcast-rs = "1.2"

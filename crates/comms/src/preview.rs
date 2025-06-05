@@ -1,14 +1,13 @@
 use std::{str::FromStr, time::Duration};
 
 use anyhow::{anyhow, bail};
-use async_tungstenite::tungstenite::client::IntoClientRequest;
 use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
 use common::{structs::PreviewCommand, util::TaskExt};
-use futures_util::StreamExt;
 use ipfs::CurrentRealm;
+use platform::IntoClientRequest;
 
 #[derive(Resource, Default)]
 pub struct PreviewMode {
@@ -51,10 +50,12 @@ fn connect_preview_server(
         return;
     }
 
-    if task.as_ref().is_none_or(|(t, _)| t.is_finished()) {
-        if let Some(Err(e)) = task.take().map(|(mut t, _)| t.complete().unwrap()) {
-            warn!("preview socket error: {e}");
-        };
+    let mut restart = task.as_ref().is_none();
+    if let Some(Err(err)) = task.as_mut().and_then(|t| t.0.complete()) {
+        warn!("preview socket error: {err}, restarting");
+        restart = true;
+    }
+    if restart {
         let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
         *task = Some((
             IoTaskPool::get().spawn(handle_preview_socket(server.clone(), sx)),
@@ -85,8 +86,8 @@ pub async fn handle_preview_socket(
     };
 
     let request = remote_address.into_client_request()?;
-    let (stream, response) = async_tungstenite::async_std::connect_async(request).await?;
-    debug!("preview socket connected, response: {response:?}");
+    let stream = platform::websocket(request).await?;
+    debug!("preview socket connected");
 
     let (_, mut read) = stream.split();
 

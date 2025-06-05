@@ -10,6 +10,8 @@ use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 
 use crate::SimpleAuthChain;
+#[allow(unused_imports)]
+use platform::ReqwestBuilderExt;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,11 +47,11 @@ const AUTH_SERVER_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 const AUTH_SERVER_TIMEOUT: Duration = Duration::from_secs(600);
 
 async fn fetch_server(req_id: String) -> Result<(H160, serde_json::Value), anyhow::Error> {
-    let start_time = std::time::Instant::now();
+    let start_time = web_time::Instant::now();
     let mut attempt = 0;
     loop {
         debug!("trying req_id {:?} attempt ${attempt}", req_id);
-        if std::time::Instant::now()
+        if web_time::Instant::now()
             .checked_duration_since(start_time)
             .unwrap_or_default()
             >= AUTH_SERVER_TIMEOUT
@@ -167,8 +169,14 @@ pub async fn remote_send_async(
         .map(|(_, payload)| payload)
 }
 
-fn get_ephemeral_message(ephemeral_address: &str, expiration: std::time::SystemTime) -> String {
-    let datetime: chrono::DateTime<chrono::Utc> = expiration.into();
+fn get_ephemeral_message(ephemeral_address: &str, expiration: web_time::SystemTime) -> String {
+    let datetime: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_timestamp_millis(
+        expiration
+            .duration_since(web_time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64,
+    )
+    .unwrap();
     let formatted_time = datetime.format("%Y-%m-%dT%H:%M:%S%.3fZ");
     format!(
         "Decentraland Login\nEphemeral address: {ephemeral_address}\nExpiration: {formatted_time}",
@@ -185,7 +193,7 @@ pub struct RemoteEphemeralRequest {
 pub async fn init_remote_ephemeral_request() -> Result<RemoteEphemeralRequest, anyhow::Error> {
     let ephemeral_wallet = LocalWallet::new(&mut thread_rng());
     let ephemeral_address = format!("{:#x}", ephemeral_wallet.address());
-    let expiration = std::time::SystemTime::now() + std::time::Duration::from_secs(30 * 24 * 3600);
+    let expiration = web_time::SystemTime::now() + std::time::Duration::from_secs(30 * 24 * 3600);
     let message = get_ephemeral_message(ephemeral_address.as_str(), expiration);
 
     let request = CreateRequest {
@@ -219,7 +227,7 @@ pub async fn finish_remote_ephemeral_request(
     let delegate = ChainLink {
         ty: "ECDSA_EPHEMERAL".to_owned(),
         payload: message,
-        signature: format!("0x{}", signature),
+        signature: format!("0x{signature}"),
     };
     Ok((signer, ephemeral_wallet, vec![delegate], 1))
 }

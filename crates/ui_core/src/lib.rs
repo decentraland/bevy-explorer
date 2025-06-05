@@ -26,7 +26,7 @@ use bevy::{
     state::state::FreelyMutableState,
     utils::{HashMap, HashSet},
 };
-use bevy_dui::{DuiPlugin, DuiRegistry};
+use bevy_dui::{DuiNodeList, DuiPlugin, DuiRegistry};
 use bevy_egui::EguiPlugin;
 use bound_node::BoundedNodePlugin;
 use button::{DuiButtonSetTemplate, DuiButtonTemplate, DuiTabGroupTemplate};
@@ -110,8 +110,37 @@ fn setup(
     mut tracker: ResMut<StateTracker<State>>,
     mut dui: ResMut<DuiRegistry>,
 ) {
-    tracker.load_asset(asset_server.load_folder("ui"));
-    tracker.load_asset(asset_server.load_folder("images"));
+    // tracker.load_asset(asset_server.load_folder("ui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/app_settings.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/avatar.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/button.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/change-realm.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/chat.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/combo.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/dialog.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/discover.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/emote-select.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/emote.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/foreign-profile-dialog.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/fullscreen-block.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/login.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/map.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/minimap.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/motd.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/nft-dialog.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/oow.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/permissions-dialog.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/permissions.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/profile-detail.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/profile.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/spinner.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/toast.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/tracker.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/update.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/utils.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/wearables.dui"));
+
+    // tracker.load_asset(asset_server.load_folder("images"));
 
     dui.register_template("button", DuiButtonTemplate);
     dui.register_template("button-set", DuiButtonSetTemplate);
