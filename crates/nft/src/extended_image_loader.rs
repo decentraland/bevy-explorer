@@ -39,7 +39,8 @@ impl AssetLoader for SvgLoader {
             };
             resvg::render(&svg_tree, transform, &mut pixmap.as_mut());
             let png = pixmap.encode_png().map_err(|_| "encode png failed")?;
-            let img = Image::from_buffer(
+            #[allow(unused_mut)]
+            let mut image = Image::from_buffer(
                 &png,
                 ImageType::Extension("png"),
                 CompressedImageFormats::default(),
@@ -49,8 +50,27 @@ impl AssetLoader for SvgLoader {
             )
             .map_err(|_| "image construction failed")?;
 
+            #[cfg(target_arch="wasm32")]
+            if image.texture_descriptor.format == bevy::render::render_resource::TextureFormat::Rgba16Unorm {
+                let data = image
+                    .data
+                    .chunks_exact(2)
+                    .map(|pair| {
+                        (u16::from_le_bytes([pair[0], pair[1]]) as f32 / u16::MAX as f32
+                            * u8::MAX as f32) as u8
+                    })
+                    .collect::<Vec<_>>();
+                image = Image::new(
+                    image.texture_descriptor.size,
+                    image.texture_descriptor.dimension,
+                    data,
+                    bevy::render::render_resource::TextureFormat::Rgba8Unorm,
+                    image.asset_usage,
+                );
+            }
+
             debug!("svg load ok");
-            Ok(img)
+            Ok(image)
         })
     }
 }

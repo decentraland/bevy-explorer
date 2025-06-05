@@ -113,7 +113,7 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
     let _ = console_log::init_with_level(log::Level::Info);
 
     let scene_initialization_data: SceneInitializationData =
-        SCENE_QUEUE.get().unwrap().lock().await.pop().unwrap();
+        SCENE_QUEUE.get().expect("scene queue not initialized").lock().await.pop().unwrap();
     let context = WorkerContext {
         state: Default::default(),
     };
