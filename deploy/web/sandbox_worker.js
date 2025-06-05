@@ -164,7 +164,7 @@ var allowedModules = undefined;
 
 async function preloadModules() {
   const modules = {
-    "~system/BevyExplorerApi": "modules/systemApi.js",
+    "~system/BevyExplorerApi": "modules/SystemApi.js",
     "~system/CommunicationsController": "modules/CommunicationsController.js",
     "~system/CommsApi": "modules/CommsApi.js",
     "~system/EngineApi": "modules/EngineApi.js",
