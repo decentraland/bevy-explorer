@@ -11,7 +11,7 @@ name = "webgpu_build"
 # to build wasm lib:
 # - copy ./assets to deploy/web/assets
 # - copy ./crates/dcl/src/js/modules to deploy/web/modules
-# - wasm-pack build --dev --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm" && npx serve deploy/web
+# - wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm" && npx serve deploy/web
 
 [features]
 default = ["livekit", "ffmpeg", "inspect", "social"]
