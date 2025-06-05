@@ -238,7 +238,8 @@ self.onmessage = async (event) => {
       var elapsed = 0;
       var count = 0;
       while (ops.op_continue_running()) {
-        await module.onUpdate(elapsed - prevElapsed);
+        const dt = (elapsed - prevElapsed) / 1000;
+        await module.onUpdate(dt);
         prevElapsed = elapsed;
         elapsed = new Date() - startTime;
         count += 1;
