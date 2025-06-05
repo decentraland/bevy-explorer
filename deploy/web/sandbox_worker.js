@@ -81,9 +81,9 @@ function createJsContext(wasmApi, context) {
 
   const ops = Object.create(null);
   for (const exportName in wasmApi) {
-    console.log("checking", exportName);
+    // console.log("checking", exportName);
     if (exportName.substring(0, 3) === "op_") {
-      console.log("adding", exportName);
+      // console.log("adding", exportName);
       Object.defineProperty(ops, exportName, {
         configurable: false,
         get() {
@@ -195,7 +195,7 @@ async function preloadModules() {
 function require(moduleName) {
   let code = allowedModules[moduleName];
   if (!code) {
-    console.log(allowedModules);
+    // console.log(allowedModules);
     throw "can't find module `" + moduleName + "`";
   }
 
@@ -216,6 +216,7 @@ self.onmessage = async (event) => {
       await init({ module: compiledModule, memory: sharedMemory });
       const wasmContext = await wasm_bindgen_exports.wasm_init_scene();
       createJsContext(wasm_bindgen_exports, wasmContext);
+      const ops = jsContext.Deno.core.ops;
 
       // preload modules
       await preloadModules();
@@ -224,7 +225,7 @@ self.onmessage = async (event) => {
       let module = await runWithScope(sceneCode);
 
       // send any initial rpc requests
-      jsContext.Deno.core.ops.op_crdt_send_to_renderer([]);
+      ops.op_crdt_send_to_renderer([]);
 
       console.log("[Scene Worker] calling onStart");
       await module.onStart();
@@ -236,12 +237,13 @@ self.onmessage = async (event) => {
       var prevElapsed = 0;
       var elapsed = 0;
       var count = 0;
-      while (true) {
+      while (ops.op_continue_running()) {
         await module.onUpdate(elapsed - prevElapsed);
         prevElapsed = elapsed;
         elapsed = new Date() - startTime;
         count += 1;
       }
+      console.log("[Scene Worker] exiting gracefully");
     } catch (e) {
       console.error(
         "[Scene Worker] Error during Wasm instantiation or setup:",

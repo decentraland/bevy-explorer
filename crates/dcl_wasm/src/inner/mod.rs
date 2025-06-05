@@ -9,7 +9,7 @@ use std::{
 };
 
 use bevy::tasks::IoTaskPool;
-use dcl::{interface::CrdtComponentInterfaces, RendererResponse, SceneId, SceneResponse};
+use dcl::{interface::CrdtComponentInterfaces, js::ShuttingDown, RendererResponse, SceneId, SceneResponse};
 use gotham_state::GothamState;
 use ipfs::{IpfsResource, SceneJsFile};
 use once_cell::sync::OnceCell;
@@ -219,4 +219,9 @@ impl From<WasmError> for JsValue {
     fn from(value: WasmError) -> Self {
         js_sys::Error::new(&value.0.to_string()).into()
     }
+}
+
+#[wasm_bindgen]
+pub fn op_continue_running(state: &WorkerContext) -> bool {
+    !state.state.borrow().has::<ShuttingDown>()
 }

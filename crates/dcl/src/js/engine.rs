@@ -110,7 +110,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
         }
         None => {
             // channel has been closed, shutdown gracefully
-            info!("{}: shutting down", std::thread::current().name().unwrap());
+            info!("{}: shutting down", std::thread::current().name().unwrap_or("(webworker)"));
             op_state.put(ShuttingDown);
             Default::default()
         }
