@@ -28,3 +28,24 @@ build-std = ["std", "panic_abort"]
 # uncomment for rust analyzer to attempt (and fail) to use wasm32 as default
 [build]
 target = "wasm32-unknown-unknown"
+
+
+### for panic_unwind (currently unsupported by walrus)
+# - remove [unstable] section (we must add via wasm-pack cli so it is used for all deps)
+# - add `panic = "unwind"` to cargo.toml [profile.dev/release]
+# - update zune-jpeg to >= 4.15
+# - patch tracing_wasm to githug/robtfm (unless source is updated)
+# - replace rustflags:
+# [target.wasm32-unknown-unknown]
+# rustflags = [
+#     "--cfg=web_sys_unstable_apis", 
+#     "-C", "panic=unwind",
+#     "-C", "target-feature=+atomics,+bulk-memory,+mutable-globals,+exception-handling",
+#     "-C", "llvm-args=-wasm-enable-eh",
+#     "-C", "link-arg=--shared-memory", 
+#     "-C", "link-arg=--max-memory=4294967296",
+#     "-Z", "build-std=std,panic_unwind"
+# ]
+# - rustup override set nightly
+# - command line : wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm" . -Zbuild-std=std,core,alloc,panic_unwind
+# => fails now at "exceptions proposal is not enabled" in walrus
