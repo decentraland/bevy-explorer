@@ -244,6 +244,7 @@ self.onmessage = async (event) => {
         count += 1;
       }
       console.log("[Scene Worker] exiting gracefully");
+      self.close();
     } catch (e) {
       console.error(
         "[Scene Worker] Error during Wasm instantiation or setup:",
