@@ -6,7 +6,10 @@ use bevy::{
     },
     pbr::ShadowFilteringMethod,
     prelude::*,
-    render::{renderer::RenderDevice, view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers}},
+    render::{
+        renderer::RenderDevice,
+        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
+    },
     tasks::{IoTaskPool, Task},
 };
 use bevy_console::ConsoleCommand;
@@ -220,7 +223,11 @@ fn setup(
     config: Res<AppConfig>,
     render_device: ResMut<RenderDevice>,
 ) {
-    render_device.wgpu_device().on_uncaptured_error(Box::new(|e: wgpu::Error| error!("captured wgpu error: {e:?}")));
+    render_device
+        .wgpu_device()
+        .on_uncaptured_error(Box::new(|e: wgpu::Error| {
+            error!("captured wgpu error: {e:?}")
+        }));
     info!("main::setup");
     // create the main player
     let attach_points = AttachPoints::new(&mut commands);

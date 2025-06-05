@@ -9,7 +9,9 @@ use std::{
 };
 
 use bevy::tasks::IoTaskPool;
-use dcl::{interface::CrdtComponentInterfaces, js::ShuttingDown, RendererResponse, SceneId, SceneResponse};
+use dcl::{
+    interface::CrdtComponentInterfaces, js::ShuttingDown, RendererResponse, SceneId, SceneResponse,
+};
 use gotham_state::GothamState;
 use ipfs::{IpfsResource, SceneJsFile};
 use once_cell::sync::OnceCell;
@@ -112,8 +114,13 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     let _ = console_log::init_with_level(log::Level::Info);
 
-    let scene_initialization_data: SceneInitializationData =
-        SCENE_QUEUE.get().expect("scene queue not initialized").lock().await.pop().unwrap();
+    let scene_initialization_data: SceneInitializationData = SCENE_QUEUE
+        .get()
+        .expect("scene queue not initialized")
+        .lock()
+        .await
+        .pop()
+        .unwrap();
     let context = WorkerContext {
         state: Default::default(),
     };
