@@ -30,3 +30,4 @@ opener = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 async-compat = { workspace = true }
+copypasta = { workspace = true }

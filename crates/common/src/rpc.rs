@@ -228,4 +228,9 @@ pub enum RpcCall {
         element_id: String,
         response: RpcResultSender<Result<(), String>>,
     },
+    CopyToClipboard {
+        scene: Entity,
+        text: String,
+        response: RpcResultSender<Result<(), String>>,
+    },
 }

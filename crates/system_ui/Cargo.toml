@@ -50,6 +50,6 @@ build-time = { workspace = true }
 futures-lite = { workspace = true }
 async-compat = { workspace = true }
 web-time = { workspace = true }
+copypasta = { workspace = true }
 
-copypasta = "0.10"
 shlex = "1"
