@@ -30,6 +30,7 @@ use comms::{
     NetworkMessage, SceneRoom, Transport,
 };
 use console::DoAddConsoleCommand;
+use copypasta::{ClipboardContext, ClipboardProvider};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
 use ipfs::{
@@ -85,6 +86,7 @@ impl Plugin for RestrictedActionsPlugin {
                     handle_texture_size,
                     handle_generic_perm,
                     handle_spawned_command,
+                    handle_copy_to_clipboard,
                 ),
             )
                 .in_set(SceneSets::RestrictedActions),
@@ -1117,7 +1119,7 @@ pub fn handle_eth_async(
             .ok()
             .and_then(|scene| scene.last_action_event)
             .unwrap_or_default();
-        if last_action_time < time.elapsed_seconds() - 5.0 {
+        if last_action_time < time.elapsed_seconds() - 1.0 {
             response.send(Err(format!(
                 "no recent user activity (last action {}, time {}).",
                 last_action_time,
@@ -1161,6 +1163,56 @@ pub fn handle_eth_async(
             true
         }
     })
+}
+
+pub fn handle_copy_to_clipboard(
+    mut events: EventReader<RpcCall>,
+    scenes: Query<&RendererSceneContext>,
+    time: Res<Time>,
+    mut perms: Permission<(String, RpcResultSender<Result<(), String>>)>,
+) {
+    for (text, scene, response) in events.read().filter_map(|ev| match ev {
+        RpcCall::CopyToClipboard {
+            text,
+            scene,
+            response,
+        } => Some((text, scene, response)),
+        _ => None,
+    }) {
+        let last_action_time = scenes
+            .get(*scene)
+            .ok()
+            .and_then(|scene| scene.last_action_event)
+            .unwrap_or_default();
+        if last_action_time < time.elapsed_seconds() - 1.0 {
+            response.send(Err(format!(
+                "no recent user activity (last action {}, time {}).",
+                last_action_time,
+                time.elapsed_seconds()
+            )));
+            continue;
+        }
+
+        perms.check(
+            PermissionType::CopyToClipboard,
+            *scene,
+            (text.clone(), response.clone()),
+            Some(format!("\"{}\"", text.clone())),
+            false,
+        );
+    }
+
+    for (text, response) in perms.drain_success(PermissionType::CopyToClipboard) {
+        let result = ClipboardContext::new()
+            .map_err(|e| e.to_string())
+            .and_then(|mut ctx| ctx.set_contents(text.clone()).map_err(|e| e.to_string()));
+
+        response.send(result);
+    }
+
+    for (_, response) in perms.drain_fail(PermissionType::Web3) {
+        response.send(Err("permission denied".to_owned()));
+    }
 }
 
 #[allow(clippy::type_complexity)]

@@ -209,3 +209,26 @@ pub async fn op_set_ui_focus(
 
     rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
 }
+
+pub async fn op_copy_to_clipboard(
+    state: Rc<RefCell<impl State>>,
+    text: String,
+) -> Result<(), anyhow::Error> {
+    debug!("op_set_ui_focus");
+    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+
+    {
+        let mut state = state.borrow_mut();
+        let scene = state.borrow::<CrdtContext>().scene_id.0;
+
+        state
+            .borrow_mut::<RpcCalls>()
+            .push(RpcCall::CopyToClipboard {
+                scene,
+                text,
+                response: sx.into(),
+            });
+    }
+
+    rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
+}

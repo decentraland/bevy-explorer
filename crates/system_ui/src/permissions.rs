@@ -331,6 +331,7 @@ fn set_permission_settings_content(
             spawn_row(PermissionType::Fetch, &mut commands),
             spawn_row(PermissionType::Websocket, &mut commands),
             spawn_row(PermissionType::OpenUrl, &mut commands),
+            spawn_row(PermissionType::CopyToClipboard, &mut commands),
         ];
 
         commands

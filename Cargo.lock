@@ -9101,6 +9101,7 @@ dependencies = [
  "common",
  "comms",
  "console",
+ "copypasta",
  "dcl_component",
  "ethers-core",
  "ipfs",

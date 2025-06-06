@@ -634,6 +634,7 @@ pub enum PermissionType {
     SpawnPortable,
     KillPortables,
     Web3,
+    CopyToClipboard,
     Fetch,
     Websocket,
     OpenUrl,

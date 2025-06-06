@@ -84,3 +84,10 @@ pub async fn op_set_ui_focus(
         .await
         .map_err(WasmError::from)
 }
+
+#[wasm_bindgen]
+pub async fn op_copy_to_clipboard(op_state: &WorkerContext, text: String) -> Result<(), WasmError> {
+    dcl::js::restricted_actions::op_copy_to_clipboard(op_state.rc(), text)
+        .await
+        .map_err(WasmError::from)
+}

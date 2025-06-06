@@ -60,9 +60,9 @@ impl PermissionManager {
 #[allow(clippy::type_complexity)]
 #[derive(SystemParam)]
 pub struct Permission<'w, 's, T: Send + Sync + 'static> {
-    pub success: Local<'s, Vec<(T, PermissionType, Entity)>>,
+    pub success: Local<'s, Vec<(T, PermissionType, Option<String>, Entity)>>,
     pub fail: Local<'s, Vec<(T, PermissionType, Entity)>>,
-    pub pending: Local<'s, Vec<(T, PermissionType, Entity, Receiver<bool>)>>,
+    pub pending: Local<'s, Vec<(T, PermissionType, Entity, Option<String>, Receiver<bool>)>>,
     config: Res<'w, AppConfig>,
     realm: Res<'w, CurrentRealm>,
     containing_scenes: ContainingScene<'w, 's>,
@@ -115,7 +115,7 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
 
         // allow system scene to do anything
         if self.is_system_scene(hash) {
-            self.success.push((value, ty, scene));
+            self.success.push((value, ty, additional, scene));
             return;
         };
 
@@ -137,13 +137,16 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
                 .get_permission(ty, &self.realm.address, hash, is_portable)
         );
         match perm {
-            common::structs::PermissionValue::Allow => self.success.push((value, ty, scene)),
+            common::structs::PermissionValue::Allow => {
+                self.success.push((value, ty, additional, scene))
+            }
             common::structs::PermissionValue::Deny => self.fail.push((value, ty, scene)),
             common::structs::PermissionValue::Ask => {
                 self.pending.push((
                     value,
                     ty,
                     scene,
+                    additional.clone(),
                     self.manager.request(
                         ty,
                         self.realm.about_url.clone(),
@@ -175,33 +178,36 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
         let pending = std::mem::take(&mut *self.pending);
         *self.pending = pending
             .into_iter()
-            .flat_map(|(value, ty, scene, mut rx)| match rx.try_recv() {
-                Ok(true) => {
-                    self.success.push((value, ty, scene));
-                    None
-                }
-                Ok(false) => {
-                    self.fail.push((value, ty, scene));
-                    None
-                }
-                Err(TryRecvError::Closed) => {
-                    let (_, _, _, is_portable) = self.get_scene_info(scene)?;
-                    warn!("unexpected close of channel, re-requesting");
-                    Some((
-                        value,
-                        ty,
-                        scene,
-                        self.manager.request(
+            .flat_map(
+                |(value, ty, scene, additional, mut rx)| match rx.try_recv() {
+                    Ok(true) => {
+                        self.success.push((value, ty, additional, scene));
+                        None
+                    }
+                    Ok(false) => {
+                        self.fail.push((value, ty, scene));
+                        None
+                    }
+                    Err(TryRecvError::Closed) => {
+                        let (_, _, _, is_portable) = self.get_scene_info(scene)?;
+                        warn!("unexpected close of channel, re-requesting");
+                        Some((
+                            value,
                             ty,
-                            self.realm.about_url.clone(),
                             scene,
-                            is_portable,
-                            None,
-                        ),
-                    ))
-                }
-                Err(TryRecvError::Empty) => Some((value, ty, scene, rx)),
-            })
+                            additional.clone(),
+                            self.manager.request(
+                                ty,
+                                self.realm.about_url.clone(),
+                                scene,
+                                is_portable,
+                                additional,
+                            ),
+                        ))
+                    }
+                    Err(TryRecvError::Empty) => Some((value, ty, scene, additional, rx)),
+                },
+            )
             .collect();
     }
 
@@ -211,18 +217,18 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
         let (matching, not_matching): (Vec<_>, Vec<_>) = self
             .success
             .drain(..)
-            .partition(|(_, perm_ty, _)| *perm_ty == ty);
+            .partition(|(_, perm_ty, _, _)| *perm_ty == ty);
         *self.success = not_matching;
 
         if let Some(last) = matching.last() {
-            let (_, _, scene) = last;
+            let (_, _, additional, scene) = last;
             let scene = *scene;
             if let Some((_, hash, title, is_portable)) = self.get_scene_info(scene) {
                 if !self.is_system_scene(hash) {
                     let portable_name = is_portable.then_some(title);
                     self.toaster.add_clicky_toast(
                         format!("{ty:?}"),
-                        ty.on_success(portable_name),
+                        ty.on_success(portable_name, additional.as_deref()),
                         On::<Click>::new(
                             (move |mut target: ResMut<PermissionTarget>| {
                                 target.scene = Some(scene);
@@ -234,7 +240,7 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
                 }
             }
         }
-        matching.into_iter().map(|(value, _, _)| value)
+        matching.into_iter().map(|(value, _, _, _)| value)
     }
 
     pub fn drain_fail(&mut self, ty: PermissionType) -> impl Iterator<Item = T> + '_ {
@@ -277,7 +283,7 @@ pub trait PermissionStrings {
     fn passive(&self) -> &str;
     fn title(&self) -> &str;
     fn request(&self) -> String;
-    fn on_success(&self, portable: Option<&str>) -> String;
+    fn on_success(&self, portable: Option<&str>, additional: Option<&str>) -> String;
 
     fn on_fail(&self, portable: Option<&str>) -> String;
     fn description(&self) -> String;
@@ -300,6 +306,7 @@ impl PermissionStrings for PermissionType {
             PermissionType::Fetch => "Fetch Data",
             PermissionType::Websocket => "Open Websocket",
             PermissionType::OpenUrl => "Open Url",
+            PermissionType::CopyToClipboard => "Copy to Clipboard",
         }
     }
 
@@ -314,14 +321,17 @@ impl PermissionStrings for PermissionType {
         )
     }
 
-    fn on_success(&self, portable: Option<&str>) -> String {
+    fn on_success(&self, portable: Option<&str>, additional: Option<&str>) -> String {
         format!(
-            "{} is {} (click to manage)",
+            "{} is {}{}(click to manage)",
             match portable {
                 Some(portable) => format!("The portable scene {portable}"),
                 None => "The scene".to_owned(),
             },
-            self.active()
+            self.active(),
+            additional
+                .map(|add| format!(": {add} "))
+                .unwrap_or_default(),
         )
     }
     fn on_fail(&self, portable: Option<&str>) -> String {
@@ -351,6 +361,7 @@ impl PermissionStrings for PermissionType {
             PermissionType::Fetch => "fetch data from a remote server",
             PermissionType::Websocket => "open a web socket to communicate with a remote server",
             PermissionType::OpenUrl => "open a url in your browser",
+            PermissionType::CopyToClipboard => "copy text into the clipboard",
         }
     }
 
@@ -370,6 +381,7 @@ impl PermissionStrings for PermissionType {
             PermissionType::Fetch => "fetching remote data",
             PermissionType::Websocket => "opening a websocket",
             PermissionType::OpenUrl => "opening a url in your browser",
+            PermissionType::CopyToClipboard => "copying text into the clipboard",
         }
     }
 }

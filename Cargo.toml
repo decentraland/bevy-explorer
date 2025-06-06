@@ -153,6 +153,7 @@ strum_macros = "0.27"
 wasm-bindgen = "0.2.92"
 wasm-bindgen-futures = "0.4.50"
 web-time = "1.1"
+copypasta = "0.10"
 
 [dependencies]
 analytics = { workspace = true }
