@@ -2551,6 +2551,7 @@ dependencies = [
  "http 1.2.0",
  "image",
  "ipfs",
+ "js-sys",
  "kira",
  "livekit",
  "modular-bitfield",
@@ -2566,6 +2567,9 @@ dependencies = [
  "serde_json",
  "tokio",
  "wallet",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "web-time",
 ]
 
