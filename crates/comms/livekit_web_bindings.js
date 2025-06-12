@@ -1,3 +1,6 @@
+let currentMicTrack = null;
+const activeRooms = new Set();
+
 export async function connect_room(url, token) {
     const room = new LivekitClient.Room({
         autoSubscribe: true,
@@ -6,7 +9,73 @@ export async function connect_room(url, token) {
     });
     
     await room.connect(url, token);
+    
+    // Add to active rooms set
+    activeRooms.add(room);
+    
+    // Don't automatically set up microphone - let it be controlled by the mic state
+    
     return room;
+}
+
+export function set_microphone_enabled(enabled) {
+    if (activeRooms.size === 0) {
+        console.warn('No rooms available for microphone control');
+        return;
+    }
+    
+    if (enabled) {
+        // Enable microphone
+        if (!currentMicTrack) {
+            LivekitClient.createLocalAudioTrack({
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+            }).then(audioTrack => {
+                currentMicTrack = audioTrack;
+                
+                // Publish to all active rooms
+                const publishPromises = Array.from(activeRooms).map(room => 
+                    room.localParticipant.publishTrack(audioTrack, {
+                        source: LivekitClient.Track.Source.Microphone,
+                    }).catch(error => {
+                        console.error(`Failed to publish to room: ${error}`);
+                    })
+                );
+                
+                return Promise.all(publishPromises);
+            }).then(() => {
+                console.log('Microphone enabled successfully for all rooms');
+            }).catch(error => {
+                console.error('Failed to enable microphone:', error);
+                currentMicTrack = null;
+            });
+        }
+    } else {
+        // Disable microphone
+        if (currentMicTrack) {
+            // Unpublish from all active rooms
+            const unpublishPromises = Array.from(activeRooms).map(room => 
+                room.localParticipant.unpublishTrack(currentMicTrack).catch(error => {
+                    console.error(`Failed to unpublish from room: ${error}`);
+                })
+            );
+            
+            Promise.all(unpublishPromises).then(() => {
+                currentMicTrack.stop();
+                currentMicTrack = null;
+                console.log('Microphone disabled successfully for all rooms');
+            }).catch(error => {
+                console.error('Failed to disable microphone:', error);
+            });
+        }
+    }
+}
+
+export function is_microphone_available() {
+    // Check if getUserMedia is available
+    const res = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+    return res;
 }
 
 export async function publish_data(room, data, reliable, destinations) {
@@ -33,43 +102,19 @@ export async function unpublish_track(room, sid) {
 }
 
 export async function close_room(room) {
+    // Remove from active rooms set
+    activeRooms.delete(room);
+    
+    // If this was the last room and mic is active, clean up
+    if (activeRooms.size === 0 && currentMicTrack) {
+        currentMicTrack.stop();
+        currentMicTrack = null;
+    }
+    
     await room.disconnect();
 }
 
-export function create_audio_track(sampleRate, numChannels) {
-    // Create a Web Audio context and source
-    const audioContext = new AudioContext({ sampleRate });
-    const source = audioContext.createScriptProcessor(4096, numChannels, numChannels);
-    
-    // Create MediaStream from the source
-    const destination = audioContext.createMediaStreamDestination();
-    source.connect(destination);
-    
-    // Create LiveKit track from the stream
-    const track = LivekitClient.createLocalAudioTrack({
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-    });
-    
-    // Store the processor for sending audio data
-    track._processor = source;
-    track._context = audioContext;
-    
-    return track;
-}
-
-export function send_audio_frame(track, samples, sampleRate, numChannels) {
-    if (track._processor && track._processor.onaudioprocess === null) {
-        track._processor.onaudioprocess = (e) => {
-            // This will be called when the processor needs audio data
-            // You would need to queue the samples and feed them here
-        };
-    }
-    
-    // Note: This is a simplified version. In reality, you'd need to properly
-    // queue and process the audio samples with the Web Audio API
-}
+// Remove create_audio_track and send_audio_frame functions as they're no longer needed
 
 export function set_room_event_handler(room, handler) {
     room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
@@ -81,8 +126,32 @@ export function set_room_event_handler(room, handler) {
     });
     
     room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+        // For audio tracks, automatically play them
+        if (track.kind === 'audio') {
+            const audioElement = track.attach();
+            audioElement.play().catch(e => console.warn('Failed to play audio:', e));
+            
+            // Store the audio element reference on the track for cleanup
+            track._audioElement = audioElement;
+        }
+        
         handler({
             type: 'track_subscribed',
+            track: track,
+            publication: publication,
+            participant: participant,
+        });
+    });
+    
+    room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+        // Clean up audio elements
+        if (track._audioElement) {
+            track.detach(track._audioElement);
+            track._audioElement = null;
+        }
+        
+        handler({
+            type: 'track_unsubscribed',
             track: track,
             publication: publication,
             participant: participant,
@@ -95,4 +164,17 @@ export function set_room_event_handler(room, handler) {
             participant: participant,
         });
     });
+}
+
+// Helper function to clean up audio resources
+export function cleanup_audio_track(track) {
+    if (track._audioContext) {
+        track._audioContext.close();
+    }
+    if (track._scriptNode) {
+        track._scriptNode.disconnect();
+    }
+    if (track._audioElement) {
+        track.detach(track._audioElement);
+    }
 }

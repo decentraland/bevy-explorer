@@ -1,14 +1,8 @@
 use bevy::prelude::*;
-use comms::global_crdt::{LocalAudioFrame, LocalAudioSource};
+use comms::global_crdt::{LocalAudioFrame, LocalAudioSource, MicState};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 pub struct MicPlugin;
-
-#[derive(Resource, Default)]
-pub struct MicState {
-    pub available: bool,
-    pub enabled: bool,
-}
 
 impl Plugin for MicPlugin {
     fn build(&self, app: &mut App) {

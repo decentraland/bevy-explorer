@@ -35,6 +35,8 @@ impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, (connect_livekit, start_livekit));
         app.add_event::<StartLivekit>();
+        #[cfg(target_arch = "wasm32")]
+        app.add_plugins(crate::livekit_web::LivekitWebPlugin);
     }
 }
 
@@ -98,7 +100,7 @@ fn connect_livekit(
     mut commands: Commands,
     mut new_livekits: Query<(Entity, &mut LivekitTransport), Without<LivekitConnection>>,
     player_state: Res<GlobalCrdtState>,
-    mic: Res<LocalAudioSource>,
+    #[cfg(not(target_arch = "wasm32"))] mic: Res<LocalAudioSource>,
 ) {
     for (transport_id, mut new_transport) in new_livekits.iter_mut() {
         debug!("spawn lk connect");
@@ -106,10 +108,9 @@ fn connect_livekit(
         let receiver = new_transport.receiver.take().unwrap();
         let sender = player_state.get_sender();
 
-        let subscription = mic.subscribe();
-
         #[cfg(not(target_arch = "wasm32"))]
         {
+            let subscription = mic.subscribe();
             std::thread::spawn(move || {
                 livekit_handler(transport_id, remote_address, receiver, sender, subscription)
             });
@@ -119,13 +120,7 @@ fn connect_livekit(
         {
             // For WASM, we directly call the handler which will spawn the async task
             let receiver = Arc::new(Mutex::new(receiver));
-            if let Err(e) = livekit_handler_inner(
-                transport_id,
-                &remote_address,
-                receiver,
-                sender,
-                subscription,
-            ) {
+            if let Err(e) = livekit_handler_inner(transport_id, &remote_address, receiver, sender) {
                 warn!("Failed to start livekit connection: {e}");
             }
         }

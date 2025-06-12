@@ -10,7 +10,10 @@ use tokio::sync::{
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use crate::global_crdt::{LocalAudioFrame, PlayerMessage};
+use crate::{
+    global_crdt::{LocalAudioFrame, MicState, PlayerMessage},
+    Transport, TransportType,
+};
 use common::util::AsH160;
 use dcl_component::proto_components::kernel::comms::rfc4;
 
@@ -54,6 +57,44 @@ extern "C" {
         room: &JsValue,
         handler: &Closure<dyn FnMut(JsValue)>,
     ) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(catch)]
+    fn set_microphone_enabled(enabled: bool) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(catch)]
+    fn is_microphone_available() -> Result<bool, JsValue>;
+}
+
+pub struct LivekitWebPlugin;
+
+impl Plugin for LivekitWebPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<MicState>();
+        app.add_systems(Update, update_mic_state);
+    }
+}
+
+fn update_mic_state(
+    mut mic_state: ResMut<MicState>,
+    mut last_enabled: Local<Option<bool>>,
+    mut last_available: Local<Option<bool>>,
+) {
+    // Check if microphone is available in the browser
+    let current_available = is_microphone_available().unwrap_or(false);
+
+    // Only update availability if it changed
+    if last_available.is_none() || last_available.unwrap() != current_available {
+        mic_state.available = current_available;
+        *last_available = Some(current_available);
+    }
+
+    // Only update microphone enabled state if it changed
+    if last_enabled.is_none() || last_enabled.unwrap() != mic_state.enabled {
+        if let Err(e) = set_microphone_enabled(mic_state.enabled) {
+            warn!("Failed to set microphone state: {:?}", e);
+        }
+        *last_enabled = Some(mic_state.enabled);
+    }
 }
 
 pub fn livekit_handler_inner(
@@ -61,7 +102,6 @@ pub fn livekit_handler_inner(
     remote_address: &str,
     app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,
     sender: Sender<PlayerUpdate>,
-    mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
 ) -> Result<(), anyhow::Error> {
     debug!(">> lk connect async : {}", remote_address);
 
@@ -81,9 +121,7 @@ pub fn livekit_handler_inner(
 
     // In WASM, we can't block or create threads, so we just spawn the async task
     spawn_local(async move {
-        if let Err(e) =
-            run_livekit_session(transport_id, &address, &token, app_rx, sender, mic).await
-        {
+        if let Err(e) = run_livekit_session(transport_id, &address, &token, app_rx, sender).await {
             error!("LiveKit session error: {:?}", e);
         }
     });
@@ -97,7 +135,6 @@ async fn run_livekit_session(
     token: &str,
     app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,
     sender: Sender<PlayerUpdate>,
-    mut mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
 ) -> Result<(), anyhow::Error> {
     let room = connect_room(address, token)
         .await
@@ -120,64 +157,7 @@ async fn run_livekit_session(
     // Keep the closure alive
     event_handler.forget();
 
-    // Handle microphone audio
-    let room_for_mic = room.clone();
-    let _mic_task = spawn_local(async move {
-        let mut audio_track: Option<JsValue> = None;
-        let mut current_sid: Option<String> = None;
-        let mut current_sample_rate = 0u32;
-        let mut current_num_channels = 0u32;
-
-        while let Ok(frame) = mic.recv().await {
-            // Check if we need to create or recreate the track
-            if audio_track.is_none()
-                || current_sample_rate != frame.sample_rate
-                || current_num_channels != frame.num_channels
-            {
-                // Unpublish existing track if any
-                if let Some(sid) = current_sid.take() {
-                    if let Err(e) = unpublish_track(&room_for_mic, &sid).await {
-                        warn!("Error unpublishing previous mic track: {:?}", e);
-                    }
-                }
-
-                // Create new track
-                match create_audio_track(frame.sample_rate, frame.num_channels) {
-                    Ok(track) => {
-                        audio_track = Some(track);
-                        current_sample_rate = frame.sample_rate;
-                        current_num_channels = frame.num_channels;
-
-                        // Publish the track
-                        if let Some(ref track) = audio_track {
-                            match publish_audio_track(&room_for_mic, track).await {
-                                Ok(sid_value) => {
-                                    if let Some(sid) = sid_value.as_string() {
-                                        current_sid = Some(sid);
-                                        debug!("Published audio track");
-                                    }
-                                }
-                                Err(e) => warn!("Failed to publish audio track: {:?}", e),
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        warn!("Failed to create audio track: {:?}", e);
-                        continue;
-                    }
-                }
-            }
-
-            // Send audio frame
-            if let Some(ref track) = audio_track {
-                if let Err(e) =
-                    send_audio_frame(track, &frame.data, frame.sample_rate, frame.num_channels)
-                {
-                    warn!("Failed to send audio frame: {:?}", e);
-                }
-            }
-        }
-    });
+    // Microphone is handled entirely in JavaScript
 
     // Handle outgoing messages
     let mut app_rx = app_rx.lock().await;
@@ -254,11 +234,13 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                     }
                 }
                 "track_subscribed" => {
-                    // Handle audio track subscription
-                    // This would require additional JavaScript bindings to process audio streams
-                    debug!(
-                        "Track subscribed event - audio processing not fully implemented for web"
-                    );
+                    // Audio is now handled directly in JavaScript
+                    // We just log this for debugging
+                    debug!("Track subscribed event - audio is handled in JavaScript");
+                }
+                "track_unsubscribed" => {
+                    // Track cleanup is handled in JavaScript
+                    debug!("Track unsubscribed event");
                 }
                 "participant_connected" => {
                     if let Ok(participant) =
