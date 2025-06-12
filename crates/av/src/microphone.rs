@@ -7,7 +7,6 @@ pub struct MicPlugin;
 impl Plugin for MicPlugin {
     fn build(&self, app: &mut App) {
         app.init_non_send_resource::<MicStream>();
-        app.init_resource::<MicState>();
         app.add_systems(Update, update_mic);
     }
 }

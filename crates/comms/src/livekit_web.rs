@@ -69,7 +69,6 @@ pub struct LivekitWebPlugin;
 
 impl Plugin for LivekitWebPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<MicState>();
         app.add_systems(Update, update_mic_state);
     }
 }
