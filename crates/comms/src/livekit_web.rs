@@ -9,6 +9,7 @@ use tokio::sync::{
 };
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     global_crdt::{LocalAudioFrame, MicState, PlayerMessage},
@@ -205,87 +206,82 @@ async fn run_livekit_session(
     Ok(())
 }
 
-async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<PlayerUpdate>) {
-    // Parse the event from JavaScript
-    // This is a simplified version - you'll need to properly parse the JavaScript event object
-    if let Ok(event_type) = js_sys::Reflect::get(&event, &JsValue::from_str("type")) {
-        if let Some(event_type_str) = event_type.as_string() {
-            match event_type_str.as_str() {
-                "data_received" => {
-                    if let Ok(payload) = js_sys::Reflect::get(&event, &JsValue::from_str("payload"))
-                    {
-                        if let Ok(participant) =
-                            js_sys::Reflect::get(&event, &JsValue::from_str("participant"))
-                        {
-                            if let Ok(identity) =
-                                js_sys::Reflect::get(&participant, &JsValue::from_str("identity"))
-                            {
-                                if let Some(identity_str) = identity.as_string() {
-                                    if let Some(address) = identity_str.as_h160() {
-                                        // Convert payload to bytes
-                                        let data = js_sys::Uint8Array::new(&payload);
-                                        let mut bytes = vec![0u8; data.length() as usize];
-                                        data.copy_to(&mut bytes);
+// Define structures for the events coming from JavaScript
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum RoomEvent {
+    DataReceived {
+        payload: Vec<u8>,
+        participant: Participant,
+    },
+    TrackSubscribed {
+        participant: Participant,
+    },
+    TrackUnsubscribed {
+        participant: Participant,
+    },
+    ParticipantConnected {
+        participant: Participant,
+    },
+    ParticipantDisconnected {
+        participant: Participant,
+    },
+}
 
-                                        if let Ok(packet) = rfc4::Packet::decode(bytes.as_slice()) {
-                                            if let Some(message) = packet.message {
-                                                let _ = sender
-                                                    .send(PlayerUpdate {
-                                                        transport_id,
-                                                        message: PlayerMessage::PlayerData(message),
-                                                        address,
-                                                    })
-                                                    .await;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Participant {
+    identity: String,
+    #[serde(default)]
+    metadata: String,
+}
+
+async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<PlayerUpdate>) {
+    // Try to deserialize the event using serde_wasm_bindgen
+    let event_result: Result<RoomEvent, _> = serde_wasm_bindgen::from_value(event);
+    
+    match event_result {
+        Ok(room_event) => match room_event {
+            RoomEvent::DataReceived { payload, participant } => {
+                if let Some(address) = participant.identity.as_h160() {
+                    if let Ok(packet) = rfc4::Packet::decode(payload.as_slice()) {
+                        if let Some(message) = packet.message {
+                            let _ = sender
+                                .send(PlayerUpdate {
+                                    transport_id,
+                                    message: PlayerMessage::PlayerData(message),
+                                    address,
+                                })
+                                .await;
                         }
                     }
                 }
-                "track_subscribed" => {
-                    // Audio is now handled directly in JavaScript
-                    // We just log this for debugging
-                    debug!("Track subscribed event - audio is handled in JavaScript");
-                }
-                "track_unsubscribed" => {
-                    // Track cleanup is handled in JavaScript
-                    debug!("Track unsubscribed event");
-                }
-                "participant_connected" => {
-                    if let Ok(participant) =
-                        js_sys::Reflect::get(&event, &JsValue::from_str("participant"))
-                    {
-                        if let Ok(metadata) =
-                            js_sys::Reflect::get(&participant, &JsValue::from_str("metadata"))
-                        {
-                            if let Ok(identity) =
-                                js_sys::Reflect::get(&participant, &JsValue::from_str("identity"))
-                            {
-                                if let Some(metadata_str) = metadata.as_string() {
-                                    if let Some(identity_str) = identity.as_string() {
-                                        if let Some(address) = identity_str.as_h160() {
-                                            if !metadata_str.is_empty() {
-                                                let _ = sender
-                                                    .send(PlayerUpdate {
-                                                        transport_id,
-                                                        message: PlayerMessage::MetaData(
-                                                            metadata_str,
-                                                        ),
-                                                        address,
-                                                    })
-                                                    .await;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                _ => {}
             }
+            RoomEvent::TrackSubscribed { .. } => {
+                debug!("Track subscribed event - audio is handled in JavaScript");
+            }
+            RoomEvent::TrackUnsubscribed { .. } => {
+                debug!("Track unsubscribed event");
+            }
+            RoomEvent::ParticipantConnected { participant } => {
+                if let Some(address) = participant.identity.as_h160() {
+                    if !participant.metadata.is_empty() {
+                        let _ = sender
+                            .send(PlayerUpdate {
+                                transport_id,
+                                message: PlayerMessage::MetaData(participant.metadata),
+                                address,
+                            })
+                            .await;
+                    }
+                }
+            }
+            RoomEvent::ParticipantDisconnected { .. } => {
+                debug!("Participant disconnected");
+            }
+        },
+        Err(e) => {
+            warn!("Failed to parse room event: {:?}", e);
         }
     }
 }

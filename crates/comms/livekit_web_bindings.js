@@ -121,10 +121,16 @@ export async function close_room(room) {
 
 export function set_room_event_handler(room, handler) {
     room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
+        // Convert Uint8Array to regular array for serde compatibility
+        const payloadArray = Array.from(new Uint8Array(payload));
+        
         handler({
-            type: 'data_received',
-            payload: payload,
-            participant: participant,
+            type: 'dataReceived',
+            payload: payloadArray,
+            participant: {
+                identity: participant.identity,
+                metadata: participant.metadata || ''
+            }
         });
     });
     
@@ -159,10 +165,11 @@ export function set_room_event_handler(room, handler) {
         }
         
         handler({
-            type: 'track_subscribed',
-            track: track,
-            publication: publication,
-            participant: participant,
+            type: 'trackSubscribed',
+            participant: {
+                identity: participant.identity,
+                metadata: participant.metadata || ''
+            }
         });
     });
     
@@ -181,17 +188,21 @@ export function set_room_event_handler(room, handler) {
         }
         
         handler({
-            type: 'track_unsubscribed',
-            track: track,
-            publication: publication,
-            participant: participant,
+            type: 'trackUnsubscribed',
+            participant: {
+                identity: participant.identity,
+                metadata: participant.metadata || ''
+            }
         });
     });
     
     room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
         handler({
-            type: 'participant_connected',
-            participant: participant,
+            type: 'participantConnected',
+            participant: {
+                identity: participant.identity,
+                metadata: participant.metadata || ''
+            }
         });
     });
     
@@ -207,8 +218,11 @@ export function set_room_event_handler(room, handler) {
         }
         
         handler({
-            type: 'participant_disconnected',
-            participant: participant,
+            type: 'participantDisconnected',
+            participant: {
+                identity: participant.identity,
+                metadata: participant.metadata || ''
+            }
         });
     });
 }
