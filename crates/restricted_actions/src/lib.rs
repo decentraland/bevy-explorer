@@ -30,7 +30,7 @@ use comms::{
     NetworkMessage, SceneRoom, Transport,
 };
 use console::DoAddConsoleCommand;
-use copypasta::{ClipboardContext, ClipboardProvider};
+use copypwasmta::{ClipboardContext, ClipboardProvider};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
 use ipfs::{
@@ -1203,11 +1203,18 @@ pub fn handle_copy_to_clipboard(
     }
 
     for (text, response) in perms.drain_success(PermissionType::CopyToClipboard) {
-        let result = ClipboardContext::new()
-            .map_err(|e| e.to_string())
-            .and_then(|mut ctx| ctx.set_contents(text.clone()).map_err(|e| e.to_string()));
-
-        response.send(result);
+        IoTaskPool::get()
+            .spawn(async move {
+                let result = match ClipboardContext::new() {
+                    Ok(mut ctx) => ctx
+                        .set_contents(text.clone())
+                        .await
+                        .map_err(|e| e.to_string()),
+                    Err(e) => Err(e.to_string()),
+                };
+                response.send(result);
+            })
+            .detach();
     }
 
     for (_, response) in perms.drain_fail(PermissionType::Web3) {

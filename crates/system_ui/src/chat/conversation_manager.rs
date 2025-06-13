@@ -1,7 +1,7 @@
-use bevy::{core::FrameCount, ecs::system::SystemParam, prelude::*};
+use bevy::{core::FrameCount, ecs::system::SystemParam, prelude::*, tasks::IoTaskPool};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{structs::ShowProfileEvent, util::TryPushChildrenEx};
-use copypasta::{ClipboardContext, ClipboardProvider};
+use copypwasmta::{ClipboardContext, ClipboardProvider};
 use ethers_core::types::Address;
 use scene_runner::Toaster;
 use ui_core::ui_actions::{Click, EventCloneExt, On, UiCaller};
@@ -220,17 +220,19 @@ impl ConversationManager<'_, '_> {
                                 return;
                             };
 
-                            if ctx.set_contents(message_body.clone()).is_ok() {
-                                toaster.add_toast(
-                                    format!("chatcopy {}", frame.0),
-                                    "Message copied to clipboard",
-                                );
-                            } else {
-                                toaster.add_toast(
-                                    format!("chatcopy {}", frame.0),
-                                    "Failed to copy message",
-                                );
-                            }
+                            let message_body = message_body.clone();
+                            IoTaskPool::get()
+                                .spawn(async move {
+                                    if let Err(e) = ctx.set_contents(message_body.clone()).await {
+                                        error!("failed to set clipboard content: {e:?}");
+                                    }
+                                })
+                                .detach();
+
+                            toaster.add_toast(
+                                format!("chatcopy {}", frame.0),
+                                "Message copied to clipboard",
+                            );
                         }),
                     ),
             )
