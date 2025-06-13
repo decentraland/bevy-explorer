@@ -9,7 +9,7 @@ use tokio::sync::{
 };
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize};
 
 use crate::{
     global_crdt::{LocalAudioFrame, MicState, PlayerMessage},
@@ -145,8 +145,51 @@ async fn run_livekit_session(
     transport_id: Entity,
     address: &str,
     token: &str,
-    app_rx: Receiver<NetworkMessage>,
+    mut app_rx: Receiver<NetworkMessage>,
     sender: Sender<PlayerUpdate>,
+) -> Result<(), anyhow::Error> {
+    loop {
+        // Check if sender is closed (indicates we should stop)
+        if sender.is_closed() {
+            debug!("Sender closed, stopping LiveKit connection attempts");
+            break;
+        }
+
+        match connect_and_handle_session(transport_id, address, token, &mut app_rx, &sender).await {
+            Ok(_) => {
+                debug!("LiveKit session ended normally");
+                // Check if we should reconnect
+                if sender.is_closed() {
+                    break;
+                }
+                // Session ended but sender still open, might need to reconnect
+                // Wait a bit before reconnecting
+                gloo_timers::future::TimeoutFuture::new(1000).await;
+            }
+            Err(e) => {
+                error!("LiveKit session error: {:?}", e);
+                
+                // Check again if sender is closed before retrying
+                if sender.is_closed() {
+                    debug!("Sender closed during error, stopping LiveKit connection attempts");
+                    break;
+                }
+                
+                // Wait before retrying
+                gloo_timers::future::TimeoutFuture::new(1000).await;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn connect_and_handle_session(
+    transport_id: Entity,
+    address: &str,
+    token: &str,
+    app_rx: &mut Receiver<NetworkMessage>,
+    sender: &Sender<PlayerUpdate>,
 ) -> Result<(), anyhow::Error> {
     let room = connect_room(address, token)
         .await
@@ -172,7 +215,6 @@ async fn run_livekit_session(
     // Microphone is handled entirely in JavaScript
 
     // Handle outgoing messages
-    let mut app_rx = app_rx;
     loop {
         let message = app_rx.recv().await;
         let Some(outgoing) = message else {
