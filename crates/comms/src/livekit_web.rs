@@ -99,7 +99,7 @@ fn update_mic_state(
 pub fn livekit_handler_inner(
     transport_id: Entity,
     remote_address: &str,
-    app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,
+    app_rx: Receiver<NetworkMessage>,
     sender: Sender<PlayerUpdate>,
 ) -> Result<(), anyhow::Error> {
     debug!(">> lk connect async : {}", remote_address);
@@ -132,7 +132,7 @@ async fn run_livekit_session(
     transport_id: Entity,
     address: &str,
     token: &str,
-    app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,
+    app_rx: Receiver<NetworkMessage>,
     sender: Sender<PlayerUpdate>,
 ) -> Result<(), anyhow::Error> {
     let room = connect_room(address, token)
@@ -159,7 +159,7 @@ async fn run_livekit_session(
     // Microphone is handled entirely in JavaScript
 
     // Handle outgoing messages
-    let mut app_rx = app_rx.lock().await;
+    let mut app_rx = app_rx;
     loop {
         let message = app_rx.recv().await;
         let Some(outgoing) = message else {

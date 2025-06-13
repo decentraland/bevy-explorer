@@ -119,7 +119,6 @@ fn connect_livekit(
         #[cfg(target_arch = "wasm32")]
         {
             // For WASM, we directly call the handler which will spawn the async task
-            let receiver = Arc::new(Mutex::new(receiver));
             if let Err(e) = livekit_handler_inner(transport_id, &remote_address, receiver, sender) {
                 warn!("Failed to start livekit connection: {e}");
             }
@@ -136,7 +135,7 @@ fn livekit_handler(
     receiver: Receiver<NetworkMessage>,
     sender: Sender<PlayerUpdate>,
     mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
-) {
+) { 
     let receiver = Arc::new(Mutex::new(receiver));
 
     loop {
