@@ -3,13 +3,13 @@ use std::sync::Arc;
 use bevy::{prelude::*, utils::HashMap};
 use http::Uri;
 use prost::Message;
+use serde::Deserialize;
 use tokio::sync::{
     mpsc::{Receiver, Sender},
     Mutex,
 };
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use serde::{Deserialize};
 
 use crate::{
     global_crdt::{LocalAudioFrame, MicState, PlayerMessage},
@@ -66,7 +66,11 @@ extern "C" {
     fn is_microphone_available() -> Result<bool, JsValue>;
 
     #[wasm_bindgen(catch)]
-    fn set_participant_spatial_audio(participant_identity: &str, pan: f32, volume: f32) -> Result<(), JsValue>;
+    fn set_participant_spatial_audio(
+        participant_identity: &str,
+        pan: f32,
+        volume: f32,
+    ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch)]
     fn set_participant_pan(participant_identity: &str, pan: f32) -> Result<(), JsValue>;
@@ -78,10 +82,11 @@ extern "C" {
     fn get_audio_participants() -> Result<JsValue, JsValue>;
 }
 
-pub struct LivekitWebPlugin;
+pub struct MicPlugin;
 
-impl Plugin for LivekitWebPlugin {
+impl Plugin for MicPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<MicState>();
         app.add_systems(Update, update_mic_state);
     }
 }
@@ -168,13 +173,13 @@ async fn run_livekit_session(
             }
             Err(e) => {
                 error!("LiveKit session error: {:?}", e);
-                
+
                 // Check again if sender is closed before retrying
                 if sender.is_closed() {
                     debug!("Sender closed during error, stopping LiveKit connection attempts");
                     break;
                 }
-                
+
                 // Wait before retrying
                 gloo_timers::future::TimeoutFuture::new(1000).await;
             }
@@ -281,10 +286,13 @@ struct Participant {
 async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<PlayerUpdate>) {
     // Try to deserialize the event using serde_wasm_bindgen
     let event_result: Result<RoomEvent, _> = serde_wasm_bindgen::from_value(event);
-    
+
     match event_result {
         Ok(room_event) => match room_event {
-            RoomEvent::DataReceived { payload, participant } => {
+            RoomEvent::DataReceived {
+                payload,
+                participant,
+            } => {
                 if let Some(address) = participant.identity.as_h160() {
                     if let Ok(packet) = rfc4::Packet::decode(payload.as_slice()) {
                         if let Some(message) = packet.message {
@@ -331,7 +339,10 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
 // Public API for spatial audio control
 pub fn update_participant_spatial_audio(participant_identity: &str, pan: f32, volume: f32) {
     if let Err(e) = set_participant_spatial_audio(participant_identity, pan, volume) {
-        warn!("Failed to set spatial audio for {}: {:?}", participant_identity, e);
+        warn!(
+            "Failed to set spatial audio for {}: {:?}",
+            participant_identity, e
+        );
     }
 }
 

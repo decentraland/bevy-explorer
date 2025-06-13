@@ -11,7 +11,7 @@ use tokio::sync::{
 use dcl_component::proto_components::kernel::comms::rfc4;
 
 use crate::{
-    global_crdt::{LocalAudioFrame, LocalAudioSource},
+    global_crdt::{LocalAudioFrame, LocalAudioSource, MicState},
     profile::CurrentUserProfile,
     Transport, TransportType,
 };
@@ -35,8 +35,11 @@ impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, (connect_livekit, start_livekit));
         app.add_event::<StartLivekit>();
+        app.init_resource::<MicState>();
         #[cfg(target_arch = "wasm32")]
-        app.add_plugins(crate::livekit_web::LivekitWebPlugin);
+        app.add_plugins(crate::livekit_web::MicPlugin);
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_plugins(crate::livekit_native::MicPlugin);
     }
 }
 
@@ -135,7 +138,7 @@ fn livekit_handler(
     receiver: Receiver<NetworkMessage>,
     sender: Sender<PlayerUpdate>,
     mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
-) { 
+) {
     let receiver = Arc::new(Mutex::new(receiver));
 
     loop {
