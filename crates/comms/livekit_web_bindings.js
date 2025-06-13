@@ -1,6 +1,9 @@
 let currentMicTrack = null;
 const activeRooms = new Set();
 
+// Store audio elements and panner nodes for spatial audio
+const participantAudioNodes = new Map();
+
 export async function connect_room(url, token) {
     const room = new LivekitClient.Room({
         autoSubscribe: true,
@@ -126,13 +129,33 @@ export function set_room_event_handler(room, handler) {
     });
     
     room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
-        // For audio tracks, automatically play them
+        // For audio tracks, set up spatial audio
         if (track.kind === 'audio') {
             const audioElement = track.attach();
-            audioElement.play().catch(e => console.warn('Failed to play audio:', e));
             
-            // Store the audio element reference on the track for cleanup
-            track._audioElement = audioElement;
+            // Create Web Audio API nodes for spatial audio
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioContext.createMediaElementSource(audioElement);
+            const pannerNode = audioContext.createStereoPanner();
+            const gainNode = audioContext.createGain();
+            
+            // Connect the audio graph: source -> panner -> gain -> destination
+            source.connect(pannerNode);
+            pannerNode.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // Store the nodes for later control
+            participantAudioNodes.set(participant.identity, {
+                audioElement,
+                audioContext,
+                source,
+                pannerNode,
+                gainNode,
+                track
+            });
+            
+            // Start playing
+            audioElement.play().catch(e => console.warn('Failed to play audio:', e));
         }
         
         handler({
@@ -144,10 +167,17 @@ export function set_room_event_handler(room, handler) {
     });
     
     room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
-        // Clean up audio elements
-        if (track._audioElement) {
-            track.detach(track._audioElement);
-            track._audioElement = null;
+        // Clean up spatial audio nodes
+        if (track.kind === 'audio') {
+            const nodes = participantAudioNodes.get(participant.identity);
+            if (nodes) {
+                nodes.source.disconnect();
+                nodes.pannerNode.disconnect();
+                nodes.gainNode.disconnect();
+                nodes.audioContext.close();
+                track.detach(nodes.audioElement);
+                participantAudioNodes.delete(participant.identity);
+            }
         }
         
         handler({
@@ -164,6 +194,57 @@ export function set_room_event_handler(room, handler) {
             participant: participant,
         });
     });
+    
+    room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
+        // Clean up any audio nodes when participant disconnects
+        const nodes = participantAudioNodes.get(participant.identity);
+        if (nodes) {
+            nodes.source.disconnect();
+            nodes.pannerNode.disconnect();
+            nodes.gainNode.disconnect();
+            nodes.audioContext.close();
+            participantAudioNodes.delete(participant.identity);
+        }
+        
+        handler({
+            type: 'participant_disconnected',
+            participant: participant,
+        });
+    });
+}
+
+// Spatial audio control functions
+export function set_participant_spatial_audio(participantIdentity, pan, volume) {
+    const nodes = participantAudioNodes.get(participantIdentity);
+    if (nodes) {
+        // Pan value should be between -1 (left) and 1 (right)
+        nodes.pannerNode.pan.value = Math.max(-1, Math.min(1, pan));
+        // Volume should be between 0 and 1 (or higher for boost)
+        nodes.gainNode.gain.value = Math.max(0, volume);
+        
+        console.log(`Set spatial audio for ${participantIdentity}: pan=${pan}, volume=${volume}`);
+    }
+}
+
+// Set pan value only (-1 to 1, where -1 is left, 0 is center, 1 is right)
+export function set_participant_pan(participantIdentity, pan) {
+    const nodes = participantAudioNodes.get(participantIdentity);
+    if (nodes) {
+        nodes.pannerNode.pan.value = Math.max(-1, Math.min(1, pan));
+    }
+}
+
+// Set volume only (0 to 1, or higher for boost)
+export function set_participant_volume(participantIdentity, volume) {
+    const nodes = participantAudioNodes.get(participantIdentity);
+    if (nodes) {
+        nodes.gainNode.gain.value = Math.max(0, volume);
+    }
+}
+
+// Get all active participant identities with audio
+export function get_audio_participants() {
+    return Array.from(participantAudioNodes.keys());
 }
 
 // Helper function to clean up audio resources

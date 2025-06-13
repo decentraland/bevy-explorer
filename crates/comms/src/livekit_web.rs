@@ -63,6 +63,18 @@ extern "C" {
 
     #[wasm_bindgen(catch)]
     fn is_microphone_available() -> Result<bool, JsValue>;
+
+    #[wasm_bindgen(catch)]
+    fn set_participant_spatial_audio(participant_identity: &str, pan: f32, volume: f32) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(catch)]
+    fn set_participant_pan(participant_identity: &str, pan: f32) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(catch)]
+    fn set_participant_volume(participant_identity: &str, volume: f32) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(catch)]
+    fn get_audio_participants() -> Result<JsValue, JsValue>;
 }
 
 pub struct LivekitWebPlugin;
@@ -275,5 +287,24 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                 _ => {}
             }
         }
+    }
+}
+
+// Public API for spatial audio control
+pub fn update_participant_spatial_audio(participant_identity: &str, pan: f32, volume: f32) {
+    if let Err(e) = set_participant_spatial_audio(participant_identity, pan, volume) {
+        warn!("Failed to set spatial audio for {}: {:?}", participant_identity, e);
+    }
+}
+
+pub fn update_participant_pan(participant_identity: &str, pan: f32) {
+    if let Err(e) = set_participant_pan(participant_identity, pan) {
+        warn!("Failed to set pan for {}: {:?}", participant_identity, e);
+    }
+}
+
+pub fn update_participant_volume(participant_identity: &str, volume: f32) {
+    if let Err(e) = set_participant_volume(participant_identity, volume) {
+        warn!("Failed to set volume for {}: {:?}", participant_identity, e);
     }
 }
