@@ -1,4 +1,3 @@
-use av::microphone::MicState;
 use bevy::prelude::*;
 use common::{
     inputs::SystemAction,
@@ -6,7 +5,7 @@ use common::{
     structs::{SystemAudio, ToolTips, TooltipSource},
     util::{FireEventEx, TryPushChildrenEx},
 };
-use comms::{Transport, TransportType};
+use comms::{global_crdt::MicState, Transport, TransportType};
 use input_manager::{InputManager, InputPriority};
 use ui_core::ui_actions::{Click, HoverEnter, HoverExit, On};
 
@@ -27,6 +26,8 @@ pub struct MicImages {
 impl Plugin for MicUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup.in_set(SetupSets::Main));
+
+        #[cfg(feature = "livekit")]
         app.add_systems(Update, update_mic_ui);
 
         let asset_server = app.world().resource::<AssetServer>();
@@ -56,6 +57,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
                 ..Default::default()
             },
             Interaction::default(),
+            #[cfg(feature = "livekit")]
             On::<Click>::new(|mut commands: Commands, mut mic_state: ResMut<MicState>| {
                 mic_state.enabled = !mic_state.enabled;
                 if mic_state.enabled {
@@ -64,6 +66,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
                     commands.fire_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
                 }
             }),
+            #[cfg(feature = "livekit")]
             On::<HoverEnter>::new(
                 |mut tooltip: ResMut<ToolTips>,
                  transport: Query<&Transport>,
@@ -91,6 +94,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "livekit")]
 fn update_mic_ui(
     mut commands: Commands,
     mut mic_state: ResMut<MicState>,

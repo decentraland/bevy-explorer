@@ -2,8 +2,12 @@ pub mod archipelago;
 pub mod broadcast_position;
 pub mod global_crdt;
 
+#[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
+pub mod livekit_native;
 #[cfg(feature = "livekit")]
 pub mod livekit_room;
+#[cfg(all(feature = "livekit", target_arch = "wasm32"))]
+pub mod livekit_web;
 
 pub mod movement_compressed;
 pub mod preview;
