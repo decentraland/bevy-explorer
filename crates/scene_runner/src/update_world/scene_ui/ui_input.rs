@@ -51,7 +51,7 @@ pub fn set_ui_input(
             components::common::Font::FSerif => FontName::Serif,
             components::common::Font::FMonospace => FontName::Mono,
         };
-        let font_size = input.0.font_size.unwrap_or(10) as f32;
+        let font_size = input.0.font_size.unwrap_or(10).max(1) as f32;
 
         let ui_entity = link.ui_entity;
         let root = scene_ent.root;
