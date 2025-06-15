@@ -28,7 +28,7 @@
             "name": "Debug executable 'decentra-bevy'",
             "cargo": {
                 "args": [
-                    "build",
+                    "run",
                     "--bin=decentra-bevy",
                     "--package=decentra-bevy"
                 ],
@@ -37,7 +37,6 @@
                     "kind": "bin"
                 }
             },
-            "args": ["step-4"],
             "cwd": "${workspaceFolder}"
         },
         {

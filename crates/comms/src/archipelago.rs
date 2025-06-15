@@ -99,6 +99,7 @@ pub fn start_archipelago(mut commands: Commands, mut archi_events: EventReader<S
                 transport_type: TransportType::Archipelago,
                 sender,
                 foreign_aliases: Default::default(),
+                voice_subscription_sender: None,
             },
             ArchipelagoTransport {
                 address: ev.address.to_owned(),

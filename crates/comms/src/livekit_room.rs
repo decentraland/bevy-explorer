@@ -39,6 +39,7 @@ pub struct LivekitTransport {
     pub address: String,
     pub receiver: Option<Receiver<NetworkMessage>>,
     pub retries: usize,
+    pub voice_subscription_receiver: Option<tokio::sync::mpsc::Receiver<(Address, bool)>>,
 }
 
 #[derive(Component)]
@@ -52,6 +53,8 @@ pub fn start_livekit(
     if let Some(ev) = room_events.read().last() {
         info!("starting livekit protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
+        let (voice_subscription_sender, voice_subscription_receiver) =
+            tokio::sync::mpsc::channel(100);
 
         let Some(current_profile) = current_profile.profile.as_ref() else {
             return;
@@ -73,11 +76,13 @@ pub fn start_livekit(
                 transport_type: TransportType::Livekit,
                 sender,
                 foreign_aliases: Default::default(),
+                voice_subscription_sender: Some(voice_subscription_sender),
             },
             LivekitTransport {
                 address: ev.address.to_owned(),
                 receiver: Some(receiver),
                 retries: 0,
+                voice_subscription_receiver: Some(voice_subscription_receiver),
             },
         ));
     }

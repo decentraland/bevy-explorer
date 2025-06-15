@@ -66,9 +66,12 @@ impl Plugin for GlobalCrdtPlugin {
 
         app.add_systems(Update, process_transport_updates);
         app.add_systems(Update, despawn_players);
+        app.add_systems(Update, manage_voice_subscriptions);
+        app.add_systems(Update, handle_voice_subscription_requests);
         app.add_event::<PlayerPositionEvent>();
         app.add_event::<ProfileEvent>();
         app.add_event::<ChatEvent>();
+        app.add_event::<VoiceSubscriptionRequest>();
     }
 }
 
@@ -76,6 +79,13 @@ pub enum PlayerMessage {
     MetaData(String),
     PlayerData(rfc4::packet::Message),
     AudioStream(Box<StreamingSoundData<AudioDecoderError>>),
+    VoiceSourceChange(VoiceSourceEvent),
+}
+
+#[derive(Debug)]
+pub enum VoiceSourceEvent {
+    Published,
+    Unpublished,
 }
 
 impl std::fmt::Debug for PlayerMessage {
@@ -84,6 +94,9 @@ impl std::fmt::Debug for PlayerMessage {
             Self::MetaData(arg0) => f.debug_tuple("MetaData").field(arg0).finish(),
             Self::PlayerData(arg0) => f.debug_tuple("PlayerData").field(arg0).finish(),
             Self::AudioStream(_) => f.debug_tuple("AudioStream").finish(),
+            Self::VoiceSourceChange(arg0) => {
+                f.debug_tuple("VoiceSourceChange").field(arg0).finish()
+            }
         };
         var_name
     }
@@ -164,6 +177,8 @@ pub struct ForeignPlayer {
     pub scene_id: SceneEntityId,
     pub profile_version: u32,
     audio_sender: mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
+    pub available_voice_sources: Vec<Entity>,
+    pub active_voice_subscription: Option<Entity>,
 }
 
 #[derive(Component)]
@@ -231,6 +246,13 @@ pub struct ChatEvent {
     pub sender: Entity,
     pub channel: String,
     pub message: String,
+}
+
+#[derive(Event, Debug)]
+pub struct VoiceSubscriptionRequest {
+    pub transport_id: Entity,
+    pub player_address: Address,
+    pub subscribe: bool, // true = subscribe, false = unsubscribe
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -318,6 +340,8 @@ pub fn process_transport_updates(
                             scene_id: next_free,
                             profile_version: 0,
                             audio_sender: audio_sender.clone(),
+                            available_voice_sources: Vec::new(),
+                            active_voice_subscription: None,
                         },
                         ForeignAudioSource(audio_receiver),
                         propagate::Propagate(RenderLayers::default()),
@@ -352,6 +376,41 @@ pub fn process_transport_updates(
             PlayerMessage::AudioStream(audio) => {
                 // pass through
                 let _ = audio_channel.blocking_send(*audio);
+            }
+            PlayerMessage::VoiceSourceChange(event) => {
+                debug!("voice source change for {}: {:?}", update.address, event);
+                // Handle voice source availability changes
+                if let Some(existing) = state.lookup.get_by_left(&update.address) {
+                    if let Ok(mut foreign_player) = players.get_mut(*existing) {
+                        match event {
+                            VoiceSourceEvent::Published => {
+                                debug!(
+                                    "voice source became available for player {} from transport {}",
+                                    update.address, update.transport_id
+                                );
+                                if !foreign_player
+                                    .available_voice_sources
+                                    .contains(&update.transport_id)
+                                {
+                                    foreign_player
+                                        .available_voice_sources
+                                        .push(update.transport_id);
+                                }
+                            }
+                            VoiceSourceEvent::Unpublished => {
+                                debug!("voice source became unavailable for player {} from transport {}", update.address, update.transport_id);
+                                foreign_player
+                                    .available_voice_sources
+                                    .retain(|&id| id != update.transport_id);
+                                if foreign_player.active_voice_subscription
+                                    == Some(update.transport_id)
+                                {
+                                    foreign_player.active_voice_subscription = None;
+                                }
+                            }
+                        }
+                    }
+                }
             }
             PlayerMessage::PlayerData(Message::Position(pos)) => {
                 let dcl_transform = DclTransformAndParent {
@@ -570,6 +629,77 @@ fn despawn_players(
 
             state.delete_entity(player.scene_id);
             state.lookup.remove_by_right(&entity);
+        }
+    }
+}
+
+fn manage_voice_subscriptions(
+    mut players: Query<&mut ForeignPlayer>,
+    transports: Query<(Entity, &crate::Transport)>,
+    mut subscription_events: EventWriter<VoiceSubscriptionRequest>,
+) {
+    for mut player in players.iter_mut() {
+        // If we have available voice sources and no active subscription
+        if !player.available_voice_sources.is_empty() && player.active_voice_subscription.is_none()
+        {
+            // Find the best available voice source, prioritizing Archipelago transports
+            let best_source = player
+                .available_voice_sources
+                .iter()
+                .filter_map(|&transport_id| {
+                    transports
+                        .get(transport_id)
+                        .ok()
+                        .map(|(entity, transport)| (entity, &transport.transport_type))
+                })
+                .max_by_key(|(_, transport_type)| {
+                    match transport_type {
+                        crate::TransportType::Archipelago => 1, // Highest priority
+                        _ => 0, // Lower priority for other transport types
+                    }
+                })
+                .map(|(entity, _)| entity);
+
+            if let Some(best_source) = best_source {
+                warn!(
+                    "Requesting subscription to voice source {:?} for player {}",
+                    best_source, player.address
+                );
+                player.active_voice_subscription = Some(best_source);
+                subscription_events.send(VoiceSubscriptionRequest {
+                    transport_id: best_source,
+                    player_address: player.address,
+                    subscribe: true,
+                });
+            }
+        }
+
+        // Clean up references to non-existent transports
+        player
+            .available_voice_sources
+            .retain(|&transport_id| transports.get(transport_id).is_ok());
+    }
+}
+
+fn handle_voice_subscription_requests(
+    mut subscription_events: EventReader<VoiceSubscriptionRequest>,
+    transports: Query<&crate::Transport>,
+) {
+    for event in subscription_events.read() {
+        debug!("Processing voice subscription request: {:?}", event);
+
+        // Get the transport and send the subscription request
+        if let Ok(transport) = transports.get(event.transport_id) {
+            if let Some(voice_subscription_sender) = &transport.voice_subscription_sender {
+                if let Err(e) =
+                    voice_subscription_sender.try_send((event.player_address, event.subscribe))
+                {
+                    warn!(
+                        "Failed to send voice subscription request to transport {}: {}",
+                        event.transport_id, e
+                    );
+                }
+            }
         }
     }
 }

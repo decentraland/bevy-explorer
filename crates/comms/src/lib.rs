@@ -127,6 +127,7 @@ pub struct Transport {
     pub transport_type: TransportType,
     pub sender: Sender<NetworkMessage>,
     pub foreign_aliases: BiMap<u32, Address>,
+    pub voice_subscription_sender: Option<tokio::sync::mpsc::Sender<(Address, bool)>>,
 }
 
 fn process_realm_change(

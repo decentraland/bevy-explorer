@@ -82,6 +82,7 @@ pub fn start_ws_room(
                 transport_type: TransportType::WebsocketRoom,
                 sender,
                 foreign_aliases: Default::default(),
+                voice_subscription_sender: None,
             },
             WebsocketRoomTransport {
                 address: ev.address.to_owned(),

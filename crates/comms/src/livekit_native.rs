@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use bevy::{prelude::*, utils::HashMap};
+use ethers_core::types::Address;
 use futures_lite::StreamExt;
 use http::Uri;
 use prost::Message;
@@ -14,7 +15,7 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 
 use crate::{
     global_crdt::{
-        GlobalCrdtState, LocalAudioFrame, LocalAudioSource, MicState, PlayerMessage, PlayerUpdate,
+        GlobalCrdtState, LocalAudioFrame, LocalAudioSource, MicState, PlayerMessage, PlayerUpdate, VoiceSourceEvent,
     },
     livekit_room::{LivekitConnection, LivekitTransport},
     NetworkMessage,
@@ -127,11 +128,12 @@ pub fn connect_livekit(
         debug!("spawn lk connect");
         let remote_address = new_transport.address.to_owned();
         let receiver = new_transport.receiver.take().unwrap();
+        let subscription_rx = new_transport.voice_subscription_receiver.take().unwrap();
         let sender = player_state.get_sender();
 
         let subscription = mic.subscribe();
         std::thread::spawn(move || {
-            livekit_handler(transport_id, remote_address, receiver, sender, subscription)
+            livekit_handler(transport_id, remote_address, receiver, sender, subscription, subscription_rx)
         });
 
         commands.entity(transport_id).try_insert(LivekitConnection);
@@ -144,6 +146,7 @@ fn livekit_handler(
     receiver: Receiver<NetworkMessage>,
     sender: Sender<PlayerUpdate>,
     mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
+    subscription_rx: Receiver<(Address, bool)>,
 ) {
     let receiver = Arc::new(Mutex::new(receiver));
 
@@ -154,6 +157,7 @@ fn livekit_handler(
             receiver.clone(),
             sender.clone(),
             mic.resubscribe(),
+            subscription_rx.clone(),
         ) {
             warn!("livekit error: {e}");
         }
@@ -171,6 +175,7 @@ fn livekit_handler_inner(
     app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,
     sender: Sender<PlayerUpdate>,
     mut mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
+    subscription_rx: Arc<Mutex<tokio::sync::mpsc::Receiver<(Address, bool)>>>,
 ) -> Result<(), anyhow::Error> {
     debug!(">> lk connect async : {remote_address}");
 
@@ -199,8 +204,11 @@ fn livekit_handler_inner(
     let rt2 = rt.clone();
 
     let task = rt.spawn(async move {
-        let (room, mut network_rx) = livekit::prelude::Room::connect(&address, &token, RoomOptions{ auto_subscribe: true, adaptive_stream: false, dynacast: false, ..Default::default() }).await.unwrap();
+        let (room, mut network_rx) = livekit::prelude::Room::connect(&address, &token, RoomOptions{ auto_subscribe: false, adaptive_stream: false, dynacast: false, ..Default::default() }).await.unwrap();
         let local_participant = room.local_participant();
+
+        // Store available tracks for subscription
+        let mut available_tracks: HashMap<Address, livekit::publication::RemoteTrackPublication> = HashMap::new();
 
         let mut native_source: Option<NativeAudioSource> = None;
         let mut mic_sid: Option<TrackSid> = None;
@@ -242,6 +250,7 @@ fn livekit_handler_inner(
         });
 
         let mut app_rx = app_rx.lock().await;
+        let mut subscription_rx = subscription_rx.lock().await;
         'stream: loop {
             tokio::select!(
                 incoming = network_rx.recv() => {
@@ -332,6 +341,40 @@ fn livekit_handler_inner(
                                 }
                             }
                         }
+                        livekit::RoomEvent::TrackPublished { publication, participant } => {
+                            if let Some(address) = participant.identity().0.as_str().as_h160() {
+                                if matches!(publication.source(), TrackSource::Microphone) {
+                                    // Store the track publication for potential subscription
+                                    available_tracks.insert(address, publication.clone());
+
+                                    if let Err(e) = sender.send(PlayerUpdate {
+                                        transport_id,
+                                        message: PlayerMessage::VoiceSourceChange(VoiceSourceEvent::Published),
+                                        address,
+                                    }).await {
+                                        warn!("app pipe broken ({e}), existing loop");
+                                        break 'stream;
+                                    }
+                                }
+                            }
+                        }
+                        livekit::RoomEvent::TrackUnpublished { publication, participant } => {
+                            if let Some(address) = participant.identity().0.as_str().as_h160() {
+                                if matches!(publication.source(), TrackSource::Microphone) {
+                                    // Remove the track publication
+                                    available_tracks.remove(&address);
+
+                                    if let Err(e) = sender.send(PlayerUpdate {
+                                        transport_id,
+                                        message: PlayerMessage::VoiceSourceChange(VoiceSourceEvent::Unpublished),
+                                        address,
+                                    }).await {
+                                        warn!("app pipe broken ({e}), existing loop");
+                                        break 'stream;
+                                    }
+                                }
+                            }
+                        }
                         livekit::RoomEvent::ParticipantConnected(participant) => {
                             let meta = participant.metadata();
                             if !meta.is_empty() {
@@ -349,6 +392,23 @@ fn livekit_handler_inner(
                         }
                         _ => { debug!("Event: {:?}", incoming); }
                     };
+                }
+                subscription_request = subscription_rx.recv() => {
+                    if let Some((player_address, should_subscribe)) = subscription_request {
+                        if should_subscribe {
+                            // Subscribe to the player's voice track
+                            if let Some(publication) = available_tracks.get(&player_address) {
+                                debug!("Subscribing to voice track for player {}", player_address);
+                                publication.set_subscribed(true);
+                            }
+                        } else {
+                            // Unsubscribe from the player's voice track
+                            if let Some(publication) = available_tracks.get(&player_address) {
+                                debug!("Unsubscribing from voice track for player {}", player_address);
+                                publication.set_subscribed(false);
+                            }
+                        }
+                    }
                 }
                 outgoing = app_rx.recv() => {
                     let Some(outgoing) = outgoing else {
