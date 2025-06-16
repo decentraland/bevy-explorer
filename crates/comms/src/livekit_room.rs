@@ -1,23 +1,20 @@
 // --server https://worlds-content-server.decentraland.org/world/shibu.dcl.eth --location 1,1
 
-use std::sync::Arc;
-
 use bevy::prelude::*;
 use tokio::sync::{
-    mpsc::{Receiver, Sender},
-    Mutex,
+    mpsc::Receiver
 };
 
 use dcl_component::proto_components::kernel::comms::rfc4;
 
 use crate::{
-    global_crdt::{LocalAudioFrame, LocalAudioSource, MicState},
+    global_crdt::MicState,
     profile::CurrentUserProfile,
     Transport, TransportType,
 };
 
 use super::{
-    global_crdt::{GlobalCrdtState, PlayerUpdate},
+    global_crdt::GlobalCrdtState,
     NetworkMessage,
 };
 
@@ -27,7 +24,7 @@ use super::{
 pub use crate::livekit_web::livekit_handler_inner;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use crate::livekit_native::livekit_handler_inner;
+pub use crate::livekit_native::livekit_handler;
 
 pub struct LivekitPlugin;
 
@@ -128,33 +125,5 @@ fn connect_livekit(
         }
 
         commands.entity(transport_id).try_insert(LivekitConnection);
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn livekit_handler(
-    transport_id: Entity,
-    remote_address: String,
-    receiver: Receiver<NetworkMessage>,
-    sender: Sender<PlayerUpdate>,
-    mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
-) {
-    let receiver = Arc::new(Mutex::new(receiver));
-
-    loop {
-        if let Err(e) = livekit_handler_inner(
-            transport_id,
-            &remote_address,
-            receiver.clone(),
-            sender.clone(),
-            mic.resubscribe(),
-        ) {
-            warn!("livekit error: {e}");
-        }
-        if receiver.blocking_lock().is_closed() {
-            // caller closed the channel
-            return;
-        }
-        warn!("livekit connection dropped, reconnecting");
     }
 }

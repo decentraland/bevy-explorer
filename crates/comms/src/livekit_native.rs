@@ -113,7 +113,33 @@ pub fn update_mic(
     mic_state.available = false;
 }
 
-pub fn livekit_handler_inner(
+pub fn livekit_handler(
+    transport_id: Entity,
+    remote_address: String,
+    receiver: Receiver<NetworkMessage>,
+    sender: Sender<PlayerUpdate>,
+    mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
+) {
+    let receiver = Arc::new(Mutex::new(receiver));
+
+    loop {
+        if let Err(e) = livekit_handler_inner(
+            transport_id,
+            &remote_address,
+            receiver.clone(),
+            sender.clone(),
+            mic.resubscribe(),
+        ) {
+            warn!("livekit error: {e}");
+        }
+        if receiver.blocking_lock().is_closed() {
+            // caller closed the channel
+            return;
+        }
+        warn!("livekit connection dropped, reconnecting");
+    }
+}
+fn livekit_handler_inner(
     transport_id: Entity,
     remote_address: &str,
     app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,

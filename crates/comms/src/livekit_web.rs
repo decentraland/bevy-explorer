@@ -1,20 +1,12 @@
-use std::sync::Arc;
-
 use bevy::{prelude::*, utils::HashMap};
 use http::Uri;
 use prost::Message;
 use serde::Deserialize;
-use tokio::sync::{
-    mpsc::{Receiver, Sender},
-    Mutex,
-};
+use tokio::sync::mpsc::{Receiver, Sender};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use crate::{
-    global_crdt::{LocalAudioFrame, MicState, PlayerMessage},
-    Transport, TransportType,
-};
+use crate::global_crdt::{MicState, PlayerMessage};
 use common::util::AsH160;
 use dcl_component::proto_components::kernel::comms::rfc4;
 
@@ -307,10 +299,10 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                     }
                 }
             }
-            RoomEvent::TrackSubscribed { .. } => {
+            RoomEvent::TrackSubscribed { participant: _p } => {
                 debug!("Track subscribed event - audio is handled in JavaScript");
             }
-            RoomEvent::TrackUnsubscribed { .. } => {
+            RoomEvent::TrackUnsubscribed { participant: _p } => {
                 debug!("Track unsubscribed event");
             }
             RoomEvent::ParticipantConnected { participant } => {
@@ -326,7 +318,7 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                     }
                 }
             }
-            RoomEvent::ParticipantDisconnected { .. } => {
+            RoomEvent::ParticipantDisconnected { participant: _p } => {
                 debug!("Participant disconnected");
             }
         },
