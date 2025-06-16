@@ -1,4 +1,3 @@
-use av::microphone::MicState;
 use bevy::prelude::*;
 use common::{
     inputs::SystemAction,
@@ -6,7 +5,7 @@ use common::{
     structs::{SystemAudio, ToolTips, TooltipSource},
     util::{FireEventEx, TryPushChildrenEx},
 };
-use comms::{Transport, TransportType};
+use comms::{global_crdt::MicState, Transport, TransportType};
 use input_manager::{InputManager, InputPriority};
 use ui_core::ui_actions::{Click, HoverEnter, HoverExit, On};
 
@@ -27,6 +26,7 @@ pub struct MicImages {
 impl Plugin for MicUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup.in_set(SetupSets::Main));
+
         app.add_systems(Update, update_mic_ui);
 
         let asset_server = app.world().resource::<AssetServer>();

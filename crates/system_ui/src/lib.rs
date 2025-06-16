@@ -8,6 +8,7 @@ pub mod emotes;
 pub mod foreign_profile;
 pub mod login;
 pub mod map;
+#[cfg(feature = "livekit")]
 pub mod mic;
 pub mod oow;
 pub mod permission_manager;
@@ -33,7 +34,6 @@ use foreign_profile::ForeignProfilePlugin;
 use input_manager::{InputManager, InputPriority, MouseInteractionComponent};
 use login::LoginPlugin;
 use map::MapPlugin;
-use mic::MicUiPlugin;
 use oow::OowUiPlugin;
 use permission_manager::PermissionPlugin;
 use profile_detail::ProfileDetailPlugin;
@@ -60,7 +60,8 @@ impl Plugin for SystemUiPlugin {
             ChatPanelPlugin,
             ProfileEditPlugin,
             ToastsPlugin,
-            MicUiPlugin,
+            #[cfg(feature = "livekit")]
+            mic::MicUiPlugin,
             ToolTipPlugin,
             LoginPlugin,
             EmoteUiPlugin,
