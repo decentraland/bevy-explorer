@@ -6,11 +6,13 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use crate::global_crdt::{MicState, PlayerMessage};
+use crate::{
+    global_crdt::{GlobalCrdtState, MicState, PlayerMessage, PlayerUpdate},
+    livekit_room::{LivekitConnection, LivekitTransport},
+    NetworkMessage,
+};
 use common::util::AsH160;
 use dcl_component::proto_components::kernel::comms::rfc4;
-
-use super::{global_crdt::PlayerUpdate, NetworkMessage};
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
@@ -107,7 +109,7 @@ fn update_mic_state(
 }
 
 #[allow(clippy::type_complexity)]
-fn connect_livekit(
+pub fn connect_livekit(
     mut commands: Commands,
     mut new_livekits: Query<(Entity, &mut LivekitTransport), Without<LivekitConnection>>,
     player_state: Res<GlobalCrdtState>,
@@ -127,7 +129,7 @@ fn connect_livekit(
     }
 }
 
-pub fn livekit_handler_inner(
+fn livekit_handler_inner(
     transport_id: Entity,
     remote_address: &str,
     app_rx: Receiver<NetworkMessage>,
