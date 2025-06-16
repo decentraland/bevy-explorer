@@ -13,7 +13,11 @@ use common::{structs::AudioDecoderError, util::AsH160};
 use dcl_component::proto_components::kernel::comms::rfc4;
 
 use crate::{
-    global_crdt::{GlobalCrdtState, LocalAudioFrame, LocalAudioSource, MicState, PlayerMessage, PlayerUpdate}, livekit_room::{LivekitConnection, LivekitTransport}, NetworkMessage
+    global_crdt::{
+        GlobalCrdtState, LocalAudioFrame, LocalAudioSource, MicState, PlayerMessage, PlayerUpdate,
+    },
+    livekit_room::{LivekitConnection, LivekitTransport},
+    NetworkMessage,
 };
 
 use livekit::{
