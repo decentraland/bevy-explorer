@@ -179,18 +179,18 @@ async fn run_livekit_session(
             Ok(_) => {
                 debug!("LiveKit session ended normally");
                 // Check if we should reconnect
-                if sender.is_closed() {
+                if app_rx.is_closed() {
                     break;
                 }
-                // Session ended but sender still open, might need to reconnect
+                // Session ended but receiver still open, might need to reconnect
                 // Wait a bit before reconnecting
                 gloo_timers::future::TimeoutFuture::new(1000).await;
             }
             Err(e) => {
                 error!("LiveKit session error: {:?}", e);
 
-                // Check again if sender is closed before retrying
-                if sender.is_closed() {
+                // Check again if receiver is closed before retrying
+                if app_rx.is_closed() {
                     debug!("Sender closed during error, stopping LiveKit connection attempts");
                     break;
                 }
