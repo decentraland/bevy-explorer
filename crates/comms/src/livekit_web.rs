@@ -229,9 +229,6 @@ async fn connect_and_handle_session(
     set_room_event_handler(&room, &event_handler)
         .map_err(|e| anyhow::anyhow!("Failed to set event handler: {:?}", e))?;
 
-    // Keep the closure alive
-    event_handler.forget();
-
     // Microphone is handled entirely in JavaScript
 
     // Handle outgoing messages
