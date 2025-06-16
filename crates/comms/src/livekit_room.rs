@@ -32,6 +32,7 @@ impl Plugin for LivekitPlugin {
 pub struct StartLivekit {
     pub entity: Entity,
     pub address: String,
+    pub transport_type: TransportType,
 }
 
 #[derive(Component)]
@@ -73,7 +74,7 @@ pub fn start_livekit(
 
         commands.entity(ev.entity).try_insert((
             Transport {
-                transport_type: TransportType::Livekit,
+                transport_type: ev.transport_type,
                 sender,
                 foreign_aliases: Default::default(),
                 voice_subscription_sender: Some(voice_subscription_sender),

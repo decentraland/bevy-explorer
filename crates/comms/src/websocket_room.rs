@@ -41,6 +41,7 @@ impl Plugin for WebsocketRoomPlugin {
 #[derive(Event)]
 pub struct StartWsRoom {
     pub address: String,
+    pub transport_type: TransportType,
 }
 
 #[derive(Component)]
@@ -79,7 +80,7 @@ pub fn start_ws_room(
 
         commands.spawn((
             Transport {
-                transport_type: TransportType::WebsocketRoom,
+                transport_type: ev.transport_type,
                 sender,
                 foreign_aliases: Default::default(),
                 voice_subscription_sender: None,

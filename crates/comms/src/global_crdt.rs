@@ -654,8 +654,9 @@ fn manage_voice_subscriptions(
                 })
                 .max_by_key(|(_, transport_type)| {
                     match transport_type {
-                        crate::TransportType::Archipelago => 1, // Highest priority
-                        _ => 0, // Lower priority for other transport types
+                        crate::TransportType::Island => 1, // Highest priority
+                        crate::TransportType::SceneRoom => 0, // Lower priority
+                        crate::TransportType::Realm => -1, // lowest (no realm-channels support voice currently)
                     }
                 })
                 .map(|(entity, _)| entity);

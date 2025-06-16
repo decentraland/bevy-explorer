@@ -96,7 +96,7 @@ pub fn start_archipelago(mut commands: Commands, mut archi_events: EventReader<S
 
         commands.spawn((
             Transport {
-                transport_type: TransportType::Archipelago,
+                transport_type: TransportType::Realm,
                 sender,
                 foreign_aliases: Default::default(),
                 voice_subscription_sender: None,
@@ -130,7 +130,7 @@ fn manage_islands(
         if let Some(entity) = current_island.remove(&island.owner) {
             commands.entity(entity).despawn_recursive();
         }
-        if let Some(entity) = manager.connect(&island.connect_str) {
+        if let Some(entity) = manager.connect(&island.connect_str, TransportType::Island) {
             current_island.insert(island.owner, entity);
         }
 

@@ -70,7 +70,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
                  state: Res<MicState>| {
                     let transport_available = transport
                         .iter()
-                        .any(|t| t.transport_type == TransportType::Livekit);
+                        .any(|t| t.voice_subscription_sender.is_some());
                     tooltip.0.insert(
                         TooltipSource::Label("mic"),
                         vec![(
@@ -104,7 +104,7 @@ fn update_mic_ui(
     let mic_available = mic_state.available;
     let transport_available = transport
         .iter()
-        .any(|t| t.transport_type == TransportType::Livekit);
+        .any(|t| t.transport_type == TransportType::Island);
 
     if mic_available && transport_available {
         if mic_state.enabled {

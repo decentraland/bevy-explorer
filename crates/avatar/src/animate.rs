@@ -147,17 +147,15 @@ fn broadcast_emote(
             };
 
             for transport in transports.iter() {
-                if transport.transport_type != TransportType::Archipelago {
-                    if transport.transport_type != TransportType::SceneRoom {
-                        let _ = transport
-                            .sender
-                            .blocking_send(NetworkMessage::reliable(&old_packet));
-                    }
-
+                if transport.transport_type != TransportType::SceneRoom {
                     let _ = transport
                         .sender
-                        .blocking_send(NetworkMessage::reliable(&new_packet));
+                        .blocking_send(NetworkMessage::reliable(&old_packet));
                 }
+
+                let _ = transport
+                    .sender
+                    .blocking_send(NetworkMessage::reliable(&new_packet));
             }
 
             *last = Some(emote.clone());
