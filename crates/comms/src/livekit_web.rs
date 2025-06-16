@@ -258,8 +258,8 @@ async fn connect_and_handle_session(
 #[serde(tag = "type", rename_all = "camelCase")]
 enum RoomEvent {
     DataReceived {
-        payload: Vec<u8>,
         participant: Participant,
+        payload: serde_bytes::ByteBuf,
     },
     TrackSubscribed {
         participant: Participant,

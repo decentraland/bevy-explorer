@@ -2566,6 +2566,7 @@ dependencies = [
  "reqwest 0.12.12",
  "serde",
  "serde-wasm-bindgen",
+ "serde_bytes",
  "serde_json",
  "tokio",
  "wallet",

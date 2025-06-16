@@ -56,4 +56,5 @@ wasm-bindgen-futures = { workspace = true }
 js-sys = { workspace = true }
 web-sys = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
+serde_bytes = { workspace = true }
 gloo-timers = "0.3"

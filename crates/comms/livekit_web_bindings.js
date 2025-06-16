@@ -117,16 +117,11 @@ export async function close_room(room) {
     await room.disconnect();
 }
 
-// Remove create_audio_track and send_audio_frame functions as they're no longer needed
-
 export function set_room_event_handler(room, handler) {
     room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
-        // Convert Uint8Array to regular array for serde compatibility
-        const payloadArray = Array.from(new Uint8Array(payload));
-        
         handler({
             type: 'dataReceived',
-            payload: payloadArray,
+            payload,
             participant: {
                 identity: participant.identity,
                 metadata: participant.metadata || ''
