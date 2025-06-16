@@ -106,6 +106,27 @@ fn update_mic_state(
     }
 }
 
+#[allow(clippy::type_complexity)]
+fn connect_livekit(
+    mut commands: Commands,
+    mut new_livekits: Query<(Entity, &mut LivekitTransport), Without<LivekitConnection>>,
+    player_state: Res<GlobalCrdtState>,
+) {
+    for (transport_id, mut new_transport) in new_livekits.iter_mut() {
+        debug!("spawn lk connect");
+        let remote_address = new_transport.address.to_owned();
+        let receiver = new_transport.receiver.take().unwrap();
+        let sender = player_state.get_sender();
+
+        // For WASM, we directly call the handler which will spawn the async task
+        if let Err(e) = livekit_handler_inner(transport_id, &remote_address, receiver, sender) {
+            warn!("Failed to start livekit connection: {e}");
+        }
+
+        commands.entity(transport_id).try_insert(LivekitConnection);
+    }
+}
+
 pub fn livekit_handler_inner(
     transport_id: Entity,
     remote_address: &str,

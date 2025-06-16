@@ -1,30 +1,21 @@
 // --server https://worlds-content-server.decentraland.org/world/shibu.dcl.eth --location 1,1
 
 use bevy::prelude::*;
-use tokio::sync::{
-    mpsc::Receiver
-};
+use tokio::sync::mpsc::Receiver;
 
 use dcl_component::proto_components::kernel::comms::rfc4;
 
 use crate::{
-    global_crdt::MicState,
-    profile::CurrentUserProfile,
-    Transport, TransportType,
-};
-
-use super::{
-    global_crdt::GlobalCrdtState,
-    NetworkMessage,
+    global_crdt::MicState, profile::CurrentUserProfile, NetworkMessage, Transport, TransportType,
 };
 
 // main.rs or lib.rs
 
 #[cfg(target_arch = "wasm32")]
-pub use crate::livekit_web::livekit_handler_inner;
+pub use crate::livekit_web::{connect_livekit, MicPlugin};
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use crate::livekit_native::livekit_handler;
+pub use crate::livekit_native::{connect_livekit, MicPlugin};
 
 pub struct LivekitPlugin;
 
@@ -33,10 +24,7 @@ impl Plugin for LivekitPlugin {
         app.add_systems(Update, (connect_livekit, start_livekit));
         app.add_event::<StartLivekit>();
         app.init_resource::<MicState>();
-        #[cfg(target_arch = "wasm32")]
-        app.add_plugins(crate::livekit_web::MicPlugin);
-        #[cfg(not(target_arch = "wasm32"))]
-        app.add_plugins(crate::livekit_native::MicPlugin);
+        app.add_plugins(MicPlugin);
     }
 }
 
@@ -92,38 +80,5 @@ pub fn start_livekit(
                 retries: 0,
             },
         ));
-    }
-}
-
-#[allow(clippy::type_complexity)]
-fn connect_livekit(
-    mut commands: Commands,
-    mut new_livekits: Query<(Entity, &mut LivekitTransport), Without<LivekitConnection>>,
-    player_state: Res<GlobalCrdtState>,
-    #[cfg(not(target_arch = "wasm32"))] mic: Res<LocalAudioSource>,
-) {
-    for (transport_id, mut new_transport) in new_livekits.iter_mut() {
-        debug!("spawn lk connect");
-        let remote_address = new_transport.address.to_owned();
-        let receiver = new_transport.receiver.take().unwrap();
-        let sender = player_state.get_sender();
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let subscription = mic.subscribe();
-            std::thread::spawn(move || {
-                livekit_handler(transport_id, remote_address, receiver, sender, subscription)
-            });
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            // For WASM, we directly call the handler which will spawn the async task
-            if let Err(e) = livekit_handler_inner(transport_id, &remote_address, receiver, sender) {
-                warn!("Failed to start livekit connection: {e}");
-            }
-        }
-
-        commands.entity(transport_id).try_insert(LivekitConnection);
     }
 }

@@ -13,8 +13,7 @@ use common::{structs::AudioDecoderError, util::AsH160};
 use dcl_component::proto_components::kernel::comms::rfc4;
 
 use crate::{
-    global_crdt::{LocalAudioFrame, LocalAudioSource, MicState, PlayerMessage, PlayerUpdate},
-    NetworkMessage,
+    global_crdt::{GlobalCrdtState, LocalAudioFrame, LocalAudioSource, MicState, PlayerMessage, PlayerUpdate}, livekit_room::{LivekitConnection, LivekitTransport}, NetworkMessage
 };
 
 use livekit::{
@@ -113,7 +112,29 @@ pub fn update_mic(
     mic_state.available = false;
 }
 
-pub fn livekit_handler(
+#[allow(clippy::type_complexity)]
+pub fn connect_livekit(
+    mut commands: Commands,
+    mut new_livekits: Query<(Entity, &mut LivekitTransport), Without<LivekitConnection>>,
+    player_state: Res<GlobalCrdtState>,
+    mic: Res<crate::global_crdt::LocalAudioSource>,
+) {
+    for (transport_id, mut new_transport) in new_livekits.iter_mut() {
+        debug!("spawn lk connect");
+        let remote_address = new_transport.address.to_owned();
+        let receiver = new_transport.receiver.take().unwrap();
+        let sender = player_state.get_sender();
+
+        let subscription = mic.subscribe();
+        std::thread::spawn(move || {
+            livekit_handler(transport_id, remote_address, receiver, sender, subscription)
+        });
+
+        commands.entity(transport_id).try_insert(LivekitConnection);
+    }
+}
+
+fn livekit_handler(
     transport_id: Entity,
     remote_address: String,
     receiver: Receiver<NetworkMessage>,
@@ -139,6 +160,7 @@ pub fn livekit_handler(
         warn!("livekit connection dropped, reconnecting");
     }
 }
+
 fn livekit_handler_inner(
     transport_id: Entity,
     remote_address: &str,
