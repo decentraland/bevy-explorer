@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 use tokio::sync::mpsc::Receiver;
+use ethers_core::types::Address;
 
 use dcl_component::proto_components::kernel::comms::rfc4;
 

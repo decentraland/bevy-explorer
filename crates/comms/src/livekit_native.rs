@@ -149,6 +149,7 @@ fn livekit_handler(
     subscription_rx: Receiver<(Address, bool)>,
 ) {
     let receiver = Arc::new(Mutex::new(receiver));
+    let subscription_rx = Arc::new(Mutex::new(subscription_rx));
 
     loop {
         if let Err(e) = livekit_handler_inner(
