@@ -14,7 +14,7 @@ use bevy::{
     },
     transform::TransformSystem,
     ui::UiSystem,
-    utils::HashMap,
+    platform::collections::HashMap,
 };
 use boimp::bake::{
     ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin, STANDARD_BAKE_HANDLE,

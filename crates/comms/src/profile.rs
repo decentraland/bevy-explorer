@@ -5,7 +5,7 @@ use bevy::{
     ecs::system::SystemParam,
     prelude::*,
     tasks::{IoTaskPool, Task},
-    utils::HashMap,
+    platform::collections::HashMap,
 };
 use dcl::interface::CrdtType;
 use ethers_core::types::Address;

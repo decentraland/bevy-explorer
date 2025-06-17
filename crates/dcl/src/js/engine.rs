@@ -1,8 +1,5 @@
 // Engine module
-use bevy::{
-    utils::tracing::span::EnteredSpan,
-    utils::tracing::{debug, info, info_span, warn},
-};
+use bevy::log::{debug, info, info_span, tracing::span::EnteredSpan, warn};
 use std::{
     cell::RefCell,
     rc::Rc,

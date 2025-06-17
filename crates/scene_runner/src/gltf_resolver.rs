@@ -4,7 +4,7 @@ use bevy::{
     gltf::{Gltf, GltfLoaderSettings, GltfMesh},
     prelude::*,
     render::render_asset::RenderAssetUsages,
-    utils::HashMap,
+    platform::collections::HashMap,
 };
 use ipfs::IpfsAssetServer;
 

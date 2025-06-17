@@ -3,7 +3,7 @@ use bevy::{
     render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
     transform::TransformSystem,
     ui::FocusPolicy,
-    utils::HashMap,
+    platform::collections::HashMap,
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};

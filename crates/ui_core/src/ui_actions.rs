@@ -10,7 +10,7 @@ use bevy::{
     },
     prelude::*,
     ui::UiSystem,
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
     window::PrimaryWindow,
 };
 

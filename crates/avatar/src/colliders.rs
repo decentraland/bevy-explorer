@@ -2,7 +2,7 @@ use crate::AvatarMaterials;
 use bevy::{
     core::FrameCount,
     prelude::*,
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
 };
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},

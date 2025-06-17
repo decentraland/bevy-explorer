@@ -10,7 +10,7 @@ use bevy::{
         view::{NoFrustumCulling, RenderLayers},
     },
     tasks::{IoTaskPool, Task},
-    utils::{hashbrown::HashSet, HashMap},
+    platform::collections::{HashSet, HashMap},
 };
 use boimp::{bake::ImposterBakeMaterialPlugin, render::Imposter, ImposterLoaderSettings};
 use common::{

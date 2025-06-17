@@ -13,7 +13,7 @@ use bevy::{
     math::{FloatOrd, Vec3A, Vec3Swizzles},
     prelude::*,
     scene::scene_spawner_system,
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
     window::PrimaryWindow,
     winit::WinitWindows,
 };

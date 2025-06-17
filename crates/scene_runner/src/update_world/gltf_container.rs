@@ -20,7 +20,7 @@ use bevy::{
     },
     scene::{scene_spawner_system, InstanceId},
     transform::TransformSystem,
-    utils::HashMap,
+    platform::collections::HashMap,
 };
 use common::{
     anim_last_system,

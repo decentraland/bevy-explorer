@@ -3,7 +3,7 @@ use std::f32::consts::FRAC_PI_2;
 use bevy::{
     prelude::*,
     render::mesh::{skinning::SkinnedMesh, VertexAttributeValues},
-    utils::HashMap,
+    platform::collections::HashMap,
 };
 
 use common::{sets::SceneSets, structs::AppConfig};

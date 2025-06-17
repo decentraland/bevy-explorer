@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail};
 use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
-    utils::HashMap,
+    platform::collections::HashMap,
 };
 use futures_util::{pin_mut, select, FutureExt};
 use http::HeaderValue;

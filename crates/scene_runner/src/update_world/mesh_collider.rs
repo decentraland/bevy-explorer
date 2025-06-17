@@ -3,7 +3,7 @@ use bevy::{
     pbr::{wireframe::Wireframe, NotShadowCaster, NotShadowReceiver},
     prelude::*,
     render::mesh::VertexAttributeValues,
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
 use rapier3d_f64::{

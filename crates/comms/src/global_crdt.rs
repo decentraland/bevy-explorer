@@ -1,7 +1,7 @@
 use std::{f32::consts::TAU, ops::RangeInclusive};
 
 use bevy::{
-    app::Propagate, prelude::*, render::view::RenderLayers, utils::{HashMap, HashSet}
+    app::Propagate, prelude::*, render::view::RenderLayers, platform::collections::{HashMap, HashSet}
 };
 use bimap::BiMap;
 use common::{

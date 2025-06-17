@@ -4,7 +4,7 @@ use bevy::{
     render::{
         camera::RenderTarget, render_asset::RenderAssetUsages, view::screenshot::ScreenshotManager,
     },
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
     window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution},
 };
 use common::{

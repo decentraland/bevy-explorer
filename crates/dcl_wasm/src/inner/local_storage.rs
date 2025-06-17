@@ -1,5 +1,5 @@
 use super::WorkerContext;
-use bevy::utils::HashMap;
+use bevy::platform::collections::HashMap;
 use wallet::Wallet;
 use wasm_bindgen::prelude::*;
 

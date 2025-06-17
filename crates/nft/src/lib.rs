@@ -9,7 +9,7 @@ use bevy::{
     gltf::Gltf,
     prelude::*,
     scene::InstanceId,
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
 };
 use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
 use dcl::interface::ComponentPosition;

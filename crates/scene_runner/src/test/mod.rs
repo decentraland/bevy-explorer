@@ -13,7 +13,7 @@ use bevy::{
     render::mesh::MeshPlugin,
     scene::ScenePlugin,
     time::TimePlugin,
-    utils::{HashMap, Instant},
+    platform::collections::{HashMap, Instant},
 };
 use bevy_dui::DuiPlugin;
 use itertools::Itertools;

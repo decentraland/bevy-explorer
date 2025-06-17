@@ -8,7 +8,7 @@ use bevy::{
     prelude::*,
     render::view::RenderLayers,
     scene::InstanceId,
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
 use bevy_kira_audio::{AudioControl, AudioInstance, AudioTween};

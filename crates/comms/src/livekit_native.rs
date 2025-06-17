@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{prelude::*, platform::collections::HashMap};
 use futures_lite::StreamExt;
 use http::Uri;
 use prost::Message;

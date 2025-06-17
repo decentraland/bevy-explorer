@@ -10,7 +10,7 @@ use bevy::{
     math::Vec3Swizzles,
     prelude::*,
     tasks::{IoTaskPool, Task},
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};

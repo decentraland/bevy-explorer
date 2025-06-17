@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
-    utils::{hashbrown::hash_map::Entry, HashMap},
+    platform::collections::{hash_map::Entry, HashMap},
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};

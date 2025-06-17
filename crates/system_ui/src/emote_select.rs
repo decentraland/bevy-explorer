@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
     text::BreakLineOn,
     ui::FocusPolicy,
-    utils::HashSet,
+    platform::collections::HashSet,
     window::{PrimaryWindow, WindowFocused, WindowResized},
 };
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};

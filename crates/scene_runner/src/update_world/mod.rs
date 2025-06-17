@@ -4,7 +4,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use bevy::{core::FrameCount, ecs::system::EntityCommands, prelude::*, utils::HashMap};
+use bevy::{core::FrameCount, ecs::system::EntityCommands, prelude::*, platform::collections::HashMap};
 
 use dcl::{
     crdt::{growonly::CrdtGOState, lww::CrdtLWWState},

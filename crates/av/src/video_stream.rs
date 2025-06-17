@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use bevy::{prelude::*, utils::tracing};
+use bevy::{prelude::*, log};
 use common::structs::AudioDecoderError;
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::format::input;

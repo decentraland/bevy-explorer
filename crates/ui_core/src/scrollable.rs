@@ -1,5 +1,5 @@
 use bevy::{
-    prelude::*, transform::TransformSystem, ui::ManualCursorPosition, utils::HashMap,
+    prelude::*, transform::TransformSystem, ui::ManualCursorPosition, platform::collections::HashMap,
     window::PrimaryWindow,
 };
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};

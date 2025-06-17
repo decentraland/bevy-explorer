@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use bevy::{
     log::{debug, warn},
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
 };
 use common::util::AsH160;
 use dcl_component::proto_components::social::{

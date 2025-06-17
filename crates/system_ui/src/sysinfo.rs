@@ -7,7 +7,7 @@ use bevy::{
     render::mesh::Indices,
     text::JustifyText,
     ui::FocusPolicy,
-    utils::hashbrown::HashSet,
+    platform::collections::HashSet,
 };
 
 use bevy_console::ConsoleCommand;

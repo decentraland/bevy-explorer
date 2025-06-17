@@ -1,4 +1,4 @@
-use bevy::utils::HashMap;
+use bevy::platform::collections::HashMap;
 use dcl_component::{DclReader, SceneEntityId};
 use std::collections::VecDeque;
 

@@ -12,7 +12,7 @@ use bevy::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
     },
-    utils::HashMap,
+    platform::collections::HashMap,
 };
 use common::{
     sets::SceneSets,

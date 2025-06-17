@@ -92,7 +92,7 @@ use bevy::{
     prelude::*,
     text::{BreakLineOn, CosmicBuffer, TextLayoutInfo},
     ui::{update::update_clipping_system, widget::text_system},
-    utils::{hashbrown::HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
 };
 use common::{
     sets::{SceneLoopSets, SceneSets},

@@ -24,7 +24,7 @@ use bevy::{
     ecs::schedule::SystemConfigs,
     prelude::*,
     state::state::FreelyMutableState,
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
 };
 use bevy_dui::{DuiNodeList, DuiPlugin, DuiRegistry};
 use bevy_egui::EguiPlugin;

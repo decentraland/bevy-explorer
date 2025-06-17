@@ -9,7 +9,7 @@ use bevy::{
     core::FrameCount,
     ecs::system::SystemParam,
     prelude::*,
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
 };
 
 use common::util::TaskExt;

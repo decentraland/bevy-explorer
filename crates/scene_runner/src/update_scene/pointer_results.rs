@@ -6,7 +6,7 @@ use bevy::{
     prelude::*,
     render::mesh::{Indices, VertexAttributeValues},
     ui::{ManualCursorPosition, RelativeCursorPosition, UiSystem},
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
 use console::DoAddConsoleCommand;

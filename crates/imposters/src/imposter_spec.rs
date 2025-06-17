@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::anyhow;
-use bevy::{asset::AsyncReadExt, prelude::*, utils::HashMap};
+use bevy::{asset::AsyncReadExt, prelude::*, platform::collections::HashMap};
 use common::structs::IVec2Arg;
 use ipfs::IpfsIo;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

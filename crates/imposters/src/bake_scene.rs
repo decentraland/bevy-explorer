@@ -12,7 +12,7 @@ use bevy::{
     math::FloatOrd,
     prelude::*,
     render::{primitives::Aabb, view::RenderLayers},
-    utils::HashSet,
+    platform::collections::HashSet,
 };
 use boimp::{
     bake::{BakeState, ImposterBakeBundle, ImposterBakeCamera},

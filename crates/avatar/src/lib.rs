@@ -13,7 +13,7 @@ use bevy::{
     },
     scene::InstanceId,
     tasks::{IoTaskPool, Task},
-    utils::{hashbrown::HashSet, HashMap},
+    platform::collections::{HashSet, HashMap},
 };
 use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};

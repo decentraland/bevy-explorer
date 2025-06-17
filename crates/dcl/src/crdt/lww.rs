@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use bevy::utils::{Entry, HashMap, HashSet};
+use bevy::platform::collections::{hash_map::Entry, HashMap, HashSet};
 
 use dcl_component::{DclReader, SceneCrdtTimestamp, SceneEntityId};
 

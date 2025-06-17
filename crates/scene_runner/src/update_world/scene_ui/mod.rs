@@ -11,7 +11,7 @@ use bevy::{
     prelude::*,
     render::render_resource::Extent3d,
     ui::{FocusPolicy, ManualCursorPosition},
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};

@@ -1,4 +1,4 @@
-use bevy::{prelude::*, utils::HashSet};
+use bevy::{prelude::*, platform::collections::HashSet};
 
 use crate::{
     permissions::Permission, renderer_context::RendererSceneContext, ContainingScene, SceneEntity,

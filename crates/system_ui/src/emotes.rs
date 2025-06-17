@@ -8,7 +8,7 @@ use bevy::{
     prelude::*,
     render::render_resource::Extent3d,
     tasks::{IoTaskPool, Task},
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
 };
 use bevy_dui::{
     DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry, DuiWalker,

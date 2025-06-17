@@ -9,7 +9,7 @@ use bevy::{
         render_resource::{Extent3d, TextureFormat, TextureUsages},
         texture::BevyDefault,
         view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
-    }, utils::{hashbrown::HashMap, HashSet}
+    }, platform::collections::{HashMap, HashSet}
 };
 use bevy_atmosphere::plugin::AtmosphereCamera;
 use common::{

@@ -3,7 +3,7 @@ use std::time::Duration;
 use bevy::{
     prelude::*,
     render::view::RenderLayers,
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
 };
 use bevy_kira_audio::{prelude::AudioEmitter, AudioControl, AudioInstance, AudioTween};
 use common::{
