@@ -1,6 +1,6 @@
 use super::SettingCategory;
 use bevy::{
-    core_pipeline::bloom::BloomSettings,
+    core_pipeline::bloom::Bloom,
     ecs::system::{lifetimeless::SRes, SystemParamItem},
     prelude::*,
 };
@@ -61,19 +61,19 @@ impl AppSetting for BloomSetting {
         mut commands: Commands,
         camera_entity: Entity,
     ) {
-        let Some(mut cmds) = commands.get_entity(camera_entity) else {
+        let Ok(mut cmds) = commands.get_entity(camera_entity) else {
             return;
         };
 
         match self {
-            BloomSetting::Off => cmds.remove::<BloomSettings>(),
-            BloomSetting::Low => cmds.insert(BloomSettings {
+            BloomSetting::Off => cmds.remove::<Bloom>(),
+            BloomSetting::Low => cmds.insert(Bloom {
                 intensity: 0.10,
-                ..BloomSettings::NATURAL
+                ..Bloom::NATURAL
             }),
-            BloomSetting::High => cmds.insert(BloomSettings {
+            BloomSetting::High => cmds.insert(Bloom {
                 intensity: 0.10,
-                ..BloomSettings::OLD_SCHOOL
+                ..Bloom::OLD_SCHOOL
             }),
         };
     }

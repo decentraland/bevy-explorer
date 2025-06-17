@@ -55,11 +55,11 @@ impl AppSetting for WindowSetting {
     }
 
     fn apply(&self, mut window: SystemParamItem<Self::Param>, _: Commands) {
-        let mut window = window.get_single_mut().unwrap();
+        let mut window = window.single_mut().unwrap();
         window.mode = match self {
-            WindowSetting::Fullscreen => bevy::window::WindowMode::Fullscreen,
+            WindowSetting::Fullscreen => bevy::window::WindowMode::Fullscreen(MonitorSelection::Current, VideoModeSelection::Current),
             WindowSetting::Windowed => bevy::window::WindowMode::Windowed,
-            WindowSetting::Borderless => bevy::window::WindowMode::BorderlessFullscreen,
+            WindowSetting::Borderless => bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Current),
         };
     }
 }

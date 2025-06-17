@@ -8,7 +8,7 @@ use bevy::{
     log::debug,
     prelude::{Event, EventWriter, ResMut, Resource},
 };
-use bevy_console::{clap::builder::StyledStr, ConsoleCommandEntered, PrintConsoleLine};
+use bevy_console::{ConsoleCommandEntered, PrintConsoleLine};
 use common::{
     inputs::{BindingsData, InputIdentifier, SystemActionEvent},
     rpc::RpcResultSender,
@@ -128,21 +128,21 @@ pub fn post_events(
             pending.push_back((cmd, args, sender));
         } else {
             debug!("system bridge: {ev:?}");
-            writer.send(ev);
+            writer.write(ev);
         }
     }
 
     if let Some(response) = console_response.take() {
         let mut reply = replies.read().collect::<Vec<_>>();
         match reply.pop() {
-            Some(PrintConsoleLine { line }) if line == &StyledStr::from("[ok]") => {
+            Some(PrintConsoleLine { line }) if line.as_str() == "[ok]" => {
                 response.send(Ok(reply
                     .into_iter()
                     .map(|l| format!("{}", l.line))
                     .collect::<Vec<_>>()
                     .join("\n")));
             }
-            Some(PrintConsoleLine { line }) if line == &StyledStr::from("[failed]") => {
+            Some(PrintConsoleLine { line }) if line.as_str() == "[failed]" => {
                 response.send(Err(reply
                     .into_iter()
                     .map(|l| format!("{}", l.line))
@@ -158,7 +158,7 @@ pub fn post_events(
             }
         }
     } else if let Some((cmd, args, sender)) = pending.pop_front() {
-        console.send(ConsoleCommandEntered {
+        console.write(ConsoleCommandEntered {
             command_name: cmd,
             args,
         });

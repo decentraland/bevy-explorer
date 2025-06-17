@@ -1,6 +1,6 @@
 use super::SettingCategory;
 use bevy::{
-    core_pipeline::dof::{DepthOfFieldMode, DepthOfFieldSettings},
+    core_pipeline::dof::{DepthOfFieldMode, DepthOfField},
     ecs::system::{lifetimeless::SRes, SystemParamItem},
     prelude::*,
 };
@@ -61,14 +61,14 @@ impl AppSetting for DofSetting {
         mut commands: Commands,
         camera_entity: Entity,
     ) {
-        let Some(mut cmds) = commands.get_entity(camera_entity) else {
+        let Ok(mut cmds) = commands.get_entity(camera_entity) else {
             return;
         };
 
         match self {
-            DofSetting::Off => cmds.remove::<(DepthOfFieldSettings, DofConfig)>(),
+            DofSetting::Off => cmds.remove::<(DepthOfField, DofConfig)>(),
             DofSetting::Low => cmds.try_insert((
-                DepthOfFieldSettings {
+                DepthOfField {
                     mode: DepthOfFieldMode::Gaussian,
                     focal_distance: 0.0, // updated based on cam + extra
                     aperture_f_stops: 0.15,
@@ -82,7 +82,7 @@ impl AppSetting for DofSetting {
                 },
             )),
             DofSetting::High => cmds.try_insert((
-                DepthOfFieldSettings {
+                DepthOfField {
                     mode: DepthOfFieldMode::Gaussian,
                     focal_distance: 0.0, // updated based on cam + extra
                     aperture_f_stops: 0.05,
