@@ -228,6 +228,7 @@ prost-build = "0.11.8"
 bevy = { path="../bevy" }
 # mess required by egui referencing bevy crates directly
 bevy_a11y = { path="../bevy/crates/bevy_a11y" }
+bevy_asset = { path="../bevy/crates/bevy_asset" }
 bevy_app = { path="../bevy/crates/bevy_app" }
 bevy_derive = { path="../bevy/crates/bevy_derive" }
 bevy_ecs = { path="../bevy/crates/bevy_ecs" }
@@ -236,6 +237,7 @@ bevy_input = { path="../bevy/crates/bevy_input" }
 bevy_log = { path="../bevy/crates/bevy_log" }
 bevy_math = { path="../bevy/crates/bevy_math" }
 bevy_reflect = { path="../bevy/crates/bevy_reflect" }
+bevy_render = { path="../bevy/crates/bevy_render" }
 bevy_time = { path="../bevy/crates/bevy_time" }
 bevy_winit = { path="../bevy/crates/bevy_winit" }
 bevy_window = { path="../bevy/crates/bevy_window" }
