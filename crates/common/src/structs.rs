@@ -1,9 +1,9 @@
 use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr, sync::Arc};
 
 use bevy::{
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::view::RenderLayers,
-    utils::{HashMap, HashSet},
 };
 use dcl_component::proto_components::sdk::components::common::CameraTransition;
 use ethers_core::abi::Address;
@@ -114,24 +114,26 @@ pub struct AttachPoints {
 impl AttachPoints {
     pub fn new(commands: &mut Commands) -> Self {
         Self {
-            position: commands.spawn(SpatialBundle::default()).id(),
+            position: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
             nametag: commands
-                .spawn(SpatialBundle {
-                    transform: Transform::from_translation(Vec3::Y * 2.2),
-                    ..default()
-                })
+                .spawn((
+                    Transform::from_translation(Vec3::Y * 2.2),
+                    Visibility::default(),
+                ))
                 .id(),
             left_hand: commands
-                .spawn(SpatialBundle {
-                    transform: Transform::from_rotation(Quat::from_rotation_y(PI)),
-                    ..Default::default()
-                })
+                .spawn((
+                    Transform::from_rotation(Quat::from_rotation_y(PI)),
+                    Visibility::default(),
+                ))
                 .id(),
             right_hand: commands
-                .spawn(SpatialBundle {
-                    transform: Transform::from_rotation(Quat::from_rotation_y(PI)),
-                    ..Default::default()
-                })
+                .spawn((
+                    Transform::from_rotation(Quat::from_rotation_y(PI)),
+                    Visibility::default(),
+                ))
                 .id(),
         }
     }

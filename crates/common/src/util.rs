@@ -3,21 +3,20 @@ use std::{collections::VecDeque, marker::PhantomData};
 
 use bevy::{
     app::Update,
-    asset::{AssetServer, Handle, LoadState, RecursiveDependencyLoadState, UntypedAssetId},
+    asset::{AsAssetId, AssetServer, UntypedAssetId},
     ecs::{
-        component::Component,
-        event::{Event, Events},
-        system::{Commands, EntityCommand, EntityCommands, Query, SystemParam},
-        world::Command,
+        component::{Component, Mutable},
+        schedule::IntoScheduleConfigs,
+        system::{Commands, EntityCommand, EntityCommands, Query, ScheduleSystem, SystemParam},
+        world::EntityWorldMut,
     },
-    hierarchy::DespawnRecursiveExt,
     math::Vec3,
-    pbr::StandardMaterial,
-    prelude::{
-        despawn_with_children_recursive, BuildWorldChildren, Bundle, Entity, GlobalTransform,
-        IntoSystemConfigs, Mesh, Plugin, Res, World,
+    pbr::{MeshMaterial3d, StandardMaterial},
+    prelude::{Bundle, Command, Entity, GlobalTransform, Plugin, Res, World},
+    render::{
+        mesh::Mesh3d,
+        view::{Layer, RenderLayers},
     },
-    render::view::{Layer, RenderLayers},
     scene::{InstanceId, SceneSpawner},
     tasks::{IoTaskPool, Task},
 };
@@ -169,11 +168,13 @@ impl Command for TryPushChildren {
             .filter(|c| world.entities().contains(*c))
             .collect();
 
-        if let Some(mut entity) = world.get_entity_mut(self.parent) {
-            entity.push_children(&live_children);
+        if let Ok(mut entity) = world.get_entity_mut(self.parent) {
+            entity.add_children(&live_children);
         } else {
             for child in live_children {
-                despawn_with_children_recursive(world, child);
+                if let Ok(cmd) = world.get_entity_mut(child) {
+                    cmd.despawn();
+                }
             }
         }
     }
@@ -208,7 +209,7 @@ impl TryChildBuilder<'_> {
 
     /// Adds a command to be executed, like [`Commands::add`].
     pub fn add_command<C: Command>(&mut self, command: C) -> &mut Self {
-        self.commands.add(command);
+        self.commands.queue(command);
         self
     }
 }
@@ -221,7 +222,7 @@ pub trait TryPushChildrenEx {
 impl TryPushChildrenEx for EntityCommands<'_> {
     fn try_push_children(&mut self, children: &[Entity]) -> &mut Self {
         let parent = self.id();
-        self.commands().add(TryPushChildren {
+        self.commands().queue(TryPushChildren {
             children: SmallVec::from(children),
             parent,
         });
@@ -246,29 +247,7 @@ impl TryPushChildrenEx for EntityCommands<'_> {
         if children.children.contains(&parent) {
             panic!("Entity cannot be a child of itself.");
         }
-        self.commands().add(children);
-        self
-    }
-}
-
-pub struct FireEvent<E: Event> {
-    event: E,
-}
-
-impl<E: Event> Command for FireEvent<E> {
-    fn apply(self, world: &mut World) {
-        let mut events = world.resource_mut::<Events<E>>();
-        events.send(self.event);
-    }
-}
-
-pub trait FireEventEx {
-    fn fire_event<E: Event>(&mut self, e: E) -> &mut Self;
-}
-
-impl FireEventEx for Commands<'_, '_> {
-    fn fire_event<E: Event>(&mut self, event: E) -> &mut Self {
-        self.add(FireEvent { event });
+        self.commands().queue(children);
         self
     }
 }
@@ -277,7 +256,7 @@ impl FireEventEx for Commands<'_, '_> {
 pub trait DoAddConsoleCommand {
     fn add_console_command<T: Command, U>(
         &mut self,
-        system: impl IntoSystemConfigs<U>,
+        system: impl IntoScheduleConfigs<ScheduleSystem, U>,
     ) -> &mut Self;
 }
 
@@ -320,8 +299,8 @@ pub struct DespawnWith(pub Entity);
 
 fn despawn_with(mut commands: Commands, q: Query<(Entity, &DespawnWith)>) {
     for (ent, with) in q.iter() {
-        if commands.get_entity(with.0).is_none() {
-            commands.entity(ent).despawn_recursive();
+        if commands.get_entity(with.0).is_err() {
+            commands.entity(ent).despawn();
         }
     }
 }
@@ -333,11 +312,11 @@ pub struct ModifyComponent<C: Component, F: FnOnce(&mut C) + Send + Sync + 'stat
     _p: PhantomData<fn() -> C>,
 }
 
-impl<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> EntityCommand
+impl<C: Component<Mutability = Mutable>, F: FnOnce(&mut C) + Send + Sync + 'static> EntityCommand
     for ModifyComponent<C, F>
 {
-    fn apply(self, id: Entity, world: &mut World) {
-        if let Some(mut c) = world.get_mut::<C>(id) {
+    fn apply(self, mut entity: EntityWorldMut) {
+        if let Some(mut c) = entity.get_mut::<C>() {
             (self.func)(&mut *c)
         }
     }
@@ -353,34 +332,42 @@ impl<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static> ModifyComponent<C,
 }
 
 pub trait ModifyComponentExt {
-    fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
+    fn modify_component<
+        C: Component<Mutability = Mutable>,
+        F: FnOnce(&mut C) + Send + Sync + 'static,
+    >(
         &mut self,
         func: F,
     ) -> &mut Self;
 }
 
 impl ModifyComponentExt for EntityCommands<'_> {
-    fn modify_component<C: Component, F: FnOnce(&mut C) + Send + Sync + 'static>(
+    fn modify_component<
+        C: Component<Mutability = Mutable>,
+        F: FnOnce(&mut C) + Send + Sync + 'static,
+    >(
         &mut self,
         func: F,
     ) -> &mut Self {
-        self.add(ModifyComponent::new(func))
+        self.queue(ModifyComponent::new(func))
     }
 }
 
-pub struct ModifyDefaultComponent<C: Component + Default, F: FnOnce(&mut C) + Send + Sync + 'static>
-{
+pub struct ModifyDefaultComponent<
+    C: Component<Mutability = Mutable> + Default,
+    F: FnOnce(&mut C) + Send + Sync + 'static,
+> {
     func: F,
     _p: PhantomData<fn() -> C>,
 }
 
-impl<C: Component + Default, F: FnOnce(&mut C) + Send + Sync + 'static> EntityCommand
-    for ModifyDefaultComponent<C, F>
+impl<C: Component<Mutability = Mutable> + Default, F: FnOnce(&mut C) + Send + Sync + 'static>
+    EntityCommand for ModifyDefaultComponent<C, F>
 {
-    fn apply(self, id: Entity, world: &mut World) {
-        if let Some(mut c) = world.get_mut::<C>(id) {
+    fn apply(self, mut entity: EntityWorldMut) {
+        if let Some(mut c) = entity.get_mut::<C>() {
             (self.func)(&mut *c)
-        } else if let Some(mut entity) = world.get_entity_mut(id) {
+        } else {
             let mut v = C::default();
             (self.func)(&mut v);
             entity.insert(v);
@@ -388,7 +375,7 @@ impl<C: Component + Default, F: FnOnce(&mut C) + Send + Sync + 'static> EntityCo
     }
 }
 
-impl<C: Component + Default, F: FnOnce(&mut C) + Send + Sync + 'static>
+impl<C: Component<Mutability = Mutable> + Default, F: FnOnce(&mut C) + Send + Sync + 'static>
     ModifyDefaultComponent<C, F>
 {
     fn new(func: F) -> Self {
@@ -401,7 +388,7 @@ impl<C: Component + Default, F: FnOnce(&mut C) + Send + Sync + 'static>
 
 pub trait ModifyDefaultComponentExt {
     fn default_and_modify_component<
-        C: Component + Default,
+        C: Component<Mutability = Mutable> + Default,
         F: FnOnce(&mut C) + Send + Sync + 'static,
     >(
         &mut self,
@@ -411,13 +398,13 @@ pub trait ModifyDefaultComponentExt {
 
 impl ModifyDefaultComponentExt for EntityCommands<'_> {
     fn default_and_modify_component<
-        C: Component + Default,
+        C: Component<Mutability = Mutable> + Default,
         F: FnOnce(&mut C) + Send + Sync + 'static,
     >(
         &mut self,
         func: F,
     ) -> &mut Self {
-        self.add(ModifyDefaultComponent::new(func))
+        self.queue(ModifyDefaultComponent::new(func))
     }
 }
 
@@ -550,8 +537,8 @@ pub struct SceneSpawnerPlus<'w, 's> {
         'w,
         's,
         (
-            Option<&'static Handle<Mesh>>,
-            Option<&'static Handle<StandardMaterial>>,
+            Option<&'static Mesh3d>,
+            Option<&'static MeshMaterial3d<StandardMaterial>>,
         ),
     >,
 }
@@ -572,12 +559,13 @@ impl SceneSpawnerPlus<'_, '_> {
 
         fn check_handle(asset_server: &AssetServer, id: impl Into<UntypedAssetId>) -> bool {
             let id = id.into();
-            if asset_server.load_state(id) == LoadState::Loading {
+            if asset_server.load_state(id).is_loading() {
                 return false;
             }
 
-            if asset_server.recursive_dependency_load_state(id)
-                == RecursiveDependencyLoadState::Loading
+            if asset_server
+                .recursive_dependency_load_state(id)
+                .is_loading()
             {
                 return false;
             }
@@ -587,10 +575,10 @@ impl SceneSpawnerPlus<'_, '_> {
 
         for scene_ent in self.scene_spawner.iter_instance_entities(instance) {
             let (maybe_h_mat, maybe_h_mesh) = self.query.get(scene_ent).unwrap();
-            if maybe_h_mat.is_some_and(|h| !check_handle(&self.asset_server, h)) {
+            if maybe_h_mat.is_some_and(|h| !check_handle(&self.asset_server, h.as_asset_id())) {
                 return false;
             }
-            if maybe_h_mesh.is_some_and(|h| !check_handle(&self.asset_server, h)) {
+            if maybe_h_mesh.is_some_and(|h| !check_handle(&self.asset_server, h.as_asset_id())) {
                 return false;
             }
         }
