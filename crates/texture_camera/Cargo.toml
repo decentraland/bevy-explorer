@@ -46,4 +46,4 @@ urlencoding = { workspace = true }
 build-time = { workspace = true }
 futures-lite = { workspace = true }
 
-bevy_atmosphere = { git = "https://github.com/robtfm/bevy_atmosphere", branch = "0.14-dcl" }
+bevy_atmosphere = { git = "https://github.com/robtfm/bevy_atmosphere", branch = "0.16-2" }
