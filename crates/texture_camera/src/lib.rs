@@ -1,19 +1,15 @@
 use std::f32::consts::FRAC_PI_4;
 
 use bevy::{
-    core_pipeline::{
+    app::{HierarchyPropagatePlugin, Propagate, PropagateStop}, core_pipeline::{
         bloom::BloomSettings,
         tonemapping::{DebandDither, Tonemapping},
-    },
-    pbr::ShadowFilteringMethod,
-    prelude::*,
-    render::{
+    }, pbr::ShadowFilteringMethod, prelude::*, render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureFormat, TextureUsages},
         texture::BevyDefault,
         view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
-    },
-    utils::{hashbrown::HashMap, HashSet},
+    }, utils::{hashbrown::HashMap, HashSet}
 };
 use bevy_atmosphere::plugin::AtmosphereCamera;
 use common::{
@@ -33,7 +29,6 @@ use dcl_component::{
     SceneComponentId,
 };
 use platform::{DepthPrepass, NormalPrepass};
-use propagate::{HierarchyPropagatePlugin, Propagate, PropagateStop};
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{
@@ -51,7 +46,7 @@ impl Plugin for TextureCameraPlugin {
             .init_resource::<SceneLayerProperties>();
         app.add_systems(PostUpdate, TextureLayersCache::cleanup);
 
-        app.add_plugins(HierarchyPropagatePlugin::<RenderLayers, ()>::default());
+        app.add_plugins(HierarchyPropagatePlugin::<RenderLayers>::default());
 
         app.add_crdt_lww_component::<PbTextureCamera, TextureCamera>(
             SceneComponentId::TEXTURE_CAMERA,

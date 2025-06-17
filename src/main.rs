@@ -16,18 +16,11 @@ use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use imposters::DclImposterPlugin;
 
 use bevy::{
-    core::TaskPoolThreadAssignmentPolicy,
-    core_pipeline::{
+    app::Propagate, core::TaskPoolThreadAssignmentPolicy, core_pipeline::{
         bloom::BloomSettings,
         prepass::{DepthPrepass, NormalPrepass},
         tonemapping::{DebandDither, Tonemapping},
-    },
-    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    pbr::ShadowFilteringMethod,
-    prelude::*,
-    render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
-    tasks::{IoTaskPool, Task},
-    window::WindowResolution,
+    }, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, pbr::ShadowFilteringMethod, prelude::*, render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers}, tasks::{IoTaskPool, Task}, window::WindowResolution
 };
 use bevy_console::ConsoleCommand;
 
@@ -500,7 +493,7 @@ fn setup(
             OutOfWorld,
             AvatarDynamicState::default(),
             GroundCollider::default(),
-            propagate::Propagate(RenderLayers::default()),
+            Propagate(RenderLayers::default()),
         ))
         .try_push_children(&attach_points.entities())
         .insert(attach_points)

@@ -1,9 +1,7 @@
 use std::{f32::consts::TAU, ops::RangeInclusive};
 
 use bevy::{
-    prelude::*,
-    render::view::RenderLayers,
-    utils::{HashMap, HashSet},
+    app::Propagate, prelude::*, render::view::RenderLayers, utils::{HashMap, HashSet}
 };
 use bimap::BiMap;
 use common::{
@@ -320,7 +318,7 @@ pub fn process_transport_updates(
                             audio_sender: audio_sender.clone(),
                         },
                         ForeignAudioSource(audio_receiver),
-                        propagate::Propagate(RenderLayers::default()),
+                        Propagate(RenderLayers::default()),
                     ))
                     .try_push_children(&attach_points.entities())
                     .insert(attach_points)

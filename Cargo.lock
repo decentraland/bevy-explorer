@@ -846,7 +846,6 @@ dependencies = [
  "itertools 0.12.1",
  "once_cell",
  "platform",
- "propagate",
  "rapier3d-f64",
  "reqwest 0.12.15",
  "scene_material",
@@ -2030,7 +2029,7 @@ dependencies = [
 [[package]]
 name = "bevy_kira_audio"
 version = "0.23.0"
-source = "git+https://github.com/robtfm/bevy_kira_audio?branch=0.16-2#bd5bdcaf90ade0c8833b297c93e653942ae9b12b"
+source = "git+https://github.com/robtfm/bevy_kira_audio?branch=0.16-2#9fd6a63be6ddd3da71d567e6b18d7450aca9d4dd"
 dependencies = [
  "anyhow",
  "bevy",
@@ -3195,7 +3194,7 @@ dependencies = [
  "bitflags 2.9.1",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.10.5",
  "lazy_static",
  "lazycell",
  "log",
@@ -3218,7 +3217,7 @@ dependencies = [
  "bitflags 2.9.1",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "log",
  "prettyplease 0.2.34",
  "proc-macro2",
@@ -3238,7 +3237,7 @@ dependencies = [
  "bitflags 2.9.1",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "regex",
@@ -3409,7 +3408,7 @@ version = "0.1.1"
 source = "git+https://github.com/robtfm/boimp?branch=0.3#6f2e09828fc1e0bb01f73596101bd10b15b99546"
 dependencies = [
  "anyhow",
- "async-channel 2.3.1",
+ "async-channel 1.9.0",
  "bevy",
  "bytemuck",
  "crossbeam-channel",
@@ -3941,7 +3940,6 @@ dependencies = [
  "multipart",
  "num-traits",
  "platform",
- "propagate",
  "prost 0.11.9",
  "rand 0.8.5",
  "reqwest 0.12.15",
@@ -4796,7 +4794,6 @@ dependencies = [
  "nft",
  "pico-args",
  "platform",
- "propagate",
  "prost-build 0.11.9",
  "restricted_actions",
  "scene_material",
@@ -10132,13 +10129,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "propagate"
-version = "0.1.0"
-dependencies = [
- "bevy",
-]
-
-[[package]]
 name = "proptest"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10213,8 +10203,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
- "heck 0.5.0",
- "itertools 0.12.1",
+ "heck 0.4.1",
+ "itertools 0.10.5",
  "log",
  "multimap 0.10.1",
  "once_cell",
@@ -10247,7 +10237,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.103",
@@ -10260,7 +10250,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.103",
@@ -11448,7 +11438,6 @@ dependencies = [
  "once_cell",
  "petgraph 0.6.5",
  "platform",
- "propagate",
  "rand 0.8.5",
  "rapier3d-f64",
  "scene_material",
@@ -12544,7 +12533,6 @@ dependencies = [
  "ipfs",
  "opener",
  "platform",
- "propagate",
  "reqwest 0.12.15",
  "scene_material",
  "scene_runner",
@@ -13561,7 +13549,6 @@ dependencies = [
  "console",
  "dcl_component",
  "input_manager",
- "propagate",
  "rapier3d-f64",
  "restricted_actions",
  "scene_runner",
@@ -14399,7 +14386,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

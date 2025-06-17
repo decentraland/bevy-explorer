@@ -2,19 +2,14 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use bevy::{
-    core::FrameCount,
-    core_pipeline::bloom::BloomSettings,
-    ecs::system::SystemParam,
-    prelude::*,
-    render::{
+    app::Propagate, core::FrameCount, core_pipeline::bloom::BloomSettings, ecs::system::SystemParam, prelude::*, render::{
         camera::RenderTarget,
         render_asset::RenderAssetUsages,
         render_resource::{
             Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
         },
         view::{screenshot::ScreenshotManager, RenderLayers},
-    },
-    window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution},
+    }, window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution}
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};
 use collectibles::{urn::CollectibleUrn, Emote};
@@ -23,7 +18,6 @@ use common::{
     structs::{AvatarDynamicState, EmoteCommand},
 };
 use platform::{DepthPrepass, NormalPrepass};
-use propagate::Propagate;
 use ui_core::ui_actions::{DragData, Dragged, On};
 
 use crate::{AvatarSelection, AvatarShape};

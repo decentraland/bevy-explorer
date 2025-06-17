@@ -1,5 +1,6 @@
 use analytics::segment_system::SegmentConfig;
 use bevy::{
+    app::Propagate,
     core_pipeline::{
         bloom::BloomSettings,
         tonemapping::{DebandDither, Tonemapping},
@@ -245,7 +246,7 @@ fn setup(
             OutOfWorld,
             AvatarDynamicState::default(),
             GroundCollider::default(),
-            propagate::Propagate(RenderLayers::default()),
+            Propagate(RenderLayers::default()),
         ))
         .try_push_children(&attach_points.entities())
         .insert(attach_points)

@@ -14,7 +14,6 @@ dcl = { workspace = true }
 dcl_component = { workspace = true }
 ipfs = { workspace = true }
 wallet = { workspace = true }
-propagate = { workspace = true }
 platform = { workspace = true }
 
 bevy = { workspace = true }

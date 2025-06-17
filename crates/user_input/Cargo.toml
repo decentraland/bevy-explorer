@@ -16,7 +16,6 @@ console = { workspace = true }
 restricted_actions = { workspace = true }
 system_ui = { workspace = true }
 ui_core = { workspace = true }
-propagate = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }

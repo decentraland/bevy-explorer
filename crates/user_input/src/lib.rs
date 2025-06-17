@@ -3,10 +3,7 @@ pub mod dynamics;
 pub mod player_input;
 
 use bevy::{
-    ecs::query::Has,
-    prelude::*,
-    render::{camera::CameraUpdateSystem, view::RenderLayers},
-    transform::TransformSystem,
+    app::Propagate, ecs::query::Has, prelude::*, render::{camera::CameraUpdateSystem, view::RenderLayers}, transform::TransformSystem
 };
 
 use camera::update_cursor_lock;
@@ -88,7 +85,7 @@ fn manage_player_visibility(
         (
             &GlobalTransform,
             &mut Visibility,
-            &mut propagate::Propagate<RenderLayers>,
+            &mut Propagate<RenderLayers>,
             Has<OutOfWorld>,
             &PlayerModifiers,
         ),

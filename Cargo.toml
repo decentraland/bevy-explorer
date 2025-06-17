@@ -71,7 +71,6 @@ social = { path="crates/social" }
 imposters = { path="crates/imposters" }
 system_bridge = { path="crates/system_bridge" }
 texture_camera = { path="crates/texture_camera" }
-propagate = { path="crates/propagate" }
 platform = { path="crates/platform" }
 
 bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl", default-features = false, features=[
@@ -184,7 +183,6 @@ social = { workspace = true }
 imposters = { workspace = true }
 system_bridge = { workspace = true }
 texture_camera = { workspace = true }
-propagate = { workspace = true }
 platform = { workspace = true }
 
 bevy = { workspace = true }
