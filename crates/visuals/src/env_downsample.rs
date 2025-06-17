@@ -1,5 +1,5 @@
 use bevy::{
-    asset::load_internal_asset,
+    asset::{load_internal_asset, weak_handle},
     core_pipeline::fullscreen_vertex_shader::fullscreen_shader_vertex_state,
     prelude::*,
     render::{
@@ -23,8 +23,7 @@ use bevy::{
 };
 use bevy_atmosphere::pipeline::{AtmosphereImage, BevyAtmosphereLabel};
 
-pub const ENV_DOWNSAMPLE_SHADER_HANDLE: Handle<Shader> =
-    Handle::weak_from_u128(1245571048899995008);
+pub const ENV_DOWNSAMPLE_SHADER_HANDLE: Handle<Shader> = weak_handle!("21e75ed5-7834-49e5-bcca-fa699f25c393");
 
 pub struct EnvmapDownsamplePlugin;
 
@@ -82,6 +81,7 @@ impl FromWorld for EnvmapDownsampleData {
             depth_stencil: None,
             multisample: MultisampleState::default(),
             push_constant_ranges: Vec::new(),
+            zero_initialize_workgroup_memory: false,
         });
 
         Self {
@@ -125,6 +125,7 @@ impl Plugin for EnvmapDownsamplePlugin {
             mip_level_count: None,
             base_array_layer: 0,
             array_layer_count: Some(6),
+            usage: None,
         });
         image.texture_descriptor = TextureDescriptor {
             label: Some("downsampled envmap"),
@@ -191,6 +192,7 @@ fn prepare_envmap_resources(
                 mip_level_count: None,
                 base_array_layer: i,
                 array_layer_count: Some(1),
+                usage: None,
             });
 
             let target_view = target_texture.create_view(&TextureViewDescriptor {
@@ -202,6 +204,7 @@ fn prepare_envmap_resources(
                 mip_level_count: None,
                 base_array_layer: i,
                 array_layer_count: Some(1),
+                usage: None,
             });
 
             let bindgroup = device.create_bind_group(

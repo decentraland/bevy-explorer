@@ -1,6 +1,5 @@
 use bevy::{
-    prelude::*,
-    render::{
+    image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor}, prelude::*, render::{
         render_asset::{RenderAssetUsages, RenderAssets},
         render_resource::{
             binding_types::{sampler, texture_2d},
@@ -11,10 +10,10 @@ use bevy::{
         },
         renderer::RenderDevice,
         texture::{
-            FallbackImage, GpuImage, ImageAddressMode, ImageSampler, ImageSamplerDescriptor,
+            FallbackImage, GpuImage, 
         },
         RenderApp,
-    },
+    }
 };
 use bevy_atmosphere::{model::AtmosphereModelMetadata, pipeline::AtmosphereImageBindGroupLayout};
 use chrono::Datelike;
@@ -233,6 +232,7 @@ impl bevy_atmosphere::model::RegisterAtmosphereModel for NishitaCloud {
             shader: handle,
             shader_defs: vec![],
             entry_point: Cow::from("main"),
+            zero_initialize_workgroup_memory: false,
         });
         let id = TypeId::of::<Self>();
         let data = AtmosphereModelMetadata {

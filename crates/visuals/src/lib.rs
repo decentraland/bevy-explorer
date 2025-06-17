@@ -3,7 +3,7 @@ pub mod env_downsample;
 mod nishita_cloud;
 
 use bevy::{
-    core_pipeline::dof::{DepthOfFieldMode, DepthOfFieldSettings},
+    core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
     pbr::{wireframe::WireframePlugin, CascadeShadowConfigBuilder, DirectionalLightShadowMap},
     prelude::*,
     render::{
@@ -53,7 +53,7 @@ impl Plugin for VisualsPlugin {
                 cover: 0.45,
                 speed: 10.0,
             })
-            .add_plugins(WireframePlugin)
+            .add_plugins(WireframePlugin::default())
             .add_systems(First, update_time_of_day.after(bevy::time::TimeSystem))
             .add_systems(Update, apply_global_light)
             .add_systems(Update, move_ground)
@@ -64,6 +64,10 @@ impl Plugin for VisualsPlugin {
         app.insert_resource(AtmosphereSettings {
             resolution: 1024,
             dithering: true,
+            skybox_creation_mode:
+                bevy_atmosphere::settings::SkyboxCreationMode::FromProjectionFarWithFallback(
+                    99999.0,
+                ),
         })
         .insert_resource(AtmosphereModel::new(NishitaCloud::default()))
         .add_plugins(AtmospherePlugin);
@@ -108,7 +112,7 @@ fn setup(
 ) {
     info!("visuals::setup");
 
-    commands.entity(camera.0).try_insert(FogSettings {
+    commands.entity(camera.0).try_insert(DistanceFog {
         color: Color::srgb(0.3, 0.2, 0.1),
         directional_light_color: Color::srgb(1.0, 1.0, 0.7),
         directional_light_exponent: 10.0,
@@ -116,18 +120,15 @@ fn setup(
     });
 
     commands.spawn((
-        PbrBundle {
-            mesh: meshes.add(Plane3d::default().mesh().size(50000.0, 50000.0)),
-            material: materials.add(StandardMaterial {
-                base_color: Color::srgb(0.3, 0.45, 0.2),
-                perceptual_roughness: 1.0,
-                metallic: 0.0,
-                depth_bias: -100.0,
-                fog_enabled: false,
-                ..Default::default()
-            }),
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(50000.0, 50000.0))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::srgb(0.3, 0.45, 0.2),
+            perceptual_roughness: 1.0,
+            metallic: 0.0,
+            depth_bias: -100.0,
+            fog_enabled: false,
             ..Default::default()
-        },
+        })),
         Ground,
         GROUND_RENDERLAYER.clone(),
     ));
@@ -169,7 +170,7 @@ fn apply_global_light(
     )>,
     mut ambient: ResMut<AmbientLight>,
     time: Res<Time>,
-    mut cameras: Query<(Option<&PrimaryCamera>, Option<&mut FogSettings>), With<Camera3d>>,
+    mut cameras: Query<(Option<&PrimaryCamera>, Option<&mut DistanceFog>), With<Camera3d>>,
     scene_distance: Res<SceneLoadDistance>,
     scene_global_light: Res<SceneGlobalLight>,
     mut prev: Local<(f32, SceneGlobalLight)>,
@@ -235,7 +236,7 @@ fn apply_global_light(
     let mut directional_layers = RenderLayers::none();
     for (entity, layer, mut light_trans, mut directional) in sun.iter_mut() {
         if !next_light.layers.intersects(&RenderLayers::layer(layer.0)) {
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
             continue;
         }
 
@@ -282,17 +283,14 @@ fn apply_global_light(
         };
 
         commands.spawn((
-            DirectionalLightBundle {
-                directional_light: DirectionalLight {
-                    color: next_light.dir_color,
-                    illuminance: next_light.dir_illuminance,
-                    shadows_enabled,
-                    ..Default::default()
-                },
-                transform: Transform::default().with_rotation(rotation),
-                cascade_shadow_config,
+            DirectionalLight {
+                color: next_light.dir_color,
+                illuminance: next_light.dir_illuminance,
+                shadows_enabled,
                 ..Default::default()
             },
+            Transform::default().with_rotation(rotation),
+            cascade_shadow_config,
             layer,
             DirectionalLightLayer(new_layer),
         ));
@@ -352,11 +350,11 @@ fn move_ground(
     mut ground: Query<&mut Transform, With<Ground>>,
     cam: Query<&GlobalTransform, With<PrimaryUser>>,
 ) {
-    let Ok(mut transform) = ground.get_single_mut() else {
+    let Ok(mut transform) = ground.single_mut() else {
         return;
     };
 
-    let Ok(target) = cam.get_single() else {
+    let Ok(target) = cam.single() else {
         return;
     };
 
@@ -469,14 +467,14 @@ struct DofConsoleCommand {
 
 fn dof_console_command(
     mut input: ConsoleCommand<DofConsoleCommand>,
-    mut cam: Query<(&mut DepthOfFieldSettings, &mut DofConfig)>,
+    mut cam: Query<(&mut DepthOfField, &mut DofConfig)>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        let Ok((mut dof, mut mydof)) = cam.get_single_mut() else {
+        let Ok((mut dof, mut mydof)) = cam.single_mut() else {
             return;
         };
 
-        *dof = DepthOfFieldSettings {
+        *dof = DepthOfField {
             mode: if command.mode == 0 {
                 DepthOfFieldMode::Gaussian
             } else {
@@ -494,10 +492,10 @@ fn dof_console_command(
 }
 
 fn update_dof(
-    mut cam: Query<(&Transform, &DofConfig, &mut DepthOfFieldSettings), With<PrimaryCamera>>,
+    mut cam: Query<(&Transform, &DofConfig, &mut DepthOfField), With<PrimaryCamera>>,
     player: Query<&Transform, With<PrimaryUser>>,
 ) {
-    let (Ok((cam, mydof, mut dof)), Ok(player)) = (cam.get_single_mut(), player.get_single())
+    let (Ok((cam, mydof, mut dof)), Ok(player)) = (cam.single_mut(), player.single())
     else {
         return;
     };
