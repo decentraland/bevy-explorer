@@ -96,7 +96,8 @@ bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl", de
     "webgl2",
     "jpeg",
     "serialize",
-    "log",
+    "bevy_log",
+    "std",
 ] }
 wgpu = "24"
 bevy_console = { git = "https://github.com/robtfm/bevy-console", branch="0.16" }
