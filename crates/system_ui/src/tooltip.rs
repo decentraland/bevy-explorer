@@ -49,10 +49,10 @@ pub fn update_tooltip(
 
     active_tips.retain(|key, (_, vis)| {
         if tips.0.contains_key(key) {
-            *vis = (*vis + time.delta_seconds() * 5.0).clamp(0.0, 1.0);
+            *vis = (*vis + time.delta_secs() * 5.0).clamp(0.0, 1.0);
             true
         } else {
-            *vis = (*vis - time.delta_seconds() * 10.0).clamp(0.0, 1.0);
+            *vis = (*vis - time.delta_secs() * 10.0).clamp(0.0, 1.0);
             *vis > 0.0
         }
     });

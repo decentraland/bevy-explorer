@@ -799,7 +799,7 @@ fn transition_imposters(
                 };
 
                 asset.data.alpha = 1f32
-                    .min(asset.data.alpha.powf(TPOW) + time.delta_seconds() / TRANSITION_TIME)
+                    .min(asset.data.alpha.powf(TPOW) + time.delta_secs() / TRANSITION_TIME)
                     .powf(TPOW.recip());
                 if asset.data.alpha < 1.0 {
                     still_transitioning = true;
@@ -844,7 +844,7 @@ fn transition_imposters(
                 };
 
                 asset.data.alpha = 0f32
-                    .max(asset.data.alpha.powf(TPOW) - time.delta_seconds() / TRANSITION_TIME)
+                    .max(asset.data.alpha.powf(TPOW) - time.delta_secs() / TRANSITION_TIME)
                     .powf(TPOW.recip());
                 if asset.data.alpha > 0.0 {
                     still_transitioning = true;

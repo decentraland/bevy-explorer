@@ -14,7 +14,7 @@ pub fn primary_player_parcel_position_system(
     mut metrics: ResMut<SegmentMetricsEvents>,
     mut segment_config: Option<ResMut<SegmentConfig>>,
 ) {
-    let Ok(player) = player.get_single() else {
+    let Ok(player) = player.single() else {
         return;
     };
     let parcel_position = ((player.translation().xz() * Vec2::new(1.0, -1.0)) / PARCEL_SIZE)

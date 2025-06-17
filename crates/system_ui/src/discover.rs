@@ -473,7 +473,7 @@ fn update_page(
     };
 
     if settings.search_timer > 0.0 {
-        let delta = time.delta_seconds();
+        let delta = time.delta_secs();
         commands.commands().entity(settings_ent).modify_component(
             move |settings: &mut DiscoverSettings| {
                 settings.search_timer = 0f32.max(settings.search_timer - delta);

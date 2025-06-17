@@ -181,9 +181,9 @@ fn apply_global_light(
     } else {
         // transition part way
         let new_amount = if prev.1.source == scene_global_light.source {
-            (time.delta_seconds() / (TRANSITION_TIME - prev.0)).clamp(0.0, 1.0)
+            (time.delta_secs() / (TRANSITION_TIME - prev.0)).clamp(0.0, 1.0)
         } else {
-            time.delta_seconds() / TRANSITION_TIME
+            time.delta_secs() / TRANSITION_TIME
         };
         let old_amount = 1.0 - new_amount;
         SceneGlobalLight {
@@ -217,19 +217,19 @@ fn apply_global_light(
         atmosphere.tick += 1;
 
         if atmosphere.cloudy != cloud.cover {
-            *cloud_dt = (*cloud_dt + time.delta_seconds() * 20.0)
+            *cloud_dt = (*cloud_dt + time.delta_secs() * 20.0)
                 .min(80.0 * (atmosphere.cloudy - cloud.cover).abs())
                 .max(1.0);
             atmosphere.cloudy += (cloud.cover - atmosphere.cloudy).clamp(
-                -time.delta_seconds() * 0.005 * *cloud_dt,
-                time.delta_seconds() * 0.005 * *cloud_dt,
+                -time.delta_secs() * 0.005 * *cloud_dt,
+                time.delta_secs() * 0.005 * *cloud_dt,
             );
-            // atmosphere.time += time.delta_seconds() * 10.0;
+            // atmosphere.time += time.delta_secs() * 10.0;
         } else {
-            *cloud_dt = f32::max(*cloud_dt - time.delta_seconds(), cloud.speed);
+            *cloud_dt = f32::max(*cloud_dt - time.delta_secs(), cloud.speed);
         }
 
-        atmosphere.time += time.delta_seconds() * *cloud_dt;
+        atmosphere.time += time.delta_secs() * *cloud_dt;
     }
 
     let mut directional_layers = RenderLayers::none();
@@ -338,9 +338,9 @@ fn apply_global_light(
     ambient.color = next_light.ambient_color;
 
     if prev.1.source == scene_global_light.source {
-        prev.0 += time.delta_seconds()
+        prev.0 += time.delta_secs()
     } else {
-        prev.0 = time.delta_seconds()
+        prev.0 = time.delta_secs()
     };
     prev.1 = next_light;
 }
@@ -370,7 +370,7 @@ fn update_time_of_day(time: Res<Time>, mut tod: ResMut<TimeOfDay>, mut t_delta: 
         let seconds_to_travel = (seconds_diff + 12.0 * 3600.0) % (24.0 * 3600.0) - (12.0 * 3600.0);
         let unwrapped_target = initial_time + seconds_to_travel;
 
-        tod.time += *t_delta * time.delta_seconds();
+        tod.time += *t_delta * time.delta_secs();
 
         const ACCEL: f32 = 4.0 * 3600.0;
 
@@ -378,10 +378,10 @@ fn update_time_of_day(time: Res<Time>, mut tod: ResMut<TimeOfDay>, mut t_delta: 
         if (tod.time + total_change_min - unwrapped_target).signum()
             == (tod.time - unwrapped_target).signum()
         {
-            *t_delta += time.delta_seconds() * ACCEL * seconds_to_travel.signum();
+            *t_delta += time.delta_secs() * ACCEL * seconds_to_travel.signum();
         } else {
             // we overshoot at this speed, start slowing down
-            *t_delta -= time.delta_seconds() * ACCEL * seconds_to_travel.signum();
+            *t_delta -= time.delta_secs() * ACCEL * seconds_to_travel.signum();
         }
 
         if (initial_time - target).signum() != (tod.time - target).signum() {
@@ -393,7 +393,7 @@ fn update_time_of_day(time: Res<Time>, mut tod: ResMut<TimeOfDay>, mut t_delta: 
         debug!("time: {initial_time}, target: {:?}, secs_to_travel: {seconds_to_travel}, t_delta: {}, final: {}", target, *t_delta, tod.time);
     } else {
         let speed = tod.speed;
-        tod.time += time.delta_seconds() * speed;
+        tod.time += time.delta_secs() * speed;
         tod.time %= 3600.0 * 24.0;
         if tod.time < 0.0 {
             tod.time += 3600.0 * 24.0;

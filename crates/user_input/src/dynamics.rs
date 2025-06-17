@@ -107,12 +107,12 @@ pub fn update_user_position(
         .map(|m| m.combine(user))
         .unwrap_or_else(|| user.clone());
 
-    let dt = time.delta_seconds();
+    let dt = time.delta_secs();
 
     let mut velocity = dynamic_state.velocity;
     let force = (dynamic_state.force * user.friction).extend(0.0).xzy();
 
-    let mut elapsed = time.delta_seconds() + *prev_excess_time;
+    let mut elapsed = time.delta_secs() + *prev_excess_time;
     let mut target_motion = Vec3::ZERO;
 
     let record_peak = velocity.y > 0.0;
@@ -139,7 +139,7 @@ pub fn update_user_position(
 
     if dynamic_state.tank {
         // rotate as instructed
-        transform.rotation *= Quat::from_rotation_y(dynamic_state.rotate * time.delta_seconds());
+        transform.rotation *= Quat::from_rotation_y(dynamic_state.rotate * time.delta_secs());
     } else {
         // rotate towards velocity vec
         if dynamic_state.force.length() > 0.0 {

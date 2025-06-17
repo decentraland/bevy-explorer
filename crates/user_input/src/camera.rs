@@ -39,7 +39,7 @@ pub fn update_camera(
     input_manager: InputManager,
     gt_helper: TransformHelper,
 ) {
-    let dt = time.delta_seconds();
+    let dt = time.delta_secs();
 
     let Ok((camera_transform, mut options)) = camera.get_single_mut() else {
         return;

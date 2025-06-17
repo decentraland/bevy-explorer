@@ -164,7 +164,7 @@ pub fn update_tween(
     for (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat) in tweens.iter_mut() {
         let playing = tween.0.playing.unwrap_or(true);
         let delta = if playing {
-            time.delta_seconds() * 1000.0 / tween.0.duration
+            time.delta_secs() * 1000.0 / tween.0.duration
         } else {
             0.0
         };

@@ -281,7 +281,7 @@ fn animate(
             .get(&avatar_ent)
             .copied()
             .unwrap_or(Vec3::ZERO);
-        let ratio = time.delta_seconds().clamp(0.0, 0.1) / 0.1;
+        let ratio = time.delta_secs().clamp(0.0, 0.1) / 0.1;
         let damped_velocity =
             dynamic_state.force.extend(0.0).xzy() * ratio + prior_velocity * (1.0 - ratio);
         let damped_velocity_len = damped_velocity.xz().length();
@@ -400,7 +400,7 @@ fn animate(
                     speed: time_to_peak.recip() * 0.75,
                     repeat: true,
                     restart: dynamic_state.jump_time
-                        > time.elapsed_seconds() - time.delta_seconds(),
+                        > time.elapsed_seconds() - time.delta_secs(),
                     transition_seconds: 0.1,
                     initial_audio_mark: if !just_jumped { Some(0.1) } else { None },
                     ..Default::default()

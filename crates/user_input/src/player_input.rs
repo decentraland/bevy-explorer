@@ -57,10 +57,10 @@ pub(crate) fn update_user_velocity(
     };
 
     if rotate {
-        *tankiness = (*tankiness + time.delta_seconds() / TRANSITION_TIME).min(1.0);
+        *tankiness = (*tankiness + time.delta_secs() / TRANSITION_TIME).min(1.0);
         dynamic_state.tank = true;
     } else {
-        *tankiness = (*tankiness - time.delta_seconds() / TRANSITION_TIME).max(0.0);
+        *tankiness = (*tankiness - time.delta_secs() / TRANSITION_TIME).max(0.0);
         dynamic_state.tank = false;
     }
 
