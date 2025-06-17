@@ -559,7 +559,7 @@ fn update_page(
             commands
                 .commands()
                 .entity(components.root)
-                .modify_component(|style: &mut Style| style.min_width = Val::Vw(80.0));
+                .modify_component(|style: &mut Node| style.min_width = Val::Vw(80.0));
 
             commands.commands().entity(settings_ent).modify_component(
                 |settings: &mut DiscoverSettings| {
@@ -596,7 +596,7 @@ fn update_page(
             commands
                 .commands()
                 .entity(components.root)
-                .modify_component(|style: &mut Style| style.min_width = Val::Vw(80.0));
+                .modify_component(|style: &mut Node| style.min_width = Val::Vw(80.0));
         }
     }
 

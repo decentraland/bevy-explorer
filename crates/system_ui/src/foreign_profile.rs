@@ -171,7 +171,7 @@ fn update_profile_friend_buttons(
     client: Res<SocialClient>,
     mut events: EventReader<FriendshipEvent>,
     children: Query<&Children>,
-    mut style: Query<&mut Style>,
+    mut style: Query<&mut Node>,
 ) {
     let Ok((profile, components)) = q.get_single() else {
         events.clear();

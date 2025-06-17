@@ -177,9 +177,9 @@ pub fn add_worldui_materials(
 #[allow(clippy::type_complexity)]
 pub fn update_worldui_materials(
     q: Query<
-        (Entity, &WorldUiMaterialRef, &Node, &GlobalTransform),
+        (Entity, &WorldUiMaterialRef, &ComputedNode, &GlobalTransform),
         Or<(
-            Changed<Node>,
+            Changed<ComputedNode>,
             Changed<GlobalTransform>,
             Added<WorldUiMaterialRef>,
         )>,

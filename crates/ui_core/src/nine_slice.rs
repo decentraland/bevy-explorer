@@ -54,11 +54,11 @@ fn update_slices(
     mut commands: Commands,
     images: Res<Assets<Image>>,
     new_slices: Query<
-        (Entity, &Node, &Ui9Slice, Option<&Handle<NineSliceMaterial>>),
+        (Entity, &ComputedNode, &Ui9Slice, Option<&Handle<NineSliceMaterial>>),
         Or<(
             Changed<Ui9Slice>,
             Added<Ui9Slice>,
-            Changed<Node>,
+            Changed<ComputedNode>,
             With<Retry9Slice>,
         )>,
     >,
@@ -197,7 +197,7 @@ impl DuiTemplate for Ui9SliceTemplate {
 
         commands.insert((
             NodeBundle {
-                style: Style {
+                style: Node {
                     position_type: PositionType::Absolute,
                     top: Val::Px(0.0),
                     right: Val::Px(0.0),

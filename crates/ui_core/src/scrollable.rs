@@ -65,7 +65,7 @@ impl SpawnScrollable for ChildBuilder<'_> {
             .with_children(|commands| {
                 commands
                     .spawn(NodeBundle {
-                        style: Style {
+                        style: Node {
                             width: panel_size.0,
                             height: panel_size.1,
                             // TODO this should be set based on direction
@@ -78,7 +78,7 @@ impl SpawnScrollable for ChildBuilder<'_> {
                         // TODO need one more layer for bidirectional scrolling
                         content = commands
                             .spawn(NodeBundle {
-                                style: Style {
+                                style: Node {
                                     ..Default::default()
                                 },
                                 ..Default::default()
@@ -217,18 +217,18 @@ fn update_scrollables(
     mut commands: Commands,
     window: Query<&Window, With<PrimaryWindow>>,
     mut nodes: Query<
-        (&Node, &mut Style, Option<&Children>),
+        (&ComputedNode, &mut Node, Option<&Children>),
         (Without<Scrollable>, Without<ScrollBar>, Without<Slider>),
     >,
-    positions: Query<(&Node, &Transform, &Parent, &GlobalTransform)>,
+    positions: Query<(&ComputedNode, &Transform, &Parent, &GlobalTransform)>,
     mut scrollables: Query<(
         Entity,
         &mut Scrollable,
         &ScrollContent,
-        &Node,
+        &ComputedNode,
         &GlobalTransform,
         Ref<GlobalTransform>,
-        Ref<Node>,
+        Ref<ComputedNode>,
         &Interaction,
         Option<&TargetCamera>,
     )>,
@@ -236,16 +236,16 @@ fn update_scrollables(
         (
             Entity,
             &ScrollBar,
-            &mut Style,
+            &mut Node,
             &Interaction,
-            &Node,
+            &ComputedNode,
             &GlobalTransform,
             Option<&TargetCamera>,
         ),
         (Without<Scrollable>, Without<Slider>),
     >,
     mut sliders: Query<
-        (Entity, &mut Slider, &mut Style),
+        (Entity, &mut Slider, &mut Node),
         (Without<Scrollable>, Without<ScrollBar>),
     >,
     mut clicked_slider: Local<Option<Entity>>,
@@ -641,7 +641,7 @@ fn update_scrollables(
                         image: None,
                         color: Color::srgba(0.5, 0.5, 0.5, 0.2).into(),
                     },
-                    style: Style {
+                    style: Node {
                         display: if info.visible {
                             Display::Flex
                         } else {
@@ -726,7 +726,7 @@ fn update_scrollables(
                         image: None,
                         color: Color::srgba(1.0, 1.0, 1.0, 0.2).into(),
                     },
-                    style: Style {
+                    style: Node {
                         display: if info.visible {
                             Display::Flex
                         } else {
@@ -814,7 +814,7 @@ impl DuiTemplate for ScrollableTemplate {
         let content = props.take::<Entity>("content")?.unwrap_or_else(|| {
             let mut root_cmds = commands.commands();
             let mut content_cmds = root_cmds.spawn(NodeBundle {
-                style: Style {
+                style: Node {
                     ..Default::default()
                 },
                 ..Default::default()
@@ -832,7 +832,7 @@ impl DuiTemplate for ScrollableTemplate {
 
         commands
             .insert(NodeBundle {
-                style: Style {
+                style: Node {
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     min_width: Val::Percent(0.0),
@@ -846,7 +846,7 @@ impl DuiTemplate for ScrollableTemplate {
             })
             .with_children(|c| {
                 c.spawn(NodeBundle {
-                    style: Style {
+                    style: Node {
                         width: panel_size.0,
                         height: panel_size.1,
                         // TODO this should be set based on direction

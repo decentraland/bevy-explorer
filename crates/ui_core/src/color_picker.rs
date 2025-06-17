@@ -44,8 +44,8 @@ fn update_color_picker_components(
         (
             Entity,
             &mut ColorPicker,
-            &Style,
             &Node,
+            &ComputedNode,
             &GlobalTransform,
             Option<&mut Interaction>,
             Option<&Focus>,
@@ -53,7 +53,7 @@ fn update_color_picker_components(
         Without<Blocker>,
     >,
     mut blocker: Local<Option<Entity>>,
-    mut blocker_display: Query<&mut Style, With<Blocker>>,
+    mut blocker_display: Query<&mut Node, With<Blocker>>,
     mut blocker_active: Local<bool>,
 ) {
     let Ok(mut ctx) = egui_ctx.get_single_mut() else {
@@ -64,7 +64,7 @@ fn update_color_picker_components(
         commands
             .spawn((
                 NodeBundle {
-                    style: Style {
+                    style: Node {
                         position_type: PositionType::Absolute,
                         display: Display::None,
                         left: Val::Px(0.0),

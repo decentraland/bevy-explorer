@@ -586,7 +586,7 @@ fn create_ui_roots(
             };
 
             let root_style = if config.constrain_scene_ui {
-                Style {
+                Node {
                     display,
                     position_type: PositionType::Absolute,
                     left: Val::VMin(27.0),
@@ -597,7 +597,7 @@ fn create_ui_roots(
                     ..Default::default()
                 }
             } else {
-                Style {
+                Node {
                     display,
                     position_type: PositionType::Absolute,
                     width: Val::Percent(100.0),
@@ -652,7 +652,7 @@ fn create_ui_roots(
                         },
                         DespawnWith(ent),
                         NodeBundle {
-                            style: Style {
+                            style: Node {
                                 position_type: PositionType::Absolute,
                                 width: Val::Percent(100.0),
                                 height: Val::Percent(100.0),
@@ -953,7 +953,7 @@ fn layout_scene_ui(
 
             // update style
             if !existing || transform_is_changed {
-                let mut style = Style {
+                let mut style = Node {
                     align_content: ui_transform.align_content,
                     align_items: ui_transform.align_items,
                     flex_wrap: ui_transform.wrap,
@@ -988,7 +988,7 @@ fn layout_scene_ui(
                 if link.content_entity != link.ui_entity {
                     let new_style = style.clone();
                     commands.entity(link.content_entity).modify_component(
-                        move |style: &mut Style| {
+                        move |style: &mut Node| {
                             style.align_content = new_style.align_content;
                             style.align_items = new_style.align_items;
                             style.flex_wrap = new_style.flex_wrap;
@@ -1000,7 +1000,7 @@ fn layout_scene_ui(
                     let padding = std::mem::take(&mut style.padding);
                     commands
                         .entity(link.scroll_entity.unwrap())
-                        .modify_component(move |style: &mut Style| {
+                        .modify_component(move |style: &mut Node| {
                             style.padding = padding;
                         });
                 }
@@ -1127,8 +1127,8 @@ fn layout_scene_ui(
 
 pub fn fully_update_target_camera_system(
     mut commands: Commands,
-    root_nodes_query: Query<(Entity, Option<&TargetCamera>), (With<Node>, Without<Parent>)>,
-    children_query: Query<&Children, With<Node>>,
+    root_nodes_query: Query<(Entity, Option<&TargetCamera>), (With<ComputedNode>, Without<Parent>)>,
+    children_query: Query<&Children, With<ComputedNode>>,
 ) {
     // Track updated entities to prevent redundant updates, as `Commands` changes are deferred,
     // and updates done for changed_children_query can overlap with itself or with root_node_query
@@ -1148,7 +1148,7 @@ pub fn fully_update_target_camera_system(
 fn update_children_target_camera(
     entity: Entity,
     camera_to_set: Option<&TargetCamera>,
-    children_query: &Query<&Children, With<Node>>,
+    children_query: &Query<&Children, With<ComputedNode>>,
     commands: &mut Commands,
     updated_entities: &mut HashSet<Entity>,
 ) {
@@ -1208,7 +1208,7 @@ fn toggle_scene_ui_command(
     mut input: ConsoleCommand<ToggleSceneUiCommand>,
     live_scenes: Res<LiveScenes>,
     ui_links: Query<(Entity, &UiLink), (With<SceneUiData>, Without<SuperUserScene>)>,
-    mut styles: Query<&mut Style>,
+    mut styles: Query<&mut Node>,
     mut hidden_uis: ResMut<HiddenSceneUis>,
 ) {
     if let Some(Ok(ToggleSceneUiCommand { hash, enable })) = input.take() {

@@ -187,7 +187,7 @@ pub fn set_ui_background(
                         .commands()
                         .spawn((
                             NodeBundle {
-                                style: Style {
+                                style: Node {
                                     position_type: PositionType::Absolute,
                                     top: Val::Px(0.0),
                                     right: Val::Px(0.0),
@@ -210,7 +210,7 @@ pub fn set_ui_background(
                         .commands()
                         .spawn((
                             NodeBundle {
-                                style: Style {
+                                style: Node {
                                     position_type: PositionType::Absolute,
                                     top: Val::Px(0.0),
                                     right: Val::Px(0.0),
@@ -225,7 +225,7 @@ pub fn set_ui_background(
                         ))
                         .try_with_children(|c| {
                             let mut inner = c.spawn((MaterialNodeBundle {
-                                style: Style {
+                                style: Node {
                                     position_type: PositionType::Absolute,
                                     top: Val::Px(0.0),
                                     right: Val::Px(0.0),
@@ -249,7 +249,7 @@ pub fn set_ui_background(
                         .commands()
                         .spawn((
                             NodeBundle {
-                                style: Style {
+                                style: Node {
                                     position_type: PositionType::Absolute,
                                     left: Val::Px(0.0),
                                     right: Val::Px(0.0),
@@ -267,7 +267,7 @@ pub fn set_ui_background(
                         .try_with_children(|c| {
                             c.spacer();
                             c.spawn(NodeBundle {
-                                style: Style {
+                                style: Node {
                                     flex_direction: FlexDirection::Column,
                                     justify_content: JustifyContent::Center,
                                     overflow: Overflow::clip(),
@@ -279,7 +279,7 @@ pub fn set_ui_background(
                             .try_with_children(|c| {
                                 c.spacer();
                                 let mut inner = c.spawn(ImageBundle {
-                                    style: Style {
+                                    style: Node {
                                         overflow: Overflow::clip(),
                                         ..Default::default()
                                     },

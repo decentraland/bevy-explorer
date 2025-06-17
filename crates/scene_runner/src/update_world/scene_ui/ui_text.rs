@@ -141,13 +141,13 @@ pub fn set_ui_text(
             .any(Option::is_some);
 
         let inner_style = if any_axis_specified {
-            Style {
+            Node {
                 position_type: PositionType::Relative,
                 margin: UiRect::all(Val::Px(ui_text.font_size * 0.5)),
                 ..Default::default()
             }
         } else {
-            Style {
+            Node {
                 position_type: PositionType::Absolute,
                 left: if ui_text.h_align == JustifyText::Left {
                     Val::Percent(50.0)
@@ -190,7 +190,7 @@ pub fn set_ui_text(
             .commands()
             .spawn((
                 NodeBundle {
-                    style: Style {
+                    style: Node {
                         flex_direction: FlexDirection::Row,
                         justify_content: match ui_text.h_align {
                             JustifyText::Left => JustifyContent::FlexStart,

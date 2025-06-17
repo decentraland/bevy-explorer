@@ -44,7 +44,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
         .spawn((
             ImageBundle {
                 image: images.inactive.clone_weak().into(),
-                style: Style {
+                style: Node {
                     position_type: PositionType::Absolute,
                     top: Val::VMin(BUTTON_SCALE * 1.5),
                     right: Val::VMin(BUTTON_SCALE * 0.5),

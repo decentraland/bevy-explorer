@@ -65,7 +65,7 @@ fn automatic_testing(
         Res<Assets<Image>>,
         ResMut<ScreenshotManager>,
     ),
-    ui_roots: Query<(Entity, Option<&mut TargetCamera>), (With<Node>, Without<Parent>)>,
+    ui_roots: Query<(Entity, Option<&mut TargetCamera>), (With<ComputedNode>, Without<Parent>)>,
 ) {
     // load screenshots before entering any scenes (to ensure we don't have to async wait later)
     if screenshots.is_weak() {

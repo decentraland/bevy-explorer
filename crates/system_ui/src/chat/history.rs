@@ -227,7 +227,7 @@ fn update_chat_history(
             Interaction::default(),
             On::<Click>::new(
                 |mut commands: Commands,
-                 mut container: Query<&mut Style, With<ChatboxContainer>>,
+                 mut container: Query<&mut Node, With<ChatboxContainer>>,
                  entry: Query<Entity, With<ChatInput>>,
                  tab_entity: Query<Entity, With<ChatTab>>,
                  mut tab_mgr: TabManager| {

@@ -99,7 +99,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
         .spawn((
             ImageBundle {
                 image: asset_server.load("images/chat_button.png").into(),
-                style: Style {
+                style: Node {
                     position_type: PositionType::Absolute,
                     top: Val::VMin(BUTTON_SCALE * 3.5),
                     right: Val::VMin(BUTTON_SCALE * 0.5),
@@ -112,7 +112,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
             },
             Interaction::default(),
             On::<Click>::new(
-                |mut commands: Commands, mut q: Query<&mut Style, With<ChatboxContainer>>| {
+                |mut commands: Commands, mut q: Query<&mut Node, With<ChatboxContainer>>| {
                     if let Ok(mut style) = q.get_single_mut() {
                         style.display = if style.display == Display::Flex {
                             commands
@@ -144,7 +144,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
 fn keyboard_popup(
     mut commands: Commands,
     input_manager: InputManager,
-    mut container: Query<&mut Style, With<ChatboxContainer>>,
+    mut container: Query<&mut Node, With<ChatboxContainer>>,
     entry: Query<Entity, With<ChatInput>>,
 ) {
     if input_manager.just_down(SystemAction::Chat, InputPriority::None) {
@@ -236,7 +236,7 @@ fn setup_chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<Du
         })
         .pipe(select_chat_tab);
 
-    let close_ui = |mut commands: Commands, mut q: Query<&mut Style, With<ChatboxContainer>>| {
+    let close_ui = |mut commands: Commands, mut q: Query<&mut Node, With<ChatboxContainer>>| {
         let Ok(mut style) = q.get_single_mut() else {
             return;
         };
@@ -289,7 +289,7 @@ fn toggle_friends(container: Query<&DuiEntities, With<ChatboxContainer>>, mut co
     if let Some((container, friends)) = components {
         commands
             .entity(container)
-            .modify_component(|style: &mut Style| {
+            .modify_component(|style: &mut Node| {
                 if style.width == Val::VMin(90.0) {
                     style.width = Val::VMin(45.0);
                     style.min_width = Val::VMin(30.0);
@@ -300,7 +300,7 @@ fn toggle_friends(container: Query<&DuiEntities, With<ChatboxContainer>>, mut co
             });
         commands
             .entity(friends)
-            .modify_component(|style: &mut Style| {
+            .modify_component(|style: &mut Node| {
                 style.display = if style.display == Display::Flex {
                     Display::None
                 } else {

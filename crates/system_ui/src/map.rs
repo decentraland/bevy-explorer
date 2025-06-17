@@ -239,7 +239,7 @@ fn update_map_data(
 
             commands.entity(data.you_are_here).try_insert((
                 Visibility::Inherited,
-                Style {
+                Node {
                     position_type: PositionType::Absolute,
                     left: Val::Px(icon_pos.x - icon_size * 0.5),
                     bottom: Val::Px(icon_pos.y - data.pixels_per_parcel),
@@ -269,7 +269,7 @@ fn update_map_data(
 
         commands
             .entity(data.cursor)
-            .modify_component(move |style: &mut Style| {
+            .modify_component(move |style: &mut Node| {
                 style.position_type = PositionType::Absolute;
                 style.left = Val::Px(bottomleft_pixel.x);
                 style.bottom = Val::Px(bottomleft_pixel.y);
@@ -311,11 +311,11 @@ fn touch_map(mut e: EventReader<WindowResized>, mut q: Query<&mut MapTexture>) {
 fn render_map(
     mut commands: Commands,
     mut q: Query<
-        (Entity, &Node, &MapTexture, Option<&mut MapData>),
-        Or<(Changed<MapTexture>, Changed<Node>)>,
+        (Entity, &ComputedNode, &MapTexture, Option<&mut MapData>),
+        Or<(Changed<MapTexture>, Changed<ComputedNode>)>,
     >,
     window: Query<&Window, With<PrimaryWindow>>,
-    mut styles: Query<(&mut Style, &mut Visibility)>,
+    mut styles: Query<(&mut Node, &mut Visibility)>,
     asset_server: Res<AssetServer>,
 ) {
     let Ok(window) = window.get_single() else {
@@ -339,7 +339,7 @@ fn render_map(
                     .with_children(|c| {
                         c.spawn((
                             TextBundle {
-                                style: Style {
+                                style: Node {
                                     position_type: PositionType::Absolute,
                                     bottom: Val::Percent(100.0),
                                     left: Val::Percent(100.0),
@@ -480,7 +480,7 @@ fn render_map(
 
                             let tile_entity = commands
                                 .spawn(BoundedNodeBundle {
-                                    style: Style {
+                                    style: Node {
                                         position_type: PositionType::Absolute,
                                         left: Val::Px(left),
                                         bottom: Val::Px(bottom),

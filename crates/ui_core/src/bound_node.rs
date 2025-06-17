@@ -41,21 +41,21 @@ pub struct BoundedNode {
 pub struct BoundedNodeBundle {
     pub bounded: BoundedNode,
     /// Describes the logical size of the node
-    pub node: Node,
+    pub node: ComputedNode,
     /// Styles which control the layout (size and position) of the node and it's children
     /// In some cases these styles also affect how the node drawn/painted.
-    pub style: Style,
+    pub style: Node,
     /// Whether this node should block interaction with lower nodes
     pub focus_policy: FocusPolicy,
     /// The transform of the node
     ///
     /// This component is automatically managed by the UI layout system.
-    /// To alter the position of the `NodeBundle`, use the properties of the [`Style`] component.
+    /// To alter the position of the `NodeBundle`, use the properties of the [`Node`] component.
     pub transform: Transform,
     /// The global transform of the node
     ///
     /// This component is automatically updated by the [`TransformPropagate`](`bevy_transform::TransformSystem::TransformPropagate`) systems.
-    /// To alter the position of the `NodeBundle`, use the properties of the [`Style`] component.
+    /// To alter the position of the `NodeBundle`, use the properties of the [`Node`] component.
     pub global_transform: GlobalTransform,
     /// Describes the visibility properties of the node
     pub visibility: Visibility,
@@ -130,13 +130,13 @@ fn update_bounded_nodes(
         Or<(Without<Handle<BoundedImageMaterial>>, Changed<BoundedNode>)>,
     >,
     mut existing: Local<HashMap<Entity, Vec<(AssetId<BoundedImageMaterial>, bool)>>>,
-    mut removed_nodes: RemovedComponents<Node>,
+    mut removed_nodes: RemovedComponents<ComputedNode>,
     mut mats: ResMut<Assets<BoundedImageMaterial>>,
     updated_nodes: Query<
-        (Entity, &Node, &GlobalTransform, &NodeBounds),
-        Or<(Changed<Node>, Changed<GlobalTransform>, Changed<NodeBounds>)>,
+        (Entity, &ComputedNode, &GlobalTransform, &NodeBounds),
+        Or<(Changed<ComputedNode>, Changed<GlobalTransform>, Changed<NodeBounds>)>,
     >,
-    all_nodes: Query<(Entity, &Node, &GlobalTransform, &NodeBounds)>,
+    all_nodes: Query<(Entity, &ComputedNode, &GlobalTransform, &NodeBounds)>,
     window: Query<&Window, With<PrimaryWindow>>,
     mut resized: EventReader<WindowResized>,
     bound_parents: Query<(Option<&Parent>, Option<&NodeBounds>)>,
@@ -148,7 +148,7 @@ fn update_bounded_nodes(
 
     fn update_mat(
         mat: &mut BoundedImageMaterial,
-        node: &Node,
+        node: &ComputedNode,
         gt: &GlobalTransform,
         bounds: &NodeBounds,
         window: Vec2,
@@ -251,7 +251,7 @@ fn update_bounded_nodes(
         existing: &mut HashMap<Entity, Vec<(AssetId<BoundedImageMaterial>, bool)>>,
         mats: &mut Assets<BoundedImageMaterial>,
         window: Vec2,
-        iter: impl Iterator<Item = (Entity, &'a Node, &'a GlobalTransform, &'a NodeBounds)>,
+        iter: impl Iterator<Item = (Entity, &'a ComputedNode, &'a GlobalTransform, &'a NodeBounds)>,
     ) {
         for (node_ent, node, gt, bounds) in iter {
             if let Some(ids) = existing.get_mut(&node_ent) {

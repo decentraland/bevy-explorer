@@ -96,7 +96,7 @@ pub(crate) fn setup(
     commands.entity(root.0).with_children(|commands| {
         commands
             .spawn(NodeBundle {
-                style: Style {
+                style: Node {
                     position_type: PositionType::Absolute,
                     left: Val::Percent(48.5),
                     top: Val::Percent(48.5),
@@ -112,7 +112,7 @@ pub(crate) fn setup(
             .with_children(|c| {
                 c.spawn((
                     ImageBundle {
-                        style: Style {
+                        style: Node {
                             width: Val::VMin(3.0),
                             height: Val::VMin(3.0),
                             ..Default::default()
@@ -128,7 +128,7 @@ pub(crate) fn setup(
                 ));
             });
         commands.spawn(TextBundle {
-            style: Style {
+            style: Node {
                 position_type: PositionType::Absolute,
                 right: Val::VMin(2.0),
                 bottom: Val::VMin(2.0),
@@ -146,7 +146,7 @@ pub(crate) fn setup(
         commands
             .spawn((
                 NodeBundle {
-                    style: Style {
+                    style: Node {
                         position_type: PositionType::Absolute,
                         right: Val::Px(40.0),
                         top: Val::Px(0.0),
@@ -176,7 +176,7 @@ pub(crate) fn setup(
                 commands
                     .spawn((
                         NodeBundle {
-                            style: Style {
+                            style: Node {
                                 flex_direction: FlexDirection::Column,
                                 ..Default::default()
                             },
@@ -190,7 +190,7 @@ pub(crate) fn setup(
                                 .spawn(NodeBundle::default())
                                 .with_children(|commands| {
                                     commands.spawn(TextBundle {
-                                        style: Style {
+                                        style: Node {
                                             width: Val::Px(150.0),
                                             ..Default::default()
                                         },
@@ -202,7 +202,7 @@ pub(crate) fn setup(
                                         ..Default::default()
                                     });
                                     commands.spawn(TextBundle {
-                                        style: Style {
+                                        style: Node {
                                             width: Val::Px(250.0),
                                             ..Default::default()
                                         },
@@ -245,7 +245,7 @@ fn update_scene_load_state(
     q: Query<Entity, With<SysInfoMarker>>,
     q_children: Query<&Children>,
     mut text: Query<&mut Text>,
-    mut style: Query<&mut Style>,
+    mut style: Query<&mut Node>,
     loading_scenes: Query<&SceneLoading>,
     running_scenes: Query<&RendererSceneContext, Without<SceneLoading>>,
     transports: Query<&Transport>,
@@ -647,7 +647,7 @@ fn set_sysinfo(
 
         commands
             .entity(q.single())
-            .modify_component(move |style: &mut Style| {
+            .modify_component(move |style: &mut Node| {
                 style.display = if on { Display::Flex } else { Display::None };
             });
         input.reply_ok("");
@@ -657,7 +657,7 @@ fn set_sysinfo(
 fn update_map_visibilty(
     realm: Res<CurrentRealm>,
     map: Query<&DuiEntities, With<Minimap>>,
-    mut style: Query<&mut Style>,
+    mut style: Query<&mut Node>,
     mut init: Local<bool>,
 ) {
     if !*init || realm.is_changed() {
@@ -683,7 +683,7 @@ fn entity_count(
     f: Res<FrameCount>,
     meshes: Res<Assets<Mesh>>,
     textures: Res<Assets<Image>>,
-    ui_nodes: Query<(), With<Node>>,
+    ui_nodes: Query<(), With<ComputedNode>>,
     scene_mats: Query<&Handle<SceneMaterial>>,
     std_mats: Query<(), With<Handle<StandardMaterial>>>,
     mask_mats: Query<(), With<Handle<MaskMaterial>>>,

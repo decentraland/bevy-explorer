@@ -68,7 +68,7 @@ fn setup(
 
     commands
         .spawn(NodeBundle {
-            style: Style {
+            style: Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
@@ -80,7 +80,7 @@ fn setup(
         .with_children(|c| {
             c.spawn((
                 NodeBundle {
-                    style: Style {
+                    style: Node {
                         flex_grow: 1.0,
                         flex_direction: FlexDirection::Column,
                         ..Default::default()
@@ -107,7 +107,7 @@ fn setup(
             });
             c.spawn((
                 NodeBundle {
-                    style: Style {
+                    style: Node {
                         height: Val::Px(100.0),
                         ..Default::default()
                     },

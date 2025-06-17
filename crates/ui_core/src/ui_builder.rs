@@ -8,7 +8,7 @@ pub trait SpawnSpacer {
 impl SpawnSpacer for ChildBuilder<'_> {
     fn spacer(&mut self) -> EntityCommands<'_> {
         self.spawn(NodeBundle {
-            style: Style {
+            style: Node {
                 flex_grow: 1.0,
                 ..Default::default()
             },
@@ -20,7 +20,7 @@ impl SpawnSpacer for ChildBuilder<'_> {
 impl SpawnSpacer for TryChildBuilder<'_> {
     fn spacer(&mut self) -> EntityCommands<'_> {
         self.spawn(NodeBundle {
-            style: Style {
+            style: Node {
                 flex_grow: 1.0,
                 ..Default::default()
             },

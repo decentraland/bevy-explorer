@@ -83,7 +83,7 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
     let root = commands
         .spawn((
             NodeBundle {
-                style: Style {
+                style: Node {
                     flex_direction: FlexDirection::Column,
                     justify_content: JustifyContent::SpaceBetween,
                     width: Val::Percent(100.0),
@@ -101,7 +101,7 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
     // interaction component
     commands.spawn((
         NodeBundle {
-            style: Style {
+            style: Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(0.0),
                 right: Val::Px(0.0),
@@ -120,7 +120,7 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
 fn toggle_system_ui(
     mut toast: Toaster,
     input_manager: InputManager,
-    mut root: Query<&mut Style, With<UiRoot>>,
+    mut root: Query<&mut Node, With<UiRoot>>,
 ) {
     if input_manager.just_down(SystemAction::HideUi, InputPriority::None) {
         let Ok(mut root) = root.get_single_mut() else {

@@ -55,7 +55,7 @@ pub fn set_ui_dropdown(
             Some(dropdown.0.selected_index.unwrap_or(0) as isize)
         };
 
-        commands.modify_component(|style: &mut Style| {
+        commands.modify_component(|style: &mut Node| {
             //ensure we use max width if not given
             if style.width == Val::Px(0.0) || style.width == Val::Auto {
                 style.width = Val::Percent(100.0);

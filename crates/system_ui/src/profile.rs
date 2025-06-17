@@ -59,7 +59,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
         .spawn((
             ImageBundle {
                 image: asset_server.load("images/profile_button.png").into(),
-                style: Style {
+                style: Node {
                     position_type: PositionType::Absolute,
                     top: Val::VMin(BUTTON_SCALE * 0.5),
                     right: Val::VMin(BUTTON_SCALE * 0.5),

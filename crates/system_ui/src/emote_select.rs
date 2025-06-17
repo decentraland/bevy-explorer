@@ -59,7 +59,7 @@ fn setup(
         .spawn((
             ImageBundle {
                 image: asset_server.load("images/emote_button.png").into(),
-                style: Style {
+                style: Node {
                     position_type: PositionType::Absolute,
                     top: Val::VMin(BUTTON_SCALE * 2.5),
                     right: Val::VMin(BUTTON_SCALE * 0.5),
@@ -207,7 +207,7 @@ impl LayoutPropsEx for Window {
 }
 
 fn apply_layout(
-    mut q: Query<(&mut Style, Ref<DuiLayout>)>,
+    mut q: Query<(&mut Node, Ref<DuiLayout>)>,
     mut resized: EventReader<WindowResized>,
     window: Query<&Window, With<PrimaryWindow>>,
 ) {

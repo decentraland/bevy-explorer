@@ -208,7 +208,7 @@ fn update_text_shapes(
                 let ui_root = commands
                     .spawn((
                         NodeBundle {
-                            style: Style {
+                            style: Node {
                                 width: Val::Px(8192.0),
                                 min_width: Val::Px(8192.0),
                                 max_width: Val::Px(8192.0),
@@ -299,7 +299,7 @@ fn update_text_shapes(
         let ui_node = commands
             .spawn((
                 NodeBundle {
-                    style: Style {
+                    style: Node {
                         margin: UiRect::all(Val::Px(1.0)),
                         flex_direction: FlexDirection::Row,
                         max_width: Val::Px(width),
@@ -312,7 +312,7 @@ fn update_text_shapes(
             .with_children(|c| {
                 if text_shape.0.padding_left.is_some() {
                     c.spawn(NodeBundle {
-                        style: Style {
+                        style: Node {
                             width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
                             min_width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
                             max_width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
@@ -332,7 +332,7 @@ fn update_text_shapes(
                 .with_children(|c| {
                     let mut cmds = c.spawn(TextBundle {
                         text,
-                        style: Style {
+                        style: Node {
                             align_self: match halign {
                                 JustifyText::Left => AlignSelf::FlexStart,
                                 JustifyText::Center => AlignSelf::Center,
@@ -354,7 +354,7 @@ fn update_text_shapes(
 
                 if text_shape.0.padding_right.is_some() {
                     c.spawn(NodeBundle {
-                        style: Style {
+                        style: Node {
                             width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
                             min_width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
                             max_width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
@@ -418,7 +418,7 @@ fn apply_text_extras(
             &CosmicBuffer,
             &Parent,
             &GlobalTransform,
-            &Node,
+            &ComputedNode,
             Option<&TargetCamera>,
             Option<&Children>,
         ),
@@ -533,7 +533,7 @@ fn apply_text_extras(
             let my_translation = round_layout_coords(my_tl + size * 0.5);
             let mut cmds = commands.spawn((
                 NodeBundle {
-                    style: Style {
+                    style: Node {
                         position_type: PositionType::Absolute,
                         left: Val::Px(bound.x),
                         top: Val::Px(bound.y + bound.w * top),
@@ -544,7 +544,7 @@ fn apply_text_extras(
                     background_color: color.into(),
                     z_index: ZIndex::Local(1),
                     view_visibility,
-                    node: Node {
+                    node: ComputedNode {
                         stack_index: node.stack_index + 1,
                         calculated_size: round_layout_coords(size),
                         outline_width: 0.0,

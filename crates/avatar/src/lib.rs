@@ -126,7 +126,7 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>, mut view: ResMut
     view.ui_root = commands
         .spawn((
             NodeBundle {
-                style: Style {
+                style: Node {
                     width: Val::Px(0.0),
                     min_width: Val::Px(0.0),
                     max_width: Val::Px(0.0),

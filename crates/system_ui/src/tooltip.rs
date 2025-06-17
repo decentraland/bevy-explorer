@@ -93,7 +93,7 @@ pub fn update_tooltip(
         commands
             .spawn((
                 NodeBundle {
-                    style: Style {
+                    style: Node {
                         position_type: PositionType::Absolute,
                         left,
                         right,
@@ -114,7 +114,7 @@ pub fn update_tooltip(
             .with_children(|c| {
                 for i in 0..columns {
                     c.spawn(NodeBundle {
-                        style: Style {
+                        style: Node {
                             flex_direction: FlexDirection::Column,
                             ..Default::default()
                         },

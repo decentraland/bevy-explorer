@@ -143,7 +143,7 @@ impl BoothInstance {
     pub fn image_bundle(&self) -> impl Bundle {
         (
             ImageBundle {
-                style: Style {
+                style: Node {
                     width: Val::Percent(30.0),
                     height: Val::Percent(100.0),
                     ..Default::default()
@@ -283,7 +283,7 @@ fn add_booth_camera(
 }
 
 fn update_booth_image(
-    q: Query<(&Node, &UiImage), With<BoothImage>>,
+    q: Query<(&ComputedNode, &UiImage), With<BoothImage>>,
     mut images: ResMut<Assets<Image>>,
 ) {
     for (node, h_image) in q.iter() {
@@ -483,7 +483,7 @@ impl DuiTemplate for DuiBooth {
 
         commands.insert((
             ImageBundle {
-                style: Style {
+                style: Node {
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     ..Default::default()

@@ -8,7 +8,7 @@ use bevy::{
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry, DuiTemplate};
 use common::{
     sets::SceneSets,
-    util::{DespawnWith, FireEventEx, ModifyComponentExt, TryPushChildrenEx},
+    util::{DespawnWith, ModifyComponentExt, TryPushChildrenEx},
 };
 
 use crate::{
@@ -19,6 +19,8 @@ use crate::{
     text_size::FontSize,
     ui_actions::{close_ui_silent, Click, DataChanged, Defocus, On},
 };
+
+pub type TextStyle = (TextFont, TextColor);
 
 #[derive(Component, Debug, Clone)]
 pub struct ComboBox {
@@ -72,7 +74,7 @@ fn setup(mut dui: ResMut<DuiRegistry>) {
 
 #[derive(SystemParam)]
 pub struct TargetCameraHelper<'w, 's> {
-    target_camera: Query<'w, 's, &'static TargetCamera>,
+    target_camera: Query<'w, 's, &'static UiTargetCamera>,
     cameras: Query<'w, 's, &'static Camera>,
     all_windows: Query<'w, 's, &'static Window>,
     primary_window: Query<'w, 's, &'static Window, With<PrimaryWindow>>,
@@ -80,7 +82,7 @@ pub struct TargetCameraHelper<'w, 's> {
 }
 
 pub struct TargetCameraProps {
-    pub target_camera: Option<TargetCamera>,
+    pub target_camera: Option<UiTargetCamera>,
     pub size: UVec2,
     pub scale_factor: f32,
 }
@@ -195,7 +197,7 @@ fn update_comboboxen(
             }),
             On::<Focus>::new(
                 move |mut commands: Commands,
-                      combo: Query<(&ComboBox, &Node, &GlobalTransform)>,
+                      combo: Query<(&ComboBox, &ComputedNode, &GlobalTransform)>,
                       target_camera: TargetCameraHelper,
                       dui: Res<DuiRegistry>| {
                     let Ok((cbox, node, gt)) = combo.get(ent) else {
@@ -269,7 +271,7 @@ fn update_comboboxen(
                         .map(|(ix, option)| {
                             let mut cmds = commands.spawn((
                                 NodeBundle {
-                                    style: Style {
+                                    style: Node {
                                         // width: Val::Percent(100.0),
                                         // min_width: Val::Percent(100.0),
                                         // flex_grow: 1.0,
@@ -323,7 +325,7 @@ fn update_comboboxen(
                                         option,
                                         cbox.style.clone().unwrap_or_default(),
                                     ),
-                                    style: Style {
+                                    style: Node {
                                         width: Val::Percent(100.0),
                                         min_width: Val::Percent(100.0),
                                         flex_grow: 1.0,

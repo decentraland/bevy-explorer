@@ -225,7 +225,7 @@ pub struct EnvmapNode {
     loading: bool,
 }
 
-impl render_graph::Node for EnvmapNode {
+impl render_graph::ComputedNode for EnvmapNode {
     fn update(&mut self, world: &mut World) {
         if self.loading {
             let pipeline = world.resource::<EnvmapDownsampleData>().pipeline;

@@ -101,7 +101,7 @@ fn update_text_entry_components(
                 let mut cmds = commands.entity(id);
                 cmds.insert((
                     NodeBundle {
-                        style: Style {
+                        style: Node {
                             width: Val::Percent(100.0),
                             min_width: Val::Percent(100.0),
                             height: Val::Percent(100.0),

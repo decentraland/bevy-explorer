@@ -91,7 +91,7 @@ pub fn set_ui_input(
             context.last_action_event = Some(time.elapsed_seconds());
         };
 
-        commands.modify_component(move |style: &mut Style| {
+        commands.modify_component(move |style: &mut Node| {
             //ensure we use max width if not given
             if style.width == Val::Px(0.0) {
                 style.width = Val::Percent(100.0);

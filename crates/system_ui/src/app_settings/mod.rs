@@ -208,7 +208,7 @@ fn bump_int<S: IntAppSetting, const I: i32>(
     commands: Commands,
     caller: Res<UiCaller>,
     parents: Query<(&Parent, Option<&DuiEntities>)>,
-    mut style: Query<&mut Style>,
+    mut style: Query<&mut Node>,
     mut text: Query<&mut Text, Without<AppSettingDescription>>,
 ) {
     let (mut dialog, mut config) = q.single_mut();
@@ -312,7 +312,7 @@ fn spawn_int_setting_template<S: IntAppSetting>(
              params: StaticSystemParam<S::Param>,
              commands: Commands,
              parents: Query<(&Parent, Option<&DuiEntities>)>,
-             mut style: Query<&mut Style>,
+             mut style: Query<&mut Node>,
              mut text: Query<&mut Text, Without<AppSettingDescription>>| {
                 let Some(pos) = cursor.get(caller.0).ok().and_then(|rcp| rcp.normalized) else {
                     return;

@@ -113,7 +113,7 @@ pub fn show_conversation(
     mut tab_manager: TabManager,
     tab: Query<Entity, With<ChatTab>>,
     mut profile_cache: ProfileManager,
-    mut container: Query<&mut Style, With<ChatboxContainer>>,
+    mut container: Query<&mut Node, With<ChatboxContainer>>,
     entry: Query<Entity, With<ChatInput>>,
 ) {
     if let Some(event) = show_events.read().last() {
