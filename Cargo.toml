@@ -99,7 +99,7 @@ bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl", de
 ] }
 wgpu = "24"
 bevy_console = { git = "https://github.com/robtfm/bevy-console", branch="0.16" }
-bevy_egui = { version = "0.31", default-features = false, features = ["default_fonts", "render"] }
+bevy_egui = { version = "0.34", default-features = false, features = ["default_fonts", "render"] }
 
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
@@ -224,8 +224,23 @@ wasm-bindgen = { workspace = true }
 prost-build = "0.11.8"
 
 [patch.crates-io]
-bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-# bevy = { path="../bevy" }
+# bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy = { path="../bevy" }
+# mess required by egui referencing bevy crates directly
+bevy_a11y = { path="../bevy/crates/bevy_a11y" }
+bevy_app = { path="../bevy/crates/bevy_app" }
+bevy_derive = { path="../bevy/crates/bevy_derive" }
+bevy_ecs = { path="../bevy/crates/bevy_ecs" }
+bevy_image = { path="../bevy/crates/bevy_image" }
+bevy_input = { path="../bevy/crates/bevy_input" }
+bevy_log = { path="../bevy/crates/bevy_log" }
+bevy_math = { path="../bevy/crates/bevy_math" }
+bevy_reflect = { path="../bevy/crates/bevy_reflect" }
+bevy_time = { path="../bevy/crates/bevy_time" }
+bevy_winit = { path="../bevy/crates/bevy_winit" }
+bevy_window = { path="../bevy/crates/bevy_window" }
+bevy_platform = { path="../bevy/crates/bevy_platform" }
+
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
 parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "bugfix-project-local-point" }
 # rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }
@@ -242,8 +257,8 @@ deno_web = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_websocket = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 
-# [patch."https://github.com/robtfm/bevy"]
-# bevy = { path = "../bevy" }
+[patch."https://github.com/robtfm/bevy"]
+bevy = { path = "../bevy" }
 
 # [patch."https://github.com/robtfm/bevy_dui"]
 # bevy_dui = { path = "../bevy_dui" }
@@ -256,3 +271,4 @@ deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfi
 
 # [patch."https://github.com/robtfm/bevy_atmosphere"]
 # bevy_atmosphere = { path = "../bevy_atmosphere" }
+
