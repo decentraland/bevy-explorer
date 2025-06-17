@@ -11,23 +11,25 @@ use std::{
     },
 };
 
+use futures_io::{AsyncRead, AsyncSeek};
 use web_time::{Duration, Instant};
 
 use anyhow::anyhow;
-use async_std::io::{Cursor, ReadExt, WriteExt};
+use async_std::io::WriteExt;
 use bevy::{
     asset::{
         io::{
-            AssetReader, AssetReaderError, AssetSource, AssetSourceId, ErasedAssetReader, Reader,
+            AssetReader, AssetReaderError, AssetSource, AssetSourceId, AsyncSeekForward,
+            ErasedAssetReader, Reader, VecReader,
         },
         meta::Settings,
         Asset, AssetLoader, LoadState, UntypedAssetId,
     },
     ecs::system::SystemParam,
+    platform::collections::HashMap,
     prelude::*,
     reflect::TypePath,
-    tasks::{IoTaskPool, Task},
-    utils::{ConditionalSendFuture, HashMap},
+    tasks::{ConditionalSendFuture, IoTaskPool, Task},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -93,46 +95,44 @@ impl IpfsAsset for SceneJsFile {
 pub struct EntityDefinitionLoader;
 
 impl EntityDefinitionLoader {
-    pub fn load_internal<'a>(
-        &'a self,
-        reader: &'a mut Reader,
-        _settings: &'a (),
-        id_fn: impl FnOnce() -> String + Send + Sync + 'a,
-    ) -> bevy::utils::BoxedFuture<'a, Result<EntityDefinition, anyhow::Error>> {
-        Box::pin(async move {
-            let mut bytes = Vec::default();
-            reader.read_to_end(&mut bytes).await?;
+    pub async fn load_internal(
+        &self,
+        reader: &mut dyn Reader,
+        _settings: &(),
+        id_fn: impl FnOnce() -> String + Send + Sync,
+    ) -> Result<EntityDefinition, anyhow::Error> {
+        let mut bytes = Vec::default();
+        reader.read_to_end(&mut bytes).await?;
 
-            let maybe_definition_json = {
-                // try to parse as a vec
-                let definition_json_vec: Result<Vec<EntityDefinitionJson>, _> =
-                    serde_json::from_reader(bytes.as_slice());
-                match definition_json_vec {
-                    Ok(mut vec) => vec.pop(),
-                    Err(_) => {
-                        // else try to parse as a single item
-                        Some(serde_json::from_reader(bytes.as_slice())?)
-                    }
+        let maybe_definition_json = {
+            // try to parse as a vec
+            let definition_json_vec: Result<Vec<EntityDefinitionJson>, _> =
+                serde_json::from_reader(bytes.as_slice());
+            match definition_json_vec {
+                Ok(mut vec) => vec.pop(),
+                Err(_) => {
+                    // else try to parse as a single item
+                    Some(serde_json::from_reader(bytes.as_slice())?)
                 }
-            };
-            let Some(definition_json) = maybe_definition_json else {
-                // if the source was an empty vec, we have loaded a pointer with no content, just set default
-                return Ok(EntityDefinition::default());
-            };
-            let content =
-                ContentMap(HashMap::from_iter(definition_json.content.into_iter().map(
-                    |ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash),
-                )));
-            let id = definition_json.id.unwrap_or_else(id_fn);
+            }
+        };
+        let Some(definition_json) = maybe_definition_json else {
+            // if the source was an empty vec, we have loaded a pointer with no content, just set default
+            return Ok(EntityDefinition::default());
+        };
+        let content =
+            ContentMap(HashMap::from_iter(definition_json.content.into_iter().map(
+                |ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash),
+            )));
+        let id = definition_json.id.unwrap_or_else(id_fn);
 
-            let definition = EntityDefinition {
-                id,
-                pointers: definition_json.pointers,
-                content,
-                metadata: definition_json.metadata,
-            };
-            Ok(definition)
-        })
+        let definition = EntityDefinition {
+            id,
+            pointers: definition_json.pointers,
+            content,
+            metadata: definition_json.metadata,
+        };
+        Ok(definition)
     }
 }
 
@@ -141,11 +141,11 @@ impl AssetLoader for EntityDefinitionLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader,
-        settings: &'a Self::Settings,
-        load_context: &'a mut bevy::asset::LoadContext,
+    fn load(
+        &self,
+        reader: &mut dyn Reader,
+        settings: &Self::Settings,
+        load_context: &mut bevy::asset::LoadContext,
     ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
         let id_fn = || {
             // we must have been loaded as an entity with the format "$ipfs/$entity/{hash}.entity_type" - use the ipfs path to resolve the id
@@ -177,19 +177,17 @@ impl AssetLoader for SceneJsLoader {
     type Settings = ();
     type Error = std::io::Error;
 
-    fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader,
-        _settings: &'a Self::Settings,
-        _load_context: &'a mut bevy::asset::LoadContext,
-    ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            let mut bytes = Vec::default();
-            reader.read_to_end(&mut bytes).await?;
-            Ok(SceneJsFile(Arc::new(String::from_utf8(bytes).map_err(
-                |e| std::io::Error::new(ErrorKind::InvalidData, e),
-            )?)))
-        })
+    async fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _settings: &Self::Settings,
+        _load_context: &mut bevy::asset::LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        let mut bytes = Vec::default();
+        reader.read_to_end(&mut bytes).await?;
+        Ok(SceneJsFile(Arc::new(String::from_utf8(bytes).map_err(
+            |e| std::io::Error::new(ErrorKind::InvalidData, e),
+        )?)))
     }
 
     fn extensions(&self) -> &[&str] {
@@ -540,7 +538,7 @@ fn change_realm_command(
     mut writer: EventWriter<ChangeRealmEvent>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        writer.send(ChangeRealmEvent {
+        writer.write(ChangeRealmEvent {
             new_realm: command.new_realm,
             content_server_override: command.content_server_override,
         });
@@ -591,10 +589,10 @@ pub fn change_realm(
                     };
 
                     match about.configurations {
-                        Some(_) => print.send(PrintConsoleLine::new(
+                        Some(_) => print.write(PrintConsoleLine::new(
                             format!("Realm set to `{realm}`").into(),
                         )),
-                        None => print.send(PrintConsoleLine::new(
+                        None => print.write(PrintConsoleLine::new(
                             format!("Failed to set realm `{realm}`").into(),
                         )),
                     };
@@ -1105,12 +1103,11 @@ pub enum ActiveEntitiesRequest {
 pub struct ActiveEntitiesResponse(Vec<EntityDefinitionJson>);
 
 impl AssetReader for IpfsIo {
-    fn read<'a>(
+    async fn read<'a>(
         &'a self,
         path: &'a std::path::Path,
-    ) -> impl ConditionalSendFuture<Output = Result<Box<Reader<'a>>, bevy::asset::io::AssetReaderError>>
-    {
-        Box::pin(platform::compat(async move {
+    ) -> Result<impl Reader + 'a, bevy::asset::io::AssetReaderError> {
+        platform::compat(async move {
             let wrap_err = |e| {
                 bevy::asset::io::AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
                     "w: {e}"
@@ -1136,8 +1133,7 @@ impl AssetReader for IpfsIo {
                         if let Ok(mut res) = self.default_io.read(&cache_path.join(hash)).await {
                             let mut daft_buffer = Vec::default();
                             res.read_to_end(&mut daft_buffer).await?;
-                            let reader: Box<Reader> = Box::new(Cursor::new(daft_buffer));
-                            return Ok(reader);
+                            return Ok(Box::new(VecReader::new(daft_buffer)));
                         }
                     }
                 };
@@ -1309,32 +1305,67 @@ impl AssetReader for IpfsIo {
             }
 
             debug!("[{token:?}]: completed remote url: `{remote}`");
-            let reader: Box<Reader> = Box::new(Cursor::new(data));
-            Ok(reader)
-        }))
+            Ok(Box::new(AsyncCursor::new(data)))
+        })
+        .await
     }
 
-    fn read_meta<'a>(
+    async fn read_meta<'a>(
         &'a self,
         path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output = Result<Box<bevy::asset::io::Reader<'a>>, AssetReaderError>>
-    {
-        self.default_io.read_meta(path)
+    ) -> Result<impl bevy::asset::io::Reader + 'a, AssetReaderError> {
+        self.default_io.read_meta(path).await
     }
 
-    fn is_directory<'a>(
-        &'a self,
-        path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output = Result<bool, AssetReaderError>> {
-        self.default_io.is_directory(path)
+    async fn is_directory<'a>(&'a self, path: &'a Path) -> Result<bool, AssetReaderError> {
+        self.default_io.is_directory(path).await
     }
 
-    fn read_directory<'a>(
+    async fn read_directory<'a>(
         &'a self,
         path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output = Result<Box<bevy::asset::io::PathStream>, AssetReaderError>>
-    {
-        self.default_io.read_directory(path)
+    ) -> Result<Box<bevy::asset::io::PathStream>, AssetReaderError> {
+        self.default_io.read_directory(path).await
+    }
+}
+
+pub struct AsyncCursor<T>(async_std::io::Cursor<T>);
+
+impl<T> AsyncSeekForward for AsyncCursor<T>
+where
+    T: Unpin + AsRef<[u8]>,
+{
+    fn poll_seek_forward(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        offset: u64,
+    ) -> std::task::Poll<std::io::Result<u64>> {
+        let mut pinned = unsafe { self.map_unchecked_mut(|slf| &mut slf.0) };
+        pinned
+            .as_mut()
+            .poll_seek(cx, std::io::SeekFrom::Current(offset as i64))
+    }
+}
+
+impl<T> AsyncRead for AsyncCursor<T>
+where
+    T: AsRef<[u8]> + Unpin,
+{
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut [u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let mut pinned = unsafe { self.map_unchecked_mut(|slf| &mut slf.0) };
+        pinned.as_mut().poll_read(cx, buf)
+    }
+}
+
+impl<T> Reader for AsyncCursor<T> where T: AsRef<[u8]> + Unpin + Send + Sync {}
+
+impl<T> AsyncCursor<T> {
+    pub fn new(data: T) -> Self {
+        Self(async_std::io::Cursor::new(data))
     }
 }
 
@@ -1344,24 +1375,16 @@ pub struct PassThroughReader {
 }
 
 impl AssetReader for PassThroughReader {
-    fn read<'a>(
-        &'a self,
-        path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output = Result<Box<Reader<'a>>, AssetReaderError>> {
-        AssetReader::read(&*self.inner, path)
+    async fn read<'a>(&'a self, path: &'a Path) -> Result<impl Reader + 'a, AssetReaderError> {
+        AssetReader::read(&*self.inner, path).await
     }
 
-    fn read_meta<'a>(
-        &'a self,
-        path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output = Result<Box<Reader<'a>>, AssetReaderError>> {
-        Box::pin(async move {
-            if IpfsPath::new_from_path(path).is_ok() {
-                Err(AssetReaderError::NotFound(path.to_owned()))
-            } else {
-                AssetReader::read_meta(&*self.inner, path).await
-            }
-        })
+    async fn read_meta<'a>(&'a self, path: &'a Path) -> Result<impl Reader + 'a, AssetReaderError> {
+        if IpfsPath::new_from_path(path).is_ok() {
+            Err(AssetReaderError::NotFound(path.to_owned()))
+        } else {
+            AssetReader::read_meta(&*self.inner, path).await
+        }
     }
 
     fn read_directory<'a>(

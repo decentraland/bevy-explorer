@@ -6177,6 +6177,7 @@ dependencies = [
  "common",
  "console",
  "downcast-rs 1.2.1",
+ "futures-io",
  "multihash-codetable",
  "platform",
  "reqwest 0.12.15",
