@@ -188,7 +188,7 @@ pub fn update_pointer_lock(
     let frame_delta = input_manager.get_analog(POINTER_SET, InputPriority::Scene);
 
     let ray = screen_coordinates
-        .and_then(|coords| camera.viewport_to_world(camera_position, coords))
+        .and_then(|coords| camera.viewport_to_world(camera_position, coords).ok())
         .map(|ray| Vector3::world_vec_from_vec3(&ray.direction));
 
     for (entity, mut context, maybe_pointer_delta, _, _) in scenes.iter_mut() {

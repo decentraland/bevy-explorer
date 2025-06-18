@@ -1,4 +1,4 @@
-use bevy::{core::FrameCount, prelude::*};
+use bevy::{diagnostic::FrameCount, prelude::*};
 
 use crate::{renderer_context::RendererSceneContext, SceneSets};
 use dcl::interface::CrdtType;

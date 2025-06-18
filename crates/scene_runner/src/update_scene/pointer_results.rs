@@ -1,12 +1,5 @@
 use bevy::{
-    core::FrameCount,
-    ecs::entity::Entities,
-    input::InputSystem,
-    math::FloatOrd,
-    prelude::*,
-    render::mesh::{Indices, VertexAttributeValues},
-    ui::{CameraCursorPosition, RelativeCursorPosition, UiSystem},
-    platform::collections::{HashMap, HashSet},
+    diagnostic::FrameCount, ecs::entity::Entities, input::InputSystem, math::FloatOrd, platform::collections::{HashMap, HashSet}, prelude::*, render::mesh::{Indices, VertexAttributeValues}, ui::{CameraCursorPosition, RelativeCursorPosition, UiSystem}
 };
 use bevy_console::ConsoleCommand;
 use console::DoAddConsoleCommand;
@@ -263,7 +256,7 @@ fn update_manual_cursor(
     uis: Query<(
         &GlobalTransform,
         &MeshCollider,
-        &Handle<Mesh>,
+        &Mesh3d,
         &ResolveCursor,
         &ContainerEntity,
     )>,
@@ -586,7 +579,7 @@ fn send_hover_events(
     mut input_manager: InputManager,
     mut previously_entered: Local<HashSet<Entity>>,
     scene_ui_ent: Query<&UiLink>,
-    linked: Query<(&Parent, &DespawnWith, Option<&RelativeCursorPosition>)>,
+    linked: Query<(&ChildOf, &DespawnWith, Option<&RelativeCursorPosition>)>,
 ) {
     debug!("hover target : {:?}", new_target);
 
