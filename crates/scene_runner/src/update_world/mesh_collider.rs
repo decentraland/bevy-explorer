@@ -376,7 +376,7 @@ impl SceneColliderData {
         self.update_pipeline(scene_time);
 
         // collect colliders we started inside of, we must omit these from the query
-        let mut inside = HashSet::default();
+        let mut inside = HashSet::new();
         if skip_inside {
             self.query_state.as_ref().unwrap().intersections_with_shape(
                 &self.dummy_rapier_structs.1,
@@ -520,7 +520,7 @@ impl SceneColliderData {
         let mut results = Vec::default();
         self.update_pipeline(scene_time);
 
-        let mut inside = HashSet::default();
+        let mut inside = HashSet::new();
         if skip_inside {
             // collect colliders we started (nearly) inside of, we must omit these from the query
             self.query_state.as_ref().unwrap().intersections_with_shape(
@@ -798,7 +798,7 @@ fn propagate_disabled(
             let mut list = children.iter().collect::<Vec<_>>();
 
             while let Some(child) = list.pop() {
-                let Ok((maybe_id, maybe_children)) = r.get(*child) else {
+                let Ok((maybe_id, maybe_children)) = r.get(child) else {
                     continue;
                 };
 
@@ -835,7 +835,7 @@ fn update_collider_transforms(
     containing_scene: ContainingScene,
     mut player: Query<(Entity, &mut Transform), With<PrimaryUser>>,
 ) {
-    let mut containing_scenes = HashSet::default();
+    let mut containing_scenes = HashSet::new();
     let mut player_transform = None;
 
     if let Ok((player, transform)) = player.single_mut() {
@@ -1075,7 +1075,7 @@ fn render_debug_colliders(
 
     if debug.0 == 0 || debug.is_changed() {
         for (_, debug_ent) in debug_entities.drain() {
-            if let Some(mut commands) = commands.get_entity(debug_ent) {
+            if let Ok(mut commands) = commands.get_entity(debug_ent) {
                 commands.despawn();
             };
         }
@@ -1094,7 +1094,7 @@ fn render_debug_colliders(
 
     for collider in changed_collider.iter() {
         if let Some(debug_ent) = debug_entities.remove(&collider) {
-            if let Some(mut commands) = commands.get_entity(debug_ent) {
+            if let Ok(mut commands) = commands.get_entity(debug_ent) {
                 commands.despawn();
             }
         }

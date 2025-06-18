@@ -34,7 +34,7 @@ anyhow = { workspace = true }
 bevy_console = { workspace = true }
 clap = { workspace = true }
 bimap = { workspace = true }
-nalgebra = { version = "0.33", features = [ "convert-glam027" ] }
+nalgebra = { version = "0.33.2", features = [ "convert-glam029" ] }
 futures-lite = { workspace = true }
 once_cell = { workspace = true }
 rapier3d-f64 = { workspace = true }
