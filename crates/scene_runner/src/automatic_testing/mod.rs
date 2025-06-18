@@ -1,10 +1,12 @@
 use bevy::{
     asset::LoadedFolder,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
-        camera::RenderTarget, render_asset::RenderAssetUsages, view::screenshot::ScreenshotManager,
+        camera::RenderTarget,
+        render_asset::RenderAssetUsages,
+        view::screenshot::{Screenshot, ScreenshotCaptured},
     },
-    platform::collections::{HashMap, HashSet},
     window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution},
 };
 use common::{
@@ -59,13 +61,12 @@ fn automatic_testing(
         Local<Handle<LoadedFolder>>,
         Local<bool>,
     ),
-    (mut wallet, folders, images, mut screenshotter): (
+    (mut wallet, folders, images): (
         ResMut<Wallet>,
         Res<Assets<LoadedFolder>>,
         Res<Assets<Image>>,
-        ResMut<ScreenshotManager>,
     ),
-    ui_roots: Query<(Entity, Option<&mut TargetCamera>), (With<ComputedNode>, Without<Parent>)>,
+    ui_roots: Query<(Entity, Option<&mut UiTargetCamera>), (With<ComputedNode>, Without<ChildOf>)>,
 ) {
     // load screenshots before entering any scenes (to ensure we don't have to async wait later)
     if screenshots.is_weak() {
@@ -98,21 +99,21 @@ fn automatic_testing(
 
             let mut cam = |window: Entity, transform: Transform| {
                 commands
-                    .spawn((Camera3dBundle {
+                    .spawn((
+                        Camera3d::default(),
                         transform,
-                        projection: Projection::Perspective(PerspectiveProjection {
+                        Projection::Perspective(PerspectiveProjection {
                             fov: std::f32::consts::PI / 2.0,
                             aspect_ratio: 1.0,
                             near: 0.1,
                             far: 1000.0,
                         }),
-                        camera: Camera {
+                        Camera {
                             target: RenderTarget::Window(WindowRef::Entity(window)),
                             clear_color: ClearColorConfig::Custom(Color::NONE),
                             ..default()
                         },
-                        ..Default::default()
-                    },))
+                    ))
                     .id()
             };
 
@@ -131,19 +132,21 @@ fn automatic_testing(
             for (ent, target) in ui_roots.iter() {
                 if target.is_none() {
                     debug!("added {snapshot_cam:?} on {ent:?}");
-                    commands.entity(ent).insert(TargetCamera(snapshot_cam));
+                    commands.entity(ent).insert(UiTargetCamera(snapshot_cam));
                 }
             }
 
             let sender = local_sender.as_ref().unwrap().clone();
-            let _ = screenshotter.take_screenshot(window, move |image| {
-                let _ = sender.blocking_send(SnapshotResult {
-                    request: snapshot,
-                    image,
-                    window,
-                    camera: snapshot_cam,
-                });
-            });
+            commands.spawn(Screenshot::window(window)).observe(
+                |trigger: Trigger<ScreenshotCaptured>| {
+                    let _ = sender.blocking_send(SnapshotResult {
+                        request: snapshot,
+                        image: trigger.0,
+                        window,
+                        camera: snapshot_cam,
+                    });
+                },
+            );
         } else {
             warn!("scene not found for snapshot");
         };
@@ -213,9 +216,9 @@ fn automatic_testing(
 
         // set ui to render to the snapshot camera
         for (ent, target) in ui_roots.iter() {
-            if target == Some(&TargetCamera(result.camera)) {
+            if target == Some(&UiTargetCamera(result.camera)) {
                 debug!("removed {:?} from {ent:?}", result.camera);
-                commands.entity(ent).remove::<TargetCamera>();
+                commands.entity(ent).remove::<UiTargetCamera>();
             } else {
                 debug!(
                     "skipping remove from {ent:?}, {:?} != {:?}",
@@ -387,8 +390,8 @@ fn compute_image_similarity(img_a: Image, img_b: Image) -> f64 {
     let height = img_a.height() as usize;
     let pixel_count = width * height;
 
-    let a_data = img_a.data.as_slice();
-    let b_data = img_b.data.as_slice();
+    let a_data = img_a.data.as_ref().unwrap().as_slice();
+    let b_data = img_b.data.as_ref().unwrap().as_slice();
 
     let mut data_diff = Vec::with_capacity(a_data.len());
     for index in 0..a_data.len() {
