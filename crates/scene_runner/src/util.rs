@@ -11,7 +11,6 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
-use clap::builder::StyledStr;
 use common::{
     structs::{PreviewCommand, PrimaryUser},
     util::TaskExt,
@@ -43,13 +42,13 @@ impl Plugin for SceneUtilPlugin {
 
 #[derive(Resource)]
 pub struct ConsoleRelay {
-    pub send: tokio::sync::mpsc::UnboundedSender<StyledStr>,
-    recv: tokio::sync::mpsc::UnboundedReceiver<StyledStr>,
+    pub send: tokio::sync::mpsc::UnboundedSender<String>,
+    recv: tokio::sync::mpsc::UnboundedReceiver<String>,
 }
 
 fn console_relay(mut write: EventWriter<PrintConsoleLine>, mut relay: ResMut<ConsoleRelay>) {
     while let Ok(line) = relay.recv.try_recv() {
-        write.send(PrintConsoleLine { line });
+        write.write(PrintConsoleLine { line });
     }
 }
 

@@ -31,12 +31,10 @@ use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
 use crate::{
-    renderer_context::RendererSceneContext,
-    update_world::{
+    initialize_scene::SceneEntityDefinitionHandle, renderer_context::RendererSceneContext, update_world::{
         lights::{Light, SpotlightAngles},
         material::{dcl_material_from_standard_material, BaseMaterial},
-    },
-    ContainerEntity, SceneEntity, SceneSets,
+    }, ContainerEntity, SceneEntity, SceneSets
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -125,6 +123,9 @@ struct DclNodeExtras {
     dcl_collision_mask: Option<u32>,
 }
 
+#[derive(Component)]
+pub struct GltfHandle(Handle<Gltf>);
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_gltf(
     mut commands: Commands,
@@ -140,10 +141,10 @@ fn update_gltf(
         Changed<GltfDefinition>,
     >,
     unprocessed_gltfs: Query<
-        (Entity, &SceneEntity, &Handle<Gltf>, &GltfDefinition),
+        (Entity, &SceneEntity, &GltfHandle, &GltfDefinition),
         (With<GltfDefinition>, Without<GltfLoaded>),
     >,
-    scene_def_handles: Query<&Handle<EntityDefinition>>,
+    scene_def_handles: Query<&SceneEntityDefinitionHandle>,
     (scene_defs, gltfs, images, ipfas, mut base_mats): (
         Res<Assets<EntityDefinition>>,
         Res<Assets<Gltf>>,
@@ -159,7 +160,7 @@ fn update_gltf(
     instances_to_despawn_when_ready.retain(|instance| {
         if scene_spawner.instance_is_ready(*instance) {
             for entity in scene_spawner.iter_instance_entities(*instance) {
-                if let Some(mut commands) = commands.get_entity(entity) {
+                if let Ok(mut commands) = commands.get_entity(entity) {
                     // have to do this non-recursively and safely because we may have removed some entities already
                     commands.despawn();
                 }
@@ -220,7 +221,7 @@ fn update_gltf(
             continue;
         };
 
-        let Some(scene_def) = scene_defs.get(h_scene_def) else {
+        let Some(scene_def) = scene_defs.get(h_scene_def.0.id()) else {
             warn!("scene definition not loaded, can't process file request");
             continue;
         };
@@ -249,12 +250,12 @@ fn update_gltf(
         set_state(scene_ent, LoadingState::Loading);
         commands
             .entity(ent)
-            .try_insert(h_gltf)
+            .try_insert(GltfHandle(h_gltf))
             .remove::<GltfLoaded>();
     }
 
     for (ent, scene_ent, h_gltf, def) in unprocessed_gltfs.iter() {
-        match ipfas.load_state(h_gltf) {
+        match ipfas.load_state(h_gltf.0.id()) {
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed(e) => {
                 warn!("failed to process gltf {}: {}", def.0.src, e);
@@ -269,7 +270,7 @@ fn update_gltf(
             }
         }
 
-        let gltf = gltfs.get(h_gltf).unwrap();
+        let gltf = gltfs.get(h_gltf.0.id()).unwrap();
         let gltf_scene_handle = gltf.default_scene.as_ref();
 
         // validate texture types
@@ -279,7 +280,7 @@ fn update_gltf(
             };
 
             if let Some(h_base) = mat.base_color_texture.as_ref() {
-                if ipfas.asset_server().get_load_state(h_base) == Some(LoadState::Loading) {
+                if let Some(LoadState::Loading) = ipfas.asset_server().get_load_state(h_base) {
                     continue;
                 }
 
@@ -335,19 +336,19 @@ fn update_ready_gltfs(
             &SceneEntity,
             &GltfLoaded,
             &GltfDefinition,
-            &Handle<Gltf>,
+            &GltfHandle,
         ),
         Without<GltfProcessed>,
     >,
     gltf_spawned_entities: Query<(
         Option<&Name>,
         &Transform,
-        &Parent,
+        &ChildOf,
         Option<&AnimationPlayer>,
-        Option<&Handle<Mesh>>,
+        Option<&Mesh3d>,
         Option<&GltfExtras>,
         Option<&SkinnedMesh>,
-        Option<&Handle<StandardMaterial>>,
+        Option<&MeshMaterial3d<StandardMaterial>>,
         Option<&AnimationTarget>,
         Option<&DirectionalLight>,
         Option<&PointLight>,
@@ -387,7 +388,7 @@ fn update_ready_gltfs(
         }
         let instance = loaded.0.as_ref().unwrap();
         if scene_spawner.instance_is_really_ready(*instance) {
-            let Some(gltf) = gltfs.get(h_gltf) else {
+            let Some(gltf) = gltfs.get(h_gltf.0.id()) else {
                 commands
                     .entity(bevy_scene_entity)
                     .try_insert(GltfProcessed::default());
@@ -432,7 +433,7 @@ fn update_ready_gltfs(
                 // delete any base materials
                 commands
                     .entity(spawned_ent)
-                    .remove::<(Handle<StandardMaterial>,)>();
+                    .remove::<(MeshMaterial3d<StandardMaterial>,)>();
 
                 // add a container node so other systems can reference the root
                 commands.entity(spawned_ent).try_insert(ContainerEntity {
@@ -489,20 +490,20 @@ fn update_ready_gltfs(
                     // collect named nodes to push to scene on request
                     if let Some(name) = maybe_name {
                         let mut name = name.to_string();
-                        let mut ptr = parent.get();
+                        let mut ptr = parent.parent();
                         while ptr != bevy_scene_entity {
                             let (maybe_name, _, parent, ..) =
                                 gltf_spawned_entities.get(ptr).unwrap();
                             if let Some(parent_name) = maybe_name {
                                 name = format!("{parent_name}/{name}");
                             }
-                            ptr = parent.get();
+                            ptr = parent.parent();
                         }
                         named_nodes.insert(name, spawned_ent);
                     }
 
                     // children of root nodes -> rotate
-                    if parent.get() == bevy_scene_entity {
+                    if parent.parent() == bevy_scene_entity {
                         let mut rotated = *transform;
                         rotated
                             .rotate_around(Vec3::ZERO, Quat::from_rotation_y(std::f32::consts::PI));
@@ -538,8 +539,8 @@ fn update_ready_gltfs(
                     };
 
                     let hash = &mut std::hash::DefaultHasher::new();
-                    for (attr_id, data) in mesh_data.attributes() {
-                        attr_id.hash(hash);
+                    for (attr, data) in mesh_data.attributes() {
+                        attr.id.hash(hash);
                         data.get_bytes().hash(hash);
                     }
 
@@ -568,7 +569,7 @@ fn update_ready_gltfs(
                         match (mesh_data.has_morph_targets(), cached_data) {
                             (false, Some((h_mesh, cached_collider))) => {
                                 // overwrite with cached handle
-                                commands.entity(spawned_ent).insert(h_mesh.clone());
+                                commands.entity(spawned_ent).insert(Mesh3d(h_mesh.clone()));
                                 (h_mesh, cached_collider.clone())
                             }
                             _ => {
@@ -592,7 +593,7 @@ fn update_ready_gltfs(
                                     },
                                 );
                                 *tracker.0.entry("Unique Meshes").or_default() += 1;
-                                (h_gltf_mesh.clone(), None)
+                                (h_gltf_mesh.0.clone(), None)
                             }
                         };
                     *tracker.0.entry("Total Meshes").or_default() += 1;
@@ -610,21 +611,21 @@ fn update_ready_gltfs(
                         let material_name = gltf
                             .named_materials
                             .iter()
-                            .find(|(_, handle)| handle == &h_material)
+                            .find(|(_, handle)| *handle == &h_material.0)
                             .map(|(name, _)| name.to_string())
                             .unwrap_or_else(|| {
                                 let ix = gltf
                                     .materials
                                     .iter()
                                     .enumerate()
-                                    .find(|(_, handle)| handle == &h_material)
+                                    .find(|(_, handle)| *handle == &h_material.0)
                                     .map(|(ix, _)| ix)
                                     .unwrap_or(usize::MAX); // TODO handle inverted materials (make a list in Gltf, choose based on scale of the target?)
                                 format!("Material{ix}")
                             });
 
                         let h_scene_material = if let Some(h_scene_material) =
-                            resource_lookup.materials.get(h_material)
+                            resource_lookup.materials.get(&h_material.0)
                         {
                             h_scene_material.clone()
                         } else {
@@ -640,14 +641,14 @@ fn update_ready_gltfs(
                             });
                             resource_lookup
                                 .materials
-                                .insert(h_material.clone(), h_scene_material.clone());
+                                .insert(h_material.0.clone(), h_scene_material.clone());
 
                             *tracker.0.entry("Unique Materials").or_default() += 1;
                             h_scene_material
                         };
                         commands
                             .entity(spawned_ent)
-                            .insert(h_scene_material)
+                            .insert(MeshMaterial3d(h_scene_material))
                             .insert(GltfMaterialName(material_name));
                     }
                     *tracker.0.entry("Materials").or_default() += 1;
@@ -660,7 +661,7 @@ fn update_ready_gltfs(
                     if collider_base_name.is_none() {
                         // check parent name also
                         collider_base_name = gltf_spawned_entities
-                            .get(parent.get())
+                            .get(parent.parent())
                             .ok()
                             .and_then(|(name, ..)| name)
                             .map(|name| name.as_str())
@@ -671,7 +672,7 @@ fn update_ready_gltfs(
                     if is_collider {
                         // make invisible by removing mesh handle
                         // TODO - this will break with toggling, we need to store the handle somewhere
-                        commands.entity(spawned_ent).remove::<Handle<Mesh>>();
+                        commands.entity(spawned_ent).remove::<Mesh3d>();
                     }
 
                     // get specified or default collider bits
@@ -684,7 +685,7 @@ fn update_ready_gltfs(
                         .unwrap_or_else(|| {
                             // then try parent node
                             gltf_spawned_entities
-                                .get(parent.get())
+                                .get(parent.parent())
                                 .ok()
                                 .and_then(|tpl| tpl.5)
                                 .and_then(|extras| {
@@ -734,8 +735,8 @@ fn update_ready_gltfs(
                                     if let Some(indices) = mesh_data.indices().cloned() {
                                         new_mesh.insert_indices(indices);
                                     }
-                                    for (attribute_id, data) in mesh_data.attributes() {
-                                        let attribute = match attribute_id {
+                                    for (attribute, data) in mesh_data.attributes() {
+                                        let attribute = match attribute.id {
                                             id if id == Mesh::ATTRIBUTE_JOINT_INDEX.id => continue,
                                             id if id == Mesh::ATTRIBUTE_JOINT_WEIGHT.id => continue,
                                             id if id == Mesh::ATTRIBUTE_POSITION.id => {
@@ -757,7 +758,7 @@ fn update_ready_gltfs(
                                                 Mesh::ATTRIBUTE_COLOR
                                             }
                                             _ => {
-                                                warn!("unrecognised vertex attribute {attribute_id:?}");
+                                                warn!("unrecognised vertex attribute {attribute:?}");
                                                 continue;
                                             }
                                         };
@@ -885,7 +886,7 @@ fn update_ready_gltfs(
                 };
                 commands.entity(bevy_scene_entity).insert((
                     AnimationPlayer::default(),
-                    graphs.add(graph),
+                    AnimationGraphHandle(graphs.add(graph)),
                     animation_clips,
                 ));
             }
@@ -951,7 +952,7 @@ fn _node_graph(
     )>,
     root: Entity,
 ) -> String {
-    let mut graph_nodes = HashMap::default();
+    let mut graph_nodes = HashMap::new();
     let mut graph = petgraph::Graph::<_, ()>::new();
     let mut to_check = vec![root];
 
@@ -977,17 +978,17 @@ fn _node_graph(
                 .map(|c| {
                     (
                         scene_entity_query
-                            .get(*c)
+                            .get(c)
                             .map(|q| q.1.map(|name| name.as_str().to_owned()))
                             .unwrap_or(Some(String::from("?"))),
                         (
                             c,
                             scene_entity_query
-                                .get(*c)
+                                .get(c)
                                 .map(|(_, _, _, skin, _)| skin.is_some())
                                 .unwrap_or(false),
                             scene_entity_query
-                                .get(*c)
+                                .get(c)
                                 .map(|(_, _, _, _, t)| t.scale)
                                 .unwrap_or(Vec3::ZERO),
                         ),
@@ -999,7 +1000,7 @@ fn _node_graph(
             for (child_id, (child_ent, is_skinned, child_scale)) in
                 sorted_children_with_name.into_iter()
             {
-                let child_graph_node = *graph_nodes.entry(*child_ent).or_insert_with(|| {
+                let child_graph_node = *graph_nodes.entry(child_ent).or_insert_with(|| {
                     graph.add_node(format!(
                         "{child_ent:?}:{:?} {} [{:?}]",
                         child_id,
@@ -1075,7 +1076,7 @@ pub enum GltfLinkState<'a> {
 }
 
 #[derive(Component)]
-pub struct HiddenMaterial(Handle<SceneMaterial>);
+pub struct HiddenMaterial(MeshMaterial3d<SceneMaterial>);
 
 #[derive(Component)]
 pub struct HiddenCollider(MeshCollider);
@@ -1089,10 +1090,10 @@ pub struct HiddenSpotLight(SpotLight);
 fn expose_gltfs(
     mut commands: Commands,
     new_links: Query<
-        (Entity, &SceneEntity, &GltfNodeRequest, &Parent),
+        (Entity, &SceneEntity, &GltfNodeRequest, &ChildOf),
         Or<(
             Changed<GltfNodeRequest>,
-            Changed<Parent>,
+            Changed<ChildOf>,
             With<GltfNodeRequestRetry>,
         )>,
     >,
@@ -1101,15 +1102,15 @@ fn expose_gltfs(
         Option<&GltfProcessed>,
         Option<&GltfNodeRequest>,
         &SceneEntity,
-        &Parent,
+        &ChildOf,
     )>,
     already_linked: Query<&RendererNodeLink>,
     mut scenes: Query<&mut RendererSceneContext>,
     mut removed: RemovedComponents<GltfNodeRequest>,
     node_data: Query<(
-        Option<&Handle<SceneMaterial>>,
+        Option<&MeshMaterial3d<SceneMaterial>>,
         Option<&GltfMaterialName>,
-        Option<&Handle<Mesh>>,
+        Option<&Mesh3d>,
         Option<&SkinnedMesh>,
         Option<&MeshCollider>,
         Option<&Name>,
@@ -1120,7 +1121,7 @@ fn expose_gltfs(
     images: Res<Assets<Image>>,
 ) {
     for e in removed.read() {
-        if let Some(mut commands) = commands.get_entity(e) {
+        if let Ok(mut commands) = commands.get_entity(e) {
             commands.remove::<SceneNodeLink>();
         }
     }
@@ -1128,7 +1129,7 @@ fn expose_gltfs(
     for (ent, scene_ent, req, parent) in new_links.iter() {
         commands.entity(ent).remove::<SceneNodeLink>();
 
-        let mut parent = parent.get();
+        let mut parent = parent.parent();
         let mut scene_parent = None; // (gltf_path, entity, scene_entity_id)
         let state = loop {
             // walk up parents until we find a gltf container
@@ -1215,7 +1216,7 @@ fn expose_gltfs(
             }
 
             // otherwise keep checking parents
-            parent = next.get();
+            parent = next.parent();
         };
 
         let Ok(mut scene) = scenes.get_mut(scene_ent.root) else {
@@ -1258,7 +1259,7 @@ fn expose_gltfs(
                     },
                 );
 
-                let Some(mut target_commands) = commands.get_entity(gltf_entity) else {
+                let Ok(mut target_commands) = commands.get_entity(gltf_entity) else {
                     warn!("gltf node entity not found");
                     continue;
                 };
@@ -1331,7 +1332,7 @@ fn expose_gltfs(
                     // hide
                     commands
                         .entity(gltf_entity)
-                        .remove::<Handle<SceneMaterial>>()
+                        .remove::<MeshMaterial3d<SceneMaterial>>()
                         .insert(HiddenMaterial(material.clone()));
                     // copy
                     commands.entity(ent).insert(material.clone());
@@ -1447,13 +1448,13 @@ fn update_gltf_linked_transforms(
         Entity,
         &RendererNodeLink,
         &ContainerEntity,
-        &Parent,
+        &ChildOf,
         Option<&HiddenMaterial>,
         Option<&HiddenCollider>,
         Option<&HiddenPointLight>,
         Option<&HiddenSpotLight>,
     )>,
-    scene_nodes: Query<(&SceneEntity, Ref<Transform>, &Parent, &SceneNodeLink)>,
+    scene_nodes: Query<(&SceneEntity, Ref<Transform>, &ChildOf, &SceneNodeLink)>,
     mut scenes: Query<&mut RendererSceneContext>,
     gt_helper: TransformHelperPub,
     mut stored_transforms_and_parents: Local<HashMap<Entity, (Transform, Vec<Entity>)>>,
@@ -1478,7 +1479,7 @@ fn update_gltf_linked_transforms(
         Scene,
     }
 
-    let mut node_movement_state = HashMap::default();
+    let mut node_movement_state = HashMap::new();
 
     // init parents and positions, check for changes
     for (
@@ -1530,7 +1531,7 @@ fn update_gltf_linked_transforms(
             continue;
         };
 
-        if scene_parent.get() != scene_link.scene_parent.0 {
+        if scene_parent.parent() != scene_link.scene_parent.0 {
             unlink(gltf_entity, &mut commands);
             warn!("linked entity moved out of container");
             continue;
@@ -1561,7 +1562,7 @@ fn update_gltf_linked_transforms(
                         UpdateData {
                             state,
                             root_relative_transform,
-                            gltf_parent: parent.get(),
+                            gltf_parent: parent.parent(),
                             scene_entity: link.0,
                             scene_entity_id: scene_entity_id.id,
                             scene: container.root,
@@ -1594,7 +1595,7 @@ fn update_gltf_linked_transforms(
                     UpdateData {
                         state: MoveState::Anim,
                         root_relative_transform,
-                        gltf_parent: parent.get(),
+                        gltf_parent: parent.parent(),
                         scene_entity: link.0,
                         scene_entity_id: scene_entity_id.id,
                         scene: container.root,
