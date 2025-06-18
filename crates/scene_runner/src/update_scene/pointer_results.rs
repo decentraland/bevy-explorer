@@ -5,7 +5,7 @@ use bevy::{
     math::FloatOrd,
     prelude::*,
     render::mesh::{Indices, VertexAttributeValues},
-    ui::{ManualCursorPosition, RelativeCursorPosition, UiSystem},
+    ui::{CameraCursorPosition, RelativeCursorPosition, UiSystem},
     platform::collections::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
@@ -268,7 +268,7 @@ fn update_manual_cursor(
         &ContainerEntity,
     )>,
     meshes: Res<Assets<Mesh>>,
-    mut cursors: Query<&mut ManualCursorPosition>,
+    mut cursors: Query<&mut CameraCursorPosition>,
     mut gltf_resolver: GltfMeshResolver,
     scenes: Query<&RendererSceneContext>,
 ) {

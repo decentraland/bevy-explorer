@@ -10,7 +10,7 @@ use bevy::{
     math::FloatOrd,
     prelude::*,
     render::render_resource::Extent3d,
-    ui::{FocusPolicy, ManualCursorPosition},
+    ui::{FocusPolicy, CameraCursorPosition},
     platform::collections::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
@@ -645,7 +645,7 @@ fn create_ui_roots(
                         world_ui::spawn_world_ui_view(&mut commands, images, existing_texture);
                     commands.entity(root).try_insert((
                         TargetCamera(root),
-                        ManualCursorPosition::default(),
+                        CameraCursorPosition::default(),
                         SceneUiRoot {
                             scene: container.root,
                             canvas: ent,
