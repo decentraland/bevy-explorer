@@ -127,7 +127,7 @@ fn manage_islands(
 
     while let Ok(island) = channel.receiver.try_recv() {
         if let Some(entity) = current_island.remove(&island.owner) {
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
         }
         if let Some(entity) = manager.connect(&island.connect_str) {
             current_island.insert(island.owner, entity);

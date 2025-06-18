@@ -78,7 +78,7 @@ fn run_raycasts(
     // redraw non-continuous gizmos for 1 sec
     gizmo_cache.retain(|(until, origin, end)| {
         gizmos.line(*origin, *end, basic::BLUE);
-        time.elapsed_seconds() > *until
+        time.elapsed_secs() > *until
     });
 
     for (e, scene_ent, mut raycast, transform) in raycast_requests.iter_mut() {
@@ -235,7 +235,7 @@ fn run_raycasts(
             let end = origin + direction * raycast.max_distance;
             gizmos.line(origin, end, basic::BLUE);
             if !continuous {
-                gizmo_cache.push((time.elapsed_seconds() + 1.0, origin, end));
+                gizmo_cache.push((time.elapsed_secs() + 1.0, origin, end));
             }
         }
 

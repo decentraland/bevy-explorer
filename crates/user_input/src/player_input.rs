@@ -41,7 +41,7 @@ pub(crate) fn update_user_velocity(
         && !user.block_jump
     {
         dynamic_state.velocity.y = (user.jump_height * -user.gravity * 2.0).sqrt();
-        dynamic_state.jump_time = time.elapsed_seconds();
+        dynamic_state.jump_time = time.elapsed_secs();
     }
 
     let axis_input = input.get_analog(MOVE_SET, InputPriority::Scene);

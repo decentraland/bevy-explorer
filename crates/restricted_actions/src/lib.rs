@@ -1119,11 +1119,11 @@ pub fn handle_eth_async(
             .ok()
             .and_then(|scene| scene.last_action_event)
             .unwrap_or_default();
-        if last_action_time < time.elapsed_seconds() - 1.0 {
+        if last_action_time < time.elapsed_secs() - 1.0 {
             response.send(Err(format!(
                 "no recent user activity (last action {}, time {}).",
                 last_action_time,
-                time.elapsed_seconds()
+                time.elapsed_secs()
             )));
             continue;
         }
@@ -1184,11 +1184,11 @@ pub fn handle_copy_to_clipboard(
             .ok()
             .and_then(|scene| scene.last_action_event)
             .unwrap_or_default();
-        if last_action_time < time.elapsed_seconds() - 1.0 {
+        if last_action_time < time.elapsed_secs() - 1.0 {
             response.send(Err(format!(
                 "no recent user activity (last action {}, time {}).",
                 last_action_time,
-                time.elapsed_seconds()
+                time.elapsed_secs()
             )));
             continue;
         }

@@ -1083,10 +1083,10 @@ fn output_progress(
         return;
     }
 
-    if time.elapsed_seconds() < *last_time + 5.0 {
+    if time.elapsed_secs() < *last_time + 5.0 {
         return;
     }
-    *last_time = time.elapsed_seconds();
+    *last_time = time.elapsed_secs();
 
     let max_level = config.scene_imposter_distances.len() - 1;
     let count = q.iter().filter(|i| i.level == max_level).count();

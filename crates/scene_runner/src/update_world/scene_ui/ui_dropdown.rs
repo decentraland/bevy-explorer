@@ -114,7 +114,7 @@ pub fn set_ui_dropdown(
                             value: combo.selected as i32,
                         },
                     );
-                    context.last_action_event = Some(time.elapsed_seconds());
+                    context.last_action_event = Some(time.elapsed_secs());
                 },
             ),
         ));

@@ -25,7 +25,7 @@ use common::{
     rpc::RpcEventSender,
     sets::SceneSets,
     structs::PrimaryUser,
-    util::{FireEventEx, TaskCompat, TaskExt},
+    util::{TaskCompat, TaskExt},
 };
 use common::{rpc::RpcCall, util::AsH160};
 use dcl_component::{
@@ -173,7 +173,7 @@ pub fn setup_primary_profile(
         senders.push(sender.clone());
     }
 
-    if let Ok((player, maybe_profile)) = player.get_single() {
+    if let Ok((player, maybe_profile)) = player.single() {
         if maybe_profile.is_none() || current_profile.is_changed() {
             let Some(profile) = current_profile.profile.as_ref() else {
                 commands.entity(player).remove::<UserProfile>();
@@ -251,7 +251,7 @@ pub fn setup_primary_profile(
                 current_profile.is_deployed = true;
             }
         } else if let Some(current_profile) = current_profile.profile.as_ref() {
-            let now = time.elapsed_seconds();
+            let now = time.elapsed_secs();
             if now > *last_announce + 5.0 {
                 debug!("announcing profile v {}", current_profile.version);
                 let packet = rfc4::Packet {
@@ -274,7 +274,7 @@ pub fn setup_primary_profile(
         match task.complete() {
             Some(Ok(None)) => {
                 info!("deployed profile ok");
-                commands.fire_event(ProfileDeployedEvent {
+                commands.send_event(ProfileDeployedEvent {
                     version,
                     success: true,
                 });
@@ -290,14 +290,14 @@ pub fn setup_primary_profile(
                     .snapshots = Some(AvatarSnapshots { face256, body });
                 current_profile.snapshots = None;
                 cache.update(current_profile.profile.clone().unwrap());
-                commands.fire_event(ProfileDeployedEvent {
+                commands.send_event(ProfileDeployedEvent {
                     version,
                     success: true,
                 });
             }
             Some(Err(e)) => {
                 error!("failed to deploy profile: {e}");
-                commands.fire_event(ProfileDeployedEvent {
+                commands.send_event(ProfileDeployedEvent {
                     version,
                     success: false,
                 });
@@ -331,7 +331,7 @@ fn request_missing_profiles(
         maybe_profile.is_none_or(|profile| player.profile_version > profile.version)
     }) {
         if let Some((address, req_time)) = last_requested.remove_entry(&player.address) {
-            if time.elapsed_seconds() - req_time < 10.0 {
+            if time.elapsed_secs() - req_time < 10.0 {
                 requested.insert(address, req_time);
                 continue;
             }
@@ -392,7 +392,7 @@ fn request_missing_profiles(
                     debug!("sent profile request for player {player:?}");
                 }
             };
-            requested.insert(player.address, time.elapsed_seconds());
+            requested.insert(player.address, time.elapsed_secs());
         }
     }
 }
@@ -448,7 +448,7 @@ pub fn process_profile_events(
                         let _ = transport
                             .sender
                             .try_send(NetworkMessage::reliable(&response));
-                        last_sent_request.insert(player.transport_id, time.elapsed_seconds());
+                        last_sent_request.insert(player.transport_id, time.elapsed_secs());
                     }
                 }
             }
@@ -513,7 +513,7 @@ pub fn process_profile_events(
         }
     }
 
-    last_sent_request.retain(|_, req_time| *req_time > time.elapsed_seconds() - 10.0);
+    last_sent_request.retain(|_, req_time| *req_time > time.elapsed_secs() - 10.0);
 }
 
 #[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]

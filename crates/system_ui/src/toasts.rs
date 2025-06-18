@@ -55,7 +55,7 @@ fn update_toasts(
         };
 
         if let Some(ent) = maybe_ent {
-            if toast.time < time.elapsed_seconds() - 5.0 {
+            if toast.time < time.elapsed_secs() - 5.0 {
                 commands.entity(ent).despawn_recursive();
                 displays.insert(key.clone(), None);
                 continue;
@@ -75,5 +75,5 @@ fn update_toasts(
 
     toasts
         .0
-        .retain(|_, toast| toast.last_update > time.elapsed_seconds() - 5.0);
+        .retain(|_, toast| toast.last_update > time.elapsed_secs() - 5.0);
 }

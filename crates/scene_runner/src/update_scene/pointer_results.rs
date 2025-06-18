@@ -805,7 +805,7 @@ fn send_action_events(
                             tick_number,
                         },
                     );
-                    context.last_action_event = Some(time.elapsed_seconds());
+                    context.last_action_event = Some(time.elapsed_secs());
                     consumed = true;
                 }
             }

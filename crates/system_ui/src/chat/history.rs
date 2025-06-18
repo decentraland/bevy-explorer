@@ -110,7 +110,7 @@ fn update_chat_history(
             warn!("no");
             break;
         };
-        let mut alpha = (time.elapsed_seconds() - 10.0 - *exp).clamp(-1.0, 0.0) * -0.3;
+        let mut alpha = (time.elapsed_secs() - 10.0 - *exp).clamp(-1.0, 0.0) * -0.3;
         if history
             .current
             .get(1)
@@ -121,7 +121,7 @@ fn update_chat_history(
         node.0.border_color.set_alpha(alpha * 2.0);
         node.1.color.as_mut().unwrap().set_alpha(alpha);
 
-        if *exp > time.elapsed_seconds() - 10.0 {
+        if *exp > time.elapsed_secs() - 10.0 {
             break;
         }
 
@@ -191,7 +191,7 @@ fn update_chat_history(
         ));
         history
             .current
-            .push_back((bubble, message, time.elapsed_seconds()));
+            .push_back((bubble, message, time.elapsed_secs()));
     }
 
     for chat in pending_private_chats.drain(..) {
@@ -212,7 +212,7 @@ fn update_chat_history(
         ));
         history
             .current
-            .push_back((bubble, message, time.elapsed_seconds()));
+            .push_back((bubble, message, time.elapsed_secs()));
     }
 
     for chat in pending_nearby_chats.drain(..) {
@@ -254,6 +254,6 @@ fn update_chat_history(
         ));
         history
             .current
-            .push_back((bubble, message, time.elapsed_seconds()));
+            .push_back((bubble, message, time.elapsed_secs()));
     }
 }

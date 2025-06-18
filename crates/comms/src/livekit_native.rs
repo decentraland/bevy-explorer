@@ -181,7 +181,7 @@ fn livekit_handler_inner(
         url.host().unwrap_or_default(),
         url.path()
     );
-    let params = HashMap::from_iter(url.query().unwrap_or_default().split('&').flat_map(|par| {
+    let params: HashMap<_, _, bevy::platform::hash::FixedHasher> = HashMap::from_iter(url.query().unwrap_or_default().split('&').flat_map(|par| {
         par.split_once('=')
             .map(|(a, b)| (a.to_owned(), b.to_owned()))
     }));

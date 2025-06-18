@@ -154,7 +154,7 @@ impl Toaster<'_, '_> {
         let message = message.into();
         if let Some(existing) = self.toasts.0.get_mut(&key) {
             if existing.message == message {
-                existing.last_update = self.time.elapsed_seconds();
+                existing.last_update = self.time.elapsed_secs();
                 return;
             }
         }
@@ -163,8 +163,8 @@ impl Toaster<'_, '_> {
             key,
             Toast {
                 message,
-                time: self.time.elapsed_seconds(),
-                last_update: self.time.elapsed_seconds(),
+                time: self.time.elapsed_secs(),
+                last_update: self.time.elapsed_secs(),
                 on_click,
             },
         );
@@ -436,12 +436,12 @@ fn update_scene_priority(
             } else {
                 distance
             };
-            let not_yet_run = context.last_sent < time.elapsed_seconds();
+            let not_yet_run = context.last_sent < time.elapsed_secs();
 
             (!context.in_flight && not_yet_run).then(|| {
                 updates.eligible_jobs += 1;
                 let priority =
-                    FloatOrd(context.priority / (time.elapsed_seconds() - context.last_sent));
+                    FloatOrd(context.priority / (time.elapsed_secs() - context.last_sent));
                 (ent, priority)
             })
         })
@@ -828,7 +828,7 @@ fn send_scene_updates(
         // TODO: clean up
     } else {
         context.in_flight = true;
-        context.last_sent = time.elapsed_seconds();
+        context.last_sent = time.elapsed_secs();
         dcl_assert!(!updates.jobs_in_flight.contains(&ent));
         updates.jobs_in_flight.insert(ent);
     }

@@ -571,7 +571,7 @@ fn timeofday_console_command(
             (target as u32 / 3600),
             target as u32 % 3600 / 60,
             time.speed,
-            time.elapsed_seconds()
+            time.elapsed_secs()
         ));
     }
 }

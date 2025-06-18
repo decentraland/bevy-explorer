@@ -64,7 +64,7 @@ fn connect_preview_server(
     }
 
     while let Some(command) = task.as_mut().and_then(|(_, rx)| rx.try_recv().ok()) {
-        writer.send(command);
+        writer.write(command);
     }
 
     preview.is_preview = true;

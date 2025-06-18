@@ -70,14 +70,14 @@ impl CameraInteractionState<'_, '_> {
         match self.state.0 {
             ClickState::None | ClickState::Released => {
                 if self.input_manager.just_down(action, InputPriority::None) {
-                    *self.state = (ClickState::Held, self.time.elapsed_seconds());
+                    *self.state = (ClickState::Held, self.time.elapsed_secs());
                 } else {
                     self.state.0 = ClickState::None;
                 }
             }
             ClickState::Held => {
                 if self.input_manager.just_up(action) {
-                    if self.time.elapsed_seconds() - self.state.1 > 0.25 {
+                    if self.time.elapsed_secs() - self.state.1 > 0.25 {
                         self.state.0 = ClickState::Released;
                     } else {
                         self.state.0 = ClickState::Clicked;

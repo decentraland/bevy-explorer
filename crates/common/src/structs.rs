@@ -814,7 +814,7 @@ pub struct TimeOfDay {
 }
 
 impl TimeOfDay {
-    pub fn elapsed_seconds(&self) -> f32 {
+    pub fn elapsed_secs(&self) -> f32 {
         self.time
     }
 }

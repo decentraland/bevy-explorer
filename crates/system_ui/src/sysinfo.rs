@@ -258,7 +258,7 @@ fn update_scene_load_state(
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     debug_info: Res<DebugInfo>,
 ) {
-    let tick = (time.elapsed_seconds() * 10.0) as u32;
+    let tick = (time.elapsed_secs() * 10.0) as u32;
     if tick == *last_update {
         return;
     }

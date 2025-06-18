@@ -108,7 +108,7 @@ pub fn update_directional_light(
     time: Res<TimeOfDay>,
 ) {
     // default 2-hourly cycle
-    let t = (time.elapsed_seconds() / (60.0 * 60.0 * 24.0) + 0.75).fract() * TAU;
+    let t = (time.elapsed_secs() / (60.0 * 60.0 * 24.0) + 0.75).fract() * TAU;
 
     *global_light = SceneGlobalLight {
         source: None,

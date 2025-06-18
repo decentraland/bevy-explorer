@@ -148,7 +148,7 @@ fn update_foreign_user_actual_position(
 
         let turn_time;
         if let Some(velocity) = target.velocity {
-            let t0 = time.elapsed_seconds();
+            let t0 = time.elapsed_secs();
             let t1 = target.time + target.update_freq;
 
             if t1 < t0 + time.delta_secs() * 2.0 {
@@ -180,7 +180,7 @@ fn update_foreign_user_actual_position(
             }
         } else {
             // arrive at target position by time + 0.5
-            let walk_time_left = target.time + 0.5 - time.elapsed_seconds();
+            let walk_time_left = target.time + 0.5 - time.elapsed_secs();
             if walk_time_left <= 0.0 {
                 actual.translation = target.translation;
                 dynamic_state.velocity = Vec3::ZERO;
@@ -190,7 +190,7 @@ fn update_foreign_user_actual_position(
                 dynamic_state.velocity = delta / time.delta_secs();
                 actual.translation += dynamic_state.velocity * time.delta_secs();
             }
-            turn_time = target.time + 0.2 - time.elapsed_seconds();
+            turn_time = target.time + 0.2 - time.elapsed_secs();
         }
 
         if turn_time <= 0.0 {
@@ -202,7 +202,7 @@ fn update_foreign_user_actual_position(
 
         if let Some(jumping) = target.jumping {
             if jumping && dynamic_state.jump_time == -1.0 {
-                dynamic_state.jump_time = time.elapsed_seconds();
+                dynamic_state.jump_time = time.elapsed_secs();
             }
         }
 

@@ -120,10 +120,10 @@ fn handle_emote_key(
         };
 
         w.send(EmoteUiEvent::Show { coords });
-        *press_time = time.elapsed_seconds();
+        *press_time = time.elapsed_secs();
     }
 
-    if input_manager.just_up(SystemAction::Emote) && time.elapsed_seconds() > *press_time + 0.25 {
+    if input_manager.just_up(SystemAction::Emote) && time.elapsed_secs() > *press_time + 0.25 {
         w.send(EmoteUiEvent::Hide);
     }
 

@@ -1,7 +1,5 @@
 use bevy::{
-    ecs::event::ManualEventReader,
-    prelude::*,
-    tasks::{IoTaskPool, Task},
+    ecs::event::EventCursor, prelude::*, tasks::{IoTaskPool, Task}
 };
 use common::util::{TaskCompat, TaskExt};
 use http::Uri;
@@ -28,7 +26,7 @@ pub struct StartSignedLogin {
 }
 
 pub fn start_signed_login(
-    mut signed_login_events: Local<ManualEventReader<StartSignedLogin>>,
+    mut signed_login_events: Local<EventCursor<StartSignedLogin>>,
     current_realm: Res<CurrentRealm>,
     wallet: Res<Wallet>,
     mut task: Local<Option<Task<Result<SignedLoginResponse, anyhow::Error>>>>,

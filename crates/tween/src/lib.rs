@@ -258,12 +258,12 @@ pub fn update_system_tween(
                 debug!("system tween starting {} @ {:?}", tween.time, tween.target);
                 commands.entity(ent).try_insert(SystemTweenData {
                     start_pos: *transform,
-                    start_time: time.elapsed_seconds(),
+                    start_time: time.elapsed_secs(),
                 });
             }
         } else {
             let data = data.unwrap();
-            let elapsed = time.elapsed_seconds() - data.start_time;
+            let elapsed = time.elapsed_secs() - data.start_time;
             if elapsed >= tween.time {
                 debug!("system tween complete @ {:?}", tween.target);
                 *transform = tween.target;

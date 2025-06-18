@@ -387,7 +387,7 @@ fn animate(
             // otherwise play a default emote based on motion
             let time_to_peak = (jump_height * -gravity * 2.0).sqrt() / -gravity;
             let just_jumped =
-                dynamic_state.jump_time > (time.elapsed_seconds() - time_to_peak / 2.0).max(0.0);
+                dynamic_state.jump_time > (time.elapsed_secs() - time_to_peak / 2.0).max(0.0);
             if dynamic_state.ground_height > 0.2 || (dynamic_state.velocity.y > 0.0 && just_jumped)
             {
                 if just_jumped {
@@ -400,7 +400,7 @@ fn animate(
                     speed: time_to_peak.recip() * 0.75,
                     repeat: true,
                     restart: dynamic_state.jump_time
-                        > time.elapsed_seconds() - time.delta_secs(),
+                        > time.elapsed_secs() - time.delta_secs(),
                     transition_seconds: 0.1,
                     initial_audio_mark: if !just_jumped { Some(0.1) } else { None },
                     ..Default::default()
