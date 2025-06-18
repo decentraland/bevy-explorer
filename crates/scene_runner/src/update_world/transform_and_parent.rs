@@ -1,10 +1,7 @@
 use std::marker::PhantomData;
 
 use bevy::{
-    ecs::system::SystemParam,
-    prelude::*,
-    transform::TransformSystem,
-    platform::collections::{hash_map::Entry, HashMap, HashSet},
+    ecs::system::SystemParam, platform::{collections::{hash_map::Entry, HashMap, HashSet}, hash::FixedHasher}, prelude::*, transform::TransformSystem
 };
 use common::{anim_last_system, util::ModifyComponentExt};
 use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
@@ -178,7 +175,7 @@ pub(crate) fn process_transform_and_parent_updates(
             let mut parents = HashMap::new();
 
             // entities that we know connect ultimately to the root
-            let mut valid_entities = HashSet::from_iter(std::iter::once(root));
+            let mut valid_entities: HashSet<_, FixedHasher> = HashSet::from_iter(std::iter::once(root));
             // entities that we know are part of a cycle (or lead to a cycle)
             let mut invalid_entities = HashSet::default();
 
@@ -212,7 +209,7 @@ pub(crate) fn process_transform_and_parent_updates(
                     );
                     // this entity (and all checked entities) link to the root
                     // apply parenting
-                    commands.entity(*entity).set_parent(parents[entity]);
+                    commands.entity(*entity).insert(ChildOf(parents[entity]));
                     //  record validity of the chain
                     valid_entities.extend(checklist.into_iter());
                     // remove from the unparented list
@@ -221,7 +218,7 @@ pub(crate) fn process_transform_and_parent_updates(
                     debug!("{:?}: not valid, setting parent to {:?}", entity, root);
                     // this entity (and all checked entities) end in a cycle
                     // parent to the root
-                    commands.entity(*entity).set_parent(root);
+                    commands.entity(*entity).insert(ChildOf(root));
                     // mark as invalid
                     invalid_entities.extend(checklist.into_iter());
                     // keep the entity in the unparented list to recheck at the next hierarchy update
@@ -264,7 +261,7 @@ pub fn parent_position_sync<T: ParentPositionSyncStage>(
     gt_helper: TransformHelperPub,
 ) {
     for (ent, sync, parent) in syncees.iter() {
-        let Ok(parent_transform) = globals.get(parent.get()) else {
+        let Ok(parent_transform) = globals.get(parent.parent()) else {
             continue;
         };
 

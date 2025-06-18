@@ -10,7 +10,6 @@ use bevy::{
     reflect::TypePath,
     render::render_resource::{AsBindGroup, ShaderRef},
 };
-use futures_lite::AsyncReadExt;
 
 use common::{
     structs::{AppConfig, IVec2Arg, SceneLoadDistance, SceneMeta},
@@ -135,7 +134,7 @@ pub(crate) fn load_scene_entity(
     for event in load_scene_events.read() {
         let mut commands = match event.entity {
             Some(entity) => {
-                let Ok(mut commands) = commands.get_entity(entity) else {
+                let Ok(commands) = commands.get_entity(entity) else {
                     continue;
                 };
                 commands

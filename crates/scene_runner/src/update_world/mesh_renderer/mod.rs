@@ -309,7 +309,7 @@ pub fn update_mesh(
                     continue;
                 };
                 // remove skin if mesh changed
-                if maybe_existing_mesh != Some(&Mesh3d(h_mesh)) {
+                if maybe_existing_mesh.map(|me| &me.0) != Some(&h_mesh) {
                     commands.entity(ent).remove::<SkinnedMesh>();
                 }
                 h_mesh
@@ -336,8 +336,8 @@ pub fn update_mesh(
     }
 
     for ent in removed_primitives.read() {
-        if let Some(mut e) = commands.get_entity(ent) {
-            e.remove::<Handle<Mesh>>();
+        if let Ok(mut e) = commands.get_entity(ent) {
+            e.remove::<Mesh3d>();
         }
     }
 

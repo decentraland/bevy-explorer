@@ -200,7 +200,7 @@ pub trait AddCrdtInterfaceExt {
 
     fn add_crdt_go_component<
         D: FromDclReader + std::fmt::Debug,
-        C: Component + DerefMut<Target = VecDeque<D>> + Default,
+        C: Component<Mutability = Mutable> + DerefMut<Target = VecDeque<D>> + Default,
     >(
         &mut self,
         id: SceneComponentId,
@@ -248,7 +248,7 @@ impl AddCrdtInterfaceExt for App {
 
     fn add_crdt_go_component<
         D: FromDclReader + std::fmt::Debug,
-        C: Component + DerefMut<Target = VecDeque<D>> + Default,
+        C: Component<Mutability = Mutable> + DerefMut<Target = VecDeque<D>> + Default,
     >(
         &mut self,
         id: SceneComponentId,
@@ -408,7 +408,7 @@ pub fn track_components<C: Component, const ALLOW_UNALLOCATED: bool>(
         return;
     }
 
-    let mut counts = HashMap::default();
+    let mut counts = HashMap::new();
 
     for container in q.iter() {
         let Some(container) = container else {
