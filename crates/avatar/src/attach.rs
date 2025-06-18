@@ -53,7 +53,7 @@ pub fn update_attached(
     for (ent, attach) in attachments.iter() {
         let attach_points = match attach.0.avatar_id.as_ref() {
             None => {
-                let Ok(data) = primary_user.get_single() else {
+                let Ok(data) = primary_user.single() else {
                     warn!("no primary user");
                     continue;
                 };

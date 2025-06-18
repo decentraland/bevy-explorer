@@ -95,7 +95,7 @@ fn update_chat_history(
         })
     }));
 
-    let Ok((entity, mut history)) = q.get_single_mut() else {
+    let Ok((entity, mut history)) = q.single_mut() else {
         return;
     };
 
@@ -127,7 +127,7 @@ fn update_chat_history(
 
         // despawn the message
         if let Some(commands) = commands.get_entity(*message) {
-            commands.despawn_recursive();
+            commands.despawn();
         }
 
         // and the bubble if this was last
@@ -137,7 +137,7 @@ fn update_chat_history(
             .is_none_or(|(next_bubble, ..)| next_bubble != bubble)
         {
             if let Some(commands) = commands.get_entity(*bubble) {
-                commands.despawn_recursive();
+                commands.despawn();
             }
         }
 
@@ -231,7 +231,7 @@ fn update_chat_history(
                  entry: Query<Entity, With<ChatInput>>,
                  tab_entity: Query<Entity, With<ChatTab>>,
                  mut tab_mgr: TabManager| {
-                    if let Ok(mut style) = container.get_single_mut() {
+                    if let Ok(mut style) = container.single_mut() {
                         if style.display == Display::None {
                             commands
                                 .fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
@@ -239,11 +239,11 @@ fn update_chat_history(
                         };
                     }
 
-                    if let Ok(entry) = entry.get_single() {
+                    if let Ok(entry) = entry.single() {
                         commands.entity(entry).insert(Focus);
                     }
 
-                    let Ok(tab_entity) = tab_entity.get_single() else {
+                    let Ok(tab_entity) = tab_entity.single() else {
                         warn!("no tab");
                         return;
                     };

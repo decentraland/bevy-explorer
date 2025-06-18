@@ -34,13 +34,13 @@ fn set_oow(
 ) {
     if wallet.address().is_none() || oow.is_empty() {
         if let Some(ent) = dialog.take() {
-            commands.entity(ent).despawn_recursive();
+            commands.entity(ent).despawn();
         }
         *last_count = 0;
         return;
     }
 
-    let Ok(player) = player.get_single() else {
+    let Ok(player) = player.single() else {
         return;
     };
 

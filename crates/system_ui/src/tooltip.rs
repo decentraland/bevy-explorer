@@ -25,7 +25,7 @@ pub fn update_tooltip(
     mut active_tips: Local<BTreeMap<TooltipSource, (Vec<(String, bool)>, f32)>>,
     time: Res<Time>,
 ) {
-    let Ok(window) = windows.get_single() else {
+    let Ok(window) = windows.single() else {
         return;
     };
     let cursor_position = if window.cursor.grab_mode == bevy::window::CursorGrabMode::Locked {
@@ -70,7 +70,7 @@ pub fn update_tooltip(
 
     // remove any existing nodes
     for existing in cur_tips.iter() {
-        commands.entity(existing).despawn_recursive();
+        commands.entity(existing).despawn();
     }
 
     if active_tips.is_empty() {

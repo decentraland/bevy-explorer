@@ -34,7 +34,7 @@ impl Plugin for DiscoverSettingsPlugin {
             (
                 set_discover_content,
                 (update_results, update_page).run_if(|q: Query<&SettingsTab>| {
-                    q.get_single()
+                    q.single()
                         .is_ok_and(|tab| tab == &SettingsTab::Discover)
                 }),
             ),
@@ -284,7 +284,7 @@ fn set_discover_content(
                               caller: Res<UiCaller>,
                               mut buttons: Query<&mut Active>,
                               mut settings: Query<&mut DiscoverSettings>| {
-                            let Ok(mut settings) = settings.get_single_mut() else {
+                            let Ok(mut settings) = settings.single_mut() else {
                                 warn!("no settings");
                                 return;
                             };
@@ -324,7 +324,7 @@ fn set_discover_content(
                             warn!("no value from sort combo?");
                             return;
                         };
-                        let Ok(mut settings) = settings.get_single_mut() else {
+                        let Ok(mut settings) = settings.single_mut() else {
                             warn!("no settings");
                             return;
                         };
@@ -344,7 +344,7 @@ fn set_discover_content(
                             return;
                         };
 
-                        let Ok(mut settings) = settings.get_single_mut() else {
+                        let Ok(mut settings) = settings.single_mut() else {
                             warn!("no settings");
                             return;
                         };
@@ -456,7 +456,7 @@ fn update_page(
     mut prev_search: Local<Option<String>>,
     time: Res<Time>,
 ) {
-    let Ok((settings_ent, settings, components)) = settings.get_single() else {
+    let Ok((settings_ent, settings, components)) = settings.single() else {
         return;
     };
 
@@ -579,8 +579,8 @@ fn update_page(
                         |caller: Res<UiCaller>,
                          mut commands: Commands,
                          mut settings: Query<&mut DiscoverSettings>| {
-                            commands.entity(caller.0).despawn_recursive();
-                            let Ok(mut settings) = settings.get_single_mut() else {
+                            commands.entity(caller.0).despawn();
+                            let Ok(mut settings) = settings.single_mut() else {
                                 warn!("no settings");
                                 return;
                             };
@@ -632,7 +632,7 @@ pub fn spawn_discover_popup(
             response: Default::default(),
         };
 
-        if let Ok(mut settings) = settings.get_single_mut() {
+        if let Ok(mut settings) = settings.single_mut() {
             settings.on_close = Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev));
         } else {
             warn!("no settings");

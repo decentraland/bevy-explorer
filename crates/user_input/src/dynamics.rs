@@ -98,7 +98,7 @@ pub fn update_user_position(
         mut transform,
         mut dynamic_state,
         mut ground_collider,
-    )) = player.get_single_mut()
+    )) = player.single_mut()
     else {
         return;
     };

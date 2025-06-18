@@ -113,7 +113,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
             Interaction::default(),
             On::<Click>::new(
                 |mut commands: Commands, mut q: Query<&mut Node, With<ChatboxContainer>>| {
-                    if let Ok(mut style) = q.get_single_mut() {
+                    if let Ok(mut style) = q.single_mut() {
                         style.display = if style.display == Display::Flex {
                             commands
                                 .fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
@@ -148,14 +148,14 @@ fn keyboard_popup(
     entry: Query<Entity, With<ChatInput>>,
 ) {
     if input_manager.just_down(SystemAction::Chat, InputPriority::None) {
-        if let Ok(mut style) = container.get_single_mut() {
+        if let Ok(mut style) = container.single_mut() {
             if style.display == Display::None {
                 commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                 style.display = Display::Flex;
             };
         }
 
-        if let Ok(entry) = entry.get_single() {
+        if let Ok(entry) = entry.single() {
             commands.entity(entry).insert(Focus);
         }
     }
@@ -172,8 +172,8 @@ fn debug_chat(
     if let Some(Ok(Rechat { arg })) = input.take() {
         match arg.as_str() {
             "reload" => {
-                if let Ok((existing, _)) = existing.get_single() {
-                    commands.entity(existing).despawn_recursive();
+                if let Ok((existing, _)) = existing.single() {
+                    commands.entity(existing).despawn();
                 }
 
                 commands.fire_event(FriendshipEvent(None));
@@ -227,7 +227,7 @@ fn setup_chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<Du
         (move |selection: Query<&TabSelection, With<ChatTab>>| -> Option<&'static str> {
             Some(
                 selection
-                    .get_single()
+                    .single()
                     .ok()
                     .and_then(|ts| ts.selected)
                     .and_then(|sel| tab_labels_changed.get(sel))
@@ -237,7 +237,7 @@ fn setup_chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<Du
         .pipe(select_chat_tab);
 
     let close_ui = |mut commands: Commands, mut q: Query<&mut Node, With<ChatboxContainer>>| {
-        let Ok(mut style) = q.get_single_mut() else {
+        let Ok(mut style) = q.single_mut() else {
             return;
         };
         style.display = Display::None;
@@ -283,7 +283,7 @@ fn setup_chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<Du
 
 fn toggle_friends(container: Query<&DuiEntities, With<ChatboxContainer>>, mut commands: Commands) {
     let components = container
-        .get_single()
+        .single()
         .ok()
         .map(|ents| (ents.root, ents.named("friends-panel")));
     if let Some((container, friends)) = components {
@@ -315,7 +315,7 @@ fn append_chat_messages(
     mut chatbox: Query<&mut ChatBox>,
     users: Query<&UserProfile>,
 ) {
-    let Ok(mut chatbox) = chatbox.get_single_mut() else {
+    let Ok(mut chatbox) = chatbox.single_mut() else {
         return;
     };
 
@@ -393,7 +393,7 @@ fn display_chat(
     contexts: Query<&RendererSceneContext>,
     mut conversation: ConversationManager,
 ) {
-    let Ok((entity, mut chatbox, maybe_children)) = chatbox.get_single_mut() else {
+    let Ok((entity, mut chatbox, maybe_children)) = chatbox.single_mut() else {
         return;
     };
 
@@ -401,7 +401,7 @@ fn display_chat(
         if children.len() > 255 {
             let mut iter = children.iter();
             for _ in 0..children.len() - 255 {
-                commands.entity(*iter.next().unwrap()).despawn_recursive();
+                commands.entity(*iter.next().unwrap()).despawn();
             }
         }
     }
@@ -434,7 +434,7 @@ fn display_chat(
 
     if chatbox.active_tab == "Scene Log" {
         let current_scene = player
-            .get_single()
+            .single()
             .map(|player| containing_scene.get_parcel(player))
             .unwrap_or_default();
 
@@ -502,14 +502,14 @@ fn emit_user_chat(
     mut console_lines: EventReader<PrintConsoleLine>,
     f: Query<Entity, With<Focus>>,
 ) {
-    let Ok(player) = player.get_single() else {
+    let Ok(player) = player.single() else {
         return;
     };
-    let Ok(output) = chat_output.get_single() else {
+    let Ok(output) = chat_output.single() else {
         return;
     };
 
-    if let Ok((ent, TextEntrySubmit(message))) = chat_input.get_single() {
+    if let Ok((ent, TextEntrySubmit(message))) = chat_input.single() {
         let mut cmds = commands.entity(ent);
         cmds.remove::<TextEntrySubmit>();
 
@@ -574,7 +574,7 @@ pub fn broadcast_nearby_chats(
     transports: Query<&Transport>,
     player: Query<Entity, With<PrimaryUser>>,
 ) {
-    let Ok(player) = player.get_single() else {
+    let Ok(player) = player.single() else {
         return;
     };
 
@@ -614,7 +614,7 @@ pub(crate) fn select_chat_tab(
         return;
     };
 
-    let Ok((entity, mut chatbox)) = chatbox.get_single_mut() else {
+    let Ok((entity, mut chatbox)) = chatbox.single_mut() else {
         return;
     };
 

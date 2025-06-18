@@ -4,7 +4,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use bevy::{core::FrameCount, ecs::system::EntityCommands, prelude::*, platform::collections::HashMap};
+use bevy::{diagnostic::FrameCount, ecs::{component::Mutable, system::EntityCommands}, platform::collections::HashMap, prelude::*};
 
 use dcl::{
     crdt::{growonly::CrdtGOState, lww::CrdtLWWState},
@@ -173,11 +173,11 @@ impl Plugin for SceneOutputPlugin {
 
         app.add_systems(
             PostUpdate,
-            track_components::<Handle<Mesh>, true>.run_if(|track: Res<TrackComponents>| track.0),
+            track_components::<Mesh3d, true>.run_if(|track: Res<TrackComponents>| track.0),
         );
         app.add_systems(
             PostUpdate,
-            track_components::<Handle<SceneMaterial>, true>
+            track_components::<MeshMaterial3d<SceneMaterial>, true>
                 .run_if(|track: Res<TrackComponents>| track.0),
         );
     }
@@ -342,7 +342,7 @@ pub(crate) fn process_crdt_lww_updates<
 
 fn process_crdt_go_updates<
     D: FromDclReader + std::fmt::Debug,
-    C: Component + DerefMut<Target = VecDeque<D>> + Default,
+    C: Component<Mutability = Mutable> + DerefMut<Target = VecDeque<D>> + Default,
 >(
     mut commands: Commands,
     mut scenes: Query<(

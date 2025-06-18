@@ -147,7 +147,7 @@ fn update_server_list(
                                             new_realm: server.url.clone(),
                                             content_server_override: None,
                                         });
-                                        commands.entity(root_id).despawn_recursive();
+                                        commands.entity(root_id).despawn();
                                     }),
                                 )
                         ).unwrap();

@@ -82,12 +82,12 @@ fn update_audio(
     settings: Res<AudioSettings>,
 ) {
     let current_scenes = player
-        .get_single()
+        .single()
         .ok()
         .map(|p| containing_scene.get(p))
         .unwrap_or_default();
 
-    let gt = cam.get_single().unwrap_or(&GlobalTransform::IDENTITY);
+    let gt = cam.single().unwrap_or(&GlobalTransform::IDENTITY);
 
     for (ent, scene_ent, audio_source, maybe_source, maybe_emitter, egt) in query.iter_mut() {
         let mut new_state = None;
@@ -267,7 +267,7 @@ fn update_source_volume(
     mut all_instances: Local<HashMap<Entity, Vec<Handle<AudioInstance>>>>,
 ) {
     let current_scenes = player
-        .get_single()
+        .single()
         .ok()
         .map(|p| containing_scene.get(p))
         .unwrap_or_default();

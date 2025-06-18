@@ -87,7 +87,7 @@ fn set_impost_multi(
         config.scene_imposter_multisample_amount = multisample;
         input.reply_ok("imposter multisample set to {multisample}");
         for e in q.iter() {
-            commands.entity(e).despawn_recursive();
+            commands.entity(e).despawn();
         }
 
         lookup.0.retain(|(_, _, ingredient), _| *ingredient);

@@ -70,7 +70,7 @@ fn debug_dump_scene(
 ) {
     if let Some(Ok(_)) = input.take() {
         let scenes = player
-            .get_single()
+            .single()
             .ok()
             .map(|p| containing_scene.get(p))
             .unwrap_or_default()

@@ -306,7 +306,7 @@ fn update(
                 "clear" => {
                     if let Some(children) = children {
                         for child in children.iter().rev().skip(1) {
-                            commands.entity(*child).despawn_recursive();
+                            commands.entity(*child).despawn();
                         }
                     }
                 }

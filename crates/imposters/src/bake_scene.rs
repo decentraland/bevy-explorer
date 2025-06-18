@@ -231,7 +231,7 @@ fn bake_scene_imposters(
     config: Res<AppConfig>,
     plugin: Res<DclImposterPlugin>,
 ) {
-    if let Ok((baking_ent, mut oven)) = baking.get_single_mut() {
+    if let Ok((baking_ent, mut oven)) = baking.single_mut() {
         let current_scene_ent = {
             let Some(entity) = live_scenes.scenes.get(&oven.hash) else {
                 return;
@@ -267,7 +267,7 @@ fn bake_scene_imposters(
                 }
 
                 // delete the scene since we messed with it a lot to get it stable
-                commands.entity(current_scene_ent).despawn_recursive();
+                commands.entity(current_scene_ent).despawn();
                 live_scenes.scenes.remove(&oven.hash);
 
                 for parcel in std::mem::take(&mut oven.all_parcels).drain() {
@@ -289,7 +289,7 @@ fn bake_scene_imposters(
                 }
 
                 current_imposter.0.as_mut().unwrap().1 = true;
-                commands.entity(baking_ent).despawn_recursive();
+                commands.entity(baking_ent).despawn();
                 return;
             };
 
@@ -487,7 +487,7 @@ fn bake_scene_imposters(
                 debug!("finished baking");
 
                 for (cam_ent, _) in all_baking_cams.iter() {
-                    commands.entity(cam_ent).despawn_recursive();
+                    commands.entity(cam_ent).despawn();
                 }
             }
         }
@@ -616,7 +616,7 @@ fn bake_imposter_imposter(
 
             for (ent, _) in all_baking_cams.iter() {
                 if let Some(commands) = commands.get_entity(ent) {
-                    commands.despawn_recursive();
+                    commands.despawn();
                 }
             }
 
@@ -854,7 +854,7 @@ fn pick_imposter_to_bake(
     }
 
     let focus = focus
-        .get_single()
+        .single()
         .map(|gt| gt.translation())
         .unwrap_or_default();
 

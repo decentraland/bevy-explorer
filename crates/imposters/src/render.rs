@@ -282,7 +282,7 @@ pub fn spawn_imposters(
     if current_realm.is_changed() {
         for (_, entity) in lookup.0.drain() {
             if let Some(commands) = commands.get_entity(entity) {
-                commands.despawn_recursive();
+                commands.despawn();
             }
         }
 
@@ -298,7 +298,7 @@ pub fn spawn_imposters(
     // add baking requirements
     required.extend(ingredients.0.iter().map(|(p, l)| (*p, *l, true)));
 
-    let Some(origin) = focus.get_single().ok().map(|gt| gt.translation().xz()) else {
+    let Some(origin) = focus.single().ok().map(|gt| gt.translation().xz()) else {
         return;
     };
     let origin = origin * Vec2::new(1.0, -1.0);
@@ -412,7 +412,7 @@ pub fn spawn_imposters(
             debug!("remove {}: {} [{}]", level, pos, ingredient);
             if let Some(mut commands) = commands.get_entity(*ent) {
                 if ingredient {
-                    commands.despawn_recursive();
+                    commands.despawn();
                     return false;
                 }
 
@@ -478,7 +478,7 @@ fn load_imposters(
     let free_count = 20 - loading_scenes.len() - loading_parcels.iter().count();
 
     let focus = (focus
-        .get_single()
+        .single()
         .map(|t| t.translation)
         .unwrap_or_default()
         .xz()
@@ -780,7 +780,7 @@ fn transition_imposters(
 ) {
     const TPOW: f32 = 2.0;
     let player = player
-        .get_single()
+        .single()
         .map(|t| t.translation)
         .unwrap_or_default();
 
@@ -853,7 +853,7 @@ fn transition_imposters(
         }
 
         if !still_transitioning {
-            commands.entity(ent).despawn_recursive();
+            commands.entity(ent).despawn();
         }
     }
 }

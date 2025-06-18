@@ -91,7 +91,7 @@ pub fn set_ui_text(
         if let Ok(children) = children.get(link.ui_entity) {
             for child in children.iter().filter(|c| prev_texts.get(**c).is_ok()) {
                 if let Some(commands) = commands.get_entity(*child) {
-                    commands.despawn_recursive();
+                    commands.despawn();
                 }
             }
         }
@@ -104,7 +104,7 @@ pub fn set_ui_text(
         if let Ok(children) = children.get(link.ui_entity) {
             for child in children.iter().filter(|c| prev_texts.get(**c).is_ok()) {
                 if let Some(commands) = commands.get_entity(*child) {
-                    commands.despawn_recursive();
+                    commands.despawn();
                 }
             }
         }

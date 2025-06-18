@@ -10,7 +10,6 @@ use dcl_component::{
     proto_components::sdk::components::{PbAnimationState, PbAnimator},
     SceneComponentId,
 };
-use petgraph::graph::NodeIndex;
 
 use crate::SceneEntity;
 
@@ -31,8 +30,8 @@ impl Plugin for AnimatorPlugin {
 
 #[derive(Component, Default)]
 pub struct Clips {
-    pub default: Option<NodeIndex>,
-    pub named: HashMap<String, (NodeIndex, f32)>,
+    pub default: Option<AnimationNodeIndex>,
+    pub named: HashMap<String, (AnimationNodeIndex, f32)>,
 }
 
 #[derive(Component)]

@@ -29,7 +29,7 @@ fn update_toasts(
     mut displays: Local<HashMap<String, Option<Entity>>>,
     dui: Res<DuiRegistry>,
 ) {
-    let Ok(toaster_ent) = toast_display.get_single() else {
+    let Ok(toaster_ent) = toast_display.single() else {
         return;
     };
 
@@ -56,7 +56,7 @@ fn update_toasts(
 
         if let Some(ent) = maybe_ent {
             if toast.time < time.elapsed_secs() - 5.0 {
-                commands.entity(ent).despawn_recursive();
+                commands.entity(ent).despawn();
                 displays.insert(key.clone(), None);
                 continue;
             }
@@ -68,7 +68,7 @@ fn update_toasts(
     for (key, ent) in prev_displays {
         if !displays.contains_key(&key) {
             if let Some(ent) = ent {
-                commands.entity(ent).despawn_recursive();
+                commands.entity(ent).despawn();
             }
         }
     }

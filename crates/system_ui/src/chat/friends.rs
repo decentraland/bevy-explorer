@@ -120,7 +120,7 @@ pub fn show_conversation(
         *pending_event = Some(event.0);
     }
 
-    let Ok(tab) = tab.get_single() else {
+    let Ok(tab) = tab.single() else {
         return;
     };
 
@@ -137,14 +137,14 @@ pub fn show_conversation(
     // we're going ahead after these checks, so clear the pending
     pending_event.take();
 
-    if let Ok(mut style) = container.get_single_mut() {
+    if let Ok(mut style) = container.single_mut() {
         if style.display == Display::None {
             commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
             style.display = Display::Flex;
         };
     }
 
-    if let Ok(entry) = entry.get_single() {
+    if let Ok(entry) = entry.single() {
         commands.entity(entry).insert(Focus);
     }
 
@@ -174,7 +174,7 @@ pub fn show_conversation(
                           tab: Query<Entity, With<ChatTab>>,
                           buttons: Query<(Entity, &PrivateChat)>| {
                         // delete this tab
-                        let Ok(tab) = tab.get_single() else {
+                        let Ok(tab) = tab.single() else {
                             return;
                         };
 
@@ -248,7 +248,7 @@ pub fn update_friends(
     let is_init = client.0.as_ref().is_some_and(|c| c.is_initialized);
     if is_init != *init || friend_events.read().next().is_some() {
         *init = is_init;
-        let Ok(components) = components.get_single() else {
+        let Ok(components) = components.single() else {
             return;
         };
         if !is_init {
@@ -404,7 +404,7 @@ pub fn update_conversations(
     mut new_chats_outbound: EventReader<PrivateChatEntered>,
     mut conversation: ConversationManager,
 ) {
-    let (Ok(tab), Ok(chatbox)) = (tab.get_single(), chatbox.get_single()) else {
+    let (Ok(tab), Ok(chatbox)) = (tab.single(), chatbox.single()) else {
         return;
     };
 

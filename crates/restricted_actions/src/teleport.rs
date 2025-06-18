@@ -23,7 +23,7 @@ pub fn teleport_player(
     mut perms: Permission<(IVec2, RpcResultSender<Result<(), String>>)>,
 ) {
     let mut do_teleport = |to: IVec2, response: RpcResultSender<Result<(), String>>| {
-        let Ok((ent, mut transform, mut dynamic_state)) = player.get_single_mut() else {
+        let Ok((ent, mut transform, mut dynamic_state)) = player.single_mut() else {
             warn!("player doesn't exist?!");
             response.send(Err("Something went wrong".into()));
             return;
@@ -87,7 +87,7 @@ pub fn handle_out_of_world(
     foreign_players: Query<&GlobalTransform, With<ForeignPlayer>>,
     wallet: Res<Wallet>,
 ) {
-    let Ok((player, mut t)) = player.get_single_mut() else {
+    let Ok((player, mut t)) = player.single_mut() else {
         return;
     };
 

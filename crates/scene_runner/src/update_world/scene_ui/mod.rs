@@ -555,7 +555,7 @@ fn create_ui_roots(
     let images = images.into_inner();
 
     let current_scenes = player
-        .get_single()
+        .single()
         .ok()
         .map(|p| containing_scene.get(p))
         .unwrap_or_default();
@@ -563,7 +563,7 @@ fn create_ui_roots(
     // remove any non-current uis
     for (ent, ui_root) in &current_uis {
         if !current_scenes.contains(&ui_root.scene) {
-            commands.entity(ent).despawn_recursive();
+            commands.entity(ent).despawn();
             if let Some(mut commands) = commands.get_entity(ui_root.canvas) {
                 commands.remove::<UiLink>();
             }
@@ -730,7 +730,7 @@ fn layout_scene_ui(
     dui: Res<DuiRegistry>,
 ) {
     let current_scenes = player
-        .get_single()
+        .single()
         .ok()
         .map(|p| containing_scene.get(p))
         .unwrap_or_default();
@@ -1089,7 +1089,7 @@ fn layout_scene_ui(
             if let Ok(link) = ui_links.get(node) {
                 if let Some(commands) = commands.get_entity(link.ui_entity) {
                     debug!("{node} delete linked {:?}", link.ui_entity);
-                    commands.despawn_recursive();
+                    commands.despawn();
                 }
             }
             ui_data.nodes.remove(&node);
@@ -1100,7 +1100,7 @@ fn layout_scene_ui(
             if let Ok(link) = ui_links.get(node) {
                 if let Some(commands) = commands.get_entity(link.ui_entity) {
                     debug!("{node} delete linked {:?}", link.ui_entity);
-                    commands.despawn_recursive();
+                    commands.despawn();
                 }
             }
         }
@@ -1108,7 +1108,7 @@ fn layout_scene_ui(
         // and any invalidated nodes
         for node in invalid_ui_entities {
             debug!("?? delete linked {:?}", node);
-            commands.entity(node).despawn_recursive();
+            commands.entity(node).despawn();
         }
 
         // send any pending events

@@ -4,7 +4,7 @@ use bevy::{
     ecs::system::SystemParam,
     prelude::*,
     transform::TransformSystem,
-    utils::{Entry, HashMap, HashSet},
+    platform::collections::{hash_map::Entry, HashMap, HashSet},
 };
 use common::{anim_last_system, util::ModifyComponentExt};
 use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
@@ -175,7 +175,7 @@ pub(crate) fn process_transform_and_parent_updates(
             scene.hierarchy_changed = false;
 
             // hashmap for parent lookup to avoid reusing query
-            let mut parents = HashMap::default();
+            let mut parents = HashMap::new();
 
             // entities that we know connect ultimately to the root
             let mut valid_entities = HashSet::from_iter(std::iter::once(root));
@@ -233,7 +233,7 @@ pub(crate) fn process_transform_and_parent_updates(
 }
 
 // sync an entity's transform with a given target, without blowing the native
-// hierarchy so we still catch it when we despawn_recursive the scene, etc.
+// hierarchy so we still catch it when we despawn the scene, etc.
 // since this runs before global hierarchy update we calculate the full target
 // transform by walking up the tree of local transforms. this will be slow so
 // should only be used with shallow entities ... hands are not very shallow
@@ -259,7 +259,7 @@ impl ParentPositionSyncStage for SceneProxyStage {}
 
 pub fn parent_position_sync<T: ParentPositionSyncStage>(
     mut commands: Commands,
-    syncees: Query<(Entity, &ParentPositionSync<T>, &Parent)>,
+    syncees: Query<(Entity, &ParentPositionSync<T>, &ChildOf)>,
     globals: Query<&GlobalTransform>,
     gt_helper: TransformHelperPub,
 ) {
@@ -288,7 +288,7 @@ pub fn parent_position_sync<T: ParentPositionSyncStage>(
 /// the last time the transform propagation systems ran.
 #[derive(SystemParam)]
 pub struct TransformHelperPub<'w, 's> {
-    pub parent_query: Query<'w, 's, &'static Parent>,
+    pub parent_query: Query<'w, 's, &'static ChildOf>,
     pub transform_query: Query<'w, 's, &'static Transform>,
 }
 

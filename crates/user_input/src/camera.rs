@@ -41,7 +41,7 @@ pub fn update_camera(
 ) {
     let dt = time.delta_secs();
 
-    let Ok((camera_transform, mut options)) = camera.get_single_mut() else {
+    let Ok((camera_transform, mut options)) = camera.single_mut() else {
         return;
     };
 
@@ -185,7 +185,7 @@ pub fn update_camera_position(
     let (
         Ok((player_transform, dynamic_state)),
         Ok((camera_ent, camera_transform, options, mut projection, maybe_tween)),
-    ) = (player.get_single_mut(), camera.get_single_mut())
+    ) = (player.single_mut(), camera.single_mut())
     else {
         return;
     };

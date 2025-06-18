@@ -112,7 +112,7 @@ pub fn update_pointer_lock(
     let Ok(window) = window.single() else {
         return;
     };
-    let Ok((camera, camera_position)) = camera.get_single() else {
+    let Ok((camera, camera_position)) = camera.single() else {
         return;
     };
 
@@ -132,7 +132,7 @@ pub fn update_pointer_lock(
             (0.0, 0.0, real_window_size.x, real_window_size.y)
         };
 
-        if window.cursor.grab_mode == bevy::window::CursorGrabMode::Locked {
+        if window.cursor_options.grab_mode == bevy::window::CursorGrabMode::Locked {
             // if pointer locked, just middle
             let window_size = Vec2::new(right - left, bottom - top);
             Some(window_size / 2.0)

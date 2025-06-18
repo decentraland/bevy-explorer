@@ -5,10 +5,10 @@ use bevy::{
     asset::{io::Reader, AssetLoader, LoadContext},
     math::{FloatOrd, Vec3Swizzles},
     pbr::NotShadowCaster,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     reflect::TypePath,
     render::render_resource::{AsBindGroup, ShaderRef},
-    utils::{ConditionalSendFuture, HashMap, HashSet},
 };
 use futures_lite::AsyncReadExt;
 
@@ -54,17 +54,15 @@ impl AssetLoader for CrdtLoader {
     type Error = std::io::Error;
     type Settings = ();
 
-    fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader,
-        _: &'a Self::Settings,
-        _: &'a mut LoadContext,
-    ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            let mut bytes = Vec::default();
-            reader.read_to_end(&mut bytes).await?;
-            Ok(SerializedCrdtStore(bytes))
-        })
+    async fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _: &Self::Settings,
+        _: &mut LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        let mut bytes = Vec::default();
+        reader.read_to_end(&mut bytes).await?;
+        Ok(SerializedCrdtStore(bytes))
     }
 
     fn extensions(&self) -> &[&str] {
@@ -123,6 +121,12 @@ pub enum SceneLoading {
     Failed,
 }
 
+#[derive(Component)]
+pub struct SceneEntityDefinitionHandle(pub Handle<EntityDefinition>);
+
+#[derive(Component)]
+pub struct SceneJsHandle(pub Handle<SceneJsFile>);
+
 pub(crate) fn load_scene_entity(
     mut commands: Commands,
     mut load_scene_events: EventReader<LoadSceneEvent>,
@@ -131,7 +135,7 @@ pub(crate) fn load_scene_entity(
     for event in load_scene_events.read() {
         let mut commands = match event.entity {
             Some(entity) => {
-                let Some(commands) = commands.get_entity(entity) else {
+                let Ok(mut commands) = commands.get_entity(entity) else {
                     continue;
                 };
                 commands
@@ -155,7 +159,7 @@ pub(crate) fn load_scene_entity(
             SceneLoading::SceneEntity {
                 realm: event.realm.clone(),
             },
-            h_scene,
+            SceneEntityDefinitionHandle(h_scene),
         ));
 
         if event.super_user {
@@ -166,7 +170,7 @@ pub(crate) fn load_scene_entity(
 
 pub(crate) fn load_scene_json(
     mut commands: Commands,
-    mut loading_scenes: Query<(Entity, &mut SceneLoading, &Handle<EntityDefinition>)>,
+    mut loading_scenes: Query<(Entity, &mut SceneLoading, &SceneEntityDefinitionHandle)>,
     scene_definitions: Res<Assets<EntityDefinition>>,
     ipfas: IpfsAssetServer,
 ) {
@@ -179,7 +183,7 @@ pub(crate) fn load_scene_json(
             commands.entity(entity).try_insert(SceneLoading::Failed);
         };
 
-        match ipfas.load_state(h_scene) {
+        match ipfas.load_state(h_scene.0.id()) {
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed(_) => {
                 fail("Scene entity could not be loaded");
@@ -187,7 +191,7 @@ pub(crate) fn load_scene_json(
             }
             _ => continue,
         }
-        let Some(definition) = scene_definitions.get(h_scene) else {
+        let Some(definition) = scene_definitions.get(h_scene.0.id()) else {
             fail("Scene entity did not resolve to a valid asset");
             continue;
         };
@@ -222,7 +226,7 @@ pub struct SerializedCrdtStore(pub Vec<u8>);
 pub(crate) fn load_scene_javascript(
     mut commands: Commands,
     config: Res<AppConfig>,
-    loading_scenes: Query<(Entity, &SceneLoading, &Handle<EntityDefinition>)>,
+    loading_scenes: Query<(Entity, &SceneLoading, &SceneEntityDefinitionHandle)>,
     scene_definitions: Res<Assets<EntityDefinition>>,
     main_crdts: Res<Assets<SerializedCrdtStore>>,
     ipfas: IpfsAssetServer,
@@ -254,7 +258,7 @@ pub(crate) fn load_scene_javascript(
             }
         }
 
-        let Some(definition) = scene_definitions.get(h_scene) else {
+        let Some(definition) = scene_definitions.get(h_scene.0.id()) else {
             fail("definition was dropped");
             continue;
         };
@@ -446,14 +450,12 @@ pub(crate) fn load_scene_javascript(
         renderer_context.crdt_store = initial_crdt;
 
         commands.entity(root).try_insert((
-            SpatialBundle {
-                transform: Transform::from_translation(Vec3::new(
-                    initial_position.x,
-                    -1000.0,
-                    -initial_position.y,
-                )),
-                ..Default::default()
-            },
+            Transform::from_translation(Vec3::new(
+                initial_position.x,
+                -1000.0,
+                -initial_position.y,
+            )),
+            Visibility::default(),
             renderer_context,
             ComponentTracker::default(),
             DeletedSceneEntities::default(),
@@ -469,9 +471,10 @@ pub(crate) fn load_scene_javascript(
             },
         ));
 
-        commands
-            .entity(root)
-            .try_insert((h_code, SceneLoading::Javascript(Some(global_updates))));
+        commands.entity(root).try_insert((
+            SceneJsHandle(h_code),
+            SceneLoading::Javascript(Some(global_updates)),
+        ));
     }
 }
 
@@ -530,7 +533,7 @@ pub(crate) fn initialize_scene(
     mut loading_scenes: Query<(
         Entity,
         &mut SceneLoading,
-        &Handle<SceneJsFile>,
+        &SceneJsHandle,
         &mut RendererSceneContext,
         Option<&SuperUserScene>,
     )>,
@@ -553,7 +556,7 @@ pub(crate) fn initialize_scene(
             commands.entity(root).try_insert(SceneLoading::Failed);
         };
 
-        match asset_server.load_state(h_code) {
+        match asset_server.load_state(h_code.0.id()) {
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed(_) => {
                 fail("main js could not be loaded");
@@ -562,7 +565,7 @@ pub(crate) fn initialize_scene(
             _ => continue,
         }
 
-        let Some(js_file) = scene_js_files.get(h_code) else {
+        let Some(js_file) = scene_js_files.get(h_code.0.id()) else {
             fail("main js did not resolve to expected format");
             continue;
         };
@@ -844,7 +847,7 @@ pub fn process_realm_change(
             "realm change `{}` / `{}`! purging scenes",
             current_realm.address, current_realm.about_url
         );
-        let mut realm_scene_urns = HashSet::default();
+        let mut realm_scene_urns = HashSet::new();
         for urn in current_realm
             .config
             .scenes_urn
@@ -946,7 +949,7 @@ fn load_active_entities(
             .as_ref()
             .is_none_or(Vec::is_empty);
 
-        let Ok(focus) = focus.get_single() else {
+        let Ok(focus) = focus.single() else {
             return;
         };
 
@@ -1140,7 +1143,7 @@ pub fn process_scene_lifecycle(
     let mut required_scene_ids: HashMap<(String, Option<String>), bool> = HashMap::default();
 
     // add nearby scenes to requirements
-    let Ok(focus) = focus.get_single() else {
+    let Ok(focus) = focus.single() else {
         return;
     };
 
@@ -1211,7 +1214,7 @@ pub fn process_scene_lifecycle(
         })
         .collect();
 
-    let mut existing_ids = HashSet::default();
+    let mut existing_ids = HashSet::new();
     let mut removed_hashes = Vec::default();
 
     // despawn any no-longer required entities
@@ -1222,9 +1225,9 @@ pub fn process_scene_lifecycle(
                 existing_ids.insert(<&String>::clone(hash));
             }
             None => {
-                if let Some(commands) = commands.get_entity(entity) {
+                if let Ok(mut commands) = commands.get_entity(entity) {
                     info!("despawning {:?}", entity);
-                    commands.despawn_recursive();
+                    commands.despawn();
                 }
                 removed_hashes.push(&scene_hash.0);
             }
@@ -1273,7 +1276,7 @@ pub fn process_scene_lifecycle(
         live_scenes
             .scenes
             .insert(required_scene_hash.clone(), entity);
-        spawn.send(LoadSceneEvent {
+        spawn.write(LoadSceneEvent {
             realm: current_realm.address.clone(),
             entity: Some(entity),
             location: match maybe_urn {
@@ -1338,8 +1341,8 @@ fn animate_ready_scene(
         if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken) {
             if transform.translation.y == -1000.0 {
                 for child in children.map(|c| c.iter()).unwrap_or_default() {
-                    if loading_quads.get(*child).is_ok() {
-                        commands.entity(*child).despawn_recursive();
+                    if loading_quads.get(child).is_ok() {
+                        commands.entity(child).despawn();
                     }
                 }
             }
@@ -1370,17 +1373,14 @@ fn animate_ready_scene(
                         children.push(
                             commands
                                 .spawn((
-                                    MaterialMeshBundle {
-                                        mesh: handles.as_ref().unwrap().0.clone(),
-                                        material: loading_materials.add(LoadingMaterial::default()),
-                                        transform: Transform::from_translation(
-                                            position
-                                                + position_offset * PARCEL_SIZE
-                                                + Vec3::Y * 1000.0,
-                                        )
-                                        .looking_at(position + middle + Vec3::Y * 1000.0, Vec3::Y),
-                                        ..Default::default()
-                                    },
+                                    Mesh3d(handles.as_ref().unwrap().0.clone()),
+                                    MeshMaterial3d(
+                                        loading_materials.add(LoadingMaterial::default()),
+                                    ),
+                                    Transform::from_translation(
+                                        position + position_offset * PARCEL_SIZE + Vec3::Y * 1000.0,
+                                    )
+                                    .looking_at(position + middle + Vec3::Y * 1000.0, Vec3::Y),
                                     LoadingQuad(is_x),
                                     NotShadowCaster,
                                 ))
@@ -1392,10 +1392,10 @@ fn animate_ready_scene(
                 if preview.is_preview {
                     children.push(
                         commands
-                            .spawn(PbrBundle {
-                                mesh: handles.as_ref().unwrap().0.clone(),
-                                material: handles.as_ref().unwrap().1.clone(),
-                                transform: Transform::from_translation(
+                            .spawn((
+                                Mesh3d(handles.as_ref().unwrap().0.clone()),
+                                MeshMaterial3d(handles.as_ref().unwrap().1.clone()),
+                                Transform::from_translation(
                                     position
                                         + Vec3::new(PARCEL_SIZE * 0.5, -0.01, PARCEL_SIZE * -0.5),
                                 )
@@ -1404,8 +1404,7 @@ fn animate_ready_scene(
                                         + Vec3::new(PARCEL_SIZE * 0.5, -2.0, -PARCEL_SIZE * 0.5),
                                     Vec3::Z,
                                 ),
-                                ..Default::default()
-                            })
+                            ))
                             .id(),
                     );
                 }
@@ -1416,12 +1415,15 @@ fn animate_ready_scene(
     }
 }
 
+#[derive(Component)]
+pub struct LoadingMaterialHandle(pub Handle<LoadingMaterial>);
+
 fn update_loading_quads(
     mut q: Query<
         (
             &GlobalTransform,
             &mut Transform,
-            &Handle<LoadingMaterial>,
+            &LoadingMaterialHandle,
             &LoadingQuad,
         ),
         Without<PrimaryUser>,
@@ -1430,7 +1432,7 @@ fn update_loading_quads(
     mut mats: ResMut<Assets<LoadingMaterial>>,
     mut local_prev_active: Local<HashSet<AssetId<LoadingMaterial>>>,
 ) {
-    let Ok(player_translation) = player.get_single().map(|p| p.translation) else {
+    let Ok(player_translation) = player.single().map(|p| p.translation) else {
         return;
     };
 
@@ -1452,15 +1454,15 @@ fn update_loading_quads(
                 },
         );
         let active = (nearest_point - player_translation.xz()).length() < 10.0;
-        if prev_active.contains(&h_mat.id()) || active {
-            let mat = mats.get_mut(h_mat.id()).unwrap();
+        if prev_active.contains(&h_mat.0.id()) || active {
+            let mat = mats.get_mut(h_mat.0.id()).unwrap();
             mat.player_pos = player_translation.extend(if active { 1.0 } else { 0.0 })
         }
 
         trans.translation.y = player_translation.y + 1000.0;
 
         if active {
-            local_prev_active.insert(h_mat.id());
+            local_prev_active.insert(h_mat.0.id());
         }
     }
 }

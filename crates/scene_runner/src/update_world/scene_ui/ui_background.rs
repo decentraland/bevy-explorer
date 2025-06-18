@@ -132,7 +132,7 @@ pub fn set_ui_background(
                 .filter(|c| prev_backgrounds.get(**c).is_ok())
             {
                 if let Some(commands) = commands.get_entity(*child) {
-                    commands.despawn_recursive();
+                    commands.despawn();
                 }
             }
         }
@@ -149,7 +149,7 @@ pub fn set_ui_background(
                 .filter(|c| prev_backgrounds.get(**c).is_ok())
             {
                 if let Some(commands) = commands.get_entity(*child) {
-                    commands.despawn_recursive();
+                    commands.despawn();
                 }
             }
         }

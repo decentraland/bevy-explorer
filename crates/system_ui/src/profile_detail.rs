@@ -37,7 +37,7 @@ fn set_profile_detail_content(
     }
 
     for (ent, tab) in q.iter() {
-        let Ok((settings_entity, maybe_detail)) = dialog.get_single() else {
+        let Ok((settings_entity, maybe_detail)) = dialog.single() else {
             return;
         };
 
@@ -77,11 +77,11 @@ fn set_profile_detail_content(
                                 warn!("no entry");
                                 return;
                             };
-                            let Ok(mut profile) = profile.get_single_mut() else {
+                            let Ok(mut profile) = profile.single_mut() else {
                                 warn!("no profile");
                                 return;
                             };
-                            let Ok(mut settings) = settings.get_single_mut() else {
+                            let Ok(mut settings) = settings.single_mut() else {
                                 warn!("no settings");
                                 return;
                             };

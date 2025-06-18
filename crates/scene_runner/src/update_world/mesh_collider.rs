@@ -1,9 +1,9 @@
 use bevy::{
     math::DVec3,
     pbr::{wireframe::Wireframe, NotShadowCaster, NotShadowReceiver},
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::mesh::VertexAttributeValues,
-    platform::collections::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
 use rapier3d_f64::{
@@ -838,7 +838,7 @@ fn update_collider_transforms(
     let mut containing_scenes = HashSet::default();
     let mut player_transform = None;
 
-    if let Ok((player, transform)) = player.get_single_mut() {
+    if let Ok((player, transform)) = player.single_mut() {
         player_transform = Some(transform);
         containing_scenes.extend(containing_scene.get_area(player, PLAYER_COLLIDER_RADIUS));
     }
@@ -1100,7 +1100,7 @@ fn render_debug_colliders(
         }
     }
 
-    if let Ok(player) = player.get_single() {
+    if let Ok(player) = player.single() {
         if !debug_entities.contains_key(&player) {
             let h_mesh = meshes.add(
                 Capsule3d::new(
@@ -1111,12 +1111,9 @@ fn render_debug_colliders(
             );
             let debug_ent = commands
                 .spawn((
-                    PbrBundle {
-                        mesh: h_mesh,
-                        material: debug_material.as_ref().unwrap().clone(),
-                        transform: Transform::from_translation(Vec3::Y),
-                        ..Default::default()
-                    },
+                    Mesh3d(h_mesh),
+                    MeshMaterial3d(debug_material.as_ref().unwrap().clone()),
+                    Transform::from_translation(Vec3::Y),
                     Wireframe,
                     NotShadowCaster,
                     NotShadowReceiver,
@@ -1160,11 +1157,8 @@ fn render_debug_colliders(
 
             let debug_ent = commands
                 .spawn((
-                    PbrBundle {
-                        mesh: h_mesh,
-                        material: debug_material.as_ref().unwrap().clone(),
-                        ..Default::default()
-                    },
+                    Mesh3d(h_mesh),
+                    MeshMaterial3d(debug_material.as_ref().unwrap().clone()),
                     Wireframe,
                     NotShadowCaster,
                     NotShadowReceiver,

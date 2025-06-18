@@ -193,7 +193,7 @@ fn update_text_shapes(
             }
 
             if let Some(commands) = commands.get_entity(prior.0) {
-                commands.despawn_recursive();
+                commands.despawn();
             }
         }
 
@@ -432,7 +432,7 @@ fn apply_text_extras(
         if let Ok(children) = children.get(removed) {
             for child in children {
                 if existing.get(*child).is_ok() {
-                    commands.entity(*child).despawn_recursive();
+                    commands.entity(*child).despawn();
                 }
             }
         }
@@ -513,7 +513,7 @@ fn apply_text_extras(
     for (text, extras, buffer, parent, gt, node, maybe_camera, maybe_children) in q.iter() {
         for &child in maybe_children.map(|c| c.iter()).unwrap_or_default() {
             if existing.get(child).is_ok() {
-                commands.entity(child).despawn_recursive();
+                commands.entity(child).despawn();
             }
         }
         let mut ents = Vec::default();

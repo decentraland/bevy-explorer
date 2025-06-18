@@ -140,7 +140,7 @@ fn save_settings(
     };
 
     let Ok((dialog_ent, maybe_avatar, maybe_detail, maybe_booth, maybe_settings, maybe_perms)) =
-        modified.get_single()
+        modified.single()
     else {
         error!("no dialog");
         return;
@@ -212,7 +212,7 @@ fn save_settings(
         current_profile.is_deployed = false;
     }
 
-    commands.entity(dialog_ent).despawn_recursive();
+    commands.entity(dialog_ent).despawn();
 }
 
 fn really_close_settings(
@@ -220,12 +220,12 @@ fn really_close_settings(
     modified: Query<Entity, With<SettingsDialog>>,
     mut config: ResMut<AppConfig>,
 ) {
-    let Ok(dialog_ent) = modified.get_single() else {
+    let Ok(dialog_ent) = modified.single() else {
         error!("no dialog");
         return;
     };
 
-    commands.entity(dialog_ent).despawn_recursive();
+    commands.entity(dialog_ent).despawn();
 
     // touch the app config so all settings get reverted
     config.set_changed();
@@ -238,7 +238,7 @@ pub fn close_settings(
     mut cr: EventWriter<ChangeRealmEvent>,
     mut rpc: EventWriter<RpcCall>,
 ) {
-    let Ok((settings_ent, mut settings)) = q.get_single_mut() else {
+    let Ok((settings_ent, mut settings)) = q.single_mut() else {
         warn!("no settings dialog");
         return;
     };
@@ -279,7 +279,7 @@ pub fn close_settings(
                             DuiButton::new_enabled_and_close_sad(
                                 "Cancel",
                                 |mut q: Query<&mut SettingsDialog>| {
-                                    if let Ok(mut settings) = q.get_single_mut() {
+                                    if let Ok(mut settings) = q.single_mut() {
                                         settings.on_close = None;
                                     }
                                 },
@@ -289,7 +289,7 @@ pub fn close_settings(
             )
             .unwrap();
     } else {
-        commands.entity(settings_ent).despawn_recursive();
+        commands.entity(settings_ent).despawn();
         match &ev {
             Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
                 cr.send(cr_ev.clone());
@@ -519,7 +519,7 @@ fn process_profile(
         if let Some(existing) = processing.take() {
             match existing {
                 ProcessProfileState::Snapping(entity, _, sender) => {
-                    commands.entity(entity).despawn_recursive();
+                    commands.entity(entity).despawn();
                     sender.send(Err("cancelled".to_owned()));
                 }
                 ProcessProfileState::Deploying(_, sender) => {
@@ -562,7 +562,7 @@ fn process_profile(
         };
         debug!("updating ...");
 
-        commands.entity(*booth_ent).despawn_recursive();
+        commands.entity(*booth_ent).despawn();
         current_profile.snapshots = Some((face, body));
         current_profile.is_deployed = false;
 

@@ -89,7 +89,7 @@ impl ConversationManager<'_, '_> {
                                   parent: Query<&Parent>,
                                   mut commands: Commands| {
                                 if let Ok(parent) = parent.get(caller.0) {
-                                    commands.entity(parent.get()).despawn_recursive();
+                                    commands.entity(parent.get()).despawn();
                                 }
                                 if let Ok(mut chat) = private_chats.get_mut(private_chat_ent) {
                                     chat.wants_history_count = 10;

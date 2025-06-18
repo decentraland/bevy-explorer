@@ -66,7 +66,7 @@ fn update_permissions(
         // kill/requeue dialogs where the scene is no longer active
         if !active_scenes.contains(&req.as_ref().unwrap().scene) {
             if let Some(commands) = commands.get_entity(*ent) {
-                commands.despawn_recursive();
+                commands.despawn();
             }
             let req = req.take().unwrap();
             if scenes.get(req.scene).is_ok() {
@@ -147,7 +147,7 @@ fn update_permissions(
             let ty = req.ty;
             move |mut config: ResMut<AppConfig>, dialog: Query<&PermissionDialog>| {
                 sender.send(matches!(value, PermissionValue::Allow));
-                let Some(level) = dialog.get_single().ok().and_then(|p| p.level.as_ref()) else {
+                let Some(level) = dialog.single().ok().and_then(|p| p.level.as_ref()) else {
                     debug!("no perm");
                     return;
                 };
@@ -230,7 +230,7 @@ fn update_permissions(
                             move |mut dialog: Query<&mut PermissionDialog>,
                                   caller: Res<UiCaller>,
                                   combo: Query<&ComboBox>| {
-                                let Ok(mut dialog) = dialog.get_single_mut() else {
+                                let Ok(mut dialog) = dialog.single_mut() else {
                                     warn!("no dialog");
                                     return;
                                 };

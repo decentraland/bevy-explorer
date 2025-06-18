@@ -120,7 +120,7 @@ pub fn update_directional_light(
         layers: RenderLayers::default(),
     };
 
-    let Ok(player) = player.get_single() else {
+    let Ok(player) = player.single() else {
         return;
     };
 
@@ -218,8 +218,8 @@ fn update_point_lights(
         // despawn any previous
         if let Some(children) = maybe_children {
             for child in children.iter() {
-                if child_lights.get(*child).is_ok() {
-                    commands.entity(*child).despawn_recursive();
+                if child_lights.get(child).is_ok() {
+                    commands.entity(child).despawn();
                 }
             }
         }
@@ -231,28 +231,22 @@ fn update_point_lights(
         };
         let range = light.illuminance.unwrap_or(10000.0).powf(0.25);
         let mut light = match angles {
-            Some(angles) => commands.spawn(SpotLightBundle {
-                spot_light: SpotLight {
-                    color: light.color.unwrap_or(Color::WHITE),
-                    intensity: lumens,
-                    range,
-                    radius: 0.0,
-                    shadows_enabled: light.shadows.unwrap_or(false),
-                    outer_angle: angles.outer_angle,
-                    inner_angle: angles.inner_angle,
-                    ..Default::default()
-                },
+            Some(angles) => commands.spawn(SpotLight {
+                color: light.color.unwrap_or(Color::WHITE),
+                intensity: lumens,
+                range,
+                radius: 0.0,
+                shadows_enabled: light.shadows.unwrap_or(false),
+                outer_angle: angles.outer_angle,
+                inner_angle: angles.inner_angle,
                 ..Default::default()
             }),
-            None => commands.spawn(PointLightBundle {
-                point_light: PointLight {
-                    color: light.color.unwrap_or(Color::WHITE),
-                    intensity: lumens,
-                    range,
-                    radius: 0.0,
-                    shadows_enabled: light.shadows.unwrap_or(false),
-                    ..Default::default()
-                },
+            None => commands.spawn(PointLight {
+                color: light.color.unwrap_or(Color::WHITE),
+                intensity: lumens,
+                range,
+                radius: 0.0,
+                shadows_enabled: light.shadows.unwrap_or(false),
                 ..Default::default()
             }),
         };
@@ -275,7 +269,7 @@ fn update_point_lights(
         };
         for child in children {
             if child_lights.get(*child).is_ok() {
-                commands.entity(*child).despawn_recursive();
+                commands.entity(*child).despawn();
             }
         }
     }
@@ -297,7 +291,7 @@ fn manage_shadow_casters(
     config: Res<AppConfig>,
     mut lights: Local<Vec<(Entity, bool, FloatOrd, bool)>>,
 ) {
-    let Ok((player, player_gt)) = player.get_single() else {
+    let Ok((player, player_gt)) = player.single() else {
         return;
     };
     let player_t = player_gt.translation();

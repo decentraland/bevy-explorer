@@ -138,10 +138,10 @@ fn automatic_testing(
 
             let sender = local_sender.as_ref().unwrap().clone();
             commands.spawn(Screenshot::window(window)).observe(
-                |trigger: Trigger<ScreenshotCaptured>| {
+                move |trigger: Trigger<ScreenshotCaptured>| {
                     let _ = sender.blocking_send(SnapshotResult {
-                        request: snapshot,
-                        image: trigger.0,
+                        request: snapshot.clone(),
+                        image: std::mem::take(&mut trigger.0),
                         window,
                         camera: snapshot_cam,
                     });
@@ -211,8 +211,8 @@ fn automatic_testing(
             similarity,
         });
 
-        commands.entity(result.window).despawn_recursive();
-        commands.entity(result.camera).despawn_recursive();
+        commands.entity(result.window).despawn();
+        commands.entity(result.camera).despawn();
 
         // set ui to render to the snapshot camera
         for (ent, target) in ui_roots.iter() {
@@ -333,7 +333,7 @@ fn automatic_testing(
         return;
     }
 
-    let (player_ent, oow) = player.single();
+    let (player_ent, oow) = player.single().unwrap();
 
     if oow.is_some() {
         return;
@@ -363,7 +363,7 @@ fn automatic_testing(
     }) else {
         info!("moving to next scene {:?}", next_test_scene.location);
         let to = next_test_scene.location;
-        commands.add(move |w: &mut World| {
+        commands.queue(move |w: &mut World| {
             w.send_event(RpcCall::TeleportPlayer {
                 scene: None,
                 to,

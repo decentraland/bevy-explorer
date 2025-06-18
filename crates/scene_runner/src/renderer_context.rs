@@ -199,7 +199,8 @@ impl RendererSceneContext {
 
         let spawned = commands
             .spawn((
-                SpatialBundle::default(),
+                Transform::default(),
+                Visibility::default(),
                 SceneEntity {
                     scene_id: self.scene_id,
                     root,

@@ -99,8 +99,7 @@ impl Plugin for GltfDefinitionPlugin {
         );
         app.add_systems(
             PostUpdate,
-            (update_gltf_linked_transforms, apply_deferred)
-                .chain()
+            update_gltf_linked_transforms
                 .in_set(GltfLinkSet)
                 .after(anim_last_system!())
                 .before(TransformSystem::TransformPropagate),
@@ -459,7 +458,7 @@ fn update_ready_gltfs(
                 {
                     // remove directional lights
                     if maybe_directional.is_some() {
-                        commands.entity(spawned_ent).despawn_recursive();
+                        commands.entity(spawned_ent).despawn();
                         continue;
                     }
 

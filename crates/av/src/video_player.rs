@@ -235,7 +235,7 @@ pub fn update_video_players(
     }
 
     // disable distant av
-    let Ok(user) = user.get_single() else {
+    let Ok(user) = user.single() else {
         return;
     };
 

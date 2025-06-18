@@ -100,7 +100,7 @@ fn set_map_content(
             .unwrap();
 
         let center = player
-            .get_single()
+            .single()
             .ok()
             .map(|gt| vec3_to_parcel(gt.translation()).as_vec2())
             .unwrap_or(Vec2::ZERO)
@@ -124,7 +124,7 @@ fn set_map_content(
                         return;
                     };
 
-                    let Ok(window) = window.get_single() else {
+                    let Ok(window) = window.single() else {
                         return;
                     };
                     let window = Vec2::new(window.width(), window.height());
@@ -143,7 +143,7 @@ fn set_map_content(
                 |caller: Res<UiCaller>,
                  mut map: Query<(&GlobalTransform, &MouseWheelData, &mut MapTexture, &MapData)>,
                  window: Query<&Window, With<PrimaryWindow>>| {
-                    let Ok(window) = window.get_single() else {
+                    let Ok(window) = window.single() else {
                         return;
                     };
 
@@ -172,11 +172,11 @@ fn set_map_content(
                  window: Query<&Window, With<PrimaryWindow>>,
                  map: Query<(&GlobalTransform, &MapTexture, &MapData)>,
                  ipfas: IpfsAssetServer| {
-                    let Ok(mut settings) = q.get_single_mut() else {
+                    let Ok(mut settings) = q.single_mut() else {
                         warn!("no settings");
                         return;
                     };
-                    let Ok(window) = window.get_single() else {
+                    let Ok(window) = window.single() else {
                         warn!("no window");
                         return;
                     };
@@ -223,12 +223,12 @@ fn update_map_data(
     children: Query<&Children>,
     mut text: Query<&mut Text>,
 ) {
-    let Ok(window) = window.get_single() else {
+    let Ok(window) = window.single() else {
         return;
     };
     for (gt, map, data, interaction) in map.iter() {
         // update you are here
-        if let Ok(gt) = player.get_single() {
+        if let Ok(gt) = player.single() {
             let icon_pos = data.bottom_left_offset
                 + (((gt.translation().xz() * Vec2::new(1.0, -1.0)) / PARCEL_SIZE)
                     - data.min_parcel.as_vec2())
@@ -318,7 +318,7 @@ fn render_map(
     mut styles: Query<(&mut Node, &mut Visibility)>,
     asset_server: Res<AssetServer>,
 ) {
-    let Ok(window) = window.get_single() else {
+    let Ok(window) = window.single() else {
         return;
     };
 

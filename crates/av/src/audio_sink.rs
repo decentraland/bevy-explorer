@@ -65,7 +65,7 @@ pub fn spawn_audio_streams(
     }
 
     let containing_scenes = player
-        .get_single()
+        .single()
         .ok()
         .map(|player| containing_scene.get(player))
         .unwrap_or_default();

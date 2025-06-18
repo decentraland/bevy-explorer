@@ -173,7 +173,7 @@ fn update_profile_friend_buttons(
     children: Query<&Children>,
     mut style: Query<&mut Node>,
 ) {
-    let Ok((profile, components)) = q.get_single() else {
+    let Ok((profile, components)) = q.single() else {
         events.clear();
         return;
     };

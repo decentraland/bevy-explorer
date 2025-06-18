@@ -61,7 +61,7 @@ fn set_app_settings_content(
     }
 
     for (ent, tab) in q.iter() {
-        let Ok((settings_entity, maybe_settings)) = dialog.get_single() else {
+        let Ok((settings_entity, maybe_settings)) = dialog.single() else {
             return;
         };
 

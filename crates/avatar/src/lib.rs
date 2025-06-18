@@ -504,7 +504,7 @@ fn update_render_avatar(
                 .iter()
                 .filter(|child| avatar_render_entities.get(**child).is_ok())
             {
-                commands.entity(*render_child).despawn_recursive();
+                commands.entity(*render_child).despawn();
             }
         }
     }
@@ -722,7 +722,7 @@ fn update_render_avatar(
             {
                 if maybe_prev.is_some_and(|e| e.0 != *render_child) {
                     debug!("despawn {render_child:?} as prev is already {maybe_prev:?}");
-                    commands.entity(*render_child).despawn_recursive();
+                    commands.entity(*render_child).despawn();
                 } else {
                     debug!("set prev -> {render_child:?}");
                     if chose_existing {
@@ -1235,7 +1235,7 @@ fn process_avatar(
                         armature_map.insert(scene_ent, target);
                     }
                     if parent_name == "armature" {
-                        commands.entity(scene_ent).despawn_recursive();
+                        commands.entity(scene_ent).despawn();
                     }
                     continue;
                 }
@@ -1372,7 +1372,7 @@ fn process_avatar(
         if let Ok(prev) = previous_avatar.get(root_player_entity.get()) {
             debug!("new {avatar_ent:?} done, remove prev -> {prev:?}");
             if let Some(commands) = commands.get_entity(prev.0) {
-                commands.despawn_recursive();
+                commands.despawn();
             }
             commands
                 .entity(root_player_entity.get())
@@ -1401,7 +1401,7 @@ fn set_avatar_visibility(
     player: Query<&GlobalTransform, With<PrimaryUser>>,
     config: Res<AppConfig>,
 ) {
-    let Ok(player_pos) = player.get_single().map(|gt| gt.translation()) else {
+    let Ok(player_pos) = player.single().map(|gt| gt.translation()) else {
         return;
     };
 
@@ -1446,7 +1446,7 @@ fn debug_dump_avatar(
     mut store: Local<HashSet<Handle<EntityDefinition>>>,
 ) {
     if let Some(Ok(_)) = input.take() {
-        let Ok(shape) = player.get_single() else {
+        let Ok(shape) = player.single() else {
             return;
         };
 

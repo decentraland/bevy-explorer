@@ -84,7 +84,7 @@ fn update_nft_shapes(
         .collect::<HashSet<_>>();
     for (ent, par) in existing.iter() {
         if old_parents.contains(&par.get()) {
-            commands.entity(ent).despawn_recursive();
+            commands.entity(ent).despawn();
         }
     }
 

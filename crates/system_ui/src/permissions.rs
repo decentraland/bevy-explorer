@@ -55,7 +55,7 @@ fn set_permission_settings_content(
     }
 
     for (ent, tab) in q.iter() {
-        let Ok((settings_entity, maybe_settings)) = dialog.get_single() else {
+        let Ok((settings_entity, maybe_settings)) = dialog.single() else {
             return;
         };
 
@@ -181,7 +181,7 @@ fn set_permission_settings_content(
                               caller: Res<UiCaller>,
                               mut commands: Commands,
                               asset_server: Res<AssetServer>| {
-                            let Ok((mut dialog, mut config)) = config.get_single_mut() else {
+                            let Ok((mut dialog, mut config)) = config.single_mut() else {
                                 warn!("no config");
                                 return;
                             };
@@ -286,7 +286,7 @@ fn set_permission_settings_content(
                 Interaction::default(),
                 On::<HoverEnter>::new(
                     move |mut q: Query<&mut Text, With<PermissionSettingDescription>>| {
-                        q.get_single_mut().unwrap().sections[0].value = ty.description();
+                        q.single_mut().unwrap().sections[0].value = ty.description();
                     },
                 ),
             ));

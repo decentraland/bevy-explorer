@@ -61,7 +61,7 @@ impl Plugin for WearableSettingsPlugin {
                     )
                         .chain()
                         .run_if(|q: Query<&SettingsTab>| {
-                            q.get_single()
+                            q.single()
                                 .is_ok_and(|tab| tab == &SettingsTab::Wearables)
                         }),
                 )
@@ -185,7 +185,7 @@ fn set_wearables_content(
     }
 
     for (ent, tab, wearable_settings, has_select) in q.iter_mut() {
-        let Ok((settings_entity, maybe_instance, _, dialog)) = dialog.get_single() else {
+        let Ok((settings_entity, maybe_instance, _, dialog)) = dialog.single() else {
             return;
         };
 
@@ -203,7 +203,7 @@ fn set_wearables_content(
         commands.entity(ent).despawn_descendants();
 
         let instance = maybe_instance.cloned().unwrap_or_else(|| {
-            let avatar = player.get_single().unwrap();
+            let avatar = player.single().unwrap();
             let instance = booth.spawn_booth(
                 PROFILE_UI_RENDERLAYER,
                 avatar.clone(),
@@ -228,7 +228,7 @@ fn set_wearables_content(
                 settings.into_inner()
             }
             None => {
-                let player_shape = &player.get_single().unwrap().0;
+                let player_shape = &player.single().unwrap().0;
                 let body_instance =
                     WearableInstance::new(player_shape.body_shape.as_ref().unwrap())
                         .unwrap_or_else(|_| default_bodyshape_instance());
@@ -375,7 +375,7 @@ fn set_wearables_content(
                             return;
                         };
 
-                        let Ok(mut settings) = settings.get_single_mut() else {
+                        let Ok(mut settings) = settings.single_mut() else {
                             warn!("failed to get settings");
                             return;
                         };
@@ -461,7 +461,7 @@ fn only_collectibles(
         return;
     };
 
-    let Ok(mut settings) = q.get_single_mut() else {
+    let Ok(mut settings) = q.single_mut() else {
         warn!("settings access failed");
         return;
     };
@@ -486,7 +486,7 @@ fn get_owned_wearables(
     if let Some(mut t) = task.take() {
         match t.complete() {
             Some(Ok(wearable_data)) => {
-                if let Ok(mut settings) = q.get_single_mut() {
+                if let Ok(mut settings) = q.single_mut() {
                     debug!("wearable task ok");
                     settings.owned_wearables = wearable_data.elements;
 
@@ -687,7 +687,7 @@ fn update_wearables_list(
     collections: Res<WearableCollections>,
     mut retry: Local<bool>,
 ) {
-    let Ok((mut settings, components, selected)) = q.get_single_mut() else {
+    let Ok((mut settings, components, selected)) = q.single_mut() else {
         return;
     };
 
@@ -775,7 +775,7 @@ fn update_wearables_list(
         }
     }
 
-    if wearables == settings.current_list && !dialog.get_single().is_ok_and(|d| d.is_changed()) {
+    if wearables == settings.current_list && !dialog.single().is_ok_and(|d| d.is_changed()) {
         // wearables list matches and dialog has not changed (so current wearables have not changed)
         return;
     }
@@ -895,7 +895,7 @@ fn update_wearable_item(
     settings: Query<(Entity, &WearablesSettings)>,
     walker: DuiWalker,
 ) {
-    let Ok((settings_ent, settings)) = settings.get_single() else {
+    let Ok((settings_ent, settings)) = settings.single() else {
         return;
     };
 
@@ -1027,11 +1027,11 @@ fn update_selected_item(
     mut wearable_loader: CollectibleManager<Wearable>,
     mut retry: Local<bool>,
 ) {
-    let Ok((settings_ent, settings, components, selection)) = settings.get_single() else {
+    let Ok((settings_ent, settings, components, selection)) = settings.single() else {
         return;
     };
 
-    let Ok(avatar) = avatar.get_single() else {
+    let Ok(avatar) = avatar.single() else {
         return;
     };
 
@@ -1108,7 +1108,7 @@ fn update_selected_item(
                         .insert(category, (instance.clone(), data.clone()))
                 };
 
-                let Ok((mut dialog, booth_instance, mut avatar)) = dialog.get_single_mut() else {
+                let Ok((mut dialog, booth_instance, mut avatar)) = dialog.single_mut() else {
                     warn!("fail to update dialog+booth instance");
                     return;
                 };
@@ -1204,7 +1204,7 @@ fn update_selected_item(
                     return;
                 };
 
-                let Ok((mut dialog, instance, mut avatar)) = dialog.get_single_mut() else {
+                let Ok((mut dialog, instance, mut avatar)) = dialog.single_mut() else {
                     warn!("fail to update dialog+booth instance");
                     return;
                 };

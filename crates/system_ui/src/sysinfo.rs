@@ -264,7 +264,7 @@ fn update_scene_load_state(
     }
     *last_update = tick;
 
-    let Ok((player, pos)) = player.get_single() else {
+    let Ok((player, pos)) = player.single() else {
         return;
     };
     let scene = containing_scene.get_parcel(player);
@@ -276,7 +276,7 @@ fn update_scene_load_state(
         .map(|context| context.title.clone())
         .unwrap_or("???".to_owned());
 
-    if let Ok(sysinfo) = q.get_single() {
+    if let Ok(sysinfo) = q.single() {
         let mut ix = 0;
         let children = q_children.get(sysinfo).unwrap();
         let mut set_child = |value: String| {
@@ -412,7 +412,7 @@ fn setup_minimap(
                             }
                             return;
                         }
-                        let Ok(player) = player.get_single() else {
+                        let Ok(player) = player.single() else {
                             return;
                         };
                         let Some(scene) = containing_scene.get_parcel_oow(player) else {
@@ -442,7 +442,7 @@ fn update_minimap(
     mut text: Query<&mut Text>,
     preview: Res<PreviewMode>,
 ) {
-    let Ok((player, gt)) = player.get_single() else {
+    let Ok((player, gt)) = player.single() else {
         return;
     };
 
@@ -474,7 +474,7 @@ fn update_minimap(
         })
         .unwrap_or("No scene".to_owned());
 
-    if let Ok(components) = q.get_single() {
+    if let Ok(components) = q.single() {
         if let Ok(mut map) = maps.get_mut(components.named("map-node")) {
             map.center = map_center;
         }
@@ -506,7 +506,7 @@ fn update_tracker(
     diagnostics: Res<DiagnosticsStore>,
     images: Res<Assets<Image>>,
 ) {
-    let Ok((tracker, entities)) = q.get_single_mut() else {
+    let Ok((tracker, entities)) = q.single_mut() else {
         return;
     };
 
@@ -522,7 +522,7 @@ fn update_tracker(
         return;
     }
 
-    let Ok(player) = player.get_single() else {
+    let Ok(player) = player.single() else {
         return;
     };
 
@@ -661,7 +661,7 @@ fn update_map_visibilty(
     mut init: Local<bool>,
 ) {
     if !*init || realm.is_changed() {
-        let Ok(nodes) = map.get_single() else {
+        let Ok(nodes) = map.single() else {
             return;
         };
         let Ok(mut style) = style.get_mut(nodes.named("map-container")) else {
@@ -732,7 +732,7 @@ fn display_tracked_components(
         return;
     }
 
-    let Ok(player) = player.get_single() else {
+    let Ok(player) = player.single() else {
         return;
     };
 
@@ -770,7 +770,7 @@ fn update_crosshair(
 ) {
     let locked = locks.0.contains("Camera");
     if Some(locked) != *prev {
-        let Ok(mut img) = crosshair.get_single_mut() else {
+        let Ok(mut img) = crosshair.single_mut() else {
             return;
         };
         *prev = Some(locked);

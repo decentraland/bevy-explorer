@@ -125,7 +125,7 @@ fn login(
     // cleanup if we're done
     if wallet.address().is_some() {
         if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
-            commands.despawn_recursive();
+            commands.despawn();
         }
         *dialog = None;
         *req_code = None;
@@ -168,7 +168,7 @@ fn login(
         match t.try_recv() {
             Ok(Ok(code)) => {
                 if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
-                    commands.despawn_recursive();
+                    commands.despawn();
                     *dialog = None;
                 }
 
@@ -195,7 +195,7 @@ fn login(
             Ok(Err(e)) => {
                 toaster.add_toast("login profile", format!("Login failed: {e}"));
                 if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
-                    commands.despawn_recursive();
+                    commands.despawn();
                     *dialog = None;
                 }
             }
@@ -217,7 +217,7 @@ fn login(
                 error!("{e}");
                 toaster.add_toast("login profile", format!("Login failed: {e}"));
                 if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
-                    commands.despawn_recursive();
+                    commands.despawn();
                 }
                 *dialog = None;
             }
@@ -233,7 +233,7 @@ fn login(
     // handle click
     if let Some(login) = logins.read().last() {
         if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
-            commands.despawn_recursive();
+            commands.despawn();
             *dialog = None;
         }
 
@@ -498,7 +498,7 @@ fn process_login_bridge(
     if let Some(mut task) = login_task.take() {
         match task.complete() {
             Some(Ok((root_address, local_wallet, auth, profile, sender))) => {
-                if let Ok(mut window) = window.get_single_mut() {
+                if let Ok(mut window) = window.single_mut() {
                     window.focused = true;
                 }
 

@@ -172,7 +172,7 @@ pub enum EmoteUiEvent {
 }
 
 fn update_dui_props(mut dui: ResMut<DuiRegistry>, window: Query<&Window, With<PrimaryWindow>>) {
-    let Ok(window) = window.get_single() else {
+    let Ok(window) = window.single() else {
         return;
     };
     let aspect_size = window.width().min(window.height());
@@ -212,7 +212,7 @@ fn apply_layout(
     window: Query<&Window, With<PrimaryWindow>>,
 ) {
     let resized = resized.read().last().is_some();
-    let Ok(window) = window.get_single() else {
+    let Ok(window) = window.single() else {
         return;
     };
     let viewport = Vec2::new(window.width(), window.height());
@@ -271,7 +271,7 @@ fn show_emote_ui(
     if let Some(ev) = ev {
         for ent in existing.iter() {
             commands.fire_event(SystemAudio("sounds/ui/widget_emotes_close.wav".to_owned()));
-            commands.entity(ent).despawn_recursive();
+            commands.entity(ent).despawn();
 
             for (button, interact) in &buttons {
                 if interact != &Interaction::None {
@@ -403,7 +403,7 @@ fn show_emote_ui(
         for unused_slot in all_slots {
             commands
                 .entity(buttons.named(format!("image_{unused_slot}").as_str()))
-                .despawn_recursive();
+                .despawn();
             commands
                 .entity(buttons.named(format!("emote_{unused_slot}").as_str()))
                 .modify_component(|img: &mut UiImage| img.color = css::GRAY.into());

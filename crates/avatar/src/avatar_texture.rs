@@ -170,7 +170,7 @@ impl BoothInstance {
         mut transform: Query<&mut Transform>,
         q: Query<(&BoothInstance, &DragData), With<BoothImage>>,
     ) {
-        let Ok((instance, drag)) = q.get_single() else {
+        let Ok((instance, drag)) = q.single() else {
             return;
         };
         let drag = drag.delta_pixels;
@@ -442,8 +442,8 @@ fn snapshot(
         index,
     }) = local_receiver.as_mut().unwrap().try_recv()
     {
-        commands.entity(window).despawn_recursive();
-        commands.entity(camera).despawn_recursive();
+        commands.entity(window).despawn();
+        commands.entity(camera).despawn();
 
         let Some(target_img) = images.get_mut(&target) else {
             error!("target {:?} not found", target);
@@ -506,7 +506,7 @@ fn clean_booths(mut commands: Commands, mut live: ResMut<LiveBooths>) {
     for booth in booths {
         match Arc::try_unwrap(booth) {
             Ok(ent) => {
-                commands.entity(ent).despawn_recursive();
+                commands.entity(ent).despawn();
                 debug!("cleaning booth");
             }
             Err(arc) => live.0.push(arc),

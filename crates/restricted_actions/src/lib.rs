@@ -169,7 +169,7 @@ pub fn move_camera(
         _ => None,
     }) {
         if !player
-            .get_single()
+            .single()
             .ok()
             .is_some_and(|(_, e)| containing_scene.get(e).contains(root))
         {
@@ -177,7 +177,7 @@ pub fn move_camera(
             warn!("request from {root:?}");
             warn!(
                 "containing scenes {:?}",
-                player.get_single().map(|(_, p)| containing_scene.get(p))
+                player.single().map(|(_, p)| containing_scene.get(p))
             );
             return;
         }
@@ -749,7 +749,7 @@ fn get_players_in_scene(
         _ => None,
     }) {
         let mut results = Vec::default();
-        if let Ok(player) = me.get_single() {
+        if let Ok(player) = me.single() {
             if containing_scene.get(player).contains(scene) {
                 if let Some(address) = wallet.address() {
                     results.push(format!("{address:#x}"));
@@ -998,7 +998,7 @@ fn open_nft_dialog(
         } => Some((scene, urn, response)),
         _ => None,
     }) {
-        let Ok(player) = primary_user.get_single() else {
+        let Ok(player) = primary_user.single() else {
             response.send(Err("No player".to_owned()));
             return;
         };

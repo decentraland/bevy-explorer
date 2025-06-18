@@ -134,13 +134,13 @@ fn update_avatar_collider_actions(
         return;
     }
 
-    let Ok((camera, camera_position)) = camera.get_single() else {
+    let Ok((camera, camera_position)) = camera.single() else {
         // can't do much without a camera
         return;
     };
 
     // get new 3d hover target
-    let Ok(window) = windows.get_single() else {
+    let Ok(window) = windows.single() else {
         return;
     };
     let cursor_position = if window.cursor.grab_mode == bevy::window::CursorGrabMode::Locked {

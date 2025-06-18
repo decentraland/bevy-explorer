@@ -572,7 +572,7 @@ fn change_location(
     mut player: Query<(Entity, &mut Transform), With<PrimaryUser>>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        if let Ok((ent, mut transform)) = player.get_single_mut() {
+        if let Ok((ent, mut transform)) = player.single_mut() {
             transform.translation.x = command.x as f32 * 16.0 + 8.0;
             transform.translation.z = -command.y as f32 * 16.0 - 8.0;
             if let Some(mut commands) = commands.get_entity(ent) {

@@ -76,7 +76,7 @@ fn handle_trigger_emotes(
     player: Query<(Entity, Option<&EmoteCommand>), With<PrimaryUser>>,
     mut perms: Permission<EmoteCommand>,
 ) {
-    let Ok((player, maybe_prev)) = player.get_single() else {
+    let Ok((player, maybe_prev)) = player.single() else {
         return;
     };
 
@@ -126,7 +126,7 @@ fn broadcast_emote(
         senders.push(sender.clone());
     }
 
-    if let Ok(emote) = q.get_single() {
+    if let Ok(emote) = q.single() {
         if last.as_ref() != Some(emote) {
             *count += 1;
             debug!("sending emote: {emote:?} {}", *count);
@@ -245,7 +245,7 @@ fn animate(
     mut scenes: Query<&mut RendererSceneContext>,
 ) {
     let (gravity, jump_height) = player
-        .get_single()
+        .single()
         .map(|(p, m)| m.map(|m| m.combine(p)).unwrap_or(p.clone()))
         .map(|p| (p.gravity, p.jump_height))
         .unwrap_or((-20.0, 1.25));
@@ -535,7 +535,7 @@ fn play_current_emote(
 
                 if let Some((audio_ent, _)) = extras.audio.as_ref() {
                     if let Some(commands) = commands.get_entity(*audio_ent) {
-                        commands.despawn_recursive();
+                        commands.despawn();
                     }
                 }
             } else {
@@ -938,7 +938,7 @@ fn emote_console_command(
     profile: Res<CurrentUserProfile>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        if let Ok((player, maybe_prev)) = player.get_single() {
+        if let Ok((player, maybe_prev)) = player.single() {
             let mut urn = &command.urn;
             if let Ok(slot) = command.urn.parse::<u32>() {
                 if let Some(emote) = profile

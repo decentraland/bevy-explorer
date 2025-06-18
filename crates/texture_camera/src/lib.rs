@@ -218,14 +218,14 @@ fn update_texture_cameras(
     mut layer_cache: ResMut<TextureLayersCache>,
 ) {
     let active_scenes = player
-        .get_single()
+        .single()
         .map(|p| containing_scene.get_area(p, PLAYER_COLLIDER_RADIUS))
         .unwrap_or_default();
 
     // remove cameras when TextureCam is removed
     for (ent, removed) in &removed {
         if let Some(commands) = commands.get_entity(removed.0) {
-            commands.despawn_recursive();
+            commands.despawn();
         }
         commands.entity(ent).remove::<TextureCamEntity>();
     }
@@ -237,7 +237,7 @@ fn update_texture_cameras(
             // remove previous camera if modified
             if let Some(prev) = maybe_existing_camera {
                 if let Some(commands) = commands.get_entity(prev.0) {
-                    commands.despawn_recursive();
+                    commands.despawn();
                 }
             }
 
