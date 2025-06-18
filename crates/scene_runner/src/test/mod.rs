@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Mutex};
+use std::{path::PathBuf, sync::Mutex, time::Instant};
 
 use std::{collections::BTreeMap, fs::File, io::Write};
 
@@ -74,7 +74,6 @@ impl PluginGroup for TestPlugins {
             .add(TimePlugin)
             .add(ScheduleRunnerPlugin::default())
             .add(TransformPlugin)
-            .add(HierarchyPlugin)
             .add(DiagnosticsPlugin)
             .add(IpfsIoPlugin {
                 preview: false,
@@ -169,7 +168,8 @@ fn init_test_app(entity_json: &str) -> App {
     // startup system to create camera and fire load event
     app.add_systems(Startup, move |mut commands: Commands| {
         commands.spawn((
-            SpatialBundle::default(),
+            Transform::default(),
+            Visibility::default(),
             PrimaryUser::default(),
             PrimaryCamera::default(),
         ));
@@ -490,7 +490,6 @@ fn cyclic_recovery() {
                 .add_systems(
                     (
                         process_scene_entity_lifecycle,
-                        apply_deferred,
                         process_transform_and_parent_updates,
                     )
                         .chain(),

@@ -86,7 +86,6 @@ bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl", de
     "bevy_sprite",
     "bevy_text",
     "bevy_ui",
-    "bevy_hierarchy",
     "multi_threaded",
     "png",
     "hdr",

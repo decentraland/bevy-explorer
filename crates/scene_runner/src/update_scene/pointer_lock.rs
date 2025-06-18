@@ -52,7 +52,6 @@ pub struct CameraInteractionState<'w, 's> {
     input_manager: InputManager<'w>,
     state: Local<'s, (ClickState, f32)>,
     time: Res<'w, Time>,
-    #[system_param(ignore)]
     _p: PhantomData<&'s ()>,
 }
 
@@ -110,7 +109,7 @@ pub fn update_pointer_lock(
     mut toggle: Local<bool>,
     mut last_explicit_tick: Local<u32>,
 ) {
-    let Ok(window) = window.get_single() else {
+    let Ok(window) = window.single() else {
         return;
     };
     let Ok((camera, camera_position)) = camera.get_single() else {
