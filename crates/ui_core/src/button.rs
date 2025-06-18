@@ -101,13 +101,13 @@ impl DuiButton {
         Self::new(label, true, close_ui_sad)
     }
 
-    pub fn close_dialog(mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller>) {
+    pub fn close_dialog(mut commands: Commands, parents: Query<&ChildOf>, c: Res<UiCaller>) {
         let mut ent = c.0;
         while let Ok(p) = parents.get(ent) {
-            ent = **p;
+            ent = p.0;
         }
-        if let Some(commands) = commands.get_entity(ent) {
-            commands.despawn_recursive();
+        if let Ok(mut commands) = commands.get_entity(ent) {
+            commands.despawn();
         }
     }
 
@@ -253,10 +253,8 @@ impl DuiTemplate for DuiButtonTemplate {
                 commands
                     .commands()
                     .entity(*label)
-                    .modify_component(|text: &mut Text| {
-                        for section in text.sections.iter_mut() {
-                            section.style.color = Color::srgb(0.5, 0.5, 0.5);
-                        }
+                    .modify_component(|text_color: &mut TextColor| {
+                        text_color.0 = Color::srgb(0.5, 0.5, 0.5);
                     });
             }
         }
@@ -360,8 +358,8 @@ impl TabManager<'_, '_> {
             return;
         };
         if let Some(components) = tab.active_entities.get(ix) {
-            if let Some(commands) = self.commands.get_entity(components.root) {
-                commands.despawn_recursive();
+            if let Ok(mut commands) = self.commands.get_entity(components.root) {
+                commands.despawn();
             }
             tab.active_entities.remove(ix);
         }
@@ -378,7 +376,7 @@ impl TabManager<'_, '_> {
             .enumerate()
             .find(|(_, ents)| ents.root == entity)
         {
-            self.commands.entity(entity).despawn_recursive();
+            self.commands.entity(entity).despawn();
             tab.active_entities.remove(ix);
             if tab.selected == Some(ix) {
                 if ix >= tab.active_entities.len() {
@@ -475,7 +473,7 @@ impl TabSelection {
                             }
                         }
 
-                        if let Some(mut cmd) = commands.get_entity(id) {
+                        if let Ok(mut cmd) = commands.get_entity(id) {
                             cmd.try_insert(DataChanged);
                         }
                     },

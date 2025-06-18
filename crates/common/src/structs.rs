@@ -818,3 +818,6 @@ impl TimeOfDay {
         self.time
     }
 }
+
+// porting aid, used to be one component
+pub type TextStyle = (TextFont, TextColor);

@@ -127,7 +127,7 @@ fn update_bounded_nodes(
     mut commands: Commands,
     new_children: Query<
         (Entity, &BoundedNode),
-        Or<(Without<Handle<BoundedImageMaterial>>, Changed<BoundedNode>)>,
+        Or<(Without<MaterialNode<BoundedImageMaterial>>, Changed<BoundedNode>)>,
     >,
     mut existing: Local<HashMap<Entity, Vec<(AssetId<BoundedImageMaterial>, bool)>>>,
     mut removed_nodes: RemovedComponents<ComputedNode>,
@@ -139,9 +139,9 @@ fn update_bounded_nodes(
     all_nodes: Query<(Entity, &ComputedNode, &GlobalTransform, &NodeBounds)>,
     window: Query<&Window, With<PrimaryWindow>>,
     mut resized: EventReader<WindowResized>,
-    bound_parents: Query<(Option<&Parent>, Option<&NodeBounds>)>,
+    bound_parents: Query<(Option<&ChildOf>, Option<&NodeBounds>)>,
 ) {
-    let Ok(window) = window.get_single() else {
+    let Ok(window) = window.single() else {
         return;
     };
     let window = Vec2::new(window.width(), window.height());
@@ -210,7 +210,7 @@ fn update_bounded_nodes(
             if maybe_bounds.is_some() {
                 return Some(e);
             }
-            e = maybe_parent.map(|p| p.get())?;
+            e = maybe_parent.map(|p| p.parent())?;
         }
     };
 
@@ -240,7 +240,7 @@ fn update_bounded_nodes(
                 .or_default()
                 .push((mat.id(), bound_parent == ent));
         }
-        commands.entity(ent).try_insert(mat);
+        commands.entity(ent).try_insert(MaterialNode(mat));
     }
 
     for removed in removed_nodes.read() {
@@ -318,7 +318,7 @@ impl DuiTemplate for DuiBoundNode {
         let image = props.take_as::<Handle<Image>>(ctx, "bound-image")?;
         let color = props.take_as::<Color>(ctx, "color")?;
         commands.insert(BoundedNode { image, color });
-        commands.remove::<BackgroundColor>().remove::<UiImage>();
+        commands.remove::<BackgroundColor>().remove::<ImageNode>();
         Ok(Default::default())
     }
 }

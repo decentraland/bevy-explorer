@@ -12,9 +12,9 @@ use bevy_dui::{DuiRegistry, DuiTemplate};
 use bevy_simple_text_input::{
     TextInputCursorTimer, TextInputInactive, TextInputPlaceholder, TextInputPlugin,
     TextInputSelectionStyle, TextInputSettings, TextInputSubmitEvent, TextInputSystem,
-    TextInputTextStyle, TextInputValue,
+    TextInputTextFont, TextInputTextColor, TextInputValue,
 };
-use common::{sets::SceneSets, util::TryPushChildrenEx};
+use common::{sets::SceneSets, structs::TextStyle, util::TryPushChildrenEx};
 use input_manager::{InputManager, InputPriority, InputType};
 
 use super::focus::Focus;
@@ -80,7 +80,7 @@ fn update_text_entry_components(
             textbox
                 .text_style
                 .as_ref()
-                .map(|s| s.color)
+                .map(|s| s.1.0)
                 .unwrap_or(Color::WHITE),
         )
         .lightness;
@@ -100,13 +100,10 @@ fn update_text_entry_components(
                     .insert(TextEntryEntity(id));
                 let mut cmds = commands.entity(id);
                 cmds.insert((
-                    NodeBundle {
-                        style: Node {
-                            width: Val::Percent(100.0),
-                            min_width: Val::Percent(100.0),
-                            height: Val::Percent(100.0),
-                            ..Default::default()
-                        },
+                    Node {
+                        width: Val::Percent(100.0),
+                        min_width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
                         ..Default::default()
                     },
                     TextInputInactive(true),
@@ -143,19 +140,21 @@ fn update_text_entry_components(
                 retain_on_submit: !textbox.accept_line,
                 mask_character: None,
             },
-            TextInputTextStyle(textbox.text_style.clone().unwrap_or_default()),
+            TextInputTextFont(textbox.text_style.clone().unwrap_or_default().0),
+            TextInputTextColor(textbox.text_style.clone().unwrap_or_default().1),
             TextInputSelectionStyle {
                 color: Some(select),
                 background: Some(select_bg),
             },
             TextInputPlaceholder {
                 value: textbox.hint_text.clone(),
-                text_style: Some(TextStyle {
-                    color: textbox
+                text_font: Some(
+                    textbox.text_style.clone().unwrap_or_default().0
+                ),
+                text_color: Some(TextColor(textbox
                         .hint_text_color
-                        .unwrap_or(Color::srgb(0.3, 0.3, 0.3)),
-                    ..textbox.text_style.clone().unwrap_or_default()
-                }),
+                        .unwrap_or(Color::srgb(0.3, 0.3, 0.3))
+                )),
             },
             TextInputValue(value.clone()),
         ));
@@ -163,12 +162,12 @@ fn update_text_entry_components(
 }
 
 pub fn update_fontsize(
-    mut q: Query<(&mut TextInputTextStyle, Ref<FontSize>)>,
+    mut q: Query<(&mut TextInputTextFont, Ref<FontSize>)>,
     mut resized: EventReader<WindowResized>,
     window: Query<&Window, With<PrimaryWindow>>,
 ) {
     let resized = resized.read().last().is_some();
-    let Ok(window) = window.get_single() else {
+    let Ok(window) = window.single() else {
         return;
     };
     let win_size = window.width().min(window.height());
@@ -191,12 +190,12 @@ fn propagate_focus(
         if !textbox.enabled {
             continue;
         }
-        if let Some(child) = children.iter().find(|c| child.get(**c).is_ok()) {
-            commands.entity(*child).insert(Focus);
+        if let Some(child) = children.iter().find(|c| child.get(*c).is_ok()) {
+            commands.entity(child).insert(Focus);
         }
     }
 
-    if focussed_text.get_single().is_ok() {
+    if focussed_text.single().is_ok() {
         input_manager
             .priorities()
             .reserve(InputType::Keyboard, InputPriority::TextEntry);
@@ -210,7 +209,7 @@ fn propagate_focus(
 fn pipe_events(
     mut submit: EventReader<TextInputSubmitEvent>,
     changed: Query<(Entity, Ref<TextInputValue>), Changed<TextInputValue>>,
-    parents: Query<&Parent>,
+    parents: Query<&ChildOf>,
     settings: Query<&TextEntry>,
     mut commands: Commands,
 ) {
@@ -220,14 +219,14 @@ fn pipe_events(
             continue;
         };
 
-        if let Some(mut commands) = commands.get_entity(parent.get()) {
+        if let Ok(mut commands) = commands.get_entity(parent.parent()) {
             commands
                 .try_insert(Submit)
                 .insert(TextEntrySubmit(ev.value.trim().to_owned()));
             debug!("{:?} submit to {}", commands.id(), ev.value);
         }
 
-        if let Ok(settings) = settings.get(parent.get()) {
+        if let Ok(settings) = settings.get(parent.parent()) {
             if !settings.retain_focus_on_submit {
                 debug!("{:?} defocus", ev.entity);
                 commands.entity(ev.entity).remove::<Focus>();
@@ -244,7 +243,7 @@ fn pipe_events(
         if let Some(mut commands) = parents
             .get(entity)
             .ok()
-            .and_then(|p| commands.get_entity(p.get()))
+            .and_then(|p| commands.get_entity(p.parent()).ok())
         {
             commands
                 .try_insert(DataChanged)

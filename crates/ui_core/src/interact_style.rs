@@ -48,7 +48,7 @@ pub fn set_interaction_style(
         Option<&mut BackgroundColor>,
         Option<&mut BorderColor>,
         Option<&mut Ui9Slice>,
-        Option<&mut UiImage>,
+        Option<&mut ImageNode>,
         Option<&mut BoundedNode>,
         Option<&mut NodeBounds>,
         Option<&Interaction>,
@@ -131,8 +131,8 @@ pub fn set_interaction_style(
 
         if let Some(mut ui_image) = maybe_image {
             if let Some(image) = &style.image {
-                if &ui_image.texture != image {
-                    ui_image.texture = image.clone();
+                if &ui_image.image != image {
+                    ui_image.image = image.clone();
                 }
             }
             if let Some(req_bg) = style.background {

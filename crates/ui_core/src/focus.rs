@@ -21,7 +21,7 @@ impl Plugin for FocusPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             PreUpdate,
-            (apply_deferred, defocus, focus)
+            (defocus, focus)
                 .chain()
                 .in_set(SceneSets::UiActions)
                 .after(UiActionSet)

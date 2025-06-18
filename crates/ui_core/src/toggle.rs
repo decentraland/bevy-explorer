@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use bevy::{prelude::*, ui::FocusPolicy};
 use bevy_dui::{DuiRegistry, DuiTemplate};
-use common::{structs::SystemAudio, util::FireEventEx};
+use common::structs::SystemAudio;
 
 use crate::ui_actions::{Click, DataChanged, On};
 
@@ -35,28 +35,22 @@ impl DuiTemplate for ToggleTemplate {
         let id = commands.id();
 
         commands.insert((
-            ImageBundle {
-                style: Node {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    ..Default::default()
-                },
-                image: ctx
-                    .asset_server()
-                    .load(if on {
-                        "images/toggle-on.png"
-                    } else {
-                        "images/toggle-off.png"
-                    })
-                    .into(),
-                focus_policy: FocusPolicy::Block,
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
                 ..Default::default()
             },
+            ImageNode::new(ctx.asset_server().load(if on {
+                "images/toggle-on.png"
+            } else {
+                "images/toggle-off.png"
+            })),
+            FocusPolicy::Block,
             Interaction::default(),
             On::<Click>::new(
                 move |mut commands: Commands,
                       asset_server: Res<AssetServer>,
-                      mut q: Query<(&mut Toggled, &mut UiImage)>| {
+                      mut q: Query<(&mut Toggled, &mut ImageNode)>| {
                     let Ok((mut toggle, mut image)) = q.get_mut(id) else {
                         warn!("toggle not found");
                         return;
@@ -64,12 +58,12 @@ impl DuiTemplate for ToggleTemplate {
 
                     if toggle.0 {
                         toggle.0 = false;
-                        image.texture = asset_server.load("images/toggle-off.png");
-                        commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+                        image.image = asset_server.load("images/toggle-off.png");
+                        commands.send_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
                     } else {
                         toggle.0 = true;
-                        image.texture = asset_server.load("images/toggle-on.png");
-                        commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                        image.image = asset_server.load("images/toggle-on.png");
+                        commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                     }
 
                     commands.entity(id).try_insert(DataChanged);

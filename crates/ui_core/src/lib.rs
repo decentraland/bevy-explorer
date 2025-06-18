@@ -4,15 +4,14 @@ pub mod color_picker;
 pub mod combo_box;
 pub mod dui_utils;
 pub mod focus;
+pub mod interact_sounds;
 pub mod interact_style;
 pub mod nine_slice;
 pub mod scrollable;
 pub mod spinner;
 pub mod stretch_uvs_image;
-pub mod text_size;
-// pub mod textentry;
-pub mod interact_sounds;
 pub mod text_entry;
+pub mod text_size;
 pub mod toggle;
 pub mod ui_actions;
 pub mod ui_builder;
@@ -21,10 +20,10 @@ use std::{any::type_name, marker::PhantomData};
 
 use bevy::{
     asset::{DependencyLoadState, LoadState, RecursiveDependencyLoadState},
-    ecs::schedule::SystemConfigs,
+    ecs::{schedule::ScheduleConfigs, system::ScheduleSystem},
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     state::state::FreelyMutableState,
-    platform::collections::{HashMap, HashSet},
 };
 use bevy_dui::{DuiNodeList, DuiPlugin, DuiRegistry};
 use bevy_egui::EguiPlugin;
@@ -36,7 +35,7 @@ use interact_sounds::InteractSoundsPlugin;
 use nine_slice::Ui9SlicePlugin;
 use once_cell::sync::OnceCell;
 
-use common::sets::SetupSets;
+use common::{sets::SetupSets, structs::TextStyle};
 use spinner::SpinnerPlugin;
 use stretch_uvs_image::StretchUvsImagePlugin;
 use text_entry::TextEntryPlugin;
@@ -79,7 +78,9 @@ impl Plugin for UiCorePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(DuiPlugin);
         app.add_plugins(BoundedNodePlugin);
-        app.add_plugins(EguiPlugin);
+        app.add_plugins(EguiPlugin {
+            enable_multipass_for_primary_context: false,
+        });
         app.add_plugins(UiActionPlugin);
         app.add_plugins(FocusPlugin);
         app.add_plugins(InteractStylePlugin);
@@ -198,26 +199,37 @@ fn setup(
     }
 
     TITLE_TEXT_STYLE
-        .set(TextStyle {
-            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
-            font_size: 35.0 / 1.3,
-            color: Color::BLACK,
-        })
+        .set((
+            TextFont {
+                font: asset_server.load("fonts/NotoSans-Bold.ttf"),
+                font_size: 35.0 / 1.3,
+                ..Default::default()
+            },
+            TextColor(Color::BLACK),
+        ))
         .unwrap();
     BODY_TEXT_STYLE
-        .set(TextStyle {
-            font: asset_server.load("fonts/NotoSans-Regular.ttf"),
-            font_size: 25.0 / 1.3,
-            color: Color::BLACK,
-        })
+        .set((
+            TextFont {
+                font: asset_server.load("fonts/NotoSans-Regular.ttf"),
+                font_size: 25.0 / 1.3,
+                ..Default::default()
+            },
+            TextColor(Color::BLACK),
+        ))
         .unwrap();
     HOVER_TEXT_STYLE
         .set(
             (0..10)
-                .map(|i| TextStyle {
-                    font: asset_server.load("fonts/NotoSans-Bold.ttf"),
-                    font_size: 25.0 / 1.3,
-                    color: Color::srgba(1.0, 1.0, 1.0, i as f32 / 9.0),
+                .map(|i| {
+                    (
+                        TextFont {
+                            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
+                            font_size: 25.0 / 1.3,
+                            ..Default::default()
+                        },
+                        TextColor(Color::srgba(1.0, 1.0, 1.0, i as f32 / 9.0)),
+                    )
                 })
                 .collect::<Vec<_>>()
                 .try_into()
@@ -247,7 +259,7 @@ impl<S: States + FreelyMutableState> StateTracker<S> {
     }
 
     // run the system every tick until it returns false
-    pub fn run_while<M, F: IntoSystem<(), bool, M>>(f: F) -> SystemConfigs {
+    pub fn run_while<M, F: IntoSystem<(), bool, M>>(f: F) -> ScheduleConfigs<ScheduleSystem> {
         let update_cond = move |In(retain): In<bool>, mut slf: ResMut<Self>| {
             slf.systems.insert(type_name::<F>(), !retain);
         };
@@ -263,17 +275,21 @@ impl<S: States + FreelyMutableState> StateTracker<S> {
     }
 
     // transition when all assets are loaded and all systems are finished
-    pub fn transition_when_finished(next: S) -> SystemConfigs {
+    pub fn transition_when_finished(next: S) -> ScheduleConfigs<ScheduleSystem> {
         let system = move |slf: Res<StateTracker<S>>,
                            asset_server: Res<AssetServer>,
                            mut next_state: ResMut<NextState<S>>| {
             if slf.assets.iter().all(|a| {
-                asset_server.get_load_states(a.id())
-                    == Some((
-                        LoadState::Loaded,
-                        DependencyLoadState::Loaded,
-                        RecursiveDependencyLoadState::Loaded,
-                    ))
+                if let Some((
+                    LoadState::Loaded,
+                    DependencyLoadState::Loaded,
+                    RecursiveDependencyLoadState::Loaded,
+                )) = asset_server.get_load_states(a.id())
+                {
+                    true
+                } else {
+                    false
+                }
             }) && slf.systems.values().all(|v| *v)
             {
                 next_state.set(next.clone())

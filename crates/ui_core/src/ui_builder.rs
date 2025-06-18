@@ -5,13 +5,10 @@ pub trait SpawnSpacer {
     fn spacer(&mut self) -> EntityCommands<'_>;
 }
 
-impl SpawnSpacer for ChildBuilder<'_> {
+impl SpawnSpacer for ChildSpawnerCommands<'_> {
     fn spacer(&mut self) -> EntityCommands<'_> {
-        self.spawn(NodeBundle {
-            style: Node {
-                flex_grow: 1.0,
-                ..Default::default()
-            },
+        self.spawn(Node {
+            flex_grow: 1.0,
             ..Default::default()
         })
     }
@@ -19,11 +16,8 @@ impl SpawnSpacer for ChildBuilder<'_> {
 
 impl SpawnSpacer for TryChildBuilder<'_> {
     fn spacer(&mut self) -> EntityCommands<'_> {
-        self.spawn(NodeBundle {
-            style: Node {
-                flex_grow: 1.0,
-                ..Default::default()
-            },
+        self.spawn(Node {
+            flex_grow: 1.0,
             ..Default::default()
         })
     }
