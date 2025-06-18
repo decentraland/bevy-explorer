@@ -3,17 +3,7 @@ use std::{path::PathBuf, sync::Mutex};
 use std::{collections::BTreeMap, fs::File, io::Write};
 
 use bevy::{
-    app::{PluginGroupBuilder, ScheduleRunnerPlugin},
-    diagnostic::DiagnosticsPlugin,
-    gizmos::GizmoPlugin,
-    gltf::GltfPlugin,
-    input::InputPlugin,
-    log::LogPlugin,
-    prelude::*,
-    render::mesh::MeshPlugin,
-    scene::ScenePlugin,
-    time::TimePlugin,
-    platform::collections::{HashMap, Instant},
+    app::{PluginGroupBuilder, ScheduleRunnerPlugin}, diagnostic::{DiagnosticsPlugin, FrameCountPlugin}, gizmos::GizmoPlugin, gltf::GltfPlugin, input::InputPlugin, log::LogPlugin, platform::collections::HashMap, prelude::*, render::mesh::MeshPlugin, scene::ScenePlugin, time::TimePlugin
 };
 use bevy_dui::DuiPlugin;
 use itertools::Itertools;
@@ -80,7 +70,6 @@ impl PluginGroup for TestPlugins {
 
         builder
             .add(TaskPoolPlugin::default())
-            .add(TypeRegistrationPlugin)
             .add(FrameCountPlugin)
             .add(TimePlugin)
             .add(ScheduleRunnerPlugin::default())
