@@ -38,14 +38,14 @@ pub fn set_ui_dropdown(
 ) {
     for ent in removed.read() {
         if let Ok(link) = links.get(ent) {
-            if let Some(mut commands) = commands.get_entity(link.ui_entity) {
+            if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
                 commands.remove::<ComboBox>();
             }
         }
     }
 
     for (scene_ent, dropdown, link) in dropdowns.iter() {
-        let Some(mut commands) = commands.get_entity(link.ui_entity) else {
+        let Ok(mut commands) = commands.get_entity(link.ui_entity) else {
             continue;
         };
 
@@ -83,15 +83,20 @@ pub fn set_ui_dropdown(
                 dropdown.0.accept_empty,
                 dropdown.0.disabled,
                 initial_selection,
-                Some(TextStyle {
-                    font: user_font(font_name, ui_core::WeightName::Regular),
-                    font_size,
-                    color: dropdown
-                        .0
-                        .color
-                        .map(Color4DclToBevy::convert_srgba)
-                        .unwrap_or(Color::BLACK),
-                }),
+                Some((
+                    TextFont {
+                        font: user_font(font_name, ui_core::WeightName::Regular),
+                        font_size,
+                        ..Default::default()
+                    },
+                    TextColor(
+                        dropdown
+                            .0
+                            .color
+                            .map(Color4DclToBevy::convert_srgba)
+                            .unwrap_or(Color::BLACK),
+                    ),
+                )),
             ),
             On::<DataChanged>::new(
                 move |combo: Query<(Entity, &ComboBox)>,

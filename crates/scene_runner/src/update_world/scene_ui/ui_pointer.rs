@@ -28,13 +28,13 @@ pub fn set_ui_pointer_events(
             continue;
         };
 
-        if let Some(mut commands) = commands.get_entity(link.ui_entity) {
+        if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
             commands.remove::<(On<HoverEnter>, On<HoverExit>)>();
         }
     }
 
     for (ent, link) in pes.iter() {
-        if let Some(mut commands) = commands.get_entity(link.ui_entity) {
+        if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
             let is_primary = link.is_window_ui;
             commands.try_insert((
                 FocusPolicy::Block,

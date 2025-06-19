@@ -8,10 +8,10 @@ use std::collections::{BTreeSet, VecDeque};
 
 use bevy::{
     math::FloatOrd,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::render_resource::Extent3d,
-    ui::{FocusPolicy, CameraCursorPosition},
-    platform::collections::{HashMap, HashSet},
+    ui::{CameraCursorPosition, FocusPolicy},
 };
 use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
@@ -30,7 +30,7 @@ use crate::{
 use common::{
     rpc::RpcCall,
     structs::{AppConfig, PrimaryPlayerRes, PrimaryUser},
-    util::{DespawnWith, FireEventEx, ModifyComponentExt},
+    util::{DespawnWith, ModifyComponentExt},
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -564,7 +564,7 @@ fn create_ui_roots(
     for (ent, ui_root) in &current_uis {
         if !current_scenes.contains(&ui_root.scene) {
             commands.entity(ent).despawn();
-            if let Some(mut commands) = commands.get_entity(ui_root.canvas) {
+            if let Ok(mut commands) = commands.get_entity(ui_root.canvas) {
                 commands.remove::<UiLink>();
             }
         }
@@ -606,15 +606,12 @@ fn create_ui_roots(
                 }
             };
 
-            let z_index = ZIndex::Global(if ui_data.super_user { 1 << 17 } else { 0 });
+            let z_index = GlobalZIndex(if ui_data.super_user { 1 << 17 } else { 0 });
 
             let window_root = commands
                 .spawn((
-                    NodeBundle {
-                        style: root_style,
-                        z_index,
-                        ..Default::default()
-                    },
+                    root_style,
+                    z_index,
                     SceneUiRoot {
                         scene: ent,
                         canvas: ent,
@@ -644,23 +641,20 @@ fn create_ui_roots(
                     let (root, ui_texture) =
                         world_ui::spawn_world_ui_view(&mut commands, images, existing_texture);
                     commands.entity(root).try_insert((
-                        TargetCamera(root),
+                        UiTargetCamera(root),
                         CameraCursorPosition::default(),
                         SceneUiRoot {
                             scene: container.root,
                             canvas: ent,
                         },
                         DespawnWith(ent),
-                        NodeBundle {
-                            style: Node {
-                                position_type: PositionType::Absolute,
-                                width: Val::Percent(100.0),
-                                height: Val::Percent(100.0),
-                                ..Default::default()
-                            },
-                            z_index: ZIndex::Global(0), // behind the ZIndex((1 << 18) + 1) MouseInteractionComponent
+                        Node {
+                            position_type: PositionType::Absolute,
+                            width: Val::Percent(100.0),
+                            height: Val::Percent(100.0),
                             ..Default::default()
                         },
+                        GlobalZIndex(0), // behind the ZIndex((1 << 18) + 1) MouseInteractionComponent
                     ));
                     debug!("create texture root {:?} -> {:?}", ent, root);
 
@@ -723,7 +717,7 @@ fn layout_scene_ui(
     mut scene_uis: Query<(Entity, &mut SceneUiData)>,
     player: Query<Entity, With<PrimaryUser>>,
     containing_scene: ContainingScene,
-    ui_nodes: Query<(&SceneEntity, Ref<UiTransform>, &Parent)>,
+    ui_nodes: Query<(&SceneEntity, Ref<UiTransform>, &ChildOf)>,
     config: Res<AppConfig>,
     mut removed_transforms: RemovedComponents<UiTransform>,
     ui_links: Query<&UiLink>,
@@ -758,7 +752,7 @@ fn layout_scene_ui(
         ui_data.relayout = false;
 
         // collect ui data
-        let mut deleted_nodes = HashSet::default();
+        let mut deleted_nodes = HashSet::new();
         let mut unprocessed_uis = ui_data
             .nodes
             .iter()
@@ -770,7 +764,7 @@ fn layout_scene_ui(
                             *node,
                             transform.clone(),
                             transform.is_changed(),
-                            bevy_parent.get(),
+                            bevy_parent.parent(),
                         ),
                     )),
                     Err(_) => {
@@ -836,7 +830,7 @@ fn layout_scene_ui(
 
             // get or create the counterpart ui entity
             let existing_link = if let Ok(link) = ui_links.get(bevy_entity) {
-                if commands.get_entity(link.ui_entity).is_none() {
+                if commands.get_entity(link.ui_entity).is_err() {
                     None
                 } else if link.scroll_entity.is_some() == ui_transform.scroll {
                     debug!("{scene_id} reuse linked {:?}", link.ui_entity);
@@ -854,8 +848,7 @@ fn layout_scene_ui(
                 // update parent (always, so the child order is correct)
                 commands
                     .entity(link.ui_entity)
-                    .remove_parent()
-                    .set_parent(parent_link.content_entity);
+                    .insert(ChildOf(parent_link.content_entity));
                 let updated = UiLink {
                     opacity: FloatOrd(parent_link.opacity.0 * ui_transform.opacity),
                     is_window_ui: bevy_ui_root.is_window_ui,
@@ -870,15 +863,17 @@ fn layout_scene_ui(
                 valid_nodes.insert(scene_id, updated);
                 true
             } else {
-                let mut ent_cmds =
-                    commands.spawn((NodeBundle::default(), DespawnWith(bevy_entity)));
-                ent_cmds.set_parent(parent_link.content_entity);
+                let mut ent_cmds = commands.spawn((
+                    Node::default(),
+                    DespawnWith(bevy_entity),
+                    ChildOf(parent_link.content_entity),
+                ));
                 let ui_entity = ent_cmds.id();
                 debug!("{scene_id} create linked {:?}", ui_entity);
 
                 let (scroll_entity, content_entity) = if ui_transform.scroll {
                     ent_cmds.try_insert(FocusPolicy::Block);
-                    let content = ent_cmds.commands().spawn(NodeBundle::default()).id();
+                    let content = ent_cmds.commands().spawn(Node::default()).id();
                     let scrollable = ent_cmds
                         .spawn_template(
                             &dui,
@@ -906,29 +901,31 @@ fn layout_scene_ui(
                     ent_cmds
                     .commands()
                     .entity(scrollable)
-                    .set_parent(ui_entity)
-                    .try_insert(On::<DataChanged>::new(
-                        move |caller: Res<UiCaller>,
-                            position: Query<&ScrollPosition>,
-                            mut context: Query<&mut RendererSceneContext>| {
-                            let Ok(pos) = position.get(caller.0) else {
-                                warn!("failed to get scroll pos on scrollable update");
-                                return;
-                            };
-                            let Ok(mut context) = context.get_mut(scene_root) else {
-                                warn!("failed to get context on scrollable update");
-                                return;
-                            };
+                    .try_insert((
+                        ChildOf(ui_entity),
+                        On::<DataChanged>::new(
+                            move |caller: Res<UiCaller>,
+                                position: Query<&ScrollPosition>,
+                                mut context: Query<&mut RendererSceneContext>| {
+                                let Ok(pos) = position.get(caller.0) else {
+                                    warn!("failed to get scroll pos on scrollable update");
+                                    return;
+                                };
+                                let Ok(mut context) = context.get_mut(scene_root) else {
+                                    warn!("failed to get context on scrollable update");
+                                    return;
+                                };
 
-                            context.update_crdt(
-                                SceneComponentId::UI_SCROLL_RESULT,
-                                CrdtType::LWW_ENT,
-                                scene_id,
-                                &PbUiScrollResult {
-                                    value: Some(Vec2::new(pos.h, pos.v).into()),
-                                },
-                            );
-                        },
+                                context.update_crdt(
+                                    SceneComponentId::UI_SCROLL_RESULT,
+                                    CrdtType::LWW_ENT,
+                                    scene_id,
+                                    &PbUiScrollResult {
+                                        value: Some(Vec2::new(pos.h, pos.v).into()),
+                                    },
+                                );
+                            },
+                        )
                     ));
 
                     (Some(scrollable), content)
@@ -1019,7 +1016,7 @@ fn layout_scene_ui(
                 if let Some(zindex) = ui_transform.zindex {
                     if zindex != 0 {
                         zindex_added = true;
-                        cmds.try_insert(ZIndex::Global(
+                        cmds.try_insert(GlobalZIndex(
                             zindex as i32 + if ui_data.super_user { 1 << 17 } else { 0 },
                         ));
                     }
@@ -1047,7 +1044,7 @@ fn layout_scene_ui(
                         match target {
                             scroll_position_value::Value::Position(vec) => {
                                 debug!("scroll literal {vec:?}");
-                                commands.fire_event(ScrollTargetEvent {
+                                commands.send_event(ScrollTargetEvent {
                                     scrollable: scroll_entity,
                                     position: ScrollTarget::Literal(Vec2::from(vec)),
                                 });
@@ -1087,7 +1084,7 @@ fn layout_scene_ui(
         // remove any dead nodes
         for node in deleted_nodes {
             if let Ok(link) = ui_links.get(node) {
-                if let Some(commands) = commands.get_entity(link.ui_entity) {
+                if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
                     debug!("{node} delete linked {:?}", link.ui_entity);
                     commands.despawn();
                 }
@@ -1098,7 +1095,7 @@ fn layout_scene_ui(
         // and any unused linked entities
         for (_, (node, ..)) in unprocessed_uis {
             if let Ok(link) = ui_links.get(node) {
-                if let Some(commands) = commands.get_entity(link.ui_entity) {
+                if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
                     debug!("{node} delete linked {:?}", link.ui_entity);
                     commands.despawn();
                 }
@@ -1114,7 +1111,7 @@ fn layout_scene_ui(
         // send any pending events
         for (scrollable, target) in pending_scroll_events {
             if let Some(target) = ui_data.named_nodes.get(&target) {
-                commands.fire_event(ScrollTargetEvent {
+                commands.send_event(ScrollTargetEvent {
                     scrollable,
                     position: ScrollTarget::Entity(*target),
                 });
@@ -1127,7 +1124,7 @@ fn layout_scene_ui(
 
 pub fn fully_update_target_camera_system(
     mut commands: Commands,
-    root_nodes_query: Query<(Entity, Option<&TargetCamera>), (With<ComputedNode>, Without<Parent>)>,
+    root_nodes_query: Query<(Entity, Option<&UiTargetCamera>), (With<ComputedNode>, Without<ChildOf>)>,
     children_query: Query<&Children, With<ComputedNode>>,
 ) {
     // Track updated entities to prevent redundant updates, as `Commands` changes are deferred,
@@ -1147,7 +1144,7 @@ pub fn fully_update_target_camera_system(
 
 fn update_children_target_camera(
     entity: Entity,
-    camera_to_set: Option<&TargetCamera>,
+    camera_to_set: Option<&UiTargetCamera>,
     children_query: &Query<&Children, With<ComputedNode>>,
     commands: &mut Commands,
     updated_entities: &mut HashSet<Entity>,
@@ -1167,7 +1164,7 @@ fn update_children_target_camera(
                 commands.entity(child).try_insert(camera.clone());
             }
             None => {
-                commands.entity(child).remove::<TargetCamera>();
+                commands.entity(child).remove::<UiTargetCamera>();
             }
         }
         updated_entities.insert(child);
@@ -1307,7 +1304,7 @@ fn set_ui_focus(
             continue;
         };
 
-        let Some(mut commands) = commands.get_entity(*target) else {
+        let Ok(mut commands) = commands.get_entity(*target) else {
             response.send(Err(format!("element {element} destroyed",)));
             continue;
         };

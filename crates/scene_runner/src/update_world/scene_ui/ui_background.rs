@@ -113,11 +113,9 @@ pub fn set_ui_background(
     contexts: Query<&RendererSceneContext>,
     mut resolver: TextureResolver,
     mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
-    mut images: ResMut<Assets<Image>>,
     sourced: Query<(
         Entity,
-        Option<&Handle<StretchUvMaterial>>,
-        Option<&Handle<Image>>,
+        Option<&MaterialNode<StretchUvMaterial>>,
         &UiMaterialSource,
     )>,
 ) {
@@ -129,15 +127,15 @@ pub fn set_ui_background(
         if let Ok(children) = children.get(link.ui_entity) {
             for child in children
                 .iter()
-                .filter(|c| prev_backgrounds.get(**c).is_ok())
+                .filter(|c| prev_backgrounds.get(*c).is_ok())
             {
-                if let Some(commands) = commands.get_entity(*child) {
+                if let Ok(mut commands) = commands.get_entity(child) {
                     commands.despawn();
                 }
             }
         }
 
-        if let Some(mut commands) = commands.get_entity(link.ui_entity) {
+        if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
             commands.remove::<BackgroundColor>();
         }
     }
@@ -146,9 +144,9 @@ pub fn set_ui_background(
         if let Ok(children) = children.get(link.ui_entity) {
             for child in children
                 .iter()
-                .filter(|c| prev_backgrounds.get(**c).is_ok())
+                .filter(|c| prev_backgrounds.get(*c).is_ok())
             {
-                if let Some(commands) = commands.get_entity(*child) {
+                if let Ok(mut commands) = commands.get_entity(child) {
                     commands.despawn();
                 }
             }
@@ -156,7 +154,7 @@ pub fn set_ui_background(
 
         commands.entity(ent).remove::<RetryBackground>();
 
-        let Some(mut commands) = commands.get_entity(link.ui_entity) else {
+        let Ok(mut commands) = commands.get_entity(link.ui_entity) else {
             continue;
         };
 
@@ -186,16 +184,13 @@ pub fn set_ui_background(
                     BackgroundTextureMode::NineSlices(rect) => commands
                         .commands()
                         .spawn((
-                            NodeBundle {
-                                style: Node {
-                                    position_type: PositionType::Absolute,
-                                    top: Val::Px(0.0),
-                                    right: Val::Px(0.0),
-                                    left: Val::Px(0.0),
-                                    bottom: Val::Px(0.0),
-                                    overflow: Overflow::clip(),
-                                    ..Default::default()
-                                },
+                            Node {
+                                position_type: PositionType::Absolute,
+                                top: Val::Px(0.0),
+                                right: Val::Px(0.0),
+                                left: Val::Px(0.0),
+                                bottom: Val::Px(0.0),
+                                overflow: Overflow::clip(),
                                 ..Default::default()
                             },
                             Ui9Slice {
@@ -209,23 +204,20 @@ pub fn set_ui_background(
                     BackgroundTextureMode::Stretch(ref uvs) => commands
                         .commands()
                         .spawn((
-                            NodeBundle {
-                                style: Node {
-                                    position_type: PositionType::Absolute,
-                                    top: Val::Px(0.0),
-                                    right: Val::Px(0.0),
-                                    left: Val::Px(0.0),
-                                    bottom: Val::Px(0.0),
-                                    overflow: Overflow::clip(),
-                                    ..Default::default()
-                                },
+                            Node {
+                                position_type: PositionType::Absolute,
+                                top: Val::Px(0.0),
+                                right: Val::Px(0.0),
+                                left: Val::Px(0.0),
+                                bottom: Val::Px(0.0),
+                                overflow: Overflow::clip(),
                                 ..Default::default()
                             },
                             UiBackgroundMarker,
                         ))
                         .try_with_children(|c| {
-                            let mut inner = c.spawn((MaterialNodeBundle {
-                                style: Node {
+                            let mut inner = c.spawn((
+                                Node {
                                     position_type: PositionType::Absolute,
                                     top: Val::Px(0.0),
                                     right: Val::Px(0.0),
@@ -233,13 +225,12 @@ pub fn set_ui_background(
                                     bottom: Val::Px(0.0),
                                     ..Default::default()
                                 },
-                                material: stretch_uvs.add(StretchUvMaterial {
+                                MaterialNode(stretch_uvs.add(StretchUvMaterial {
                                     image: image.image.clone(),
                                     uvs: *uvs,
                                     color: image_color.to_linear().to_vec4(),
-                                }),
-                                ..Default::default()
-                            },));
+                                })),
+                            ));
                             if let Some(source) = image.source_entity {
                                 inner.insert(UiMaterialSource(source));
                             }
@@ -248,49 +239,37 @@ pub fn set_ui_background(
                     BackgroundTextureMode::Center => commands
                         .commands()
                         .spawn((
-                            NodeBundle {
-                                style: Node {
-                                    position_type: PositionType::Absolute,
-                                    left: Val::Px(0.0),
-                                    right: Val::Px(0.0),
-                                    top: Val::Px(0.0),
-                                    bottom: Val::Px(0.0),
-                                    justify_content: JustifyContent::Center,
-                                    overflow: Overflow::clip(),
-                                    width: Val::Percent(100.0),
-                                    ..Default::default()
-                                },
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(0.0),
+                                right: Val::Px(0.0),
+                                top: Val::Px(0.0),
+                                bottom: Val::Px(0.0),
+                                justify_content: JustifyContent::Center,
+                                overflow: Overflow::clip(),
+                                width: Val::Percent(100.0),
                                 ..Default::default()
                             },
                             UiBackgroundMarker,
                         ))
                         .try_with_children(|c| {
                             c.spacer();
-                            c.spawn(NodeBundle {
-                                style: Node {
-                                    flex_direction: FlexDirection::Column,
-                                    justify_content: JustifyContent::Center,
-                                    overflow: Overflow::clip(),
-                                    height: Val::Percent(100.0),
-                                    ..Default::default()
-                                },
+                            c.spawn(Node {
+                                flex_direction: FlexDirection::Column,
+                                justify_content: JustifyContent::Center,
+                                overflow: Overflow::clip(),
+                                height: Val::Percent(100.0),
                                 ..Default::default()
                             })
                             .try_with_children(|c| {
                                 c.spacer();
-                                let mut inner = c.spawn(ImageBundle {
-                                    style: Node {
+                                let mut inner = c.spawn((
+                                    Node {
                                         overflow: Overflow::clip(),
                                         ..Default::default()
                                     },
-                                    image: UiImage {
-                                        color: image_color,
-                                        texture: image.image,
-                                        flip_x: false,
-                                        flip_y: false,
-                                    },
-                                    ..Default::default()
-                                });
+                                    ImageNode::new(image.image).with_color(image_color),
+                                ));
                                 if let Some(source) = image.source_entity {
                                     inner.insert(UiMaterialSource(source));
                                 }
@@ -310,15 +289,12 @@ pub fn set_ui_background(
         }
     }
 
-    for (ent, maybe_stretch, maybe_image, source) in sourced.iter() {
-        if commands.get_entity(source.0).is_none() {
+    for (ent, maybe_stretch, source) in sourced.iter() {
+        if commands.get_entity(source.0).is_err() {
             commands.entity(ent).insert(RetryBackground);
         } else {
             if let Some(h_stretch) = maybe_stretch {
                 stretch_uvs.get_mut(h_stretch);
-            }
-            if let Some(h_image) = maybe_image {
-                images.get_mut(h_image);
             }
         }
     }
