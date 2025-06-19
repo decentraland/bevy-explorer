@@ -44,7 +44,7 @@
 // and back to scene loop
 
 use bevy::{
-    core::FrameCount,
+    diagnostic::FrameCount,
     math::{DVec3, Vec3Swizzles},
     prelude::*,
 };
@@ -87,7 +87,7 @@ pub fn update_user_position(
     containing_scenes: ContainingScene,
     time: Res<Time>,
     _frame: Res<FrameCount>,
-    manual_transform: Query<(&Transform, Option<&Parent>), Without<PrimaryUser>>,
+    manual_transform: Query<(&Transform, Option<&ChildOf>), Without<PrimaryUser>>,
     clip: Res<UserClipping>,
     mut prev_excess_time: Local<f32>,
 ) {
@@ -163,7 +163,7 @@ pub fn update_user_position(
         let mut transforms = vec![sync_transform];
         let mut pointer = maybe_parent;
         while let Some(next_parent) = pointer {
-            let Ok((next_transform, next_parent)) = manual_transform.get(next_parent.get()) else {
+            let Ok((next_transform, next_parent)) = manual_transform.get(next_parent.parent()) else {
                 break;
             };
 
@@ -393,7 +393,7 @@ pub(crate) fn speed_cmd(
     mut user: Query<&mut PrimaryUser>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        let mut user = user.single_mut();
+        let mut user = user.single_mut().unwrap();
         user.run_speed = command.run;
         user.friction = command.friction;
         input.reply_ok(format!(
@@ -414,7 +414,7 @@ pub(crate) struct JumpCommand {
 
 pub(crate) fn jump_cmd(mut input: ConsoleCommand<JumpCommand>, mut user: Query<&mut PrimaryUser>) {
     if let Some(Ok(command)) = input.take() {
-        let mut user = user.single_mut();
+        let mut user = user.single_mut().unwrap();
         user.jump_height = command.jump_height;
         user.gravity = -command.gravity;
         user.fall_speed = -command.fall_speed;
